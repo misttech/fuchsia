@@ -91,7 +91,7 @@ class UserMemory {
     return mapping_->MapRange(offset, size, false, true);
   }
 
-  zx_status_t Protect(uint flags, uint64_t offset = 0) {
+  zx_status_t Protect(arch_mmu_flags_t flags, uint64_t offset = 0) {
     ASSERT(offset < mapping_->size());
     return mapping_->DebugProtect(mapping_->base() + offset, mapping_->size() - offset,
                                   ARCH_MMU_FLAG_PERM_USER | flags);

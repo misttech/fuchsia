@@ -479,7 +479,7 @@ bool vmo_create_physical_test() {
   paddr_t pa;
   vm_page_t* vm_page;
   zx_status_t status = pmm_alloc_page(0, &vm_page, &pa);
-  uint32_t cache_policy;
+  arch_mmu_flags_t cache_policy;
 
   ASSERT_EQ(ZX_OK, status, "vm page allocation\n");
   ASSERT_TRUE(vm_page);
@@ -1132,8 +1132,8 @@ bool vmo_cache_test() {
   vm_page_t* vm_page;
   zx_status_t status = pmm_alloc_page(0, &vm_page, &pa);
   auto ka = VmAspace::kernel_aspace();
-  uint32_t cache_policy = ARCH_MMU_FLAG_UNCACHED_DEVICE;
-  uint32_t cache_policy_get;
+  arch_mmu_flags_t cache_policy = ARCH_MMU_FLAG_UNCACHED_DEVICE;
+  arch_mmu_flags_t cache_policy_get;
   void* ptr;
 
   ASSERT_TRUE(vm_page);
@@ -1165,7 +1165,8 @@ bool vmo_cache_test() {
     status = VmObjectPhysical::Create(pa, kPageSize, &vmo);
     ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
     ASSERT_TRUE(vmo, "vmobject creation\n");
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(i), "try set with invalid flags");
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(i)),
+              "try set with invalid flags");
   }
 
   // Test valid flags with invalid flags
@@ -1174,10 +1175,18 @@ bool vmo_cache_test() {
     status = VmObjectPhysical::Create(pa, kPageSize, &vmo);
     ASSERT_EQ(status, ZX_OK, "vmobject creation\n");
     ASSERT_TRUE(vmo, "vmobject creation\n");
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0x5), "bad 0x5");
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0xA), "bad 0xA");
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0x55), "bad 0x55");
-    EXPECT_EQ(ZX_ERR_INVALID_ARGS, vmo->SetMappingCachePolicy(cache_policy | 0xAA), "bad 0xAA");
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              vmo->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(cache_policy | 0x5)),
+              "bad 0x5");
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              vmo->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(cache_policy | 0xA)),
+              "bad 0xA");
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              vmo->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(cache_policy | 0x55)),
+              "bad 0x55");
+    EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+              vmo->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(cache_policy | 0xAA)),
+              "bad 0xAA");
   }
 
   // Test that changing policy while mapped is blocked
@@ -1391,7 +1400,7 @@ bool vmo_clone_removes_write_test() {
 
   // Query the aspace and validate there is a writable mapping.
   paddr_t paddr_writable;
-  uint mmu_flags;
+  arch_mmu_flags_t mmu_flags;
   status = mapping->aspace()->arch_aspace().Query(mapping->base(), &paddr_writable, &mmu_flags);
   EXPECT_EQ(ZX_OK, status, "query aspace");
 
@@ -4305,7 +4314,7 @@ bool vmo_skip_range_update_test() {
     for (uint64_t i = 0; i < kNumPages; i++) {
       user_memory->get<char>(i * kPageSize);
       paddr_t paddr;
-      uint mmu_flags;
+      arch_mmu_flags_t mmu_flags;
       EXPECT_OK(user_memory->aspace()->arch_aspace().Query(user_memory->base() + i * kPageSize,
                                                            &paddr, &mmu_flags));
     }
@@ -4332,7 +4341,7 @@ bool vmo_skip_range_update_test() {
     }
     for (uint64_t i = 0; i < kNumPages; i++) {
       paddr_t paddr;
-      uint mmu_flags;
+      arch_mmu_flags_t mmu_flags;
       zx_status_t status = user_memory->aspace()->arch_aspace().Query(
           user_memory->base() + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(expected[i] ? ZX_OK : ZX_ERR_NOT_FOUND, status);

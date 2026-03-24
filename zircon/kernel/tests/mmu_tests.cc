@@ -37,7 +37,7 @@ static bool test_large_unaligned_region() {
   zx_status_t err = aspace.Init();
   EXPECT_EQ(err, ZX_OK, "init aspace");
 
-  const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+  const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
   // We want our region to be misaligned by at least a page, and for
   // it to straddle the PDP.
@@ -56,8 +56,8 @@ static bool test_large_unaligned_region() {
   EXPECT_EQ(err, ZX_OK, "map last page");
 
   paddr_t pa;
-  uint flags;
-  err = aspace.Query(va + alloc_size - kPageSize, &pa, &flags);
+  arch_mmu_flags_t mmu_flags;
+  err = aspace.Query(va + alloc_size - kPageSize, &pa, &mmu_flags);
   EXPECT_EQ(err, ZX_OK, "last entry is mapped");
 
   // Attempt to unmap the target region (analogous to unmapping a demand
@@ -65,7 +65,7 @@ static bool test_large_unaligned_region() {
   err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
   EXPECT_EQ(err, ZX_OK, "unmap unallocated region");
 
-  err = aspace.Query(va + alloc_size - kPageSize, &pa, &flags);
+  err = aspace.Query(va + alloc_size - kPageSize, &pa, &mmu_flags);
   EXPECT_EQ(err, ZX_ERR_NOT_FOUND, "last entry is not mapped anymore");
 
   // Unmap the single page from earlier
@@ -86,7 +86,7 @@ static bool test_large_unaligned_region_without_map() {
     zx_status_t err = aspace.Init();
     EXPECT_EQ(err, ZX_OK, "init aspace");
 
-    const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+    const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
     // We want our region to be misaligned by a page, and for it to
     // straddle the PDP
@@ -138,7 +138,7 @@ static bool test_large_region_protect() {
     zx_status_t err = aspace.Init();
     EXPECT_EQ(err, ZX_OK, "init aspace");
 
-    const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+    const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
     err = aspace.MapContiguous(va, 0, alloc_size / kPageSize, arch_rw_flags);
     EXPECT_EQ(err, ZX_OK, "map large page");
@@ -147,12 +147,12 @@ static bool test_large_region_protect() {
     EXPECT_EQ(err, ZX_OK, "protect single page");
 
     for (unsigned j = 0; j < ktl::size(target_vaddrs); j++) {
-      uint retrieved_flags = 0;
+      arch_mmu_flags_t mmu_flags = 0;
       paddr_t pa;
-      EXPECT_EQ(ZX_OK, aspace.Query(target_vaddrs[j], &pa, &retrieved_flags));
+      EXPECT_EQ(ZX_OK, aspace.Query(target_vaddrs[j], &pa, &mmu_flags));
       EXPECT_EQ(target_vaddrs[j] - va, pa);
 
-      EXPECT_EQ(i == j ? ARCH_MMU_FLAG_PERM_READ : arch_rw_flags, retrieved_flags);
+      EXPECT_EQ(i == j ? ARCH_MMU_FLAG_PERM_READ : arch_rw_flags, mmu_flags);
     }
 
     err = aspace.Unmap(va, alloc_size / kPageSize, ArchUnmapOptions::Enlarge);
@@ -168,11 +168,11 @@ static bool test_large_region_protect() {
 // running a single instance of these tests at a time.
 DECLARE_SINGLETON_MUTEX(TogglePageAllocLock);
 static bool fail_page_allocs = false;
-static zx_status_t toggle_page_alloc_fn(uint mmu_flags, vm_page** p, paddr_t* pa) {
+static zx_status_t toggle_page_alloc_fn(uint alloc_flags, vm_page** p, paddr_t* pa) {
   if (fail_page_allocs) {
     return ZX_ERR_NO_MEMORY;
   }
-  return pmm_alloc_page(mmu_flags, p, pa);
+  return pmm_alloc_page(alloc_flags, p, pa);
 }
 
 static bool test_large_region_unmap() {
@@ -200,7 +200,7 @@ static bool test_large_region_unmap() {
     zx_status_t err = aspace.Init();
     EXPECT_EQ(err, ZX_OK, "init aspace");
 
-    const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+    const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
     // Use MapContiguous to create a mapping that should get backed by a large page.
     err = aspace.MapContiguous(va, 0, alloc_size / kPageSize, arch_rw_flags);
@@ -212,9 +212,9 @@ static bool test_large_region_unmap() {
 
     // Ensure the single page was unmapped, but the rest of the large page is still present.
     for (unsigned j = 0; j < ktl::size(target_vaddrs); j++) {
-      uint retrieved_flags = 0;
+      arch_mmu_flags_t mmu_flags = 0;
       paddr_t pa;
-      zx_status_t result = aspace.Query(target_vaddrs[j], &pa, &retrieved_flags);
+      zx_status_t result = aspace.Query(target_vaddrs[j], &pa, &mmu_flags);
       EXPECT_EQ(i == j ? ZX_ERR_NOT_FOUND : ZX_OK, result, "query page");
     }
 
@@ -233,9 +233,9 @@ static bool test_large_region_unmap() {
 
     // The entire large page should have ended up unmapped.
     for (unsigned j = 0; j < ktl::size(target_vaddrs); j++) {
-      uint retrieved_flags = 0;
+      arch_mmu_flags_t mmu_flags = 0;
       paddr_t pa;
-      zx_status_t result = aspace.Query(target_vaddrs[j], &pa, &retrieved_flags);
+      zx_status_t result = aspace.Query(target_vaddrs[j], &pa, &mmu_flags);
       EXPECT_EQ(ZX_ERR_NOT_FOUND, result, "query page");
     }
 
@@ -256,9 +256,9 @@ static bool test_large_region_unmap() {
     // All mappings should still be present.
     // The entire large page should have ended up unmapped.
     for (unsigned j = 0; j < ktl::size(target_vaddrs); j++) {
-      uint retrieved_flags = 0;
+      arch_mmu_flags_t mmu_flags = 0;
       paddr_t pa;
-      zx_status_t result = aspace.Query(target_vaddrs[j], &pa, &retrieved_flags);
+      zx_status_t result = aspace.Query(target_vaddrs[j], &pa, &mmu_flags);
       EXPECT_EQ(ZX_OK, result, "query page");
     }
 
@@ -325,7 +325,7 @@ static bool test_mapping_oom() {
     zx_status_t err = aspace.Init();
     ASSERT_EQ(err, ZX_OK, "init aspace");
 
-    const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+    const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
     err = aspace.Map(kMappingStart, mapping_paddrs, kMappingPageCount, arch_rw_flags,
                      ArchVmAspace::ExistingEntryAction::Error);
@@ -361,7 +361,7 @@ static bool test_skip_existing_mapping() {
   zx_status_t err = aspace.Init();
   EXPECT_EQ(err, ZX_OK);
 
-  const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+  const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
   paddr_t page_addresses[kNumPages];
   for (size_t i = 0; i < kNumPages; i++) {
@@ -381,11 +381,11 @@ static bool test_skip_existing_mapping() {
   // Validate all the pages.
   for (size_t i = 0; i < kNumPages; i++) {
     paddr_t paddr;
-    uint flags;
-    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &flags);
+    arch_mmu_flags_t mmu_flags;
+    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &mmu_flags);
     EXPECT_EQ(err, ZX_OK);
     EXPECT_EQ(paddr, page_addresses[i]);
-    EXPECT_EQ(flags, arch_rw_flags);
+    EXPECT_EQ(mmu_flags, arch_rw_flags);
   }
   err = aspace.Unmap(kMapBase, kNumPages, ArchUnmapOptions::Enlarge);
   EXPECT_EQ(err, ZX_OK);
@@ -399,14 +399,14 @@ static bool test_skip_existing_mapping() {
   EXPECT_EQ(err, ZX_OK);
   for (size_t i = 0; i < kNumPages; i++) {
     paddr_t paddr;
-    uint flags;
-    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &flags);
+    arch_mmu_flags_t mmu_flags;
+    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &mmu_flags);
     EXPECT_EQ(err, ZX_OK);
     EXPECT_EQ(paddr, page_addresses[i]);
     if (i == kMidPage) {
-      EXPECT_EQ(flags, ARCH_MMU_FLAG_PERM_READ);
+      EXPECT_EQ(mmu_flags, ARCH_MMU_FLAG_PERM_READ);
     } else {
-      EXPECT_EQ(flags, arch_rw_flags);
+      EXPECT_EQ(mmu_flags, arch_rw_flags);
     }
   }
   err = aspace.Unmap(kMapBase, kNumPages, ArchUnmapOptions::Enlarge);
@@ -422,14 +422,14 @@ static bool test_skip_existing_mapping() {
   EXPECT_EQ(err, ZX_OK);
   for (size_t i = 0; i < kNumPages; i++) {
     paddr_t paddr;
-    uint flags;
-    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &flags);
+    arch_mmu_flags_t mmu_flags;
+    err = aspace.Query(kMapBase + i * kPageSize, &paddr, &mmu_flags);
     EXPECT_EQ(err, ZX_OK);
     if (i == kMidPage) {
-      EXPECT_EQ(flags, ARCH_MMU_FLAG_PERM_READ);
+      EXPECT_EQ(mmu_flags, ARCH_MMU_FLAG_PERM_READ);
       EXPECT_EQ(paddr, other_paddr);
     } else {
-      EXPECT_EQ(flags, arch_rw_flags);
+      EXPECT_EQ(mmu_flags, arch_rw_flags);
       EXPECT_EQ(paddr, page_addresses[i]);
     }
   }
@@ -472,7 +472,7 @@ static bool test_large_region_atomic() {
           VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kAlwaysPinned, alloc_size, &vmo);
       ASSERT_OK(status);
 
-      const uint arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+      const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
       auto mapping_result = vmar->CreateVmMapping(
           0, alloc_size, 0,

@@ -79,7 +79,7 @@ void SecondLevelPageTable::Destroy() {
   X86PageTableImpl::Destroy(0, size);
 }
 
-bool SecondLevelPageTable::allowed_flags(uint flags) {
+bool SecondLevelPageTable::allowed_flags(arch_mmu_flags_t flags) {
   constexpr uint kSupportedFlags =
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE;
   if (flags & ~kSupportedFlags) {
@@ -111,7 +111,7 @@ IntermediatePtFlags SecondLevelPageTable::intermediate_flags() {
   return kSlptRead | kSlptWrite | kSlptExecute;
 }
 
-PtFlags SecondLevelPageTable::terminal_flags(PageTableLevel level, uint flags) {
+PtFlags SecondLevelPageTable::terminal_flags(PageTableLevel level, arch_mmu_flags_t flags) {
   PtFlags terminal_flags = 0;
 
   if (flags & ARCH_MMU_FLAG_PERM_READ) {
@@ -161,8 +161,8 @@ void SecondLevelPageTable::TlbInvalidate(const PendingTlbInvalidation* pending)
   }
 }
 
-uint SecondLevelPageTable::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
-  uint mmu_flags = 0;
+arch_mmu_flags_t SecondLevelPageTable::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
+  arch_mmu_flags_t mmu_flags = 0;
 
   if (flags & kSlptRead) {
     mmu_flags |= ARCH_MMU_FLAG_PERM_READ;

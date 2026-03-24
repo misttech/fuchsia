@@ -130,7 +130,7 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
 
 VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
                      uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-                     uint arch_mmu_flags, Mergeable mergeable)
+                     arch_mmu_flags_t arch_mmu_flags, Mergeable mergeable)
     : VmMapping(parent, private_clone, base, size, vmar_flags, vmo, vmo_offset,
                 MappingProtectionRanges(arch_mmu_flags), mergeable) {}
 
@@ -180,13 +180,14 @@ void VmMapping::DumpLocked(uint depth, bool verbose) const {
   printf("map %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx state %d mergeable %s\n", this, base_,
          base_ + size_ - 1, size_, (int)state_locked(),
          mergeable_ == Mergeable::YES ? "true" : "false");
-  EnumerateProtectionRangesLocked(base_, size_, [depth](vaddr_t base, size_t len, uint mmu_flags) {
-    for (uint i = 0; i < depth + 1; ++i) {
-      printf("  ");
-    }
-    printf(" [%#" PRIxPTR " %#" PRIxPTR "] mmufl %#x\n", base, base + len - 1, mmu_flags);
-    return ZX_ERR_NEXT;
-  });
+  EnumerateProtectionRangesLocked(
+      base_, size_, [depth](vaddr_t base, size_t len, arch_mmu_flags_t mmu_flags) {
+        for (uint i = 0; i < depth + 1; ++i) {
+          printf("  ");
+        }
+        printf(" [%#" PRIxPTR " %#" PRIxPTR "] mmufl %#x\n", base, base + len - 1, mmu_flags);
+        return ZX_ERR_NEXT;
+      });
   for (uint i = 0; i < depth + 1; ++i) {
     printf("  ");
   }
@@ -203,7 +204,7 @@ using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
 // static
 zx_status_t VmMapping::ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr_t base,
-                                      size_t size, uint new_arch_mmu_flags) {
+                                      size_t size, arch_mmu_flags_t new_arch_mmu_flags) {
   // This can never be used to set a WRITE permission since it does not ask the underlying VMO to
   // perform the copy-on-write step. The underlying VMO might also support dirty tracking, which
   // requires write permission faults in order to track pages as dirty when written.
@@ -224,7 +225,8 @@ zx_status_t VmMapping::ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr
   return aspace->arch_aspace().Unmap(base, size / kPageSize, aspace->EnlargeArchUnmap());
 }
 
-zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size, uint new_arch_mmu_flags) {
+zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
+                                     arch_mmu_flags_t new_arch_mmu_flags) {
   // Assert a few things that should already have been checked by the caller.
   DEBUG_ASSERT(size != 0 && IsPageRounded(base) && IsPageRounded(size));
   DEBUG_ASSERT(!(new_arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK));
@@ -236,18 +238,19 @@ zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size, uint new_arch_mm
 
   // Persist our current caching mode. Every protect region will have the same caching mode so we
   // can acquire this from any region.
-  new_arch_mmu_flags |= (protection_ranges_.FirstRegionMmuFlags() & ARCH_MMU_FLAG_CACHE_MASK);
+  new_arch_mmu_flags |= static_cast<arch_mmu_flags_t>(
+      (protection_ranges_.FirstRegionMmuFlags() & ARCH_MMU_FLAG_CACHE_MASK));
 
   // This will get called by UpdateProtectionRange below for every existing unique protection range
   // that gets changed and allows us to fine tune the protect action based on the previous flags.
   auto protect_callback = [new_arch_mmu_flags, this](vaddr_t base, size_t size,
-                                                     uint old_arch_mmu_flags) {
+                                                     arch_mmu_flags_t old_arch_mmu_flags) {
     // Perform an early return if the new and old flags are the same, as there's nothing to be done.
     if (new_arch_mmu_flags == old_arch_mmu_flags) {
       return;
     }
 
-    uint flags = new_arch_mmu_flags;
+    arch_mmu_flags_t flags = new_arch_mmu_flags;
     // Check if the new flags have the write permission. This is problematic as we cannot just
     // change any existing hardware mappings to have the write permission, as any individual mapping
     // may be the result of a read fault and still need to have a copy-on-write step performed. This
@@ -514,7 +517,7 @@ void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset, uint64_t len) con
 
   zx_status_t status = ProtectRangesLockedObject().EnumerateProtectionRanges(
       this->base(), size(), base, new_len,
-      [this](vaddr_t region_base, size_t region_len, uint mmu_flags) {
+      [this](vaddr_t region_base, size_t region_len, arch_mmu_flags_t mmu_flags) {
         // If this range doesn't currently support being writable then we can skip.
         if (!(mmu_flags & ARCH_MMU_FLAG_PERM_WRITE)) {
           return ZX_ERR_NEXT;
@@ -567,7 +570,7 @@ namespace {
 template <size_t NumPages>
 class VmMappingCoalescer {
  public:
-  VmMappingCoalescer(VmMapping* mapping, vaddr_t base, uint mmu_flags,
+  VmMappingCoalescer(VmMapping* mapping, vaddr_t base, arch_mmu_flags_t mmu_flags,
                      ArchVmAspace::ExistingEntryAction existing_entry_action)
       TA_REQ(mapping->object_lock());
   ~VmMappingCoalescer();
@@ -587,7 +590,7 @@ class VmMappingCoalescer {
     return ZX_OK;
   }
 
-  zx_status_t AppendOrAdjustMapping(vaddr_t vaddr, paddr_t paddr, uint mmu_flags) {
+  zx_status_t AppendOrAdjustMapping(vaddr_t vaddr, paddr_t paddr, arch_mmu_flags_t mmu_flags) {
     // If this isn't the expected vaddr or mmu_flags have changed, flush the run we have first.
     if (!can_append(vaddr) || mmu_flags != mmu_flags_) {
       zx_status_t status = Flush();
@@ -615,7 +618,7 @@ class VmMappingCoalescer {
   // the pages are contiguous.
   paddr_t* GetNextPageSlot() { return &phys_[count_]; }
 
-  uint GetMmuFlags() { return mmu_flags_; }
+  arch_mmu_flags_t GetMmuFlags() { return mmu_flags_; }
 
   void IncrementCount(size_t i) { count_ += i; }
 
@@ -640,13 +643,13 @@ class VmMappingCoalescer {
   paddr_t phys_[NumPages];
   size_t count_;
   size_t total_mapped_ = 0;
-  uint mmu_flags_;
+  arch_mmu_flags_t mmu_flags_;
   const ArchVmAspace::ExistingEntryAction existing_entry_action_;
 };
 
 template <size_t NumPages>
 VmMappingCoalescer<NumPages>::VmMappingCoalescer(
-    VmMapping* mapping, vaddr_t base, uint mmu_flags,
+    VmMapping* mapping, vaddr_t base, arch_mmu_flags_t mmu_flags,
     ArchVmAspace::ExistingEntryAction existing_entry_action)
     : mapping_(mapping),
       base_(base),
@@ -726,7 +729,8 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
   // over them to ensure we install mappings with the correct permissions.
   return EnumerateProtectionRangesLocked(
       base_ + offset, len,
-      [this, commit, dirty_tracked, ignore_existing](vaddr_t base, size_t len, uint mmu_flags) {
+      [this, commit, dirty_tracked, ignore_existing](vaddr_t base, size_t len,
+                                                     arch_mmu_flags_t mmu_flags) {
         AssertHeld(lock_ref());
 
         // Remove the write permission if this maps a vmo that supports dirty tracking, in order to
@@ -962,7 +966,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
 
   // Build the mmu flags we need to have based on the page fault. This strategy of building the
   // flags and then comparing all at once allows the compiler to provide much better code gen.
-  uint needed_mmu_flags = 0;
+  arch_mmu_flags_t needed_mmu_flags = 0;
   if (pf_flags & VMM_PF_FLAG_USER) {
     needed_mmu_flags |= ARCH_MMU_FLAG_PERM_USER;
   }
@@ -1058,7 +1062,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
     // Fault requested pages.
     uint64_t offset = 0;
     for (; offset < (num_required_pages * kPageSize); offset += kPageSize) {
-      uint curr_mmu_flags = range.mmu_flags;
+      arch_mmu_flags_t curr_mmu_flags = range.mmu_flags;
 
       uint num_curr_pages = static_cast<uint>(num_required_pages - (offset / kPageSize));
       __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
@@ -1192,8 +1196,8 @@ void VmMapping::ActivateLocked() {
 
   // Now that we have added a mapping to the VMO it's cache policy becomes fixed, and we can read it
   // and augment our arch_mmu_flags.
-  uint32_t cache_policy = object_->GetMappingCachePolicyLocked();
-  uint arch_mmu_flags = protection_ranges_.FirstRegionMmuFlags();
+  arch_mmu_flags_t cache_policy = object_->GetMappingCachePolicyLocked();
+  arch_mmu_flags_t arch_mmu_flags = protection_ranges_.FirstRegionMmuFlags();
   if ((arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) != cache_policy) {
     // Warn in the event that we somehow receive a VMO that has a cache
     // policy set while also holding cache policy flags within the arch
@@ -1563,7 +1567,8 @@ uint64_t VmMapping::TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) cons
 template <typename F>
 zx_status_t MappingProtectionRanges::UpdateProtectionRange(vaddr_t mapping_base,
                                                            size_t mapping_size, vaddr_t base,
-                                                           size_t size, uint new_arch_mmu_flags,
+                                                           size_t size,
+                                                           arch_mmu_flags_t new_arch_mmu_flags,
                                                            F callback) {
   // If we're changing the whole mapping, just make the change.
   if (mapping_base == base && mapping_size == size) {
@@ -1580,8 +1585,8 @@ zx_status_t MappingProtectionRanges::UpdateProtectionRange(vaddr_t mapping_base,
   // Work the flags in the regions before the first/last nodes. We need to cache these flags so that
   // once we are inserting the new protection nodes, we do not insert nodes such that we would cause
   // two regions to have the same flags (which would be redundant).
-  const uint start_carry_flags = FlagsForPreviousRegion(first);
-  const uint end_carry_flags = FlagsForPreviousRegion(last);
+  const arch_mmu_flags_t start_carry_flags = FlagsForPreviousRegion(first);
+  const arch_mmu_flags_t end_carry_flags = FlagsForPreviousRegion(last);
 
   // Determine how many new nodes we are going to need so we can allocate up front. This ensures
   // that after we have deleted nodes from the tree (and destroyed information) we do not have to
@@ -1617,7 +1622,7 @@ zx_status_t MappingProtectionRanges::UpdateProtectionRange(vaddr_t mapping_base,
   // data.
   {
     vaddr_t old_start = base;
-    uint old_flags = start_carry_flags;
+    arch_mmu_flags_t old_flags = start_carry_flags;
     while (first != last) {
       // On the first iteration if the range is aligned to a node then we skip, since we do not want
       // to do the callback for a zero sized range.
@@ -1694,7 +1699,7 @@ uint MappingProtectionRanges::NodeAllocationsForRange(vaddr_t mapping_base, size
                                                       vaddr_t base, size_t size,
                                                       RegionList::iterator removal_start,
                                                       RegionList::iterator removal_end,
-                                                      uint new_mmu_flags) const {
+                                                      arch_mmu_flags_t new_mmu_flags) const {
   uint nodes_needed = 0;
   // Check if we will need a node at the start. if base==base_ then we will just be changing the
   // first_region_arch_mmu_flags_, otherwise we need a node if we're actually causing a protection
@@ -1741,7 +1746,7 @@ zx_status_t MappingProtectionRanges::MergeRightNeighbor(MappingProtectionRanges&
 MappingProtectionRanges MappingProtectionRanges::SplitAt(vaddr_t split) {
   // Determine the mmu flags the right most mapping would start at.
   auto right_nodes = protect_region_list_rest_.upper_bound(split);
-  const uint right_mmu_flags = FlagsForPreviousRegion(right_nodes);
+  const arch_mmu_flags_t right_mmu_flags = FlagsForPreviousRegion(right_nodes);
 
   MappingProtectionRanges ranges(right_mmu_flags);
 

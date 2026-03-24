@@ -1842,7 +1842,7 @@ zx_status_t VmObjectPaged::EnumerateDirtyRanges(uint64_t offset, uint64_t len,
   return ZX_ERR_OUT_OF_RANGE;
 }
 
-zx_status_t VmObjectPaged::SetMappingCachePolicy(const uint32_t cache_policy) {
+zx_status_t VmObjectPaged::SetMappingCachePolicy(const arch_mmu_flags_t cache_policy) {
   // Is it a valid cache flag?
   if (cache_policy & ~ZX_CACHE_POLICY_MASK) {
     return ZX_ERR_INVALID_ARGS;

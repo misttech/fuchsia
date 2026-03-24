@@ -25,7 +25,7 @@ struct KernelRegion {
   const char* name;
   vaddr_t base;
   size_t size;
-  uint arch_mmu_flags;
+  arch_mmu_flags_t arch_mmu_flags;
 };
 
 const ktl::array kernel_regions = {
@@ -714,8 +714,9 @@ static bool vmaspace_merge_mapping_test() {
         MergeResult merge_result[3] = {DOES_NOT_MERGE, DOES_NOT_MERGE, DOES_NOT_MERGE};
         for (int i = 0; i < 3; i++) {
           if (test.mappings[i].vmo) {
-            uint mmu_flags = ARCH_MMU_FLAG_PERM_READ |
-                             (test.mappings[i].flags == FLAG_TYPE_1 ? ARCH_MMU_FLAG_PERM_WRITE : 0);
+            arch_mmu_flags_t mmu_flags =
+                ARCH_MMU_FLAG_PERM_READ |
+                (test.mappings[i].flags == FLAG_TYPE_1 ? ARCH_MMU_FLAG_PERM_WRITE : 0);
             uint vmar_flags = VMAR_FLAG_SPECIFIC | (test.mappings[i].beyond_stream_size == FAULT
                                                         ? VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE
                                                         : 0);
@@ -2022,7 +2023,7 @@ static bool arch_noncontiguous_map() {
     // Expect that the map succeeded
     for (size_t i = 0; i < ktl::size(phys); ++i) {
       paddr_t paddr;
-      uint mmu_flags;
+      arch_mmu_flags_t mmu_flags;
       status = aspace.Query(base + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(ZX_OK, status, "bad first map\n");
       EXPECT_EQ(phys[i], paddr, "bad first map\n");
@@ -2118,7 +2119,7 @@ static bool arch_noncontiguous_map_with_upgrade() {
           ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE};
 
       paddr_t paddr;
-      uint mmu_flags;
+      arch_mmu_flags_t mmu_flags;
       status = aspace.Query(base + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(ZX_OK, status, "bad map upgrade\n");
       EXPECT_EQ(phys[MAP_WINDOW_PADDR_INDEX[i]], paddr, "bad map upgrade\n");
@@ -2149,7 +2150,7 @@ static bool arch_noncontiguous_map_with_upgrade() {
           ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE};
 
       paddr_t paddr;
-      uint mmu_flags;
+      arch_mmu_flags_t mmu_flags;
       status = aspace.Query(window_base + i * kPageSize, &paddr, &mmu_flags);
       EXPECT_EQ(ZX_OK, status, "bad map upgrade\n");
       EXPECT_EQ(phys[MAP_WINDOW_PADDR_INDEX[i]], paddr, "bad map upgrade\n");
@@ -2172,9 +2173,9 @@ static bool arch_noncontiguous_map_with_upgrade() {
 // Get the mmu_flags of the given vaddr of the given aspace.
 //
 // Return 0 if the page is unmapped or on error.
-static uint get_vaddr_flags(ArchVmAspace* aspace, vaddr_t vaddr) {
+static arch_mmu_flags_t get_vaddr_flags(ArchVmAspace* aspace, vaddr_t vaddr) {
   paddr_t unused_paddr;
-  uint mmu_flags;
+  arch_mmu_flags_t mmu_flags;
   if (aspace->Query(vaddr, &unused_paddr, &mmu_flags) != ZX_OK) {
     return 0;
   }

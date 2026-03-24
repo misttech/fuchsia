@@ -1328,7 +1328,7 @@ static zx_status_t x86_map_mchbar_stat_registers(PerfmonState* state) {
 
   auto vmar = VmAspace::kernel_aspace()->RootVmar();
   uint32_t vmar_flags = 0;
-  uint32_t arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ;
+  arch_mmu_flags_t arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ;
   zx::result<VmAddressRegion::MapResult> mapping_result = vmar->CreateVmMapping(
       0, kPageSize, /*align_pow2*/ 0, vmar_flags, ktl::move(vmo), 0, arch_mmu_flags, name);
   if (mapping_result.is_error())
@@ -1374,7 +1374,7 @@ static zx_status_t x86_perfmon_map_buffers_locked(PerfmonState* state, Guard<Mut
     // Heads up: The logic is off if |vmo_offset| is non-zero.
     const uint64_t vmo_offset = 0;
     const size_t size = data->buffer_size;
-    const uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+    const arch_mmu_flags_t arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
     const char* name = "ipm-buffer";
     PinnedVmObject buf_pin;
     // The buffer_vmo is provided by userspace and may need pages committed, which could potentially

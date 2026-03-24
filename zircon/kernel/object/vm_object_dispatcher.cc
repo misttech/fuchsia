@@ -485,7 +485,7 @@ zx_status_t VmObjectDispatcher::RangeOp(uint32_t op, uint64_t offset, uint64_t s
   }
 }
 
-zx_status_t VmObjectDispatcher::SetMappingCachePolicy(uint32_t cache_policy) {
+zx_status_t VmObjectDispatcher::SetMappingCachePolicy(arch_mmu_flags_t cache_policy) {
   return vmo_->SetMappingCachePolicy(cache_policy);
 }
 

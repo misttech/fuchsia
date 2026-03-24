@@ -28,25 +28,25 @@ KCOUNTER(dispatcher_vmar_destroy_count, "dispatcher.vmar.destroy")
 
 namespace {
 
-template <uint32_t FromFlag, uint32_t ToFlag>
-uint32_t ExtractFlag(uint32_t* flags) {
-  const uint32_t flag_set = *flags & FromFlag;
+template <auto FromFlag, auto ToFlag>
+auto ExtractFlag(auto* flags) {
+  const auto flag_set = *flags & FromFlag;
   // Unconditionally clear |flags| so that the compiler can more easily see that multiple
   // ExtractFlag invocations can just use a single combined clear, greatly reducing code-gen.
   *flags &= ~FromFlag;
   if (flag_set) {
     return ToFlag;
   }
-  return 0;
+  return static_cast<decltype(ToFlag)>(0);
 }
 
 // Split out the syscall flags into vmar flags and mmu flags.  Note that this
 // does not validate that the requested protections in *flags* are valid.  For
 // that use is_valid_mapping_protection()
-zx_status_t split_syscall_flags(uint32_t flags, uint32_t* vmar_flags, uint* arch_mmu_flags,
-                                uint8_t* align_pow2) {
+zx_status_t split_syscall_flags(uint32_t flags, uint32_t* vmar_flags,
+                                arch_mmu_flags_t* arch_mmu_flags, uint8_t* align_pow2) {
   // Figure out arch_mmu_flags
-  uint mmu_flags = 0;
+  arch_mmu_flags_t mmu_flags = 0;
   mmu_flags |= ExtractFlag<ZX_VM_PERM_READ, ARCH_MMU_FLAG_PERM_READ>(&flags);
   mmu_flags |= ExtractFlag<ZX_VM_PERM_WRITE, ARCH_MMU_FLAG_PERM_WRITE>(&flags);
   mmu_flags |= ExtractFlag<ZX_VM_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_EXECUTE>(&flags);
@@ -88,7 +88,7 @@ zx_status_t split_syscall_flags(uint32_t flags, uint32_t* vmar_flags, uint* arch
 }  // namespace
 
 zx_status_t VmAddressRegionDispatcher::Create(fbl::RefPtr<VmAddressRegion> vmar,
-                                              uint base_arch_mmu_flags,
+                                              arch_mmu_flags_t base_arch_mmu_flags,
                                               KernelHandle<VmAddressRegionDispatcher>* handle,
                                               zx_rights_t* rights) {
   // The initial rights should match the VMAR's creation permissions
@@ -116,7 +116,7 @@ zx_status_t VmAddressRegionDispatcher::Create(fbl::RefPtr<VmAddressRegion> vmar,
 }
 
 VmAddressRegionDispatcher::VmAddressRegionDispatcher(fbl::RefPtr<VmAddressRegion> vmar,
-                                                     uint base_arch_mmu_flags)
+                                                     arch_mmu_flags_t base_arch_mmu_flags)
     : vmar_(ktl::move(vmar)), base_arch_mmu_flags_(base_arch_mmu_flags) {
   kcounter_add(dispatcher_vmar_create_count, 1);
 }
@@ -131,7 +131,7 @@ zx_status_t VmAddressRegionDispatcher::Allocate(size_t offset, size_t size, uint
   canary_.Assert();
 
   uint32_t vmar_flags = 0;
-  uint arch_mmu_flags = 0;
+  arch_mmu_flags_t arch_mmu_flags = 0;
   uint8_t alignment = 0;
   zx_status_t status = split_syscall_flags(flags, &vmar_flags, &arch_mmu_flags, &alignment);
   if (status != ZX_OK)
@@ -173,7 +173,7 @@ zx::result<VmAddressRegionDispatcher::MapResult> VmAddressRegionDispatcher::Map(
 
   // Split flags into vmar_flags and arch_mmu_flags
   uint32_t vmar_flags = 0;
-  uint arch_mmu_flags = base_arch_mmu_flags_;
+  arch_mmu_flags_t arch_mmu_flags = base_arch_mmu_flags_;
   uint8_t alignment = 0;
   zx_status_t status = split_syscall_flags(flags, &vmar_flags, &arch_mmu_flags, &alignment);
   if (status != ZX_OK) {
@@ -213,7 +213,7 @@ zx_status_t VmAddressRegionDispatcher::Protect(vaddr_t base, size_t len, uint32_
     return ZX_ERR_INVALID_ARGS;
 
   uint32_t vmar_flags = 0;
-  uint arch_mmu_flags = base_arch_mmu_flags_;
+  arch_mmu_flags_t arch_mmu_flags = base_arch_mmu_flags_;
   uint8_t alignment = 0;
   zx_status_t status = split_syscall_flags(flags, &vmar_flags, &arch_mmu_flags, &alignment);
   if (status != ZX_OK)

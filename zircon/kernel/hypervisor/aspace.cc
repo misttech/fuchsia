@@ -20,8 +20,8 @@
 
 namespace {
 
-constexpr uint kInterruptMmuFlags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
-constexpr uint kGuestMmuFlags =
+constexpr arch_mmu_flags_t kInterruptMmuFlags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+constexpr arch_mmu_flags_t kGuestMmuFlags =
     ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
 
 }  // namespace
@@ -108,7 +108,7 @@ zx::result<> GuestPhysicalAspace::PageFault(zx_gpaddr_t guest_paddr) {
       // guest physical address space on x86 (through the use of INVEPT), we
       // fault the page with the maximum allowable permissions of the mapping.
       AssertHeld(mapping->lock_ref());
-      const uint mmu_flags = mapping->arch_mmu_flags_locked(guest_paddr);
+      const arch_mmu_flags_t mmu_flags = mapping->arch_mmu_flags_locked(guest_paddr);
       uint pf_flags = VMM_PF_FLAG_GUEST | VMM_PF_FLAG_HW_FAULT;
       if (mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) {
         pf_flags |= VMM_PF_FLAG_WRITE;

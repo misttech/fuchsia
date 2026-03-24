@@ -81,7 +81,7 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zx_status_t SetMappingCachePolicy(uint32_t cache_policy) override;
+  zx_status_t SetMappingCachePolicy(arch_mmu_flags_t cache_policy) override;
 
   void MaybeDeadTransition() {}
 

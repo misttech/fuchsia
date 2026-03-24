@@ -71,7 +71,7 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
   zx_status_t CreateChild(uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
                           fbl::RefPtr<VmObject>* child_vmo);
 
-  zx_status_t SetMappingCachePolicy(uint32_t cache_policy);
+  zx_status_t SetMappingCachePolicy(arch_mmu_flags_t cache_policy);
 
   zx_info_vmo_t GetVmoInfo(zx_rights_t rights);
 

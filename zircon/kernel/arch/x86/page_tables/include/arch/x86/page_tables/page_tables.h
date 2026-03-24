@@ -180,13 +180,13 @@ class X86PageTableBase {
   // Returns whether this page table is unified.
   bool IsUnified() const { return role_ == PageTableRole::kUnified; }
 
-  virtual zx_status_t MapPages(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
-                               ExistingEntryAction existing_action) = 0;
+  virtual zx_status_t MapPages(vaddr_t vaddr, paddr_t* phys, size_t count,
+                               arch_mmu_flags_t mmu_flags, ExistingEntryAction existing_action) = 0;
   virtual zx_status_t MapPagesContiguous(vaddr_t vaddr, paddr_t paddr, const size_t count,
-                                         uint mmu_flags) = 0;
+                                         arch_mmu_flags_t mmu_flags) = 0;
   virtual zx_status_t UnmapPages(vaddr_t vaddr, const size_t count, ArchUnmapOptions enlarge) = 0;
-  virtual zx_status_t ProtectPages(vaddr_t vaddr, size_t count, uint mmu_flags) = 0;
-  virtual zx_status_t QueryVaddr(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) = 0;
+  virtual zx_status_t ProtectPages(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags) = 0;
+  virtual zx_status_t QueryVaddr(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) = 0;
 
   using NonTerminalAction = ArchVmAspaceInterface::NonTerminalAction;
   using TerminalAction = ArchVmAspaceInterface::TerminalAction;
@@ -286,7 +286,7 @@ class X86PageTableBase {
 // PageTableLevel top_level();
 //
 // Returns true if the given ARCH_MMU_FLAG_* flag combination is valid.
-// bool allowed_flags(uint flags);
+// bool allowed_flags(arch_mmu_flags_t flags);
 //
 // Returns true if the given paddr is valid
 // bool check_paddr(paddr_t paddr);
@@ -301,7 +301,7 @@ class X86PageTableBase {
 // IntermediatePtFlags intermediate_flags();
 //
 // Return the hardware flags to use on terminal page table entries
-// PtFlags terminal_flags(PageTableLevel level, uint flags);
+// PtFlags terminal_flags(PageTableLevel level, arch_mmu_flags_t flags);
 //
 // Return the hardware flags to use on smaller pages after a splitting a
 // large page with flags |flags|.
@@ -311,7 +311,7 @@ class X86PageTableBase {
 // void TlbInvalidate(const PendingTlbInvalidation* pending);
 //
 // Convert PtFlags to ARCH_MMU_* flags.
-// uint pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
+// arch_mmu_flags_t pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
 //
 // Returns true if a cache flush is necessary for pagetable changes to be
 // visible to hardware page table walkers. On x86, this is only true for Intel IOMMU page
@@ -343,7 +343,7 @@ class X86PageTableImpl : public X86PageTableBase {
     return referenced_pt_;
   }
 
-  zx_status_t MapPages(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
+  zx_status_t MapPages(vaddr_t vaddr, paddr_t* phys, size_t count, arch_mmu_flags_t mmu_flags,
                        ExistingEntryAction existing_action) override final {
     canary_.Assert();
 
@@ -390,7 +390,7 @@ class X86PageTableImpl : public X86PageTableBase {
     return ZX_OK;
   }
   zx_status_t MapPagesContiguous(vaddr_t vaddr, paddr_t paddr, const size_t count,
-                                 uint mmu_flags) override final {
+                                 arch_mmu_flags_t mmu_flags) override final {
     canary_.Assert();
 
     if (!static_cast<T*>(this)->check_paddr(paddr))
@@ -455,7 +455,7 @@ class X86PageTableImpl : public X86PageTableBase {
     return status;
   }
 
-  zx_status_t ProtectPages(vaddr_t vaddr, size_t count, uint mmu_flags) override final {
+  zx_status_t ProtectPages(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags) override final {
     canary_.Assert();
 
     if (!static_cast<T*>(this)->check_vaddr(vaddr))
@@ -481,7 +481,8 @@ class X86PageTableImpl : public X86PageTableBase {
     return ZX_OK;
   }
 
-  zx_status_t QueryVaddr(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) override final {
+  zx_status_t QueryVaddr(vaddr_t vaddr, paddr_t* paddr,
+                         arch_mmu_flags_t* mmu_flags) override final {
     canary_.Assert();
 
     PageTableLevel ret_level;
@@ -876,7 +877,7 @@ class X86PageTableImpl : public X86PageTableBase {
    * mapping count is non-zero, regardless of the error value, the num_mappings field in the page
    * must be updated by the caller.
    */
-  ktl::pair<zx_status_t, uint> AddMapping(volatile pt_entry_t* table, uint mmu_flags,
+  ktl::pair<zx_status_t, uint> AddMapping(volatile pt_entry_t* table, arch_mmu_flags_t mmu_flags,
                                           PageTableLevel level, ExistingEntryAction existing_action,
                                           MappingCursor& cursor, ConsistencyManager* cm)
       TA_REQ(lock_) {
@@ -983,7 +984,7 @@ class X86PageTableImpl : public X86PageTableBase {
 
   // Base case of AddMapping for smallest page size. Returns the number of mappings installed in
   // |table|, it is the callers responsibility to update the num_mappings field in the page.
-  ktl::pair<zx_status_t, uint> AddMappingL0(volatile pt_entry_t* table, uint mmu_flags,
+  ktl::pair<zx_status_t, uint> AddMappingL0(volatile pt_entry_t* table, arch_mmu_flags_t mmu_flags,
                                             ExistingEntryAction existing_action,
                                             MappingCursor& cursor, ConsistencyManager* cm)
       TA_REQ(lock_) {
@@ -1228,8 +1229,9 @@ class X86PageTableImpl : public X86PageTableBase {
    * @param new_cursor A returned cursor describing how much work was not
    * completed.  Must be non-null.
    */
-  zx_status_t UpdateMapping(volatile pt_entry_t* table, uint mmu_flags, PageTableLevel level,
-                            VirtualAddressCursor& cursor, ConsistencyManager* cm) TA_REQ(lock_) {
+  zx_status_t UpdateMapping(volatile pt_entry_t* table, arch_mmu_flags_t mmu_flags,
+                            PageTableLevel level, VirtualAddressCursor& cursor,
+                            ConsistencyManager* cm) TA_REQ(lock_) {
     DEBUG_ASSERT(table);
     DEBUG_ASSERT(static_cast<T*>(this)->check_vaddr(cursor.vaddr()));
 
@@ -1281,7 +1283,7 @@ class X86PageTableImpl : public X86PageTableBase {
     return ZX_OK;
   }
   // Base case of UpdateMapping for smallest page size.
-  zx_status_t UpdateMappingL0(volatile pt_entry_t* table, uint mmu_flags,
+  zx_status_t UpdateMappingL0(volatile pt_entry_t* table, arch_mmu_flags_t mmu_flags,
                               VirtualAddressCursor& cursor, ConsistencyManager* cm) TA_REQ(lock_) {
     DEBUG_ASSERT(IsPageRounded(cursor.size()));
 
@@ -1351,7 +1353,8 @@ class X86PageTableImpl : public X86PageTableBase {
         // If the request covers the entire large page then harvest the accessed bit, otherwise we
         // just skip it.
         if (vaddr_level_aligned && cursor.size() >= ps) {
-          const uint mmu_flags = static_cast<T*>(this)->pt_flags_to_mmu_flags(pt_val, level);
+          const arch_mmu_flags_t mmu_flags =
+              static_cast<T*>(this)->pt_flags_to_mmu_flags(pt_val, level);
           const PtFlags term_flags = static_cast<T*>(this)->terminal_flags(level, mmu_flags);
           UpdateEntry(cm, level, cursor.vaddr(), e, paddr_from_pte(level, pt_val),
                       term_flags | X86_MMU_PG_PS, /*was_terminal=*/true, /*exact_flags=*/true);
@@ -1457,7 +1460,7 @@ class X86PageTableImpl : public X86PageTableBase {
       pt_entry_t pt_val = *e;
       if (IS_PAGE_PRESENT(pt_val) && (pt_val & X86_MMU_PG_A)) {
         const paddr_t paddr = paddr_from_pte(PageTableLevel::PT_L, pt_val);
-        const uint mmu_flags =
+        const arch_mmu_flags_t mmu_flags =
             static_cast<T*>(this)->pt_flags_to_mmu_flags(pt_val, PageTableLevel::PT_L);
         const PtFlags term_flags =
             static_cast<T*>(this)->terminal_flags(PageTableLevel::PT_L, mmu_flags);

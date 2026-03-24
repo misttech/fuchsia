@@ -46,7 +46,7 @@ zx::result<const void *> ZirconPhysmemReader::PhysToPtr(uintptr_t phys, size_t l
   ArchVmAspace &arch_aspace = VmAspace::kernel_aspace()->arch_aspace();
   for (auto &mapping : mappings_) {
     paddr_t map_paddr = 0;
-    [[maybe_unused]] uint mmu_flags = 0;
+    [[maybe_unused]] arch_mmu_flags_t mmu_flags = 0;
     zx_status_t status = arch_aspace.Query(mapping.mapping->base(), &map_paddr, &mmu_flags);
     if (status != ZX_OK) {
       return zx::error{status};

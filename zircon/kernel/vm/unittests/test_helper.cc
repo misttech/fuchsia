@@ -231,7 +231,7 @@ bool verify_mapped_page_range(vaddr_t base, size_t mapping_size,
 
   // All pages up to expected_mapped_page_count should have been faulted.
   paddr_t paddr_writable;
-  uint mmu_flags;
+  arch_mmu_flags_t mmu_flags;
   uint64_t offset = 0;
   for (; offset < expected_mapped_page_count * kPageSize; offset += kPageSize) {
     ASSERT_OK(Thread::Current::Get()->active_aspace()->arch_aspace().Query(

@@ -34,7 +34,7 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
  public:
   Riscv64ArchVmAspace(vaddr_t base, size_t size, Riscv64AspaceType type,
                       page_alloc_fn_t test_paf = nullptr);
-  Riscv64ArchVmAspace(vaddr_t base, size_t size, uint mmu_flags,
+  Riscv64ArchVmAspace(vaddr_t base, size_t size, arch_mmu_flags_t mmu_flags,
                       page_alloc_fn_t test_paf = nullptr);
   virtual ~Riscv64ArchVmAspace();
 
@@ -52,9 +52,10 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
   zx_status_t Destroy() override;
 
   // main methods
-  zx_status_t Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
+  zx_status_t Map(vaddr_t vaddr, paddr_t* phys, size_t count, arch_mmu_flags_t mmu_flags,
                   ExistingEntryAction existing_action) override;
-  zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count, uint mmu_flags) override;
+  zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
+                            arch_mmu_flags_t mmu_flags) override;
 
   zx_status_t Unmap(vaddr_t vaddr, size_t count, ArchUnmapOptions enlarge) override;
   // riscv does not document any restrictions on manipulating page tables such that duplicate TLB
@@ -62,12 +63,13 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
   // without enlarging.
   bool UnmapOnlyEnlargeOnOom() const override { return true; }
 
-  zx_status_t Protect(vaddr_t vaddr, size_t count, uint mmu_flags,
+  zx_status_t Protect(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags,
                       ArchUnmapOptions enlarge) override;
 
-  zx_status_t Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) override;
+  zx_status_t Query(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) override;
 
-  vaddr_t PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size, uint mmu_flags) override;
+  vaddr_t PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
+                   arch_mmu_flags_t mmu_flags) override;
 
   zx_status_t MarkAccessed(vaddr_t vaddr, size_t count) override;
 
@@ -152,7 +154,7 @@ class Riscv64ArchVmAspace final : public ArchVmAspaceInterface {
                                 ConsistencyManager& cm) TA_REQ(lock_);
 
   zx_status_t ProtectPages(vaddr_t vaddr, size_t size, pte_t attrs) TA_REQ(lock_);
-  zx_status_t QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) TA_REQ(lock_);
+  zx_status_t QueryLocked(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) TA_REQ(lock_);
 
   void FlushTLBEntryRun(vaddr_t vaddr, size_t page_count) const TA_REQ(lock_);
 

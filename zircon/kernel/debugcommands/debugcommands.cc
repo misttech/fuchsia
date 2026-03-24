@@ -448,7 +448,7 @@ static int crash_user_execute() {
     return -1;
   }
 
-  uint32_t mmu_flags;
+  arch_mmu_flags_t mmu_flags;
   status = mem->aspace()->arch_aspace().Query(mem->base(), nullptr, &mmu_flags);
   if (status != ZX_OK) {
     printf("failed to query mmu flags (%d); will not crash.\n", status);

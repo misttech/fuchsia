@@ -71,12 +71,13 @@ class DeviceContext : public fbl::DoublyLinkedListable<ktl::unique_ptr<DeviceCon
   // Map a VMO which may consist of discontiguous physical pages. Either maps
   // the whole requested range, returning the base dev_addr_t, or fails.
   zx::result<uint64_t> SecondLevelMapDiscontiguous(const fbl::RefPtr<VmObject>& vmo,
-                                                   uint64_t offset, size_t size, uint flags);
+                                                   uint64_t offset, size_t size,
+                                                   arch_mmu_flags_t flags);
 
   // Map a VMO which consists of contiguous physical pages. Either maps
   // the whole requested range, returning the base dev_addr_t, or fails.
   zx::result<uint64_t> SecondLevelMapContiguous(const fbl::RefPtr<VmObject>& vmo, uint64_t offset,
-                                                size_t size, uint flags);
+                                                size_t size, arch_mmu_flags_t flags);
 
   IommuImpl* const parent_;
   union {

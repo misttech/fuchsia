@@ -22,7 +22,7 @@ class VmObject;
 class VmAddressRegionDispatcher final
     : public SoloDispatcher<VmAddressRegionDispatcher, ZX_DEFAULT_VMAR_RIGHTS> {
  public:
-  static zx_status_t Create(fbl::RefPtr<VmAddressRegion> vmar, uint base_arch_mmu_flags,
+  static zx_status_t Create(fbl::RefPtr<VmAddressRegion> vmar, arch_mmu_flags_t base_arch_mmu_flags,
                             KernelHandle<VmAddressRegionDispatcher>* handle, zx_rights_t* rights);
 
   ~VmAddressRegionDispatcher() final;
@@ -62,10 +62,11 @@ class VmAddressRegionDispatcher final
   }
 
  private:
-  explicit VmAddressRegionDispatcher(fbl::RefPtr<VmAddressRegion> vmar, uint base_arch_mmu_flags);
+  explicit VmAddressRegionDispatcher(fbl::RefPtr<VmAddressRegion> vmar,
+                                     arch_mmu_flags_t base_arch_mmu_flags);
 
   const fbl::RefPtr<VmAddressRegion> vmar_;
-  const uint base_arch_mmu_flags_;
+  const arch_mmu_flags_t base_arch_mmu_flags_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_ADDRESS_REGION_DISPATCHER_H_

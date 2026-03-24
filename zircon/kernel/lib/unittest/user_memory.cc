@@ -27,7 +27,7 @@ ktl::unique_ptr<UserMemory> UserMemory::CreateInVmar(fbl::RefPtr<VmObject> vmo,
 
   constexpr uint32_t vmar_flags =
       VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE;
-  constexpr uint arch_mmu_flags =
+  constexpr arch_mmu_flags_t arch_mmu_flags =
       ARCH_MMU_FLAG_PERM_USER | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
   auto mapping_result = vmar->CreateVmMapping(/* offset= */ 0, size, align_pow2, vmar_flags, vmo, 0,
                                               arch_mmu_flags, "unittest");

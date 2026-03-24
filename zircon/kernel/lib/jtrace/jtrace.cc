@@ -24,7 +24,7 @@ bool ValidateVaddr(const void* val) {
 
   VmAspace* aspace = VmAspace::kernel_aspace();
   paddr_t pa;
-  uint flags;
+  arch_mmu_flags_t flags;
   zx_status_t err = aspace->arch_aspace().Query(addr, &pa, &flags);
   return (err == ZX_OK);
 }

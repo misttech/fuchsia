@@ -98,7 +98,7 @@ inline bool is_valid_for_type(vaddr_t base, size_t size, VmAspace::Type type) {
   return base >= min && base + size <= max;
 }
 
-uint arch_aspace_flags_from_type(VmAspace::Type type) {
+arch_mmu_flags_t arch_aspace_flags_from_type(VmAspace::Type type) {
   bool is_high_kernel = type == VmAspace::Type::Kernel;
   bool is_guest = type == VmAspace::Type::GuestPhysical;
   return (is_high_kernel ? ARCH_ASPACE_FLAG_KERNEL : 0u) | (is_guest ? ARCH_ASPACE_FLAG_GUEST : 0u);
@@ -339,7 +339,8 @@ bool VmAspace::is_destroyed() const {
 
 zx_status_t VmAspace::MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* name,
                                         uint64_t offset, size_t size, void** ptr,
-                                        uint8_t align_pow2, uint vmm_flags, uint arch_mmu_flags) {
+                                        uint8_t align_pow2, uint vmm_flags,
+                                        arch_mmu_flags_t arch_mmu_flags) {
   canary_.Assert();
   LTRACEF("aspace %p name '%s' vmo %p, offset %#" PRIx64
           " size %#zx "
@@ -418,7 +419,8 @@ zx_status_t VmAspace::MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* n
 }
 
 zx_status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, uint8_t align_pow2,
-                                    paddr_t paddr, uint vmm_flags, uint arch_mmu_flags) {
+                                    paddr_t paddr, uint vmm_flags,
+                                    arch_mmu_flags_t arch_mmu_flags) {
   canary_.Assert();
   LTRACEF("aspace %p name '%s' size %#zx ptr %p paddr %#" PRIxPTR
           " vmm_flags 0x%x arch_mmu_flags 0x%x\n",
@@ -458,7 +460,7 @@ zx_status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, u
 }
 
 zx_status_t VmAspace::AllocContiguous(const char* name, size_t size, void** ptr, uint8_t align_pow2,
-                                      uint vmm_flags, uint arch_mmu_flags) {
+                                      uint vmm_flags, arch_mmu_flags_t arch_mmu_flags) {
   canary_.Assert();
   LTRACEF("aspace %p name '%s' size 0x%zx ptr %p align %hhu vmm_flags 0x%x arch_mmu_flags 0x%x\n",
           this, name, size, ptr ? *ptr : 0, align_pow2, vmm_flags, arch_mmu_flags);
@@ -486,7 +488,7 @@ zx_status_t VmAspace::AllocContiguous(const char* name, size_t size, void** ptr,
 }
 
 zx_status_t VmAspace::Alloc(const char* name, size_t size, void** ptr, uint8_t align_pow2,
-                            uint vmm_flags, uint arch_mmu_flags) {
+                            uint vmm_flags, arch_mmu_flags_t arch_mmu_flags) {
   canary_.Assert();
   LTRACEF("aspace %p name '%s' size 0x%zx ptr %p align %hhu vmm_flags 0x%x arch_mmu_flags 0x%x\n",
           this, name, size, ptr ? *ptr : 0, align_pow2, vmm_flags, arch_mmu_flags);

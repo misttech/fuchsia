@@ -37,7 +37,8 @@ enum class ArmAspaceRole : uint8_t {
 class ArmArchVmAspace final : public ArchVmAspaceInterface {
  public:
   ArmArchVmAspace(vaddr_t base, size_t size, ArmAspaceType type, page_alloc_fn_t paf = nullptr);
-  ArmArchVmAspace(vaddr_t base, size_t size, uint mmu_flags, page_alloc_fn_t paf = nullptr);
+  ArmArchVmAspace(vaddr_t base, size_t size, arch_mmu_flags_t mmu_flags,
+                  page_alloc_fn_t paf = nullptr);
   virtual ~ArmArchVmAspace();
 
   // See comments on `ArchVmAspaceInterface` where these methods are declared.
@@ -52,9 +53,10 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   zx_status_t Destroy() override;
 
   // main methods
-  zx_status_t Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
+  zx_status_t Map(vaddr_t vaddr, paddr_t* phys, size_t count, arch_mmu_flags_t mmu_flags,
                   ExistingEntryAction existing_action) override;
-  zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count, uint mmu_flags) override;
+  zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
+                            arch_mmu_flags_t mmu_flags) override;
 
   using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
@@ -65,12 +67,13 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   // large page must break-before-make, counting as an enlargement.
   bool UnmapOnlyEnlargeOnOom() const override { return false; }
 
-  zx_status_t Protect(vaddr_t vaddr, size_t count, uint mmu_flags,
+  zx_status_t Protect(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags,
                       ArchUnmapOptions enlarge) override;
 
-  zx_status_t Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) override;
+  zx_status_t Query(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) override;
 
-  vaddr_t PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size, uint mmu_flags) override;
+  vaddr_t PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
+                   arch_mmu_flags_t mmu_flags) override;
 
   zx_status_t MarkAccessed(vaddr_t vaddr, size_t count) override;
 
@@ -157,11 +160,11 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   zx_status_t SplitLargePage(vaddr_t vaddr, uint index_shift, vaddr_t pt_index, pte_t* page_table,
                              ConsistencyManager& cm) TA_REQ(lock_);
 
-  pte_t MmuParamsFromFlags(uint mmu_flags);
+  pte_t MmuParamsFromFlags(arch_mmu_flags_t mmu_flags);
 
   zx_status_t ProtectPages(vaddr_t vaddr, size_t size, pte_t attrs, ArchUnmapOptions enlarge,
                            vaddr_t vaddr_base, ConsistencyManager& cm) TA_REQ(lock_);
-  zx_status_t QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) TA_REQ(lock_);
+  zx_status_t QueryLocked(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) TA_REQ(lock_);
 
   // Walks the aspace and finds the first leaf mapping that it can, return the virtual address (in
   // the kernel physmap) of the containing page table, the virtual address of the entry, and the
@@ -177,7 +180,7 @@ class ArmArchVmAspace final : public ArchVmAspaceInterface {
   void FlushAsid() const TA_REQ(lock_);
   void FlushAllAsids() const TA_REQ(lock_);
 
-  uint MmuFlagsFromPte(pte_t pte);
+  arch_mmu_flags_t MmuFlagsFromPte(pte_t pte);
 
   // Panic if the page table is not empty.
   //

@@ -337,10 +337,10 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   zx_status_t CacheOp(uint64_t offset, uint64_t len, CacheOpType type) override;
 
-  uint32_t GetMappingCachePolicyLocked() const TA_REQ(lock()) {
+  arch_mmu_flags_t GetMappingCachePolicyLocked() const TA_REQ(lock()) {
     return self_locked()->GetMappingCachePolicyLocked();
   }
-  zx_status_t SetMappingCachePolicy(uint32_t cache_policy) override;
+  zx_status_t SetMappingCachePolicy(arch_mmu_flags_t cache_policy) override;
 
   void DetachSource() override { cow_pages_->DetachSource(); }
 

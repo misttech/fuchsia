@@ -527,7 +527,7 @@ static zx_status_t arm64_perfmon_map_buffers_locked(PerfmonState* state, Guard<M
     // Heads up: The logic is off if |vmo_offset| is non-zero.
     const uint64_t vmo_offset = 0;
     const size_t size = data->buffer_size;
-    const uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+    const arch_mmu_flags_t arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
     const char* name = "pmu-buffer";
     PinnedVmObject buf_pin;
     // The buffer_vmo is provided by userspace and may need pages committed, which could potentially

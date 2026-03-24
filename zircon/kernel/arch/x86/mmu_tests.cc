@@ -66,8 +66,8 @@ static bool x86_arch_vmaspace_usermmu_tests() {
 
     // Use query() interface to find a mapping.
     paddr_t retrieved_pa;
-    uint flags;
-    EXPECT_EQ(ZX_OK, aspace.Query(kTestVirtualAddress, &retrieved_pa, &flags));
+    arch_mmu_flags_t mmu_flags;
+    EXPECT_EQ(ZX_OK, aspace.Query(kTestVirtualAddress, &retrieved_pa, &mmu_flags));
     EXPECT_EQ(retrieved_pa, pa);
 
     EXPECT_EQ(ZX_OK, aspace.Unmap(kTestVirtualAddress, 1, ArchUnmapOptions::Enlarge));
@@ -174,7 +174,7 @@ static bool x86_test_physmap_nx() {
 
   for (uintptr_t addr = gPhysmapBase; addr < (gPhysmapBase + gPhysmapSize); addr += kPageSize) {
     paddr_t paddr;
-    uint mmu_flags;
+    arch_mmu_flags_t mmu_flags;
     zx_status_t status = VmAspace::kernel_aspace()->arch_aspace().Query(addr, &paddr, &mmu_flags);
     if (status == ZX_OK) {
       EXPECT_TRUE(!(mmu_flags & ARCH_MMU_FLAG_PERM_EXECUTE));

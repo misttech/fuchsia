@@ -90,7 +90,8 @@ zx_status_t VmAddressRegion::CreateRootLocked(VmAspace& aspace, uint32_t vmar_fl
 
 zx_status_t VmAddressRegion::CreateSubVmarInternal(size_t offset, size_t size, uint8_t align_pow2,
                                                    uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo,
-                                                   uint64_t vmo_offset, uint arch_mmu_flags,
+                                                   uint64_t vmo_offset,
+                                                   arch_mmu_flags_t arch_mmu_flags,
                                                    const char* name, vaddr_t* base_out,
                                                    fbl::RefPtr<VmAddressRegionOrMapping>* out) {
   zx_status_t status = CreateSubVmarInner(offset, size, align_pow2, vmar_flags, vmo, vmo_offset,
@@ -120,8 +121,9 @@ zx_status_t VmAddressRegion::CreateSubVmarInternal(size_t offset, size_t size, u
 
 zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint8_t align_pow2,
                                                 uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo,
-                                                uint64_t vmo_offset, uint arch_mmu_flags,
-                                                const char* name, vaddr_t* base_out,
+                                                uint64_t vmo_offset,
+                                                arch_mmu_flags_t arch_mmu_flags, const char* name,
+                                                vaddr_t* base_out,
                                                 fbl::RefPtr<VmAddressRegionOrMapping>* out) {
   DEBUG_ASSERT(out);
   MemoryPriority memory_priority;
@@ -290,7 +292,8 @@ zx_status_t VmAddressRegion::CreateSubVmar(size_t offset, size_t size, uint8_t a
 
 zx::result<VmAddressRegion::MapResult> VmAddressRegion::CreateVmMapping(
     size_t mapping_offset, size_t size, uint8_t align_pow2, uint32_t vmar_flags,
-    fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset, uint arch_mmu_flags, const char* name) {
+    fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+    const char* name) {
   LTRACEF("%p %#zx %#zx %x\n", this, mapping_offset, size, vmar_flags);
 
   // Check that only allowed flags have been set
@@ -348,11 +351,9 @@ zx::result<VmAddressRegion::MapResult> VmAddressRegion::CreateVmMapping(
   return zx::ok(MapResult{ktl::move(map), base});
 }
 
-zx_status_t VmAddressRegion::OverwriteVmMappingLocked(vaddr_t base, size_t size,
-                                                      uint32_t vmar_flags,
-                                                      fbl::RefPtr<VmObject> vmo,
-                                                      uint64_t vmo_offset, uint arch_mmu_flags,
-                                                      fbl::RefPtr<VmAddressRegionOrMapping>* out) {
+zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
+    vaddr_t base, size_t size, uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
+    arch_mmu_flags_t arch_mmu_flags, fbl::RefPtr<VmAddressRegionOrMapping>* out) {
   canary_.Assert();
   DEBUG_ASSERT(vmo);
   DEBUG_ASSERT(vmar_flags & VMAR_FLAG_SPECIFIC_OVERWRITE);
@@ -507,7 +508,7 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegi
                                                              const VmAddressRegionOrMapping* next,
                                                              vaddr_t search_base, vaddr_t align,
                                                              size_t region_size, size_t min_gap,
-                                                             uint arch_mmu_flags) {
+                                                             arch_mmu_flags_t arch_mmu_flags) {
   vaddr_t gap_beg;  // first byte of a gap
   vaddr_t gap_end;  // last byte of a gap
 
@@ -1011,7 +1012,7 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
   return ZX_OK;
 }
 
-zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mmu_flags,
+zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, arch_mmu_flags_t new_arch_mmu_flags,
                                      VmAddressRegionOpChildren op_children) {
   canary_.Assert();
 
@@ -1074,7 +1075,7 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
         // range of mapping.
         const size_t len = ktl::min(end_addr_byte, end - 1) - expected + 1;
         zx_status_t status = mapping->EnumerateProtectionRangesLocked(
-            expected, len, [&new_arch_mmu_flags](vaddr_t, size_t, uint flags) {
+            expected, len, [&new_arch_mmu_flags](vaddr_t, size_t, arch_mmu_flags_t flags) {
               if ((flags & new_arch_mmu_flags) != new_arch_mmu_flags) {
                 return ZX_ERR_ACCESS_DENIED;
               }
@@ -1137,7 +1138,7 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
 // from the address space, and can vary based on whether the user has requested compact allocations
 // or not.
 zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_pow2,
-                                                   uint arch_mmu_flags, vaddr_t* spot,
+                                                   arch_mmu_flags_t arch_mmu_flags, vaddr_t* spot,
                                                    vaddr_t upper_limit) {
   LTRACEF("size=%zu align_pow2=%u arch_mmu_flags=%x upper_limit=%zx\n", size, align_pow2,
           arch_mmu_flags, upper_limit);
@@ -1197,7 +1198,7 @@ zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_po
 using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
 zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t size,
-                                          uint arch_mmu_flags) {
+                                          arch_mmu_flags_t arch_mmu_flags) {
   canary_.Assert();
   if (!is_in_range(base, size)) {
     return ZX_ERR_INVALID_ARGS;

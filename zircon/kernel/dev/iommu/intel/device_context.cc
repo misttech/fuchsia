@@ -191,8 +191,8 @@ zx_status_t DeviceContext::Create(ds::Bdf bdf, uint32_t domain_id, IommuImpl* pa
 
 namespace {
 
-uint perms_to_arch_mmu_flags(uint32_t perms) {
-  uint flags = 0;
+arch_mmu_flags_t perms_to_arch_mmu_flags(uint32_t perms) {
+  arch_mmu_flags_t flags = 0;
   if (perms & IOMMU_FLAG_PERM_READ) {
     flags |= ARCH_MMU_FLAG_PERM_READ;
   }
@@ -212,7 +212,7 @@ zx::result<uint64_t> DeviceContext::SecondLevelMap(const fbl::RefPtr<VmObject>& 
                                                    uint32_t perms) {
   DEBUG_ASSERT(IsPageRounded(vmo_offset));
 
-  uint flags = perms_to_arch_mmu_flags(perms);
+  arch_mmu_flags_t flags = perms_to_arch_mmu_flags(perms);
 
   if (vmo->LookupContiguous(vmo_offset, size, nullptr) != ZX_OK) {
     return SecondLevelMapDiscontiguous(vmo, vmo_offset, size, flags);
@@ -222,7 +222,7 @@ zx::result<uint64_t> DeviceContext::SecondLevelMap(const fbl::RefPtr<VmObject>& 
 
 zx::result<uint64_t> DeviceContext::SecondLevelMapDiscontiguous(const fbl::RefPtr<VmObject>& vmo,
                                                                 uint64_t offset, size_t size,
-                                                                uint flags) {
+                                                                arch_mmu_flags_t flags) {
   const uint64_t min_contig = minimum_contiguity();
   RegionAllocator::Region::UPtr region;
   zx_status_t status = region_alloc_.GetRegion(size, min_contig, region);
@@ -291,7 +291,7 @@ zx::result<uint64_t> DeviceContext::SecondLevelMapDiscontiguous(const fbl::RefPt
 
 zx::result<uint64_t> DeviceContext::SecondLevelMapContiguous(const fbl::RefPtr<VmObject>& vmo,
                                                              uint64_t vmo_offset, size_t size,
-                                                             uint flags) {
+                                                             arch_mmu_flags_t flags) {
   paddr_t paddr = UINT64_MAX;
   zx_status_t status = vmo->LookupContiguous(vmo_offset, size, &paddr);
   if (status != ZX_OK) {
@@ -333,7 +333,7 @@ zx_status_t DeviceContext::SecondLevelMapIdentity(paddr_t base, size_t size, uin
   DEBUG_ASSERT(IsPageRounded(base));
   DEBUG_ASSERT(IsPageRounded(size));
 
-  uint flags = perms_to_arch_mmu_flags(perms);
+  arch_mmu_flags_t flags = perms_to_arch_mmu_flags(perms);
 
   RegionAllocator::Region::UPtr region;
   zx_status_t status = region_alloc_.GetRegion({base, size}, region);

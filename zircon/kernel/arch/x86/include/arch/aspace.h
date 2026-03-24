@@ -43,15 +43,15 @@ class X86PageTableMmu final : public X86PageTableImpl<X86PageTableMmu> {
   zx_status_t AliasKernelMappings();
 
   PageTableLevel top_level() { return PageTableLevel::PML4_L; }
-  bool allowed_flags(uint flags) { return (flags & ARCH_MMU_FLAG_PERM_READ); }
+  bool allowed_flags(arch_mmu_flags_t flags) { return (flags & ARCH_MMU_FLAG_PERM_READ); }
   bool check_paddr(paddr_t paddr);
   bool check_vaddr(vaddr_t vaddr);
   bool supports_page_size(PageTableLevel level);
   IntermediatePtFlags intermediate_flags();
-  PtFlags terminal_flags(PageTableLevel level, uint flags);
+  PtFlags terminal_flags(PageTableLevel level, arch_mmu_flags_t flags);
   PtFlags split_flags(PageTableLevel level, PtFlags flags);
   void TlbInvalidate(const PendingTlbInvalidation* pending);
-  uint pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
+  arch_mmu_flags_t pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
   bool needs_cache_flushes() { return false; }
 
   // If true, all mappings will have the global bit set.
@@ -65,21 +65,22 @@ class X86PageTableEpt final : public X86PageTableImpl<X86PageTableEpt> {
   using X86PageTableImpl::Destroy;
 
   PageTableLevel top_level() { return PageTableLevel::PML4_L; }
-  bool allowed_flags(uint flags);
+  bool allowed_flags(arch_mmu_flags_t flags);
   bool check_paddr(paddr_t paddr);
   bool check_vaddr(vaddr_t vaddr);
   bool supports_page_size(PageTableLevel level);
   IntermediatePtFlags intermediate_flags();
-  PtFlags terminal_flags(PageTableLevel level, uint flags);
+  PtFlags terminal_flags(PageTableLevel level, arch_mmu_flags_t flags);
   PtFlags split_flags(PageTableLevel level, PtFlags flags);
   void TlbInvalidate(const PendingTlbInvalidation* pending);
-  uint pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
+  arch_mmu_flags_t pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
   bool needs_cache_flushes() { return false; }
 };
 
 class X86ArchVmAspace final : public ArchVmAspaceInterface {
  public:
-  X86ArchVmAspace(vaddr_t base, size_t size, uint mmu_flags, page_alloc_fn_t test_paf = nullptr);
+  X86ArchVmAspace(vaddr_t base, size_t size, arch_mmu_flags_t mmu_flags,
+                  page_alloc_fn_t test_paf = nullptr);
   virtual ~X86ArchVmAspace();
 
   using ArchVmAspaceInterface::page_alloc_fn_t;
@@ -98,20 +99,22 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
   zx_status_t Destroy() override;
 
   // main methods
-  zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count, uint mmu_flags) override;
+  zx_status_t MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
+                            arch_mmu_flags_t mmu_flags) override;
   using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
-  zx_status_t Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
+  zx_status_t Map(vaddr_t vaddr, paddr_t* phys, size_t count, arch_mmu_flags_t mmu_flags,
                   ExistingEntryAction existing_action) override;
   zx_status_t Unmap(vaddr_t vaddr, size_t count, ArchUnmapOptions enlarge) override;
   // x86 may generate duplicate TLB entries if changing the translation size of mapping, but this
   // does not lead to any incorrectness as long as the we invalidate the TLB (which we do),
   // therefore unmap is safe to split large pages without enlarging.
   bool UnmapOnlyEnlargeOnOom() const override { return true; }
-  zx_status_t Protect(vaddr_t vaddr, size_t count, uint mmu_flags,
+  zx_status_t Protect(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags,
                       ArchUnmapOptions enlarge) override;
-  zx_status_t Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) override;
+  zx_status_t Query(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) override;
 
-  vaddr_t PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size, uint mmu_flags) override;
+  vaddr_t PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
+                   arch_mmu_flags_t mmu_flags) override;
 
   // On x86 the hardware can always set the accessed bit so we do not need to support the software
   // fault method.
@@ -177,7 +180,7 @@ class X86ArchVmAspace final : public ArchVmAspaceInterface {
   // PCID assigned to the aspace. Defaults to unused if PCIDs are not being used.
   uint16_t pcid_ = MMU_X86_UNUSED_PCID;
 
-  const uint flags_ = 0;
+  const arch_mmu_flags_t flags_ = 0;
 
   // Range of address space.
   const vaddr_t base_ = 0;

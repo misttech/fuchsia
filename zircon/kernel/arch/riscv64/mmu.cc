@@ -135,7 +135,7 @@ constexpr uintptr_t page_size_per_level(uint level) {
 constexpr uintptr_t page_mask_per_level(uint level) { return page_size_per_level(level) - 1; }
 
 // Convert user level mmu flags to flags that go in leaf descriptors.
-pte_t mmu_flags_to_pte_attr(uint flags, bool global) {
+pte_t mmu_flags_to_pte_attr(arch_mmu_flags_t flags, bool global) {
   pte_t attr = RISCV64_PTE_V;
   attr |= RISCV64_PTE_A | RISCV64_PTE_D;
   attr |= (flags & ARCH_MMU_FLAG_PERM_USER) ? RISCV64_PTE_U : 0;
@@ -164,8 +164,8 @@ pte_t mmu_flags_to_pte_attr(uint flags, bool global) {
 }
 
 // Convert leaf pte flags to mmu flags.
-uint mmu_flags_from_pte(pte_t pte) {
-  uint mmu_flags = 0;
+arch_mmu_flags_t mmu_flags_from_pte(pte_t pte) {
+  arch_mmu_flags_t mmu_flags = 0;
   mmu_flags |= (pte & RISCV64_PTE_U) ? ARCH_MMU_FLAG_PERM_USER : 0;
   mmu_flags |= (pte & RISCV64_PTE_R) ? ARCH_MMU_FLAG_PERM_READ : 0;
   mmu_flags |= (pte & RISCV64_PTE_W) ? ARCH_MMU_FLAG_PERM_WRITE : 0;
@@ -237,7 +237,7 @@ bool page_table_is_clear(const volatile pte_t* page_table) {
   return index_result.is_error();
 }
 
-constexpr Riscv64AspaceType AspaceTypeFromFlags(uint mmu_flags) {
+constexpr Riscv64AspaceType AspaceTypeFromFlags(arch_mmu_flags_t mmu_flags) {
   // Kernel/Guest flags are mutually exclusive. Ensure at most 1 is set.
   DEBUG_ASSERT(((mmu_flags & ARCH_ASPACE_FLAG_KERNEL) != 0) +
                    ((mmu_flags & ARCH_ASPACE_FLAG_GUEST) != 0) <=
@@ -493,12 +493,13 @@ class Riscv64ArchVmAspace::ConsistencyManager {
   } pending_tlbs_[kMaxPendingTlbRuns];
 };
 
-zx_status_t Riscv64ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
+zx_status_t Riscv64ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) {
   Guard<Mutex> al{AssertOrderedLock, &lock_, LockOrder()};
   return QueryLocked(vaddr, paddr, mmu_flags);
 }
 
-zx_status_t Riscv64ArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
+zx_status_t Riscv64ArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr,
+                                             arch_mmu_flags_t* mmu_flags) {
   uint level = kNumPageTableLevels - 1;
 
   canary_.Assert();
@@ -1081,7 +1082,7 @@ zx_status_t Riscv64ArchVmAspace::ProtectPages(vaddr_t vaddr, size_t size, pte_t 
 }
 
 zx_status_t Riscv64ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
-                                               uint mmu_flags) {
+                                               arch_mmu_flags_t mmu_flags) {
   canary_.Assert();
   LTRACEF("vaddr %#" PRIxPTR " paddr %#" PRIxPTR " count %zu flags %#x\n", vaddr, paddr, count,
           mmu_flags);
@@ -1133,7 +1134,8 @@ zx_status_t Riscv64ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, siz
   return ZX_OK;
 }
 
-zx_status_t Riscv64ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
+zx_status_t Riscv64ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count,
+                                     arch_mmu_flags_t mmu_flags,
                                      ExistingEntryAction existing_action) {
   canary_.Assert();
 
@@ -1221,7 +1223,7 @@ zx_status_t Riscv64ArchVmAspace::Unmap(vaddr_t vaddr, size_t count, ArchUnmapOpt
   return result.status_value();
 }
 
-zx_status_t Riscv64ArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags,
+zx_status_t Riscv64ArchVmAspace::Protect(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags,
                                          ArchUnmapOptions enlarge) {
   canary_.Assert();
 
@@ -1250,7 +1252,7 @@ zx_status_t Riscv64ArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_f
     size_t pages_synced = 0;
     for (size_t idx = 0; idx < count; idx++) {
       paddr_t paddr;
-      uint flags;
+      arch_mmu_flags_t flags;
       if (QueryLocked(vaddr + idx * kPageSize, &paddr, &flags) == ZX_OK &&
           (flags & ARCH_MMU_FLAG_PERM_EXECUTE)) {
         cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), kPageSize);
@@ -1660,7 +1662,7 @@ Riscv64ArchVmAspace::Riscv64ArchVmAspace(vaddr_t base, size_t size, Riscv64Aspac
                                          page_alloc_fn_t paf)
     : test_page_alloc_func_(paf), type_(type), base_(base), size_(size) {}
 
-Riscv64ArchVmAspace::Riscv64ArchVmAspace(vaddr_t base, size_t size, uint mmu_flags,
+Riscv64ArchVmAspace::Riscv64ArchVmAspace(vaddr_t base, size_t size, arch_mmu_flags_t mmu_flags,
                                          page_alloc_fn_t paf)
     : Riscv64ArchVmAspace(base, size, AspaceTypeFromFlags(mmu_flags), paf) {}
 
@@ -1671,7 +1673,7 @@ Riscv64ArchVmAspace::~Riscv64ArchVmAspace() {
 }
 
 vaddr_t Riscv64ArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
-                                      uint mmu_flags) {
+                                      arch_mmu_flags_t mmu_flags) {
   canary_.Assert();
   return RoundUpPageSize(base);
 }

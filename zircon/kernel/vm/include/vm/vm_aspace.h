@@ -204,18 +204,18 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   // as children of the root.  They will all assert if used on user aspaces
   // TODO(teisenbe): remove uses of these in favor of new VMAR interfaces
   zx_status_t AllocPhysical(const char* name, size_t size, void** ptr, uint8_t align_pow2,
-                            paddr_t paddr, uint vmm_flags, uint arch_mmu_flags);
+                            paddr_t paddr, uint vmm_flags, arch_mmu_flags_t arch_mmu_flags);
   zx_status_t AllocContiguous(const char* name, size_t size, void** ptr, uint8_t align_pow2,
-                              uint vmm_flags, uint arch_mmu_flags);
+                              uint vmm_flags, arch_mmu_flags_t arch_mmu_flags);
   zx_status_t Alloc(const char* name, size_t size, void** ptr, uint8_t align_pow2, uint vmm_flags,
-                    uint arch_mmu_flags);
+                    arch_mmu_flags_t arch_mmu_flags);
   zx_status_t FreeRegion(vaddr_t va);
 
   // Internal use function for mapping VMOs.  Do not use.  This is exposed in
   // the public API purely for tests.
   zx_status_t MapObjectInternal(fbl::RefPtr<VmObject> vmo, const char* name, uint64_t offset,
                                 size_t size, void** ptr, uint8_t align_pow2, uint vmm_flags,
-                                uint arch_mmu_flags);
+                                arch_mmu_flags_t arch_mmu_flags);
 
   uintptr_t vdso_base_address() const;
   uintptr_t vdso_code_address() const;

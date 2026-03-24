@@ -238,7 +238,7 @@ zx_status_t VmObjectPhysical::LookupContiguousLocked(uint64_t offset, uint64_t l
   return ZX_OK;
 }
 
-zx_status_t VmObjectPhysical::SetMappingCachePolicy(const uint32_t cache_policy) {
+zx_status_t VmObjectPhysical::SetMappingCachePolicy(const arch_mmu_flags_t cache_policy) {
   // Is it a valid cache flag?
   if (cache_policy & ~ZX_CACHE_POLICY_MASK) {
     return ZX_ERR_INVALID_ARGS;

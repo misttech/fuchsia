@@ -54,7 +54,7 @@ LK_INIT_HOOK(efi_init, EfiInitHook, LK_INIT_LEVEL_PLATFORM - 1)
 
 // Helper function that maps the region with size |size| at |base| into the given aspace.
 zx_status_t MapUnalignedRegion(VmAspace* aspace, paddr_t base, size_t size, const char* name,
-                               uint arch_mmu_flags) {
+                               arch_mmu_flags_t arch_mmu_flags) {
   // Check that the given region does not intersect with any RAM.
   {
     zx_paddr_t end = base + size;
@@ -208,7 +208,7 @@ zx_status_t InitEfiServices(uint64_t efi_system_table) {
         //
         // We assume double-negatives apply sensibly: "not read-only" implies
         // writable and "not execute-protected" implies executable.
-        uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ;
+        arch_mmu_flags_t arch_mmu_flags = ARCH_MMU_FLAG_PERM_READ;
         if ((desc->Attribute & EFI_MEMORY_RO) == 0) {
           arch_mmu_flags |= ARCH_MMU_FLAG_PERM_WRITE;
         }

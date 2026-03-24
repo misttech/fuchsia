@@ -1039,7 +1039,7 @@ zx_status_t VmAspace::GetMemoryUsage(vm_usage_t* usage) {
 
 namespace {
 
-unsigned int arch_mmu_flags_to_vm_flags(unsigned int arch_mmu_flags) {
+unsigned int arch_mmu_flags_to_vm_flags(arch_mmu_flags_t arch_mmu_flags) {
   if (arch_mmu_flags & ARCH_MMU_FLAG_INVALID) {
     return 0;
   }
@@ -1078,7 +1078,7 @@ class AspaceEnumerator final : public VmEnumerator {
           map->arch_mmu_flags_range_locked(region_base);
       const size_t region_len = protect_range.region_top - region_base;
       if (available_ < max_) {
-        const uint mmu_flags = protect_range.mmu_flags;
+        const arch_mmu_flags_t mmu_flags = protect_range.mmu_flags;
         zx_status_t status = ZX_OK;
         guard.CallUnlocked([&]() {
           vmo->get_name(entry.name, sizeof(entry.name));

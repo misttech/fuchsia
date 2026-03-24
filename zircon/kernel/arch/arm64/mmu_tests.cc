@@ -29,7 +29,7 @@ bool arm64_test_perms() {
   ArmArchVmAspace aspace(USER_ASPACE_BASE, USER_ASPACE_SIZE, ArmAspaceType::kUser);
   EXPECT_EQ(ZX_OK, aspace.Init());
 
-  auto map_query_test = [&](uint mmu_perms) -> bool {
+  auto map_query_test = [&](arch_mmu_flags_t mmu_perms) -> bool {
     paddr_t pa = 0;
     vm_page_t* vm_page;
     pmm_alloc_page(/*alloc_flags=*/0, &vm_page, &pa);
@@ -37,7 +37,7 @@ bool arm64_test_perms() {
                                 ArchVmAspaceInterface::ExistingEntryAction::Error));
 
     paddr_t query_pa;
-    uint query_flags;
+    arch_mmu_flags_t query_flags;
     EXPECT_EQ(ZX_OK, aspace.Query(kTestVirtualAddress, &query_pa, &query_flags));
     EXPECT_EQ(pa, query_pa);
     EXPECT_EQ(mmu_perms, query_flags);

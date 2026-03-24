@@ -27,15 +27,15 @@ class SecondLevelPageTable final : public X86PageTableImpl<SecondLevelPageTable>
   void Destroy();
 
   PageTableLevel top_level() { return top_level_; }
-  bool allowed_flags(uint flags);
+  bool allowed_flags(arch_mmu_flags_t flags);
   bool check_paddr(paddr_t paddr);
   bool check_vaddr(vaddr_t vaddr);
   bool supports_page_size(PageTableLevel level);
   IntermediatePtFlags intermediate_flags();
-  PtFlags terminal_flags(PageTableLevel level, uint flags);
+  PtFlags terminal_flags(PageTableLevel level, arch_mmu_flags_t flags);
   PtFlags split_flags(PageTableLevel level, PtFlags flags);
   void TlbInvalidate(const PendingTlbInvalidation* pending);
-  uint pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
+  arch_mmu_flags_t pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level);
   bool needs_cache_flushes() { return needs_flushes_; }
 
   IommuImpl* iommu_;

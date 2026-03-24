@@ -260,7 +260,7 @@ bool X86PageTableMmu::supports_page_size(PageTableLevel level) {
 
 IntermediatePtFlags X86PageTableMmu::intermediate_flags() { return X86_MMU_PG_RW | X86_MMU_PG_U; }
 
-PtFlags X86PageTableMmu::terminal_flags(PageTableLevel level, uint flags) {
+PtFlags X86PageTableMmu::terminal_flags(PageTableLevel level, arch_mmu_flags_t flags) {
   PtFlags terminal_flags = 0;
 
   if (flags & ARCH_MMU_FLAG_PERM_WRITE) {
@@ -542,8 +542,8 @@ void X86PageTableMmu::TlbInvalidate(const PendingTlbInvalidation* pending) {
   mp_sync_exec(target, target_mask, tlb_invalidate_page_task, &task_context);
 }
 
-uint X86PageTableMmu::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
-  uint mmu_flags = ARCH_MMU_FLAG_PERM_READ;
+arch_mmu_flags_t X86PageTableMmu::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
+  arch_mmu_flags_t mmu_flags = ARCH_MMU_FLAG_PERM_READ;
 
   if (flags & X86_MMU_PG_RW) {
     mmu_flags |= ARCH_MMU_FLAG_PERM_WRITE;
@@ -589,7 +589,7 @@ uint X86PageTableMmu::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level)
 
 // X86PageTableEpt
 
-bool X86PageTableEpt::allowed_flags(uint flags) {
+bool X86PageTableEpt::allowed_flags(arch_mmu_flags_t flags) {
   if (!(flags & ARCH_MMU_FLAG_PERM_READ)) {
     return false;
   }
@@ -616,7 +616,7 @@ bool X86PageTableEpt::supports_page_size(PageTableLevel level) {
 
 PtFlags X86PageTableEpt::intermediate_flags() { return X86_EPT_R | X86_EPT_W | X86_EPT_X; }
 
-PtFlags X86PageTableEpt::terminal_flags(PageTableLevel level, uint flags) {
+PtFlags X86PageTableEpt::terminal_flags(PageTableLevel level, arch_mmu_flags_t flags) {
   PtFlags terminal_flags = 0;
 
   if (flags & ARCH_MMU_FLAG_PERM_READ) {
@@ -672,8 +672,8 @@ void X86PageTableEpt::TlbInvalidate(const PendingTlbInvalidation* pending) {
   broadcast_invept(eptp);
 }
 
-uint X86PageTableEpt::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
-  uint mmu_flags = 0;
+arch_mmu_flags_t X86PageTableEpt::pt_flags_to_mmu_flags(PtFlags flags, PageTableLevel level) {
+  arch_mmu_flags_t mmu_flags = 0;
 
   if (flags & X86_EPT_R) {
     mmu_flags |= ARCH_MMU_FLAG_PERM_READ;
@@ -725,7 +725,7 @@ zx_status_t X86PageTableMmu::AliasKernelMappings() {
   return ZX_OK;
 }
 
-X86ArchVmAspace::X86ArchVmAspace(vaddr_t base, size_t size, uint mmu_flags,
+X86ArchVmAspace::X86ArchVmAspace(vaddr_t base, size_t size, arch_mmu_flags_t mmu_flags,
                                  page_alloc_fn_t test_paf)
     : test_page_alloc_func_(test_paf), flags_(mmu_flags), base_(base), size_(size) {}
 
@@ -934,7 +934,7 @@ zx_status_t X86ArchVmAspace::Unmap(vaddr_t vaddr, size_t count, ArchUnmapOptions
 }
 
 zx_status_t X86ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
-                                           uint mmu_flags) {
+                                           arch_mmu_flags_t mmu_flags) {
   DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
@@ -944,8 +944,8 @@ zx_status_t X86ArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
   return result;
 }
 
-zx_status_t X86ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
-                                 ExistingEntryAction existing_action) {
+zx_status_t X86ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count,
+                                 arch_mmu_flags_t mmu_flags, ExistingEntryAction existing_action) {
   DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
@@ -955,7 +955,7 @@ zx_status_t X86ArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uin
   return result;
 }
 
-zx_status_t X86ArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags,
+zx_status_t X86ArchVmAspace::Protect(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags,
                                      ArchUnmapOptions enlarge) {
   DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
@@ -1054,7 +1054,7 @@ void X86ArchVmAspace::ContextSwitch(X86ArchVmAspace* old_aspace, X86ArchVmAspace
     x86_set_tss_io_bitmap(aspace->io_bitmap());
 }
 
-zx_status_t X86ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
+zx_status_t X86ArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) {
   DEBUG_ASSERT(!pt_->IsUnified());
   if (!IsValidVaddr(vaddr))
     return ZX_ERR_INVALID_ARGS;
@@ -1088,7 +1088,7 @@ bool X86ArchVmAspace::AccessedSinceLastCheck(bool clear) {
 }
 
 vaddr_t X86ArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
-                                  uint mmu_flags) {
+                                  arch_mmu_flags_t mmu_flags) {
   canary_.Assert();
   return RoundUpPageSize(base);
 }

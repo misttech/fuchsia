@@ -264,7 +264,7 @@ zx_status_t sys_vmo_set_cache_policy(zx_handle_t handle, uint32_t cache_policy) 
     return status;
   }
 
-  return vmo->SetMappingCachePolicy(cache_policy);
+  return vmo->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(cache_policy));
 }
 
 // zx_status_t zx_vmo_create_child

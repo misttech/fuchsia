@@ -210,7 +210,7 @@ class VmAddressRegionOrMapping
 
   // Check if the given *arch_mmu_flags* are allowed under this
   // regions *flags_*
-  bool is_valid_mapping_flags(uint arch_mmu_flags) {
+  bool is_valid_mapping_flags(arch_mmu_flags_t arch_mmu_flags) {
     // Work out what flags we must support for these arch_mmu_flags
     uint32_t needed = 0;
     if (arch_mmu_flags & ARCH_MMU_FLAG_PERM_READ) {
@@ -648,7 +648,8 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   };
   zx::result<MapResult> CreateVmMapping(size_t mapping_offset, size_t size, uint8_t align_pow2,
                                         uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo,
-                                        uint64_t vmo_offset, uint arch_mmu_flags, const char* name);
+                                        uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+                                        const char* name);
 
   // Finds the child region that contains the given addr.  If addr is in a gap,
   // returns nullptr.  This is a non-recursive search.
@@ -688,13 +689,14 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // Change protections on a subset of the region of memory in the containing
   // address space. If the requested range overlaps with a subregion and op_children is No,
   // Protect() will fail, otherwise the mapping permissions in the sub-region may only be reduced.
-  zx_status_t Protect(vaddr_t base, size_t size, uint new_arch_mmu_flags,
+  zx_status_t Protect(vaddr_t base, size_t size, arch_mmu_flags_t new_arch_mmu_flags,
                       VmAddressRegionOpChildren op_children);
 
   // Reserve a memory region within this VMAR. This region is already mapped in the page table with
   // |arch_mmu_flags|. VMAR should create a VmMapping for this region even though no physical pages
   // need to be allocated for this region.
-  zx_status_t ReserveSpace(const char* name, size_t base, size_t size, uint arch_mmu_flags);
+  zx_status_t ReserveSpace(const char* name, size_t base, size_t size,
+                           arch_mmu_flags_t arch_mmu_flags);
 
   const char* name() const { return name_; }
   bool has_parent() const;
@@ -756,19 +758,21 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // Helpers to share code between CreateSubVmar and CreateVmMapping
   zx_status_t CreateSubVmarInternal(size_t offset, size_t size, uint8_t align_pow2,
                                     uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo,
-                                    uint64_t vmo_offset, uint arch_mmu_flags, const char* name,
-                                    vaddr_t* base_out, fbl::RefPtr<VmAddressRegionOrMapping>* out);
+                                    uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+                                    const char* name, vaddr_t* base_out,
+                                    fbl::RefPtr<VmAddressRegionOrMapping>* out);
   zx_status_t CreateSubVmarInner(size_t offset, size_t size, uint8_t align_pow2,
                                  uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo,
-                                 uint64_t vmo_offset, uint arch_mmu_flags, const char* name,
-                                 vaddr_t* base_out, fbl::RefPtr<VmAddressRegionOrMapping>* out);
+                                 uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+                                 const char* name, vaddr_t* base_out,
+                                 fbl::RefPtr<VmAddressRegionOrMapping>* out);
 
   // Create a new VmMapping within this region, overwriting any existing
   // mappings that are in the way.  If the range crosses a subregion, the call
   // fails.
   zx_status_t OverwriteVmMappingLocked(vaddr_t base, size_t size, uint32_t vmar_flags,
                                        fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-                                       uint arch_mmu_flags,
+                                       arch_mmu_flags_t arch_mmu_flags,
                                        fbl::RefPtr<VmAddressRegionOrMapping>* out)
       TA_REQ(region_lock()) TA_REQ(lock());
 
@@ -786,11 +790,12 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
                                               const VmAddressRegionOrMapping* next,
                                               vaddr_t search_base, vaddr_t align,
                                               size_t region_size, size_t min_gap,
-                                              uint arch_mmu_flags) TA_REQ(region_lock());
+                                              arch_mmu_flags_t arch_mmu_flags)
+      TA_REQ(region_lock());
 
   // search for a spot to allocate for a region of a given size
-  zx_status_t AllocSpotLockedRegion(size_t size, uint8_t align_pow2, uint arch_mmu_flags,
-                                    vaddr_t* spot,
+  zx_status_t AllocSpotLockedRegion(size_t size, uint8_t align_pow2,
+                                    arch_mmu_flags_t arch_mmu_flags, vaddr_t* spot,
                                     vaddr_t upper_limit = ktl::numeric_limits<vaddr_t>::max())
       TA_REQ(region_lock());
 
@@ -817,7 +822,7 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
 // anything mapping specific.
 class MappingProtectionRanges {
  public:
-  explicit MappingProtectionRanges(uint arch_mmu_flags)
+  explicit MappingProtectionRanges(arch_mmu_flags_t arch_mmu_flags)
       : first_region_arch_mmu_flags_(arch_mmu_flags) {}
   MappingProtectionRanges(MappingProtectionRanges&&) = default;
   ~MappingProtectionRanges() = default;
@@ -825,7 +830,7 @@ class MappingProtectionRanges {
 
   // Helper struct for FlagsRangeAtAddr
   struct FlagsRange {
-    uint mmu_flags;
+    arch_mmu_flags_t mmu_flags;
     uint64_t region_top;
   };
   // Returns both the flags for the specified vaddr, as well as the end of the range those flags are
@@ -837,7 +842,7 @@ class MappingProtectionRanges {
       auto region = protect_region_list_rest_.upper_bound(vaddr);
       const vaddr_t region_top =
           region.IsValid() ? region->region_start : (mapping_base + mapping_size);
-      const uint mmu_flags = FlagsForPreviousRegion(region);
+      const arch_mmu_flags_t mmu_flags = FlagsForPreviousRegion(region);
       return FlagsRange{mmu_flags, region_top};
     }
   }
@@ -847,14 +852,14 @@ class MappingProtectionRanges {
   // modified.
   template <typename F>
   zx_status_t UpdateProtectionRange(vaddr_t mapping_base, size_t mapping_size, vaddr_t base,
-                                    size_t size, uint new_arch_mmu_flags, F callback);
+                                    size_t size, arch_mmu_flags_t new_arch_mmu_flags, F callback);
 
   // Enumerates any different protection ranges that exist inside this mapping. The virtual range
   // specified by range_base and range_size must be within this mappings base_ and size_. The
   // provided callback is called in virtual address order for each protection type. ZX_ERR_NEXT
   // and ZX_ERR_STOP can be used to control iteration, with any other status becoming the return
   // value of this method. The callback |func| is assumed to have a type signature of:
-  // |zx_status_t(vaddr_t region_base, size_t region_size, uint mmu_flags)|
+  // |zx_status_t(vaddr_t region_base, size_t region_size, arch_mmu_flags_t mmu_flags)|
   template <typename F>
   zx_status_t EnumerateProtectionRanges(vaddr_t mapping_base, size_t mapping_size, vaddr_t base,
                                         size_t size, F func) const {
@@ -928,20 +933,23 @@ class MappingProtectionRanges {
   void clear() { protect_region_list_rest_.clear(); }
 
   // Flags for the first protection region.
-  uint FirstRegionMmuFlags() const { return first_region_arch_mmu_flags_; }
+  arch_mmu_flags_t FirstRegionMmuFlags() const { return first_region_arch_mmu_flags_; }
 
   // Returns whether there is only a single protection region, that being the first region.
   bool IsSingleRegion() const { return protect_region_list_rest_.is_empty(); }
 
   // Sets the flags for the first region
-  void SetFirstRegionMmuFlags(uint32_t new_flags) { first_region_arch_mmu_flags_ = new_flags; }
+  void SetFirstRegionMmuFlags(arch_mmu_flags_t new_flags) {
+    first_region_arch_mmu_flags_ = new_flags;
+  }
 
  private:
   // If a mapping is protected so that parts of it are different types then we need to track this
   // information. The ProtectNode represents the additional metadata that we need to allocate to
   // track this, and these nodes get placed in the protect_region_list_rest_.
   struct ProtectNode : public fbl::WAVLTreeContainable<ktl::unique_ptr<ProtectNode>> {
-    ProtectNode(vaddr_t start, uint flags) : region_start(start), arch_mmu_flags(flags) {}
+    ProtectNode(vaddr_t start, arch_mmu_flags_t flags)
+        : region_start(start), arch_mmu_flags(flags) {}
     ProtectNode() = default;
     ~ProtectNode() = default;
 
@@ -951,7 +959,7 @@ class MappingProtectionRanges {
     // implicitly by either the next region in the tree, or the end of the mapping.
     vaddr_t region_start = 0;
     // The mapping flags (read/write/user/etc) for this region.
-    uint arch_mmu_flags = 0;
+    arch_mmu_flags_t arch_mmu_flags = 0;
   };
   using KeyTraits = fbl::DefaultKeyedObjectTraits<
       vaddr_t, typename fbl::internal::ContainerPtrTraits<ktl::unique_ptr<ProtectNode>>::ValueType>;
@@ -961,7 +969,7 @@ class MappingProtectionRanges {
   // Internal helper that returns the flags for the region before the given node. Templated to work
   // on both iterator and const_iterator.
   template <typename T>
-  uint FlagsForPreviousRegion(T node) const {
+  arch_mmu_flags_t FlagsForPreviousRegion(T node) const {
     node--;
     return node.IsValid() ? node->arch_mmu_flags : first_region_arch_mmu_flags_;
   }
@@ -971,7 +979,7 @@ class MappingProtectionRanges {
   // added.
   uint NodeAllocationsForRange(vaddr_t mapping_base, size_t mapping_size, vaddr_t base, size_t size,
                                RegionList::iterator removal_start, RegionList::iterator removal_end,
-                               uint new_mmu_flags) const;
+                               arch_mmu_flags_t new_mmu_flags) const;
 
   // To efficiently track the current protection/arch mmu flags of the mapping we want to avoid
   // allocating ProtectNode's as much as possible. For this the following scheme is used:
@@ -997,7 +1005,7 @@ class MappingProtectionRanges {
   // 0x1000-0x3000: READ (start comes from base_, the end comes from the start of the first node)
   // 0x3000-0x6000: READ_WRITE (start from node start, end comes from the end of the mapping as
   // there is no next node.
-  uint first_region_arch_mmu_flags_;
+  arch_mmu_flags_t first_region_arch_mmu_flags_;
   RegionList protect_region_list_rest_;
 };
 
@@ -1007,10 +1015,11 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // Accessors for VMO-mapping state
   // These can be read under either lock (both locks being held for writing), so we provide two
   // different accessors, one for each lock.
-  uint arch_mmu_flags_locked(vaddr_t offset) const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+  arch_mmu_flags_t arch_mmu_flags_locked(vaddr_t offset) const
+      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
   }
-  uint arch_mmu_flags_locked_object(vaddr_t offset) const
+  arch_mmu_flags_t arch_mmu_flags_locked_object(vaddr_t offset) const
       TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
   }
@@ -1057,7 +1066,8 @@ class VmMapping final : public VmAddressRegionOrMapping {
   }
 
   // Unlocked convenience wrapper of ProtectLocked for testing.
-  zx_status_t DebugProtect(vaddr_t base, size_t size, uint new_arch_mmu_flags) TA_EXCL(lock()) {
+  zx_status_t DebugProtect(vaddr_t base, size_t size, arch_mmu_flags_t new_arch_mmu_flags)
+      TA_EXCL(lock()) {
     Guard<CriticalMutex> guard{lock()};
     return ProtectLocked(base, size, new_arch_mmu_flags);
   }
@@ -1190,7 +1200,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // private constructors, use VmAddressRegion::Create...() instead
   VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
             uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-            uint arch_mmu_flags, Mergeable mergeable);
+            arch_mmu_flags_t arch_mmu_flags, Mergeable mergeable);
   VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
             uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
             MappingProtectionRanges&& ranges, Mergeable mergeable);
@@ -1220,11 +1230,12 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // caching mode in the flags.  This will persist the caching mode the
   // mapping was created with.  If a subrange of the mapping is specified, the
   // mapping may be split.
-  zx_status_t ProtectLocked(vaddr_t base, size_t size, uint new_arch_mmu_flags) TA_REQ(lock());
+  zx_status_t ProtectLocked(vaddr_t base, size_t size, arch_mmu_flags_t new_arch_mmu_flags)
+      TA_REQ(lock());
 
   // Helper for protect and unmap.
   static zx_status_t ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr_t base, size_t size,
-                                    uint new_arch_mmu_flags);
+                                    arch_mmu_flags_t new_arch_mmu_flags);
 
   AttributionCounts GetAttributedMemoryLocked(Guard<CriticalMutex>& guard) const TA_REQ(lock());
 

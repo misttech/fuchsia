@@ -188,7 +188,7 @@ LK_INIT_HOOK(arm64_mmu_enable_bbm, enable_bbm, LK_INIT_LEVEL_VM)
 // Convert user level mmu flags to flags that go in L1 descriptors.
 // Hypervisor flag modifies behavior to work for single translation regimes
 // such as the mapping of kernel pages with ArmAspaceType::kHypervisor in EL2.
-pte_t mmu_flags_to_s1_pte_attr(uint flags, bool hypervisor = false) {
+pte_t mmu_flags_to_s1_pte_attr(arch_mmu_flags_t flags, bool hypervisor = false) {
   pte_t attr = MMU_PTE_ATTR_AF;
 
   switch (flags & ARCH_MMU_FLAG_CACHE_MASK) {
@@ -251,8 +251,8 @@ pte_t mmu_flags_to_s1_pte_attr(uint flags, bool hypervisor = false) {
   return attr;
 }
 
-uint s1_pte_attr_to_mmu_flags(pte_t pte, bool hypervisor = false) {
-  uint mmu_flags = 0;
+arch_mmu_flags_t s1_pte_attr_to_mmu_flags(pte_t pte, bool hypervisor = false) {
+  arch_mmu_flags_t mmu_flags = 0;
   switch (pte & MMU_PTE_ATTR_ATTR_INDEX_MASK) {
     case MMU_PTE_ATTR_STRONGLY_ORDERED:
       mmu_flags |= ARCH_MMU_FLAG_UNCACHED;
@@ -314,7 +314,7 @@ uint s1_pte_attr_to_mmu_flags(pte_t pte, bool hypervisor = false) {
   return mmu_flags;
 }
 
-pte_t mmu_flags_to_s2_pte_attr(uint flags) {
+pte_t mmu_flags_to_s2_pte_attr(arch_mmu_flags_t flags) {
   pte_t attr = MMU_PTE_ATTR_AF;
 
   switch (flags & ARCH_MMU_FLAG_CACHE_MASK) {
@@ -346,8 +346,8 @@ pte_t mmu_flags_to_s2_pte_attr(uint flags) {
   return attr;
 }
 
-uint s2_pte_attr_to_mmu_flags(pte_t pte) {
-  uint mmu_flags = 0;
+arch_mmu_flags_t s2_pte_attr_to_mmu_flags(pte_t pte) {
+  arch_mmu_flags_t mmu_flags = 0;
 
   switch (pte & MMU_S2_PTE_ATTR_ATTR_INDEX_MASK) {
     case MMU_S2_PTE_ATTR_STRONGLY_ORDERED:
@@ -414,7 +414,7 @@ int first_used_page_table_entry(pte_t* page_table, uint page_size_shift) {
   return -1;
 }
 
-ArmAspaceType AspaceTypeFromFlags(uint mmu_flags) {
+ArmAspaceType AspaceTypeFromFlags(arch_mmu_flags_t mmu_flags) {
   // Kernel/Guest flags are mutually exclusive. Ensure at most 1 is set.
   DEBUG_ASSERT(((mmu_flags & ARCH_ASPACE_FLAG_KERNEL) != 0) +
                    ((mmu_flags & ARCH_ASPACE_FLAG_GUEST) != 0) <=
@@ -620,7 +620,7 @@ uint64_t ArmArchVmAspace::Tcr() const {
   return MMU_TCR_FLAGS_USER;
 }
 
-uint ArmArchVmAspace::MmuFlagsFromPte(pte_t pte) {
+arch_mmu_flags_t ArmArchVmAspace::MmuFlagsFromPte(pte_t pte) {
   switch (type_) {
     case ArmAspaceType::kUser:
     case ArmAspaceType::kKernel:
@@ -633,12 +633,13 @@ uint ArmArchVmAspace::MmuFlagsFromPte(pte_t pte) {
   __UNREACHABLE;
 }
 
-zx_status_t ArmArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
+zx_status_t ArmArchVmAspace::Query(vaddr_t vaddr, paddr_t* paddr, arch_mmu_flags_t* mmu_flags) {
   Guard<CriticalMutex> al{&lock_};
   return QueryLocked(vaddr, paddr, mmu_flags);
 }
 
-zx_status_t ArmArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr, uint* mmu_flags) {
+zx_status_t ArmArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr,
+                                         arch_mmu_flags_t* mmu_flags) {
   vaddr_t vaddr_rem;
 
   canary_.Assert();
@@ -1458,7 +1459,7 @@ zx_status_t ArmArchVmAspace::ProtectPages(vaddr_t vaddr, size_t size, pte_t attr
   return ret;
 }
 
-pte_t ArmArchVmAspace::MmuParamsFromFlags(uint mmu_flags) {
+pte_t ArmArchVmAspace::MmuParamsFromFlags(arch_mmu_flags_t mmu_flags) {
   pte_t attrs = 0;
   switch (type_) {
     case ArmAspaceType::kUser:
@@ -1480,7 +1481,7 @@ pte_t ArmArchVmAspace::MmuParamsFromFlags(uint mmu_flags) {
 }
 
 zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t count,
-                                           uint mmu_flags) {
+                                           arch_mmu_flags_t mmu_flags) {
   canary_.Assert();
   LTRACEF("vaddr %#" PRIxPTR " paddr %#" PRIxPTR " count %zu flags %#x\n", vaddr, paddr, count,
           mmu_flags);
@@ -1563,8 +1564,8 @@ zx_status_t ArmArchVmAspace::MapContiguous(vaddr_t vaddr, paddr_t paddr, size_t 
   return ZX_OK;
 }
 
-zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count, uint mmu_flags,
-                                 ExistingEntryAction existing_action) {
+zx_status_t ArmArchVmAspace::Map(vaddr_t vaddr, paddr_t* phys, size_t count,
+                                 arch_mmu_flags_t mmu_flags, ExistingEntryAction existing_action) {
   canary_.Assert();
   LTRACEF("vaddr %#" PRIxPTR " count %zu flags %#x\n", vaddr, count, mmu_flags);
 
@@ -1683,7 +1684,7 @@ zx_status_t ArmArchVmAspace::Unmap(vaddr_t vaddr, size_t count, ArchUnmapOptions
   return ret;
 }
 
-zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags,
+zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, arch_mmu_flags_t mmu_flags,
                                      ArchUnmapOptions enlarge) {
   canary_.Assert();
 
@@ -1724,7 +1725,7 @@ zx_status_t ArmArchVmAspace::Protect(vaddr_t vaddr, size_t count, uint mmu_flags
     size_t pages_synced = 0;
     for (size_t idx = 0; idx < count; idx++) {
       paddr_t paddr;
-      uint flags;
+      arch_mmu_flags_t flags;
       if (QueryLocked(vaddr + idx * kPageSize, &paddr, &flags) == ZX_OK &&
           (flags & ARCH_MMU_FLAG_PERM_EXECUTE)) {
         cache_cm.SyncAddr(reinterpret_cast<vaddr_t>(paddr_to_physmap(paddr)), kPageSize);
@@ -2416,7 +2417,8 @@ zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write) 
 ArmArchVmAspace::ArmArchVmAspace(vaddr_t base, size_t size, ArmAspaceType type, page_alloc_fn_t paf)
     : type_(type), test_page_alloc_func_(paf), base_(base), size_(size) {}
 
-ArmArchVmAspace::ArmArchVmAspace(vaddr_t base, size_t size, uint mmu_flags, page_alloc_fn_t paf)
+ArmArchVmAspace::ArmArchVmAspace(vaddr_t base, size_t size, arch_mmu_flags_t mmu_flags,
+                                 page_alloc_fn_t paf)
     : ArmArchVmAspace(base, size, AspaceTypeFromFlags(mmu_flags), paf) {}
 
 ArmArchVmAspace::~ArmArchVmAspace() {
@@ -2426,7 +2428,7 @@ ArmArchVmAspace::~ArmArchVmAspace() {
 }
 
 vaddr_t ArmArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size_t size,
-                                  uint mmu_flags) {
+                                  arch_mmu_flags_t mmu_flags) {
   canary_.Assert();
   return RoundUpPageSize(base);
 }

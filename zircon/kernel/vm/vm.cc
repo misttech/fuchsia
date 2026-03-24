@@ -76,8 +76,8 @@ constexpr uint32_t ToVmarFlags(PhysMapping::Permissions perms) {
   return flags;
 }
 
-constexpr uint ToArchMmuFlags(PhysMapping::Permissions perms, PhysMapping::Type type) {
-  uint flags = 0;
+constexpr arch_mmu_flags_t ToArchMmuFlags(PhysMapping::Permissions perms, PhysMapping::Type type) {
+  arch_mmu_flags_t flags = 0;
   switch (type) {
     case PhysMapping::Type::kNormal:
       flags |= ARCH_MMU_FLAG_CACHED;
@@ -99,8 +99,9 @@ constexpr uint ToArchMmuFlags(PhysMapping::Permissions perms, PhysMapping::Type 
 
 void RegisterMappings(ktl::span<const PhysMapping> mappings, fbl::RefPtr<VmAddressRegion> vmar) {
   for (const PhysMapping& mapping : mappings) {
-    zx_status_t status = vmar->ReserveSpace(mapping.name.data(), mapping.vaddr, mapping.size,
-                                            ToArchMmuFlags(mapping.perms, mapping.type));
+    zx_status_t status = vmar->ReserveSpace(
+        mapping.name.data(), mapping.vaddr, mapping.size,
+        static_cast<arch_mmu_flags_t>(ToArchMmuFlags(mapping.perms, mapping.type)));
     ASSERT(status == ZX_OK);
 
 #if __has_feature(address_sanitizer)
@@ -264,11 +265,11 @@ static int cmd_vm(int argc, const cmd_args* argv, uint32_t) {
     }
 
     paddr_t pa;
-    uint flags;
-    zx_status_t err = VmAspace::kernel_aspace()->arch_aspace().Query(argv[2].u, &pa, &flags);
+    arch_mmu_flags_t mmu_flags;
+    zx_status_t err = VmAspace::kernel_aspace()->arch_aspace().Query(argv[2].u, &pa, &mmu_flags);
     printf("arch_mmu_query returns %d\n", err);
     if (err >= 0) {
-      printf("\tpa %#" PRIxPTR ", flags %#x\n", pa, flags);
+      printf("\tpa %#" PRIxPTR ", flags %#x\n", pa, mmu_flags);
     }
   } else if (!strcmp(argv[1].str, "map")) {
     if (argc < 6) {
@@ -281,7 +282,7 @@ static int cmd_vm(int argc, const cmd_args* argv, uint32_t) {
     }
 
     auto err = VmAspace::kernel_aspace()->arch_aspace().MapContiguous(
-        argv[3].u, argv[2].u, (uint)argv[4].u, (uint)argv[5].u);
+        argv[3].u, argv[2].u, (uint)argv[4].u, static_cast<arch_mmu_flags_t>(argv[5].u));
     printf("arch_mmu_map returns %d\n", err);
   } else if (!strcmp(argv[1].str, "unmap")) {
     if (argc < 4) {

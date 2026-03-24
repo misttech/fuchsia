@@ -21,7 +21,7 @@
 #include <vm/vm_object.h>
 #include <vm/vm_object_paged.h>
 
-static constexpr uint kMmuFlags =
+static constexpr arch_mmu_flags_t kMmuFlags =
     ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE;
 
 static bool hypervisor_supported() {
@@ -50,7 +50,7 @@ static zx_status_t commit_vmo(fbl::RefPtr<VmObjectPaged> vmo) {
 }
 
 static zx_status_t create_mapping(fbl::RefPtr<VmAddressRegion> vmar, fbl::RefPtr<VmObjectPaged> vmo,
-                                  zx_gpaddr_t addr, uint mmu_flags = kMmuFlags) {
+                                  zx_gpaddr_t addr, arch_mmu_flags_t mmu_flags = kMmuFlags) {
   return vmar
       ->CreateVmMapping(addr, vmo->size(), 0 /* align_pow2 */, VMAR_FLAG_SPECIFIC, vmo,
                         0 /* vmo_offset */, mmu_flags, "vmo")
@@ -424,7 +424,7 @@ static bool guest_physical_aspace_query() {
 
   // This test is arch independent so be conservative with the permission and assume that read is
   // needed for any other permission.
-  constexpr uint kMmuFlagTests[] = {
+  constexpr arch_mmu_flags_t kMmuFlagTests[] = {
       ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE,
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_EXECUTE,
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE};
@@ -436,7 +436,7 @@ static bool guest_physical_aspace_query() {
   auto gpa = create_gpas();
   ASSERT_OK(gpa.status_value());
 
-  for (const uint flags : kMmuFlagTests) {
+  for (const arch_mmu_flags_t flags : kMmuFlagTests) {
     auto mapping_result =
         gpa->RootVmar()->CreateVmMapping(0, kPageSize, 0 /* align_pow2 */, VMAR_FLAG_SPECIFIC, vmo,
                                          0 /* vmo_offset */, flags, "vmo");
@@ -444,7 +444,7 @@ static bool guest_physical_aspace_query() {
     status = mapping_result->mapping->MapRange(0, kPageSize, true, false);
     EXPECT_OK(status);
 
-    uint query_flags = 0;
+    arch_mmu_flags_t query_flags = 0;
     status = gpa->arch_aspace().Query(0, nullptr, &query_flags);
     EXPECT_OK(status);
     EXPECT_EQ(flags, query_flags);
