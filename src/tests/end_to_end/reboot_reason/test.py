@@ -2,15 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-
-import reboot_reason_suite
+import reboot_reason_test_cases
+from fuchsia_base_test import fuchsia_base_test
 from mobly import test_runner
 
 
-class RebootReasonTest(reboot_reason_suite.RebootReasonTestSuite):
-    def setup_class(self) -> None:
-        super().setup_class()
-        self.dut = self.fuchsia_devices[0]
+class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
+    TEST_CASES = [reboot_reason_test_cases.RebootReasonTestCases]
 
 
 if __name__ == "__main__":

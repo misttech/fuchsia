@@ -4,25 +4,28 @@
 
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
+import fuchsia_base_test
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class RebootReasonTestSuite(fuchsia_base_test.FuchsiaBaseTest):
-    """Suite of tests for reboot reasons. Subclasses must implement
-    setup_class and set self.dut to a FuchsiaDevice instance."""
+class RebootReasonTestCases(fuchsia_base_test.FuchsiaTestCases):
+    """Test cases for reboot reasons."""
 
-    dut: fuchsia_device.FuchsiaDevice
+    dut: FuchsiaDevice
+
+    def setup_test(self) -> None:
+        super().setup_test()
+        self.dut = self.mobly_test.fuchsia_devices[0]
 
     def test_reboot_reason(self) -> None:
-        boot_id_before_reboot_file = self.output_file_path(
+        boot_id_before_reboot_file = self.mobly_test.output_file_path(
             "boot_id_before_reboot.txt"
         )
-        previous_boot_id_after_reboot_file = self.output_file_path(
+        previous_boot_id_after_reboot_file = self.mobly_test.output_file_path(
             "previous_boot_id_after_reboot.txt"
         )
 
@@ -57,16 +60,20 @@ class RebootReasonTestSuite(fuchsia_base_test.FuchsiaBaseTest):
         # instances of true bugs where something goes wrong during shutdown. To help with
         # https://fxbug.dev/432864757, we want a different message on failure depending on what
         # the reason is to better inform whoemever is looking at the test failure.
-        if self.dut.last_reboot_reason == "ROOT_JOB_TERMINATION":
+        last_reboot_reason = self.dut.last_reboot_reason
+        if last_reboot_reason == "ROOT_JOB_TERMINATION":
             asserts.assert_equal(
-                self.dut.last_reboot_reason,
+                last_reboot_reason,
                 "DEVELOPER_REQUEST",
                 msg=(
                     "There was likely a driver hang during userspace shutdown. See"
                     " serial_log.txt and https://fxbug.dev/432968401"
                 ),
             )
-        elif self.dut.last_reboot_reason in ["COLD", "BRIEF_POWER_LOSS"]:
+        elif last_reboot_reason in [
+            "COLD",
+            "BRIEF_POWER_LOSS",
+        ]:
             with open(boot_id_before_reboot_file, "r") as bid_file:
                 with open(previous_boot_id_after_reboot_file, "r") as pbid_file:
                     boot_id_before_reboot = bid_file.read()
@@ -77,7 +84,7 @@ class RebootReasonTestSuite(fuchsia_base_test.FuchsiaBaseTest):
                         msg="There was at least one extra spurious reboot. See serial_log.txt and https://fxbug.dev/479305824",
                     )
             asserts.assert_equal(
-                self.dut.last_reboot_reason,
+                last_reboot_reason,
                 "DEVELOPER_REQUEST",
                 msg=(
                     "There was likely a hardware reboot due to a driver action during"
@@ -86,6 +93,4 @@ class RebootReasonTestSuite(fuchsia_base_test.FuchsiaBaseTest):
                 ),
             )
         else:
-            asserts.assert_equal(
-                self.dut.last_reboot_reason, "DEVELOPER_REQUEST"
-            )
+            asserts.assert_equal(last_reboot_reason, "DEVELOPER_REQUEST")
