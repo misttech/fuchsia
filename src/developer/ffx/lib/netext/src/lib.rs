@@ -12,6 +12,7 @@ use regex::Regex;
 use std::cell::RefCell;
 use std::ffi::CString;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
@@ -271,7 +272,7 @@ impl IsLocalAddr for Ipv6Addr {
 /// This can result in unstable connection recovery, as things that may deactivate a CDC Ethernet
 /// connection (rebooting, adb, etc), will cause the scope ID to increment without changing the
 /// string scope ID.
-#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ScopedSocketAddr {
     addr: SocketAddr,
     scope_id: Option<String>,
@@ -323,6 +324,22 @@ impl ScopedSocketAddr {
             SocketAddr::V6(inner) => inner.scope_id(),
             _ => 0,
         }
+    }
+
+    pub fn ip_string(&self) -> String {
+        if self.addr.is_ipv6() && self.addr.ip().is_link_local_addr() {
+            let sid = self.scope_id.clone().map_or_else(|| "".to_string(), |s| format!("%{}", s));
+            format!("{}{}", self.addr.ip(), sid)
+        } else {
+            format!("{}", self.addr.ip())
+        }
+    }
+}
+
+impl Hash for ScopedSocketAddr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
+        self.scope_id_integer().hash(state);
     }
 }
 
