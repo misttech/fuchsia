@@ -372,7 +372,7 @@ where
                 body,
                 protocol,
                 dest_addr,
-                LoopbackTxQueueMeta::default(),
+                tx_meta,
             ),
             None => send_ethernet_frame(core_ctx, bindings_ctx, &device_id, body, tx_meta),
         }
