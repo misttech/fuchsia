@@ -10,9 +10,7 @@ use super::{
 
 use crate::task::CurrentTask;
 use crate::vfs::fs_args::MountParams;
-use crate::vfs::{
-    FileSystem, FileSystemHandle, FileSystemOps, FsStr, Mount, NamespaceNode, OutputBuffer,
-};
+use crate::vfs::{FileSystem, FileSystemHandle, FileSystemOps, FsStr, Mount, NamespaceNode};
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFilePermission, FileSystemMountOptions, FileSystemPermission, ForClass, FsNodeClass,
@@ -24,6 +22,7 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::unmount_flags::UnmountFlags;
+use std::fmt::Formatter;
 
 /// Returns the [`SecurityId`] of `fs`.
 /// If the filesystem is not labeled, returns EPERM.
@@ -218,13 +217,44 @@ pub(in crate::security) fn sb_remount(
     Ok(())
 }
 
+/// Internal type that allows the `FileSystemMountOptions` to be `Display`ed as comma-separated
+/// options suitable for inclusion in "/proc/mounts" or "/proc/self/mountinfo".
+///
+/// Because this is a `Display` implementation and only ever used to append to a non-empty list of
+/// stringified mount options, the implementation produces UTF-8 output and includes a leading
+/// comma, e.g: ",context=foo,root_context=bar,seclabel"
+struct DisplayFileSystemMountOptions<'a>(&'a FileSystemState);
+
+impl<'a> std::fmt::Display for DisplayFileSystemMountOptions<'a> {
+    fn fmt(&self, buf: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let mut write_option = |name, option: Option<&Vec<u8>>| -> Result<(), std::fmt::Error> {
+            let Some(value) = option else {
+                return Ok(());
+            };
+            write!(buf, ",{name}={}", FsStr::new(value))
+        };
+
+        // Mounter-supplied options are serializable without SELinux being enabled or configured.
+        let options = &self.0.mount_options;
+        write_option("context", options.context.as_ref())?;
+        write_option("fscontext", options.fs_context.as_ref())?;
+        write_option("defcontext", options.def_context.as_ref())?;
+        write_option("rootcontext", options.root_context.as_ref())?;
+
+        // `supports_relabel()` defaults to false if SELinux is not enabled.
+        if self.0.supports_relabel() {
+            write!(buf, ",seclabel")?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Writes the LSM mount options of `mount` to `buf`.
-pub(in crate::security) fn sb_show_options(
-    security_server: &SecurityServer,
-    buf: &mut impl OutputBuffer,
-    mount: &Mount,
-) -> Result<(), Errno> {
-    mount.security_state().state.write_mount_options(security_server, buf)
+pub(in crate::security) fn sb_show_options<'a>(
+    fs: &'a FileSystem,
+) -> Result<impl std::fmt::Display + 'a, Errno> {
+    Ok(DisplayFileSystemMountOptions(&fs.security_state.state))
 }
 
 /// Checks if `current_task` has the permission to get information on `fs`.

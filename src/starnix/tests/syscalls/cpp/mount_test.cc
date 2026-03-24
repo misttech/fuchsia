@@ -33,31 +33,6 @@ namespace {
 using ::testing::IsSupersetOf;
 using ::testing::UnorderedElementsAreArray;
 
-// Reads and splits the "/proc/self/mountinfo" file.
-void ReadMountInfo(std::vector<std::vector<std::string>> *out_data) {
-  std::string mountinfo;
-  EXPECT_TRUE(files::ReadFileToString("/proc/self/mountinfo", &mountinfo));
-  auto lines = SplitString(mountinfo, "\n", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
-  for (auto &line : lines) {
-    auto parts = SplitStringCopy(line, " ", fxl::kTrimWhitespace, fxl::kSplitWantAll);
-    ASSERT_GE(parts.size(), 10U) << line;
-    out_data->push_back(parts);
-  }
-}
-
-// Reads "/proc/self/mountinfo" and returns the line for mount at `path`.
-void ReadMountInfoLine(const std::string &path, std::vector<std::string> *out_line) {
-  std::vector<std::vector<std::string>> data;
-  ASSERT_NO_FATAL_FAILURE(ReadMountInfo(&data));
-  for (auto &line : data) {
-    if (line[4] == path) {
-      *out_line = line;
-      return;
-    }
-  }
-  out_line->clear();
-}
-
 static bool skip_mount_tests = false;
 
 class MountTest : public ::testing::Test {
@@ -289,16 +264,15 @@ TEST_F(MountTest, ProcMountInfoRoot) {
   ASSERT_SUCCESS(MakeDir("b"));
   ASSERT_SUCCESS(Mount("a/foo", "b", MS_BIND));
 
-  std::vector<std::string> line;
-  ASSERT_NO_FATAL_FAILURE(ReadMountInfoLine(TestPath("b"), &line));
-  ASSERT_FALSE(line.empty());
-  EXPECT_EQ(line[3], "/a/foo");
+  auto info = test_helper::ReadMountInfoLine(TestPath("b"));
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->root, "/a/foo");
 
   ASSERT_THAT(rmdir(TestPath("a/foo").c_str()), SyscallSucceeds());
 
-  ASSERT_NO_FATAL_FAILURE(ReadMountInfoLine(TestPath("b"), &line));
-  ASSERT_FALSE(line.empty());
-  EXPECT_EQ(line[3], "/a/foo//deleted");
+  info = test_helper::ReadMountInfoLine(TestPath("b"));
+  ASSERT_TRUE(info.has_value());
+  EXPECT_EQ(info->root, "/a/foo//deleted");
 }
 
 TEST_F(MountTest, Ext4ReadOnlySmokeTest) {

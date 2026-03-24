@@ -450,8 +450,22 @@ impl Mount {
         }
     }
 
+    /// Returns the effective flags for the `Mount`, calculated as the union of the mount flags
+    /// associated with the `FileSystem`, and with the `Mount` itself.
     fn flags(&self) -> MountFlags {
+        // TODO: https://fxbug.dev/322875215 - `FileSystem` flags should be included here, once
+        // updating superblock mount flags via `MS_REMOUNT` is implemented.
+        self.mount_flags()
+    }
+
+    /// Returns the mount flags stored unique to this `Mount`.
+    fn mount_flags(&self) -> MountFlags {
         self.flags.load(Ordering::Relaxed)
+    }
+
+    /// Returns the mount flags for the `FileSystem` of this `Mount`.
+    fn fs_flags(&self) -> MountFlags {
+        self.fs.options.flags
     }
 
     pub fn update_flags(self: &MountHandle, mut flags: MountFlags) {
@@ -729,12 +743,6 @@ impl CurrentTask {
     }
 }
 
-// Writes to `sink` the mount flags and LSM mount options for the given `mount`.
-fn write_mount_info(task: &Task, sink: &mut DynamicFileBuf, mount: &Mount) -> Result<(), Errno> {
-    write!(sink, "{}", mount.flags())?;
-    security::sb_show_options(&task.kernel(), sink, &mount)
-}
-
 struct ProcMountsFileSource(WeakRef<Task>);
 
 impl DynamicFileSource for ProcMountsFileSource {
@@ -758,12 +766,15 @@ impl DynamicFileSource for ProcMountsFileSource {
             }
             write!(
                 sink,
-                "{} {} {} ",
+                "{} {} {} {}{}",
                 mount.fs.options.source_for_display(),
                 mountpoint.path(&task_fs),
                 mount.fs.name(),
+                // Report the union of the FileSystem and Mount flags, as well as any FileSystem-
+                // or LSM-specific options.
+                mount.flags(),
+                security::sb_show_options(&task.kernel(), &mount.fs)?,
             )?;
-            write_mount_info(&task, sink, mount)?;
             writeln!(sink, " 0 0")?;
             Ok(())
         })?;
@@ -857,14 +868,14 @@ impl DynamicFileSource for ProcMountinfoFile {
             let parent = mountpoint.mount.as_ref().unwrap();
             write!(
                 sink,
-                "{} {} {} {} {} ",
+                "{} {} {} {} {} {}",
                 mount.id,
                 parent.id,
                 mount.root.node.fs().dev_id,
                 path_from_fs_root(&mount.root),
                 mountpoint.path(&task_fs),
+                mount.mount_flags(),
             )?;
-            write_mount_info(&task, sink, mount)?;
             if let Some(peer_group) = mount.read().peer_group() {
                 write!(sink, " shared:{}", peer_group.id)?;
             }
@@ -873,10 +884,12 @@ impl DynamicFileSource for ProcMountinfoFile {
             }
             writeln!(
                 sink,
-                " - {} {} {}",
+                " - {} {} {}{}",
                 mount.fs.name(),
                 mount.fs.options.source_for_display(),
-                mount.fs.options.flags,
+                mount.fs_flags(),
+                // LSM options are associated with the FileSystem rather than the Mount.
+                security::sb_show_options(&task.kernel(), &mount.fs)?
             )?;
             Ok(())
         })?;

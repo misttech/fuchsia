@@ -23,8 +23,7 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{
     DirEntryHandle, DowncastedFile, FileHandle, FileObject, FileSystem, FileSystemHandle,
-    FileSystemOps, FsNode, FsStr, FsString, Mount, NamespaceNode, OutputBuffer, ValueOrSize,
-    XattrOp,
+    FileSystemOps, FsNode, FsStr, FsString, Mount, NamespaceNode, ValueOrSize, XattrOp,
 };
 use ebpf::MapFlags;
 use linux_uapi::{
@@ -1681,18 +1680,14 @@ pub fn sb_remount(
     })
 }
 
-/// Writes the LSM mount options of `mount` into `buf`.
+/// Returns a `Display` implementation that Writes the LSM mount options of `fs` into `buf`.
 /// Corresponds to the `sb_show_options` LSM hook.
-pub fn sb_show_options(
-    kernel: &Kernel,
-    buf: &mut impl OutputBuffer,
-    mount: &Mount,
-) -> Result<(), Errno> {
+pub fn sb_show_options<'a>(
+    _kernel: &Kernel,
+    fs: &'a FileSystem,
+) -> Result<impl std::fmt::Display + 'a, Errno> {
     track_hook_duration!("security.hooks.sb_show_options");
-    if let Some(state) = &kernel.security_state.state {
-        selinux_hooks::superblock::sb_show_options(&state.server, buf, mount)?;
-    }
-    Ok(())
+    selinux_hooks::superblock::sb_show_options(fs)
 }
 
 /// Checks if `current_task` has the permission to get the filesystem statistics of `fs`.

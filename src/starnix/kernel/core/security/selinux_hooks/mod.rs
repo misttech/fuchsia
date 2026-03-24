@@ -20,9 +20,7 @@ pub(super) mod testing;
 
 use super::PermissionFlags;
 use crate::task::{CurrentTask, TaskPersistentInfo};
-use crate::vfs::{
-    DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
-};
+use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode};
 use audit::{Auditable, audit_decision, audit_todo_decision};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
@@ -622,57 +620,6 @@ impl FileSystemState {
             | FileSystemLabelingScheme::GenFsCon { .. } => false,
             FileSystemLabelingScheme::FsUse { fs_use_type, .. } => fs_use_type == FsUseType::Xattr,
         }
-    }
-
-    /// Writes the Security mount options for the `FileSystemState` into `buf`.
-    /// This is used where the mount options need to be stringified to expose to userspace, as
-    /// is the case for `/proc/mounts`
-    ///
-    /// This function always writes a leading comma because it is only ever called to append to a
-    /// non-empty list of comma-separated values.
-    ///
-    /// Example output:
-    ///     ",context=foo,root_context=bar"
-    fn write_mount_options(
-        &self,
-        security_server: &SecurityServer,
-        buf: &mut impl OutputBuffer,
-    ) -> Result<(), Errno> {
-        let Some(label) = self.label() else {
-            return Self::write_mount_options_to_buf(buf, &self.mount_options);
-        };
-
-        let to_context = |sid| security_server.sid_to_security_context(sid);
-        let mount_options = FileSystemMountOptions {
-            context: label.mount_sids.context.and_then(to_context),
-            fs_context: label.mount_sids.fs_context.and_then(to_context),
-            def_context: label.mount_sids.def_context.and_then(to_context),
-            root_context: label.mount_sids.root_context.and_then(to_context),
-        };
-
-        if self.supports_relabel() {
-            buf.write_all(b",seclabel").map(|_| ())?;
-        }
-
-        Self::write_mount_options_to_buf(buf, &mount_options)
-    }
-
-    /// Writes the supplied `mount_options` to the `OutputBuffer`.
-    fn write_mount_options_to_buf(
-        buf: &mut impl OutputBuffer,
-        mount_options: &FileSystemMountOptions,
-    ) -> Result<(), Errno> {
-        let mut write_option = |prefix: &[u8], option: &Option<Vec<u8>>| -> Result<(), Errno> {
-            let Some(value) = option else {
-                return Ok(());
-            };
-            buf.write_all(prefix).map(|_| ())?;
-            buf.write_all(value).map(|_| ())
-        };
-        write_option(b",context=", &mount_options.context)?;
-        write_option(b",fscontext=", &mount_options.fs_context)?;
-        write_option(b",defcontext=", &mount_options.def_context)?;
-        write_option(b",rootcontext=", &mount_options.root_context)
     }
 }
 

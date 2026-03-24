@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 
+#include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
@@ -692,6 +693,67 @@ Rendezvous MakeRendezvous(ScopedPipe pipe) {
       .poker = Poker(std::move(pipe.WriteSide())),
       .holder = Holder(std::move(pipe.ReadSide())),
   };
+}
+
+fit::result<int, std::vector<MountInfo>> ReadMountInfo() {
+  std::string content;
+  if (!files::ReadFileToString("/proc/self/mountinfo", &content)) {
+    return fit::error(errno);
+  }
+
+  std::vector<MountInfo> result;
+  std::vector<std::string_view> lines =
+      fxl::SplitString(content, "\n", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
+
+  for (auto line : lines) {
+    std::vector<std::string_view> parts =
+        fxl::SplitString(line, " ", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
+    if (parts.size() < 10) {
+      continue;
+    }
+
+    MountInfo info;
+    info.mount_id = std::string(parts[0]);
+    info.parent_id = std::string(parts[1]);
+    info.major_minor = std::string(parts[2]);
+    info.root = std::string(parts[3]);
+    info.mount_point = std::string(parts[4]);
+    info.mount_options = std::string(parts[5]);
+
+    size_t i = 6;
+    while (i < parts.size() && parts[i] != "-") {
+      info.optional_fields.push_back(std::string(parts[i]));
+      i++;
+    }
+
+    if (i < parts.size() && parts[i] == "-") {
+      i++;  // Skip separator
+    }
+
+    if (i + 2 < parts.size()) {
+      info.fs_type = std::string(parts[i]);
+      info.mount_source = std::string(parts[i + 1]);
+      info.super_options = std::string(parts[i + 2]);
+    }
+    result.push_back(std::move(info));
+  }
+
+  return fit::ok(result);
+}
+
+std::optional<MountInfo> ReadMountInfoLine(const std::string &path) {
+  auto result = ReadMountInfo();
+  if (result.is_error()) {
+    return std::nullopt;
+  }
+
+  for (const auto &info : result.value()) {
+    if (info.mount_point == path) {
+      return std::make_optional(info);
+    }
+  }
+
+  return std::nullopt;
 }
 
 }  // namespace test_helper

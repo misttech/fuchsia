@@ -585,6 +585,28 @@ Rendezvous MakeRendezvous();
 // Constructs a `Poker`-`Holder` pair from an existing pipe.
 Rendezvous MakeRendezvous(ScopedPipe pipe);
 
+// Information about a mount from /proc/[pid]/mountinfo.
+// See proc(5) for more details.
+struct MountInfo {
+  std::string mount_id;
+  std::string parent_id;
+  std::string major_minor;
+  std::string root;
+  std::string mount_point;
+  std::string mount_options;
+  std::vector<std::string> optional_fields;
+  std::string fs_type;
+  std::string mount_source;
+  std::string super_options;
+};
+
+// Reads and parses "/proc/self/mountinfo".
+fit::result<int, std::vector<MountInfo>> ReadMountInfo();
+
+// Reads "/proc/self/mountinfo" and returns the info for the mount at `path`.
+// If no such mount is found, or the file cannot be read, the result will be an empty optional.
+std::optional<MountInfo> ReadMountInfoLine(const std::string &path);
+
 }  // namespace test_helper
 
 #endif  // SRC_STARNIX_TESTS_SYSCALLS_CPP_TEST_HELPER_H_
