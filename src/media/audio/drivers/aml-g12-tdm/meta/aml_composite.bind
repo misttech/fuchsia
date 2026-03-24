@@ -12,7 +12,7 @@ using fuchsia.hardware.clock;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
     fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,audio-controller";
   } else {
@@ -31,32 +31,32 @@ primary node "pdev" {
 }
 
 
-optional node "clock-gate" {
+optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_GATE;
 }
 
-optional node "clock-pll" {
+optional parent "clock-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
 }
 
-optional node "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
-optional node "clock-init" {
+optional parent "clock-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;
 }
 
-optional node "gpio-tdm-a-sclk" {
+optional parent "gpio-tdm-a-sclk" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_A_SCLK;
 }
 
-optional node "gpio-tdm-b-sclk" {
+optional parent "gpio-tdm-b-sclk" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_B_SCLK;
 }
 
-optional node "gpio-tdm-c-sclk" {
+optional parent "gpio-tdm-c-sclk" {
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TDM_C_SCLK;
 }

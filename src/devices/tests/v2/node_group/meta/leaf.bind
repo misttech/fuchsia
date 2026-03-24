@@ -6,17 +6,17 @@ composite leaf;
 
 using fuchsia.nodegroupbind.test;
 
-primary node "left" {
+primary parent "left" {
   fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY ==
     fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_LEFT;
 }
 
-node "right" {
+parent "right" {
   fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY ==
     fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_RIGHT;
 }
 
-optional node "opt" {
+optional parent "opt" {
   fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY ==
     fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_OPTIONAL;
 }

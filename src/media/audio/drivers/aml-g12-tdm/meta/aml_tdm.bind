@@ -13,7 +13,7 @@ using fuchsia.hardware.gpio;
 using fuchsia.platform;
 using fuchsia.amlogic.platform.meson;
 
-primary node "pdev" {
+primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.TDM;
@@ -27,40 +27,40 @@ primary node "pdev" {
   }
 }
 
-optional node "clock-gate" {
+optional parent "clock-gate" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_GATE;
 }
 
-optional node "clock-pll" {
+optional parent "clock-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.AUDIO_PLL;
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
-optional node "gpio-enable" {
+optional parent "gpio-enable" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.SOC_AUDIO_ENABLE;
 }
 
-optional node "codec-01" {
+optional parent "codec-01" {
   fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
   fuchsia.BIND_CODEC_INSTANCE == 1;
 }
 
-optional node "codec-02" {
+optional parent "codec-02" {
   fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
   fuchsia.BIND_CODEC_INSTANCE == 2;
 }
 
-optional node "codec-03" {
+optional parent "codec-03" {
   fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
   fuchsia.BIND_CODEC_INSTANCE == 3;
 }
 
-node "clock-init" {
+parent "clock-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.clock.BIND_INIT_STEP.CLOCK;
 }

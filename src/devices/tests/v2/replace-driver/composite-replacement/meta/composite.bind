@@ -6,17 +6,17 @@ composite H_replaced;
 
 using fuchsia.reloaddriverbind.test;
 
-node "D_replaced" {
+parent "D_replaced" {
   fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY ==
     fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY.COMPOSITE_PARENT_D;
 }
 
-primary node "E_replaced" {
+primary parent "E_replaced" {
   fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY ==
     fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY.COMPOSITE_PARENT_E;
 }
 
-node "F_replaced" {
+parent "F_replaced" {
   fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY ==
     fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY.COMPOSITE_PARENT_F;
 }

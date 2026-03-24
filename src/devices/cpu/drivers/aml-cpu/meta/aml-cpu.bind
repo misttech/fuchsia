@@ -14,7 +14,7 @@ using fuchsia.platform;
 using fuchsia.power;
 using fuchsia.devicetree;
 
-node "pdev" {
+parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,cpu" {
     true;
   } else {
@@ -34,46 +34,46 @@ node "pdev" {
   }
 }
 
-primary node "power-01" {
+primary parent "power-01" {
   fuchsia.hardware.power.Service == fuchsia.hardware.power.Service.ZirconTransport;
   fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_BIG;
 }
 
-node "clock-pll-div16-01" {
+parent "clock-pll-div16-01" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_PLL_DIV16;
 }
 
-node "clock-cpu-div16-01" {
+parent "clock-cpu-div16-01" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPU_DIV16;
 }
 
-node "clock-cpu-scaler-01" {
+parent "clock-cpu-scaler-01" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPU_BIG_CLK;
 }
 
-optional node "power-02" {
+optional parent "power-02" {
   fuchsia.hardware.power.Service == fuchsia.hardware.power.Service.ZirconTransport;
   fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_LITTLE;
 }
 
-optional node "clock-pll-div16-02" {
+optional parent "clock-pll-div16-02" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_PLLB_DIV16;
 }
 
-optional node "clock-cpu-div16-02" {
+optional parent "clock-cpu-div16-02" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPUB_DIV16;
 }
 
-optional node "clock-cpu-scaler-02" {
+optional parent "clock-cpu-scaler-02" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.SYS_CPU_LITTLE_CLK;
 }
 
-optional node "gpio-init" {
+optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

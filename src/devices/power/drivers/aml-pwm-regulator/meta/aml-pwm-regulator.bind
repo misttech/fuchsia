@@ -10,11 +10,11 @@ using fuchsia.hardware.pwm;
 using fuchsia.pwm;
 using fuchsia.devicetree;
 
-primary node "pwm" {
+primary parent "pwm" {
     fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
 }
 
-node "pdev" {
+parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,pwm-regulator" {
     true;
   } else {
@@ -25,6 +25,6 @@ node "pdev" {
   }
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

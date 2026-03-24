@@ -7,7 +7,7 @@ composite pc_ps2;
 using fuchsia.acpi;
 using fuchsia.hardware.interrupt;
 
-primary node "acpi" {
+primary parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
   if fuchsia.acpi.HID == "PNP0303" {
     true;
@@ -16,6 +16,6 @@ primary node "acpi" {
   }
 }
 
-node "irq000" {
+parent "irq000" {
   fuchsia.hardware.interrupt.Service == fuchsia.hardware.interrupt.Service.ZirconTransport;
 }

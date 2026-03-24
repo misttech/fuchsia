@@ -8,15 +8,15 @@ using fuchsia.gpio;
 using fuchsia.hardware.i2c;
 using fuchsia.hardware.gpio;
 
-primary node "gpio" {
+primary parent "gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.USB_POWER_DELIVERY;
 }
 
-node "i2c" {
+parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

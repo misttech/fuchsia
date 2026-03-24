@@ -10,34 +10,34 @@ using fuchsia.hardware.spi;
 using fuchsia.nordic.platform;
 using fuchsia.platform;
 
-primary node "spi" {
+primary parent "spi" {
   fuchsia.hardware.spi.Service == fuchsia.hardware.spi.Service.ZirconTransport;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.nordic.platform.BIND_PLATFORM_DEV_VID.NORDIC;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.nordic.platform.BIND_PLATFORM_DEV_DID.THREAD;
 }
 
-node "gpio-int" {
+parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_INTERRUPT;
 }
 
-node "gpio-reset" {
+parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_RESET;
 }
 
-node "gpio-bootloader" {
+parent "gpio-bootloader" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.OT_RADIO_BOOTLOADER;
 }
 
-node "pdev" {
+parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.OT_RADIO;
   fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID == 0;
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

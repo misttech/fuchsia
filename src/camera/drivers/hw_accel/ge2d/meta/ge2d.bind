@@ -9,15 +9,15 @@ using fuchsia.amlogic.platform;
 using fuchsia.camera;
 using fuchsia.platform;
 
-primary node "camera-sensor" {
+primary parent "camera-sensor" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.CAMERA_SENSOR_2;
 }
 
-node "canvas" {
+parent "canvas" {
   fuchsia.hardware.amlogiccanvas.Service == fuchsia.hardware.amlogiccanvas.Service.ZirconTransport;
 }
 
-node "pdev" {
+parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;
   fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_PID.T931;

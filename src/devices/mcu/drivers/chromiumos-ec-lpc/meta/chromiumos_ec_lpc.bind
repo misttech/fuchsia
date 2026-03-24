@@ -7,11 +7,11 @@ composite chromiumos_ec_lpc;
 using fuchsia.acpi;
 using fuchsia.hardware.interrupt;
 
-primary node "acpi" {
+primary parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
   fuchsia.acpi.HID == "GOOG0004";
 }
 
-node "irq000" {
+parent "irq000" {
   fuchsia.hardware.interrupt.Service == fuchsia.hardware.interrupt.Service.ZirconTransport;
 }

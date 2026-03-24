@@ -4,11 +4,11 @@
 
 composite node_group;
 
-primary node "a" {
+primary parent "a" {
   fuchsia.BIND_PROTOCOL == 100;
   fuchsia.BIND_USB_VID == 20;
 }
 
-node "b" {
+parent "b" {
   fuchsia.BIND_PROTOCOL == 20;
 }

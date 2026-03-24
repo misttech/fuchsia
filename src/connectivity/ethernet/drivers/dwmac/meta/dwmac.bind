@@ -9,11 +9,11 @@ using fuchsia.hardware.ethernet.board;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "eth-board" {
+primary parent "eth-board" {
   fuchsia.hardware.ethernet.board.Service == fuchsia.hardware.ethernet.board.Service.ZirconTransport;
 }
 
-node "pdev" {
+parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,meson-g12a-dwmac" {
     true;
   } else {

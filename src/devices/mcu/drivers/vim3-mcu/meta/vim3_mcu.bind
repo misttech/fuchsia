@@ -8,11 +8,11 @@ using fuchsia.khadas.platform;
 using fuchsia.hardware.i2c;
 using fuchsia.devicetree;
 
-primary node "i2c" {
+primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
 }
 
-node "mcu" {
+parent "mcu" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "khadas,vim3-mcu" {
     true;
   } else {

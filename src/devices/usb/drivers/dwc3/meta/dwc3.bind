@@ -14,7 +14,7 @@ using fuchsia.platform;
 using fuchsia.regulator;
 using fuchsia.reset;
 
-primary node "pdev" {
+primary parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   accept fuchsia.BIND_PLATFORM_DEV_DID {
     fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3,
@@ -29,56 +29,56 @@ primary node "pdev" {
   }
 }
 
-optional node "dwc3-phy" {
+optional parent "dwc3-phy" {
   fuchsia.hardware.usb.phy.Service == fuchsia.hardware.usb.phy.Service.ZirconTransport;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3;
 }
 
-optional node "interconnect-usb-ddr" {
+optional parent "interconnect-usb-ddr" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
   fuchsia.interconnect.PATH_NAME == "usb-ddr";
 }
 
-optional node "interconnect-usb-ipa" {
+optional parent "interconnect-usb-ipa" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
   fuchsia.interconnect.PATH_NAME == "usb-ipa";
 }
 
-optional node "interconnect-ddr-usb" {
+optional parent "interconnect-ddr-usb" {
   fuchsia.hardware.interconnect.PathService == fuchsia.hardware.interconnect.PathService.ZirconTransport;
   fuchsia.interconnect.PATH_NAME == "ddr-usb";
 }
 
-optional node "core-clk" {
+optional parent "core-clk" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.core-clk";
 }
 
-optional node "iface-clk" {
+optional parent "iface-clk" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.iface-clk";
 }
 
-optional node "bus-aggr-clk" {
+optional parent "bus-aggr-clk" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.bus-aggr-clk";
 }
 
-optional node "xo" {
+optional parent "xo" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.xo";
 }
 
-optional node "sleep-clk" {
+optional parent "sleep-clk" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.sleep-clk";
 }
 
-optional node "utmi-clk" {
+optional parent "utmi-clk" {
   fuchsia.clock.FUNCTION == "fuchsia.clock.FUNCTION.utmi-clk";
 }
 
-optional node "reset" {
+optional parent "reset" {
   fuchsia.reset.NAME == "core_reset";
 }
 
-optional node "regulator" {
+optional parent "regulator" {
   fuchsia.regulator.NAME == "dwc3-regulator";
 }

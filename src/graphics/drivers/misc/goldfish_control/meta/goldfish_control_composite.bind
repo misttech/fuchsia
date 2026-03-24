@@ -8,17 +8,17 @@ using fuchsia.google.platform;
 using fuchsia.hardware.goldfish;
 using fuchsia.hardware.goldfish.pipe;
 
-primary node "goldfish-pipe" {
+primary parent "goldfish-pipe" {
     fuchsia.hardware.goldfish.pipe.Service == fuchsia.hardware.goldfish.pipe.Service.ZirconTransport;
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.google.platform.BIND_PLATFORM_DEV_VID.GOOGLE;
     fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.google.platform.BIND_PLATFORM_DEV_PID.GOLDFISH;
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.google.platform.BIND_PLATFORM_DEV_DID.GOLDFISH_PIPE_CONTROL;
 }
 
-node "goldfish-address-space" {
+parent "goldfish-address-space" {
     fuchsia.hardware.goldfish.AddressSpaceService == fuchsia.hardware.goldfish.AddressSpaceService.ZirconTransport;
 }
 
-node "goldfish-sync" {
+parent "goldfish-sync" {
     fuchsia.hardware.goldfish.SyncService == fuchsia.hardware.goldfish.SyncService.ZirconTransport;
 }

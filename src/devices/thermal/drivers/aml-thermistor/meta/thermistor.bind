@@ -10,7 +10,7 @@ using fuchsia.amlogic.platform;
 using fuchsia.google.platform;
 using fuchsia.platform;
 
-primary node "pdev" {
+primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.google.platform.BIND_PLATFORM_DEV_VID.GOOGLE;
   accept fuchsia.BIND_PLATFORM_DEV_PID {
@@ -21,25 +21,25 @@ primary node "pdev" {
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.THERMISTOR;
 }
 
-optional node "adc-0" {
+optional parent "adc-0" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
   fuchsia.adc.FUNCTION == fuchsia.adc.FUNCTION.THERMISTOR;
   fuchsia.adc.CHANNEL == 0;
 }
 
-optional node "adc-1" {
+optional parent "adc-1" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
   fuchsia.adc.FUNCTION == fuchsia.adc.FUNCTION.THERMISTOR;
   fuchsia.adc.CHANNEL == 1;
 }
 
-optional node "adc-2" {
+optional parent "adc-2" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
   fuchsia.adc.FUNCTION == fuchsia.adc.FUNCTION.THERMISTOR;
   fuchsia.adc.CHANNEL == 2;
 }
 
-optional node "adc-3" {
+optional parent "adc-3" {
   fuchsia.hardware.adc.Service == fuchsia.hardware.adc.Service.ZirconTransport;
   fuchsia.adc.FUNCTION == fuchsia.adc.FUNCTION.THERMISTOR;
   fuchsia.adc.CHANNEL == 3;

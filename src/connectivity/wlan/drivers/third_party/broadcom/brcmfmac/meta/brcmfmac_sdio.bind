@@ -11,21 +11,21 @@ using fuchsia.hardware.sdio;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "sdio-function-1" {
+primary parent "sdio-function-1" {
   fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;
   fuchsia.BIND_SDIO_FUNCTION == 1;
 }
 
-node "sdio-function-2" {
+parent "sdio-function-2" {
   fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;
   fuchsia.BIND_SDIO_FUNCTION == 2;
 }
 
-node "gpio-oob" {
+parent "gpio-oob" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
 }
 
-node "pdev" {
+parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "broadcom,bcm4359" {
     true;
   } else {
@@ -40,6 +40,6 @@ node "pdev" {
   }
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

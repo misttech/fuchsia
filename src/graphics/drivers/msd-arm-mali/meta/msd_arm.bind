@@ -9,11 +9,11 @@ using fuchsia.platform;
 using fuchsia.hardware.gpu.mali;
 using fuchsia.devicetree;
 
-primary node "mali" {
+primary parent "mali" {
   fuchsia.hardware.gpu.mali.Service == fuchsia.hardware.gpu.mali.Service.DriverTransport;
 }
 
-node "pdev" {
+parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
     fuchsia.devicetree.FIRST_COMPATIBLE == "arm,mali-gpu";
   } else {

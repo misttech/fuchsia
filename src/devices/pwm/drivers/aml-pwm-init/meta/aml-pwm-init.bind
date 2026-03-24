@@ -8,15 +8,15 @@ using fuchsia.gpio;
 using fuchsia.hardware.gpio;
 using fuchsia.hardware.pwm;
 
-primary node "pwm" {
+primary parent "pwm" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
-node "gpio-bt" {
+parent "gpio-bt" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.BT_REG_ON;
 }

@@ -9,7 +9,7 @@ using fuchsia.hardware.gpio;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "fuchsia,gpio-buttons" {
     true;
   } else {
@@ -18,31 +18,31 @@ primary node "pdev" {
   }
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 
-optional node "mic-privacy" {
+optional parent "mic-privacy" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
     fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.MIC_MUTE;
 }
 
-optional node "volume-up" {
+optional parent "volume-up" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
     fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VOLUME_UP;
 }
 
-optional node "volume-down" {
+optional parent "volume-down" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
     fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VOLUME_DOWN;
 }
 
-optional node "volume-both" {
+optional parent "volume-both" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
     fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.VOLUME_BOTH;
 }
 
-optional node "power" {
+optional parent "power" {
     fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
     fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.POWER;
 }

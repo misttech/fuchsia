@@ -8,7 +8,7 @@ using fuchsia.acpi;
 using fuchsia.hardware.interrupt;
 using fuchsia.maxim.platform;
 
-primary node "acpi" {
+primary parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
   if fuchsia.BIND_ACPI_BUS_TYPE == fuchsia.acpi.BIND_ACPI_BUS_TYPE.I2C {
     fuchsia.acpi.HID == "MX98373";
@@ -18,6 +18,6 @@ primary node "acpi" {
   }
 }
 
-node "irq000" {
+parent "irq000" {
   fuchsia.hardware.interrupt.Service == fuchsia.hardware.interrupt.Service.ZirconTransport;
 }

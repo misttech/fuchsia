@@ -9,17 +9,17 @@ using fuchsia.hardware.gpio;
 using fuchsia.hardware.i2c;
 using fuchsia.goodix.platform;
 
-primary node "i2c" {
+primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
   fuchsia.BIND_I2C_ADDRESS == fuchsia.goodix.platform.BIND_I2C_ADDRESS.TOUCH;
 }
 
-node "gpio-int" {
+parent "gpio-int" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT;
 }
 
-node "gpio-reset" {
+parent "gpio-reset" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_RESET;
 }

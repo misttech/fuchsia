@@ -12,7 +12,7 @@ using fuchsia.hardware.tee;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC {
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE;
     accept fuchsia.devicetree.FIRST_COMPATIBLE {
@@ -32,20 +32,20 @@ primary node "pdev" {
   }
 }
 
-node "canvas" {
+parent "canvas" {
   fuchsia.hardware.amlogiccanvas.Service == fuchsia.hardware.amlogiccanvas.Service.ZirconTransport;
 }
 
-node "clock-dos-vdec" {
+parent "clock-dos-vdec" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.DOS_GCLK_VDEC;
 }
 
-node "clock-dos" {
+parent "clock-dos" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
   fuchsia.clock.FUNCTION == fuchsia.clock.FUNCTION.DOS;
 }
 
-optional node "tee" {
+optional parent "tee" {
   fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport;
 }

@@ -14,7 +14,7 @@ using fuchsia.pci.serial.usb;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport {
     // PCI binding support.
     fuchsia.BIND_PCI_CLASS == fuchsia.pci.BIND_PCI_CLASS.SERIAL_BUS_CONTROLLER;
@@ -47,13 +47,13 @@ primary node "pdev" {
   }
 }
 
-optional node "xhci-phy" {
+optional parent "xhci-phy" {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.XHCI;
   fuchsia.hardware.usb.phy.Service == fuchsia.hardware.usb.phy.Service.ZirconTransport;
 }
 
-optional node "acpi" {
+optional parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
 }

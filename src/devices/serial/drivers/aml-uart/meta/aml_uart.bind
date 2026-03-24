@@ -10,7 +10,7 @@ using fuchsia.platform;
 using fuchsia.pwm;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,bt-uart" {
     true;
   } else {
@@ -21,10 +21,10 @@ primary node "pdev" {
   }
 }
 
-node "pwm" {
+parent "pwm" {
   fuchsia.BIND_INIT_STEP == fuchsia.pwm.BIND_INIT_STEP.PWM;
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

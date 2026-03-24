@@ -12,7 +12,7 @@ using fuchsia.hardware.pwm;
 using fuchsia.regulator;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,power" {
     true;
   } else {
@@ -31,18 +31,18 @@ primary node "pdev" {
 }
 
 // For Astro
-optional node "pwm-primary" {
+optional parent "pwm-primary" {
   fuchsia.hardware.pwm.Service == fuchsia.hardware.pwm.Service.ZirconTransport;
   fuchsia.amlogic.platform.PWM_ID == fuchsia.amlogic.platform.PWM_ID.AO_D;
 }
 
 // For Vim3
-optional node "vreg-pwm-little" {
+optional parent "vreg-pwm-little" {
   fuchsia.hardware.vreg.Service == fuchsia.hardware.vreg.Service.ZirconTransport;
   fuchsia.regulator.NAME == fuchsia.amlogic.platform.a311d.NAME.PWM_VREG_LITTLE;
 }
 
-optional node "vreg-pwm-big" {
+optional parent "vreg-pwm-big" {
   fuchsia.hardware.vreg.Service == fuchsia.hardware.vreg.Service.ZirconTransport;
   fuchsia.regulator.NAME == fuchsia.amlogic.platform.a311d.NAME.PWM_VREG_BIG;
 }

@@ -11,20 +11,20 @@ using fuchsia.hardware.audio;
 using fuchsia.hardware.gpio;
 using fuchsia.hardware.power.sensor;
 
-primary node "codec" {
+primary parent "codec" {
   fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
 }
 
-node "power-sensor" {
+parent "power-sensor" {
   fuchsia.hardware.power.sensor.Service == fuchsia.hardware.power.sensor.Service.ZirconTransport;
   fuchsia.BIND_POWER_SENSOR_DOMAIN == fuchsia.amlogic.platform.s905d3.BIND_POWER_SENSOR_DOMAIN.AUDIO;
 }
 
-node "alert-gpio" {
+parent "alert-gpio" {
   fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.GPIO_ALERT_PWR_L;
 }
 
-node "gpio-init" {
+parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

@@ -7,10 +7,10 @@ composite ufs_pdev;
 using fuchsia.devicetree;
 using fuchsia.hardware.ufs.phy;
 
-primary node "pdev" {
+primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,ufshc";
 }
 
-node "phy" {
+parent "phy" {
   fuchsia.hardware.ufs.phy.Service == fuchsia.hardware.ufs.phy.Service.ZirconTransport;
 }

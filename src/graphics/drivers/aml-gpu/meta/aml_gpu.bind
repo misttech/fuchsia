@@ -10,7 +10,7 @@ using fuchsia.platform;
 using fuchsia.devicetree;
 using fuchsia.hardware.registers;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
     fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,gpu";
   } else {
@@ -27,10 +27,10 @@ primary node "pdev" {
   }
 }
 
-node "register-reset" {
+parent "register-reset" {
   fuchsia.hardware.registers.Service == fuchsia.hardware.registers.Service.ZirconTransport;
 }
 
-optional node "clock-gp0-pll" {
+optional parent "clock-gp0-pll" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
 }

@@ -6,10 +6,10 @@ composite spec_composite_2;
 
 using multibind.test;
 
-primary node "node_d" {
+primary parent "node_d" {
   multibind.test.NODE_ID == multibind.test.NODE_ID.D;
 }
 
-node "node_b" {
+parent "node_b" {
   multibind.test.NODE_ID == multibind.test.NODE_ID.B;
 }

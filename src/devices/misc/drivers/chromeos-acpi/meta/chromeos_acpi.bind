@@ -7,7 +7,7 @@ composite chromeos_acpi;
 using fuchsia.acpi;
 using fuchsia.hardware.interrupt;
 
-primary node "acpi" {
+primary parent "acpi" {
   fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
   accept fuchsia.acpi.HID {
     "GOOG0016",
@@ -15,6 +15,6 @@ primary node "acpi" {
   }
 }
 
-node "irq000" {
+parent "irq000" {
   fuchsia.hardware.interrupt.Service == fuchsia.hardware.interrupt.Service.ZirconTransport;
 }

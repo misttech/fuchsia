@@ -6,12 +6,12 @@ composite F;
 
 using fuchsia.reloaddriverbind.test;
 
-primary node "B" {
+primary parent "B" {
   fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY ==
     fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY.COMPOSITE_PARENT_B;
 }
 
-node "E" {
+parent "E" {
   fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY ==
     fuchsia.reloaddriverbind.test.TEST_BIND_PROPERTY.COMPOSITE_PARENT_E;
 }

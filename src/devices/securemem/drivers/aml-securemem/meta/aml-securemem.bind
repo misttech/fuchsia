@@ -8,12 +8,12 @@ using fuchsia.amlogic.platform;
 using fuchsia.hardware.tee;
 using fuchsia.platform;
 
-primary node "pdev" {
+primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.amlogic.platform.BIND_PLATFORM_DEV_DID.SECURE_MEM;
 }
 
-node "tee" {
+parent "tee" {
   fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport;
 }

@@ -8,14 +8,14 @@ using fuchsia.isp;
 using fuchsia.camera;
 using fuchsia.camera;
 
-primary node "isp" {
+primary parent "isp" {
   fuchsia.BIND_PROTOCOL == fuchsia.isp.BIND_PROTOCOL.DEVICE;
 }
 
-node "gdc" {
+parent "gdc" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.GDC;
 }
 
-node "ge2d" {
+parent "ge2d" {
   fuchsia.BIND_PROTOCOL == fuchsia.camera.BIND_PROTOCOL.GE2D;
 }
