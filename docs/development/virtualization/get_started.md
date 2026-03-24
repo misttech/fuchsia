@@ -13,12 +13,9 @@ The following hardware will have the best availability:
 
 *   Pixelbook Go m3
 *   Intel NUC7 (NUC7i5DNHE)
-
-The following hardware is also available, but is more prone to failure:
-
 *   x64 QEMU/Nested VMX
 
-Some virtualization features will work when using the Fuchsia emulator with
+Basic virtualization features will work when using the Fuchsia emulator with
 nested VMX enabled. Notably, Vulkan acceleration using virtmagma will not be
 available to any guests when running in the Fuchsia emulator.
 
@@ -28,16 +25,16 @@ While arbitrary Linux guests may run on Fuchsia, the following guest
 configurations are available out-the-box:
 
 *   Zircon Guest - A minimal Fuchsia system that boots to a Zircon virtcon.
-*   Debian Guest - A Debian bullseye guest.
+*   Debian Guest - A Debian bookworm guest.
 *   Termina Guest - A Linux guest that contains additional features for Vulkan
     and window manager integration, based on the
     [Termina VM][ref.termina]{:.external} from ChromeOS.
 
-Note: The Debian Guest package expects the Linux kernel binaries and userspace
-image to be in `//prebuilt/virtualization/packages/debian_guest`. You should
-create them before running fx build by following the instructions in
-[debian_guest/README.md][ref.debian_guest_readme]. Googlers: You don't need to
-do this, the prebuilt images are downloaded from CIPD by Jiri.
+Note: Non-Googlers will need to build Debian images themselves. The Debian Guest
+package expects the Linux kernel binaries and userspace image to be in
+`//prebuilt/virtualization/packages/debian_guest`. While these are provided for
+Googlers, external contributors should create them before running fx build by
+following the instructions in [debian_guest/README.md][ref.debian_guest_readme].
 
 ## Build Fuchsia with virtualization
 
