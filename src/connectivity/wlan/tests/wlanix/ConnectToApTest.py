@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import wlanix_testing.base_test as base_test
 from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
@@ -24,9 +25,8 @@ from antlion.controllers.ap_lib.hostapd_constants import (
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from fuchsia_controller_py import Channel
-from mobly import base_test, signals, test_runner
+from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true
-from wlanix_testing import base_test
 
 
 class ConnectToApTest(base_test.ConnectionBaseTestClass):

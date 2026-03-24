@@ -172,7 +172,7 @@ def run_mypy_on_binary_target(
             return ret
 
         # Copy mypy enabled library sources to the tmp directory.
-        package_python_binary.copy_library_sources(
+        package_python_binary.copy_library_sources_for_mypy(
             tmp_dir,
             [info for info in lib_infos if info["mypy_support"]],
             src_map,
@@ -220,8 +220,10 @@ def run_mypy_on_library_target(
     src_map: dict[str, str] = {}
 
     # Copy mypy enabled library sources to the tmp directory.
-    package_python_binary.copy_library_sources(
-        tmp_dir, [info for info in lib_infos if info["mypy_support"]], src_map
+    package_python_binary.copy_library_sources_for_mypy(
+        tmp_dir,
+        [info for info in lib_infos if info["mypy_support"]],
+        src_map,
     )
 
     # Write the depfile

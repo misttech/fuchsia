@@ -14,7 +14,8 @@ import types
 from importlib.resources import as_file, files
 from typing import Any, Iterable, Self
 
-from perf_publish import data, metrics_allowlist, summarize
+from perf_publish import data  # type: ignore[attr-defined]
+from perf_publish import metrics_allowlist, summarize
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

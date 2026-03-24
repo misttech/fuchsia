@@ -8,7 +8,6 @@ The test it verifies the features are availability, but does not verify the data
 """
 import json
 import re
-import unittest
 from pathlib import Path
 from typing import Any
 
@@ -316,9 +315,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             ["--exact-sizes"],
         ]
         for incompatible_args in INCOMPATIBLE_ARGS_LIST:
-            with unittest.TestCase.assertRaises(
-                self, ffx_errors.FfxCommandError
-            ):
+            with asserts.assert_raises(ffx_errors.FfxCommandError):
                 self.dut.ffx.run(
                     [
                         "profile",

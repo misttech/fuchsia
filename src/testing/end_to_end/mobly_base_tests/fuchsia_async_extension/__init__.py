@@ -8,7 +8,7 @@ import functools
 import inspect
 import typing
 from functools import wraps
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
+from typing import Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar
 
 from mobly import base_test
 
@@ -49,7 +49,75 @@ def make_sync_wrapper(
     return wrapper
 
 
-class _AsyncBaseTestClassMeta(base_test.BaseTestClass):
+if typing.TYPE_CHECKING:
+    from _typeshed import Incomplete
+    from mobly import base_test, records, runtime_test_info
+
+    # LINT.IfChange
+    class _MoblyStub(base_test.BaseTestClass):
+        TAG: str
+        tests: list[str]
+        root_output_path: str
+        log_path: str
+        test_bed_name: str
+        testbed_name: str
+        user_params: dict[str, Any]
+        results: records.TestResult
+        summary_writer: Incomplete
+        controller_configs: dict[str, Any]
+        current_test_info: Any
+
+        def __init__(self, configs: Any) -> None:
+            ...
+
+        def unpack_userparams(
+            self,
+            req_param_names: list[str] | None = ...,
+            opt_param_names: list[str] | None = ...,
+            **kwargs: Any,
+        ) -> None:
+            ...
+
+        def setup_generated_tests(self) -> None:
+            ...
+
+        def record_data(self, content: Any) -> None:
+            ...
+
+        def exec_one_test(
+            self,
+            test_name: str,
+            test_method: Callable[..., Any],
+            record: records.TestResultRecord | None = ...,
+        ) -> None:
+            ...
+
+        def get_existing_test_names(self) -> list[str]:
+            ...
+
+        def run(self, test_names: list[str] | None = ...) -> None:
+            ...
+
+        # Add generate_tests so super() works
+        def generate_tests(
+            self,
+            test_logic: Callable[..., Any],
+            name_func: Callable[..., str],
+            arg_sets: Sequence[Any],
+            uid_func: Callable[..., str] | None = ...,
+        ) -> None:
+            ...
+
+        # Use Any to avoid LSP violation when overriding with async def
+        register_controller: Any
+
+    # LINT.ThenChange(//src/testing/end_to_end/stubs/mobly/base_test.pyi)
+    _BaseTestClass = _MoblyStub
+else:
+    _BaseTestClass = base_test.BaseTestClass
+
+
+class _AsyncBaseTestClassMeta(_BaseTestClass):
     _MOBLY_INHERITED_METHOD_NAMES = [
         "pre_run",
         "setup_generated_tests",
@@ -121,7 +189,7 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
         self,
         test_logic: Callable[P, None | Coroutine[Any, Any, None]],
         name_func: Callable[P, str],
-        arg_sets: list[P.args],
+        arg_sets: Sequence[Any],
         uid_func: Callable[P, str] | None = None,
     ) -> None:
         if inspect.iscoroutinefunction(test_logic):

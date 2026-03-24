@@ -156,6 +156,7 @@ class WifiBaseTest(BaseTestClass):
                         self.user_params[Config.key_config_path.value],
                         self.country_code_file,
                     )
+                assert isinstance(self.country_code_file, str)
                 self.country_code = utils.load_config(self.country_code_file)[
                     "country"
                 ]

@@ -50,6 +50,7 @@ class PowerSwitchTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
                 asserts.abort_class(
                     f"'{PDU_CONFIG_KEY}' required for PDU mode."
                 )
+            assert pdu_config is not None
             try:
                 self._power_switch = power_switch_using_pdu.PowerSwitchUsingPdu(
                     pdu_host=pdu_config["host"],

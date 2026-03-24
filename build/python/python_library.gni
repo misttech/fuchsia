@@ -60,6 +60,17 @@ import("//build/python/python_validator.gni")
 #     Type: boolean
 #     Default: true
 #
+#   stubs_root (optional)
+#     Base path for paths specified in `stubs`. This argument is required when `stubs` is
+#     provided.
+#     Type: path
+#
+#   stubs(optional)
+#     Paths to .pyi stub files relative to `stubs_root`. When providing this argument, `stubs_root`
+#     must be provided too. The stub files provided will be copied to the Python library generated
+#     by this template with the same directory structure relative to `stubs_root`.
+#     Type: list(path)
+#
 #   assert_no_deps (optional)
 #     GN usual
 #
@@ -110,6 +121,15 @@ template("python_library") {
     _full_source_paths += [ _source_root + "/" + source ]
   }
 
+  _full_stub_paths = []
+  if (defined(invoker.stubs)) {
+    assert(defined(invoker.stubs_root),
+           "stubs_root must be provided with stubs")
+    foreach(stub, invoker.stubs) {
+      _full_stub_paths += [ invoker.stubs_root + "/" + stub ]
+    }
+  }
+
   _full_data_source_paths = []
   foreach(data_source, _data_sources) {
     _full_data_source_paths += [ rebase_path(data_source, root_build_dir) ]
@@ -147,7 +167,16 @@ template("python_library") {
           sources = invoker.sources
           data_package_name = _data_package_name
           data_sources = _full_data_source_paths
-          mypy_support = _enable_mypy
+
+          # Label a library as having mypy support if it includes stubs.
+          # When included as a dependency, the libraries stubs will be
+          # included in the type checking.
+          mypy_support = _enable_mypy || defined(invoker.stubs)
+          mypy_enable = _enable_mypy
+          if (defined(invoker.stubs)) {
+            stubs_root = rebase_path(invoker.stubs_root, root_build_dir)
+            stubs = invoker.stubs
+          }
         },
       ]
 
@@ -163,7 +192,7 @@ template("python_library") {
       # Collect library_info from any libraries that are needed.
       library_info_barrier = library_deps
     }
-    sources = _full_source_paths
+    sources = _full_source_paths + _full_stub_paths
   }
 
   # Generate library_info.json file with all the library dependencies info
@@ -191,9 +220,9 @@ template("python_library") {
 
     library_infos = ":${_labels.library_infos}"
 
-    # This source list includes only direct library sources, excluding
+    # This source list includes only direct library sources and stubs, excluding
     # any dependencies.
-    sources = _full_source_paths
+    sources = _full_source_paths + _full_stub_paths
 
     # Required for generated sources like C extension wrappers.
     deps = library_deps

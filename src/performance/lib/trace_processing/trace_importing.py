@@ -15,7 +15,8 @@ from collections import defaultdict
 from importlib.resources import as_file, files
 from typing import Any, Dict, List, NamedTuple, Optional, Self, TextIO, Tuple
 
-from trace_processing import data, trace_model, trace_time
+from trace_processing import data  # type: ignore[attr-defined]
+from trace_processing import trace_model, trace_time
 
 _LOGGER: logging.Logger = logging.getLogger("Performance")
 _JSONLINES_SUFFIX = ".systemTraceEvents.jsonlines"

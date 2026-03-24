@@ -22,7 +22,8 @@ from contextlib import contextmanager
 from importlib import resources
 from typing import Generator, Sequence
 
-from power import data, sampler
+from power import data  # type: ignore[attr-defined]
+from power import sampler
 from trace_processing import trace_model, trace_time
 
 SAMPLE_INTERVAL_NS = 200000

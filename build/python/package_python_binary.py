@@ -200,8 +200,22 @@ def copy_binary_sources(
     return 0
 
 
+def _copy_files(
+    files: list[str], src_root: str, dest_root: str, src_map: dict[str, str]
+) -> None:
+    """Helper to copy a list of files and maintain the source mapping."""
+    for f in files:
+        src = os.path.join(src_root, f)
+        dest = os.path.join(dest_root, f)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        src_map[dest] = src
+        shutil.copy2(src, dest)
+
+
 def copy_library_sources(
-    dest_dir: str, lib_infos: list[dict[str, object]], src_map: dict[str, str]
+    dest_dir: str,
+    lib_infos: list[dict[str, object]],
+    src_map: dict[str, str],
 ) -> None:
     """Copies the sources of all library dependencies of a binary target
         into the given destination directory.
@@ -212,20 +226,17 @@ def copy_library_sources(
         src_map: The mapping from the temp dir source file paths to the original
     """
     for lib_info in lib_infos:
-        src_lib_root = str(lib_info["source_root"])
         dest_lib_root = os.path.join(dest_dir, str(lib_info["library_name"]))
         os.makedirs(dest_lib_root, exist_ok=True)
 
-        # Sources are relative to library root.
-        for source in lib_info["sources"]:
-            src = os.path.join(src_lib_root, source)
-            dest = os.path.join(dest_lib_root, source)
-            # Make sub directories if necessary.
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            src_map[dest] = src
-            shutil.copy2(src, dest)
+        _copy_files(
+            lib_info["sources"],
+            str(lib_info["source_root"]),
+            dest_lib_root,
+            src_map,
+        )
 
-        if lib_info["data_sources"]:
+        if lib_info.get("data_sources"):
             # Data sources are copied from their original location to the
             # "data_package_name" directory relative to the library_root.
             dest_data_root = os.path.join(
@@ -240,6 +251,52 @@ def copy_library_sources(
                 dest = os.path.join(dest_data_root, os.path.basename(data_src))
                 src_map[dest] = src
                 shutil.copy2(src, dest)
+
+        if lib_info.get("stubs_root") and lib_info.get("stubs"):
+            _copy_files(
+                lib_info["stubs"],
+                str(lib_info["stubs_root"]),
+                dest_lib_root,
+                src_map,
+            )
+    return
+
+
+def copy_library_sources_for_mypy(
+    dest_dir: str,
+    lib_infos: list[dict[str, object]],
+    src_map: dict[str, str],
+) -> None:
+    """Copies library components needed for mypy type checking.
+
+    If a library has stubs associated with it but does not have mypy type checking,
+    then only copy the stubs. This ensures mypy will only type check the stubs
+    # when the library is included as a dependency.
+
+    Args:
+        dest_dir: The destination directory to copy the sources to.
+        lib_infos: The list of library dependencies to be copied.
+        src_map: The mapping from the temp dir source file paths to the original
+    """
+    for lib_info in lib_infos:
+        dest_lib_root = os.path.join(dest_dir, str(lib_info["library_name"]))
+        os.makedirs(dest_lib_root, exist_ok=True)
+
+        if lib_info.get("mypy_enable", True):
+            _copy_files(
+                lib_info["sources"],
+                str(lib_info["source_root"]),
+                dest_lib_root,
+                src_map,
+            )
+
+        if lib_info.get("stubs_root") and lib_info.get("stubs"):
+            _copy_files(
+                lib_info["stubs"],
+                str(lib_info["stubs_root"]),
+                dest_lib_root,
+                src_map,
+            )
     return
 
 

@@ -83,6 +83,21 @@ python_library("mobly_no_testonly") {
     "test_runner.py",
     "utils.py",
   ]
+  stubs_root = "//src/testing/end_to_end/stubs/mobly"
+  stubs = [
+    "__init__.pyi",
+    "asserts.pyi",
+    "base_test.pyi",
+    "config_parser.pyi",
+    "expects.pyi",
+    "keys.pyi",
+    "logger.pyi",
+    "records.pyi",
+    "runtime_test_info.pyi",
+    "signals.pyi",
+    "test_runner.pyi",
+    "utils.pyi",
+  ]
   library_deps = [
     "//third_party/python_portpicker:portpicker",
     "//third_party/pyyaml:yaml",
