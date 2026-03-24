@@ -5,8 +5,9 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_H_
 #define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.virtualbustest/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <fuchsia/hardware/usb/descriptor/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
 
 #include <queue>
@@ -16,7 +17,6 @@
 namespace virtualbus {
 
 class TestFunction : public fdf::DriverBase,
-                     public ddk::UsbFunctionInterfaceProtocol<TestFunction>,
                      public fidl::Server<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> {
  protected:
   static constexpr std::string_view kName = "virtual-bus-test-peripheral";
@@ -28,19 +28,11 @@ class TestFunction : public fdf::DriverBase,
 
   zx::result<> Start() override;
 
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer, size_t descriptors_size,
-                                          size_t* out_descriptors_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                          size_t write_size, uint8_t* out_read_buffer,
-                                          size_t read_size, size_t* out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
-
-  ddk::UsbFunctionProtocolClient& function() { return function_; }
-
  protected:
-  ddk::UsbFunctionProtocolClient function_;
+  zx::result<std::vector<uint8_t>> DoControl(const fuchsia_hardware_usb_descriptor::UsbSetup& setup,
+                                             std::vector<uint8_t> write_data);
+
+  virtual zx::result<> SetFunctionInterface(bool connect) = 0;
 
   struct VirtualBusTestDescriptor {
     usb_interface_descriptor_t interface;
@@ -81,6 +73,7 @@ class TestFunction : public fdf::DriverBase,
 
   std::optional<ExpectOutCompleter::Async> expect_out_;
   std::optional<ExpectInCompleter::Async> expect_in_;
+  bool configured_ = false;
 
  private:
   void ExpectControl(ExpectControlRequest& request,
@@ -95,8 +88,6 @@ class TestFunction : public fdf::DriverBase,
 
   fdf::OwnedChildNode child_;
   fidl::ServerBindingGroup<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> bindings_;
-
-  bool configured_ = false;
 
   std::vector<uint8_t> expect_control_data_;
   std::optional<ExpectControlCompleter::Async> expect_control_;

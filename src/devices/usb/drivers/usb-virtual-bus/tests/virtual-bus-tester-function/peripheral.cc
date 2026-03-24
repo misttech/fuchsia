@@ -42,105 +42,49 @@ void TestFunction::ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& c
 }
 
 void TestFunction::Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) {
-  request.connect() ? function_.SetInterface(this, &usb_function_interface_protocol_ops_)
-                    : function_.SetInterface(nullptr, nullptr);
+  zx::result<> result = SetFunctionInterface(request.connect());
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "SetFunctionInterface failed %s", result.status_string());
+  }
   completer.Reply();
 }
 
-size_t TestFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptor_); }
-
-void TestFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
-                                                      size_t descriptors_size,
-                                                      size_t* out_descriptors_actual) {
-  memcpy(out_descriptors_buffer, &descriptor_, std::min(descriptors_size, sizeof(descriptor_)));
-  *out_descriptors_actual = sizeof(descriptor_);
-}
-
-zx_status_t TestFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
-                                                      const uint8_t* write_buffer,
-                                                      size_t write_size, uint8_t* out_read_buffer,
-                                                      size_t read_size, size_t* out_read_actual) {
-  if (out_read_actual) {
-    *out_read_actual = 0;
-  }
-
+zx::result<std::vector<uint8_t>> TestFunction::DoControl(
+    const fuchsia_hardware_usb_descriptor::UsbSetup& setup, std::vector<uint8_t> write_data) {
   if (!expect_control_) {
-    return ZX_OK;
+    return zx::ok(std::vector<uint8_t>{});
   }
 
-  if (setup->b_request != 0xFF) {
+  if (setup.b_request() != 0xFF) {
     expect_control_->Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     expect_control_.reset();
-    return ZX_ERR_NOT_SUPPORTED;
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  if (setup->w_value != 0xA) {
+  if (setup.w_value() != 0xA) {
     expect_control_->Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     expect_control_.reset();
-    return ZX_ERR_NOT_SUPPORTED;
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
-    memcpy(out_read_buffer, expect_control_data_.data(), expect_control_data_.size());
-    *out_read_actual = expect_control_data_.size();
+  if (setup.bm_request_type() == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
+    std::vector<uint8_t> data = expect_control_data_;
     expect_control_->Reply(zx::ok(std::vector<uint8_t>{}));
     expect_control_.reset();
-    return ZX_OK;
+    return zx::ok(std::move(data));
   }
-  if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
-    expect_control_->Reply(zx::ok(std::vector<uint8_t>{write_buffer, write_buffer + write_size}));
+  if (setup.bm_request_type() == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
+    expect_control_->Reply(zx::ok(write_data));
     expect_control_.reset();
-    return ZX_OK;
+    return zx::ok(std::vector<uint8_t>{});
   }
 
   expect_control_->Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
   expect_control_.reset();
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-zx_status_t TestFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed) {
-  if (configured) {
-    if (configured_) {
-      return ZX_OK;
-    }
-    configured_ = true;
-    function_.ConfigEp(&descriptor_.bulk_out, nullptr);
-    function_.ConfigEp(&descriptor_.bulk_in, nullptr);
-  } else {
-    configured_ = false;
-  }
-  return ZX_OK;
-}
-
-zx_status_t TestFunction::UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting) {
-  return ZX_OK;
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx::result<> TestFunction::Start() {
-  zx::result<ddk::UsbFunctionProtocolClient> function =
-      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect function %s", function.status_string());
-    return function.take_error();
-  }
-  function_ = *function;
-
-  zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
-  if (status != ZX_OK) {
-    FDF_LOG(ERROR, "usb_function_alloc_interface failed");
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_OUT, &descriptor_.bulk_out.b_endpoint_address);
-  if (status != ZX_OK) {
-    FDF_LOG(ERROR, "usb_function_alloc_ep failed");
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_.bulk_in.b_endpoint_address);
-  if (status != ZX_OK) {
-    FDF_LOG(ERROR, "usb_function_alloc_ep failed");
-    return zx::error(status);
-  }
-
   zx::result child = AddOwnedChild(kName);
   if (child.is_error()) {
     FDF_LOG(ERROR, "Failed to add child %s", child.status_string());
@@ -159,8 +103,6 @@ zx::result<> TestFunction::Start() {
     FDF_LOG(ERROR, "Failed to add Device service %s", serve_result.status_string());
     return serve_result.take_error();
   }
-
-  function_.SetInterface(this, &usb_function_interface_protocol_ops_);
 
   return zx::ok();
 }

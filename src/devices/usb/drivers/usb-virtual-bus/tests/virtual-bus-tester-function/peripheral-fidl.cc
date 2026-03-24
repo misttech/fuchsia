@@ -12,42 +12,191 @@ namespace virtualbus {
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 
+zx::result<> FidlTestFunction::SetFunctionInterface(bool connect) {
+  if (connect) {
+    if (binding_) {
+      return zx::ok();
+    }
+
+    zx::result endpoints =
+        fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+    if (endpoints.is_error()) {
+      return endpoints.take_error();
+    }
+
+    binding_ = fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                std::move(endpoints->server), this);
+
+    std::vector<uint8_t> config_data(sizeof(descriptor_));
+    memcpy(config_data.data(), &descriptor_, sizeof(descriptor_));
+
+    fuchsia_hardware_usb_function::UsbFunctionConfigureRequest config_req;
+    config_req.configuration(std::move(config_data));
+    config_req.iface(std::move(endpoints->client));
+
+    fidl::Result result = function_->Configure(std::move(config_req));
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Configure failed %s", result.error_value().FormatDescription().c_str());
+      return zx::error(result.error_value().is_framework_error()
+                           ? result.error_value().framework_error().status()
+                           : ZX_ERR_INTERNAL);
+    }
+  } else {
+    binding_.reset();
+  }
+  return zx::ok();
+}
+
 zx::result<> FidlTestFunction::Start() {
-  zx::result result = TestFunction::Start();
-  if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to start %s", result.status_string());
-    return result.take_error();
-  }
-
-  zx::result dispatcher =
-      fdf::SynchronizedDispatcher::Create({}, "ep-dispatcher", [](fdf_dispatcher_t*) {}, "");
-  if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create dispatcher %s", dispatcher.status_string());
-    return dispatcher.take_error();
-  }
-  dispatcher_ = std::move(*dispatcher);
-
-  auto client = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  zx::result client =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect fidl protocol");
+    FDF_LOG(ERROR, "Failed to connect fidl protocol %s", client.status_string());
     return client.take_error();
   }
+  function_ = fidl::SyncClient(std::move(*client));
 
-  zx_status_t status = bulk_out_ep_.Init(descriptor_.bulk_out.b_endpoint_address, *client,
-                                         dispatcher_.async_dispatcher());
+  zx::result ep_out = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (ep_out.is_error()) {
+    FDF_LOG(ERROR, "Failed to create endpoints %s", ep_out.status_string());
+    return ep_out.take_error();
+  }
+  ep_out_client_ = std::move(ep_out->client);
+
+  zx::result ep_in = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (ep_in.is_error()) {
+    FDF_LOG(ERROR, "Failed to create endpoints %s", ep_in.status_string());
+    return ep_in.take_error();
+  }
+  ep_in_client_ = std::move(ep_in->client);
+
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
+  fuchsia_hardware_usb_function::EndpointResource ep_out_res;
+  ep_out_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  ep_out_res.endpoint(std::move(ep_out->server));
+  endpoints.push_back(std::move(ep_out_res));
+
+  fuchsia_hardware_usb_function::EndpointResource ep_in_res;
+  ep_in_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  ep_in_res.endpoint(std::move(ep_in->server));
+  endpoints.push_back(std::move(ep_in_res));
+
+  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
+  alloc_req.interface_count(1);
+  alloc_req.endpoints(std::move(endpoints));
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    FDF_LOG(ERROR, "AllocResources failed %s",
+            alloc_result.error_value().FormatDescription().c_str());
+    return zx::error(alloc_result.error_value().is_framework_error()
+                         ? alloc_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
+  }
+
+  auto& resp = alloc_result.value();
+  descriptor_.interface.b_interface_number = resp.interface_nums()[0];
+  descriptor_.bulk_out.b_endpoint_address = resp.endpoint_addrs()[0];
+  descriptor_.bulk_in.b_endpoint_address = resp.endpoint_addrs()[1];
+
+  zx_status_t status = bulk_out_ep_.Init(std::move(ep_out_client_), dispatcher());
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
     return zx::error(status);
   }
 
-  status = bulk_in_ep_.Init(descriptor_.bulk_in.b_endpoint_address, *client,
-                            dispatcher_.async_dispatcher());
+  status = bulk_in_ep_.Init(std::move(ep_in_client_), dispatcher());
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
     return zx::error(status);
+  }
+
+  zx::result<> start_result = TestFunction::Start();
+  if (start_result.is_error()) {
+    FDF_LOG(ERROR, "Failed to start %s", start_result.status_string());
+    return start_result.take_error();
+  }
+
+  zx::result<> connect_result = SetFunctionInterface(true);
+  if (connect_result.is_error()) {
+    FDF_LOG(ERROR, "Failed to set function interface %s", connect_result.status_string());
+    return connect_result.take_error();
   }
 
   return zx::ok();
+}
+
+void FidlTestFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  zx::result result = DoControl(request.setup(), request.write());
+  if (result.is_error()) {
+    completer.Reply(zx::error(result.error_value()));
+    return;
+  }
+  fuchsia_hardware_usb_function::UsbFunctionInterfaceControlResponse resp;
+  resp.read(std::move(*result));
+  completer.Reply(zx::ok(std::move(resp)));
+}
+
+void FidlTestFunction::SetConfigured(SetConfiguredRequest& request,
+                                     SetConfiguredCompleter::Sync& completer) {
+  if (request.configured()) {
+    if (configured_) {
+      completer.Reply(zx::ok());
+      return;
+    }
+    configured_ = true;
+    fuchsia_hardware_usb_function::EndpointConfiguration config;
+    fuchsia_hardware_usb_function::EndpointDescriptor desc;
+    desc.bm_attributes(descriptor_.bulk_out.bm_attributes);
+    desc.w_max_packet_size(descriptor_.bulk_out.w_max_packet_size);
+    desc.b_interval(descriptor_.bulk_out.b_interval);
+    config.descriptor(std::move(desc));
+
+    fidl::Result result =
+        function_->ConfigureEndpoint({descriptor_.bulk_out.b_endpoint_address, std::move(config)});
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "ConfigureEndpoint failed %s",
+              result.error_value().FormatDescription().c_str());
+      completer.Reply(zx::error(result.error_value().is_framework_error()
+                                    ? result.error_value().framework_error().status()
+                                    : ZX_ERR_INTERNAL));
+      return;
+    }
+
+    config = {};
+    desc = {};
+    desc.bm_attributes(descriptor_.bulk_in.bm_attributes);
+    desc.w_max_packet_size(descriptor_.bulk_in.w_max_packet_size);
+    desc.b_interval(descriptor_.bulk_in.b_interval);
+    config.descriptor(std::move(desc));
+
+    result =
+        function_->ConfigureEndpoint({descriptor_.bulk_in.b_endpoint_address, std::move(config)});
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "ConfigureEndpoint failed %s",
+              result.error_value().FormatDescription().c_str());
+      completer.Reply(zx::error(result.error_value().is_framework_error()
+                                    ? result.error_value().framework_error().status()
+                                    : ZX_ERR_INTERNAL));
+      return;
+    }
+
+  } else {
+    configured_ = false;
+  }
+  completer.Reply(zx::ok());
+}
+
+void FidlTestFunction::SetInterface(SetInterfaceRequest& request,
+                                    SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
+void FidlTestFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  FDF_LOG(ERROR, "Unknown method %ld", metadata.method_ordinal);
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
 void FidlTestFunction::QueueOut() {
