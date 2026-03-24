@@ -9,14 +9,14 @@ using namespace escher;
 namespace {
 
 uint32_t orientation = 1;
-int32_t radius = 300;
+int32_t radius = 100;
 
 void CreateRing(std::vector<Rectangle2D>& renderables,
                 std::vector<RectangleCompositor::ColorData>& color_datas, float time) {
   vec4 colors[3] = {vec4{1, 0, 0, 0.5}, vec4(0, 0, 1, 0.5), vec4(1, 1, 0, 0.5)};
 
-  uint32_t center_x = (2160 - 50) / 2;
-  uint32_t center_y = (1140 - 50) / 2;
+  uint32_t center_x = 600 / 2;
+  uint32_t center_y = 800 / 2;
 
   const uint16_t num = 12;
   float radians = (360.f / num) * 3.1415926f / 180.f;

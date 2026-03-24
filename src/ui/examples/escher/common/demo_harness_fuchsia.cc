@@ -72,21 +72,19 @@ vk::SurfaceKHR DemoHarnessFuchsia::CreateWindowAndSurface(const WindowParams& pa
   FX_CHECK(!err);
 
 #if defined(FUCHSIA_USE_SCENIC)
-  fidl::Client<fuchsia_element::GraphicalPresenter> presenter;
   {
     auto client_end = component::Connect<fuchsia_element::GraphicalPresenter>();
     if (client_end.is_error()) {
       FX_LOGS(ERROR) << "Unable to connect to fuchsia_element::Presenter protocol: "
                      << client_end.status_string();
     }
-    presenter.Bind(std::move(*client_end), loop_->dispatcher());
+    presenter_.Bind(std::move(*client_end), loop_->dispatcher());
   }
   fuchsia_element::ViewSpec view_spec;
   view_spec.viewport_creation_token(
       fuchsia_ui_views::ViewportCreationToken(std::move(parent_viewport_token.value)));
-  presenter->PresentView({{.view_spec = std::move(view_spec)}}).ThenExactlyOnce([](auto result) {
-    if (!result.is_ok())
-      FX_LOGS(ERROR) << "PresentView failed: " << result.error_value();
+  presenter_->PresentView({{.view_spec = std::move(view_spec)}}).ThenExactlyOnce([](auto result) {
+    FX_CHECK(result.is_ok()) << "PresentView failed: " << result.error_value();
   });
 #endif
 

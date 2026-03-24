@@ -13,6 +13,10 @@
 
 #include <memory>
 
+#if defined(FUCHSIA_USE_SCENIC)
+#include <fidl/fuchsia.element/cpp/fidl.h>  // nogncheck
+#endif
+
 #include "src/ui/examples/escher/common/demo_harness.h"
 
 class DemoHarnessFuchsia : public DemoHarness {
@@ -52,6 +56,10 @@ class DemoHarnessFuchsia : public DemoHarness {
   std::unique_ptr<trace::TraceProviderWithFdio> trace_provider_;
 
   std::unique_ptr<sys::ComponentContext> component_context_;
+
+#if defined(FUCHSIA_USE_SCENIC)
+  fidl::Client<fuchsia_element::GraphicalPresenter> presenter_;
+#endif
 };
 
 #endif  // SRC_UI_EXAMPLES_ESCHER_COMMON_DEMO_HARNESS_FUCHSIA_H_

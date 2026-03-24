@@ -24,6 +24,20 @@ resource("flat_main.frag") {
   visibility = [ ":*" ]
 }
 
+resource("flat_color_correction.vert") {
+  sources =
+      [ "//src/ui/lib/escher/shaders/flatland/flat_color_correction.vert" ]
+  outputs = [ "data/shaders/flatland/flat_color_correction.vert" ]
+  visibility = [ ":*" ]
+}
+
+resource("flat_color_correction.frag") {
+  sources =
+      [ "//src/ui/lib/escher/shaders/flatland/flat_color_correction.frag" ]
+  outputs = [ "data/shaders/flatland/flat_color_correction.frag" ]
+  visibility = [ ":*" ]
+}
+
 renamed_binary("rainfall_bin_on_fb") {
   dest = "bin/escher_examples"
   source = "$root_out_dir/rainfall_on_fb"
@@ -33,6 +47,8 @@ renamed_binary("rainfall_bin_on_fb") {
 fuchsia_package_with_single_component("escher_rainfall_on_fb") {
   manifest = "meta/escher_examples_on_fb.cml"
   deps = [
+    ":flat_color_correction.frag",
+    ":flat_color_correction.vert",
     ":flat_main.frag",
     ":flat_main.vert",
     ":rainfall_bin_on_fb",
@@ -50,6 +66,8 @@ renamed_binary("rainfall_bin_on_scenic") {
 fuchsia_package_with_single_component("escher_rainfall_on_scenic") {
   manifest = "meta/escher_examples_on_scenic.cml"
   deps = [
+    ":flat_color_correction.frag",
+    ":flat_color_correction.vert",
     ":flat_main.frag",
     ":flat_main.vert",
     ":rainfall_bin_on_scenic",
