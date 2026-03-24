@@ -636,8 +636,9 @@ func (f *ffxInvoker) cmd() *exec.Cmd {
 	}
 	ffx_cmd := f.ffx.cmdBuilder.commandWithConfigs(f.ffx.ffxPath, f.supportsStrict, args, f.configs)
 	return f.ffx.runner.Command(ffx_cmd, subprocess.RunOptions{
-		Stdout: f.stdout,
-		Stderr: f.stderr,
+		Stdout:  f.stdout,
+		Stderr:  f.stderr,
+		Setpgid: true,
 	})
 }
 
@@ -793,8 +794,9 @@ func (f *FFXInstance) StartDaemon(ctx context.Context, daemonLog *os.File) *exec
 	}
 
 	cmd := f.runner.Command(ffx_cmd, subprocess.RunOptions{
-		Stdout: daemonLog,
-		Stderr: f.stderr,
+		Stdout:  daemonLog,
+		Stderr:  f.stderr,
+		Setpgid: true,
 	})
 	logger.Debugf(ctx, "%s", cmd.Args)
 	return cmd

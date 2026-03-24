@@ -648,7 +648,7 @@ func setPowerState(ctx context.Context, r *subprocess.Runner, state string) erro
 		"--state",
 		state,
 	}
-	return r.Run(ctx, cmd, subprocess.RunOptions{})
+	return r.Run(ctx, cmd, subprocess.RunOptions{Setpgid: true})
 }
 
 // shouldKeepGoing returns whether we should schedule another run of the test.

@@ -367,7 +367,7 @@ func (t *Device) placeInFastboot(ctx context.Context) error {
 	// Run the dmc invocation and wait for the subprocess call to complete.
 	// This usually takes ~20 seconds.
 	return retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), 3), func() error {
-		return runner.Run(ctx, cmdline, subprocess.RunOptions{})
+		return runner.Run(ctx, cmdline, subprocess.RunOptions{Setpgid: true})
 	}, nil)
 }
 

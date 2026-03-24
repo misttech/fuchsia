@@ -630,7 +630,7 @@ func (r *RunCommand) runPreflights(ctx context.Context) error {
 	}
 	for _, c := range cmds.Commands {
 		logger.Debugf(ctx, "running preflight %s", c)
-		if err := runner.Run(ctx, c, subprocess.RunOptions{}); err != nil {
+		if err := runner.Run(ctx, c, subprocess.RunOptions{Setpgid: true}); err != nil {
 			return err
 		}
 	}

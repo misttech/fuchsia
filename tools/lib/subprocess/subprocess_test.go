@@ -268,7 +268,7 @@ func TestRun(t *testing.T) {
 		}()
 
 		r := Runner{}
-		if err := r.Run(ctx, []string{script}, RunOptions{Stdout: stdout}); err == nil {
+		if err := r.Run(ctx, []string{script}, RunOptions{Stdout: stdout, Setpgid: true}); err == nil {
 			t.Errorf("Expected script to terminate early but it completed successfully")
 		} else {
 			if !errors.Is(err, context.Canceled) {

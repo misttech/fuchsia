@@ -495,7 +495,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			return testResult, nil
 		}
 	}
-	err := r.Run(ctx, testCmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr})
+	err := r.Run(ctx, testCmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr, Setpgid: true})
 	t.setTestRun(test, profileRelDir)
 	var exitErr *exec.ExitError
 	if err == nil {

@@ -440,7 +440,7 @@ func (t *genericFuchsiaTarget) SetupSSHControlMaster(ctx context.Context, sshKey
 		"-i", sshKey,
 		addr,
 	}
-	cmdProcess := runner.Command(cmd, subprocess.RunOptions{})
+	cmdProcess := runner.Command(cmd, subprocess.RunOptions{Setpgid: true})
 	logger.Debugf(ctx, "starting: %v", cmd)
 	if err := cmdProcess.Start(); err != nil {
 		return cleanup, fmt.Errorf("failed to start ssh controlmaster: %w", err)

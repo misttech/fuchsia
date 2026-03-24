@@ -54,6 +54,10 @@ type RunOptions struct {
 	// Dir is the directory in which the subprocess should be run. It inherits
 	// Runner.Dir if unset.
 	Dir string
+
+	// Whether to set a new process group ID so that we can kill the subprocess
+	// and any of its children.
+	Setpgid bool
 }
 
 // Command returns an *exec.Cmd from the provided command args and run options.
@@ -93,7 +97,7 @@ func (r *Runner) Command(command []string, options RunOptions) *exec.Cmd {
 	// running a potentially interactive command that has access to stdin. Those
 	// cases are less likely to involve chains of subprocesses anyway, so it's
 	// not as important to be able to kill the entire chain.
-	if cmd.Stdin != os.Stdin {
+	if cmd.Stdin != os.Stdin && options.Setpgid {
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			// Set a process group ID so we can kill the entire group, meaning
 			// the process and any of its children.
