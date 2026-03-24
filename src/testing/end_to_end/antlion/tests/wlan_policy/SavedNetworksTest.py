@@ -9,7 +9,7 @@ import logging
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
-    Security as HostapdSecurity,
+    Security as DeprecatedSecurity,
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
@@ -130,14 +130,14 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
         elif hasattr(self, "access_point"):
             # Create an AP with default values other than the specified values.
-            hostapd_security = ConfigMapper.to_hostapd_security(security)
+            deprecated_security = ConfigMapper.to_hostapd_security(security)
             setup_ap(
                 self.access_point,
                 "whirlwind",
                 hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid,
-                security=HostapdSecurity(
-                    hostapd_security,
+                security=DeprecatedSecurity(
+                    deprecated_security,
                     password,
                 ),
             )

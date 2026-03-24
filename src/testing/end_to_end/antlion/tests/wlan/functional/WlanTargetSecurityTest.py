@@ -11,9 +11,11 @@ from antlion.controllers.ap_lib.hostapd_constants import (
     AP_SSID_LENGTH_5G,
 )
 from antlion.controllers.ap_lib.hostapd_security import (
-    Security as HostapdSecurity,
+    Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals, test_runner
@@ -83,7 +85,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         else:
             hostapd_security_mode = ConfigMapper.to_hostapd_security(security)
 
-            security_profile = HostapdSecurity(
+            security_profile = DeprecatedSecurity(
                 security_mode=hostapd_security_mode, password=password
             )
             setup_ap(
@@ -100,35 +102,43 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_associate_open_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap()
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Failed to associate.",
         )
 
     def test_reject_open_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap()
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_reject_open_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap()
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_reject_open_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap()
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_reject_open_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap()
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
@@ -136,7 +146,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wep_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(Security.WEP)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Should not have associated.",
         )
 
@@ -145,7 +155,9 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         self.skip_if_wep_not_supported()
         ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
@@ -156,21 +168,27 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wep_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_reject_wep_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_reject_wep_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WEP)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
@@ -178,35 +196,43 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wpa_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(Security.WPA)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_associate_wpa_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_reject_wpa_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_reject_wpa_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
@@ -214,35 +240,43 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wpa2_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(Security.WPA2)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa2_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_associate_wpa2_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_associate_wpa2_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_reject_wpa2_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
@@ -250,35 +284,43 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wpa_wpa2_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa_wpa2_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_associate_wpa_wpa2_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_associate_wpa_wpa2_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_reject_wpa_wpa2_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA_WPA2)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
@@ -286,21 +328,25 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wpa3_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(Security.WPA3)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa3_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_associate_wpa3_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Expected failure to associate. WPA credentials for WPA3 was "
             "temporarily disabled, see https://fxbug.dev/42166758 for context. "
             "If this feature was reenabled, please update this test's "
@@ -310,14 +356,18 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_associate_wpa3_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_associate_wpa3_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA3)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
@@ -325,21 +375,25 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_reject_wpa2_wpa3_ap_with_open_target_security(self) -> None:
         ssid, _ = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.OPEN),
+            self.dut.associate(ssid, DeprecatedSecurityMode.OPEN),
             "Should not have associated.",
         )
 
     def test_reject_wpa2_wpa3_ap_with_wep_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WEP, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WEP, target_pwd=password
+            ),
             "Should not have associated.",
         )
 
     def test_associate_wpa2_wpa3_ap_with_wpa_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_false(
-            self.dut.associate(ssid, SecurityMode.WPA, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA, target_pwd=password
+            ),
             "Expected failure to associate. WPA credentials for WPA3 was "
             "temporarily disabled, see https://fxbug.dev/42166758 for context. "
             "If this feature was reenabled, please update this test's "
@@ -349,14 +403,18 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def test_associate_wpa2_wpa3_ap_with_wpa2_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA2, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA2, target_pwd=password
+            ),
             "Failed to associate.",
         )
 
     def test_associate_wpa2_wpa3_ap_with_wpa3_target_security(self) -> None:
         ssid, password = self.setup_ap(Security.WPA2_WPA3)
         asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.WPA3, target_pwd=password),
+            self.dut.associate(
+                ssid, DeprecatedSecurityMode.WPA3, target_pwd=password
+            ),
             "Failed to associate.",
         )
 

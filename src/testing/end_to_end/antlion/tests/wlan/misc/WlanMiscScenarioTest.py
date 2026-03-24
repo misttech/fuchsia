@@ -10,9 +10,11 @@ from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
-    Security as HostapdSecurity,
+    Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals, test_runner
@@ -75,7 +77,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
                 profile_name="whirlwind",
                 channel=hostapd_band.default_channel(),
                 ssid=ssid,
-                security=HostapdSecurity(
+                security=DeprecatedSecurity(
                     security_mode=hostapd_security,
                     password=password,
                 ),
@@ -101,7 +103,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         self.log.info("Attempting to associate WPA3 with wrong password.")
         asserts.assert_false(
             self.dut.associate(
-                wpa3_ssid, SecurityMode.WPA3, target_pwd="wrongpass"
+                wpa3_ssid, DeprecatedSecurityMode.WPA3, target_pwd="wrongpass"
             ),
             "Associated with WPA3 network using the wrong password",
         )
@@ -124,7 +126,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         asserts.assert_true(
             self.dut.associate(
                 wpa2_ssid,
-                SecurityMode.WPA2,
+                DeprecatedSecurityMode.WPA2,
                 target_pwd=wpa2_password,
             ),
             "Failed to associate with WPA2 network after a WPA3 rejection.",

@@ -10,9 +10,11 @@ import time
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
-    Security as HostapdSecurity,
+    Security as DeprecatedSecurity,
 )
-from antlion.controllers.ap_lib.hostapd_security import SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
     WlanPolicyControllerError,
 )
@@ -81,8 +83,8 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
                 hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 self.hidden_ssid,
                 hidden=True,
-                security=HostapdSecurity(
-                    security_mode=SecurityMode.WPA2,
+                security=DeprecatedSecurity(
+                    security_mode=DeprecatedSecurityMode.WPA2,
                     password=self.hidden_password,
                 ),
             )

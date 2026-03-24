@@ -18,10 +18,10 @@ import fidl_fuchsia_wlan_common_security as fidl_security
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import BandType
 from antlion.controllers.ap_lib.hostapd_security import (
-    Security as HostapdSecurity,
+    Security as DeprecatedSecurity,
 )
 from antlion.controllers.ap_lib.hostapd_security import (
-    SecurityMode as HostapdSecurityMode,
+    SecurityMode as DeprecatedSecurityMode,
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.wifi import base_test
@@ -64,7 +64,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             security,
         ) in itertools.product(
             # BandType,
-            # [SecurityMode.OPEN, SecurityMode.WPA2],
+            # [DeprecatedSecurityMode.OPEN, DeprecatedSecurityMode.WPA2],
             #
             # TODO(https://github.com/python/mypy/issues/14688): Replace the code below
             # with the commented code above once the bug affecting StrEnum resolves.
@@ -150,7 +150,7 @@ class WlanScanTest(base_test.WifiBaseTest):
                 profile_name="whirlwind",
                 channel=band.default_channel(),
                 ssid=ssid,
-                security=HostapdSecurity(
+                security=DeprecatedSecurity(
                     security_mode=security,
                     password=password,
                 ),
@@ -237,8 +237,8 @@ class WlanScanTest(base_test.WifiBaseTest):
                 profile_name="whirlwind",
                 channel=BandType.BAND_2G.default_channel(),
                 ssid=ssid,
-                security=HostapdSecurity(
-                    security_mode=HostapdSecurityMode.OPEN,
+                security=DeprecatedSecurity(
+                    security_mode=DeprecatedSecurityMode.OPEN,
                     password=None,
                 ),
             )
