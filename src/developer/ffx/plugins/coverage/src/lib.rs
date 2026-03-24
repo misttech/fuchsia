@@ -10,9 +10,12 @@ use glob::glob;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+#[cfg(test)]
+use std::sync::Mutex;
 use symbol_index::{SymbolIndex, global_symbol_index_path};
 
 // The line found right above build ID in `llvm-profdata show --binary-ids` output.
+#[cfg(not(test))]
 const BINARY_ID_LINE: &str = "Binary IDs:";
 
 /// A convenient struct grouping common parameters to export/show functions.
@@ -41,7 +44,20 @@ impl FfxMain for CoverageTool {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum VerboseMode {
+    NotVerbose,
+    Verbose,
+}
+
+impl From<bool> for VerboseMode {
+    fn from(v: bool) -> Self {
+        if v { Self::Verbose } else { Self::NotVerbose }
+    }
+}
+
 pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
+    let verbose_mode = VerboseMode::from(cmd.verbose);
     let clang_bin_dir = cmd.clang_dir.join("bin");
     let llvm_profdata_bin = clang_bin_dir.join("llvm-profdata");
     llvm_profdata_bin
@@ -54,22 +70,21 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
         .then_some(())
         .ok_or_else(|| anyhow!("{:?} does not exist", llvm_cov_bin))?;
 
+    let profdata_runner = ProfdataRunner::new(llvm_profdata_bin, verbose_mode);
+
     let profraws = glob_profraws(&cmd.test_output_dir)?;
     // TODO(https://fxbug.dev/42182448): find a better place to put merged.profdata.
     let merged_profile = cmd.test_output_dir.join("merged.profdata");
-    merge_profraws(&llvm_profdata_bin, &profraws, &merged_profile)
+    profdata_runner
+        .merge_profraws(&profraws, &merged_profile)
         .context("failed to merge profiles")?;
 
     let symbol_index_path = match cmd.symbol_index_json {
         Some(p) => p.to_string_lossy().to_string(),
         None => global_symbol_index_path()?,
     };
-    let bin_files = find_binaries(
-        &SymbolIndex::load_aggregate(&symbol_index_path)?,
-        &llvm_profdata_bin,
-        &profraws,
-        show_binary_id,
-    )?;
+    let bin_files = profdata_runner
+        .find_binaries(&SymbolIndex::load_aggregate(&symbol_index_path)?, &profraws)?;
 
     let params = ExportParams {
         llvm_cov_bin,
@@ -80,17 +95,17 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
     };
 
     match (cmd.export_html, cmd.export_lcov) {
-        (None, None) => show_coverage(&params).context("failed to show coverage")?,
+        (None, None) => show_coverage(&params, verbose_mode).context("failed to show coverage")?,
         (html, lcov) => {
             if let Some(ref html_export_dir) = html {
-                export_html(&params, html_export_dir).context(format!(
+                export_html(&params, html_export_dir, verbose_mode).context(format!(
                     "failed to export HTML coverage report to {:?}",
                     html_export_dir
                 ))?
             }
 
             if let Some(ref lcov_export_path) = lcov {
-                export_lcov(&params, lcov_export_path)
+                export_lcov(&params, lcov_export_path, verbose_mode)
                     .context(format!("failed to export lcov to {:?}", lcov_export_path))?
             }
         }
@@ -99,59 +114,93 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
     Ok(())
 }
 
-/// Merges input `profraws` using llvm-profdata and writes output to `output_path`.
-fn merge_profraws(
-    llvm_profdata_bin: &Path,
-    profraws: &[PathBuf],
-    output_path: &Path,
-) -> Result<()> {
-    let merge_cmd = Command::new(llvm_profdata_bin)
-        .args(["merge", "--sparse", "--output"])
-        .arg(output_path)
-        .args(profraws)
-        .output()
+struct ProfdataRunner {
+    llvm_profdata_bin: PathBuf,
+    verbose: VerboseMode,
+    #[cfg(test)]
+    mock_binary_id_list: Mutex<Vec<String>>,
+}
+
+impl ProfdataRunner {
+    fn new(llvm_profdata_bin: PathBuf, verbose: VerboseMode) -> Self {
+        #[cfg(test)]
+        {
+            Self { llvm_profdata_bin, verbose, mock_binary_id_list: Mutex::new(Vec::new()) }
+        }
+        #[cfg(not(test))]
+        {
+            Self { llvm_profdata_bin, verbose }
+        }
+    }
+
+    #[cfg(test)]
+    fn add_mock_binary_ids(&self, binary_ids: &[&str]) {
+        self.mock_binary_id_list.lock().unwrap().extend(binary_ids.iter().map(|s| s.to_string()));
+    }
+
+    /// Merges input `profraws` using llvm-profdata and writes output to `output_path`.
+    fn merge_profraws(&self, profraws: &[PathBuf], output_path: &Path) -> Result<()> {
+        let merge_cmd = run_with_verbose(
+            Command::new(&self.llvm_profdata_bin)
+                .args(["merge", "--sparse", "--output"])
+                .arg(output_path)
+                .args(profraws),
+            self.verbose,
+        )
         .context("failed to merge raw profiles")?;
-    match merge_cmd.status.code() {
-        Some(0) => Ok(()),
-        Some(code) => Err(anyhow!(
-            "failed to merge raw profiles: status code {}, stderr: {}",
-            code,
-            String::from_utf8_lossy(&merge_cmd.stderr)
-        )),
-        None => Err(anyhow!("profile merging terminated by signal unexpectedly")),
+        match merge_cmd.status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(anyhow!(
+                "failed to merge raw profiles: status code {}, stderr: {}",
+                code,
+                String::from_utf8_lossy(&merge_cmd.stderr)
+            )),
+            None => Err(anyhow!("profile merging terminated by signal unexpectedly")),
+        }
     }
-}
 
-/// Calls `llvm-profdata show --binary-ids` to fetch binary ID from input raw profile.
-fn show_binary_id(llvm_profdata_bin: &Path, profraw: &Path) -> Result<String> {
-    let cmd = Command::new(llvm_profdata_bin)
-        .args(["show", "--binary-ids"])
-        .arg(profraw)
-        .output()
-        .context(format!("failed to show binary ID from {:?}", profraw))?;
-    let stdout = String::from_utf8_lossy(&cmd.stdout);
-    let tokens: Vec<&str> = stdout.split(BINARY_ID_LINE).collect();
-    match tokens[..] {
-        [_, binary_id] => Ok(binary_id.trim().to_string()),
-        _ => Err(anyhow!("unexpected llvm-profdata show output")),
+    /// Calls `llvm-profdata show --binary-ids` to fetch binary ID from input raw profile.
+    fn show_binary_id(&self, profraw: &Path) -> Result<String> {
+        #[cfg(test)]
+        {
+            let mut binary_ids = self.mock_binary_id_list.lock().unwrap();
+            let _ = profraw;
+            if binary_ids.is_empty() {
+                return Err(anyhow!("no mock binary IDs available"));
+            }
+            return Ok(binary_ids.remove(0));
+        }
+        #[cfg(not(test))]
+        {
+            let cmd = run_with_verbose(
+                Command::new(&self.llvm_profdata_bin).args(["show", "--binary-ids"]).arg(profraw),
+                self.verbose,
+            )
+            .context(format!("failed to show binary ID from {:?}", profraw))?;
+            let stdout = String::from_utf8_lossy(&cmd.stdout);
+            let tokens: Vec<&str> = stdout.split(BINARY_ID_LINE).collect();
+            match tokens[..] {
+                [_, binary_id] => Ok(binary_id.trim().to_string()),
+                _ => Err(anyhow!("unexpected llvm-profdata show output")),
+            }
+        }
     }
-}
 
-/// Find binary files from .build-id directories to pass. These are needed for `llvm-cov show`.
-fn find_binaries<F: FnMut(&Path, &Path) -> Result<String>>(
-    symbol_index: &SymbolIndex,
-    llvm_profdata_bin: &Path,
-    profraws: &[PathBuf],
-    mut show_id: F, // stubbable in test
-) -> Result<Vec<PathBuf>> {
-    profraws
-        .iter()
-        .map(|profraw| {
-            let binary_id = show_id(llvm_profdata_bin, profraw)?;
-            find_debug_file(symbol_index, &binary_id)
-                .context(anyhow!("failed to find binary file for {:?}", profraw,))
-        })
-        .collect()
+    /// Find binary files from .build-id directories to pass. These are needed for `llvm-cov show`.
+    fn find_binaries(
+        &self,
+        symbol_index: &SymbolIndex,
+        profraws: &[PathBuf],
+    ) -> Result<Vec<PathBuf>> {
+        profraws
+            .iter()
+            .map(|profraw| {
+                let binary_id = self.show_binary_id(profraw)?;
+                find_debug_file(symbol_index, &binary_id)
+                    .context(anyhow!("failed to find binary file for {:?}", profraw,))
+            })
+            .collect()
+    }
 }
 
 /// Finds debug file in local .build-id directories from symbol index.
@@ -206,17 +255,19 @@ fn to_extra_export_args<'a>(
 
 /// Calls `llvm-cov show` to display coverage from `merged_profile` for `bin_files`.
 /// `src_files` can be used to filter coverage for selected source files.
-fn show_coverage(params: &ExportParams<'_>) -> Result<()> {
-    let show_cmd = Command::new(&params.llvm_cov_bin)
-        .args(["show", "-instr-profile"])
-        .arg(&params.merged_profile)
-        .args(&params.extra_args)
-        .args(&params.bin_files_args)
-        .args(&params.src_files)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .context("failed to show coverage")?;
+fn show_coverage(params: &ExportParams<'_>, verbose_mode: VerboseMode) -> Result<()> {
+    let show_cmd = run_with_verbose(
+        Command::new(&params.llvm_cov_bin)
+            .args(["show", "-instr-profile"])
+            .arg(&params.merged_profile)
+            .args(&params.extra_args)
+            .args(&params.bin_files_args)
+            .args(&params.src_files)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit()),
+        verbose_mode,
+    )
+    .context("failed to show coverage")?;
     match show_cmd.status.code() {
         Some(0) => Ok(()),
         Some(code) => Err(anyhow!(
@@ -229,19 +280,25 @@ fn show_coverage(params: &ExportParams<'_>) -> Result<()> {
 }
 
 /// Calls `llvm-cov show -format html` to write HTML pages for collected test coverage.
-fn export_html(params: &ExportParams<'_>, html_export_path: &Path) -> Result<()> {
-    let show_cmd = Command::new(&params.llvm_cov_bin)
-        .args(["show", "-format", "html", "-output-dir"])
-        .arg(html_export_path)
-        .arg("-instr-profile")
-        .arg(&params.merged_profile)
-        .args(&params.extra_args)
-        .args(&params.bin_files_args)
-        .args(&params.src_files)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .context("failed to show coverage")?;
+fn export_html(
+    params: &ExportParams<'_>,
+    html_export_path: &Path,
+    verbose_mode: VerboseMode,
+) -> Result<()> {
+    let show_cmd = run_with_verbose(
+        Command::new(&params.llvm_cov_bin)
+            .args(["show", "-format", "html", "-output-dir"])
+            .arg(html_export_path)
+            .arg("-instr-profile")
+            .arg(&params.merged_profile)
+            .args(&params.extra_args)
+            .args(&params.bin_files_args)
+            .args(&params.src_files)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit()),
+        verbose_mode,
+    )
+    .context("failed to export HTML coverage")?;
     match show_cmd.status.code() {
         Some(0) => Ok(()),
         Some(code) => Err(anyhow!(
@@ -254,19 +311,25 @@ fn export_html(params: &ExportParams<'_>, html_export_path: &Path) -> Result<()>
 }
 
 /// Calls `llvm-cov export -format lcov` to write a LCOV file for collected test coverage.
-fn export_lcov(params: &ExportParams<'_>, lcov_export_path: &Path) -> Result<()> {
+fn export_lcov(
+    params: &ExportParams<'_>,
+    lcov_export_path: &Path,
+    verbose_mode: VerboseMode,
+) -> Result<()> {
     let output_lcov = File::create(lcov_export_path)?;
-    let show_cmd = Command::new(&params.llvm_cov_bin)
-        .args(["export", "-format", "lcov", "-skip-expansions", "-skip-functions"])
-        .arg("-instr-profile")
-        .arg(&params.merged_profile)
-        .args(&params.extra_args)
-        .args(&params.bin_files_args)
-        .args(&params.src_files)
-        .stdout(output_lcov)
-        .stderr(Stdio::inherit())
-        .output()
-        .context("failed to show coverage")?;
+    let show_cmd = run_with_verbose(
+        Command::new(&params.llvm_cov_bin)
+            .args(["export", "-format", "lcov", "-skip-expansions", "-skip-functions"])
+            .arg("-instr-profile")
+            .arg(&params.merged_profile)
+            .args(&params.extra_args)
+            .args(&params.bin_files_args)
+            .args(&params.src_files)
+            .stdout(output_lcov)
+            .stderr(Stdio::inherit()),
+        verbose_mode,
+    )?;
+
     match show_cmd.status.code() {
         Some(0) => Ok(()),
         Some(code) => Err(anyhow!(
@@ -282,6 +345,19 @@ fn export_lcov(params: &ExportParams<'_>, lcov_export_path: &Path) -> Result<()>
 fn glob_profraws(test_out_dir: &Path) -> Result<Vec<PathBuf>> {
     let pattern = test_out_dir.join("**").join("*.profraw");
     Ok(glob(pattern.to_str().unwrap())?.filter_map(Result::ok).collect::<Vec<PathBuf>>())
+}
+
+/// Run a command, respecting the --verbose setting to output command line and outputs if set.
+fn run_with_verbose(cmd: &mut Command, verbose_mode: VerboseMode) -> Result<std::process::Output> {
+    if verbose_mode == VerboseMode::Verbose {
+        println!("Command: {:?}", cmd);
+    }
+    let cmd = cmd.output().context("failed to run command")?;
+    if verbose_mode == VerboseMode::Verbose {
+        println!("Command stdout:\n{}", String::from_utf8_lossy(&cmd.stdout));
+        println!("Command stderr:\n{}", String::from_utf8_lossy(&cmd.stderr));
+    }
+    Ok(cmd)
 }
 
 #[cfg(test)]
@@ -337,6 +413,7 @@ mod tests {
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
+                verbose: false,
             })
             .await
             .is_err()
@@ -357,6 +434,7 @@ mod tests {
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
+                verbose: false,
             })
             .await
             .is_err()
@@ -376,6 +454,7 @@ mod tests {
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
+                verbose: false,
             })
             .await,
             Ok(())
@@ -392,6 +471,7 @@ mod tests {
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
+                verbose: false,
             })
             .await,
             Ok(())
@@ -408,6 +488,7 @@ mod tests {
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
+                verbose: false,
             })
             .await,
             Ok(())
@@ -427,6 +508,7 @@ mod tests {
                 ],
                 compilation_dir: Some(PathBuf::from("path/to/comp/dir")),
                 src_files: Vec::new(),
+                verbose: false,
             })
             .await,
             Ok(())
@@ -440,23 +522,25 @@ mod tests {
         let debug_file = test_dir.path().join("fo").join("obar.debug");
         File::create(&debug_file).unwrap();
 
+        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
+        profdata_cmd.add_mock_binary_ids(&["foobar"]);
+
         assert_eq!(
-            find_binaries(
-                &SymbolIndex {
-                    build_id_dirs: vec![BuildIdDir {
-                        path: test_dir.path().to_str().unwrap().to_string(),
-                        build_dir: None,
-                    }],
-                    includes: Vec::new(),
-                    ids_txts: Vec::new(),
-                    gcs_flat: Vec::new(),
-                    debuginfod: Vec::new(),
-                },
-                &PathBuf::new(),   // llvm_profdata_bin, unused in test
-                &[PathBuf::new()], // profraws, actual values don't matter
-                |_: &Path, _: &Path| Ok("foobar".to_string()),
-            )
-            .unwrap(),
+            profdata_cmd
+                .find_binaries(
+                    &SymbolIndex {
+                        build_id_dirs: vec![BuildIdDir {
+                            path: test_dir.path().to_str().unwrap().to_string(),
+                            build_dir: None,
+                        }],
+                        includes: Vec::new(),
+                        ids_txts: Vec::new(),
+                        gcs_flat: Vec::new(),
+                        debuginfod: Vec::new(),
+                    },
+                    &[PathBuf::new()], // profraws, actual values don't matter
+                )
+                .unwrap(),
             vec![debug_file],
         )
     }
@@ -473,30 +557,31 @@ mod tests {
         let debug_file2 = test_dir2.path().join("ba").join("rbaz.debug");
         File::create(&debug_file2).unwrap();
 
-        let mut test_bin_ids = vec!["foobar", "barbaz"];
+        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
+        profdata_cmd.add_mock_binary_ids(&["foobar", "barbaz"]);
+
         assert_eq!(
-            find_binaries(
-                &SymbolIndex {
-                    build_id_dirs: vec![
-                        BuildIdDir {
-                            path: test_dir1.path().to_str().unwrap().to_string(),
-                            build_dir: None,
-                        },
-                        BuildIdDir {
-                            path: test_dir2.path().to_str().unwrap().to_string(),
-                            build_dir: None,
-                        },
-                    ],
-                    includes: Vec::new(),
-                    ids_txts: Vec::new(),
-                    gcs_flat: Vec::new(),
-                    debuginfod: Vec::new(),
-                },
-                &PathBuf::new(), // llvm_profdata_bin, unused in test
-                &[PathBuf::new(), PathBuf::new()], // profraws, actual values don't matter
-                |_: &Path, _: &Path| Ok(test_bin_ids.remove(0).to_string()),
-            )
-            .unwrap(),
+            profdata_cmd
+                .find_binaries(
+                    &SymbolIndex {
+                        build_id_dirs: vec![
+                            BuildIdDir {
+                                path: test_dir1.path().to_str().unwrap().to_string(),
+                                build_dir: None,
+                            },
+                            BuildIdDir {
+                                path: test_dir2.path().to_str().unwrap().to_string(),
+                                build_dir: None,
+                            },
+                        ],
+                        includes: Vec::new(),
+                        ids_txts: Vec::new(),
+                        gcs_flat: Vec::new(),
+                        debuginfod: Vec::new(),
+                    },
+                    &[PathBuf::new(), PathBuf::new()], // profraws, actual values don't matter
+                )
+                .unwrap(),
             vec![debug_file1, debug_file2],
         )
     }
@@ -504,61 +589,67 @@ mod tests {
     #[test]
     fn test_find_binaries_no_matches() {
         let test_dir = TempDir::new().unwrap();
+        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
+        profdata_cmd.add_mock_binary_ids(&["foobar"]);
+
         assert!(
-            find_binaries(
-                &SymbolIndex {
-                    build_id_dirs: vec![BuildIdDir {
-                        path: test_dir.path().to_str().unwrap().to_string(),
-                        build_dir: None,
-                    }],
-                    includes: Vec::new(),
-                    ids_txts: Vec::new(),
-                    gcs_flat: Vec::new(),
-                    debuginfod: Vec::new(),
-                },
-                &PathBuf::new(),   // llvm_profdata_bin, unused in test
-                &[PathBuf::new()], // profraws, actual values don't matter
-                |_: &Path, _: &Path| Ok("foobar".to_string()),
-            )
-            .is_err()
+            profdata_cmd
+                .find_binaries(
+                    &SymbolIndex {
+                        build_id_dirs: vec![BuildIdDir {
+                            path: test_dir.path().to_str().unwrap().to_string(),
+                            build_dir: None,
+                        }],
+                        includes: Vec::new(),
+                        ids_txts: Vec::new(),
+                        gcs_flat: Vec::new(),
+                        debuginfod: Vec::new(),
+                    },
+                    &[PathBuf::new()], // profraws, actual values don't matter
+                )
+                .is_err()
         )
     }
 
     #[test]
     fn test_find_binaries_show_id_err() {
+        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
+        // no mock IDs, so it will throw an error
+
         assert!(
-            find_binaries(
-                &SymbolIndex {
-                    build_id_dirs: Vec::new(),
-                    includes: Vec::new(),
-                    ids_txts: Vec::new(),
-                    gcs_flat: Vec::new(),
-                    debuginfod: Vec::new(),
-                },
-                &PathBuf::new(),   // llvm_profdata_bin, unused in test
-                &[PathBuf::new()], // profraws, actual values don't matter
-                |_: &Path, _: &Path| Err(anyhow!("test err")),
-            )
-            .is_err()
+            profdata_cmd
+                .find_binaries(
+                    &SymbolIndex {
+                        build_id_dirs: Vec::new(),
+                        includes: Vec::new(),
+                        ids_txts: Vec::new(),
+                        gcs_flat: Vec::new(),
+                        debuginfod: Vec::new(),
+                    },
+                    &[PathBuf::new()], // profraws, actual values don't matter
+                )
+                .is_err()
         )
     }
 
     #[test]
     fn test_find_binaries_id_too_short() {
+        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
+        profdata_cmd.add_mock_binary_ids(&["a"]);
+
         assert!(
-            find_binaries(
-                &SymbolIndex {
-                    build_id_dirs: Vec::new(),
-                    includes: Vec::new(),
-                    ids_txts: Vec::new(),
-                    gcs_flat: Vec::new(),
-                    debuginfod: Vec::new(),
-                },
-                &PathBuf::new(),   // llvm_profdata_bin, unused in test
-                &[PathBuf::new()], // profraws, actual values don't matter
-                |_: &Path, _: &Path| Ok("a".to_string()),
-            )
-            .is_err()
+            profdata_cmd
+                .find_binaries(
+                    &SymbolIndex {
+                        build_id_dirs: Vec::new(),
+                        includes: Vec::new(),
+                        ids_txts: Vec::new(),
+                        gcs_flat: Vec::new(),
+                        debuginfod: Vec::new(),
+                    },
+                    &[PathBuf::new()], // profraws, actual values don't matter
+                )
+                .is_err()
         )
     }
 

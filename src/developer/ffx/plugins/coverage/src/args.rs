@@ -40,4 +40,8 @@ pub struct CoverageCommand {
     /// paths to source files to show coverage for
     #[argh(positional)]
     pub src_files: Vec<PathBuf>,
+
+    /// if set, print verbose information about each command being run, for debugging
+    #[argh(switch, short = 'v')]
+    pub verbose: bool,
 }

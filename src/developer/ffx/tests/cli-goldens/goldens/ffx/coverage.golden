@@ -94,6 +94,14 @@
       "short": null,
       "description": "path to the directory used as a base for relative coverage mapping paths, passed through to llvm-cov",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--verbose",
+      "short": "v",
+      "description": "if set, print verbose information about each command being run, for debugging",
+      "hidden": false
     }
   ],
   "notes": [],

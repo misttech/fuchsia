@@ -24,6 +24,7 @@ set -euo pipefail
 function main() {
   local lcov_output_path=''
   local html_output_dir=''
+  local verbose=false
 
   while [[ $# -ge 1 ]]; do
     case "$1" in
@@ -39,6 +40,9 @@ function main() {
         # dir.
         html_output_dir="$(realpath ${1})"
         ;;
+      -v|--verbose)
+        verbose=true
+        ;;
       -h|--help)
         fx-command-help
         exit 0
@@ -49,6 +53,7 @@ function main() {
     esac
     shift
   done
+
 
   readonly _TEST_OUT_DIR="$(mktemp -d)"
   trap "rm -rf ${_TEST_OUT_DIR}" EXIT
@@ -66,6 +71,9 @@ function main() {
   fi
   if [[ -n "${html_output_dir}" ]]; then
     ffx_cov_args+=" --export-html ${html_output_dir}"
+  fi
+  if [[ ${verbose} == true ]]; then
+    ffx_cov_args+=" --verbose"
   fi
 
   # TODO(https://fxbug.dev/42054992): realpath is not available on Mac, use a
