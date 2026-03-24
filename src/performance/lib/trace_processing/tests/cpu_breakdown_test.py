@@ -408,3 +408,33 @@ class CpuBreakdownTest(unittest.TestCase):
             r"Possibly missing ContextSwitch "
             r"record\(s\) in trace for these CPUs and durations: {2: 2500.0}",
         )
+
+    def test_cpu_processing_rate_timeline_with_rates(self) -> None:
+        rates = [
+            cpu.ProcessingRateSample(timestamp_ms=100.0, rate=1000.0),
+            cpu.ProcessingRateSample(timestamp_ms=200.0, rate=798.0),
+            cpu.ProcessingRateSample(timestamp_ms=300.0, rate=506.0),
+            cpu.ProcessingRateSample(timestamp_ms=400.0, rate=360.0),
+        ]
+        timeline = cpu.CpuProcessingRateTimeline(rates)
+
+        slices = timeline.get_virtual_slices(0.0, 500.0)
+        self.assertEqual(len(slices), 5)
+
+        # 0.0 -> 100.0: rate=1000.0 (default before first change)
+        self.assertEqual(
+            slices[0],
+            cpu.VirtualProcessingSlice(duration=100.0, rate=1000.0),
+        )
+        self.assertEqual(
+            slices[1], cpu.VirtualProcessingSlice(duration=100.0, rate=1000.0)
+        )
+        self.assertEqual(
+            slices[2], cpu.VirtualProcessingSlice(duration=100.0, rate=798.0)
+        )
+        self.assertEqual(
+            slices[3], cpu.VirtualProcessingSlice(duration=100.0, rate=506.0)
+        )
+        self.assertEqual(
+            slices[4], cpu.VirtualProcessingSlice(duration=100.0, rate=360.0)
+        )

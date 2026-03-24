@@ -3,6 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import bisect
 import collections
 import dataclasses
 import itertools
@@ -16,10 +17,88 @@ from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 _CPU_USAGE_EVENT_NAME = "cpu_usage"
 _PROCESSING_RATE_EVENT_NAME = "Processing Rate"
+# The kernel reports processing rates where 1000 represents 100% capacity.
+# This constant is used as a default value when rate events are missing.
+_DEFAULT_PROCESSING_RATE = 1000.0
 _DEFAULT_PERCENT_CUTOFF = 0.0
 _ONE_S_IN_NS = 1_000_000_000
 
 Breakdown: TypeAlias = list[dict[str, metrics.JSON]]
+
+
+@dataclasses.dataclass(frozen=True)
+class ProcessingRateSample:
+    """A single processing rate sample at a given timestamp."""
+
+    timestamp_ms: float
+    rate: float
+
+
+@dataclasses.dataclass(frozen=True)
+class VirtualProcessingSlice:
+    """A slice with a constant processing rate."""
+
+    duration: float
+    rate: float
+
+
+class CpuProcessingRateTimeline:
+    """Encapsulates the processing rate shifts for a single CPU core."""
+
+    def __init__(self, rates: Iterable[ProcessingRateSample]):
+        """Constructor.
+
+        Args:
+            rates: An iterable of ProcessingRateSample objects.
+        """
+        self.rates = sorted(rates, key=lambda r: r.timestamp_ms)
+
+    def get_virtual_slices(
+        self, start_ts: float, stop_ts: float
+    ) -> list[VirtualProcessingSlice]:
+        """Splits a schedule slice into virtual slices based on rate changes.
+
+        Args:
+            start_ts: Start of the slice (ms).
+            stop_ts: End of the slice (ms).
+
+        Returns:
+            A list of VirtualProcessingSlice objects.
+        """
+        if start_ts >= stop_ts:
+            return []
+
+        virtual_slices: list[VirtualProcessingSlice] = []
+        curr_ts = start_ts
+
+        idx = bisect.bisect_right(
+            self.rates, curr_ts, key=lambda r: r.timestamp_ms
+        )
+        current_rate = (
+            _DEFAULT_PROCESSING_RATE if idx == 0 else self.rates[idx - 1].rate
+        )
+
+        while curr_ts < stop_ts:
+            next_change_ts = (
+                self.rates[idx].timestamp_ms
+                if idx < len(self.rates)
+                else float("inf")
+            )
+            seg_end = min(stop_ts, next_change_ts)
+
+            virtual_slices.append(
+                VirtualProcessingSlice(
+                    duration=seg_end - curr_ts,
+                    rate=current_rate,
+                )
+            )
+
+            curr_ts = seg_end
+            if curr_ts >= next_change_ts:
+                current_rate = self.rates[idx].rate
+                idx += 1
+
+        return virtual_slices
 
 
 @dataclasses.dataclass
