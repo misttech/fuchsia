@@ -16,6 +16,8 @@
 
 namespace dap {
 
+// NOTE: This needs to be backwards compatible and in sync with `AsyncTaskNodeData` here:
+// https://fuchsia.googlesource.com/vscode-plugins/+/refs/heads/main/src/zxdb/async_backtrace.ts
 struct AsyncTaskNode {
   // `id` is omitted (nullopt) if the task doesn't have an ID (i.e., `GetId()` == 0).
   // TODO(https://fxbug.dev/494811949): Make this field required once `AsyncTask` can generate
@@ -41,6 +43,9 @@ DAP_DECLARE_STRUCT_TYPEINFO(AsyncTaskNode);
 //  - When a thread is stopped:   An async-backtrace is collected and used to populate `tasks`.
 //  - When a thread is resumed:   An empty `tasks` array is sent.
 //  - When a thread is destroyed: The `tasks` property is omitted from the event.
+//
+// NOTE: This needs to be backwards compatible and in sync with `AsyncBacktraceUpdateData` here:
+// https://fuchsia.googlesource.com/vscode-plugins/+/refs/heads/main/src/zxdb/async_backtrace.ts
 struct AsyncBacktraceUpdate : Event {
   integer id;
   string name;
