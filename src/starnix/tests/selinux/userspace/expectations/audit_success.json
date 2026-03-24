@@ -466,6 +466,19 @@
             ]
         },
         {
+            "name": "MountTest.BindRemountWithContext",
+            "audit_expectations": [
+                "avc:  denied  { relabelfrom } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=1",
+                "avc:  denied  { relabelto } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
+                "avc:  denied  { relabelfrom } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
+                "avc:  denied  { mount } for name=\"/\" dev=\"tmpfs\" ino=1 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
+                "avc:  denied  { remount } for scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
+                "avc:  denied  { search } for name=\"68\" dev=\"proc\" ino=491 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:test_r:test_mount_permissive_t:s0 tclass=dir permissive=1",
+                "avc:  denied  { read } for name=\"mounts\" dev=\"proc\" ino=494 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:test_r:test_mount_permissive_t:s0 tclass=file permissive=1",
+                "avc:  denied  { getattr } for path=\"/proc/68/mounts\" dev=\"proc\" ino=494 scontext=test_u:test_r:test_mount_permissive_t:s0 tcontext=test_u:test_r:test_mount_permissive_t:s0 tclass=file permissive=1"
+            ]
+        },
+        {
             "name": "MountTest.FsContextRequiresRelabelFromAndTo",
             "audit_expectations": [
                 "avc:  denied  { relabelto } for scontext=test_u:test_r:test_mount_relabelto_denied_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=0",
@@ -477,7 +490,6 @@
             "audit_expectations": [
                 "avc:  denied  { relabelto } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { relabelfrom } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
-                "avc:  denied  { associate } for scontext=test_u:object_r:test_mount_fscontext_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { mount } for name=\"/\" dev=\"tmpfs\" ino=1 scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { unmount } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=test_u:object_r:test_mount_fscontext_t:s0 tclass=filesystem permissive=1"
             ]

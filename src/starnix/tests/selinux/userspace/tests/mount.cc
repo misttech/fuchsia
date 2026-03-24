@@ -93,11 +93,11 @@ TEST(MountTest, FsContextRequiresRelabelFromAndTo) {
     GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
   }
 
-  auto enforce = ScopedEnforcement::SetEnforcing();
   const char* mount_path = "/mount_relabel_test";
   const char* fscontext = "fscontext=test_u:object_r:test_mount_fscontext_t:s0";
-
   ASSERT_THAT(mkdir(mount_path, 0755), SyscallSucceeds());
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
 
   // 1. Verify that mounting fails when 'relabelto' is denied.
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_mount_relabelto_denied_t:s0", [&] {
@@ -116,6 +116,45 @@ TEST(MountTest, FsContextRequiresRelabelFromAndTo) {
   }));
 
   rmdir(mount_path);
+}
+
+TEST(MountTest, BindRemountWithContext) {
+  const char* source_path = "/bind_ctx_source";
+  const char* target_path = "/bind_ctx_target";
+  const char* ctx1 = "context=test_u:object_r:test_mount_fscontext_t:s0";
+  const char* ctx2 = "context=test_u:object_r:test_mount_relabel_allowed_t:s0";
+
+  ASSERT_THAT(mkdir(source_path, 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(target_path, 0755), SyscallSucceeds());
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_mount_permissive_t:s0", [&] {
+    // 1. Initial mount of tmpfs with ctx1
+    ASSERT_THAT(mount("tmpfs", source_path, "tmpfs", 0, ctx1), SyscallSucceeds());
+
+    // 2. Bind mount source to target
+    ASSERT_THAT(mount(source_path, target_path, nullptr, MS_BIND, 0), SyscallSucceeds());
+
+    // 3. Remount the bind mount with SAME context - should succeed
+    EXPECT_THAT(mount(nullptr, target_path, nullptr, MS_BIND | MS_REMOUNT, ctx1),
+                SyscallSucceeds());
+
+    // 4. Remount the bind mount with DIFFERENT context - Linux allows this (options are
+    // ignored/no-op)
+    EXPECT_THAT(mount(nullptr, target_path, nullptr, MS_BIND | MS_REMOUNT, ctx2),
+                SyscallSucceeds());
+
+    // 5. Verify the context is still ctx1 (it was not changed by the remount)
+    EXPECT_TRUE(cpp23::contains(MountOptionsFor(target_path), "test_mount_fscontext_t"));
+
+    // Cleanup
+    ASSERT_THAT(umount(target_path), SyscallSucceeds());
+    ASSERT_THAT(umount(source_path), SyscallSucceeds());
+  }));
+
+  rmdir(target_path);
+  rmdir(source_path);
 }
 
 }  // namespace

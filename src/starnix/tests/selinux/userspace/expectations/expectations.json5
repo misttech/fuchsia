@@ -28,6 +28,9 @@
                 // checks when mounting with fscontext= or context=.
                 "MountTest.FsContextRequiresRelabelFromAndTo",
 
+                // TODO: Ignore SELinux options when remounting a bind mount.
+                "MountTest.BindRemountWithContext",
+
                 // TODO: https://fxbug.dev/409256444 - Make (SE)Starnix match the (SE)Linux behavior
                 // demonstrated in this test.
                 "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodYes_PrivateMapping_Modification_MprotectSuccess",
