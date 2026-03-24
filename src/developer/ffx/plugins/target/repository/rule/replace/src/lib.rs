@@ -3,19 +3,19 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_pkg_rewrite::EngineProxy;
+use fdomain_fuchsia_pkg_rewrite_ext::{RuleConfig, do_transaction};
 use ffx_config::EnvironmentContext;
 use ffx_target_repository_rule_replace_args::{JsonURI, ReplaceCommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, FhoEnvironment, Result, bug, return_user_error, user_error};
-use fidl_fuchsia_pkg_rewrite::EngineProxy;
-use fidl_fuchsia_pkg_rewrite_ext::{RuleConfig, do_transaction};
 use hyper::{Body, Method, Request};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
 use std::io;
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 use url::Url;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
@@ -133,6 +133,10 @@ async fn read_literal_rule_from_url(url: &Url) -> Result<RuleConfig> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_fuchsia_net::{IpAddress, Ipv4Address};
+    use fdomain_fuchsia_pkg_rewrite::{
+        EditTransactionRequest, EngineRequest, Rule, RuleIteratorRequest,
+    };
     use ffx_config::ConfigLevel;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::TestBuffers;
@@ -140,17 +144,14 @@ mod test {
         RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
         TargetIpPort, TargetProxy, TargetRequest, TargetState,
     };
-    use fidl_fuchsia_net::{IpAddress, Ipv4Address};
-    use fidl_fuchsia_pkg_rewrite::{
-        EditTransactionRequest, EngineRequest, Rule, RuleIteratorRequest,
-    };
     use fuchsia_async as fasync;
     use futures::TryStreamExt;
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::sync::Arc;
     use target_behavior::{ConnectionBehavior, target_interface};
-    use target_holders::{FakeInjector, fake_proxy};
+    use target_holders::FakeInjector;
+    use target_holders::fdomain::fake_proxy;
 
     const TARGET_NAME: &str = "some-target";
     const VALID_TEST_RULE: &str = r#"{
@@ -165,8 +166,11 @@ mod test {
     ]
 }"#;
 
-    async fn setup_fake_engine_proxy(expected_rule: Option<Rule>) -> EngineProxy {
-        let repos = fake_proxy(move |req| match req {
+    async fn setup_fake_engine_proxy(
+        client: Arc<fdomain_client::Client>,
+        expected_rule: Option<Rule>,
+    ) -> EngineProxy {
+        let repos = fake_proxy(client, move |req| match req {
             EngineRequest::StartEditTransaction { transaction, control_handle: _ } => {
                 let expected_rule = expected_rule.clone();
                 fuchsia_async::Task::local(async move {
@@ -268,7 +272,7 @@ mod test {
 
     impl FakeTarget {
         fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
-            let target_proxy: TargetProxy = fake_proxy(move |req| match req {
+            let target_proxy: TargetProxy = target_holders::fake_proxy(move |req| match req {
                 TargetRequest::Identity { responder, .. } => {
                     let ssh_host_address = host_address.clone();
                     fasync::Task::local(async move {
@@ -286,6 +290,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_empty_args() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -303,7 +308,7 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let engine_proxy = setup_fake_engine_proxy(None).await;
+        let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         env.context
             .query(TARGET_DEFAULT_KEY)
@@ -326,6 +331,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_incomplete_json_structure() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -343,7 +349,7 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let engine_proxy = setup_fake_engine_proxy(None).await;
+        let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         env.context
             .query(TARGET_DEFAULT_KEY)
@@ -371,6 +377,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_valid_rule_via_command_line() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -388,7 +395,7 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let engine_proxy = setup_fake_engine_proxy(None).await;
+        let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         env.context
             .query(TARGET_DEFAULT_KEY)
@@ -411,6 +418,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_mutually_exclusive_command_line() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -428,7 +436,7 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let engine_proxy = setup_fake_engine_proxy(None).await;
+        let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         env.context
             .query(TARGET_DEFAULT_KEY)
@@ -454,6 +462,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_valid_rule_via_uri() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -471,7 +480,7 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let engine_proxy = setup_fake_engine_proxy(None).await;
+        let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         env.context
             .query(TARGET_DEFAULT_KEY)
