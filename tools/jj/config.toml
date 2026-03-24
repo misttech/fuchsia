@@ -1,7 +1,7 @@
 # See https://jj-vcs.github.io/jj/latest/config/ for the schema.
 
 [revset-aliases]
-"trunk()" = "main@origin"
+"trunk()" = "head@jiri"
 "immutable_heads()" = "remote_bookmarks() | tags()"
 
 [aliases]
