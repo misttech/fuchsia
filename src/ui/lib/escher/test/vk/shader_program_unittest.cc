@@ -124,10 +124,12 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
 VK_TEST_F(ShaderProgramTest, ShaderConstantsTest) {
   auto escher = test::GetEscher();
 
-  auto program1 = escher->GetProgram(kAmbientLightProgramData);
-  auto program2 = escher->GetProgram(kAmbientLightProgramData);
-  auto program3 = escher->GetProgram(kShadowVolumeGeometryDebugProgramData);
-  auto program4 = escher->GetProgram(kShadowVolumeGeometryDebugProgramData);
+  auto program1 = escher->shader_program_factory()->GetProgram(kAmbientLightProgramData);
+  auto program2 = escher->shader_program_factory()->GetProgram(kAmbientLightProgramData);
+  auto program3 =
+      escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryDebugProgramData);
+  auto program4 =
+      escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryDebugProgramData);
 
   // The first two programs use the same variant args, so should be identical,
   // and similarly with the last two.
@@ -150,13 +152,14 @@ VK_TEST_F(ShaderProgramTest, TimingTest) {
   escher->shader_program_factory()->Clear();
 
   auto start = std::chrono::high_resolution_clock::now();
-  auto program1 = escher->GetProgram(kAmbientLightProgramData);
-  auto program2 = escher->GetProgram(kNoLightingProgramData);
-  auto program3 = escher->GetProgram(kPointLightProgramData);
-  auto program4 = escher->GetProgram(kShadowVolumeGeometryProgramData);
-  auto program5 = escher->GetProgram(kShadowVolumeGeometryDebugProgramData);
-  auto program6 = escher->GetProgram(kFlatlandStandardProgram);
-  auto program7 = escher->GetProgram(kFlatlandColorConversionProgram);
+  auto program1 = escher->shader_program_factory()->GetProgram(kAmbientLightProgramData);
+  auto program2 = escher->shader_program_factory()->GetProgram(kNoLightingProgramData);
+  auto program3 = escher->shader_program_factory()->GetProgram(kPointLightProgramData);
+  auto program4 = escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryProgramData);
+  auto program5 =
+      escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryDebugProgramData);
+  auto program6 = escher->shader_program_factory()->GetProgram(kFlatlandStandardProgram);
+  auto program7 = escher->shader_program_factory()->GetProgram(kFlatlandColorConversionProgram);
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
   FX_LOGS(INFO) << "Time taken to load shaders: " << duration.count() << " microseconds.";
@@ -259,10 +262,14 @@ VK_TEST_F(ShaderProgramTest, CachedVariants) {
   const char* kMainVert = "shaders/model_renderer/main.vert";
   const char* kMainFrag = "shaders/test/main.frag";
 
-  auto program1 = escher->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
-  auto program2 = escher->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
-  auto program3 = escher->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
-  auto program4 = escher->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
+  auto program1 =
+      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
+  auto program2 =
+      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
+  auto program3 =
+      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
+  auto program4 =
+      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
 
   // The first two programs use the same variant args, so should be identical,
   // and similarly with the last two.
@@ -281,7 +288,10 @@ VK_TEST_F(ShaderProgramTest, NonExistentShaderDeathTest) {
   const char* kNonExistentFrag = "shaders/NON_EXISTENT_SHADER.frag";
 
   EXPECT_DEATH(
-      { auto program = escher->GetGraphicsProgram(kNonExistentVert, kNonExistentFrag, variant1); },
+      {
+        auto program = escher->shader_program_factory()->GetGraphicsProgram(
+            kNonExistentVert, kNonExistentFrag, variant1);
+      },
       "");
 }
 
@@ -350,7 +360,8 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelineDirectly) {
 
   // 1), 2): obtain the ShaderProgram and the corresponding PipelineLayout.
   // TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
-  auto program = ClearPipelineStash(escher->GetProgram(escher::kNoLightingProgramData));
+  auto program = ClearPipelineStash(
+      escher->shader_program_factory()->GetProgram(escher::kNoLightingProgramData));
   EXPECT_TRUE(program);
   PipelineLayoutPtr pipeline_layout =
       program->ObtainPipelineLayout(escher->pipeline_layout_cache(), nullptr);
@@ -440,8 +451,10 @@ VK_TEST_F(ShaderProgramTest, PipelineBuilder) {
 
   // 1), 2): obtain the ShaderPrograms and the corresponding PipelineLayouts.
   // TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
-  auto program1 = ClearPipelineStash(escher->GetProgram(escher::kNoLightingProgramData));
-  auto program2 = ClearPipelineStash(escher->GetProgram(escher::kPointLightProgramData));
+  auto program1 = ClearPipelineStash(
+      escher->shader_program_factory()->GetProgram(escher::kNoLightingProgramData));
+  auto program2 = ClearPipelineStash(
+      escher->shader_program_factory()->GetProgram(escher::kPointLightProgramData));
   EXPECT_TRUE(program1);
   EXPECT_TRUE(program2);
   PipelineLayoutPtr pipeline_layout1 =
@@ -692,7 +705,7 @@ bool TestRenderPassSubpasses(RenderPassInfo* rp, vk::Rect2D render_area,
 VK_TEST_F(ShaderProgramTest, MultipleSubpasses) {
   auto escher = test::GetEscher();
 
-  auto program = escher->GetProgram(kFlatlandStandardProgram);
+  auto program = escher->shader_program_factory()->GetProgram(kFlatlandStandardProgram);
   EXPECT_TRUE(program);
 
   auto cb = CommandBuffer::NewForGraphics(escher, /*use_protected_memory=*/false);
@@ -752,7 +765,7 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelines) {
   auto escher = test::GetEscher();
 
   // TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
-  auto program = escher->GetProgram(escher::kNoLightingProgramData);
+  auto program = escher->shader_program_factory()->GetProgram(escher::kNoLightingProgramData);
   EXPECT_TRUE(program);
 
   auto cb = CommandBuffer::NewForGraphics(escher, /*use_protected_memory=*/false);
@@ -934,7 +947,8 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelines) {
 // This tests if PipelineLayoutCache is keeping elements alive when ObtainPipelineLayout() is used.
 VK_TEST_F(ShaderProgramTest, ObtainPipelineLayoutHitsPipelineLayoutCache) {
   auto escher = test::GetEscher();
-  auto program = ClearPipelineStash(escher->GetProgram(escher::kNoLightingProgramData));
+  auto program = ClearPipelineStash(
+      escher->shader_program_factory()->GetProgram(escher::kNoLightingProgramData));
   EXPECT_TRUE(program);
 
   // We should use cache to generate pipeline layouts.

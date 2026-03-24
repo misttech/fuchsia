@@ -11,11 +11,9 @@
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/impl/image_cache.h"
-#include "src/ui/lib/escher/status.h"
 #include "src/ui/lib/escher/util/hash.h"
 #include "src/ui/lib/escher/util/hash_map.h"
 #include "src/ui/lib/escher/vk/command_buffer.h"
-#include "src/ui/lib/escher/vk/shader_program_factory.h"
 #include "src/ui/lib/escher/vk/vulkan_context.h"
 #include "src/ui/lib/escher/vk/vulkan_device_queues.h"
 
@@ -25,7 +23,7 @@ namespace escher {
 //
 // Escher is currently not thread-safe; it (and all objects obtained from it)
 // must be used from a single thread.
-class Escher final : public ShaderProgramFactory {
+class Escher final {
  public:
   // Escher does not take ownership of the objects in the Vulkan context.  It is
   // up to the application to eventually destroy them, and also to ensure that
@@ -155,10 +153,6 @@ class Escher final : public ShaderProgramFactory {
   bool allow_ycbcr() const { return device_->caps().allow_ycbcr; }
 
  private:
-  // |ShaderProgramFactory|
-  ShaderProgramPtr GetProgramImpl(const std::string shader_paths[EnumCount<ShaderStage>()],
-                                  ShaderVariantArgs args) override;
-
   VulkanDeviceQueuesPtr device_;
   VulkanContext vulkan_context_;
 

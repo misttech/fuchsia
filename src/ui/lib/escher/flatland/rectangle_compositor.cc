@@ -4,6 +4,7 @@
 
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 
+#include "src/ui/lib/escher/defaults/default_shader_program_factory.h"
 #include "src/ui/lib/escher/impl/naive_image.h"
 #include "src/ui/lib/escher/renderer/render_funcs.h"
 #include "src/ui/lib/escher/resources/resource_recycler.h"
@@ -260,8 +261,9 @@ void ApplyColorConversion(CommandBuffer* cmd_buf, ShaderProgramPtr program,
 // GPU buffers to store mesh data.
 RectangleCompositor::RectangleCompositor(EscherWeakPtr escher)
     : escher_(escher),
-      standard_program_(escher->GetProgram(kFlatlandStandardProgram)),
-      color_conversion_program_(escher->GetProgram(kFlatlandColorConversionProgram)) {}
+      standard_program_(escher->shader_program_factory()->GetProgram(kFlatlandStandardProgram)),
+      color_conversion_program_(
+          escher->shader_program_factory()->GetProgram(kFlatlandColorConversionProgram)) {}
 
 // DrawBatch generates the Vulkan data needed to render the batch (e.g. renderpass,
 // bounds, etc) and calls |TraverseBatch| which iterates over the renderables and
