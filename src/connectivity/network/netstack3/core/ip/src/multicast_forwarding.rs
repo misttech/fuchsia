@@ -207,10 +207,12 @@ where
     CounterContext::<MulticastForwardingCounters<I>>::counters(core_ctx).rx.increment();
     // Short circuit if the packet's addresses don't constitute a valid
     // multicast route key (e.g. src is not unicast, or dst is not multicast).
-    let key = MulticastRouteKey::new(packet.src_ip(), packet.dst_ip())?;
-    CounterContext::<MulticastForwardingCounters<I>>::counters(core_ctx)
-        .no_tx_invalid_key
-        .increment();
+    let Some(key) = MulticastRouteKey::new(packet.src_ip(), packet.dst_ip()) else {
+        CounterContext::<MulticastForwardingCounters<I>>::counters(core_ctx)
+            .no_tx_invalid_key
+            .increment();
+        return None;
+    };
 
     // Short circuit if the device has forwarding disabled.
     if !core_ctx.is_device_multicast_forwarding_enabled(dev) {
