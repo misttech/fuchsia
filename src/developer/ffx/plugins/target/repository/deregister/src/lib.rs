@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_pkg::RepositoryManagerProxy;
+use fdomain_fuchsia_pkg_rewrite::EngineProxy;
+use fdomain_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
 use ffx_config::EnvironmentContext;
 use ffx_target_repository_deregister_args::DeregisterCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result, bug, return_bug, return_user_error, user_error};
-use fidl_fuchsia_pkg::RepositoryManagerProxy;
-use fidl_fuchsia_pkg_rewrite::EngineProxy;
-use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
-use target_holders::toolbox;
+use target_holders::fdomain::toolbox;
 use zx_status::Status;
 
 const REPOSITORY_URL_PREFIX: &str = "fuchsia-pkg://";
@@ -136,27 +136,29 @@ async fn remove_aliases(repo_url: &str, rewrite_proxy: EngineProxy) -> Result<()
 mod test {
     use super::*;
     use camino::Utf8PathBuf;
+    use fdomain_client::fidl::ServerEnd;
+    use fdomain_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
     use ffx_config::ConfigLevel;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::TestBuffers;
-    use fidl::endpoints::ServerEnd;
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
     };
-    use fidl_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
     use futures::StreamExt;
     use futures::channel::oneshot::{Receiver, channel};
     use pkg::{PkgServerInfo, ServerMode};
     use std::collections::BTreeSet;
     use std::net::Ipv4Addr;
     use std::process;
-    use target_holders::fake_proxy;
+    use std::sync::Arc;
+    use target_holders::fdomain::fake_proxy;
 
-    async fn setup_fake_repo_manager_server()
-    -> (RepositoryManagerProxy, Receiver<(String, Option<String>)>) {
+    async fn setup_fake_repo_manager_server(
+        client: Arc<fdomain_client::Client>,
+    ) -> (RepositoryManagerProxy, Receiver<(String, Option<String>)>) {
         let (_sender, receiver) = channel();
-        let repos = fake_proxy(move |req| match req {
-            fidl_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
+        let repos = fake_proxy(client, move |req| match req {
+            fdomain_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
                 responder.send(Ok(())).unwrap();
             }
             other => panic!("Unexpected request: {:?}", other),
@@ -203,7 +205,7 @@ mod test {
     }
 
     fn handle_edit_transaction(
-        transaction: ServerEnd<fidl_fuchsia_pkg_rewrite::EditTransactionMarker>,
+        transaction: ServerEnd<fdomain_fuchsia_pkg_rewrite::EditTransactionMarker>,
     ) {
         fuchsia_async::Task::spawn(async move {
             let mut tx_stream = transaction.into_stream();
@@ -242,8 +244,8 @@ mod test {
         .detach()
     }
 
-    fn setup_fake_engine_server() -> EngineProxy {
-        let engine = fake_proxy(move |req| match req {
+    fn setup_fake_engine_server(client: Arc<fdomain_client::Client>) -> EngineProxy {
+        let engine = fake_proxy(client, move |req| match req {
             EngineRequest::StartEditTransaction { transaction, control_handle: _ } => {
                 handle_edit_transaction(transaction);
             }
@@ -254,6 +256,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_deregister_default_repository_standalone() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
@@ -265,7 +268,7 @@ mod test {
             .set(&env.context, "some-target".into())
             .expect("Setting default target");
 
-        let (repo_mgr, _) = setup_fake_repo_manager_server().await;
+        let (repo_mgr, _) = setup_fake_repo_manager_server(Arc::clone(&client)).await;
 
         make_server_instance(ServerMode::Foreground, default_repo_name.to_string(), &env.context)
             .expect("creating test server");
@@ -274,7 +277,7 @@ mod test {
             cmd: DeregisterCommand { repository: None, port: None },
             context: env.context.clone(),
             repo_proxy: repo_mgr,
-            engine_proxy: setup_fake_engine_server(),
+            engine_proxy: setup_fake_engine_server(Arc::clone(&client)),
         };
 
         let buffers = TestBuffers::default();
@@ -286,6 +289,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_deregister_standalone_not_found() {
+        let client = fdomain_local::local_client_empty();
         // command should still succeed if the repo_proxy returns NOT_FOUND.
         let env = ffx_config::test_init().unwrap();
 
@@ -298,8 +302,8 @@ mod test {
             .set(&env.context, "some-target".into())
             .expect("Setting default target");
 
-        let repo_mgr = fake_proxy(move |req| match req {
-            fidl_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
+        let repo_mgr = fake_proxy(Arc::clone(&client), move |req| match req {
+            fdomain_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
                 responder.send(Err(Status::NOT_FOUND.into_raw())).unwrap();
             }
             other => panic!("Unexpected request: {:?}", other),
@@ -312,7 +316,7 @@ mod test {
             cmd: DeregisterCommand { repository: None, port: None },
             context: env.context.clone(),
             repo_proxy: repo_mgr,
-            engine_proxy: setup_fake_engine_server(),
+            engine_proxy: setup_fake_engine_server(Arc::clone(&client)),
         };
 
         let buffers = TestBuffers::default();
@@ -324,6 +328,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_deregister_with_scheme() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
@@ -335,8 +340,8 @@ mod test {
             .set(&env.context, "some-target".into())
             .expect("Setting default target");
 
-        let repo_mgr = fake_proxy(move |req| match req {
-            fidl_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
+        let repo_mgr = fake_proxy(Arc::clone(&client), move |req| match req {
+            fdomain_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
                 responder.send(Err(Status::NOT_FOUND.into_raw())).unwrap();
             }
             other => panic!("Unexpected request: {:?}", other),
@@ -350,7 +355,7 @@ mod test {
             cmd: DeregisterCommand { repository: Some(erroneous_repo_name), port: None },
             context: env.context.clone(),
             repo_proxy: repo_mgr,
-            engine_proxy: setup_fake_engine_server(),
+            engine_proxy: setup_fake_engine_server(Arc::clone(&client)),
         };
 
         let buffers = TestBuffers::default();
