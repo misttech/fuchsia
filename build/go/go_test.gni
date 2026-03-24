@@ -39,7 +39,7 @@ import("//build/testing/host_test.gni")
 #
 #   timeout:
 #     Optional: override default timeout. Only applies to host tests.
-#     Values must be valid Go durations such as "300ms", "-1.5h" or "2h45m".
+#     Values must be valid Go durations such as "300ms", "1.5h" or "2h45m".
 #     See https://golang.org/cmd/go/#hdr-Testing_flags for details on timeout.
 #     See https://golang.org/pkg/time/#ParseDuration for duration format.
 #     Type: string.
@@ -69,6 +69,7 @@ template("go_test") {
       deps = [ ":${_go_build_target_name}" ]
     }
     host_test(target_name) {
+      # LINT.IfChange(go_test_wrapper)
       binary_path =
           get_label_info(
               "//build/bazel/host:bazel_root_host_tools.go_test_parser",
@@ -84,6 +85,8 @@ template("go_test") {
         timeout,
         "-test.v",  # Emit detailed test case information.
       ]
+
+      # LINT.ThenChange(//build/bazel/host_tests/host_go_test.bzl:go_test_wrapper)
       if (defined(invoker.args)) {
         args += invoker.args
       }
