@@ -13,8 +13,10 @@ rustc_library("fidl-fuchsia-update-installer-ext") {
   deps = [
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
     "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+    "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_fdomain",
     "//src/sys/pkg/lib/event-queue",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:http",
@@ -29,6 +31,7 @@ rustc_library("fidl-fuchsia-update-installer-ext") {
 
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:assert_matches",

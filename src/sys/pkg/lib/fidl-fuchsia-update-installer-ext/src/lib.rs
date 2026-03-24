@@ -16,6 +16,8 @@ pub use state::{
 pub mod options;
 pub use options::{Initiator, Options};
 
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_update_installer as fd_installer;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_update_installer::{
     InstallerProxy, MonitorMarker, MonitorRequest, MonitorRequestStream, RebootControllerMarker,
@@ -27,6 +29,7 @@ use log::info;
 use pin_project::pin_project;
 use std::fmt;
 use std::pin::Pin;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// Describes the errors encountered by UpdateAttempt.
@@ -65,6 +68,26 @@ pub struct UpdateAttempt {
     monitor: UpdateAttemptMonitor,
 }
 
+/// A remote update attempt.
+#[pin_project(project = UpdateAttemptFDomainProj)]
+#[derive(Debug)]
+pub struct UpdateAttemptFDomain {
+    /// UUID identifying the update attempt.
+    attempt_id: String,
+
+    /// The monitor for this update attempt.
+    #[pin]
+    monitor: UpdateAttemptMonitorFDomain,
+}
+
+/// A monitor of an update attempt.
+#[pin_project(project = UpdateAttemptMonitorFDomainProj)]
+pub struct UpdateAttemptMonitorFDomain {
+    /// Server end of a fdomain_fuchsia_update_installer.Monitor protocol.
+    #[pin]
+    stream: fd_installer::MonitorRequestStream,
+}
+
 /// A monitor of an update attempt.
 #[pin_project(project = UpdateAttemptMonitorProj)]
 pub struct UpdateAttemptMonitor {
@@ -77,6 +100,30 @@ impl UpdateAttempt {
     /// Getter for the attempt_id.
     pub fn attempt_id(&self) -> &str {
         &self.attempt_id
+    }
+}
+
+impl UpdateAttemptFDomain {
+    /// Getter for the attempt_id.
+    pub fn attempt_id(&self) -> &str {
+        &self.attempt_id
+    }
+}
+
+impl UpdateAttemptMonitorFDomain {
+    fn new(
+        client: Arc<fdomain_client::Client>,
+    ) -> Result<(fdomain_client::fidl::ClientEnd<fd_installer::MonitorMarker>, Self), fidl::Error>
+    {
+        let (monitor_client_end, stream) =
+            client.create_request_stream::<fd_installer::MonitorMarker>();
+
+        Ok((monitor_client_end, Self { stream }))
+    }
+
+    /// Create a new UpdateAttemptMonitorFDomain using the given stream.
+    pub fn from_stream(stream: fd_installer::MonitorRequestStream) -> Self {
+        Self { stream }
     }
 }
 
@@ -118,6 +165,32 @@ pub async fn start_update(
     Ok(UpdateAttempt { attempt_id, monitor })
 }
 
+/// Checks if an update can be started and returns the UpdateAttempt containing
+/// the attempt_id and MonitorRequestStream to the client.
+pub async fn start_update_fdomain(
+    update_url: &http::Uri,
+    options: Options,
+    installer_proxy: &fd_installer::InstallerProxy,
+    reboot_controller_server_end: Option<
+        fdomain_client::fidl::ServerEnd<fd_installer::RebootControllerMarker>,
+    >,
+) -> Result<UpdateAttemptFDomain, UpdateAttemptError> {
+    let url = fidl_fuchsia_pkg::PackageUrl { url: update_url.to_string() };
+    let (monitor_client_end, monitor) = UpdateAttemptMonitorFDomain::new(installer_proxy.domain())
+        .map_err(UpdateAttemptError::FIDL)?;
+
+    let attempt_id = installer_proxy
+        .start_update(&url, &options.into(), monitor_client_end, reboot_controller_server_end)
+        .await
+        .map_err(UpdateAttemptError::FIDL)?
+        .map_err(|reason| match reason {
+            UpdateNotStartedReason::AlreadyInProgress => UpdateAttemptError::InstallInProgress,
+        })?;
+
+    info!("Update started with attempt id: {}", attempt_id);
+    Ok(UpdateAttemptFDomain { attempt_id, monitor })
+}
+
 /// Monitors the running update attempt given by `attempt_id`, or any running update attempt if no
 /// `attempt_id` is provided.
 pub async fn monitor_update(
@@ -154,11 +227,43 @@ impl Stream for UpdateAttemptMonitor {
     }
 }
 
+impl fmt::Debug for UpdateAttemptMonitorFDomain {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UpdateAttemptMonitor").field("stream", &"MonitorRequestStream").finish()
+    }
+}
+
+impl Stream for UpdateAttemptMonitorFDomain {
+    type Item = Result<State, MonitorUpdateAttemptError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let UpdateAttemptMonitorFDomainProj { stream } = self.project();
+        let poll_res = match stream.poll_next(cx) {
+            Poll::Ready(None) => return Poll::Ready(None),
+            Poll::Ready(Some(res)) => res.map_err(MonitorUpdateAttemptError::FIDL)?,
+            Poll::Pending => return Poll::Pending,
+        };
+        let fd_installer::MonitorRequest::OnState { state, responder } = poll_res;
+        let _ = responder.send();
+        let state = state.try_into().map_err(MonitorUpdateAttemptError::DecodeState)?;
+        Poll::Ready(Some(Ok(state)))
+    }
+}
+
 impl Stream for UpdateAttempt {
     type Item = Result<State, MonitorUpdateAttemptError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let UpdateAttemptProj { attempt_id: _, monitor } = self.project();
+        monitor.poll_next(cx)
+    }
+}
+
+impl Stream for UpdateAttemptFDomain {
+    type Item = Result<State, MonitorUpdateAttemptError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let UpdateAttemptFDomainProj { attempt_id: _, monitor } = self.project();
         monitor.poll_next(cx)
     }
 }
@@ -207,6 +312,50 @@ mod tests {
             state: fidl_fuchsia_update_installer::State,
         ) {
             let () = self.proxy.on_state(&state).await.unwrap();
+        }
+    }
+
+    struct TestAttemptFDomain {
+        proxy: fd_installer::MonitorProxy,
+    }
+
+    impl TestAttemptFDomain {
+        /// Wraps the given monitor proxy in a helper type that verifies sending state to the
+        /// remote end of the Monitor results in state being acknowledged as expected.
+        fn new(
+            monitor_client_end: fdomain_client::fidl::ClientEnd<fd_installer::MonitorMarker>,
+        ) -> Self {
+            let proxy = monitor_client_end.into_proxy();
+
+            Self { proxy }
+        }
+
+        async fn send_state_and_recv_ack(&mut self, state: State) {
+            self.send_raw_state_and_recv_ack(state.into()).await;
+        }
+
+        async fn send_raw_state_and_recv_ack(
+            &mut self,
+            state: fidl_fuchsia_update_installer::State,
+        ) {
+            let () = self.proxy.on_state(&state).await.unwrap();
+        }
+
+        async fn close(self) {
+            use fdomain_client::HandleBased;
+            let channel = self.proxy.into_channel().expect("into_channel failed");
+            let _ = channel.close().await;
+        }
+    }
+
+    impl UpdateAttemptMonitorFDomain {
+        /// Returns an UpdateAttemptMonitorFDomain and a TestAttemptFDomain that can be used to send states to
+        /// the monitor.
+        fn new_test() -> (TestAttemptFDomain, Self, Arc<fdomain_client::Client>) {
+            let client = fdomain_local::local_client_empty();
+            let (monitor_client_end, monitor) = Self::new(client.clone()).unwrap();
+
+            (TestAttemptFDomain::new(monitor_client_end), monitor, client)
         }
     }
 
@@ -622,5 +771,167 @@ mod tests {
         };
 
         future::join(client_fut, server_fut).await;
+    }
+    #[fasync::run_singlethreaded(test)]
+    async fn update_attempt_monitor_fdomain_forwards_and_acks_progress() {
+        let (mut send, monitor, _client) = UpdateAttemptMonitorFDomain::new_test();
+
+        let expected_fetch_state = &State::Fetch(
+            UpdateInfoAndProgress::builder()
+                .info(UpdateInfo::builder().download_size(1000).build())
+                .progress(Progress::builder().fraction_completed(0.5).bytes_downloaded(500).build())
+                .build(),
+        );
+
+        let client_fut = async move {
+            assert_eq!(
+                monitor.try_collect::<Vec<State>>().await.unwrap(),
+                vec![State::Prepare, expected_fetch_state.clone()]
+            );
+        };
+
+        let server_fut = async move {
+            send.send_state_and_recv_ack(State::Prepare).await;
+            send.send_state_and_recv_ack(expected_fetch_state.clone()).await;
+            send.close().await;
+        };
+
+        future::join(client_fut, server_fut).await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn update_attempt_monitor_fdomain_rejects_invalid_state() {
+        let (mut send, mut monitor, _client) = UpdateAttemptMonitorFDomain::new_test();
+
+        let client_fut = async move {
+            assert_matches!(
+                monitor.next().await.unwrap(),
+                Err(MonitorUpdateAttemptError::DecodeState(_))
+            );
+            assert_matches!(monitor.next().await, Some(Ok(State::Prepare)));
+        };
+
+        let server_fut = async move {
+            send.send_raw_state_and_recv_ack(fidl_fuchsia_update_installer::State::Fetch(
+                fidl_fuchsia_update_installer::FetchData {
+                    info: Some(fidl_fuchsia_update_installer::UpdateInfo {
+                        download_size: None,
+                        ..Default::default()
+                    }),
+                    progress: Some(InstallationProgress {
+                        fraction_completed: Some(2.0),
+                        bytes_downloaded: None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ))
+            .await;
+
+            // Even though the previous state was invalid and the monitor stream yielded an error,
+            // further states will continue to be processed by the client.
+            send.send_state_and_recv_ack(State::Prepare).await;
+        };
+
+        future::join(client_fut, server_fut).await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn start_update_fdomain_forwards_args_and_returns_attempt_id() {
+        let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
+
+        let opts = Options {
+            initiator: Initiator::User,
+            allow_attach_to_existing_attempt: false,
+            should_write_recovery: true,
+        };
+
+        let client = fdomain_local::local_client_empty();
+        let (proxy, mut stream) = client.create_proxy_and_stream::<fd_installer::InstallerMarker>();
+
+        let (_reboot_controller, reboot_controller_server_end) =
+            client.create_proxy::<fd_installer::RebootControllerMarker>();
+
+        let installer_fut = async move {
+            let returned_update_attempt =
+                start_update_fdomain(&pkgurl, opts, &proxy, Some(reboot_controller_server_end))
+                    .await
+                    .unwrap();
+            assert_eq!(
+                returned_update_attempt.attempt_id(),
+                "00000000-0000-0000-0000-000000000001"
+            );
+        };
+
+        let stream_fut = async move {
+            match stream.next().await.unwrap() {
+                Ok(fd_installer::InstallerRequest::StartUpdate {
+                    url,
+                    options:
+                        fidl_fuchsia_update_installer::Options {
+                            initiator,
+                            should_write_recovery,
+                            allow_attach_to_existing_attempt,
+                            ..
+                        },
+                    monitor: _,
+                    reboot_controller,
+                    responder,
+                }) => {
+                    assert_eq!(url.url, TEST_URL);
+                    assert_eq!(initiator, Some(fidl_fuchsia_update_installer::Initiator::User));
+                    assert_matches!(reboot_controller, Some(_));
+                    assert_eq!(should_write_recovery, Some(true));
+                    assert_eq!(allow_attach_to_existing_attempt, Some(false));
+                    responder.send(Ok("00000000-0000-0000-0000-000000000001")).unwrap();
+                }
+                request => panic!("Unexpected request: {request:?}"),
+            }
+        };
+        future::join(installer_fut, stream_fut).await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_install_error_fdomain() {
+        let pkgurl = "fuchsia-pkg://fuchsia.com/update/0".parse().unwrap();
+
+        let opts = Options {
+            initiator: Initiator::User,
+            allow_attach_to_existing_attempt: false,
+            should_write_recovery: true,
+        };
+
+        let client = fdomain_local::local_client_empty();
+        let (proxy, mut stream) = client.create_proxy_and_stream::<fd_installer::InstallerMarker>();
+
+        let (_reboot_controller, reboot_controller_server_end) =
+            client.create_proxy::<fd_installer::RebootControllerMarker>();
+
+        let installer_fut = async move {
+            let returned_update_attempt =
+                start_update_fdomain(&pkgurl, opts, &proxy, Some(reboot_controller_server_end))
+                    .await
+                    .unwrap();
+
+            assert_eq!(
+                returned_update_attempt.try_collect::<Vec<State>>().await.unwrap(),
+                vec![State::FailPrepare(PrepareFailureReason::Internal)]
+            );
+        };
+
+        let stream_fut = async move {
+            match stream.next().await.unwrap() {
+                Ok(fd_installer::InstallerRequest::StartUpdate { monitor, responder, .. }) => {
+                    responder.send(Ok("00000000-0000-0000-0000-000000000002")).unwrap();
+
+                    let mut attempt = TestAttemptFDomain::new(monitor);
+                    attempt
+                        .send_state_and_recv_ack(State::FailPrepare(PrepareFailureReason::Internal))
+                        .await;
+                }
+                request => panic!("Unexpected request: {request:?}"),
+            }
+        };
+        future::join(installer_fut, stream_fut).await;
     }
 }
