@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fdomain_fuchsia_pkg::RepositoryManagerProxy;
+use fdomain_fuchsia_pkg_rewrite::EngineProxy;
 use ffx_config::EnvironmentContext;
 use ffx_ssh::parse::HostAddr;
 use ffx_target_repository_register_args::{JsonURI, RegisterCommand};
@@ -11,11 +13,9 @@ use fho::{
     Error, FfxContext, FfxMain, FfxTool, FhoEnvironment, Result, TryFromEnv, bug,
     return_user_error, user_error,
 };
-use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_ext::{
     RepositoryConfig, RepositoryRegistrationAliasConflictMode, RepositoryTarget,
 };
-use fidl_fuchsia_pkg_rewrite::EngineProxy;
 use hyper::{Body, Method, Request};
 use pkg::repo::{RepoHostAddr, register_target_with_repo_instance};
 use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
@@ -25,7 +25,8 @@ use serde_json;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
-use target_holders::{HostAddrHolder, toolbox};
+use target_holders::HostAddrHolder;
+use target_holders::fdomain::toolbox;
 use url::Url;
 use zx_types::{ZX_ERR_ACCESS_DENIED, ZX_ERR_ALREADY_EXISTS, ZX_ERR_INVALID_ARGS};
 
@@ -262,6 +263,11 @@ async fn fetch_config_file_from_url(url: &Url) -> Result<RepositoryConfig> {
 mod test {
     use super::*;
     use camino::Utf8PathBuf;
+    use fdomain_fuchsia_net::{IpAddress, Ipv4Address};
+    use fdomain_fuchsia_pkg::{MirrorConfig, RepositoryConfig, RepositoryManagerRequest};
+    use fdomain_fuchsia_pkg_rewrite::{
+        EditTransactionRequest, EngineRequest, LiteralRule, Rule, RuleIteratorRequest,
+    };
     use ffx_config::ConfigLevel;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_target_repository_register_args::parse_json_uri;
@@ -270,13 +276,8 @@ mod test {
         RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
         TargetIpPort, TargetProxy, TargetRequest, TargetState,
     };
-    use fidl_fuchsia_net::{IpAddress, Ipv4Address};
-    use fidl_fuchsia_pkg::{MirrorConfig, RepositoryConfig, RepositoryManagerRequest};
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
-    };
-    use fidl_fuchsia_pkg_rewrite::{
-        EditTransactionRequest, EngineRequest, LiteralRule, Rule, RuleIteratorRequest,
     };
     use fuchsia_async as fasync;
     use fuchsia_repo::repository::RepositorySpec;
@@ -289,7 +290,8 @@ mod test {
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use target_behavior::{ConnectionBehavior, target_interface};
-    use target_holders::{FakeInjector, fake_proxy};
+    use target_holders::FakeInjector;
+    use target_holders::fdomain::fake_proxy;
     use tempfile::TempDir;
 
     const REPO_NAME: &str = "some-name";
@@ -315,12 +317,13 @@ mod test {
 }"#;
 
     async fn setup_fake_repo_proxy(
+        client: Arc<fdomain_client::Client>,
         expected_config: Option<RepositoryConfig>,
         return_error: bool,
     ) -> (RepositoryManagerProxy, Receiver<Result<(), i32>>) {
         let (sender, receiver) = channel();
         let mut _sender = Some(sender);
-        let repos = fake_proxy(move |req| match req {
+        let repos = fake_proxy(client, move |req| match req {
             RepositoryManagerRequest::Add { repo, responder } => {
                 if let Some(expected) = &expected_config {
                     if expected.repo_url != repo.repo_url {
@@ -382,11 +385,12 @@ mod test {
     }
 
     async fn setup_fake_engine_proxy(
+        client: Arc<fdomain_client::Client>,
         expected_rule: Option<Rule>,
     ) -> (EngineProxy, Receiver<Result<(), i32>>) {
         let (sender, receiver) = channel();
         let mut _sender = Some(sender);
-        let repos = fake_proxy(move |req| match req {
+        let repos = fake_proxy(client, move |req| match req {
             EngineRequest::StartEditTransaction { transaction, control_handle: _ } => {
                 let expected_rule = expected_rule.clone();
                 fuchsia_async::Task::local(async move {
@@ -523,7 +527,7 @@ mod test {
 
     impl FakeTarget {
         fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
-            let target_proxy: TargetProxy = fake_proxy(move |req| match req {
+            let target_proxy: TargetProxy = target_holders::fake_proxy(move |req| match req {
                 TargetRequest::Identity { responder, .. } => {
                     let ssh_host_address = host_address.clone();
                     fasync::Task::local(async move {
@@ -541,6 +545,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_standalone() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -558,8 +563,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let aliases = vec![String::from("my-alias")];
 
@@ -603,6 +608,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_standalone_product_bundle() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -632,7 +638,7 @@ mod test {
             root_version: Some(1),
             root_threshold: Some(1),
             use_local_mirror: Some(false),
-            storage_type: Some(fidl_fuchsia_pkg::RepositoryStorageType::Ephemeral),
+            storage_type: Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral),
             ..Default::default()
         };
 
@@ -643,8 +649,10 @@ mod test {
             path_prefix_replacement: "/".into(),
         });
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(Some(expected_config), false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(Some(expected_rule)).await;
+        let (repo_proxy, _) =
+            setup_fake_repo_proxy(Arc::clone(&client), Some(expected_config), false).await;
+        let (engine_proxy, _) =
+            setup_fake_engine_proxy(Arc::clone(&client), Some(expected_rule)).await;
 
         let mut aliases = BTreeSet::new();
         aliases.insert("fuchsia.com".into());
@@ -699,6 +707,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_default_repository() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -734,8 +743,8 @@ mod test {
         .await
         .expect("repo server instance");
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -760,6 +769,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_storage_type() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -776,8 +786,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let aliases = vec![String::from("my-alias")];
 
@@ -821,6 +831,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_empty_aliases() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -838,8 +849,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         env.context
             .query(TARGET_DEFAULT_KEY)
@@ -881,6 +892,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_returns_error() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -913,8 +925,8 @@ mod test {
         .await
         .expect("repo server instance");
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, true).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, true).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -941,6 +953,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_returns_error_machine() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -974,8 +987,8 @@ mod test {
         .await
         .expect("repo server instance");
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, true).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, true).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -1010,6 +1023,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_machine() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
@@ -1027,8 +1041,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         make_server_instance(
             env.isolate_root.path(),
@@ -1082,6 +1096,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_tunnel_required() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) = FakeTarget::new(None);
@@ -1113,8 +1128,8 @@ mod test {
         .await
         .expect("repo server instance");
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -1140,6 +1155,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_address_override() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         env.context
@@ -1172,12 +1188,13 @@ mod test {
             root_version: Some(1),
             root_threshold: Some(1),
             use_local_mirror: Some(false),
-            storage_type: Some(fidl_fuchsia_pkg::RepositoryStorageType::Ephemeral),
+            storage_type: Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral),
             ..Default::default()
         };
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(Some(expected_config), false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) =
+            setup_fake_repo_proxy(Arc::clone(&client), Some(expected_config), false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
         // A target with no ssh host address would require a tunnel.
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -1201,11 +1218,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_config_from_json_file() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg.json");
@@ -1234,11 +1252,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_config_from_json_file_via_url_scheme() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg.json");
@@ -1267,11 +1286,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_config_from_json_file_invalid_arguments() {
+        let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
-        let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
-        let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
+        let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
+        let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
         let tmp = TempDir::new().unwrap();
         let cfg = tmp.path().join("cfg.json");
