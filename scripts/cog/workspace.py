@@ -683,7 +683,19 @@ class Workspace:
 
         # We fetch fuchsia repository from the last 2 days because git hook will
         # refer to commit from yesterday to generate integration_daily_commit_hash.
-        two_days_ago = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+        integration_commit_timestamp = int(
+            self._run(
+                ["git", "show", "-s", "--format=%ct"],
+                cwd=integration_directory,
+                capture_output=True,
+            ).strip()
+        )
+        integration_commit_time = datetime.fromtimestamp(
+            integration_commit_timestamp
+        )
+        two_days_ago = (integration_commit_time - timedelta(days=2)).strftime(
+            "%Y-%m-%d"
+        )
         if not self.cartfs_fuchsia_dir.exists():
             self._run(
                 [
