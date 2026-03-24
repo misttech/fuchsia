@@ -15,15 +15,15 @@ rustc_library("ffx_power") {
   edition = "2024"
   with_unit_tests = false
   deps = [
-    "//sdk/fidl/fuchsia.power:fuchsia.power_rust",
-    "//sdk/fidl/fuchsia.power.manager.debug:fuchsia.power.manager.debug_rust",
-    "//sdk/fidl/fuchsia.power.topology.test:fuchsia.power.topology.test_rust",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+    "//sdk/fidl/fuchsia.power:fuchsia.power_rust_fdomain",
+    "//sdk/fidl/fuchsia.power.manager.debug:fuchsia.power.manager.debug_rust_fdomain",
+    "//sdk/fidl/fuchsia.power.topology.test:fuchsia.power.topology.test_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/rcs:lib_fdomain",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/lib/fidl/rust/fidl",
-    "//src/power/tools/cli:lib",
+    "//src/lib/fdomain/client",
+    "//src/power/tools/cli:lib_fdomain",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",

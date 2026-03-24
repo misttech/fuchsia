@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use {
-    fidl_fuchsia_power as fpower, fidl_fuchsia_power_manager_debug as fdebug,
-    fidl_fuchsia_power_topology_test as fpt,
+    flex_fuchsia_power as fpower, flex_fuchsia_power_manager_debug as fdebug,
+    flex_fuchsia_power_topology_test as fpt,
 };
 
 pub trait Connector {

@@ -5,7 +5,7 @@ pub mod args;
 
 use anyhow::Result;
 use args::{ApplicationActivityCommand, ApplicationActivitySubcommand};
-use fidl_fuchsia_power_topology_test as fpt;
+use flex_fuchsia_power_topology_test as fpt;
 use std::io::Write;
 
 pub async fn application_activity(

@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 use std::io::Write;
 
 use args::{CollaborativeRebootCommand, PerformPendingRebootCommand, SubCommand};
-use fidl_fuchsia_power as fpower;
+use flex_fuchsia_power as fpower;
 
 pub async fn collaborative_reboot(
     writer: &mut dyn Write,
@@ -30,20 +30,22 @@ pub async fn collaborative_reboot(
     }
 }
 
+#[cfg(feature = "fdomain")]
 #[cfg(test)]
 mod tests {
     use ffx_writer::TestBuffers;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     use super::*;
 
     #[fuchsia::test]
     async fn test_perform_pending_reboot() {
+        let client = fdomain_local::local_client_empty();
         let command = CollaborativeRebootCommand {
-            subcommand: SubCommand::PerformPendingReboot(PerformPendingRebootCommand {}),
+            subcommand: SubCommand::PerformPendingReboot(args::PerformPendingRebootCommand {}),
         };
 
-        let power_proxy = fake_proxy(move |req| match req {
+        let power_proxy = fake_proxy(std::sync::Arc::clone(&client), move |req| match req {
             fpower::CollaborativeRebootInitiatorRequest::PerformPendingReboot {
                 responder, ..
             } => responder

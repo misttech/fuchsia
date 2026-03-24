@@ -7,7 +7,7 @@ use fuchsia_component::client;
 use powercli::args::PowerCommand;
 use {
     fidl_fuchsia_power as fpower, fidl_fuchsia_power_manager_debug as fdebug,
-    fidl_fuchsia_power_topology_test as fpt, fuchsia_async as fasync,
+    fidl_fuchsia_power_topology_test as fpt,
 };
 
 struct Connector {}
@@ -33,7 +33,7 @@ impl powercli::connector::Connector for Connector {
     }
 }
 
-#[fasync::run_singlethreaded]
+#[fuchsia::main]
 async fn main() -> Result<()> {
     let cmd: PowerCommand = argh::from_env();
     powercli::power(cmd, Connector::new(), &mut std::io::stdout()).await

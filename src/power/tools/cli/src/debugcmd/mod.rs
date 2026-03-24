@@ -6,7 +6,7 @@ pub mod args;
 
 use anyhow::{Result, anyhow};
 use args::DebugCommand;
-use fidl_fuchsia_power_manager_debug as fdebug;
+use flex_fuchsia_power_manager_debug as fdebug;
 
 pub async fn debugcmd(cmd: DebugCommand, proxy: fdebug::DebugProxy) -> Result<()> {
     proxy
@@ -29,21 +29,23 @@ pub async fn debugcmd(cmd: DebugCommand, proxy: fdebug::DebugProxy) -> Result<()
     Ok(())
 }
 
+#[cfg(feature = "fdomain")]
 #[cfg(test)]
 mod tests {
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     use super::*;
 
     #[fuchsia::test]
     async fn test_debugcmd() {
-        let command_request = PowerManagerDebugCommand {
+        let client = fdomain_local::local_client_empty();
+        let command_request = DebugCommand {
             node_name: "test_node_name".to_string(),
             command: "test_command".to_string(),
             args: vec!["test_arg_1".to_string(), "test_arg_2".to_string()],
         };
 
-        let debug_proxy = fake_proxy(move |req| match req {
+        let debug_proxy = fake_proxy(std::sync::Arc::clone(&client), move |req| match req {
             fdebug::DebugRequest::Message { node_name, command, args, responder, .. } => {
                 assert_eq!(node_name, "test_node_name");
                 assert_eq!(command, "test_command");
@@ -52,6 +54,6 @@ mod tests {
             }
         });
 
-        debugcmd(debug_proxy, command_request).await.unwrap();
+        debugcmd(command_request, debug_proxy).await.unwrap();
     }
 }

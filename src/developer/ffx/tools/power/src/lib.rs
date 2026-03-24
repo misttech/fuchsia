@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context, Result};
+use fdomain_client::fidl::DiscoverableProtocolMarker;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fidl::endpoints::DiscoverableProtocolMarker;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use {
-    fidl_fuchsia_power as fpower, fidl_fuchsia_power_manager_debug as fdebug,
-    fidl_fuchsia_power_topology_test as fpt, fidl_fuchsia_sys2 as fsys,
+    fdomain_fuchsia_power as fpower, fdomain_fuchsia_power_manager_debug as fdebug,
+    fdomain_fuchsia_power_topology_test as fpt, rcs_fdomain as rcs,
 };
 
 mod args;
@@ -29,26 +29,8 @@ impl Connector {
         let Ok(ref remote_control) = self.remote_control else {
             anyhow::bail!("{}", self.remote_control.as_ref().unwrap_err());
         };
-        // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-        let (proxy, server) = fidl::endpoints::create_proxy::<S>();
-        remote_control
-            .connect_capability(
-                moniker,
-                fsys::OpenDirType::ExposedDir,
-                S::PROTOCOL_NAME,
-                server.into_channel(),
-            )
-            .await?
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to connect to {} at {} as {}: {:?}",
-                    S::DEBUG_NAME,
-                    moniker,
-                    S::PROTOCOL_NAME,
-                    e
-                )
-            })?;
-        Ok(proxy)
+        rcs::connect_to_protocol::<S>(std::time::Duration::from_secs(15), moniker, &remote_control)
+            .await
     }
 }
 
