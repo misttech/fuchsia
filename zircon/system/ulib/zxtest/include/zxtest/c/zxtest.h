@@ -139,15 +139,15 @@ __END_CDECLS
 
 #define LIB_ZXTEST_REGISTER_FN(TestCase, Test) TestCase##_##Test##_register_fn
 
-#define LIB_ZXTEST_REGISTER(TestCase, Test)                                              \
-  static zxtest_test_ref_t LIB_ZXTEST_TEST_REF(TestCase, Test) = {.test_index = 0,       \
-                                                                  .test_case_index = 0}; \
-  static void LIB_ZXTEST_TEST_FN(TestCase, Test)(void);                                  \
-  static void LIB_ZXTEST_REGISTER_FN(TestCase, Test)(void) __attribute__((constructor)); \
-  void LIB_ZXTEST_REGISTER_FN(TestCase, Test)(void) {                                    \
-    LIB_ZXTEST_TEST_REF(TestCase, Test) = zxtest_runner_register_test(                   \
-        #TestCase, #Test, __FILE__, __LINE__, &LIB_ZXTEST_TEST_FN(TestCase, Test));      \
-  }                                                                                      \
+#define LIB_ZXTEST_REGISTER(TestCase, Test)                                                \
+  __attribute__((unused)) static zxtest_test_ref_t LIB_ZXTEST_TEST_REF(TestCase, Test) = { \
+      .test_index = 0, .test_case_index = 0};                                              \
+  static void LIB_ZXTEST_TEST_FN(TestCase, Test)(void);                                    \
+  static void LIB_ZXTEST_REGISTER_FN(TestCase, Test)(void) __attribute__((constructor));   \
+  void LIB_ZXTEST_REGISTER_FN(TestCase, Test)(void) {                                      \
+    LIB_ZXTEST_TEST_REF(TestCase, Test) = zxtest_runner_register_test(                     \
+        #TestCase, #Test, __FILE__, __LINE__, &LIB_ZXTEST_TEST_FN(TestCase, Test));        \
+  }                                                                                        \
   void LIB_ZXTEST_TEST_FN(TestCase, Test)(void)
 
 // Register a test as part of a TestCase.
