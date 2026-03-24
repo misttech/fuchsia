@@ -246,13 +246,32 @@ fs_test_suite("minfs") {
     deps += [ ":minfs-power-test" ]
   }
 
+  # Isolate corrupt-tests into a separate package to inject the false CVF panic override
+  # without impacting the main suite.
+  omit_components = [ ":minfs-corrupt-tests" ]
+
   # TODO(b/297201368): These tests timeout only on the RISC-V builders currently.
   if (current_cpu == "riscv64") {
-    omit_components = [
+    omit_components += [
       ":minfs-full-tests",
       ":minfs-resize-tests",
     ]
     extra_components -= [ ":minfs-integration-fs-tests" ]
+  }
+}
+
+fuchsia_test_package("minfs-corrupt-fs-tests") {
+  test_components = [ ":minfs-corrupt-tests" ]
+  deps = [
+    ":minfs_fs_test_config",
+    ":minfs_validate_fs_test_config",
+    "//src/storage/fvm:fvm-component",
+    "//src/storage/minfs/bin:minfs-test-component-corrupt",
+  ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
   }
 }
 

@@ -67,7 +67,8 @@ zx::result<> Mount(std::unique_ptr<minfs::Bcache> bcache, const MountOptions& op
                    fidl::ServerEnd<fuchsia_io::Directory> root);
 
 zx::result<> StartComponent(fidl::ServerEnd<fuchsia_io::Directory> root,
-                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle);
+                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle> lifecycle,
+                            bool die_on_mutation_failure = true);
 
 #endif  // __Fuchsia__
 

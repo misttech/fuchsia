@@ -17,7 +17,7 @@ namespace minfs {
 
 class ComponentRunner final : public fs::ManagedVfs {
  public:
-  explicit ComponentRunner(async_dispatcher_t* dispatcher);
+  explicit ComponentRunner(async_dispatcher_t* dispatcher, bool die_on_mutation_failure = true);
 
   ComponentRunner(const ComponentRunner&) = delete;
   ComponentRunner& operator=(const ComponentRunner&) = delete;
@@ -36,6 +36,7 @@ class ComponentRunner final : public fs::ManagedVfs {
  private:
   async_dispatcher_t* dispatcher_;
   fit::closure on_unmount_;
+  bool die_on_mutation_failure_;
 
   // These are initialized when ServeRoot is called.
   fbl::RefPtr<fs::PseudoDir> outgoing_;

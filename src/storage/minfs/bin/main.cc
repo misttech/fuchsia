@@ -9,6 +9,7 @@
 #include <zircon/process.h>
 #include <zircon/processargs.h>
 
+#include "src/storage/minfs/bin/minfs_config_lib.h"
 #include "src/storage/minfs/mount.h"
 
 namespace {
@@ -35,7 +36,9 @@ int StartComponent() {
 
   fuchsia_scheduler::SetRoleForThisThread("fuchsia.storage.minfs.main");
 
-  zx::result status = minfs::StartComponent(std::move(outgoing_dir), std::move(lifecycle_request));
+  auto config = minfs_config_lib::Config::TakeFromStartupHandle();
+  zx::result status = minfs::StartComponent(std::move(outgoing_dir), std::move(lifecycle_request),
+                                            config.die_on_mutation_failure());
   if (status.is_error()) {
     return EXIT_FAILURE;
   }

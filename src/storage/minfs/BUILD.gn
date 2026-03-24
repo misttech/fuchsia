@@ -163,6 +163,7 @@ group("tests") {
   deps = [
     "allocator/test:minfs-allocator-tests",
     "bin:tests",
+    "test:minfs-corrupt-fs-tests",
     "test:minfs-fs-tests",
     "test:minfs-fuzzers",
     "test:minfs-slow-fs-tests",

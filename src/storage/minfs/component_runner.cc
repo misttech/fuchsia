@@ -15,8 +15,10 @@
 
 namespace minfs {
 
-ComponentRunner::ComponentRunner(async_dispatcher_t* dispatcher)
-    : fs::ManagedVfs(dispatcher), dispatcher_(dispatcher) {
+ComponentRunner::ComponentRunner(async_dispatcher_t* dispatcher, bool die_on_mutation_failure)
+    : fs::ManagedVfs(dispatcher),
+      dispatcher_(dispatcher),
+      die_on_mutation_failure_(die_on_mutation_failure) {
   outgoing_ = fbl::MakeRefCounted<fs::PseudoDir>();
   auto startup = fbl::MakeRefCounted<fs::PseudoDir>();
   outgoing_->AddEntry("startup", startup);
@@ -25,7 +27,9 @@ ComponentRunner::ComponentRunner(async_dispatcher_t* dispatcher)
   auto startup_svc = fbl::MakeRefCounted<StartupService>(
       dispatcher_, [this](std::unique_ptr<Bcache> device, const MountOptions& options) {
         FX_LOGS(INFO) << "configure callback is called";
-        zx::result<> status = Configure(std::move(device), options);
+        MountOptions modified_options = options;
+        modified_options.die_on_mutation_failure = die_on_mutation_failure_;
+        zx::result<> status = Configure(std::move(device), modified_options);
         if (status.is_error()) {
           FX_LOGS(ERROR) << "Could not configure minfs: " << status.status_string();
         }

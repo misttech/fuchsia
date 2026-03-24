@@ -43,4 +43,7 @@
             from: "self",
         },
     ],
+    config: {
+        die_on_mutation_failure: { type: "bool" },
+    },
 }
