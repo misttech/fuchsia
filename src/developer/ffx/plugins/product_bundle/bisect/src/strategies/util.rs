@@ -5,7 +5,7 @@
 //! This module contains shared utility functions used by multiple bisection strategies.
 
 use crate::bisection_plan::StepResult;
-use crate::search_space::{BisectionStatus, SearchSpace};
+use crate::search_space::{ArtifactVersionSeries, BisectionStatus, SearchSpace};
 
 /// A common implementation for finding the culprit between a good and bad build.
 ///
@@ -113,6 +113,26 @@ pub(super) fn should_continue(space: &SearchSpace, results: &Vec<StepResult>) ->
     }
 
     BisectionStatus::Continue
+}
+
+/// Halves the search space for a single artifact dimension based on the test result.
+/// Keeps the right half (newer versions) if the test passed, and the left half
+/// (older versions) if the test failed.
+#[allow(dead_code)]
+pub(super) fn halve_dimension(series: &mut ArtifactVersionSeries, test_passed: bool) {
+    // If the version list can't be split anymore, there's nothing to do.
+    if series.remaining_artifacts.len() <= 1 {
+        return;
+    }
+
+    let view = series.remaining_artifacts.clone();
+    let tested_index = series.current_artifact;
+
+    if test_passed {
+        series.remaining_artifacts = (tested_index + 1)..view.end;
+    } else {
+        series.remaining_artifacts = view.start..(tested_index + 1);
+    }
 }
 
 /// A helper function to perform the core bisection logic on the single longest
@@ -281,7 +301,7 @@ mod tests {
 
         let results = vec![
             StepResult {
-                versioned_artifact_set: create_mock_vas("2", "a", "x"),
+                versioned_artifact_set: create_mock_vas("1", "a", "x"),
                 image_path: None,
                 test_passed: true,
             },
@@ -304,7 +324,12 @@ mod tests {
 
         let results = vec![
             StepResult {
-                versioned_artifact_set: create_mock_vas("2", "a", "x"),
+                versioned_artifact_set: create_mock_vas("1", "a", "x"),
+                image_path: None,
+                test_passed: true,
+            },
+            StepResult {
+                versioned_artifact_set: create_mock_vas("3", "a", "x"),
                 image_path: None,
                 test_passed: true,
             },

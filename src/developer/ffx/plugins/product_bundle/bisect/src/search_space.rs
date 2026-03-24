@@ -38,7 +38,7 @@ impl ArtifactVersionSeries {
             artifact_type: first.artifact_type,
             repository: first.repository,
             versions,
-            current_artifact: if len == 0 { 0 } else { len / 2 },
+            current_artifact: (len.saturating_sub(1)) / 2,
             remaining_artifacts: 0..len,
         }
     }
@@ -238,7 +238,7 @@ mod tests {
         let versions = mock_series("product", ArtifactType::Product, vec!["1", "2", "3", "4"]);
         let series = ArtifactVersionSeries::from_versions(versions);
         assert_eq!(series.versions.len(), 4);
-        assert_eq!(series.current_artifact, 2);
+        assert_eq!(series.current_artifact, 1);
         assert_eq!(series.remaining_artifacts, 0..4);
     }
 
@@ -287,10 +287,10 @@ mod tests {
         assert_eq!(search_space.product_input_bundles.len(), 1);
         assert_eq!(search_space.product_input_bundles[0].versions.len(), 2);
 
-        assert_eq!(search_space.platform.current_artifact, 1);
+        assert_eq!(search_space.platform.current_artifact, 0);
         assert_eq!(search_space.product.current_artifact, 1);
         assert_eq!(search_space.board.current_artifact, 0);
-        assert_eq!(search_space.product_input_bundles[0].current_artifact, 1);
+        assert_eq!(search_space.product_input_bundles[0].current_artifact, 0);
     }
 
     #[test]
@@ -313,7 +313,7 @@ mod tests {
         // Check initial state
         let initial_set = search_space.get_current_versioned_artifact_set().unwrap();
         assert_eq!(initial_set.platform.version, "2");
-        assert_eq!(initial_set.product.version, "b");
+        assert_eq!(initial_set.product.version, "a");
         assert_eq!(initial_set.board.version, "y");
         assert_eq!(initial_set.product_input_bundles[0].version, "j");
 
