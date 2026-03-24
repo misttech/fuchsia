@@ -152,6 +152,11 @@ impl ZirconClient {
         create_proxy::<T>()
     }
 
+    /// Equivalent to the module level [`create_request_stream`]
+    pub fn create_request_stream<T: ProtocolMarker>(&self) -> (ClientEnd<T>, T::RequestStream) {
+        create_request_stream::<T>()
+    }
+
     /// Equivalent to the module level [`create_proxy_and_stream`]
     pub fn create_proxy_and_stream<T: ProtocolMarker>(&self) -> (T::Proxy, T::RequestStream) {
         create_proxy_and_stream::<T>()
