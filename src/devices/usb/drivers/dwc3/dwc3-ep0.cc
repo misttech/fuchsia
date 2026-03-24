@@ -284,6 +284,13 @@ void Dwc3::HandleEp0Setup(size_t length) {
                 break;
               default:
                 if (!is_out) {
+                  if (ep0_.state == Ep0::State::None) {
+                    fdf::error(
+                        "BUG TRIPPED: Async IN control callback handling None state! (CRASH IMMINENT)");
+                    // Sleep to allow syslog to flush this to serial before the instant hardware
+                    // lockup!
+                    zx::nanosleep(zx::deadline_after(zx::msec(500)));
+                  }
                   // A lightweight byte-span is used to make it easier to process the read data.
                   cpp20::span<uint8_t> read_data{result.value()->read.get()};
                   // Don't blow out caller's buffer.
