@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use fidl_fuchsia_update_installer::{
+use flex_fuchsia_update_installer as fidl_installer;
+
+use fidl_fuchsia_update_installer_ext::{State, StateId};
+use fidl_installer::{
     InstallerMarker, InstallerProxy, InstallerRequest, InstallerRequestStream, MonitorProxy,
     Options, RebootControllerRequest, UpdateNotStartedReason,
 };
-use fidl_fuchsia_update_installer_ext::{State, StateId};
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
@@ -122,8 +124,7 @@ impl MockUpdateInstallerService {
                         options,
                         reboot_controller_present: reboot_controller.is_some(),
                     });
-                    let proxy =
-                        MonitorProxy::new(fasync::Channel::from_channel(monitor.into_channel()));
+                    let proxy = monitor.into_proxy();
                     fasync::Task::spawn(Arc::clone(&self).send_states(proxy)).detach();
                     if let Some(reboot_controller) = reboot_controller {
                         let service = Arc::clone(&self);
@@ -205,6 +206,19 @@ impl MockUpdateInstallerService {
         assert_eq!(*self.reboot_controller_requests.lock(), expected_requests);
     }
 
+    #[cfg(feature = "fdomain")]
+    pub fn spawn_installer_service(
+        self: Arc<Self>,
+        client: Arc<fdomain_client::Client>,
+    ) -> InstallerProxy {
+        let (proxy, stream) = client.create_proxy_and_stream::<InstallerMarker>();
+
+        fasync::Task::spawn(self.run_service(stream)).detach();
+
+        proxy
+    }
+
+    #[cfg(not(feature = "fdomain"))]
     pub fn spawn_installer_service(self: Arc<Self>) -> InstallerProxy {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
 
@@ -217,24 +231,30 @@ impl MockUpdateInstallerService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_update_installer::{Initiator, MonitorMarker, MonitorRequest};
+    use flex_fuchsia_update_installer::{Initiator, MonitorMarker, MonitorRequest};
     use pretty_assertions::assert_eq;
 
     #[fasync::run_singlethreaded(test)]
     async fn test_mock_installer() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let installer_service =
             Arc::new(MockUpdateInstallerService::with_states(vec![State::Prepare]));
-        let proxy = Arc::clone(&installer_service).spawn_installer_service();
+        let proxy = Arc::clone(&installer_service).spawn_installer_service(
+            #[cfg(feature = "fdomain")]
+            client.clone(),
+        );
         let url =
-            fidl_fuchsia_pkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/update".to_string() };
+            flex_fuchsia_pkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/update".to_string() };
         let options = Options {
             initiator: Some(Initiator::User),
             should_write_recovery: Some(true),
             allow_attach_to_existing_attempt: Some(true),
             ..Default::default()
         };
-        let (monitor_client_end, stream) =
-            fidl::endpoints::create_request_stream::<MonitorMarker>();
+        let (monitor_client_end, stream) = client.create_request_stream::<MonitorMarker>();
         proxy
             .start_update(&url, &options, monitor_client_end, None)
             .await

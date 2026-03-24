@@ -25,7 +25,10 @@ if (is_fuchsia) {
 
 group("all_tests") {
   testonly = true
-  public_deps = [ ":hermetic_tests($target_toolchain)" ]
+  public_deps = [
+    ":hermetic_tests($target_toolchain)",
+    "mock-installer:host_tests",
+  ]
 }
 
 # fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but the tests
