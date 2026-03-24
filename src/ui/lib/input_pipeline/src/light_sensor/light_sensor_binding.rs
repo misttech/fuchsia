@@ -9,15 +9,18 @@ use crate::input_device::{
 use crate::metrics;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport, SensorDescriptor, SensorType};
+use derivative::Derivative;
+use fidl_next_fuchsia_input_report::{InputReport, SensorType};
 use fuchsia_inspect::health::Reporter;
-
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 
-#[derive(Clone, Debug)]
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
 pub struct LightSensorEvent {
-    pub(crate) device_proxy: InputDeviceProxy,
+    #[derivative(Debug = "ignore")]
+    pub(crate) device_proxy:
+        fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, crate::Transport>,
     pub(crate) rgbc: Rgbc<u16>,
 }
 
@@ -91,7 +94,10 @@ impl LightSensorBinding {
     /// # Errors
     /// If there was an error binding to the proxy.
     pub(crate) async fn new(
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<
+            fidl_next_fuchsia_input_report::InputDevice,
+            crate::Transport,
+        >,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
@@ -148,7 +154,7 @@ impl LightSensorBinding {
     /// If the device descriptor could not be retrieved, or the descriptor could not be parsed
     /// correctly.
     async fn bind_device(
-        device: &InputDeviceProxy,
+        device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, crate::Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
@@ -156,7 +162,7 @@ impl LightSensorBinding {
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let descriptor = match device.get_descriptor().await {
-            Ok(descriptor) => descriptor,
+            Ok(descriptor) => descriptor.descriptor,
             Err(_) => {
                 input_device_status.health_node.set_unhealthy("Could not get device descriptor.");
                 return Err(format_err!("Could not get descriptor for device_id: {}", device_id));
@@ -173,7 +179,10 @@ impl LightSensorBinding {
             format_err!("empty device info for device_id: {}", device_id)
         })?;
         match descriptor.sensor {
-            Some(SensorDescriptor { input: Some(input_descriptors), .. }) => {
+            Some(fidl_next_fuchsia_input_report::SensorDescriptor {
+                input: Some(input_descriptors),
+                ..
+            }) => {
                 let sensor_layout = input_descriptors
                     .into_iter()
                     .filter_map(|input_descriptor| {
@@ -274,7 +283,10 @@ impl LightSensorBinding {
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<
+            fidl_next_fuchsia_input_report::InputDevice,
+            crate::Transport,
+        >,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
@@ -298,7 +310,10 @@ impl LightSensorBinding {
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<
+            fidl_next_fuchsia_input_report::InputDevice,
+            crate::Transport,
+        >,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {

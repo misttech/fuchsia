@@ -6,18 +6,20 @@
 
 use crate::utils::Position;
 use crate::{
-    consumer_controls_binding, input_device, input_handler, keyboard_binding, mouse_binding,
-    touch_binding,
+    Dispatcher, Transport, consumer_controls_binding, input_device, input_handler,
+    keyboard_binding, mouse_binding, touch_binding, utils,
 };
 use assert_matches::assert_matches;
-use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_fuchsia_ui_input as fidl_ui_input;
-use fidl_fuchsia_ui_input3 as fidl_ui_input3;
-use fidl_fuchsia_ui_pointerinjector as pointerinjector;
-use futures::FutureExt as _;
+use fidl::endpoints::{ProtocolMarker, Proxy};
+use futures::{FutureExt as _, TryFutureExt, TryStreamExt};
+use log::error;
 use maplit::hashmap;
 use std::collections::{HashMap, HashSet};
-use zx;
+use {
+    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
+    fidl_fuchsia_ui_input3 as fidl_ui_input3, fidl_fuchsia_ui_pointerinjector as pointerinjector,
+    zx,
+};
 
 pub use diagnostics_assertions;
 
@@ -35,11 +37,11 @@ pub fn event_times() -> (i64, zx::MonotonicInstant) {
 pub fn create_keyboard_input_report(
     pressed_keys: Vec<fidl_fuchsia_input::Key>,
     event_time: i64,
-) -> fidl_input_report::InputReport {
-    fidl_input_report::InputReport {
+) -> fidl_next_fuchsia_input_report::InputReport {
+    fidl_next_fuchsia_input_report::InputReport {
         event_time: Some(event_time),
-        keyboard: Some(fidl_input_report::KeyboardInputReport {
-            pressed_keys3: Some(pressed_keys),
+        keyboard: Some(fidl_next_fuchsia_input_report::KeyboardInputReport {
+            pressed_keys3: Some(pressed_keys.iter().map(utils::key_to_next).collect()),
             ..Default::default()
         }),
         mouse: None,
@@ -259,15 +261,17 @@ pub fn consumer_controls_device_descriptor() -> input_device::InputDeviceDescrip
 pub fn create_consumer_control_input_report(
     buttons: Vec<fidl_input_report::ConsumerControlButton>,
     event_time: i64,
-) -> fidl_input_report::InputReport {
-    fidl_input_report::InputReport {
+) -> fidl_next_fuchsia_input_report::InputReport {
+    fidl_next_fuchsia_input_report::InputReport {
         event_time: Some(event_time),
         keyboard: None,
         mouse: None,
         touch: None,
         sensor: None,
-        consumer_control: Some(fidl_input_report::ConsumerControlInputReport {
-            pressed_buttons: Some(buttons),
+        consumer_control: Some(fidl_next_fuchsia_input_report::ConsumerControlInputReport {
+            pressed_buttons: Some(
+                buttons.iter().map(utils::consumer_control_button_to_next).collect(),
+            ),
             ..Default::default()
         }),
         trace_id: None,
@@ -332,11 +336,11 @@ pub fn create_mouse_input_report_absolute(
     scroll_h: Option<i64>,
     buttons: Vec<u8>,
     event_time: i64,
-) -> fidl_input_report::InputReport {
-    fidl_input_report::InputReport {
+) -> fidl_next_fuchsia_input_report::InputReport {
+    fidl_next_fuchsia_input_report::InputReport {
         event_time: Some(event_time),
         keyboard: None,
-        mouse: Some(fidl_input_report::MouseInputReport {
+        mouse: Some(fidl_next_fuchsia_input_report::MouseInputReport {
             position_x: Some(location.x as i64),
             position_y: Some(location.y as i64),
             scroll_v,
@@ -362,11 +366,11 @@ pub fn create_mouse_input_report_relative(
     scroll_h: Option<i64>,
     buttons: Vec<u8>,
     event_time: i64,
-) -> fidl_input_report::InputReport {
-    fidl_input_report::InputReport {
+) -> fidl_next_fuchsia_input_report::InputReport {
+    fidl_next_fuchsia_input_report::InputReport {
         event_time: Some(event_time),
         keyboard: None,
-        mouse: Some(fidl_input_report::MouseInputReport {
+        mouse: Some(fidl_next_fuchsia_input_report::MouseInputReport {
             movement_x: Some(movement.x as i64),
             movement_y: Some(movement.y as i64),
             position_x: None,
@@ -565,7 +569,7 @@ pub fn create_mouse_pointer_sample_event_phase_add(
     e
 }
 
-/// Creates a [`fidl_input_report::InputReport`] with a touch report.
+/// Creates a [`fidl_next_fuchsia_input_report::InputReport`] with a touch report.
 ///
 /// # Parameters
 /// - `contacts`: The contacts in the touch report.
@@ -574,14 +578,29 @@ pub fn create_touch_input_report(
     contacts: Vec<fidl_input_report::ContactInputReport>,
     pressed_buttons: Option<Vec<fidl_input_report::TouchButton>>,
     event_time: i64,
-) -> fidl_input_report::InputReport {
-    fidl_input_report::InputReport {
+) -> fidl_next_fuchsia_input_report::InputReport {
+    fidl_next_fuchsia_input_report::InputReport {
         event_time: Some(event_time),
         keyboard: None,
         mouse: None,
-        touch: Some(fidl_input_report::TouchInputReport {
-            contacts: Some(contacts),
-            pressed_buttons,
+        touch: Some(fidl_next_fuchsia_input_report::TouchInputReport {
+            contacts: Some(
+                contacts
+                    .iter()
+                    .map(|c| fidl_next_fuchsia_input_report::ContactInputReport {
+                        contact_id: c.contact_id,
+                        position_x: c.position_x,
+                        position_y: c.position_y,
+                        pressure: c.pressure,
+                        contact_width: c.contact_width,
+                        contact_height: c.contact_height,
+                        confidence: c.confidence,
+                        ..Default::default()
+                    })
+                    .collect(),
+            ),
+            pressed_buttons: pressed_buttons
+                .map(|b| b.iter().map(utils::touch_button_to_next).collect()),
             ..Default::default()
         }),
         sensor: None,
@@ -637,11 +656,11 @@ pub fn create_touch_screen_event_with_handled(
     contacts.entry(fidl_ui_input::PointerEventPhase::Remove).or_insert(vec![]);
 
     let injector_contacts = hashmap! {
-        pointerinjector::EventPhase::Add =>
+        pointerinjector::EventPhase::Add as u32 =>
         contacts.get(&fidl_ui_input::PointerEventPhase::Add).unwrap().clone(),
-        pointerinjector::EventPhase::Change =>
+        pointerinjector::EventPhase::Change as u32 =>
         contacts.get(&fidl_ui_input::PointerEventPhase::Move).unwrap().clone(),
-        pointerinjector::EventPhase::Remove =>
+        pointerinjector::EventPhase::Remove as u32 =>
         contacts.get(&fidl_ui_input::PointerEventPhase::Remove).unwrap().clone(),
     };
     input_device::InputEvent {
@@ -687,7 +706,8 @@ pub fn create_touch_screen_event_with_buttons(
 ) -> input_device::InputEvent {
     let mut event = create_touch_screen_event(contacts, event_time, device_descriptor);
     if let input_device::InputDeviceEvent::TouchScreen(ref mut touch_event) = event.device_event {
-        touch_event.pressed_buttons = pressed_buttons;
+        touch_event.pressed_buttons =
+            pressed_buttons.iter().map(utils::touch_button_to_next).collect();
     }
     event
 }
@@ -819,7 +839,7 @@ macro_rules! assert_input_report_sequence_generates_events_with_feature_flags {
         // The feature flags.
         feature_flags: $feature_flags:expr,
     ) => {
-        let previous_report: Option<fidl_fuchsia_input_report::InputReport> = None;
+        let previous_report: Option<fidl_next_fuchsia_input_report::InputReport> = None;
         let num_reports = $input_reports.len();
         let num_events = $expected_events.len();
         let (event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
@@ -1010,4 +1030,40 @@ pub async fn assert_handler_ignores_input_event_sequence(
 
     // Request streams should not receive any events.
     assert!(injector_request_stream.next().now_or_never().is_none());
+}
+
+/// Generates a client-server endpoint pair where the client is `fidl_next` and the server
+/// is a `fidl` request stream. Useful in tests that provide server mocks with old fidl.
+pub fn next_client_old_stream<P1, P2>() -> (fidl_next::Client<P2, Transport>, P1::RequestStream)
+where
+    P1: ProtocolMarker,
+    <P1 as ProtocolMarker>::Proxy: std::fmt::Debug,
+    P2: fidl_next::DispatchClientMessage<fidl_next::IgnoreEvents, Transport>,
+{
+    let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<P1>();
+    let proxy = fidl_next::ClientEnd::<P2, _>::from_untyped(
+        proxy.into_channel().unwrap().into_zx_channel(),
+    );
+    let proxy = Dispatcher::client_from_zx_channel(proxy).spawn();
+    (proxy, stream)
+}
+
+/// Spawns a new task to handle [`fidl_fuchsia_input_report::InputDeviceRequest`].
+/// Returns a [`fidl_next::Client`] to the stream.
+pub fn spawn_input_stream_handler<F, Fut>(
+    mut f: F,
+) -> fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>
+where
+    F: FnMut(fidl_input_report::InputDeviceRequest) -> Fut + 'static + Send,
+    Fut: Future<Output = ()> + 'static + Send,
+{
+    let (proxy, stream) = next_client_old_stream::<
+        fidl_input_report::InputDeviceMarker,
+        fidl_next_fuchsia_input_report::InputDevice,
+    >();
+    fuchsia_async::Task::spawn(stream.try_for_each(move |r| f(r).map(Ok)).unwrap_or_else(|e| {
+        error!("FIDL stream handler failed: {}", e);
+    }))
+    .detach();
+    proxy
 }

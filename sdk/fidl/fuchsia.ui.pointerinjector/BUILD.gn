@@ -21,6 +21,6 @@ fidl("fuchsia.ui.pointerinjector") {
     "//sdk/fidl/fuchsia.ui.views",
     "//zircon/vdso/zx",
   ]
-
+  enable_rust_next = true
   enable_hlcpp = true
 }

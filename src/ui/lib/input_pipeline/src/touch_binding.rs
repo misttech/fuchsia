@@ -3,23 +3,24 @@
 // found in the LICENSE file.
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
-use crate::utils::{Position, Size};
-use crate::{metrics, mouse_binding};
+use crate::utils::{self, Position, Size};
+use crate::{Transport, metrics, mouse_binding};
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
+use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use zx;
 
 use fidl::HandleBased;
-use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_fuchsia_ui_input as fidl_ui_input;
-use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use maplit::hashmap;
 use metrics_registry::*;
 use std::collections::{HashMap, HashSet};
+use {
+    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
+    fidl_next_fuchsia_ui_pointerinjector as pointerinjector,
+};
 
 /// A [`TouchScreenEvent`] represents a set of contacts and the phase those contacts are in.
 ///
@@ -49,10 +50,12 @@ pub struct TouchScreenEvent {
     /// in one touch event with two [`TouchContact`]s.
     ///
     /// Contacts are grouped based on their current phase (e.g., add, change).
-    pub injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
+    // TODO(https://fxbug.dev/495373798): Revert the key type to `pointerinjector::EventPhase` once
+    // natural bindings implement `Hash`.
+    pub injector_contacts: HashMap<u32, Vec<TouchContact>>,
 
     /// Indicates whether any touch buttons are pressed.
-    pub pressed_buttons: Vec<fidl_input_report::TouchButton>,
+    pub pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
 
     /// The wake lease for this event.
     pub wake_lease: Option<zx::EventPair>,
@@ -95,11 +98,12 @@ impl TouchScreenEvent {
         let contacts_clone = self.injector_contacts.clone();
         node.record_child("injector_contacts", move |contacts_node| {
             for (phase, contacts) in contacts_clone.iter() {
-                let phase_str = match phase {
-                    pointerinjector::EventPhase::Add => "add",
-                    pointerinjector::EventPhase::Change => "change",
-                    pointerinjector::EventPhase::Remove => "remove",
-                    pointerinjector::EventPhase::Cancel => "cancel",
+                let phase_str = match pointerinjector::EventPhase::try_from(*phase) {
+                    Ok(pointerinjector::EventPhase::Add) => "add",
+                    Ok(pointerinjector::EventPhase::Change) => "change",
+                    Ok(pointerinjector::EventPhase::Remove) => "remove",
+                    Ok(pointerinjector::EventPhase::Cancel) => "cancel",
+                    Err(_) => unreachable!("invalid phase"),
                 };
                 contacts_node.record_child(phase_str, move |phase_node| {
                     for contact in contacts.iter() {
@@ -131,7 +135,7 @@ impl TouchScreenEvent {
             node.create_string_array("pressed_buttons", self.pressed_buttons.len());
         self.pressed_buttons.iter().enumerate().for_each(|(i, &ref button)| {
             let button_name: String = match button {
-                fidl_input_report::TouchButton::Palm => "palm".into(),
+                fidl_next_fuchsia_input_report::TouchButton::Palm => "palm".into(),
                 unknown_value => {
                     format!("unknown({:?})", unknown_value)
                 }
@@ -217,8 +221,8 @@ pub struct TouchContact {
 
 impl Eq for TouchContact {}
 
-impl From<&fidl_fuchsia_input_report::ContactInputReport> for TouchContact {
-    fn from(fidl_contact: &fidl_fuchsia_input_report::ContactInputReport) -> TouchContact {
+impl From<&fidl_next_fuchsia_input_report::ContactInputReport> for TouchContact {
+    fn from(fidl_contact: &fidl_next_fuchsia_input_report::ContactInputReport) -> TouchContact {
         let contact_size =
             if fidl_contact.contact_width.is_some() && fidl_contact.contact_height.is_some() {
                 Some(Size {
@@ -319,7 +323,7 @@ pub struct TouchBinding {
     touch_device_type: TouchDeviceType,
 
     /// Proxy to the device.
-    device_proxy: InputDeviceProxy,
+    device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
 }
 
 #[async_trait]
@@ -356,7 +360,7 @@ impl TouchBinding {
     /// # Errors
     /// If there was an error binding to the proxy.
     pub async fn new(
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
@@ -396,17 +400,17 @@ impl TouchBinding {
     /// If the device descriptor could not be retrieved, or the descriptor could not be parsed
     /// correctly.
     async fn bind_device(
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
-        let device_descriptor: fidl_input_report::DeviceDescriptor = match device_proxy
+        let device_descriptor: fidl_next_fuchsia_input_report::DeviceDescriptor = match device_proxy
             .get_descriptor()
             .await
         {
-            Ok(descriptor) => descriptor,
+            Ok(res) => res.descriptor,
             Err(_) => {
                 input_device_status.health_node.set_unhealthy("Could not get device descriptor.");
                 return Err(format_err!("Could not get descriptor for device_id: {}", device_id));
@@ -416,9 +420,9 @@ impl TouchBinding {
         let touch_device_type = get_device_type(&device_proxy).await;
 
         match device_descriptor.touch {
-            Some(fidl_fuchsia_input_report::TouchDescriptor {
+            Some(fidl_next_fuchsia_input_report::TouchDescriptor {
                 input:
-                    Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                    Some(fidl_next_fuchsia_input_report::TouchInputDescriptor {
                         contacts: Some(contact_descriptors),
                         max_contacts: _,
                         touch_type: _,
@@ -472,18 +476,19 @@ impl TouchBinding {
                 // `get_feature_report` to only modify the input_mode and
                 // keep other feature as is.
                 let mut report = match self.device_proxy.get_feature_report().await? {
-                    Ok(report) => report,
+                    Ok(res) => res.report,
                     Err(e) => return Err(format_err!("get_feature_report failed: {}", e)),
                 };
-                let mut touch =
-                    report.touch.unwrap_or_else(fidl_input_report::TouchFeatureReport::default);
+                let mut touch = report
+                    .touch
+                    .unwrap_or_else(fidl_next_fuchsia_input_report::TouchFeatureReport::default);
                 touch.input_mode = match enable {
-                            true => Some(fidl_input_report::TouchConfigurationInputMode::WindowsPrecisionTouchpadCollection),
-                            false => Some(fidl_input_report::TouchConfigurationInputMode::MouseCollection),
+                            true => Some(fidl_next_fuchsia_input_report::TouchConfigurationInputMode::WindowsPrecisionTouchpadCollection),
+                            false => Some(fidl_next_fuchsia_input_report::TouchConfigurationInputMode::MouseCollection),
                         };
                 report.touch = Some(touch);
                 match self.device_proxy.set_feature_report(&report).await? {
-                    Ok(()) => {
+                    Ok(_) => {
                         // TODO(https://fxbug.dev/42056283): Remove log message.
                         log::info!("touchpad: set touchpad_enabled to {}", enable);
                         Ok(())
@@ -559,10 +564,10 @@ impl TouchBinding {
     /// # Errors
     /// If the contact description fails to parse because required fields aren't present.
     fn parse_contact_descriptor(
-        contact_device_descriptor: &fidl_input_report::ContactInputDescriptor,
+        contact_device_descriptor: &fidl_next_fuchsia_input_report::ContactInputDescriptor,
     ) -> Result<ContactDeviceDescriptor, Error> {
         match contact_device_descriptor {
-            fidl_input_report::ContactInputDescriptor {
+            fidl_next_fuchsia_input_report::ContactInputDescriptor {
                 position_x: Some(x_axis),
                 position_y: Some(y_axis),
                 pressure: pressure_axis,
@@ -570,13 +575,13 @@ impl TouchBinding {
                 contact_height: height_axis,
                 ..
             } => Ok(ContactDeviceDescriptor {
-                x_range: x_axis.range,
-                y_range: y_axis.range,
-                x_unit: x_axis.unit,
-                y_unit: y_axis.unit,
-                pressure_range: pressure_axis.map(|axis| axis.range),
-                width_range: width_axis.map(|axis| axis.range),
-                height_range: height_axis.map(|axis| axis.range),
+                x_range: utils::range_to_old(&x_axis.range),
+                y_range: utils::range_to_old(&y_axis.range),
+                x_unit: utils::unit_to_old(&x_axis.unit),
+                y_unit: utils::unit_to_old(&y_axis.unit),
+                pressure_range: pressure_axis.as_ref().map(|axis| utils::range_to_old(&axis.range)),
+                width_range: width_axis.as_ref().map(|axis| utils::range_to_old(&axis.range)),
+                height_range: height_axis.as_ref().map(|axis| utils::range_to_old(&axis.range)),
             }),
             descriptor => {
                 Err(format_err!("Touch Contact Descriptor failed to parse: \n {:?}", descriptor))
@@ -591,15 +596,15 @@ fn is_move_only(event: &InputEvent) -> bool {
         input_device::InputDeviceEvent::TouchScreen(event)
             if event
                 .injector_contacts
-                .get(&pointerinjector::EventPhase::Add)
+                .get(&(pointerinjector::EventPhase::Add as u32))
                 .map_or(true, |c| c.is_empty())
                 && event
                     .injector_contacts
-                    .get(&pointerinjector::EventPhase::Remove)
+                    .get(&(pointerinjector::EventPhase::Remove as u32))
                     .map_or(true, |c| c.is_empty())
                 && event
                     .injector_contacts
-                    .get(&pointerinjector::EventPhase::Cancel)
+                    .get(&(pointerinjector::EventPhase::Cancel as u32))
                     .map_or(true, |c| c.is_empty())
     )
 }
@@ -730,7 +735,7 @@ fn process_single_touch_screen_report(
     let wake_lease = report.wake_lease.take();
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
-    let touch_report: &fidl_fuchsia_input_report::TouchInputReport = match &report.touch {
+    let touch_report: &fidl_next_fuchsia_input_report::TouchInputReport = match &report.touch {
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
@@ -740,7 +745,7 @@ fn process_single_touch_screen_report(
 
     let (previous_contacts, previous_buttons): (
         HashMap<u32, TouchContact>,
-        Vec<fidl_fuchsia_input_report::TouchButton>,
+        Vec<fidl_next_fuchsia_input_report::TouchButton>,
     ) = previous_report
         .as_ref()
         .and_then(|unwrapped_report| unwrapped_report.touch.as_ref())
@@ -748,7 +753,7 @@ fn process_single_touch_screen_report(
         .unwrap_or_default();
     let (current_contacts, current_buttons): (
         HashMap<u32, TouchContact>,
-        Vec<fidl_fuchsia_input_report::TouchButton>,
+        Vec<fidl_next_fuchsia_input_report::TouchButton>,
     ) = touch_contacts_and_buttons_from_touch_report(touch_report);
 
     // Don't send an event if there are no new contacts or pressed buttons.
@@ -805,9 +810,9 @@ fn process_single_touch_screen_report(
             fidl_ui_input::PointerEventPhase::Remove => removed_contacts.clone(),
         },
         hashmap! {
-            pointerinjector::EventPhase::Add => added_contacts,
-            pointerinjector::EventPhase::Change => moved_contacts,
-            pointerinjector::EventPhase::Remove => removed_contacts,
+            pointerinjector::EventPhase::Add as u32 => added_contacts,
+            pointerinjector::EventPhase::Change as u32 => moved_contacts,
+            pointerinjector::EventPhase::Remove as u32 => removed_contacts,
         },
         current_buttons,
         device_descriptor,
@@ -854,7 +859,7 @@ fn process_single_touchpad_report(
     }
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
-    let touch_report: &fidl_fuchsia_input_report::TouchInputReport = match &report.touch {
+    let touch_report: &fidl_next_fuchsia_input_report::TouchInputReport = match &report.touch {
         Some(touch) => touch,
         None => {
             inspect_status.count_filtered_report();
@@ -873,16 +878,16 @@ fn process_single_touchpad_report(
 
     let buttons: HashSet<mouse_binding::MouseButton> = match &touch_report.pressed_buttons {
         Some(buttons) => HashSet::from_iter(buttons.iter().filter_map(|button| match button {
-            fidl_fuchsia_input_report::TouchButton::Palm => Some(1),
-            fidl_fuchsia_input_report::TouchButton::SwipeUp
-            | fidl_fuchsia_input_report::TouchButton::SwipeLeft
-            | fidl_fuchsia_input_report::TouchButton::SwipeRight
-            | fidl_fuchsia_input_report::TouchButton::SwipeDown => {
+            fidl_next_fuchsia_input_report::TouchButton::Palm => Some(1),
+            fidl_next_fuchsia_input_report::TouchButton::SwipeUp
+            | fidl_next_fuchsia_input_report::TouchButton::SwipeLeft
+            | fidl_next_fuchsia_input_report::TouchButton::SwipeRight
+            | fidl_next_fuchsia_input_report::TouchButton::SwipeDown => {
                 // TODO(https://fxbug.dev/487728300): Support swipe buttons.
                 log::warn!("Swipe buttons {:?} are not supported", button);
                 None
             }
-            fidl_fuchsia_input_report::TouchButton::__SourceBreaking { unknown_ordinal } => {
+            fidl_next_fuchsia_input_report::TouchButton::UnknownOrdinal_(unknown_ordinal) => {
                 log::warn!("unknown TouchButton ordinal {unknown_ordinal:?}");
                 None
             }
@@ -906,8 +911,8 @@ fn process_single_touchpad_report(
 }
 
 fn touch_contacts_and_buttons_from_touch_report(
-    touch_report: &fidl_fuchsia_input_report::TouchInputReport,
-) -> (HashMap<u32, TouchContact>, Vec<fidl_fuchsia_input_report::TouchButton>) {
+    touch_report: &fidl_next_fuchsia_input_report::TouchInputReport,
+) -> (HashMap<u32, TouchContact>, Vec<fidl_next_fuchsia_input_report::TouchButton>) {
     // First unwrap all the optionals in the input report to get to the contacts.
     let contacts: Vec<TouchContact> = touch_report
         .contacts
@@ -935,8 +940,8 @@ fn touch_contacts_and_buttons_from_touch_report(
 /// - `wake_lease`: The wake lease to send with the event.
 fn create_touch_screen_event(
     contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
-    injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
-    pressed_buttons: Vec<fidl_input_report::TouchButton>,
+    injector_contacts: HashMap<u32, Vec<TouchContact>>,
+    pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     trace_id: fuchsia_trace::Id,
     wake_lease: Option<zx::EventPair>,
@@ -998,19 +1003,23 @@ fn send_touchpad_event(
 /// Windows Precision Touchpad reports `MouseCollection` or `WindowsPrecisionTouchpadCollection`
 /// in `TouchFeatureReport`. Fallback all error responses on `get_feature_report` to TouchScreen
 /// because some touch screen does not report this method.
-async fn get_device_type(input_device: &fidl_input_report::InputDeviceProxy) -> TouchDeviceType {
+async fn get_device_type(
+    input_device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
+) -> TouchDeviceType {
     match input_device.get_feature_report().await {
-        Ok(Ok(fidl_input_report::FeatureReport {
-            touch:
-                Some(fidl_input_report::TouchFeatureReport {
-                    input_mode:
-                        Some(
-                            fidl_input_report::TouchConfigurationInputMode::MouseCollection
-                            | fidl_input_report::TouchConfigurationInputMode::WindowsPrecisionTouchpadCollection,
-                        ),
-                    ..
-                }),
-            ..
+        Ok(Ok(fidl_next_fuchsia_input_report::InputDeviceGetFeatureReportResponse {
+            report: fidl_next_fuchsia_input_report::FeatureReport {
+                touch:
+                    Some(fidl_next_fuchsia_input_report::TouchFeatureReport {
+                        input_mode:
+                            Some(
+                                fidl_next_fuchsia_input_report::TouchConfigurationInputMode::MouseCollection
+                                | fidl_next_fuchsia_input_report::TouchConfigurationInputMode::WindowsPrecisionTouchpadCollection,
+                            ),
+                        ..
+                    }),
+                ..
+            }
         })) => TouchDeviceType::WindowsPrecisionTouchpad,
         _ => TouchDeviceType::TouchScreen,
     }
@@ -1021,12 +1030,11 @@ mod tests {
     use super::*;
     use crate::testing_utilities::{
         self, create_touch_contact, create_touch_input_report, create_touch_screen_event,
-        create_touch_screen_event_with_buttons, create_touchpad_event,
+        create_touch_screen_event_with_buttons, create_touchpad_event, spawn_input_stream_handler,
     };
     use crate::utils::Position;
     use assert_matches::assert_matches;
     use diagnostics_assertions::AnyProperty;
-    use fidl_test_util::spawn_stream_handler;
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use pretty_assertions::assert_eq;
@@ -1318,7 +1326,7 @@ mod tests {
     async fn enables_touchpad_mode_automatically() {
         let (set_feature_report_sender, set_feature_report_receiver) =
             futures::channel::mpsc::unbounded();
-        let input_device_proxy = spawn_stream_handler(move |input_device_request| {
+        let input_device_proxy = spawn_input_stream_handler(move |input_device_request| {
             let set_feature_report_sender = set_feature_report_sender.clone();
             async move {
                 match input_device_request {
@@ -1402,26 +1410,30 @@ mod tests {
         touch_input_mode: Option<fidl_input_report::TouchConfigurationInputMode>,
         expect_touch_device_type: TouchDeviceType,
     ) {
-        let input_device_proxy = spawn_stream_handler(move |input_device_request| async move {
-            match input_device_request {
-                fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
-                    let _ = responder.send(&get_touchpad_device_descriptor(has_mouse_descriptor));
-                }
-                fidl_input_report::InputDeviceRequest::GetFeatureReport { responder } => {
-                    let _ = responder.send(Ok(&fidl_input_report::FeatureReport {
-                        touch: Some(fidl_input_report::TouchFeatureReport {
-                            input_mode: touch_input_mode,
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
+                match input_device_request {
+                    fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
+                        let _ =
+                            responder.send(&get_touchpad_device_descriptor(has_mouse_descriptor));
+                    }
+                    fidl_input_report::InputDeviceRequest::GetFeatureReport { responder } => {
+                        let _ = responder.send(Ok(&fidl_input_report::FeatureReport {
+                            touch: Some(fidl_input_report::TouchFeatureReport {
+                                input_mode: touch_input_mode,
+                                ..Default::default()
+                            }),
                             ..Default::default()
-                        }),
-                        ..Default::default()
-                    }));
+                        }));
+                    }
+                    fidl_input_report::InputDeviceRequest::SetFeatureReport {
+                        responder, ..
+                    } => {
+                        let _ = responder.send(Ok(()));
+                    }
+                    r => panic!("unsupported request {:?}", r),
                 }
-                fidl_input_report::InputDeviceRequest::SetFeatureReport { responder, .. } => {
-                    let _ = responder.send(Ok(()));
-                }
-                r => panic!("unsupported request {:?}", r),
-            }
-        });
+            });
 
         let (device_event_sender, _) = futures::channel::mpsc::unbounded();
 
@@ -1503,7 +1515,7 @@ mod tests {
     #[fasync::run_singlethreaded(test)]
     async fn send_touchpad_event_button() {
         const TOUCH_ID: u32 = 1;
-        const PRIMARY_BUTTON: u8 = 1;
+        const PRIMARY_BUTTON: u8 = 255;
 
         let descriptor = input_device::InputDeviceDescriptor::Touchpad(TouchpadDeviceDescriptor {
             device_id: 1,
@@ -2047,19 +2059,19 @@ mod tests {
         assert_matches!(
             &batch[0].device_event,
             input_device::InputDeviceEvent::TouchScreen(event)
-                if event.injector_contacts.get(&pointerinjector::EventPhase::Add).is_some()
+                if event.injector_contacts.get(&(pointerinjector::EventPhase::Add as u32)).is_some()
         );
         // Verify Move event (merged to the last one)
         assert_matches!(
             &batch[1].device_event,
             input_device::InputDeviceEvent::TouchScreen(event)
-                if event.injector_contacts.get(&pointerinjector::EventPhase::Change).map(|c| c[0].position.x) == Some(30.0)
+                if event.injector_contacts.get(&(pointerinjector::EventPhase::Change as u32)).map(|c| c[0].position.x) == Some(30.0)
         );
         // Verify Remove event
         assert_matches!(
             &batch[2].device_event,
             input_device::InputDeviceEvent::TouchScreen(event)
-                if event.injector_contacts.get(&pointerinjector::EventPhase::Remove).is_some()
+                if event.injector_contacts.get(&(pointerinjector::EventPhase::Remove as u32)).is_some()
         );
     }
 

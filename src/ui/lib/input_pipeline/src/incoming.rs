@@ -14,15 +14,6 @@ pub use dso::*;
 #[cfg(not(feature = "dso"))]
 pub use elf::*;
 
-impl Incoming {
-    pub fn connect_protocol_at<T: Connect>(
-        dir: &impl AsRefDirectory,
-        path: &str,
-    ) -> Result<T, anyhow::Error> {
-        T::connect_at_dir_root_with_name(dir, path).context("connect_protocol_at")
-    }
-}
-
 mod dso {
     #![cfg(feature = "dso")]
 

@@ -25,6 +25,7 @@ rustc_library("fdf_sys") {
     "//src/devices/bin/driver-host/*",
     "//src/lib/dso/rust/*",
     "//src/sys/runners/dso/*",
+    "//src/ui/bin/scene_manager/*",
   ]
 }
 

@@ -5,15 +5,14 @@
 #![warn(clippy::await_holding_refcell_ref)]
 
 use crate::input_handler::{Handler, InputHandler, InputHandlerStatus};
-use crate::utils::{CursorMessage, Position, Size};
-use crate::{Incoming, MonotonicInstant, input_device, metrics, mouse_binding};
+use crate::utils::{self, CursorMessage, Position, Size};
+use crate::{
+    Dispatcher, Incoming, MonotonicInstant, Transport, input_device, metrics, mouse_binding,
+};
 use anyhow::{Context, Error, Result, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
-use fidl::endpoints::create_proxy;
 use fidl_fuchsia_input_report::Range;
-use fidl_fuchsia_ui_pointerinjector as pointerinjector;
-use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
 use fuchsia_inspect::health::Reporter;
 use futures::SinkExt;
 use futures::channel::mpsc::Sender;
@@ -22,6 +21,10 @@ use metrics_registry::*;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
+use {
+    fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
+    fidl_next_fuchsia_ui_pointerinjector as pointerinjector,
+};
 
 /// Each mm of physical movement by the mouse translates to the cursor moving
 /// on the display by 10 logical pixels.
@@ -51,7 +54,7 @@ pub struct MouseInjectorHandler {
     max_position: Position,
 
     /// The FIDL proxy to register new injectors.
-    injector_registry_proxy: pointerinjector::RegistryProxy,
+    injector_registry_proxy: fidl_next::Client<pointerinjector::Registry, Transport>,
 
     /// The FIDL proxy used to get configuration details for pointer injection.
     configuration_proxy: pointerinjector_config::SetupProxy,
@@ -68,7 +71,7 @@ struct MutableState {
     viewport: Option<pointerinjector::Viewport>,
 
     /// The injectors registered with Scenic, indexed by their device ids.
-    injectors: HashMap<u32, pointerinjector::DeviceProxy>,
+    injectors: HashMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
 
     /// The current position.
     current_position: Position,
@@ -197,7 +200,7 @@ impl MouseInjectorHandler {
         let configuration_proxy =
             incoming.connect_protocol::<pointerinjector_config::SetupProxy>()?;
         let injector_registry_proxy =
-            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
+            incoming.connect_protocol_next::<pointerinjector::Registry>()?.spawn();
 
         Self::new_handler(
             configuration_proxy,
@@ -234,7 +237,7 @@ impl MouseInjectorHandler {
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
         let injector_registry_proxy =
-            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
+            incoming.connect_protocol_next::<pointerinjector::Registry>()?.spawn();
         Self::new_handler(
             configuration_proxy,
             injector_registry_proxy,
@@ -271,7 +274,7 @@ impl MouseInjectorHandler {
     /// If unable to get injection view refs from `configuration_proxy`.
     async fn new_handler(
         configuration_proxy: pointerinjector_config::SetupProxy,
-        injector_registry_proxy: pointerinjector::RegistryProxy,
+        injector_registry_proxy: fidl_next::Client<pointerinjector::Registry, Transport>,
         display_size: Size,
         cursor_message_sender: Sender<CursorMessage>,
         input_handlers_node: &fuchsia_inspect::Node,
@@ -325,11 +328,15 @@ impl MouseInjectorHandler {
         }
 
         // Create a new injector.
-        let (device_proxy, device_server) = create_proxy::<pointerinjector::DeviceMarker>();
+        let (device_proxy, device_server) =
+            fidl_next::fuchsia::create_channel::<pointerinjector::Device>();
+        let device_proxy = Dispatcher::client_from_zx_channel(device_proxy).spawn();
         let context = fuchsia_scenic::duplicate_view_ref(&self.context_view_ref)
             .context("Failed to duplicate context view ref.")?;
+        let context = fidl_next_fuchsia_ui_views::ViewRef { reference: context.reference };
         let target = fuchsia_scenic::duplicate_view_ref(&self.target_view_ref)
             .context("Failed to duplicate target view ref.")?;
+        let target = fidl_next_fuchsia_ui_views::ViewRef { reference: target.reference };
 
         let viewport = self.inner().viewport.clone();
         let config = pointerinjector::Config {
@@ -339,8 +346,8 @@ impl MouseInjectorHandler {
             target: Some(pointerinjector::Target::View(target)),
             viewport,
             dispatch_policy: Some(pointerinjector::DispatchPolicy::MouseHoverAndLatchInTarget),
-            scroll_v_range: mouse_descriptor.wheel_v_range.clone(),
-            scroll_h_range: mouse_descriptor.wheel_h_range.clone(),
+            scroll_v_range: utils::axis_to_next(mouse_descriptor.wheel_v_range.as_ref()),
+            scroll_h_range: utils::axis_to_next(mouse_descriptor.wheel_h_range.as_ref()),
             buttons: mouse_descriptor.buttons.clone(),
             ..Default::default()
         };
@@ -364,7 +371,14 @@ impl MouseInjectorHandler {
             None,
             None,
         )];
-        device_proxy.inject_events(events_to_send).context("Failed to ADD new MouseDevice.")?;
+        // TODO(https://fxbug.dev/495480779): Once the returned future supports `send_immediately`
+        // replace the `await` with that. In practice the future for this one way call will
+        // internally delegate to a future that calls `send_immediately` when polled so there is no
+        // performance issue, but we need to call `await` for it to actually do anything.
+        device_proxy
+            .inject_events(events_to_send)
+            .await
+            .context("Failed to ADD new MouseDevice.")?;
 
         Ok(())
     }
@@ -473,7 +487,12 @@ impl MouseInjectorHandler {
 
             fuchsia_trace::flow_begin!("input", "dispatch_event_to_scenic", tracing_id.into());
 
-            let _ = injector.inject_events(events_to_send);
+            // TODO(https://fxbug.dev/495480779): Once the returned future supports
+            // `send_immediately` replace the `await` with that. In practice the future for this
+            // one way call will internally delegate to a future that calls `send_immediately` when
+            // polled so there is no performance issue, but we need to call `await` for it to
+            // actually do anything.
+            _ = injector.inject_events(events_to_send).await;
 
             Ok(())
         } else {
@@ -568,18 +587,23 @@ impl MouseInjectorHandler {
             match viewport_stream.next().await {
                 Some(Ok(new_viewport)) => {
                     // Update the viewport tracked by this handler.
-                    self.inner_mut().viewport = Some(new_viewport.clone());
+                    self.inner_mut().viewport = Some(utils::viewport_to_next(&new_viewport));
 
                     // Update Scenic with the latest viewport.
                     let injectors = self.inner().injectors.values().cloned().collect::<Vec<_>>();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {
                             timestamp: Some(MonotonicInstant::now().into_nanos()),
-                            data: Some(pointerinjector::Data::Viewport(new_viewport.clone())),
+                            data: Some(pointerinjector::Data::Viewport(utils::viewport_to_next(
+                                &new_viewport,
+                            ))),
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
                             ..Default::default()
                         }];
-                        injector.inject_events(events).expect("Failed to inject updated viewport.");
+                        injector
+                            .inject_events(events)
+                            .await
+                            .expect("Failed to inject updated viewport.");
                     }
                 }
                 Some(Err(e)) => {
@@ -616,17 +640,19 @@ mod tests {
         assert_handler_ignores_input_event_sequence, create_mouse_event,
         create_mouse_event_with_handled, create_mouse_pointer_sample_event,
         create_mouse_pointer_sample_event_phase_add,
-        create_mouse_pointer_sample_event_with_wheel_physical_pixel,
+        create_mouse_pointer_sample_event_with_wheel_physical_pixel, next_client_old_stream,
     };
     use assert_matches::assert_matches;
-    use fidl_fuchsia_input_report as fidl_input_report;
-    use fidl_fuchsia_ui_pointerinjector as pointerinjector;
-    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     use std::ops::Add;
     use test_case::test_case;
+    use {
+        fidl_fuchsia_input_report as fidl_input_report,
+        fidl_fuchsia_ui_pointerinjector as pointerinjector,
+        fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next, fuchsia_async as fasync,
+    };
 
     const DISPLAY_WIDTH_IN_PHYSICAL_PX: f32 = 100.0;
     const DISPLAY_HEIGHT_IN_PHYSICAL_PX: f32 = 100.0;
@@ -767,6 +793,14 @@ mod tests {
         }
     }
 
+    fn create_viewport_next(min: f32, max: f32) -> pointerinjector_next::Viewport {
+        pointerinjector_next::Viewport {
+            extents: Some([[min, min], [max, max]]),
+            viewport_to_context_transform: None,
+            ..Default::default()
+        }
+    }
+
     // Tests that MouseInjectorHandler::receives_viewport_updates() tracks viewport updates
     // and notifies injectors about said updates.
     #[fuchsia::test]
@@ -777,7 +811,9 @@ mod tests {
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
         let (injector_registry_proxy, _) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+            fidl_next::fuchsia::create_channel::<pointerinjector_next::Registry>();
+        let injector_registry_proxy =
+            Dispatcher::client_from_zx_channel(injector_registry_proxy).spawn();
         let (sender, _) = futures::channel::mpsc::channel::<CursorMessage>(0);
 
         let inspector = fuchsia_inspect::Inspector::default();
@@ -802,7 +838,7 @@ mod tests {
 
         // Add an injector.
         let (injector_device_proxy, mut injector_device_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::DeviceMarker>();
+            next_client_old_stream::<pointerinjector::DeviceMarker, pointerinjector_next::Device>();
         mouse_handler.inner_mut().injectors.insert(1, injector_device_proxy);
 
         // This nested block is used to bound the lifetime of `watch_viewport_fut`.
@@ -879,7 +915,7 @@ mod tests {
         });
 
         // Check the viewport on the handler is accurate.
-        let expected_viewport = create_viewport(100.0, 200.0);
+        let expected_viewport = create_viewport_next(100.0, 200.0);
         assert_eq!(mouse_handler.inner().viewport, Some(expected_viewport));
     }
 
@@ -956,8 +992,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -1045,8 +1083,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -1174,8 +1214,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -1267,8 +1309,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -1404,8 +1448,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -1613,8 +1659,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -1798,8 +1846,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -2009,8 +2059,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -2078,8 +2130,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let config_request_stream_fut =
             handle_configuration_request_stream(&mut configuration_request_stream);
 
@@ -2299,8 +2353,10 @@ mod tests {
         // Set up fidl streams.
         let (configuration_proxy, mut configuration_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
-        let (injector_registry_proxy, injector_registry_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+        let (injector_registry_proxy, injector_registry_request_stream) = next_client_old_stream::<
+            pointerinjector::RegistryMarker,
+            pointerinjector_next::Registry,
+        >();
         let (sender, _) = futures::channel::mpsc::channel::<CursorMessage>(1);
 
         let inspector = fuchsia_inspect::Inspector::default();

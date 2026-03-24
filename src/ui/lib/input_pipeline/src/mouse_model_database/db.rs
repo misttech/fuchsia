@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use super::{data, data_import_from_chromiumos};
-use fidl_fuchsia_input_report as fidl_input_report;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -126,7 +125,7 @@ const DEFAULT_MODEL: MouseModel = MouseModel {
 };
 
 pub(crate) fn get_mouse_model(
-    device_info: Option<fidl_input_report::DeviceInformation>,
+    device_info: Option<fidl_next_fuchsia_input_report::DeviceInformation>,
 ) -> MouseModel {
     match device_info {
         None => DEFAULT_MODEL.clone(),
@@ -208,7 +207,7 @@ mod test {
       ; "Unknown device: this is a microphone")]
     #[fuchsia::test]
     fn test_get_mouse_model(vendor_id: u32, product_id: u32) -> MouseModel {
-        get_mouse_model(Some(fidl_input_report::DeviceInformation {
+        get_mouse_model(Some(fidl_next_fuchsia_input_report::DeviceInformation {
             vendor_id: Some(vendor_id),
             product_id: Some(product_id),
             version: Some(0),

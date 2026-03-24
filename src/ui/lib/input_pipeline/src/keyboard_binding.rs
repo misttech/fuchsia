@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
-use crate::{Dispatcher, metrics};
+use crate::{Dispatcher, Transport, metrics, utils};
 use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
 use fidl_fuchsia_ui_input3 as fidl_ui_input3;
 use fidl_fuchsia_ui_input3::KeyEventType;
+use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
@@ -279,7 +279,7 @@ impl KeyboardBinding {
     /// # Errors
     /// If there was an error binding to the proxy.
     pub async fn new(
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
@@ -349,7 +349,7 @@ impl KeyboardBinding {
     /// If the device descriptor could not be retrieved, or the descriptor could not be parsed
     /// correctly.
     async fn bind_device(
-        device: &InputDeviceProxy,
+        device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_id: u32,
         device_node: fuchsia_inspect::Node,
@@ -357,7 +357,7 @@ impl KeyboardBinding {
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
         let descriptor = match device.get_descriptor().await {
-            Ok(descriptor) => descriptor,
+            Ok(descriptor) => descriptor.descriptor,
             Err(_) => {
                 input_device_status.health_node.set_unhealthy("Could not get device descriptor.");
                 return Err(format_err!("Could not get descriptor for device_id: {}", device_id));
@@ -375,16 +375,26 @@ impl KeyboardBinding {
             format_err!("empty device info for device_id: {}", device_id)
         })?;
         match descriptor.keyboard {
-            Some(fidl_fuchsia_input_report::KeyboardDescriptor {
-                input: Some(fidl_fuchsia_input_report::KeyboardInputDescriptor { keys3, .. }),
+            Some(fidl_next_fuchsia_input_report::KeyboardDescriptor {
+                input: Some(fidl_next_fuchsia_input_report::KeyboardInputDescriptor { keys3, .. }),
                 output: _,
                 ..
             }) => Ok((
                 KeyboardBinding {
                     event_sender: input_event_sender,
                     device_descriptor: KeyboardDeviceDescriptor {
-                        keys: keys3.unwrap_or_default(),
-                        device_information: device_info,
+                        keys: keys3
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|k| utils::key_to_old(&k))
+                            .collect(),
+                        device_information: fidl_fuchsia_input_report::DeviceInformation {
+                            vendor_id: device_info.vendor_id,
+                            product_id: device_info.product_id,
+                            version: device_info.version,
+                            polling_rate: device_info.polling_rate,
+                            ..Default::default()
+                        },
                         device_id,
                     },
                 },
@@ -531,7 +541,7 @@ impl KeyboardBinding {
             .keyboard
             .as_ref()
             .and_then(|unwrapped_keyboard| unwrapped_keyboard.pressed_keys3.as_ref())
-            .and_then(|unwrapped_keys| Some(unwrapped_keys.iter().cloned().collect()))
+            .and_then(|unwrapped_keys| Some(unwrapped_keys.iter().map(utils::key_to_old).collect()))
     }
 
     /// Sends key events to clients based on the new and previously pressed keys.

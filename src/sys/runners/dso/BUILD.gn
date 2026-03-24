@@ -25,6 +25,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust",
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/lib/async-default",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/lib/driver/runtime/rust/fdf_sys",

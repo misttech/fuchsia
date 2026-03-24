@@ -3,20 +3,19 @@
 // found in the LICENSE file.
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
-use crate::utils::Position;
-use crate::{metrics, mouse_model_database};
+use crate::utils::{self, Position};
+use crate::{Transport, metrics, mouse_model_database};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl::HandleBased;
-use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
+use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 use std::collections::HashSet;
-use zx;
+use {fidl_fuchsia_input_report as fidl_input_report, zx};
 
 pub type MouseButton = u8;
 
@@ -340,7 +339,7 @@ impl MouseBinding {
     /// # Errors
     /// If there was an error binding to the proxy.
     pub async fn new(
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
@@ -375,17 +374,17 @@ impl MouseBinding {
     /// If the device descriptor could not be retrieved, or the descriptor could
     /// not be parsed correctly.
     async fn bind_device(
-        device: &InputDeviceProxy,
+        device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
-        let device_descriptor: fidl_input_report::DeviceDescriptor = match device
+        let device_descriptor: fidl_next_fuchsia_input_report::DeviceDescriptor = match device
             .get_descriptor()
             .await
         {
-            Ok(descriptor) => descriptor,
+            Ok(res) => res.descriptor,
             Err(_) => {
                 input_device_status.health_node.set_unhealthy("Could not get device descriptor.");
                 return Err(format_err!("Could not get descriptor for device_id: {}", device_id));
@@ -410,18 +409,21 @@ impl MouseBinding {
 
         let device_descriptor: MouseDeviceDescriptor = MouseDeviceDescriptor {
             device_id,
-            absolute_x_range: mouse_input_descriptor.position_x.map(|axis| axis.range),
-            absolute_y_range: mouse_input_descriptor.position_y.map(|axis| axis.range),
-            wheel_v_range: mouse_input_descriptor.scroll_v,
-            wheel_h_range: mouse_input_descriptor.scroll_h,
+            absolute_x_range: mouse_input_descriptor
+                .position_x
+                .as_ref()
+                .map(|axis| utils::range_to_old(&axis.range)),
+            absolute_y_range: mouse_input_descriptor
+                .position_y
+                .as_ref()
+                .map(|axis| utils::range_to_old(&axis.range)),
+            wheel_v_range: utils::axis_to_old(mouse_input_descriptor.scroll_v.as_ref()),
+            wheel_h_range: utils::axis_to_old(mouse_input_descriptor.scroll_h.as_ref()),
             buttons: mouse_input_descriptor.buttons,
             counts_per_mm: model.counts_per_mm,
         };
 
-        Ok((
-            MouseBinding { event_sender: input_event_sender, device_descriptor },
-            input_device_status,
-        ))
+        Ok((Self { event_sender: input_event_sender, device_descriptor }, input_device_status))
     }
 
     /// Parses an [`InputReport`] into one or more [`InputEvent`]s.
@@ -487,7 +489,7 @@ impl MouseBinding {
 
         inspect_status.count_received_report(&report);
         // Input devices can have multiple types so ensure `report` is a MouseInputReport.
-        let mouse_report: &fidl_input_report::MouseInputReport = match &report.mouse {
+        let mouse_report: &fidl_next_fuchsia_input_report::MouseInputReport = match &report.mouse {
             Some(mouse) => mouse,
             None => {
                 inspect_status.count_filtered_report();
@@ -733,7 +735,9 @@ pub fn get_u32_from_buttons(buttons: &HashSet<MouseButton>) -> u32 {
 ///
 /// # Parameters
 /// - `report`: The input report to parse the mouse buttons from.
-fn buttons_from_report(input_report: &fidl_input_report::InputReport) -> HashSet<MouseButton> {
+fn buttons_from_report(
+    input_report: &fidl_next_fuchsia_input_report::InputReport,
+) -> HashSet<MouseButton> {
     buttons_from_optional_report(&Some(input_report))
 }
 
@@ -742,7 +746,7 @@ fn buttons_from_report(input_report: &fidl_input_report::InputReport) -> HashSet
 /// # Parameters
 /// - `report`: The input report to parse the mouse buttons from.
 fn buttons_from_optional_report(
-    input_report: &Option<&fidl_input_report::InputReport>,
+    input_report: &Option<&fidl_next_fuchsia_input_report::InputReport>,
 ) -> HashSet<MouseButton> {
     input_report
         .as_ref()
@@ -1211,10 +1215,10 @@ mod tests {
         let (event_time_i64, event_time_u64) = testing_utilities::event_times();
         let descriptor = mouse_device_descriptor(DEVICE_ID);
 
-        let input_reports = vec![fidl_input_report::InputReport {
+        let input_reports = vec![fidl_next_fuchsia_input_report::InputReport {
             event_time: Some(event_time_i64),
             keyboard: None,
-            mouse: Some(fidl_input_report::MouseInputReport {
+            mouse: Some(fidl_next_fuchsia_input_report::MouseInputReport {
                 movement_x: Some(relative_movement.x as i64),
                 movement_y: Some(relative_movement.y as i64),
                 position_x: Some(absolute_position.x as i64),

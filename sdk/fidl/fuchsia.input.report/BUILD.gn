@@ -30,4 +30,5 @@ fidl("fuchsia.input.report") {
   ]
 
   enable_hlcpp = true
+  enable_rust_next = true
 }

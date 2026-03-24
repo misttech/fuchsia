@@ -6,12 +6,10 @@ use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
 use crate::input_device::InputPipelineFeatureFlags;
 use crate::input_handler::Handler;
-use crate::{Dispatcher, Incoming, input_device, input_handler, metrics};
+use crate::{Dispatcher, Incoming, Transport, input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
 use fidl::endpoints;
-use fidl_fuchsia_io as fio;
 use focus_chain_provider::FocusChainProviderPublisher;
-use fuchsia_async as fasync;
 use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use fuchsia_inspect::NumericProperty;
@@ -27,6 +25,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
+use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Use a self incremental u32 unique id for device_id.
 ///
@@ -352,6 +351,10 @@ impl InputPipeline {
         let devices_node = input_pipeline.inspect_node.create_child("input_devices");
         let feature_flags = input_pipeline.feature_flags.clone();
         let incoming = incoming.clone();
+        // This intentionally uses the [`fuchsia_async`] task dispatcher instead of
+        // [`crate::Dispatcher`] -- the directory watcher always uses the fuchsia-async dispatcher.
+        // This is fine for performance because the actual event dispatch is still configured to
+        // run on [`crate::Dispatcher`].
         fasync::Task::local(async move {
             // Watches the input device directory for new input devices. Creates new InputDeviceBindings
             // that send InputEvents to `input_event_receiver`.
@@ -537,14 +540,18 @@ impl InputPipeline {
                     ..
                 } => {
                     // Add a binding if the device is a type being tracked
-                    let device_proxy = device.into_proxy();
-
+                    let device = fidl_next::ClientEnd::<
+                        fidl_next_fuchsia_input_report::InputDevice,
+                        zx::Channel,
+                    >::from_untyped(device.into_channel());
+                    let device = Dispatcher::client_from_zx_channel(device);
+                    let device = device.spawn();
                     let device_id = get_next_device_id();
 
                     add_device_bindings(
                         device_types,
                         &format!("input-device-registry-{}", device_id),
-                        device_proxy,
+                        device,
                         input_event_sender,
                         bindings,
                         device_id,
@@ -560,14 +567,18 @@ impl InputPipeline {
                     responder,
                     .. } => {
                     // Add a binding if the device is a type being tracked
-                    let device_proxy = device.into_proxy();
-
+                    let device = fidl_next::ClientEnd::<
+                        fidl_next_fuchsia_input_report::InputDevice,
+                        zx::Channel,
+                    >::from_untyped(device.into_channel());
+                    let device = Dispatcher::client_from_zx_channel(device);
+                    let device = device.spawn();
                     let device_id = get_next_device_id();
 
                     add_device_bindings(
                         device_types,
                         &format!("input-device-registry-{}", device_id),
-                        device_proxy,
+                        device,
                         input_event_sender,
                         bindings,
                         device_id,
@@ -636,19 +647,19 @@ impl InputPipeline {
                 }
 
                 let mut groups_seen = 0;
-                for (event_type, event_group) in events
+                let events = events
                     .into_iter()
-                    .chunk_by(|e| InputEventType::from(&e.device_event))
-                    .into_iter()
-                {
+                    .chunk_by(|e| InputEventType::from(&e.device_event));
+                let events = events.into_iter().map(|(k, v)| (k, v.collect::<Vec<_>>()));
+                for (event_type, event_group) in events {
                     groups_seen += 1;
                     if groups_seen == 2 {
                         metrics_logger.log_error(
-                            InputPipelineErrorMetricDimensionEvent::InputFrameContainsMultipleTypesOfEvents,
-                            "it is not recommended to contain multiple types of events in 1 send".to_string(),
-                        );
+                                InputPipelineErrorMetricDimensionEvent::InputFrameContainsMultipleTypesOfEvents,
+                                "it is not recommended to contain multiple types of events in 1 send".to_string(),
+                            );
                     }
-                    let mut events_in_group: Vec<_> = event_group.collect();
+                    let mut events_in_group = event_group;
 
                     // Get pre-computed handlers for this event type.
                     let handlers = handlers_by_type.get(&event_type).unwrap();
@@ -702,7 +713,7 @@ impl InputPipeline {
 async fn add_device_bindings(
     device_types: &Vec<input_device::InputDeviceType>,
     filename: &String,
-    device_proxy: fidl_fuchsia_input_report::InputDeviceProxy,
+    device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
     input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
     bindings: &InputDeviceBindingHashMap,
     device_id: u32,
@@ -712,9 +723,9 @@ async fn add_device_bindings(
     metrics_logger: metrics::MetricsLogger,
 ) {
     let mut matched_device_types = vec![];
-    if let Ok(descriptor) = device_proxy.get_descriptor().await {
+    if let Ok(res) = device_proxy.get_descriptor().await {
         for device_type in device_types {
-            if input_device::is_device_type(&descriptor, *device_type).await {
+            if input_device::is_device_type(&res.descriptor, *device_type).await {
                 matched_device_types.push(device_type);
                 match devices_connected {
                     Some(dev_connected) => {

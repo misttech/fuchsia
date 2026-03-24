@@ -2,22 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Dispatcher, Incoming};
+use crate::{Dispatcher, Incoming, Transport};
 use anyhow::{Context as _, Error};
 use cobalt_client::traits::AsEventCode;
-use fidl_fuchsia_metrics as metrics;
+use derivative::Derivative;
+use fidl_next_fuchsia_metrics as metrics;
 use log::warn;
 use metrics_registry::*;
 
 /// Connects to the MetricEventLoggerFactory service to create a
 /// MetricEventLoggerProxy for the caller.
-fn create_metrics_logger(incoming: &Incoming) -> Result<metrics::MetricEventLoggerProxy, Error> {
+fn create_metrics_logger(
+    incoming: &Incoming,
+) -> Result<fidl_next::Client<metrics::MetricEventLogger, Transport>, Error> {
     let factory_proxy = incoming
-        .connect_protocol::<metrics::MetricEventLoggerFactoryProxy>()
+        .connect_protocol_next::<metrics::MetricEventLoggerFactory>()
         .context("connecting to metrics")?;
+    let factory_proxy = factory_proxy.spawn();
 
     let (cobalt_proxy, cobalt_server) =
-        fidl::endpoints::create_proxy::<metrics::MetricEventLoggerMarker>();
+        fidl_next::fuchsia::create_channel::<metrics::MetricEventLogger>();
+    let cobalt_proxy = Dispatcher::client_from_zx_channel(cobalt_proxy).spawn();
 
     let project_spec = metrics::ProjectSpec {
         customer_id: None, // defaults to fuchsia
@@ -29,7 +34,7 @@ fn create_metrics_logger(incoming: &Incoming) -> Result<metrics::MetricEventLogg
         match factory_proxy.create_metric_event_logger(&project_spec, cobalt_server).await {
             Err(e) => warn!("FIDL failure setting up event logger: {e:?}"),
             Ok(Err(e)) => warn!("CreateMetricEventLogger failure: {e:?}"),
-            Ok(Ok(())) => {}
+            Ok(Ok(_)) => {}
         }
     })
     .detach();
@@ -37,16 +42,20 @@ fn create_metrics_logger(incoming: &Incoming) -> Result<metrics::MetricEventLogg
     Ok(cobalt_proxy)
 }
 
-fn log_on_failure(result: Result<Result<(), metrics::Error>, fidl::Error>) {
+fn log_on_failure<T: std::fmt::Debug>(result: Result<Result<T, metrics::Error>, fidl_next::Error>) {
     match result {
-        Ok(Ok(())) => (),
+        Ok(Ok(_)) => (),
         e => warn!("failed to log metrics: {:?}", e),
     };
 }
 
 /// A client connection to the Cobalt logging service.
-#[derive(Clone, Debug, Default)]
-pub struct MetricsLogger(Option<metrics::MetricEventLoggerProxy>);
+#[derive(Clone, Derivative, Default)]
+#[derivative(Debug)]
+pub struct MetricsLogger(
+    #[derivative(Debug = "ignore")]
+    Option<fidl_next::Client<metrics::MetricEventLogger, Transport>>,
+);
 
 impl MetricsLogger {
     pub fn new(incoming: &Incoming) -> Self {

@@ -350,11 +350,11 @@ mod tests {
         consumer_controls_device_descriptor, create_consumer_controls_event,
         create_fake_handled_input_event, create_fake_input_event, create_keyboard_event,
         create_mouse_event, create_touch_contact, create_touch_screen_event, create_touchpad_event,
+        next_client_old_stream,
     };
     use crate::touch_binding::{TouchScreenDeviceDescriptor, TouchpadDeviceDescriptor};
     use crate::utils::Position;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
-    use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_input_report::InputDeviceMarker;
     use fuchsia_async as fasync;
     use maplit::{hashmap, hashset};
@@ -440,7 +440,10 @@ mod tests {
             pressed_buttons_vec.push(*button as u64);
         });
 
-        let (light_sensor_proxy, _) = create_proxy_and_stream::<InputDeviceMarker>();
+        let (light_sensor_proxy, _) = next_client_old_stream::<
+            InputDeviceMarker,
+            fidl_next_fuchsia_input_report::InputDevice,
+        >();
 
         let recent_events = vec![
             create_keyboard_event(

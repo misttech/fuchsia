@@ -40,7 +40,7 @@ pub use incoming::Incoming;
 
 // The following imports prevent unused crate errors when building at a stable API level
 // that is not HEAD.
-use fidl_fuchsia_power_system as _;
+use fidl_next_fuchsia_power_system as _;
 
 pub mod focus_listener;
 pub mod gestures;

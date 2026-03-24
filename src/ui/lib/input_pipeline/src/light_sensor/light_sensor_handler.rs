@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Transport;
 use crate::input_device::{
     Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, InputEventType,
 };
@@ -13,13 +14,13 @@ use crate::light_sensor::types::{AdjustmentSetting, Calibration, Rgbc, SensorCon
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::HangingGet;
-use fidl_fuchsia_input_report::{FeatureReport, InputDeviceProxy, SensorFeatureReport};
 use fidl_fuchsia_lightsensor::{
     LightSensorData as FidlLightSensorData, Rgbc as FidlRgbc, SensorRequest, SensorRequestStream,
     SensorWatchResponder,
 };
 use fidl_fuchsia_settings::LightProxy;
 use fidl_fuchsia_ui_brightness::ControlProxy as BrightnessControlProxy;
+use fidl_next_fuchsia_input_report::{FeatureReport, SensorFeatureReport};
 use fuchsia_inspect::NumericProperty;
 use fuchsia_inspect::health::Reporter;
 
@@ -80,7 +81,7 @@ impl ActiveSetting {
     async fn adjust<Fut>(
         &mut self,
         reading: Rgbc<u16>,
-        device_proxy: &InputDeviceProxy,
+        device_proxy: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         track_feature_update: impl Fn(FeatureEvent) -> Fut,
     ) -> Result<bool, SaturatedError>
     where
@@ -133,7 +134,7 @@ impl ActiveSetting {
 
     async fn update_device<Fut>(
         &self,
-        device_proxy: &InputDeviceProxy,
+        device_proxy: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         track_feature_update: impl Fn(FeatureEvent) -> Fut,
     ) -> Result<(), Error>
     where
@@ -149,7 +150,8 @@ impl ActiveSetting {
                     "getting feature report on light sensor device: {:?}",
                     zx::Status::from_raw(e),
                 )
-            })?;
+            })?
+            .report;
         let feature_report = FeatureReport {
             sensor: Some(SensorFeatureReport {
                 sensitivity: Some(vec![active_setting.gain as i64]),
@@ -423,7 +425,7 @@ where
     async fn get_calibrated_data(
         &self,
         reading: Rgbc<u16>,
-        device_proxy: &InputDeviceProxy,
+        device_proxy: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
     ) -> Result<LightReading, SaturatedError> {
         // Update the sensor after the active setting has been used for calculations, since it may
         // change after this call.
@@ -436,7 +438,7 @@ where
                 ActiveSettingState::Uninitialized(adjustment_settings) => {
                     let active_setting = ActiveSetting::new(std::mem::take(adjustment_settings), 0);
                     if let Err(e) =
-                        active_setting.update_device(&device_proxy, track_feature_update).await
+                        active_setting.update_device(device_proxy, track_feature_update).await
                     {
                         log::error!(
                             "Unable to set initial settings for sensor. Falling back \

@@ -5,7 +5,7 @@
     include: [ "//src/ui/bin/scene_manager/meta/scene_manager-impl.shard.cml" ],
     program: {
         runner: "dso",
-        binary: "lib/libscene_manager_default.so",
+        binary: "lib/libscene_manager.so",
         scheduler_role: "fuchsia.ui.common_dispatcher",
         async: "true",
     },

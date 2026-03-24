@@ -87,6 +87,15 @@ pub fn dso_init_async(payload: DsoStartAsyncPayload) -> DsoAsyncArgs {
     // SAFETY: dso_runner which provides `names` guarantees `name_count` is in bounds.
     let names = unsafe { slice::from_raw_parts(names, name_count as usize) };
     let dispatcher = dispatcher as *mut fdf_sys::fdf_dispatcher_t;
+    // TODO(https://fxbug.dev/488394483): This is a test API but it's currently the simplest way to
+    // set the driver dispatcher on the fuchsia-async executor thread. This should be replaced
+    // when there's a better way to override the dispatcher.
+    // SAFETY: dso_runner guarantees `dispatcher` is a valid dispatcher.
+    assert_eq!(
+        unsafe { fdf_sys::fdf_testing_set_default_dispatcher(dispatcher) },
+        zx::sys::ZX_OK,
+        "fdf_testing_set_default_dispatcher"
+    );
     // SAFETY: dso_runner guarantees `dispatcher` is an `fdf_dispatcher_t` so this is a valid cast.
     let dispatcher = unsafe {
         fdf::DispatcherRef::from_raw(ptr::NonNull::new(dispatcher).expect("null dispatcher"))

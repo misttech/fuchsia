@@ -13,4 +13,5 @@ fidl("fuchsia.power.system") {
     "//sdk/fidl/fuchsia.power.broker",
     "//zircon/vdso/zx",
   ]
+  enable_rust_next = true
 }

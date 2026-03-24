@@ -3,25 +3,28 @@
 // found in the LICENSE file.
 
 use super::{
+    ActiveSetting, ActiveSettingState, LightSensorHandler, MAX_SATURATION_BLUE,
+    MAX_SATURATION_CLEAR, MAX_SATURATION_GREEN, MAX_SATURATION_RED, SaturatedError,
     correlated_color_temperature, div_round_closest, div_round_up, process_reading, saturated,
-    to_us, ActiveSetting, ActiveSettingState, LightSensorHandler, SaturatedError,
-    MAX_SATURATION_BLUE, MAX_SATURATION_CLEAR, MAX_SATURATION_GREEN, MAX_SATURATION_RED,
+    to_us,
 };
+use crate::Transport;
 use crate::input_device::{Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent};
 use crate::input_handler::{InputHandler, InputHandlerStatus};
 use crate::light_sensor::calibrator::Calibrate;
 use crate::light_sensor::types::{AdjustmentSetting, Rgbc, SensorConfiguration};
 use crate::light_sensor_binding::{LightSensorDeviceDescriptor, LightSensorEvent};
+use crate::testing_utilities::next_client_old_stream;
 use assert_matches::assert_matches;
 use diagnostics_assertions::AnyProperty;
 use fasync::Task;
 use fidl::endpoints::create_proxy_and_stream;
 use fidl_fuchsia_input_report::{
-    FeatureReport, InputDeviceGetFeatureReportResult, InputDeviceMarker, InputDeviceProxy,
-    InputDeviceRequest, InputDeviceSetFeatureReportResult, SensorFeatureReport,
-    SensorReportingState,
+    FeatureReport, InputDeviceGetFeatureReportResult, InputDeviceMarker, InputDeviceRequest,
+    InputDeviceSetFeatureReportResult, SensorFeatureReport, SensorReportingState,
 };
 use fidl_fuchsia_lightsensor::{SensorMarker, SensorProxy, SensorRequestStream};
+use fidl_next_fuchsia_input_report::InputDevice;
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use std::cell::RefCell;
@@ -125,16 +128,18 @@ fn cct_saturation() {
     assert_matches!(result, None);
 }
 
-fn get_mock_device_proxy(
-) -> (InputDeviceProxy, Rc<RefCell<Option<FeatureReport>>>, fasync::Task<()>) {
+fn get_mock_device_proxy()
+-> (fidl_next::Client<InputDevice, Transport>, Rc<RefCell<Option<FeatureReport>>>, fasync::Task<()>)
+{
     get_mock_device_proxy_with_response(None, Ok(()))
 }
 
 fn get_mock_device_proxy_with_response(
     get_response: Option<InputDeviceGetFeatureReportResult>,
     response: InputDeviceSetFeatureReportResult,
-) -> (InputDeviceProxy, Rc<RefCell<Option<FeatureReport>>>, fasync::Task<()>) {
-    let (device_proxy, mut stream) = create_proxy_and_stream::<InputDeviceMarker>();
+) -> (fidl_next::Client<InputDevice, Transport>, Rc<RefCell<Option<FeatureReport>>>, fasync::Task<()>)
+{
+    let (device_proxy, mut stream) = next_client_old_stream::<InputDeviceMarker, InputDevice>();
     let called = Rc::new(RefCell::new(Option::<FeatureReport>::None));
     let task = fasync::Task::local({
         let called = Rc::clone(&called);

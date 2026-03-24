@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
-use crate::metrics;
+use crate::{Transport, metrics, utils};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use fidl_fuchsia_input_report::{
-    self as fidl_input_report, ConsumerControlButton, InputDeviceProxy, InputReport,
-};
+use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 
@@ -151,7 +150,7 @@ impl ConsumerControlsBinding {
     /// # Errors
     /// If there was an error binding to the proxy.
     pub async fn new(
-        device_proxy: InputDeviceProxy,
+        device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
@@ -186,17 +185,17 @@ impl ConsumerControlsBinding {
     /// If the device descriptor could not be retrieved, or the descriptor could
     /// not be parsed correctly.
     async fn bind_device(
-        device: &InputDeviceProxy,
+        device: &fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
         device_id: u32,
         input_event_sender: UnboundedSender<Vec<InputEvent>>,
         device_node: fuchsia_inspect::Node,
     ) -> Result<(Self, InputDeviceStatus), Error> {
         let mut input_device_status = InputDeviceStatus::new(device_node);
-        let device_descriptor: fidl_input_report::DeviceDescriptor = match device
+        let device_descriptor: fidl_next_fuchsia_input_report::DeviceDescriptor = match device
             .get_descriptor()
             .await
         {
-            Ok(descriptor) => descriptor,
+            Ok(descriptor) => descriptor.descriptor,
             Err(_) => {
                 input_device_status.health_node.set_unhealthy("Could not get device descriptor.");
                 return Err(format_err!("Could not get descriptor for device_id: {}", device_id));
@@ -222,7 +221,12 @@ impl ConsumerControlsBinding {
 
         let device_descriptor: ConsumerControlsDeviceDescriptor =
             ConsumerControlsDeviceDescriptor {
-                buttons: consumer_controls_input_descriptor.buttons.unwrap_or_default(),
+                buttons: consumer_controls_input_descriptor
+                    .buttons
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|b| utils::consumer_control_button_to_old(&b))
+                    .collect(),
                 device_id,
             };
 
@@ -300,7 +304,7 @@ impl ConsumerControlsBinding {
             Some(ref consumer_control_report) => consumer_control_report
                 .pressed_buttons
                 .as_ref()
-                .map(|buttons| buttons.iter().cloned().collect())
+                .map(|buttons| buttons.iter().map(utils::consumer_control_button_to_old).collect())
                 .unwrap_or_default(),
             None => {
                 inspect_status.count_filtered_report();

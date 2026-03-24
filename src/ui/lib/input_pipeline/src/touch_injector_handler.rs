@@ -5,13 +5,15 @@
 #![warn(clippy::await_holding_refcell_ref)]
 use crate::dispatcher::TaskHandle;
 use crate::input_handler::{BatchInputHandler, Handler, InputHandlerStatus};
-use crate::utils::{Position, Size};
-use crate::{Dispatcher, Incoming, MonotonicInstant, input_device, metrics, touch_binding};
+use crate::utils::{self, Position, Size};
+use crate::{
+    Dispatcher, Incoming, MonotonicInstant, Transport, input_device, metrics, touch_binding,
+};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::AsHandleRef;
-use fidl::endpoints::{Proxy, create_proxy};
+use fidl::endpoints::Proxy;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -20,10 +22,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_pointerinjector as pointerinjector,
+    fidl_fuchsia_ui_input as fidl_ui_input,
     fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
     fidl_fuchsia_ui_policy as fidl_ui_policy,
+    fidl_next_fuchsia_ui_pointerinjector as pointerinjector,
 };
 
 /// An input handler that parses touch events and forwards them to Scenic through the
@@ -34,11 +36,11 @@ pub struct TouchInjectorHandler {
 
     /// The scope and coordinate system of injection.
     /// See fidl_fuchsia_pointerinjector::Context for more details.
-    context_view_ref: fidl_fuchsia_ui_views::ViewRef,
+    context_view_ref: fidl_next_fuchsia_ui_views::ViewRef,
 
     /// The region where dispatch is attempted for injected events.
     /// See fidl_fuchsia_pointerinjector::Target for more details.
-    target_view_ref: fidl_fuchsia_ui_views::ViewRef,
+    target_view_ref: fidl_next_fuchsia_ui_views::ViewRef,
 
     /// The size of the display associated with the touch device, used to convert
     /// coordinates from the touch input report to device coordinates (which is what
@@ -46,7 +48,7 @@ pub struct TouchInjectorHandler {
     display_size: Size,
 
     /// The FIDL proxy to register new injectors.
-    injector_registry_proxy: pointerinjector::RegistryProxy,
+    injector_registry_proxy: fidl_next::Client<pointerinjector::Registry, Transport>,
 
     /// The FIDL proxy used to get configuration details for pointer injection.
     configuration_proxy: pointerinjector_config::SetupProxy,
@@ -58,14 +60,13 @@ pub struct TouchInjectorHandler {
     metrics_logger: metrics::MetricsLogger,
 }
 
-#[derive(Debug)]
 struct MutableState {
     /// A rectangular region that directs injected events into a target.
     /// See fidl_fuchsia_pointerinjector::Viewport for more details.
     viewport: Option<pointerinjector::Viewport>,
 
     /// The injectors registered with Scenic, indexed by their device ids.
-    injectors: HashMap<u32, pointerinjector::DeviceProxy>,
+    injectors: HashMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
 
     /// The touch button listeners, key referenced by proxy channel's raw handle.
     pub listeners: HashMap<u32, fidl_ui_policy::TouchButtonsListenerProxy>,
@@ -132,7 +133,7 @@ impl BatchInputHandler for TouchInjectorHandler {
                 result[0].device_descriptor
             {
                 if let Err(e) =
-                    self.inject_pointer_events(pending_scenic_events, touch_device_descriptor)
+                    self.inject_pointer_events(pending_scenic_events, touch_device_descriptor).await
                 {
                     self.metrics_logger.log_error(
                         InputPipelineErrorMetricDimensionEvent::TouchInjectorSendEventToScenicFailed,
@@ -167,7 +168,7 @@ impl TouchInjectorHandler {
         let configuration_proxy =
             incoming.connect_protocol::<pointerinjector_config::SetupProxy>()?;
         let injector_registry_proxy =
-            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
+            incoming.connect_protocol_next::<pointerinjector::Registry>()?.spawn();
 
         Self::new_handler(
             configuration_proxy,
@@ -201,7 +202,7 @@ impl TouchInjectorHandler {
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
         let injector_registry_proxy =
-            incoming.connect_protocol::<pointerinjector::RegistryProxy>()?;
+            incoming.connect_protocol_next::<pointerinjector::Registry>()?.spawn();
         Self::new_handler(
             configuration_proxy,
             injector_registry_proxy,
@@ -229,7 +230,7 @@ impl TouchInjectorHandler {
     /// If unable to get injection view refs from `configuration_proxy`.
     async fn new_handler(
         configuration_proxy: pointerinjector_config::SetupProxy,
-        injector_registry_proxy: pointerinjector::RegistryProxy,
+        injector_registry_proxy: fidl_next::Client<pointerinjector::Registry, Transport>,
         display_size: Size,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
@@ -250,8 +251,12 @@ impl TouchInjectorHandler {
                 last_button_event: None,
                 send_event_task_tracker: LocalTaskTracker::new(),
             }),
-            context_view_ref,
-            target_view_ref,
+            context_view_ref: fidl_next_fuchsia_ui_views::ViewRef {
+                reference: context_view_ref.reference,
+            },
+            target_view_ref: fidl_next_fuchsia_ui_views::ViewRef {
+                reference: target_view_ref.reference,
+            },
             display_size,
             injector_registry_proxy,
             configuration_proxy,
@@ -362,11 +367,15 @@ impl TouchInjectorHandler {
         }
 
         // Create a new injector.
-        let (device_proxy, device_server) = create_proxy::<pointerinjector::DeviceMarker>();
-        let context = fuchsia_scenic::duplicate_view_ref(&self.context_view_ref)
+        let (device_proxy, device_server) =
+            fidl_next::fuchsia::create_channel::<pointerinjector::Device>();
+        let device_proxy = Dispatcher::client_from_zx_channel(device_proxy).spawn();
+        let context = utils::duplicate_view_ref_next(&self.context_view_ref)
             .context("Failed to duplicate context view ref.")?;
-        let target = fuchsia_scenic::duplicate_view_ref(&self.target_view_ref)
+        let context = fidl_next_fuchsia_ui_views::ViewRef { reference: context.reference };
+        let target = utils::duplicate_view_ref_next(&self.target_view_ref)
             .context("Failed to duplicate target view ref.")?;
+        let target = fidl_next_fuchsia_ui_views::ViewRef { reference: target.reference };
         let viewport = self.mutable_state.borrow().viewport.clone();
         if viewport.is_none() {
             // An injector without a viewport is not valid. The event will be dropped
@@ -423,7 +432,7 @@ impl TouchInjectorHandler {
         for phase in ordered_phases {
             let contacts: Vec<touch_binding::TouchContact> = touch_event
                 .injector_contacts
-                .get(&phase)
+                .get(&(phase as u32))
                 .map_or(vec![], |contacts| contacts.to_owned());
             let new_events = contacts.into_iter().map(|contact| {
                 Self::create_pointer_sample_event(
@@ -446,7 +455,7 @@ impl TouchInjectorHandler {
     /// # Parameters
     /// - `events`: The events to inject.
     /// - `touch_descriptor`: The descriptor for the device that sent the touch event.
-    fn inject_pointer_events(
+    async fn inject_pointer_events(
         &self,
         events: Vec<pointerinjector::Event>,
         touch_descriptor: &touch_binding::TouchScreenDeviceDescriptor,
@@ -456,7 +465,12 @@ impl TouchInjectorHandler {
         let injector =
             self.mutable_state.borrow().injectors.get(&touch_descriptor.device_id).cloned();
         if let Some(injector) = injector {
-            let _ = injector.inject_events(events);
+            // TODO(https://fxbug.dev/495480779): Once the returned future supports
+            // `send_immediately` replace the `await` with that. In practice the future for this
+            // one way call will internally delegate to a future that calls `send_immediately` when
+            // polled so there is no performance issue, but we need to call `await` for it to
+            // actually do anything.
+            _ = injector.inject_events(events).await;
             Ok(())
         } else {
             Err(anyhow::format_err!(
@@ -466,7 +480,7 @@ impl TouchInjectorHandler {
         }
     }
 
-    /// Creates a [`fidl_fuchsia_ui_pointerinjector::Event`] representing the given touch contact.
+    /// Creates a [`fidl_next_fuchsia_ui_pointerinjector::Event`] representing the given touch contact.
     ///
     /// # Parameters
     /// - `phase`: The phase of the touch contact.
@@ -558,19 +572,30 @@ impl TouchInjectorHandler {
             match viewport_stream.next().await {
                 Some(Ok(new_viewport)) => {
                     // Update the viewport tracked by this handler.
-                    self.mutable_state.borrow_mut().viewport = Some(new_viewport.clone());
+                    self.mutable_state.borrow_mut().viewport =
+                        Some(utils::viewport_to_next(&new_viewport));
 
                     // Update Scenic with the latest viewport.
-                    let injectors: Vec<pointerinjector::DeviceProxy> =
+                    let injectors: Vec<fidl_next::Client<pointerinjector::Device, _>> =
                         self.mutable_state.borrow_mut().injectors.values().cloned().collect();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {
                             timestamp: Some(MonotonicInstant::now().into_nanos()),
-                            data: Some(pointerinjector::Data::Viewport(new_viewport.clone())),
+                            data: Some(pointerinjector::Data::Viewport(utils::viewport_to_next(
+                                &new_viewport,
+                            ))),
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
                             ..Default::default()
                         }];
-                        injector.inject_events(events).expect("Failed to inject updated viewport.");
+                        // TODO(https://fxbug.dev/495480779): Once the returned future supports
+                        // `send_immediately` replace the `await` with that. In practice the future
+                        // for this one way call will internally delegate to a future that calls
+                        // `send_immediately` when polled so there is no performance issue, but we
+                        // need to call `await` for it to actually do anything.
+                        injector
+                            .inject_events(events)
+                            .await
+                            .expect("Failed to inject updated viewport.");
                     }
                 }
                 Some(Err(e)) => {
@@ -608,20 +633,22 @@ impl TouchInjectorHandler {
                     .clone()
                     .into_iter()
                     .map(|button| match button {
-                        fidl_input_report::TouchButton::Palm => fidl_ui_input::TouchButton::Palm,
-                        fidl_input_report::TouchButton::SwipeUp => {
+                        fidl_next_fuchsia_input_report::TouchButton::Palm => {
+                            fidl_ui_input::TouchButton::Palm
+                        }
+                        fidl_next_fuchsia_input_report::TouchButton::SwipeUp => {
                             fidl_ui_input::TouchButton::SwipeUp
                         }
-                        fidl_input_report::TouchButton::SwipeLeft => {
+                        fidl_next_fuchsia_input_report::TouchButton::SwipeLeft => {
                             fidl_ui_input::TouchButton::SwipeLeft
                         }
-                        fidl_input_report::TouchButton::SwipeRight => {
+                        fidl_next_fuchsia_input_report::TouchButton::SwipeRight => {
                             fidl_ui_input::TouchButton::SwipeRight
                         }
-                        fidl_input_report::TouchButton::SwipeDown => {
+                        fidl_next_fuchsia_input_report::TouchButton::SwipeDown => {
                             fidl_ui_input::TouchButton::SwipeDown
                         }
-                        fidl_input_report::TouchButton::__SourceBreaking { unknown_ordinal: n } => {
+                        fidl_next_fuchsia_input_report::TouchButton::UnknownOrdinal_(n) => {
                             fidl_ui_input::TouchButton::__SourceBreaking {
                                 unknown_ordinal: n as u32,
                             }
@@ -718,12 +745,12 @@ pub struct LocalTaskTracker {
 impl LocalTaskTracker {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded();
-        let receiver_task = Dispatcher::spawn_local(async move {
+        let _receiver_task = Dispatcher::spawn_local(async move {
             // Drop the tasks as they are completed.
             receiver.for_each_concurrent(None, |task: TaskHandle<()>| task).await
         });
 
-        Self { sender, _receiver_task: receiver_task }
+        Self { sender, _receiver_task }
     }
 
     /// Submits a new task to track.
@@ -750,7 +777,7 @@ mod tests {
     use crate::testing_utilities::{
         create_fake_input_event, create_touch_contact, create_touch_pointer_sample_event,
         create_touch_screen_event, create_touch_screen_event_with_handled, create_touchpad_event,
-        get_touch_screen_device_descriptor,
+        get_touch_screen_device_descriptor, next_client_old_stream,
     };
     use assert_matches::assert_matches;
     use futures::{FutureExt, TryStreamExt};
@@ -761,7 +788,9 @@ mod tests {
     use std::ops::Add;
     use {
         fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-        fidl_fuchsia_ui_policy as fidl_ui_policy, fuchsia_async as fasync,
+        fidl_fuchsia_ui_pointerinjector as pointerinjector,
+        fidl_fuchsia_ui_policy as fidl_ui_policy,
+        fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next, fuchsia_async as fasync,
     };
 
     const TOUCH_ID: u32 = 1;
@@ -820,7 +849,10 @@ mod tests {
             let (configuration_proxy, mut configuration_request_stream) =
                 fidl::endpoints::create_proxy_and_stream::<pointerinjector_config::SetupMarker>();
             let (injector_registry_proxy, injector_registry_request_stream) =
-                fidl::endpoints::create_proxy_and_stream::<pointerinjector::RegistryMarker>();
+                next_client_old_stream::<
+                    pointerinjector::RegistryMarker,
+                    pointerinjector_next::Registry,
+                >();
 
             let touch_handler_fut = TouchInjectorHandler::new_handler(
                 configuration_proxy,
@@ -908,9 +940,16 @@ mod tests {
         }
     }
 
-    // Creates a |pointerinjector::Viewport|.
     fn create_viewport(min: f32, max: f32) -> pointerinjector::Viewport {
         pointerinjector::Viewport {
+            extents: Some([[min, min], [max, max]]),
+            viewport_to_context_transform: None,
+            ..Default::default()
+        }
+    }
+
+    fn create_viewport_next(min: f32, max: f32) -> pointerinjector_next::Viewport {
+        pointerinjector_next::Viewport {
             extents: Some([[min, min], [max, max]]),
             viewport_to_context_transform: None,
             ..Default::default()
@@ -1049,7 +1088,7 @@ mod tests {
 
         // Add an injector.
         let (injector_device_proxy, mut injector_device_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::DeviceMarker>();
+            next_client_old_stream::<pointerinjector::DeviceMarker, pointerinjector_next::Device>();
         fixtures
             .touch_handler
             .mutable_state
@@ -1120,7 +1159,7 @@ mod tests {
         }
 
         // Check the viewport on the handler is accurate.
-        let expected_viewport = create_viewport(100.0, 200.0);
+        let expected_viewport = create_viewport_next(100.0, 200.0);
         assert_eq!(fixtures.touch_handler.mutable_state.borrow().viewport, Some(expected_viewport));
     }
 
@@ -1160,7 +1199,7 @@ mod tests {
 
         // Add an injector.
         let (injector_device_proxy, mut injector_device_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::DeviceMarker>();
+            next_client_old_stream::<pointerinjector::DeviceMarker, pointerinjector_next::Device>();
         fixtures
             .touch_handler
             .mutable_state
@@ -1242,7 +1281,7 @@ mod tests {
 
         // Add an injector.
         let (injector_device_proxy, mut injector_device_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::DeviceMarker>();
+            next_client_old_stream::<pointerinjector::DeviceMarker, pointerinjector_next::Device>();
         fixtures
             .touch_handler
             .mutable_state
@@ -1460,7 +1499,7 @@ mod tests {
 
         // Add an injector.
         let (injector_device_proxy, mut injector_device_request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<pointerinjector::DeviceMarker>();
+            next_client_old_stream::<pointerinjector::DeviceMarker, pointerinjector_next::Device>();
         fixtures
             .touch_handler
             .mutable_state

@@ -3,24 +3,24 @@
 // found in the LICENSE file.
 
 use crate::{
-    Dispatcher, Incoming, consumer_controls_binding, keyboard_binding, light_sensor_binding,
-    metrics, mouse_binding, touch_binding,
+    Dispatcher, Incoming, Transport, consumer_controls_binding, keyboard_binding,
+    light_sensor_binding, metrics, mouse_binding, touch_binding,
 };
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use async_utils::hanging_get::client::HangingGetStream;
-use fidl_fuchsia_input_report as fidl_input_report;
-use fidl_fuchsia_input_report::InputReport;
-use fidl_fuchsia_io as fio;
+use fidl_next_fuchsia_input_report::{InputDevice, InputReport};
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
     ExponentialHistogramParams, HistogramProperty as _, NumericProperty, Property,
 };
-use fuchsia_trace as ftrace;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 use metrics_registry::*;
 use std::path::PathBuf;
+use {
+    fidl_fuchsia_io as fio, fidl_next_fuchsia_input_report as fidl_next_input_report,
+    fuchsia_trace as ftrace,
+};
 
 pub use input_device_constants::InputDeviceType;
 
@@ -365,7 +365,7 @@ pub trait InputDeviceBinding: Send {
 ///                      `wake_lease`.
 ///
 pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
-    device_proxy: fidl_input_report::InputDeviceProxy,
+    device_proxy: fidl_next::Client<InputDevice, Transport>,
     device_descriptor: InputDeviceDescriptor,
     mut event_sender: UnboundedSender<Vec<InputEvent>>,
     inspect_status: InputDeviceStatus,
@@ -387,8 +387,9 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
 {
     Dispatcher::spawn_local(async move {
         let mut previous_report: Option<InputReport> = None;
-        let (report_reader, server_end) = fidl::endpoints::create_proxy();
-        let result = device_proxy.get_input_reports_reader(server_end);
+        let (report_reader, server_end) = fidl_next::fuchsia::create_channel();
+        let report_reader = Dispatcher::client_from_zx_channel(report_reader);
+        let result = device_proxy.get_input_reports_reader(server_end).await;
         if result.is_err() {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::InputDeviceGetInputReportsReaderError,
@@ -396,16 +397,17 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
             );
             return; // TODO(https://fxbug.dev/42131965): signal error
         }
-        let mut report_stream = HangingGetStream::new(
-            report_reader,
-            fidl_input_report::InputReportsReaderProxy::read_input_reports,
-        );
+        let report_reader = report_reader.spawn();
         loop {
-            match report_stream.next().await {
-                Some(Ok(Ok(input_reports))) => {
+            match report_reader.read_input_reports().await {
+                Ok(Err(_service_error)) => break,
+                Err(_fidl_error) => break,
+                Ok(Ok(fidl_next_input_report::InputReportsReaderReadInputReportsResponse {
+                    reports,
+                })) => {
                     fuchsia_trace::duration!("input", "input-device-process-reports");
                     let (prev_report, inspect_receiver) = process_reports(
-                        input_reports,
+                        reports,
                         previous_report,
                         &device_descriptor,
                         &mut event_sender,
@@ -459,9 +461,6 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
                         None => (),
                     };
                 }
-                Some(Ok(Err(_service_error))) => break,
-                Some(Err(_fidl_error)) => break,
-                None => break,
             }
         }
         // TODO(https://fxbug.dev/42131965): Add signaling for when this loop exits, since it means the device
@@ -477,7 +476,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
 /// - `input_device`: The InputDevice to check the type of.
 /// - `device_type`: The type of the device to compare to.
 pub async fn is_device_type(
-    device_descriptor: &fidl_input_report::DeviceDescriptor,
+    device_descriptor: &fidl_next_fuchsia_input_report::DeviceDescriptor,
     device_type: InputDeviceType,
 ) -> bool {
     // Return if the device type matches the desired `device_type`.
@@ -499,7 +498,7 @@ pub async fn is_device_type(
 /// - `input_event_sender`: The channel to send generated InputEvents to.
 pub async fn get_device_binding(
     device_type: InputDeviceType,
-    device_proxy: fidl_input_report::InputDeviceProxy,
+    device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
     device_id: u32,
     input_event_sender: UnboundedSender<Vec<InputEvent>>,
     device_node: fuchsia_inspect::Node,
@@ -581,18 +580,15 @@ pub async fn get_device_binding(
 pub fn get_device_from_dir_entry_path(
     dir_proxy: &fio::DirectoryProxy,
     entry_path: &PathBuf,
-) -> Result<fidl_input_report::InputDeviceProxy, Error> {
+) -> Result<fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>, Error> {
     let input_device_path = entry_path.to_str();
     if input_device_path.is_none() {
         return Err(format_err!("Failed to get entry path as a string."));
     }
 
-    let input_device = Incoming::connect_protocol_at::<fidl_input_report::InputDeviceProxy>(
-        dir_proxy,
-        input_device_path.unwrap(),
-    )
-    .expect("Failed to connect to InputDevice.");
-    Ok(input_device)
+    let input_device = Incoming::connect_protocol_next_at(dir_proxy, input_device_path.unwrap())
+        .expect("Failed to connect to InputDevice.");
+    Ok(input_device.spawn())
 }
 
 /// Returns the event time if it exists, otherwise returns the current time.
@@ -725,14 +721,13 @@ impl InputEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing_utilities::spawn_input_stream_handler;
     use assert_matches::assert_matches;
     use diagnostics_assertions::AnyProperty;
-    use fidl_test_util::spawn_stream_handler;
-    use fuchsia_async as fasync;
-
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;
     use test_case::test_case;
+    use {fidl_fuchsia_input_report as fidl_input_report, fuchsia_async as fasync};
 
     #[test]
     fn max_event_time() {
@@ -805,8 +800,8 @@ mod tests {
     // consumer controls device exists.
     #[fasync::run_singlethreaded(test)]
     async fn consumer_controls_input_device_exists() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -837,7 +832,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::ConsumerControls
             )
             .await
@@ -847,8 +843,8 @@ mod tests {
     // Tests that is_device_type() returns true for InputDeviceType::Mouse when a mouse exists.
     #[fasync::run_singlethreaded(test)]
     async fn mouse_input_device_exists() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -882,7 +878,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::Mouse
             )
             .await
@@ -893,8 +890,8 @@ mod tests {
     // exist.
     #[fasync::run_singlethreaded(test)]
     async fn mouse_input_device_doesnt_exist() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -916,7 +913,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::Mouse
             )
             .await
@@ -927,8 +925,8 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn touch_input_device_exists() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -959,7 +957,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::Touch
             )
             .await
@@ -970,8 +969,8 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn touch_input_device_doesnt_exist() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -993,7 +992,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::Touch
             )
             .await
@@ -1004,8 +1004,8 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn keyboard_input_device_exists() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -1034,7 +1034,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::Keyboard
             )
             .await
@@ -1045,8 +1046,8 @@ mod tests {
     // exists.
     #[fasync::run_singlethreaded(test)]
     async fn keyboard_input_device_doesnt_exist() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -1068,7 +1069,8 @@ mod tests {
                 &input_device_proxy
                     .get_descriptor()
                     .await
-                    .expect("Failed to get device descriptor"),
+                    .expect("Failed to get device descriptor")
+                    .descriptor,
                 InputDeviceType::Keyboard
             )
             .await
@@ -1078,8 +1080,8 @@ mod tests {
     // Tests that is_device_type() returns true for every input device type that exists.
     #[fasync::run_singlethreaded(test)]
     async fn no_input_device_match() {
-        let input_device_proxy: fidl_input_report::InputDeviceProxy =
-            spawn_stream_handler(move |input_device_request| async move {
+        let input_device_proxy =
+            spawn_input_stream_handler(move |input_device_request| async move {
                 match input_device_request {
                     fidl_input_report::InputDeviceRequest::GetDescriptor { responder } => {
                         let _ = responder.send(&fidl_input_report::DeviceDescriptor {
@@ -1133,8 +1135,11 @@ mod tests {
                 }
             });
 
-        let device_descriptor =
-            &input_device_proxy.get_descriptor().await.expect("Failed to get device descriptor");
+        let device_descriptor = &input_device_proxy
+            .get_descriptor()
+            .await
+            .expect("Failed to get device descriptor")
+            .descriptor;
         assert!(is_device_type(&device_descriptor, InputDeviceType::ConsumerControls).await);
         assert!(is_device_type(&device_descriptor, InputDeviceType::Mouse).await);
         assert!(is_device_type(&device_descriptor, InputDeviceType::Touch).await);
