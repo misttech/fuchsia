@@ -100,8 +100,29 @@ closed protocol UsbFunction {
         endpoint_address uint8;
     }) -> () error zx.Status;
 
-    // TODO(https://fxbug.dev/42178882): More functions to come. Equivalents to
-    // //sdk/banjo/fuchsia.hardware.usb.function/usb-function.fidl
+    /// Configure and enable an endpoint with the given configuration.
+    ///
+    /// See usb20 9.6.6.
+    ///
+    /// Returns
+    /// * `ZX_ERR_IO_NOT_PRESENT`: If device is not running, disconnected, or
+    ///    inactive.
+    /// * `ZX_ERR_NOT_FOUND`: If endpoint address does not exist.
+    /// * `ZX_ERR_INVALID_ARGS`: If the configuration is invalid.
+    strict ConfigureEndpoint(struct {
+        endpoint_address uint8;
+        endpoint_configuration EndpointConfiguration;
+    }) -> () error zx.Status;
+
+    /// Disable an endpoint.
+    ///
+    /// Returns
+    /// * `ZX_ERR_IO_NOT_PRESENT`: If device is not running, disconnected, or
+    ///    inactive.
+    /// * `ZX_ERR_NOT_FOUND`: If endpoint address does not exist.
+    strict DisableEndpoint(struct {
+        endpoint_address uint8;
+    }) -> () error zx.Status;
 };
 
 /// Protocol offered to [`UsbFunction`] instances to handle host-initiated
@@ -152,6 +173,20 @@ open protocol UsbFunctionInterface {
 type EndpointDirection = strict enum : uint8 {
     OUT = 0x00;
     IN = 0x80;
+};
+
+/// Endpoint configuration given to [`UsbFunction.ConfigureEndpoint`].
+type EndpointConfiguration = table {
+    1: descriptor @generated_name("EndpointDescriptor") struct {
+        bm_attributes uint8;
+        w_max_packet_size uint16;
+        b_interval uint8;
+    };
+    2: super_speed_companion @generated_name("SuperSpeedEndpointCompanionDescriptor") struct {
+        b_max_burst uint8;
+        bm_attributes uint8;
+        w_bytes_per_interval uint16;
+    };
 };
 
 

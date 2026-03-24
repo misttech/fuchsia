@@ -94,12 +94,23 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
 
   void ConfigureEndpoint(ConfigureEndpointRequestView req,
                          ConfigureEndpointCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (fail_configure_) {
+      completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
+      return;
+    }
+    configured_endpoints_.push_back(req->ep_descriptor);
+    configured_endpoints_ss_companion_.push_back(req->ss_comp_descriptor);
+    completer.ReplySuccess();
   }
 
   void DisableEndpoint(DisableEndpointRequestView req,
                        DisableEndpointCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (fail_disable_) {
+      completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
+      return;
+    }
+    disabled_endpoints_.push_back(req->ep_address);
+    completer.ReplySuccess();
   }
 
   void EndpointSetStall(EndpointSetStallRequestView req,
@@ -164,6 +175,13 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   std::vector<uint8_t> set_stalls_;
   std::vector<uint8_t> clear_stalls_;
 
+  bool fail_configure_ = false;
+  std::vector<fdescriptor::wire::UsbEndpointDescriptor> configured_endpoints_;
+  std::vector<fdescriptor::wire::UsbSsEpCompDescriptor> configured_endpoints_ss_companion_;
+
+  bool fail_disable_ = false;
+  std::vector<uint8_t> disabled_endpoints_;
+
  private:
   usb_dci_protocol_t proto_;
   bool controller_started_ = false;
@@ -192,6 +210,9 @@ class FakeUsbFunction
                      SetConfiguredCompleter::Sync& completer) override {
     set_configured_called_ = true;
     configured_ = req->configured;
+    if (on_set_configured_) {
+      on_set_configured_();
+    }
     completer.ReplySuccess();
     call_completed_.Signal();
   }
@@ -230,6 +251,8 @@ class FakeUsbFunction
   bool set_configured_called() const { return set_configured_called_; }
   bool configured() const { return configured_; }
   bool set_interface_called() const { return set_interface_called_; }
+
+  void set_on_set_configured(fit::function<void()> cb) { on_set_configured_ = std::move(cb); }
   uint8_t interface() const { return interface_; }
   uint8_t alt_setting() const { return alt_setting_; }
 
@@ -241,6 +264,7 @@ class FakeUsbFunction
 
   bool set_configured_called_ = false;
   bool configured_ = false;
+  fit::function<void()> on_set_configured_;
 
   bool set_interface_called_ = false;
   uint8_t interface_ = 0;
@@ -1038,6 +1062,229 @@ TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
   auto res3 = function_client->EndpointClearStall(unallocated_ep_addr);
   ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
   EXPECT_STATUS(res3.value(), ZX_ERR_NOT_FOUND);
+}
+
+class UsbPeripheralFunctionConfigureEndpointTest : public UsbPeripheralFunctionTest,
+                                                   public testing::WithParamInterface<bool> {};
+
+TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res =
+      function_client->AllocResources(0, endpoints, fidl::VectorView<fidl::StringView>());
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_OK(alloc_res.value());
+
+  uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
+
+  fuchsia_hardware_usb_function::wire::EndpointDescriptor desc = {
+      .bm_attributes = 1,
+      .w_max_packet_size = 2,
+      .b_interval = 3,
+  };
+
+  auto config_builder = fuchsia_hardware_usb_function::wire::EndpointConfiguration::Builder(arena);
+  config_builder.descriptor(desc);
+
+  bool with_ss_companion = GetParam();
+  fuchsia_hardware_usb_function::wire::SuperSpeedEndpointCompanionDescriptor ss_desc;
+  if (with_ss_companion) {
+    ss_desc = {
+        .b_max_burst = 5,
+        .bm_attributes = 4,
+        .w_bytes_per_interval = 6,
+    };
+    config_builder.super_speed_companion(ss_desc);
+  }
+
+  fuchsia_hardware_usb_function::wire::EndpointConfiguration config = config_builder.Build();
+
+  auto res = function_client->ConfigureEndpoint(ep_addr, config);
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_OK(res.value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr, &desc, with_ss_companion,
+                                     &ss_desc](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().configured_endpoints_.size(), 1u);
+    EXPECT_EQ(env.dci().configured_endpoints_[0].b_endpoint_address, ep_addr);
+    EXPECT_EQ(env.dci().configured_endpoints_[0].w_max_packet_size, desc.w_max_packet_size);
+    EXPECT_EQ(env.dci().configured_endpoints_[0].bm_attributes, desc.bm_attributes);
+    EXPECT_EQ(env.dci().configured_endpoints_[0].b_interval, desc.b_interval);
+    if (with_ss_companion) {
+      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].b_max_burst, ss_desc.b_max_burst);
+      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].bm_attributes,
+                ss_desc.bm_attributes);
+      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].w_bytes_per_interval,
+                ss_desc.w_bytes_per_interval);
+    } else {
+      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].b_max_burst, 0);
+      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].bm_attributes, 0);
+      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].w_bytes_per_interval, 0u);
+    }
+  });
+
+  // Test unknown endpoint configuration.
+  uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
+  auto res2 = function_client->ConfigureEndpoint(unallocated_ep_addr, config);
+  ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
+  EXPECT_STATUS(res2.value(), ZX_ERR_NOT_FOUND);
+
+  // Test failing configuration from DCI.
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_configure_ = true; });
+  auto res3 = function_client->ConfigureEndpoint(ep_addr, config);
+  ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
+  EXPECT_STATUS(res3.value(), ZX_ERR_IO_NOT_PRESENT);
+}
+
+INSTANTIATE_TEST_SUITE_P(UsbPeripheralFunctionConfigureEndpointTest,
+                         UsbPeripheralFunctionConfigureEndpointTest, testing::Bool());
+
+TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res =
+      function_client->AllocResources(0, endpoints, fidl::VectorView<fidl::StringView>());
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_OK(alloc_res.value());
+
+  uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
+
+  // Test disabling an allocated endpoint.
+  auto res = function_client->DisableEndpoint(ep_addr);
+  ASSERT_TRUE(res.ok()) << res.FormatDescription();
+  ASSERT_TRUE(res->is_ok()) << zx_status_get_string(res->error_value());
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().disabled_endpoints_.size(), 1u);
+    EXPECT_EQ(env.dci().disabled_endpoints_[0], ep_addr);
+  });
+
+  // Test unknown endpoint disable
+  uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
+  auto res2 = function_client->DisableEndpoint(unallocated_ep_addr);
+  ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
+  EXPECT_STATUS(res2.value(), ZX_ERR_NOT_FOUND);
+
+  // Test failing disable from DCI
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_disable_ = true; });
+  auto res3 = function_client->DisableEndpoint(ep_addr);
+  ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
+  EXPECT_STATUS(res3.value(), ZX_ERR_IO_NOT_PRESENT);
+}
+
+TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::Arena arena;
+  auto endpoints =
+      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res =
+      function_client->AllocResources(1, endpoints, fidl::VectorView<fidl::StringView>());
+  ASSERT_TRUE(alloc_res.ok());
+  ASSERT_OK(alloc_res.value());
+
+  uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  std::vector<uint8_t> descriptors;
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+  };
+  descriptors.resize(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok()) << configure_res.FormatDescription();
+  ASSERT_OK(configure_res.value());
+
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+  ASSERT_OK(dci()->SetConnected(true).status());
+
+  libsync::Completion configure_endpoint_completed;
+
+  // Set the callback that simulates the condition of calling back into the
+  // function before responding to set configured.
+  fake_function->set_on_set_configured([&]() {
+    fidl::Arena arena;
+    fuchsia_hardware_usb_function::wire::EndpointDescriptor desc;
+    desc.bm_attributes = 2;
+    desc.w_max_packet_size = 512;
+    desc.b_interval = 0;
+    auto config_builder =
+        fuchsia_hardware_usb_function::wire::EndpointConfiguration::Builder(arena);
+    config_builder.descriptor(desc);
+
+    auto res = function_client->ConfigureEndpoint(ep_addr, config_builder.Build());
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_OK(res.value());
+
+    configure_endpoint_completed.Signal();
+  });
+
+  // Trigger SetConfigured by sending standard endpoint request SetConfiguration = 1
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_SET_CONFIGURATION;
+  setup.w_value = 1;
+  setup.w_index = 0;
+  setup.w_length = 0;
+
+  std::vector<uint8_t> unused;
+  fidl::WireUnownedResult config_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(config_res.ok()) << config_res.FormatDescription();
+  ASSERT_OK(config_res.value());
+
+  fake_function->WaitUntilCalled();
+  EXPECT_TRUE(fake_function->set_configured_called());
+  EXPECT_TRUE(fake_function->configured());
+
+  configure_endpoint_completed.Wait();
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    EXPECT_EQ(env.dci().configured_endpoints_.size(), 1u);
+    EXPECT_EQ(env.dci().configured_endpoints_[0].b_endpoint_address, ep_addr);
+  });
 }
 
 }  // namespace

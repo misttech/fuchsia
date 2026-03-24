@@ -212,39 +212,22 @@ zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep
   TRACE_DURATION("usb-peripheral", __func__);
   fidl::Arena arena;
 
-  fdescriptor::wire::UsbEndpointDescriptor fep_desc;
-  fep_desc.b_length = ep_desc->b_length;
-  fep_desc.b_descriptor_type = ep_desc->b_descriptor_type;
-  fep_desc.b_endpoint_address = ep_desc->b_endpoint_address;
-  fep_desc.bm_attributes = ep_desc->bm_attributes;
-  fep_desc.w_max_packet_size = ep_desc->w_max_packet_size;
-  fep_desc.b_interval = ep_desc->b_interval;
+  fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
+  fuchsia_hardware_usb_function::EndpointDescriptor desc;
+  desc.bm_attributes(ep_desc->bm_attributes);
+  desc.w_max_packet_size(ep_desc->w_max_packet_size);
+  desc.b_interval(ep_desc->b_interval);
+  ep_config.descriptor(std::move(desc));
 
-  fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc;
   if (ss_comp_desc != nullptr) {  // Only applies to 3.x devices.
-    fss_comp_desc.b_length = ss_comp_desc->b_length;
-    fss_comp_desc.b_descriptor_type = ss_comp_desc->b_descriptor_type;
-    fss_comp_desc.b_max_burst = ss_comp_desc->b_max_burst;
-    fss_comp_desc.bm_attributes = ss_comp_desc->bm_attributes;
-    fss_comp_desc.w_bytes_per_interval = ss_comp_desc->w_bytes_per_interval;
+    fuchsia_hardware_usb_function::SuperSpeedEndpointCompanionDescriptor ss;
+    ss.b_max_burst(ss_comp_desc->b_max_burst);
+    ss.bm_attributes(ss_comp_desc->bm_attributes);
+    ss.w_bytes_per_interval(ss_comp_desc->w_bytes_per_interval);
+    ep_config.super_speed_companion(std::move(ss));
   }
 
-  if (peripheral_->dci_new().is_valid()) {
-    auto result = peripheral_->dci_new().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
-
-    if (!result.ok()) {
-      fdf::debug("Failed to send ConfigureEndpoint request: {}", result.status_string());
-    } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-      fdf::debug("Failed to configure endpoint: {}", result.status_string());
-    } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-      return result->error_value();
-    } else {
-      return ZX_OK;
-    }
-  }
-
-  fdf::debug("could not ConfigureEndpoint() over FIDL, falling back to banjo");
-  return peripheral_->dci().ConfigEp(ep_desc, ss_comp_desc);
+  return CommonEndpointConfigure(ep_desc->b_endpoint_address, std::move(ep_config));
 }
 
 zx_status_t UsbFunction::UsbFunctionDisableEp(uint8_t address) {
@@ -343,6 +326,29 @@ void UsbFunction::EndpointClearStall(EndpointClearStallRequest& request,
                                      EndpointClearStallCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
   zx_status_t status = CommonEndpointClearStall(request.endpoint_address());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbFunction::ConfigureEndpoint(ConfigureEndpointRequest& request,
+                                    ConfigureEndpointCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  zx_status_t status =
+      CommonEndpointConfigure(request.endpoint_address(), request.endpoint_configuration());
+  if (status != ZX_OK) {
+    completer.Reply(fit::as_error(status));
+    return;
+  }
+  completer.Reply(fit::ok());
+}
+
+void UsbFunction::DisableEndpoint(DisableEndpointRequest& request,
+                                  DisableEndpointCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  zx_status_t status = CommonEndpointDisable(request.endpoint_address());
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
     return;
@@ -593,6 +599,91 @@ zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
 
   fdf::warn("could not EndointClearStall() over FIDL, falling back to banjo");
   return peripheral_->dci().EpClearStall(ep_address);
+}
+
+zx_status_t UsbFunction::CommonEndpointConfigure(
+    uint8_t ep_address,
+    fuchsia_hardware_usb_function::EndpointConfiguration endpoint_configuration) {
+  if (!endpoint_configuration.descriptor().has_value()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  if (peripheral_->dci_new().is_valid()) {
+    fidl::Arena arena;
+
+    fdescriptor::wire::UsbEndpointDescriptor fep_desc = {
+        .b_endpoint_address = ep_address,
+        .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
+        .w_max_packet_size = endpoint_configuration.descriptor()->w_max_packet_size(),
+        .b_interval = endpoint_configuration.descriptor()->b_interval(),
+    };
+    fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc;
+    if (endpoint_configuration.super_speed_companion().has_value()) {
+      fss_comp_desc = {
+          .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
+          .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
+          .w_bytes_per_interval =
+              endpoint_configuration.super_speed_companion()->w_bytes_per_interval(),
+      };
+    }
+    auto result = peripheral_->dci_new().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
+
+    if (!result.ok()) {
+      fdf::debug("Failed to send ConfigureEndpoint request: {}", result.status_string());
+    } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
+      fdf::debug("Failed to configure endpoint: {}", result.status_string());
+    } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+      return result->error_value();
+    } else {
+      return ZX_OK;
+    }
+  }
+
+  usb_endpoint_descriptor_t ep_desc = {
+      .b_endpoint_address = ep_address,
+      .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
+      .w_max_packet_size = endpoint_configuration.descriptor()->w_max_packet_size(),
+      .b_interval = endpoint_configuration.descriptor()->b_interval(),
+  };
+  usb_ss_ep_comp_descriptor_t ss_comp_desc;
+  usb_ss_ep_comp_descriptor_t* ss_comp_desc_ptr = nullptr;
+  if (endpoint_configuration.super_speed_companion().has_value()) {
+    ss_comp_desc = {
+        .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
+        .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
+        .w_bytes_per_interval =
+            endpoint_configuration.super_speed_companion()->w_bytes_per_interval(),
+    };
+    ss_comp_desc_ptr = &ss_comp_desc;
+  }
+
+  fdf::debug("could not ConfigureEndpoint() over FIDL, falling back to banjo");
+  return peripheral_->dci().ConfigEp(&ep_desc, ss_comp_desc_ptr);
+}
+
+zx_status_t UsbFunction::CommonEndpointDisable(uint8_t ep_address) {
+  if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
+    return ZX_ERR_NOT_FOUND;
+  }
+
+  fidl::Arena arena;
+  auto result = peripheral_->dci_new().buffer(arena)->DisableEndpoint(ep_address);
+
+  if (!result.ok()) {
+    fdf::debug("Failed to send DisableEndpoint request: {}", result.status_string());
+  } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
+    fdf::debug("Failed to disable endpoint: {}", result.status_string());
+  } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+    return result->error_value();
+  } else {
+    return ZX_OK;
+  }
+
+  fdf::debug("could not DisableEndpoint() over FIDL, falling back to banjo");
+  return peripheral_->dci().DisableEp(ep_address);
 }
 
 }  // namespace usb_peripheral
