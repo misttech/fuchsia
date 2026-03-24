@@ -15,7 +15,6 @@
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/trace/event.h>
-#include <threads.h>
 
 #include <fbl/array.h>
 #include <usb/usb.h>
@@ -126,7 +125,6 @@ class UsbFunction
   UsbPeripheral* peripheral_;
   ddk::UsbFunctionInterfaceProtocolClient function_intf_;
   fidl::WireSharedClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_fidl_;
-  thrd_t thread_;
   int CompletionThread();
   const fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor function_descriptor_;
 
