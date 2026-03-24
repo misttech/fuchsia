@@ -309,6 +309,9 @@ async fn handle_connection(
         ConnectionStream::TargetTcp(target_tcp) => {
             format!("{target_tcp:?}")
         }
+        ConnectionStream::TargetFdomainTcp(target_tcp) => {
+            format!("{target_tcp:?}")
+        }
     };
     let conn = hyper::server::conn::Http::new().with_executor(executor.clone()).serve_connection(
         conn,
@@ -809,6 +812,7 @@ impl From<TcpStream> for TcpStreamWithPeerAddr {
 pub enum ConnectionStream {
     Tcp(TcpStreamWithPeerAddr),
     TargetTcp(ffx_target_net::TargetTcpStream),
+    TargetFdomainTcp(ffx_target_net::socket_provider_fdomain::TargetTcpStream),
 }
 
 impl tokio::io::AsyncRead for ConnectionStream {
@@ -822,6 +826,9 @@ impl tokio::io::AsyncRead for ConnectionStream {
                 Pin::new(&mut t.stream).poll_read(cx, buf.initialize_unfilled())
             }
             ConnectionStream::TargetTcp(t) => {
+                futures::AsyncRead::poll_read(Pin::new(t), cx, buf.initialize_unfilled())
+            }
+            ConnectionStream::TargetFdomainTcp(t) => {
                 futures::AsyncRead::poll_read(Pin::new(t), cx, buf.initialize_unfilled())
             }
         }
@@ -840,6 +847,9 @@ impl tokio::io::AsyncWrite for ConnectionStream {
         match &mut *self {
             ConnectionStream::Tcp(t) => Pin::new(&mut t.stream).poll_write(cx, buf),
             ConnectionStream::TargetTcp(t) => futures::AsyncWrite::poll_write(Pin::new(t), cx, buf),
+            ConnectionStream::TargetFdomainTcp(t) => {
+                futures::AsyncWrite::poll_write(Pin::new(t), cx, buf)
+            }
         }
     }
 
@@ -847,6 +857,9 @@ impl tokio::io::AsyncWrite for ConnectionStream {
         match &mut *self {
             ConnectionStream::Tcp(t) => Pin::new(&mut t.stream).poll_flush(cx),
             ConnectionStream::TargetTcp(t) => futures::AsyncWrite::poll_flush(Pin::new(t), cx),
+            ConnectionStream::TargetFdomainTcp(t) => {
+                futures::AsyncWrite::poll_flush(Pin::new(t), cx)
+            }
         }
     }
 
@@ -854,6 +867,7 @@ impl tokio::io::AsyncWrite for ConnectionStream {
         match &mut *self {
             ConnectionStream::Tcp(t) => Pin::new(&mut t.stream).poll_close(cx),
             ConnectionStream::TargetTcp(t) => Pin::new(t).poll_close(cx),
+            ConnectionStream::TargetFdomainTcp(t) => Pin::new(t).poll_close(cx),
         }
     }
 }
