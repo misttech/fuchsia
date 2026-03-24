@@ -12,7 +12,7 @@ use static_assertions::const_assert;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 /// A trait for types that have metadata.
 ///
@@ -237,6 +237,114 @@ impl<M: Counted + Parse + Sized, D: Parse> Parse for ArrayView<M, D> {
         let count = metadata.count();
         let cursor = parse_array_data::<D>(cursor, count)?;
         Ok((Self::new(start, count), cursor))
+    }
+}
+
+/// A trait for types that can be used as keys in a hash table.
+///
+/// This trait is used by [`HashedBlocksView`] to store and retrieve values.
+pub(super) trait Hashable {
+    type Key: Parse + Hash + Eq;
+    type Value: Parse + Walk;
+
+    /// Returns a reference to the key.
+    fn key(&self) -> &Self::Key;
+
+    /// Returns a [`SimpleArrayView`] into the values.
+    fn values(&self) -> &SimpleArrayView<Self::Value>;
+}
+
+/// Stores an mapping from a [`D::Key`] to a set of [`D::Value`]s
+#[derive(Debug, Clone)]
+pub(super) struct CustomKeyHashedView<D: Hashable> {
+    /// Stores the offset to D::Key.
+    index: HashTable<PolicyOffset>,
+    _phantom: PhantomData<D>,
+}
+
+impl<D: Hashable + Parse> CustomKeyHashedView<D> {
+    /// Returns an iterator over the entries with the specified `key` and parses and
+    /// emits those values.
+    pub(super) fn find_all(
+        &self,
+        query_key: D::Key,
+        policy_data: &PolicyData,
+    ) -> impl Iterator<Item = D::Value> {
+        let key_offset = self.index.find(compute_hash(&query_key), |&key_offset| {
+            let cursor = PolicyCursor::new_at(policy_data, key_offset);
+            let (key, _) = D::Key::parse(cursor)
+                .map_err(Into::<anyhow::Error>::into)
+                .expect("policy should be valid");
+
+            key == query_key
+        });
+
+        key_offset.into_iter().flat_map(move |&key_offset| {
+            let cursor = PolicyCursor::new_at(policy_data, key_offset);
+            let (entry, _) = D::parse(cursor)
+                .map_err(Into::<anyhow::Error>::into)
+                .expect("policy should be valid");
+
+            entry.values().data().iter(policy_data).map(move |v| v.parse(policy_data))
+        })
+    }
+}
+
+fn compute_hash<V: Hash>(val: &V) -> u64 {
+    let mut hasher = RapidHasher::default();
+    val.hash(&mut hasher);
+    hasher.finish()
+}
+
+impl<D: Hashable + Parse> Parse for CustomKeyHashedView<D> {
+    type Error = anyhow::Error;
+
+    /// Parses (D::Key, SimpleArrayView<D::Value>) entries and stores the keys into a CustomKeyHashedView.
+    fn parse<'a>(cursor: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        // Parse the count of entries.
+        let (metadata, cursor) = le::U32::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
+        let count = metadata.count();
+
+        // The index will store [`count`] entries. Reserve the necessary capacity ahead to avoid resizing later on.
+        let mut index = HashTable::with_capacity(count as usize);
+
+        let mut key_offset = cursor.offset();
+        let mut tail = cursor;
+        for _ in 0..count {
+            let (entry, next) = D::parse(tail).map_err(Into::<anyhow::Error>::into)?;
+            tail = next;
+
+            let key: &D::Key = entry.key();
+            index.insert_unique(compute_hash(&key), key_offset, |&key_offset| {
+                let policy_cursor = PolicyCursor::new_at(tail.data(), key_offset);
+                let (key, _) = D::Key::parse(policy_cursor)
+                    .map_err(Into::<anyhow::Error>::into)
+                    .expect("policy should be valid");
+                compute_hash::<D::Key>(&key)
+            });
+            key_offset = tail.offset();
+        }
+
+        Ok((Self { _phantom: PhantomData, index }, tail))
+    }
+}
+
+impl<D: Hashable + Parse> Validate for CustomKeyHashedView<D>
+where
+    D::Value: Validate,
+{
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        for key_offset in self.index.iter() {
+            let cursor = PolicyCursor::new_at(&context.data, *key_offset);
+            let (entry, _) = D::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
+
+            for v in entry.values().data().iter(&context.data) {
+                v.validate(context)?;
+            }
+        }
+        Ok(())
     }
 }
 

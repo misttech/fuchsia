@@ -29,6 +29,8 @@ use super::{
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
     XpermsKind,
 };
+use crate::policy::arrays::FsContext;
+use crate::policy::view::CustomKeyHashedView;
 use crate::{NullessByteStr, PolicyCap};
 
 use anyhow::Context as _;
@@ -97,7 +99,7 @@ pub struct ParsedPolicy {
     infinitiband_end_ports: Option<SimpleArray<InfinitiBandEndPort>>,
     /// A set of labeling statements to apply to given filesystems and/or their subdirectories.
     /// Corresponds to the `genfscon` labeling statement in the policy.
-    generic_fs_contexts: SimpleArray<GenericFsContext>,
+    generic_fs_contexts: CustomKeyHashedView<GenericFsContext>,
     range_transitions: SimpleArray<RangeTransition>,
     /// Extensible bitmaps that encode associations between types and attributes.
     attribute_maps: Vec<ExtensibleBitmap>,
@@ -439,8 +441,9 @@ impl ParsedPolicy {
         &self.fs_uses.data
     }
 
-    pub(super) fn generic_fs_contexts(&self) -> &[GenericFsContext] {
-        &self.generic_fs_contexts.data
+    pub(super) fn genfscon_find_all(&self, fs_type: &str) -> impl Iterator<Item = FsContext> {
+        let query = GenericFsContext::for_query(fs_type);
+        self.generic_fs_contexts.find_all(query, &self.data)
     }
 
     pub(super) fn role_allowlist(&self) -> &[RoleAllow] {
@@ -705,7 +708,7 @@ fn parse_policy_internal<'a>(data: PolicyData) -> Result<(ParsedPolicy, usize), 
             (None, None, tail)
         };
 
-    let (generic_fs_contexts, tail) = SimpleArray::<GenericFsContext>::parse(tail)
+    let (generic_fs_contexts, tail) = CustomKeyHashedView::<GenericFsContext>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing generic filesystem contexts")?;
 

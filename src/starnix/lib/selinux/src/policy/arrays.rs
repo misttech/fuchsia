@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::policy::view::Hashable;
+
 use super::error::ValidateError;
 use super::extensible_bitmap::ExtensibleBitmap;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
@@ -13,6 +15,7 @@ use super::{
 };
 
 use anyhow::Context as _;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
 use std::ops::Shl;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
@@ -1182,29 +1185,41 @@ impl Validate for GenericFsContext {
 
 /// Information parsed parsed from `genfscon [fs_type] [partial_path] [fs_context]` statements
 /// about a specific filesystem type.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(super) struct GenericFsContext {
-    /// The filesystem type.
     fs_type: SimpleArray<u8>,
-    /// The set of contexts defined for this filesystem.
-    contexts: SimpleArray<FsContext>,
+    fs_context: SimpleArrayView<FsContext>,
 }
 
 impl GenericFsContext {
-    pub(super) fn fs_type(&self) -> &[u8] {
-        &self.fs_type.data
-    }
-
-    pub(super) fn contexts(&self) -> &FsContexts {
-        &self.contexts.data
+    /// Returns the `fs_type` representation to be used when looking up in a CustomKeyHashedView.
+    pub(super) fn for_query(fs_type: &str) -> SimpleArray<u8> {
+        Array { data: fs_type.as_bytes().to_vec(), metadata: le::U32::new(fs_type.len() as u32) }
     }
 }
 
-impl Parse for GenericFsContext
-where
-    SimpleArray<u8>: Parse,
-    SimpleArray<FsContext>: Parse,
-{
+impl Hashable for GenericFsContext {
+    type Key = SimpleArray<u8>;
+    type Value = FsContext;
+
+    fn key(&self) -> &Self::Key {
+        &self.fs_type
+    }
+
+    fn values(&self) -> &SimpleArrayView<Self::Value> {
+        &self.fs_context
+    }
+}
+
+impl Eq for SimpleArray<u8> {}
+
+impl Hash for SimpleArray<u8> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
+}
+
+impl Parse for GenericFsContext {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
@@ -1212,17 +1227,15 @@ where
 
         let (fs_type, tail) = SimpleArray::<u8>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
-            .context("parsing generic filesystem context name")?;
+            .context("parsing fs_type for generic fs context")?;
 
-        let (contexts, tail) = SimpleArray::<FsContext>::parse(tail)
+        let (fs_context, tail) = SimpleArrayView::<FsContext>::parse(tail)
             .map_err(Into::<anyhow::Error>::into)
-            .context("parsing generic filesystem contexts")?;
+            .context("parsing fs_context for generic fs context")?;
 
-        Ok((Self { fs_type, contexts }, tail))
+        Ok((Self { fs_type, fs_context }, tail))
     }
 }
-
-pub(super) type FsContexts = Vec<FsContext>;
 
 #[derive(Debug, PartialEq)]
 pub(super) struct FsContext {
@@ -1272,6 +1285,25 @@ where
             .context("parsing context for filesystem context")?;
 
         Ok((Self { partial_path, class, context }, tail))
+    }
+}
+
+impl Validate for FsContext {
+    type Error = anyhow::Error;
+
+    // TODO: validate [`FsContext`].
+    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+impl Walk for FsContext {
+    fn walk(policy_data: &PolicyData, offset: PolicyOffset) -> PolicyOffset {
+        let cursor = PolicyCursor::new_at(policy_data, offset);
+        let (_, tail) = FsContext::parse(cursor)
+            .map_err(Into::<anyhow::Error>::into)
+            .expect("policy should be valid");
+        tail.offset()
     }
 }
 

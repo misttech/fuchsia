@@ -98,6 +98,8 @@ pub enum ValidateError {
         ClassDefaultRange::DEFAULT_UNKNOWN_USED_VALUE]
     )]
     InvalidClassDefaultRange { value: u32 },
+    #[error("paths not ordered lexicographicaly")]
+    InvalidGenFsPathOrdering,
     #[error("missing initial SID {initial_sid:?}")]
     MissingInitialSid { initial_sid: crate::InitialSid },
     #[error(

@@ -349,10 +349,7 @@ impl PolicyIndex {
         // All contexts listed in the policy for the file system type.
         let fs_contexts = self
             .parsed_policy
-            .generic_fs_contexts()
-            .iter()
-            .find(|genfscon| genfscon.fs_type() == fs_type.as_bytes())?
-            .contexts();
+            .genfscon_find_all(std::str::from_utf8(fs_type.as_bytes()).expect("fs type is valid"));
 
         // The correct match is the closest parent among the ones given in the policy file.
         // E.g. if in the policy we have
@@ -366,20 +363,19 @@ impl PolicyIndex {
         // Partial paths are prefix-matched, so that "/abc/default" would also be assigned label3.
         //
         // TODO(372212126): Optimize the algorithm.
-        let mut result: Option<&FsContext> = None;
+        let mut result: Option<FsContext> = None;
         for fs_context in fs_contexts {
+            let class_matches = class_id.is_none()
+                || fs_context.class().map(|other| other == class_id.unwrap()).unwrap_or(true);
+            if !class_matches {
+                continue;
+            }
             if node_path.0.starts_with(fs_context.partial_path()) {
-                if result.is_none()
-                    || result.unwrap().partial_path().len() < fs_context.partial_path().len()
+                if result
+                    .as_ref()
+                    .map_or(true, |c| c.partial_path().len() < fs_context.partial_path().len())
                 {
-                    if class_id.is_none()
-                        || fs_context
-                            .class()
-                            .map(|other| other == class_id.unwrap())
-                            .unwrap_or(true)
-                    {
-                        result = Some(fs_context);
-                    }
+                    result = Some(fs_context);
                 }
             }
         }
