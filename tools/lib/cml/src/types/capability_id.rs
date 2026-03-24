@@ -218,7 +218,7 @@ impl<'a> CapabilityId<'a> {
         // Unsupported capability type.
         let supported_keywords = capability
             .supported()
-            .into_iter()
+            .iter()
             .map(|k| format!("\"{}\"", k))
             .collect::<Vec<_>>()
             .join(", ");
@@ -300,12 +300,8 @@ impl<'a> CapabilityId<'a> {
         }
 
         // Unsupported capability type.
-        let supported_keywords = clause
-            .supported()
-            .into_iter()
-            .map(|k| format!("\"{}\"", k))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let supported_keywords =
+            clause.supported().iter().map(|k| format!("\"{}\"", k)).collect::<Vec<_>>().join(", ");
         Err(Error::validate_context(
             format!(
                 "`{}` declaration is missing a capability keyword, one of: {}",
@@ -415,7 +411,7 @@ impl<'a> CapabilityId<'a> {
         // Unsupported capability type.
         let supported_keywords = use_input
             .supported()
-            .into_iter()
+            .iter()
             .map(|k| format!("\"{}\"", k))
             .collect::<Vec<_>>()
             .join(", ");
