@@ -4,14 +4,21 @@
 
 use crate::PkgServerInfo;
 use async_lock::RwLock;
+#[cfg(feature = "fdomain")]
+use fdomain_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
+#[cfg(feature = "fdomain")]
+use ffx_target_net::socket_provider_fdomain::{SocketProvider, TargetTcpListener};
+#[cfg(not(feature = "fdomain"))]
 use ffx_target_net::{SocketProvider, TargetTcpListener};
-use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_ext::{
     MirrorConfigBuilder, RepositoryConfigBuilder, RepositoryError,
     RepositoryRegistrationAliasConflictMode, RepositoryTarget,
 };
-use fidl_fuchsia_pkg_rewrite::EngineProxy;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_pkg::RepositoryManagerProxy;
+use flex_fuchsia_pkg_rewrite::EngineProxy;
 use fuchsia_hyper::HttpsClient;
 use fuchsia_repo::repo_client::RepoClient;
 use fuchsia_repo::repository::{
@@ -179,7 +186,7 @@ pub async fn register_target_with_repo_instance(
 async fn read_alias_repos(
     engine_proxy: EngineProxy,
 ) -> Result<HashMap<String, Vec<String>>, RepositoryError> {
-    let (rule_iterator, rule_iterator_server) = fidl::endpoints::create_proxy();
+    let (rule_iterator, rule_iterator_server) = engine_proxy.domain().create_proxy();
 
     engine_proxy.list(rule_iterator_server).map_err(|e| {
         log::error!("Failed to list rules: {e}");
