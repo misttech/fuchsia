@@ -249,11 +249,11 @@ using fuchsia.arm.platform;
 using fuchsia.platform;
 using fuchsia.hardware.gpu.mali;
 
-primary node "mali" {
+primary parent "mali" {
   fuchsia.hardware.gpu.mali.Service == fuchsia.hardware.gpu.mali.Service.DriverTransport;
 }
 
-node "pdev" {
+parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.arm.platform.BIND_PLATFORM_DEV_VID.ARM;
   fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC;

@@ -74,20 +74,20 @@ fn get_symbol_table_and_instruction_debug_bytecode(
 
 // Remove the instructions in the first node and return it along with the
 // remaining bytecode.
-fn split_off_node(
+fn split_off_parent(
     mut bytecode: Vec<u8>,
     expect_primary: bool,
     symbol_table: &HashMap<u32, String>,
-) -> Result<(bool, Node, Vec<u8>), BytecodeError> {
+) -> Result<(bool, Parent, Vec<u8>), BytecodeError> {
     // Verify the node type and retrieve the node section size.
     let (is_optional, node_id, node_inst_sz) =
         verify_and_read_node_header(&bytecode, expect_primary)?;
     if bytecode.len() < NODE_TYPE_HEADER_SZ + node_inst_sz as usize {
-        return Err(BytecodeError::IncorrectNodeSectionSize);
+        return Err(BytecodeError::IncorrectParentSectionSize);
     }
 
     if !symbol_table.contains_key(&node_id) {
-        return Err(BytecodeError::MissingNodeIdInSymbolTable);
+        return Err(BytecodeError::MissingParentIdInSymbolTable);
     }
 
     let mut node_instructions = bytecode.split_off(NODE_TYPE_HEADER_SZ);
@@ -96,7 +96,7 @@ fn split_off_node(
         InstructionDecoder::new(symbol_table, &node_instructions).decode()?;
     Ok((
         is_optional,
-        Node {
+        Parent {
             name_id: node_id,
             instructions: node_instructions,
             decoded_instructions: decoded_instructions,
@@ -208,7 +208,7 @@ impl DecodedBindRules {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct Node {
+pub struct Parent {
     // Symbol table ID for the node name.
     pub name_id: u32,
     pub instructions: Vec<u8>,
@@ -221,9 +221,9 @@ pub struct Node {
 pub struct DecodedCompositeBindRules {
     pub symbol_table: HashMap<u32, String>,
     pub device_name_id: u32,
-    pub primary_node: Node,
-    pub additional_nodes: Vec<Node>,
-    pub optional_nodes: Vec<Node>,
+    pub primary_parent: Parent,
+    pub additional_parents: Vec<Parent>,
+    pub optional_parents: Vec<Parent>,
     pub debug_info: Option<DecodedDebugInfo>,
 }
 
@@ -251,29 +251,29 @@ impl DecodedCompositeBindRules {
         let node_bytecode = composite_inst_bytecode.split_off(4);
 
         // Extract the primary node instructions.
-        let (_, primary_node, mut node_bytecode) =
-            split_off_node(node_bytecode, true, &symbol_table)?;
+        let (_, primary_parent, mut node_bytecode) =
+            split_off_parent(node_bytecode, true, &symbol_table)?;
 
         // Extract additional and optional nodes from the remaining bytecode until there's none left.
-        let mut additional_nodes: Vec<Node> = vec![];
-        let mut optional_nodes: Vec<Node> = vec![];
+        let mut additional_parents: Vec<Parent> = vec![];
+        let mut optional_parents: Vec<Parent> = vec![];
         while !node_bytecode.is_empty() {
-            let (is_optional, node, remaining) =
-                split_off_node(node_bytecode, false, &symbol_table)?;
+            let (is_optional, parent, remaining) =
+                split_off_parent(node_bytecode, false, &symbol_table)?;
             node_bytecode = remaining;
             if is_optional {
-                optional_nodes.push(node);
+                optional_parents.push(parent);
             } else {
-                additional_nodes.push(node);
+                additional_parents.push(parent);
             }
         }
 
         Ok(DecodedCompositeBindRules {
             symbol_table: symbol_table,
             device_name_id: device_name_id,
-            primary_node: primary_node,
-            additional_nodes: additional_nodes,
-            optional_nodes: optional_nodes,
+            primary_parent: primary_parent,
+            additional_parents: additional_parents,
+            optional_parents: optional_parents,
             debug_info: debug_info,
         })
     }
@@ -332,29 +332,29 @@ fn verify_and_read_node_header(
     }
 
     let is_optional = match FromPrimitive::from_u8(bytecode[0]) {
-        Some(RawNodeType::Primary) => {
+        Some(RawParentType::Primary) => {
             if !expect_primary {
-                return Err(BytecodeError::MultiplePrimaryNodes);
+                return Err(BytecodeError::MultiplePrimaryParents);
             }
 
             false
         }
-        Some(RawNodeType::Additional) => {
+        Some(RawParentType::Additional) => {
             if expect_primary {
-                return Err(BytecodeError::InvalidPrimaryNode);
+                return Err(BytecodeError::InvalidPrimaryParent);
             }
 
             false
         }
-        Some(RawNodeType::Optional) => {
+        Some(RawParentType::Optional) => {
             if expect_primary {
-                return Err(BytecodeError::InvalidPrimaryNode);
+                return Err(BytecodeError::InvalidPrimaryParent);
             }
 
             true
         }
         None => {
-            return Err(BytecodeError::InvalidNodeType(bytecode[0]));
+            return Err(BytecodeError::InvalidParentType(bytecode[0]));
         }
     };
 
@@ -419,7 +419,7 @@ mod test {
         bytecode.extend_from_slice(&sz.to_le_bytes());
     }
 
-    fn append_node_header(bytecode: &mut Vec<u8>, node_type: RawNodeType, node_id: u32, sz: u32) {
+    fn append_node_header(bytecode: &mut Vec<u8>, node_type: RawParentType, node_id: u32, sz: u32) {
         bytecode.push(node_type as u8);
         bytecode.extend_from_slice(&node_id.to_le_bytes());
         bytecode.extend_from_slice(&sz.to_le_bytes());
@@ -851,18 +851,23 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst_1.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst_1);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             4,
             additional_node_inst_2.len() as u32,
         );
@@ -891,7 +896,7 @@ mod test {
         let rules = DecodedCompositeBindRules {
             symbol_table: expected_symbol_table,
             device_name_id: 1,
-            primary_node: Node {
+            primary_parent: Parent {
                 name_id: 2,
                 instructions: primary_node_inst.to_vec(),
                 decoded_instructions: vec![
@@ -903,8 +908,8 @@ mod test {
                     }),
                 ],
             },
-            additional_nodes: vec![
-                Node {
+            additional_parents: vec![
+                Parent {
                     name_id: 3,
                     instructions: additional_node_inst_1.to_vec(),
                     decoded_instructions: vec![DecodedInstruction::Condition(DecodedCondition {
@@ -913,7 +918,7 @@ mod test {
                         rhs: Symbol::NumberValue(0x10000000),
                     })],
                 },
-                Node {
+                Parent {
                     name_id: 4,
                     instructions: additional_node_inst_2.to_vec(),
                     decoded_instructions: vec![
@@ -922,7 +927,7 @@ mod test {
                     ],
                 },
             ],
-            optional_nodes: vec![],
+            optional_parents: vec![],
             debug_info: Some(DecodedDebugInfo { symbol_table: debug_symbol_table }),
         };
         assert_eq!(DecodedRules::Composite(rules), DecodedRules::new(bytecode).unwrap());
@@ -965,18 +970,23 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst_1.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst_1);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Optional,
+            RawParentType::Optional,
             4,
             optional_node_inst_1.len() as u32,
         );
@@ -1005,7 +1015,7 @@ mod test {
         let rules = DecodedCompositeBindRules {
             symbol_table: expected_symbol_table,
             device_name_id: 1,
-            primary_node: Node {
+            primary_parent: Parent {
                 name_id: 2,
                 instructions: primary_node_inst.to_vec(),
                 decoded_instructions: vec![
@@ -1017,7 +1027,7 @@ mod test {
                     }),
                 ],
             },
-            additional_nodes: vec![Node {
+            additional_parents: vec![Parent {
                 name_id: 3,
                 instructions: additional_node_inst_1.to_vec(),
                 decoded_instructions: vec![DecodedInstruction::Condition(DecodedCondition {
@@ -1026,7 +1036,7 @@ mod test {
                     rhs: Symbol::NumberValue(0x10000000),
                 })],
             }],
-            optional_nodes: vec![Node {
+            optional_parents: vec![Parent {
                 name_id: 4,
                 instructions: optional_node_inst_1.to_vec(),
                 decoded_instructions: vec![
@@ -1076,18 +1086,23 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst_1.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst_1);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             4,
             additional_node_inst_2.len() as u32,
         );
@@ -1102,7 +1117,7 @@ mod test {
         let rules = DecodedCompositeBindRules {
             symbol_table: expected_symbol_table,
             device_name_id: 1,
-            primary_node: Node {
+            primary_parent: Parent {
                 name_id: 2,
                 instructions: primary_node_inst.to_vec(),
                 decoded_instructions: vec![
@@ -1114,8 +1129,8 @@ mod test {
                     }),
                 ],
             },
-            additional_nodes: vec![
-                Node {
+            additional_parents: vec![
+                Parent {
                     name_id: 3,
                     instructions: additional_node_inst_1.to_vec(),
                     decoded_instructions: vec![DecodedInstruction::Condition(DecodedCondition {
@@ -1124,7 +1139,7 @@ mod test {
                         rhs: Symbol::NumberValue(0x10000000),
                     })],
                 },
-                Node {
+                Parent {
                     name_id: 4,
                     instructions: additional_node_inst_2.to_vec(),
                     decoded_instructions: vec![
@@ -1133,7 +1148,7 @@ mod test {
                     ],
                 },
             ],
-            optional_nodes: vec![],
+            optional_parents: vec![],
             debug_info: None,
         };
         assert_eq!(DecodedRules::Composite(rules), DecodedRules::new(bytecode).unwrap());
@@ -1176,18 +1191,23 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst_1.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst_1);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Optional,
+            RawParentType::Optional,
             4,
             optional_node_inst_1.len() as u32,
         );
@@ -1202,7 +1222,7 @@ mod test {
         let rules = DecodedCompositeBindRules {
             symbol_table: expected_symbol_table,
             device_name_id: 1,
-            primary_node: Node {
+            primary_parent: Parent {
                 name_id: 2,
                 instructions: primary_node_inst.to_vec(),
                 decoded_instructions: vec![
@@ -1214,7 +1234,7 @@ mod test {
                     }),
                 ],
             },
-            additional_nodes: vec![Node {
+            additional_parents: vec![Parent {
                 name_id: 3,
                 instructions: additional_node_inst_1.to_vec(),
                 decoded_instructions: vec![DecodedInstruction::Condition(DecodedCondition {
@@ -1223,7 +1243,7 @@ mod test {
                     rhs: Symbol::NumberValue(0x10000000),
                 })],
             }],
-            optional_nodes: vec![Node {
+            optional_parents: vec![Parent {
                 name_id: 4,
                 instructions: optional_node_inst_1.to_vec(),
                 decoded_instructions: vec![
@@ -1260,7 +1280,12 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         let mut expected_symbol_table: HashMap<u32, String> = HashMap::new();
@@ -1271,7 +1296,7 @@ mod test {
             DecodedRules::Composite(DecodedCompositeBindRules {
                 symbol_table: expected_symbol_table,
                 device_name_id: 1,
-                primary_node: Node {
+                primary_parent: Parent {
                     name_id: 2,
                     instructions: primary_node_inst.to_vec(),
                     decoded_instructions: vec![
@@ -1283,8 +1308,8 @@ mod test {
                         }),
                     ],
                 },
-                additional_nodes: vec![],
-                optional_nodes: vec![],
+                additional_parents: vec![],
+                optional_parents: vec![],
                 debug_info: None,
             }),
             DecodedRules::new(bytecode).unwrap()
@@ -1307,7 +1332,12 @@ mod test {
         append_section_header(&mut bytecode, COMPOSITE_MAGIC_NUM, composite_insts_sz);
         bytecode.extend_from_slice(&[2, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 1, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            1,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         assert_eq!(Err(BytecodeError::MissingDeviceNameInSymbolTable), DecodedRules::new(bytecode));
@@ -1329,10 +1359,15 @@ mod test {
         append_section_header(&mut bytecode, COMPOSITE_MAGIC_NUM, composite_insts_sz);
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
-        assert_eq!(Err(BytecodeError::MissingNodeIdInSymbolTable), DecodedRules::new(bytecode));
+        assert_eq!(Err(BytecodeError::MissingParentIdInSymbolTable), DecodedRules::new(bytecode));
     }
 
     #[test]
@@ -1368,20 +1403,20 @@ mod test {
         // Add the node instructions.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             2,
             additional_node_inst_1.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst_1);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst_2.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst_2);
 
-        assert_eq!(Err(BytecodeError::InvalidPrimaryNode), DecodedRules::new(bytecode));
+        assert_eq!(Err(BytecodeError::InvalidPrimaryParent), DecodedRules::new(bytecode));
     }
 
     #[test]
@@ -1416,15 +1451,20 @@ mod test {
         // Add the node instructions.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
         bytecode.extend_from_slice(&additional_node_inst);
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
-        assert_eq!(Err(BytecodeError::InvalidPrimaryNode), DecodedRules::new(bytecode));
+        assert_eq!(Err(BytecodeError::InvalidPrimaryParent), DecodedRules::new(bytecode));
     }
 
     #[test]
@@ -1457,17 +1497,22 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
         append_node_header(
             &mut bytecode,
-            RawNodeType::Primary,
+            RawParentType::Primary,
             3,
             primary_node_inst_2.len() as u32,
         );
         bytecode.extend_from_slice(&primary_node_inst_2);
 
-        assert_eq!(Err(BytecodeError::MultiplePrimaryNodes), DecodedRules::new(bytecode));
+        assert_eq!(Err(BytecodeError::MultiplePrimaryParents), DecodedRules::new(bytecode));
     }
 
     #[test]
@@ -1499,7 +1544,7 @@ mod test {
         bytecode.extend_from_slice(&(primary_node_inst.len() as u32).to_le_bytes());
         bytecode.extend_from_slice(&primary_node_inst);
 
-        assert_eq!(Err(BytecodeError::InvalidNodeType(0x53)), DecodedRules::new(bytecode));
+        assert_eq!(Err(BytecodeError::InvalidParentType(0x53)), DecodedRules::new(bytecode));
     }
 
     #[test]
@@ -1533,12 +1578,12 @@ mod test {
 
         // Add the primary node instructions with a size that overlaps to the next
         // node.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, 7);
+        append_node_header(&mut bytecode, RawParentType::Primary, 2, 7);
         bytecode.extend_from_slice(&primary_node_inst);
 
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -1546,7 +1591,7 @@ mod test {
 
         // Instructions for the primary node end, the next byte is the node type for the next node.
         assert_eq!(
-            Err(BytecodeError::InvalidOp(RawNodeType::Additional as u8)),
+            Err(BytecodeError::InvalidOp(RawParentType::Additional as u8)),
             DecodedRules::new(bytecode)
         );
     }
@@ -1580,11 +1625,16 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node with a size that's too small.
-        append_node_header(&mut bytecode, RawNodeType::Additional, 3, 1);
+        append_node_header(&mut bytecode, RawParentType::Additional, 3, 1);
         bytecode.extend_from_slice(&additional_node_inst);
 
         // Reach end when trying to read in value type after the inequality operator (0x02).
@@ -1615,10 +1665,10 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add primary node instructions with a size that exceed the entire instruction size.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, 50);
+        append_node_header(&mut bytecode, RawParentType::Primary, 2, 50);
         bytecode.extend_from_slice(&primary_node_inst);
 
-        assert_eq!(Err(BytecodeError::IncorrectNodeSectionSize), DecodedRules::new(bytecode));
+        assert_eq!(Err(BytecodeError::IncorrectParentSectionSize), DecodedRules::new(bytecode));
     }
 
     #[test]
@@ -1645,7 +1695,12 @@ mod test {
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
         // Add the node instructions.
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         assert_eq!(
@@ -1673,7 +1728,7 @@ mod test {
     #[test]
     fn test_composite_with_compiler() {
         use crate::compiler::{
-            CompiledBindRules, CompositeBindRules, CompositeNode, Symbol, SymbolicInstruction,
+            CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstruction,
             SymbolicInstructionInfo,
         };
         use crate::parser::bind_library::ValueType;
@@ -1703,15 +1758,15 @@ mod test {
         let bytecode = CompiledBindRules::CompositeBind(CompositeBindRules {
             device_name: "blackbird".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "meadowlark".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "cowbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         })
         .encode_to_bytecode()
@@ -1734,12 +1789,12 @@ mod test {
             DecodedRules::Composite(DecodedCompositeBindRules {
                 symbol_table: expected_symbol_table,
                 device_name_id: 1,
-                primary_node: Node {
+                primary_parent: Parent {
                     name_id: 2,
                     instructions: primary_node_inst.to_vec(),
                     decoded_instructions: vec![DecodedInstruction::UnconditionalAbort],
                 },
-                additional_nodes: vec![Node {
+                additional_parents: vec![Parent {
                     name_id: 3,
                     instructions: additional_node_inst.to_vec(),
                     decoded_instructions: vec![
@@ -1755,7 +1810,7 @@ mod test {
                         })
                     ]
                 }],
-                optional_nodes: vec![],
+                optional_parents: vec![],
                 debug_info: None,
             }),
             DecodedRules::new(bytecode).unwrap()
@@ -1765,7 +1820,7 @@ mod test {
     #[test]
     fn test_composite_optional_with_compiler() {
         use crate::compiler::{
-            CompiledBindRules, CompositeBindRules, CompositeNode, Symbol, SymbolicInstruction,
+            CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstruction,
             SymbolicInstructionInfo,
         };
         use crate::parser::bind_library::ValueType;
@@ -1803,15 +1858,15 @@ mod test {
         let bytecode = CompiledBindRules::CompositeBind(CompositeBindRules {
             device_name: "blackbird".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "meadowlark".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "cowbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![CompositeNode {
+            optional_parents: vec![CompositeParent {
                 name: "cowbird_optional".to_string(),
                 instructions: optional_node_inst,
             }],
@@ -1843,12 +1898,12 @@ mod test {
             DecodedRules::Composite(DecodedCompositeBindRules {
                 symbol_table: expected_symbol_table,
                 device_name_id: 1,
-                primary_node: Node {
+                primary_parent: Parent {
                     name_id: 2,
                     instructions: primary_node_inst.to_vec(),
                     decoded_instructions: vec![DecodedInstruction::UnconditionalAbort],
                 },
-                additional_nodes: vec![Node {
+                additional_parents: vec![Parent {
                     name_id: 3,
                     instructions: additional_node_inst.to_vec(),
                     decoded_instructions: vec![
@@ -1864,7 +1919,7 @@ mod test {
                         })
                     ]
                 }],
-                optional_nodes: vec![Node {
+                optional_parents: vec![Parent {
                     name_id: 6,
                     instructions: optional_node_inst.to_vec(),
                     decoded_instructions: vec![DecodedInstruction::Condition(DecodedCondition {

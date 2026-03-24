@@ -294,7 +294,7 @@ fn diagnose_composite_match<P: DiagnosableParent>(
         if match_bind(
             MatchBindData {
                 symbol_table: &rules.symbol_table,
-                instructions: &rules.primary_node.instructions,
+                instructions: &rules.primary_parent.instructions,
             },
             &props,
         )
@@ -315,13 +315,13 @@ fn diagnose_composite_match<P: DiagnosableParent>(
         let primary_props = parents[0].to_properties();
         let diagnostics = evaluate_rules_bytecode(
             &rules.symbol_table,
-            &rules.primary_node.instructions,
+            &rules.primary_parent.instructions,
             &primary_props,
         );
         report_diagnostics(&diagnostics, writer, 4)?;
     }
 
-    for (i, node) in rules.additional_nodes.iter().enumerate() {
+    for (i, node) in rules.additional_parents.iter().enumerate() {
         let node_name = rules
             .symbol_table
             .get(&node.name_id)
@@ -470,8 +470,8 @@ fn is_fuzzy_match(rules: &DecodedRules, properties: &DeviceProperties) -> bool {
     let keys = match rules {
         DecodedRules::Normal(r) => get_keys_from_instructions(&r.decoded_instructions),
         DecodedRules::Composite(r) => {
-            let mut k = get_keys_from_instructions(&r.primary_node.decoded_instructions);
-            for n in &r.additional_nodes {
+            let mut k = get_keys_from_instructions(&r.primary_parent.decoded_instructions);
+            for n in &r.additional_parents {
                 k.extend(get_keys_from_instructions(&n.decoded_instructions));
             }
             k

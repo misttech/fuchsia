@@ -8,13 +8,14 @@ pub mod instruction;
 pub mod symbol_table;
 
 pub use self::compiler::{
-    compile, compile_bind, compile_statements, BindRules, BindRulesDecodeError, CompiledBindRules,
-    CompilerError, CompositeBindRules, CompositeNode, SymbolicInstruction, SymbolicInstructionInfo,
+    BindRules, BindRulesDecodeError, CompiledBindRules, CompilerError, CompositeBindRules,
+    CompositeParent, SymbolicInstruction, SymbolicInstructionInfo, compile, compile_bind,
+    compile_statements,
 };
 
 pub use self::symbol_table::{
-    get_deprecated_key_identifier, get_deprecated_key_identifiers, get_deprecated_key_value,
-    Symbol, SymbolTable,
+    Symbol, SymbolTable, get_deprecated_key_identifier, get_deprecated_key_identifiers,
+    get_deprecated_key_value,
 };
 
 pub mod test_lib;

@@ -128,9 +128,9 @@ impl From<BindParserError> for UserError {
                 Some(span),
                 false,
             ),
-            BindParserError::NoNodes(span) => UserError::new(
+            BindParserError::NoParents(span) => UserError::new(
                 "E028",
-                "Composite bind rules must contain at least one node.",
+                "Composite bind rules must contain at least one parent.",
                 Some(span),
                 false,
             ),
@@ -140,8 +140,8 @@ impl From<BindParserError> for UserError {
             BindParserError::CompositeKeyword(span) => {
                 UserError::new("E029", "Expected 'composite' keyword.", Some(span), false)
             }
-            BindParserError::NodeKeyword(span) => {
-                UserError::new("E030", "Expected 'node' keyword.", Some(span), false)
+            BindParserError::ParentKeyword(span) => {
+                UserError::new("E030", "Expected 'parent' or 'node' keyword.", Some(span), false)
             }
             BindParserError::PrimaryOrOptionalKeyword(span) => UserError::new(
                 "E031",
@@ -149,17 +149,17 @@ impl From<BindParserError> for UserError {
                 Some(span),
                 false,
             ),
-            BindParserError::OnePrimaryNode(span) => UserError::new(
+            BindParserError::OnePrimaryParent(span) => UserError::new(
                 "E032",
-                "Composite bind rules must contain exactly one primary node.",
+                "Composite bind rules must contain exactly one primary parent.",
                 Some(span),
                 false,
             ),
-            BindParserError::InvalidNodeName(span) => {
-                UserError::new("E032", "Expected node name string literal", Some(span), false)
+            BindParserError::InvalidParentName(span) => {
+                UserError::new("E032", "Expected parent name string literal", Some(span), false)
             }
-            BindParserError::DuplicateNodeName(span) => {
-                UserError::new("E033", "Node names should be unique", Some(span), false)
+            BindParserError::DuplicateParentName(span) => {
+                UserError::new("E033", "Parent names should be unique", Some(span), false)
             }
             BindParserError::UnterminatedComment => {
                 UserError::new("E023", "Found an unterminated multiline comment.", None, false)
@@ -452,11 +452,11 @@ impl From<BindRulesEncodeError> for UserError {
             BindRulesEncodeError::MissingCompositeDeviceName => {
                 UserError::new("E610", "Composite bind rules missing a device name", None, true)
             }
-            BindRulesEncodeError::MissingCompositeNodeName => {
-                UserError::new("E611", "Composite bind rules missing a node name", None, true)
+            BindRulesEncodeError::MissingCompositeParentName => {
+                UserError::new("E611", "Composite bind rules missing a parent name", None, true)
             }
-            BindRulesEncodeError::DuplicateCompositeNodeName(name) => {
-                UserError::new("E612", &format!("Node name {} is duplicate", name), None, true)
+            BindRulesEncodeError::DuplicateCompositeParentName(name) => {
+                UserError::new("E612", &format!("Parent name {} is duplicate", name), None, true)
             }
             BindRulesEncodeError::MissingAstLocation => {
                 UserError::new("E613", "AST location missing", None, true)
@@ -547,26 +547,26 @@ impl From<BytecodeError> for UserError {
                 None,
                 false,
             ),
-            BytecodeError::InvalidPrimaryNode => UserError::new(
+            BytecodeError::InvalidPrimaryParent => UserError::new(
                 "E816",
-                "There must be a primary node at the beginning of the composite node instructions",
+                "There must be a primary parent at the beginning of the composite parent instructions",
                 None,
                 false,
             ),
-            BytecodeError::MultiplePrimaryNodes => {
-                UserError::new("E817", "There must only be one primary node", None, false)
+            BytecodeError::MultiplePrimaryParents => {
+                UserError::new("E817", "There must only be one primary parent", None, false)
             }
-            BytecodeError::InvalidNodeType(node_type) => {
-                UserError::new("E818", &format!("Invalid node type: {}", node_type), None, false)
+            BytecodeError::InvalidParentType(node_type) => {
+                UserError::new("E818", &format!("Invalid parent type: {}", node_type), None, false)
             }
-            BytecodeError::IncorrectNodeSectionSize => {
-                UserError::new("E819", "Incorrect node section size", None, false)
+            BytecodeError::IncorrectParentSectionSize => {
+                UserError::new("E819", "Incorrect parent section size", None, false)
             }
             BytecodeError::MissingDeviceNameInSymbolTable => {
                 UserError::new("E820", "Missing device name ID in the symbol table", None, false)
             }
-            BytecodeError::MissingNodeIdInSymbolTable => {
-                UserError::new("E821", "Missing node name ID in the symbol table", None, false)
+            BytecodeError::MissingParentIdInSymbolTable => {
+                UserError::new("E821", "Missing parent name ID in the symbol table", None, false)
             }
             BytecodeError::InvalidDebugFlag(val) => UserError::new(
                 "E822",
@@ -594,9 +594,9 @@ impl From<test::TestError> for UserError {
                 None,
                 false,
             ),
-            test::TestError::CompositeNodeMissing(node) => UserError::new(
+            test::TestError::CompositeParentMissing(node) => UserError::new(
                 "E404",
-                &format!("The composite node {} is not included in the bind rules.", node),
+                &format!("The composite parent {} is not included in the bind rules.", node),
                 None,
                 false,
             ),

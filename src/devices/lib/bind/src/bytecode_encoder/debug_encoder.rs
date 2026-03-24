@@ -126,7 +126,7 @@ mod test {
     use crate::bytecode_encoder::encode_v2::{encode_composite_to_bytecode, encode_to_bytecode_v2};
     use crate::compiler::compiler::compile;
     use crate::compiler::{
-        BindRules, CompiledBindRules, CompositeBindRules, CompositeNode, SymbolicInstruction,
+        BindRules, CompiledBindRules, CompositeBindRules, CompositeParent, SymbolicInstruction,
         SymbolicInstructionInfo,
     };
     use crate::make_identifier;
@@ -420,7 +420,7 @@ mod test {
     #[test]
     fn test_encode_debug_symbol_composite_bind_rules() {
         let composite_bind_rules = "composite grey_lourie;
-            primary node \"go-away-bird\" {
+            primary parent \"go-away-bird\" {
                 fuchsia.BIND_PROTOCOL == 1;
             }";
 
@@ -453,7 +453,7 @@ mod test {
 
         // Each node section consists of the total node bytes from each
         // instruction and the debug line number bytes.
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_node_bytes);
         checker.verify_debug_line_number(3);
         checker.verify_abort_not_equal(
             EncodedValue { value_type: RawValueType::NumberValue, value: 1 },
@@ -470,10 +470,10 @@ mod test {
     #[test]
     fn test_encode_debug_symbol_composite_bind_rules_with_optional() {
         let composite_bind_rules = "composite grey_lourie;
-            primary node \"go-away-bird\" {
+            primary parent \"go-away-bird\" {
                 fuchsia.BIND_PROTOCOL == 1;
             }
-            optional node \"redpoll\" {
+            optional parent \"redpoll\" {
                 fuchsia.BIND_FIDL_PROTOCOL == 2;
             }";
 
@@ -510,7 +510,7 @@ mod test {
 
         // Each node section consists of the total node bytes from each
         // instruction and the debug line number bytes.
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_node_bytes);
         checker.verify_debug_line_number(3);
         checker.verify_abort_not_equal(
             EncodedValue { value_type: RawValueType::NumberValue, value: 1 },
@@ -518,7 +518,7 @@ mod test {
         );
 
         // Verify optional node.
-        checker.verify_node_header(RawNodeType::Optional, 3, optional_node_bytes);
+        checker.verify_parent_header(RawParentType::Optional, 3, optional_node_bytes);
         checker.verify_debug_line_number(6);
         checker.verify_abort_not_equal(
             EncodedValue { value_type: RawValueType::NumberValue, value: 4 },
@@ -622,9 +622,9 @@ mod test {
         let bind_rules = CompositeBindRules {
             device_name: "treehunter".to_string(),
             symbol_table: HashMap::new(),
-            additional_nodes: vec![],
-            optional_nodes: vec![],
-            primary_node: CompositeNode {
+            additional_parents: vec![],
+            optional_parents: vec![],
+            primary_parent: CompositeParent {
                 name: "bananaquit".to_string(),
                 instructions: primary_node_inst,
             },
@@ -644,7 +644,7 @@ mod test {
             NODE_HEADER_BYTES + COMPOSITE_NAME_ID_BYTES + primary_node_bytes,
         );
 
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_node_bytes);
         checker.verify_debug_line_number(11);
         checker.verify_unconditional_abort();
 

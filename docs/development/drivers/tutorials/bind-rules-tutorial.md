@@ -201,7 +201,7 @@ You can then write the following:
 using fuchsia.acpi;
 using fuchsia.pci;
 
-primary node "pci_sample" {
+primary parent "pci_sample" {
   fuchsia.BIND_PROTOCOL == fuchsia.pci.BIND_PROTOCOL.DEVICE;
   fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.VIRTIO;
   fuchsia.BIND_PCI_DID == fuchsia.pci.BIND_PCI_DID.VIRTIO_DEV_TYPE_INPUT;
@@ -209,7 +209,7 @@ primary node "pci_sample" {
   fuchsia.acpi.HID == "GFSH0005";
 }
 
-node "acpi" {
+parent "acpi" {
   fuchsia.driver.framework.dfv2 == true;
   fuchsia.BIND_ACPI_ID == 0x000034;
   fuchsia.BIND_PCI_TOPO == 0x0000aa;
@@ -223,7 +223,7 @@ to be matched up to a composite driver.
 This is only supported when using device groups, optional nodes will not be matched in
 plain old composites where Nodes from the topology are matched to a composite driver.
 
-In the bind rules, putting `optional` before the `node` keyword will mark the node
+In the bind rules, putting `optional` before the `parent` keyword will mark the node
 as being optional. As a convention, all optional nodes should be written after
 the regular additional nodes.
 

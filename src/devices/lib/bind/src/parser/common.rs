@@ -87,7 +87,7 @@ pub enum Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum NodeType {
+pub enum ParentType {
     Primary,
     Additional,
     Optional,
@@ -118,14 +118,14 @@ pub enum BindParserError {
     TrueKeyword(String),
     FalseKeyword(String),
     NoStatements(String),
-    NoNodes(String),
+    NoParents(String),
     Eof(String),
     CompositeKeyword(String),
-    NodeKeyword(String),
+    ParentKeyword(String),
     PrimaryOrOptionalKeyword(String),
-    OnePrimaryNode(String),
-    InvalidNodeName(String),
-    DuplicateNodeName(String),
+    OnePrimaryParent(String),
+    InvalidParentName(String),
+    DuplicateParentName(String),
     UnterminatedComment,
     Unknown(String, ErrorKind),
 }

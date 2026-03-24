@@ -410,7 +410,7 @@ mod tests {
     use crate::test_common::*;
     use bind::compiler::test_lib::*;
     use bind::compiler::{
-        CompiledBindRules, CompositeBindRules, CompositeNode, Symbol, SymbolicInstructionInfo,
+        CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstructionInfo,
     };
 
     use bind::parser::bind_library::ValueType;
@@ -464,29 +464,31 @@ mod tests {
 
     fn create_driver<'a>(
         composite_name: String,
-        primary_node: (&str, Vec<SymbolicInstructionInfo<'a>>),
+        primary_parent: (&str, Vec<SymbolicInstructionInfo<'a>>),
         additionals: Vec<(&str, Vec<SymbolicInstructionInfo<'a>>)>,
         optionals: Vec<(&str, Vec<SymbolicInstructionInfo<'a>>)>,
     ) -> ResolvedDriver {
-        let mut additional_nodes = vec![];
-        let mut optional_nodes = vec![];
+        let mut additional_parents = vec![];
+        let mut optional_parents = vec![];
         for additional in additionals {
-            additional_nodes
-                .push(CompositeNode { name: additional.0.to_string(), instructions: additional.1 });
+            additional_parents.push(CompositeParent {
+                name: additional.0.to_string(),
+                instructions: additional.1,
+            });
         }
         for optional in optionals {
-            optional_nodes
-                .push(CompositeNode { name: optional.0.to_string(), instructions: optional.1 });
+            optional_parents
+                .push(CompositeParent { name: optional.0.to_string(), instructions: optional.1 });
         }
         let bind_rules = CompositeBindRules {
             device_name: composite_name,
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
-                name: primary_node.0.to_string(),
-                instructions: primary_node.1,
+            primary_parent: CompositeParent {
+                name: primary_parent.0.to_string(),
+                instructions: primary_parent.1,
             },
-            additional_nodes: additional_nodes,
-            optional_nodes: optional_nodes,
+            additional_parents: additional_parents,
+            optional_parents: optional_parents,
             enable_debug: false,
         };
 
@@ -511,11 +513,11 @@ mod tests {
     }
 
     fn create_driver_with_rules<'a>(
-        primary_node: (&str, Vec<SymbolicInstructionInfo<'a>>),
+        primary_parent: (&str, Vec<SymbolicInstructionInfo<'a>>),
         additionals: Vec<(&str, Vec<SymbolicInstructionInfo<'a>>)>,
         optionals: Vec<(&str, Vec<SymbolicInstructionInfo<'a>>)>,
     ) -> ResolvedDriver {
-        create_driver(TEST_DEVICE_NAME.to_string(), primary_node, additionals, optionals)
+        create_driver(TEST_DEVICE_NAME.to_string(), primary_parent, additionals, optionals)
     }
 
     #[fasync::run_singlethreaded(test)]

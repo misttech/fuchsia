@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::compiler::{compiler, SymbolTable, SymbolicInstructionInfo};
+use crate::compiler::{SymbolTable, SymbolicInstructionInfo, compiler};
 use crate::debugger::device_specification::DeviceSpecification;
 use crate::debugger::offline_debugger::{self, debug_from_device_specification};
 use crate::errors::UserError;
@@ -31,15 +31,16 @@ pub struct BindSpec {
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
-pub struct CompositeNodeSpec {
-    node: String,
-    tests: Vec<BindSpec>,
+pub struct CompositeParentSpec {
+    #[serde(alias = "node")]
+    pub parent: String,
+    pub tests: Vec<BindSpec>,
 }
 
 #[derive(Deserialize, Debug)]
 enum TestSpec {
     Bind(Vec<BindSpec>),
-    CompositeBind(Vec<CompositeNodeSpec>),
+    CompositeBind(Vec<CompositeParentSpec>),
 }
 
 struct TestSuite {
@@ -54,7 +55,7 @@ pub enum TestError {
     CompilerError(compiler::CompilerError),
     InvalidSchema,
     JsonParserError(String),
-    CompositeNodeMissing(String),
+    CompositeParentMissing(String),
     // The JSON validator unfortunately doesn't produce useful error messages.
     InvalidJsonError,
 }
@@ -90,7 +91,7 @@ impl TryFrom<&str> for TestSuite {
         }
 
         // Try the composite bind test spec.
-        let composite_specs: Vec<CompositeNodeSpec> =
+        let composite_specs: Vec<CompositeParentSpec> =
             serde_json::from_value(validate_spec(input, &COMPOSITE_SCHEMA)?)
                 .map_err(|e| TestError::JsonParserError(format!("{}", e)))?;
         Ok(TestSuite { specs: TestSpec::CompositeBind(composite_specs) })
@@ -159,43 +160,44 @@ fn run_bind_test_specs<'a>(
 }
 
 fn run_composite_bind_test_specs(
-    specs: &Vec<CompositeNodeSpec>,
+    specs: &Vec<CompositeParentSpec>,
     rules: &str,
     libraries: &[String],
 ) -> Result<bool, TestError> {
     let composite_bind = compiler::compile_bind_composite(rules, libraries, false, false, false)
         .map_err(TestError::CompilerError)?;
 
-    // Map composite bind rules by node name.
-    let mut node_map: HashMap<String, Vec<SymbolicInstructionInfo>> = HashMap::new();
-    node_map.insert(composite_bind.primary_node.name, composite_bind.primary_node.instructions);
-    for node in composite_bind.additional_nodes {
-        node_map.insert(node.name, node.instructions);
+    // Map composite bind rules by parent name.
+    let mut parent_map: HashMap<String, Vec<SymbolicInstructionInfo>> = HashMap::new();
+    parent_map
+        .insert(composite_bind.primary_parent.name, composite_bind.primary_parent.instructions);
+    for parent in composite_bind.additional_parents {
+        parent_map.insert(parent.name, parent.instructions);
     }
 
-    for node in composite_bind.optional_nodes {
-        node_map.insert(node.name, node.instructions);
+    for parent in composite_bind.optional_parents {
+        parent_map.insert(parent.name, parent.instructions);
     }
 
     println!("[==========]");
-    for node_spec in specs {
-        println!("[ RUN      ] Test for composite node {}", node_spec.node);
-        if !node_map.contains_key(&node_spec.node) {
-            println!("[  FAILED  ] {}", node_spec.node);
+    for parent_spec in specs {
+        println!("[ RUN      ] Test for composite parent {}", parent_spec.parent);
+        if !parent_map.contains_key(&parent_spec.parent) {
+            println!("[  FAILED  ] {}", parent_spec.parent);
             println!("[==========]");
-            return Err(TestError::CompositeNodeMissing(node_spec.node.clone()));
+            return Err(TestError::CompositeParentMissing(parent_spec.parent.clone()));
         }
 
         if !run_bind_test_specs(
-            &node_spec.tests,
+            &parent_spec.tests,
             &composite_bind.symbol_table,
-            node_map.get(&node_spec.node).unwrap(),
+            parent_map.get(&parent_spec.parent).unwrap(),
         )? {
-            println!("[  FAILED  ] {}", node_spec.node);
+            println!("[  FAILED  ] {}", parent_spec.parent);
             println!("[==========]");
             return Ok(false);
         }
-        println!("[       OK ] {}", node_spec.node);
+        println!("[       OK ] {}", parent_spec.parent);
     }
     println!("[  SUCCESS  ] ");
     println!("[==========]");
@@ -286,7 +288,7 @@ mod test {
     }
 
     #[test]
-    fn parse_one_composite_node() {
+    fn parse_one_composite_parent() {
         let TestSuite { specs } = TestSuite::try_from(
             r#"
             [
@@ -311,8 +313,8 @@ mod test {
         expected_device.insert("grassquit".to_string(), "blue-black".to_string());
         expected_device.insert("flowerpiercer".to_string(), "moustached".to_string());
 
-        let expected_specs = CompositeNodeSpec {
-            node: "honeycreeper".to_string(),
+        let expected_specs = CompositeParentSpec {
+            parent: "honeycreeper".to_string(),
             tests: vec![BindSpec {
                 name: "tanager".to_string(),
                 expected: ExpectedResult::Match,
@@ -321,14 +323,14 @@ mod test {
         };
 
         assert_matches!(specs, TestSpec::CompositeBind(_));
-        if let TestSpec::CompositeBind(node_specs) = specs {
-            assert_eq!(1, node_specs.len());
-            assert_eq!(expected_specs, node_specs[0]);
+        if let TestSpec::CompositeBind(parent_specs) = specs {
+            assert_eq!(1, parent_specs.len());
+            assert_eq!(expected_specs, parent_specs[0]);
         }
     }
 
     #[test]
-    fn parse_multiple_composite_node() {
+    fn parse_multiple_composite_parent() {
         let TestSuite { specs } = TestSuite::try_from(
             r#"
             [
@@ -369,16 +371,16 @@ mod test {
         expected_device_2.insert("bee-eater".to_string(), "little".to_string());
 
         let expected_specs = [
-            CompositeNodeSpec {
-                node: "honeycreeper".to_string(),
+            CompositeParentSpec {
+                parent: "honeycreeper".to_string(),
                 tests: vec![BindSpec {
                     name: "tanager".to_string(),
                     expected: ExpectedResult::Match,
                     device: expected_device_1,
                 }],
             },
-            CompositeNodeSpec {
-                node: "ground-roller".to_string(),
+            CompositeParentSpec {
+                parent: "ground-roller".to_string(),
                 tests: vec![BindSpec {
                     name: "kingfisher".to_string(),
                     expected: ExpectedResult::Match,
@@ -388,10 +390,10 @@ mod test {
         ];
 
         assert_matches!(specs, TestSpec::CompositeBind(_));
-        if let TestSpec::CompositeBind(node_specs) = specs {
-            assert_eq!(expected_specs.len(), node_specs.len());
+        if let TestSpec::CompositeBind(parent_specs) = specs {
+            assert_eq!(expected_specs.len(), parent_specs.len());
             for i in 0..expected_specs.len() {
-                assert_eq!(expected_specs[i], node_specs[i]);
+                assert_eq!(expected_specs[i], parent_specs[i]);
             }
         }
     }
@@ -413,7 +415,7 @@ mod test {
     }
 
     #[test]
-    fn test_missing_node() {
+    fn test_missing_parent() {
         let test_suite = TestSuite::try_from(
             r#"
             [
@@ -434,15 +436,15 @@ mod test {
         .unwrap();
 
         let composite_bind_rules = "composite flycatcher;
-            primary node \"pewee\" {
+            primary parent \"pewee\" {
                 fuchsia.BIND_PROTOCOL == 1;
             }
-            node \"phoebe\" {
+            parent \"phoebe\" {
                 fuchsia.BIND_PROTOCOL == 2;
             }";
 
         assert_eq!(
-            Err(TestError::CompositeNodeMissing("tyrant".to_string())),
+            Err(TestError::CompositeParentMissing("tyrant".to_string())),
             test_suite.run(composite_bind_rules, &[])
         );
     }

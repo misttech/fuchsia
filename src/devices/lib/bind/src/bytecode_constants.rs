@@ -63,7 +63,7 @@ pub enum RawValueType {
 }
 
 #[derive(FromPrimitive, PartialEq)]
-pub enum RawNodeType {
+pub enum RawParentType {
     Primary = 0x50,
     Additional = 0x51,
     Optional = 0x52,

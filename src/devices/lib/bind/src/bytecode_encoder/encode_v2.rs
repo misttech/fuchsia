@@ -6,7 +6,7 @@ use crate::bytecode_constants::*;
 use crate::bytecode_encoder::error::BindRulesEncodeError;
 use crate::bytecode_encoder::instruction_encoder::encode_instructions;
 use crate::bytecode_encoder::symbol_table_encoder::SymbolTableEncoder;
-use crate::compiler::{BindRules, CompositeBindRules, CompositeNode};
+use crate::compiler::{BindRules, CompositeBindRules, CompositeParent};
 use std::collections::HashSet;
 
 /// Functions for encoding the new bytecode format. When the
@@ -86,22 +86,22 @@ fn encode_debug_section(
     Ok(())
 }
 
-fn append_composite_node(
+fn append_composite_parent(
     bytecode: &mut Vec<u8>,
-    node: CompositeNode,
-    node_type: RawNodeType,
+    parent: CompositeParent,
+    parent_type: RawParentType,
     symbol_table_encoder: &mut SymbolTableEncoder,
     debug_symbol_table_encoder: &mut Option<SymbolTableEncoder>,
 ) -> Result<(), BindRulesEncodeError> {
-    if node.name.is_empty() {
-        return Err(BindRulesEncodeError::MissingCompositeNodeName);
+    if parent.name.is_empty() {
+        return Err(BindRulesEncodeError::MissingCompositeParentName);
     }
 
-    bytecode.push(node_type as u8);
-    bytecode.extend_from_slice(&symbol_table_encoder.get_key(node.name)?.to_le_bytes());
+    bytecode.push(parent_type as u8);
+    bytecode.extend_from_slice(&symbol_table_encoder.get_key(parent.name)?.to_le_bytes());
 
     let mut inst_bytecode =
-        encode_instructions(node.instructions, symbol_table_encoder, debug_symbol_table_encoder)?;
+        encode_instructions(parent.instructions, symbol_table_encoder, debug_symbol_table_encoder)?;
     bytecode.extend_from_slice(&(inst_bytecode.len() as u32).to_le_bytes());
     bytecode.append(&mut inst_bytecode);
     Ok(())
@@ -122,43 +122,43 @@ pub fn encode_composite_to_bytecode(
     let device_name_id = symbol_table_encoder.get_key(bind_rules.device_name)?;
     let mut inst_bytecode = device_name_id.to_le_bytes().to_vec();
 
-    let mut node_names = HashSet::new();
+    let mut parent_names = HashSet::new();
 
-    // Add instructions from the primary node.
-    node_names.insert(bind_rules.primary_node.name.clone());
-    append_composite_node(
+    // Add instructions from the primary parent.
+    parent_names.insert(bind_rules.primary_parent.name.clone());
+    append_composite_parent(
         &mut inst_bytecode,
-        bind_rules.primary_node,
-        RawNodeType::Primary,
+        bind_rules.primary_parent,
+        RawParentType::Primary,
         &mut symbol_table_encoder,
         &mut debug_symbol_table_encoder_option,
     )?;
 
-    // Add instructions from additional nodes.
-    for node in bind_rules.additional_nodes.into_iter() {
-        if node_names.contains(&node.name) {
-            return Err(BindRulesEncodeError::DuplicateCompositeNodeName(node.name));
+    // Add instructions from additional parents.
+    for parent in bind_rules.additional_parents.into_iter() {
+        if parent_names.contains(&parent.name) {
+            return Err(BindRulesEncodeError::DuplicateCompositeParentName(parent.name));
         }
-        node_names.insert(node.name.clone());
-        append_composite_node(
+        parent_names.insert(parent.name.clone());
+        append_composite_parent(
             &mut inst_bytecode,
-            node,
-            RawNodeType::Additional,
+            parent,
+            RawParentType::Additional,
             &mut symbol_table_encoder,
             &mut debug_symbol_table_encoder_option,
         )?;
     }
 
-    // Add instructions from optional nodes.
-    for node in bind_rules.optional_nodes.into_iter() {
-        if node_names.contains(&node.name) {
-            return Err(BindRulesEncodeError::DuplicateCompositeNodeName(node.name));
+    // Add instructions from optional parents.
+    for parent in bind_rules.optional_parents.into_iter() {
+        if parent_names.contains(&parent.name) {
+            return Err(BindRulesEncodeError::DuplicateCompositeParentName(parent.name));
         }
-        node_names.insert(node.name.clone());
-        append_composite_node(
+        parent_names.insert(parent.name.clone());
+        append_composite_parent(
             &mut inst_bytecode,
-            node,
-            RawNodeType::Optional,
+            parent,
+            RawParentType::Optional,
             &mut symbol_table_encoder,
             &mut debug_symbol_table_encoder_option,
         )?;
@@ -213,11 +213,11 @@ mod test {
             .collect()
     }
 
-    fn composite_node<'a>(
+    fn composite_parent<'a>(
         name: String,
         instructions: Vec<SymbolicInstruction>,
-    ) -> CompositeNode<'a> {
-        CompositeNode { name: name, instructions: to_symbolic_inst_info(instructions) }
+    ) -> CompositeParent<'a> {
+        CompositeParent { name: name, instructions: to_symbolic_inst_info(instructions) }
     }
 
     #[test]
@@ -1001,7 +1001,7 @@ mod test {
 
     #[test]
     fn test_composite() {
-        let primary_node = vec![
+        let primary_parent = vec![
             SymbolicInstruction::AbortIfEqual {
                 lhs: Symbol::DeprecatedKey(1),
                 rhs: Symbol::BoolValue(false),
@@ -1009,7 +1009,7 @@ mod test {
             SymbolicInstruction::UnconditionalAbort,
         ];
 
-        let additional_nodes = vec![
+        let additional_parents = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(15),
                 rhs: Symbol::StringValue("ruff".to_string()),
@@ -1026,9 +1026,9 @@ mod test {
         let bind_rules = CompositeBindRules {
             symbol_table: HashMap::new(),
             device_name: "wader".to_string(),
-            primary_node: composite_node("stilt".to_string(), primary_node),
-            additional_nodes: vec![composite_node("avocet".to_string(), additional_nodes)],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("stilt".to_string(), primary_parent),
+            additional_parents: vec![composite_parent("avocet".to_string(), additional_parents)],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -1038,26 +1038,26 @@ mod test {
 
         checker.verify_symbol_table(&["wader", "stilt", "avocet", "ruff", "plover"]);
 
-        let primary_node_bytes = COND_ABORT_BYTES + UNCOND_ABORT_BYTES;
-        let additional_node_bytes =
+        let primary_parent_bytes = COND_ABORT_BYTES + UNCOND_ABORT_BYTES;
+        let additional_parent_bytes =
             COND_JMP_BYTES + COND_ABORT_BYTES + JMP_PAD_BYTES + UNCOND_ABORT_BYTES;
         checker.verify_composite_header(
             (NODE_HEADER_BYTES * 2)
                 + COMPOSITE_NAME_ID_BYTES
-                + primary_node_bytes
-                + additional_node_bytes,
+                + primary_parent_bytes
+                + additional_parent_bytes,
         );
 
-        // Verify primary node.
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        // Verify primary parent.
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_parent_bytes);
         checker.verify_abort_equal(
             EncodedValue { value_type: RawValueType::NumberValue, value: 1 },
             EncodedValue { value_type: RawValueType::BoolValue, value: 0 },
         );
         checker.verify_unconditional_abort();
 
-        // Verify additional node.
-        checker.verify_node_header(RawNodeType::Additional, 3, additional_node_bytes);
+        // Verify additional parent.
+        checker.verify_parent_header(RawParentType::Additional, 3, additional_parent_bytes);
         checker.verify_jmp_if_equal(
             COND_ABORT_BYTES,
             EncodedValue { value_type: RawValueType::NumberValue, value: 15 },
@@ -1074,7 +1074,7 @@ mod test {
 
     #[test]
     fn test_composite_optional() {
-        let primary_node_inst = vec![
+        let primary_parent_inst = vec![
             SymbolicInstruction::AbortIfEqual {
                 lhs: Symbol::DeprecatedKey(1),
                 rhs: Symbol::BoolValue(false),
@@ -1082,7 +1082,7 @@ mod test {
             SymbolicInstruction::UnconditionalAbort,
         ];
 
-        let optional_node_inst = vec![
+        let optional_parent_inst = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(15),
                 rhs: Symbol::StringValue("ruff".to_string()),
@@ -1099,9 +1099,9 @@ mod test {
         let bind_rules = CompositeBindRules {
             symbol_table: HashMap::new(),
             device_name: "wader".to_string(),
-            primary_node: composite_node("stilt".to_string(), primary_node_inst),
-            additional_nodes: vec![],
-            optional_nodes: vec![composite_node("avocet".to_string(), optional_node_inst)],
+            primary_parent: composite_parent("stilt".to_string(), primary_parent_inst),
+            additional_parents: vec![],
+            optional_parents: vec![composite_parent("avocet".to_string(), optional_parent_inst)],
             enable_debug: false,
         };
 
@@ -1111,26 +1111,26 @@ mod test {
 
         checker.verify_symbol_table(&["wader", "stilt", "avocet", "ruff", "plover"]);
 
-        let primary_node_bytes = COND_ABORT_BYTES + UNCOND_ABORT_BYTES;
-        let optional_node_bytes =
+        let primary_parent_bytes = COND_ABORT_BYTES + UNCOND_ABORT_BYTES;
+        let optional_parent_bytes =
             COND_JMP_BYTES + COND_ABORT_BYTES + JMP_PAD_BYTES + UNCOND_ABORT_BYTES;
         checker.verify_composite_header(
             (NODE_HEADER_BYTES * 2)
                 + COMPOSITE_NAME_ID_BYTES
-                + primary_node_bytes
-                + optional_node_bytes,
+                + primary_parent_bytes
+                + optional_parent_bytes,
         );
 
-        // Verify primary node.
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        // Verify primary parent.
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_parent_bytes);
         checker.verify_abort_equal(
             EncodedValue { value_type: RawValueType::NumberValue, value: 1 },
             EncodedValue { value_type: RawValueType::BoolValue, value: 0 },
         );
         checker.verify_unconditional_abort();
 
-        // Verify optional node.
-        checker.verify_node_header(RawNodeType::Optional, 3, optional_node_bytes);
+        // Verify optional parent.
+        checker.verify_parent_header(RawParentType::Optional, 3, optional_parent_bytes);
         checker.verify_jmp_if_equal(
             COND_ABORT_BYTES,
             EncodedValue { value_type: RawValueType::NumberValue, value: 15 },
@@ -1147,7 +1147,7 @@ mod test {
 
     #[test]
     fn test_composite_additional_and_optional() {
-        let primary_node_inst = vec![
+        let primary_parent_inst = vec![
             SymbolicInstruction::AbortIfEqual {
                 lhs: Symbol::DeprecatedKey(1),
                 rhs: Symbol::BoolValue(false),
@@ -1155,7 +1155,7 @@ mod test {
             SymbolicInstruction::UnconditionalAbort,
         ];
 
-        let additional_node_inst = vec![
+        let additional_parent_inst = vec![
             SymbolicInstruction::AbortIfEqual {
                 lhs: Symbol::Key("thrasher".to_string(), ValueType::Str),
                 rhs: Symbol::StringValue("catbird".to_string()),
@@ -1166,7 +1166,7 @@ mod test {
             },
         ];
 
-        let optional_node_inst = vec![
+        let optional_parent_inst = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(15),
                 rhs: Symbol::StringValue("ruff".to_string()),
@@ -1183,9 +1183,15 @@ mod test {
         let bind_rules = CompositeBindRules {
             symbol_table: HashMap::new(),
             device_name: "wader".to_string(),
-            primary_node: composite_node("stilt".to_string(), primary_node_inst),
-            additional_nodes: vec![composite_node("avocet".to_string(), additional_node_inst)],
-            optional_nodes: vec![composite_node("mockingbird".to_string(), optional_node_inst)],
+            primary_parent: composite_parent("stilt".to_string(), primary_parent_inst),
+            additional_parents: vec![composite_parent(
+                "avocet".to_string(),
+                additional_parent_inst,
+            )],
+            optional_parents: vec![composite_parent(
+                "mockingbird".to_string(),
+                optional_parent_inst,
+            )],
             enable_debug: false,
         };
 
@@ -1204,28 +1210,28 @@ mod test {
             "plover",
         ]);
 
-        let primary_node_bytes = COND_ABORT_BYTES + UNCOND_ABORT_BYTES;
-        let additional_node_bytes = COND_ABORT_BYTES * 2;
-        let optional_node_bytes =
+        let primary_parent_bytes = COND_ABORT_BYTES + UNCOND_ABORT_BYTES;
+        let additional_parent_bytes = COND_ABORT_BYTES * 2;
+        let optional_parent_bytes =
             COND_JMP_BYTES + COND_ABORT_BYTES + JMP_PAD_BYTES + UNCOND_ABORT_BYTES;
         checker.verify_composite_header(
             (NODE_HEADER_BYTES * 3)
                 + COMPOSITE_NAME_ID_BYTES
-                + primary_node_bytes
-                + additional_node_bytes
-                + optional_node_bytes,
+                + primary_parent_bytes
+                + additional_parent_bytes
+                + optional_parent_bytes,
         );
 
-        // Verify primary node.
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        // Verify primary parent.
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_parent_bytes);
         checker.verify_abort_equal(
             EncodedValue { value_type: RawValueType::NumberValue, value: 1 },
             EncodedValue { value_type: RawValueType::BoolValue, value: 0 },
         );
         checker.verify_unconditional_abort();
 
-        // Verify additional node.
-        checker.verify_node_header(RawNodeType::Additional, 3, additional_node_bytes);
+        // Verify additional parent.
+        checker.verify_parent_header(RawParentType::Additional, 3, additional_parent_bytes);
         checker.verify_abort_equal(
             EncodedValue { value_type: RawValueType::Key, value: 4 },
             EncodedValue { value_type: RawValueType::StringValue, value: 5 },
@@ -1235,8 +1241,8 @@ mod test {
             EncodedValue { value_type: RawValueType::NumberValue, value: 1 },
         );
 
-        // Verify optional node.
-        checker.verify_node_header(RawNodeType::Optional, 6, optional_node_bytes);
+        // Verify optional parent.
+        checker.verify_parent_header(RawParentType::Optional, 6, optional_parent_bytes);
         checker.verify_jmp_if_equal(
             COND_ABORT_BYTES,
             EncodedValue { value_type: RawValueType::NumberValue, value: 15 },
@@ -1253,7 +1259,7 @@ mod test {
 
     #[test]
     fn test_composite_enable_debug_missing_ast_location() {
-        let primary_node = vec![
+        let primary_parent = vec![
             SymbolicInstruction::AbortIfEqual {
                 lhs: Symbol::DeprecatedKey(1),
                 rhs: Symbol::BoolValue(false),
@@ -1261,7 +1267,7 @@ mod test {
             SymbolicInstruction::UnconditionalAbort,
         ];
 
-        let additional_nodes = vec![
+        let additional_parents = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(15),
                 rhs: Symbol::StringValue("ruff".to_string()),
@@ -1278,9 +1284,9 @@ mod test {
         let bind_rules = CompositeBindRules {
             symbol_table: HashMap::new(),
             device_name: "wader".to_string(),
-            primary_node: composite_node("stilt".to_string(), primary_node),
-            additional_nodes: vec![composite_node("avocet".to_string(), additional_nodes)],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("stilt".to_string(), primary_parent),
+            additional_parents: vec![composite_parent("avocet".to_string(), additional_parents)],
+            optional_parents: vec![],
             enable_debug: true,
         };
 
@@ -1292,12 +1298,12 @@ mod test {
 
     #[test]
     fn test_composite_sharing_symbols() {
-        let primary_node_inst = vec![SymbolicInstruction::AbortIfEqual {
+        let primary_parent_inst = vec![SymbolicInstruction::AbortIfEqual {
             lhs: Symbol::Key("trembler".to_string(), ValueType::Str),
             rhs: Symbol::StringValue("thrasher".to_string()),
         }];
 
-        let additional_node_inst = vec![
+        let additional_parent_inst = vec![
             SymbolicInstruction::AbortIfEqual {
                 lhs: Symbol::Key("thrasher".to_string(), ValueType::Str),
                 rhs: Symbol::StringValue("catbird".to_string()),
@@ -1311,9 +1317,12 @@ mod test {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("catbird".to_string(), primary_node_inst),
-            additional_nodes: vec![composite_node("mockingbird".to_string(), additional_node_inst)],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("catbird".to_string(), primary_parent_inst),
+            additional_parents: vec![composite_parent(
+                "mockingbird".to_string(),
+                additional_parent_inst,
+            )],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -1323,22 +1332,22 @@ mod test {
         checker.verify_sym_table_header(64);
         checker.verify_symbol_table(&["mimid", "catbird", "trembler", "thrasher", "mockingbird"]);
 
-        let primary_node_bytes = COND_ABORT_BYTES;
-        let additional_node_bytes = COND_ABORT_BYTES * 2;
+        let primary_parent_bytes = COND_ABORT_BYTES;
+        let additional_parent_bytes = COND_ABORT_BYTES * 2;
         checker.verify_composite_header(
             (NODE_HEADER_BYTES * 2)
                 + COMPOSITE_NAME_ID_BYTES
-                + primary_node_bytes
-                + additional_node_bytes,
+                + primary_parent_bytes
+                + additional_parent_bytes,
         );
 
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_parent_bytes);
         checker.verify_abort_equal(
             EncodedValue { value_type: RawValueType::Key, value: 3 },
             EncodedValue { value_type: RawValueType::StringValue, value: 4 },
         );
 
-        checker.verify_node_header(RawNodeType::Additional, 5, additional_node_bytes);
+        checker.verify_parent_header(RawParentType::Additional, 5, additional_parent_bytes);
         checker.verify_abort_equal(
             EncodedValue { value_type: RawValueType::Key, value: 4 },
             EncodedValue { value_type: RawValueType::StringValue, value: 2 },
@@ -1352,7 +1361,7 @@ mod test {
 
     #[test]
     fn test_composite_same_label_id() {
-        let primary_node_inst = vec![
+        let primary_parent_inst = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(15),
                 rhs: Symbol::NumberValue(5),
@@ -1362,7 +1371,7 @@ mod test {
             SymbolicInstruction::Label(1),
         ];
 
-        let additional_node_inst = vec![
+        let additional_parent_inst = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(10),
                 rhs: Symbol::NumberValue(2),
@@ -1375,9 +1384,12 @@ mod test {
         let bind_rules = CompositeBindRules {
             device_name: "currawong".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("butcherbird".to_string(), primary_node_inst),
-            additional_nodes: vec![composite_node("bushshrike".to_string(), additional_node_inst)],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("butcherbird".to_string(), primary_parent_inst),
+            additional_parents: vec![composite_parent(
+                "bushshrike".to_string(),
+                additional_parent_inst,
+            )],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -1387,16 +1399,16 @@ mod test {
         checker.verify_sym_table_header(45);
         checker.verify_symbol_table(&["currawong", "butcherbird", "bushshrike"]);
 
-        let primary_node_bytes = COND_JMP_BYTES + UNCOND_ABORT_BYTES + JMP_PAD_BYTES;
-        let additional_node_bytes = COND_JMP_BYTES + UNCOND_ABORT_BYTES + JMP_PAD_BYTES;
+        let primary_parent_bytes = COND_JMP_BYTES + UNCOND_ABORT_BYTES + JMP_PAD_BYTES;
+        let additional_parent_bytes = COND_JMP_BYTES + UNCOND_ABORT_BYTES + JMP_PAD_BYTES;
         checker.verify_composite_header(
             (NODE_HEADER_BYTES * 2)
                 + COMPOSITE_NAME_ID_BYTES
-                + primary_node_bytes
-                + additional_node_bytes,
+                + primary_parent_bytes
+                + additional_parent_bytes,
         );
 
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_parent_bytes);
         checker.verify_jmp_if_equal(
             UNCOND_ABORT_BYTES,
             EncodedValue { value_type: RawValueType::NumberValue, value: 15 },
@@ -1405,7 +1417,7 @@ mod test {
         checker.verify_unconditional_abort();
         checker.verify_jmp_pad();
 
-        checker.verify_node_header(RawNodeType::Additional, 3, additional_node_bytes);
+        checker.verify_parent_header(RawParentType::Additional, 3, additional_parent_bytes);
         checker.verify_jmp_if_equal(
             UNCOND_ABORT_BYTES,
             EncodedValue { value_type: RawValueType::NumberValue, value: 10 },
@@ -1419,7 +1431,7 @@ mod test {
 
     #[test]
     fn test_composite_invalid_label() {
-        let primary_node_inst = vec![
+        let primary_parent_inst = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(15),
                 rhs: Symbol::NumberValue(5),
@@ -1429,7 +1441,7 @@ mod test {
             SymbolicInstruction::Label(1),
         ];
 
-        let additional_node_inst = vec![
+        let additional_parent_inst = vec![
             SymbolicInstruction::JumpIfEqual {
                 lhs: Symbol::DeprecatedKey(10),
                 rhs: Symbol::NumberValue(2),
@@ -1442,9 +1454,12 @@ mod test {
         let bind_rules = CompositeBindRules {
             device_name: "currawong".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("butcherbird".to_string(), primary_node_inst),
-            additional_nodes: vec![composite_node("bushshrike".to_string(), additional_node_inst)],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("butcherbird".to_string(), primary_parent_inst),
+            additional_parents: vec![composite_parent(
+                "bushshrike".to_string(),
+                additional_parent_inst,
+            )],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -1455,15 +1470,15 @@ mod test {
     }
 
     #[test]
-    fn test_composite_primary_node_only() {
-        let primary_node_inst = vec![SymbolicInstruction::UnconditionalAbort];
+    fn test_composite_primary_parent_only() {
+        let primary_parent_inst = vec![SymbolicInstruction::UnconditionalAbort];
 
         let bind_rules = CompositeBindRules {
             device_name: "treehunter".to_string(),
             symbol_table: HashMap::new(),
-            additional_nodes: vec![],
-            optional_nodes: vec![],
-            primary_node: composite_node("bananaquit".to_string(), primary_node_inst),
+            additional_parents: vec![],
+            optional_parents: vec![],
+            primary_parent: composite_parent("bananaquit".to_string(), primary_parent_inst),
             enable_debug: false,
         };
 
@@ -1473,25 +1488,25 @@ mod test {
         checker.verify_sym_table_header(30);
         checker.verify_symbol_table(&["treehunter", "bananaquit"]);
 
-        let primary_node_bytes = UNCOND_ABORT_BYTES;
+        let primary_parent_bytes = UNCOND_ABORT_BYTES;
         checker.verify_composite_header(
-            NODE_HEADER_BYTES + COMPOSITE_NAME_ID_BYTES + primary_node_bytes,
+            NODE_HEADER_BYTES + COMPOSITE_NAME_ID_BYTES + primary_parent_bytes,
         );
 
-        checker.verify_node_header(RawNodeType::Primary, 2, primary_node_bytes);
+        checker.verify_parent_header(RawParentType::Primary, 2, primary_parent_bytes);
         checker.verify_unconditional_abort();
 
         checker.verify_end();
     }
 
     #[test]
-    fn test_composite_empty_node_instructions() {
+    fn test_composite_empty_parent_instructions() {
         let bind_rules = CompositeBindRules {
             device_name: "spiderhunter".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("sunbird".to_string(), vec![]),
-            additional_nodes: vec![],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("sunbird".to_string(), vec![]),
+            additional_parents: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -1502,7 +1517,7 @@ mod test {
         checker.verify_symbol_table(&["spiderhunter", "sunbird"]);
 
         checker.verify_composite_header(NODE_HEADER_BYTES + COMPOSITE_NAME_ID_BYTES);
-        checker.verify_node_header(RawNodeType::Primary, 2, 0);
+        checker.verify_parent_header(RawParentType::Primary, 2, 0);
 
         checker.verify_end();
     }
@@ -1512,9 +1527,9 @@ mod test {
         let bind_rules = CompositeBindRules {
             device_name: "".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("pewee".to_string(), vec![]),
-            additional_nodes: vec![],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("pewee".to_string(), vec![]),
+            additional_parents: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -1525,53 +1540,53 @@ mod test {
     }
 
     #[test]
-    fn test_composite_missing_node_name() {
+    fn test_composite_missing_parent_name() {
         let bind_rules = CompositeBindRules {
             device_name: "pewee".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("".to_string(), vec![]),
-            additional_nodes: vec![],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("".to_string(), vec![]),
+            additional_parents: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
         assert_eq!(
-            Err(BindRulesEncodeError::MissingCompositeNodeName),
+            Err(BindRulesEncodeError::MissingCompositeParentName),
             encode_composite_to_bytecode(bind_rules)
         );
     }
 
     #[test]
-    fn test_duplicate_nodes() {
+    fn test_duplicate_parents() {
         let bind_rules = CompositeBindRules {
             device_name: "flycatcher".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("pewee".to_string(), vec![]),
-            additional_nodes: vec![composite_node("pewee".to_string(), vec![])],
-            optional_nodes: vec![],
+            primary_parent: composite_parent("pewee".to_string(), vec![]),
+            additional_parents: vec![composite_parent("pewee".to_string(), vec![])],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
         assert_eq!(
-            Err(BindRulesEncodeError::DuplicateCompositeNodeName("pewee".to_string())),
+            Err(BindRulesEncodeError::DuplicateCompositeParentName("pewee".to_string())),
             encode_composite_to_bytecode(bind_rules)
         );
 
         let bind_rules = CompositeBindRules {
             device_name: "flycatcher".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: composite_node("pewee".to_string(), vec![]),
-            additional_nodes: vec![
-                composite_node("phoebe".to_string(), vec![]),
-                composite_node("kingbird".to_string(), vec![]),
-                composite_node("phoebe".to_string(), vec![]),
+            primary_parent: composite_parent("pewee".to_string(), vec![]),
+            additional_parents: vec![
+                composite_parent("phoebe".to_string(), vec![]),
+                composite_parent("kingbird".to_string(), vec![]),
+                composite_parent("phoebe".to_string(), vec![]),
             ],
-            optional_nodes: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
         assert_eq!(
-            Err(BindRulesEncodeError::DuplicateCompositeNodeName("phoebe".to_string())),
+            Err(BindRulesEncodeError::DuplicateCompositeParentName("phoebe".to_string())),
             encode_composite_to_bytecode(bind_rules)
         );
     }

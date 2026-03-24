@@ -8,11 +8,11 @@ using fuchsia.hardware.pci;
 using fuchsia.hardware.tee;
 using fuchsia.platform;
 
-primary node "pci" {
+primary parent "pci" {
   fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
 }
 
-node "tee" {
+parent "tee" {
   if fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   } else {

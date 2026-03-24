@@ -26,12 +26,12 @@ pub enum BytecodeError {
     MismatchValueTypes,
     InvalidJumpLocation,
     InvalidKeyType,
-    InvalidPrimaryNode,
-    MultiplePrimaryNodes,
-    InvalidNodeType(u8),
-    IncorrectNodeSectionSize,
+    InvalidPrimaryParent,
+    MultiplePrimaryParents,
+    InvalidParentType(u8),
+    IncorrectParentSectionSize,
     MissingDeviceNameInSymbolTable,
-    MissingNodeIdInSymbolTable,
+    MissingParentIdInSymbolTable,
     InvalidDebugFlag(u8),
 }
 

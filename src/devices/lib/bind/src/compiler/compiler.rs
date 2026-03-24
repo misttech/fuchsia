@@ -180,7 +180,7 @@ impl<'a> SymbolicInstructionInfo<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct CompositeNode<'a> {
+pub struct CompositeParent<'a> {
     pub name: String,
     pub instructions: Vec<SymbolicInstructionInfo<'a>>,
 }
@@ -189,9 +189,9 @@ pub struct CompositeNode<'a> {
 pub struct CompositeBindRules<'a> {
     pub device_name: String,
     pub symbol_table: SymbolTable,
-    pub primary_node: CompositeNode<'a>,
-    pub additional_nodes: Vec<CompositeNode<'a>>,
-    pub optional_nodes: Vec<CompositeNode<'a>>,
+    pub primary_parent: CompositeParent<'a>,
+    pub additional_parents: Vec<CompositeParent<'a>>,
+    pub optional_parents: Vec<CompositeParent<'a>>,
     pub enable_debug: bool,
 }
 
@@ -256,40 +256,40 @@ pub fn compile_bind_composite<'a>(
 ) -> Result<CompositeBindRules<'a>, CompilerError> {
     let ast = bind_composite::Ast::try_from(rules_str).map_err(CompilerError::BindParserError)?;
     let symbol_table = get_symbol_table_from_libraries(&ast.using, libraries, lint)?;
-    let primary_node = CompositeNode {
-        name: ast.primary_node.name,
+    let primary_parent = CompositeParent {
+        name: ast.primary_parent.name,
         instructions: compile_statements(
-            ast.primary_node.statements,
+            ast.primary_parent.statements,
             &symbol_table,
             use_new_bytecode,
         )?,
     };
-    let additional_nodes = ast
-        .additional_nodes
+    let additional_parents = ast
+        .additional_parents
         .into_iter()
-        .map(|node| {
-            let name = node.name;
-            compile_statements(node.statements, &symbol_table, use_new_bytecode)
-                .map(|inst| CompositeNode { name: name, instructions: inst })
+        .map(|parent| {
+            let name = parent.name;
+            compile_statements(parent.statements, &symbol_table, use_new_bytecode)
+                .map(|inst| CompositeParent { name: name, instructions: inst })
         })
-        .collect::<Result<Vec<CompositeNode<'_>>, CompilerError>>()?;
+        .collect::<Result<Vec<CompositeParent<'_>>, CompilerError>>()?;
 
-    let optional_nodes = ast
-        .optional_nodes
+    let optional_parents = ast
+        .optional_parents
         .into_iter()
-        .map(|node| {
-            let name = node.name;
-            compile_statements(node.statements, &symbol_table, use_new_bytecode)
-                .map(|inst| CompositeNode { name: name, instructions: inst })
+        .map(|parent| {
+            let name = parent.name;
+            compile_statements(parent.statements, &symbol_table, use_new_bytecode)
+                .map(|inst| CompositeParent { name: name, instructions: inst })
         })
-        .collect::<Result<Vec<CompositeNode<'_>>, CompilerError>>()?;
+        .collect::<Result<Vec<CompositeParent<'_>>, CompilerError>>()?;
 
     Ok(CompositeBindRules {
         device_name: ast.name.to_string(),
         symbol_table: symbol_table,
-        primary_node: primary_node,
-        additional_nodes: additional_nodes,
-        optional_nodes: optional_nodes,
+        primary_parent: primary_parent,
+        additional_parents: additional_parents,
+        optional_parents: optional_parents,
         enable_debug: enable_debug,
     })
 }

@@ -20,8 +20,8 @@ pub enum BindRulesEncodeError {
     JumpOffsetOutOfRange(u32),
     MatchNotSupported,
     MissingCompositeDeviceName,
-    MissingCompositeNodeName,
-    DuplicateCompositeNodeName(String),
+    MissingCompositeParentName,
+    DuplicateCompositeParentName(String),
     MissingAstLocation,
 }
 

@@ -211,7 +211,7 @@ The example output above shows a PCI node and an ACPI node, which the `intel-i2c
 bind to. You may write the driver’s bind rules against these two nodes in the following way:
 
 ```none {:.devsite-disable-click-to-copy}
-primary node "pci" {
+primary parent "pci" {
     fuchsia.driver.framework.dfv2 == true;
 
     fuchsia.BIND_PROTOCOL == fuchsia.pci.BIND_PROTOCOL.DEVICE;
@@ -222,7 +222,7 @@ primary node "pci" {
     }
 }
 
-node "acpi" {
+parent "acpi" {
     fuchsia.driver.framework.dfv2 == true;
 
     fuchsia.BIND_ACPI_ID == 0x000034;

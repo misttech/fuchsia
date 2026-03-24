@@ -63,9 +63,9 @@ impl BytecodeChecker {
         }
     }
 
-    pub fn verify_node_header(
+    pub fn verify_parent_header(
         &mut self,
-        node_type: RawNodeType,
+        node_type: RawParentType,
         node_name: u32,
         num_of_bytes: u32,
     ) {

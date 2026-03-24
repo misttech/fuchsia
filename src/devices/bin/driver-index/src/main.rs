@@ -661,7 +661,7 @@ mod tests {
     use crate::resolved_driver::{DeviceCategoryDef, DriverPackageType};
     use crate::test_common::*;
     use bind::compiler::test_lib::*;
-    use bind::compiler::{CompiledBindRules, CompositeBindRules, CompositeNode, Symbol};
+    use bind::compiler::{CompiledBindRules, CompositeBindRules, CompositeParent, Symbol};
     use bind::interpreter::decode_bind_rules::DecodedRules;
     use bind::parser::bind_library::ValueType;
     use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, Proxy};
@@ -2141,15 +2141,15 @@ mod tests {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "catbird".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "mockingbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -2301,15 +2301,15 @@ mod tests {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "catbird".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "mockingbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![CompositeNode {
+            optional_parents: vec![CompositeParent {
                 name: "lapwing".to_string(),
                 instructions: optional_node_inst,
             }],
@@ -2463,15 +2463,15 @@ mod tests {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "catbird".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "mockingbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![CompositeNode {
+            optional_parents: vec![CompositeParent {
                 name: "lapwing".to_string(),
                 instructions: optional_node_inst,
             }],
@@ -2596,15 +2596,15 @@ mod tests {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "catbird".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "mockingbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![],
+            optional_parents: vec![],
             enable_debug: false,
         };
 
@@ -2767,15 +2767,15 @@ mod tests {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "catbird".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "mockingbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![CompositeNode {
+            optional_parents: vec![CompositeParent {
                 name: "lapwing".to_string(),
                 instructions: optional_node_inst,
             }],
@@ -2938,15 +2938,15 @@ mod tests {
         let bind_rules = CompositeBindRules {
             device_name: "mimid".to_string(),
             symbol_table: HashMap::new(),
-            primary_node: CompositeNode {
+            primary_parent: CompositeParent {
                 name: "catbird".to_string(),
                 instructions: primary_node_inst,
             },
-            additional_nodes: vec![CompositeNode {
+            additional_parents: vec![CompositeParent {
                 name: "mockingbird".to_string(),
                 instructions: additional_node_inst,
             }],
-            optional_nodes: vec![CompositeNode {
+            optional_parents: vec![CompositeParent {
                 name: "lapwing".to_string(),
                 instructions: optional_node_inst,
             }],

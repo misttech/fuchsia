@@ -144,12 +144,12 @@ using fuchsia.gpio;
 using fuchsia.hardware.i2c;
 using fuchsia.i2c;
 
-primary node "i2c" {
+primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
   fuchsia.BIND_I2C_ADDRESS == fuchsia.i2c.BIND_I2C_ADDRESS.FOCALTECH_TOUCH;
 }
 
-node "gpio-int" {
+parent "gpio-int" {
   fuchsia.BIND_PROTOCOL == fuchsia.gpio.BIND_PROTOCOL.DEVICE;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT;
 }
@@ -168,7 +168,7 @@ successful if the following conditions are met:
 - All **non-optional** nodes in the composite driver's bind rules must match
   with a parent specification.
 
-  For example, these bind rules from a composite driver includes an optional node:
+  For example, these bind rules from a composite driver includes an optional parent:
 
   ```none {:.devsite-disable-click-to-copy}
   composite virtio_input;
@@ -177,13 +177,13 @@ successful if the following conditions are met:
   using fuchsia.hardware.pci;
   using fuchsia.pci;
 
-  primary node "pci" {
+  primary parent "pci" {
       fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
       fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.VIRTIO;
       fuchsia.BIND_PCI_DID == fuchsia.pci.BIND_PCI_DID.VIRTIO_DEV_TYPE_INPUT;
   }
 
-  optional node "acpi" {
+  optional parent "acpi" {
       fuchsia.BIND_PROTOCOL == fuchsia.acpi.BIND_PROTOCOL.DEVICE;
   }
   ```
@@ -664,12 +664,12 @@ using fuchsia.gpio;
 using fuchsia.hardware.i2c;
 using fuchsia.i2c;
 
-primary node "i2c" {
+primary parent "i2c" {
   fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
   fuchsia.BIND_I2C_ADDRESS == fuchsia.i2c.BIND_I2C_ADDRESS.FOCALTECH_TOUCH;
 }
 
-node "gpio-int" {
+parent "gpio-int" {
   fuchsia.BIND_PROTOCOL == fuchsia.gpio.BIND_PROTOCOL.DEVICE;
   fuchsia.gpio.FUNCTION == fuchsia.gpio.FUNCTION.TOUCH_INTERRUPT;
 }

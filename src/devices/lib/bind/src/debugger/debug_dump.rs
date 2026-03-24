@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::compiler::symbol_table::{get_deprecated_key_identifiers, Symbol};
+use crate::compiler::symbol_table::{Symbol, get_deprecated_key_identifiers};
 use crate::interpreter::common::BytecodeError;
-use crate::interpreter::decode_bind_rules::{DecodedCompositeBindRules, DecodedRules, Node};
+use crate::interpreter::decode_bind_rules::{DecodedCompositeBindRules, DecodedRules, Parent};
 use crate::interpreter::instruction_decoder::{DecodedCondition, DecodedInstruction};
-use crate::parser::common::NodeType;
+use crate::parser::common::ParentType;
 
 fn dump_node(
-    node: &Node,
-    node_type: NodeType,
+    node: &Parent,
+    node_type: ParentType,
     decoded_rules: &DecodedCompositeBindRules,
 ) -> String {
     let node_name = decoded_rules
@@ -18,9 +18,9 @@ fn dump_node(
         .get(&node.name_id)
         .map_or_else(|| "N/A".to_string(), |name| name.clone());
     let mut node_dump = match node_type {
-        NodeType::Primary => format!("Node (primary): {}", node_name),
-        NodeType::Additional => format!("Node: {}", node_name),
-        NodeType::Optional => format!("Node (optional): {}", node_name),
+        ParentType::Primary => format!("Node (primary): {}", node_name),
+        ParentType::Additional => format!("Node: {}", node_name),
+        ParentType::Optional => format!("Node (optional): {}", node_name),
     };
     node_dump.push_str(&dump_instructions(node.decoded_instructions.clone()));
     node_dump.push_str("\n");
@@ -33,25 +33,25 @@ pub fn dump_bind_rules(bytecode: Vec<u8>) -> Result<String, BytecodeError> {
             Ok(dump_instructions(decoded_rules.decoded_instructions))
         }
         DecodedRules::Composite(rules) => {
-            let mut node_dump = dump_node(&rules.primary_node, NodeType::Primary, &rules);
+            let mut node_dump = dump_node(&rules.primary_parent, ParentType::Primary, &rules);
 
-            if !rules.additional_nodes.is_empty() {
+            if !rules.additional_parents.is_empty() {
                 let additional_nodes_dump = rules
-                    .additional_nodes
+                    .additional_parents
                     .iter()
-                    .map(|node| dump_node(node, NodeType::Additional, &rules))
+                    .map(|node| dump_node(node, ParentType::Additional, &rules))
                     .collect::<Vec<String>>()
-                    .concat();
+                    .join("\n");
                 node_dump.push_str(&additional_nodes_dump);
             }
 
-            if !rules.optional_nodes.is_empty() {
+            if !rules.optional_parents.is_empty() {
                 let optional_nodes_dump = rules
-                    .optional_nodes
+                    .optional_parents
                     .iter()
-                    .map(|node| dump_node(&node, NodeType::Optional, &rules))
+                    .map(|node| dump_node(node, ParentType::Optional, &rules))
                     .collect::<Vec<String>>()
-                    .concat();
+                    .join("\n");
                 node_dump.push_str(&optional_nodes_dump);
             }
             Ok(node_dump)

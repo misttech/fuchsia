@@ -5,14 +5,14 @@
 use crate::match_common::{get_composite_rules_from_composite_driver, node_to_device_property};
 use crate::resolved_driver::ResolvedDriver;
 use crate::serde_ext::ConditionDef;
-use bind::compiler::symbol_table::{get_deprecated_key_identifier, get_deprecated_key_value};
 use bind::compiler::Symbol;
-use bind::interpreter::match_bind::{match_bind, DeviceProperties, MatchBindData, PropertyKey};
+use bind::compiler::symbol_table::{get_deprecated_key_identifier, get_deprecated_key_value};
+use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, PropertyKey, match_bind};
 use fidl_fuchsia_driver_framework as fdf;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use zx::sys::zx_status_t;
 use zx::Status;
+use zx::sys::zx_status_t;
 
 pub type BindRules = BTreeMap<PropertyKey, BindRuleCondition>;
 
@@ -171,7 +171,7 @@ pub fn match_composite_properties<'a>(
     // The composite driver bind rules should have a total node count of more than or equal to the
     // total node count of the spec. This is to account for optional nodes in the
     // composite driver bind rules.
-    if composite.optional_nodes.len() + composite.additional_nodes.len() + 1 < parents.len() {
+    if composite.optional_parents.len() + composite.additional_parents.len() + 1 < parents.len() {
         return Ok(None);
     }
 
@@ -181,7 +181,7 @@ pub fn match_composite_properties<'a>(
     for i in 0..parents.len() {
         primary_matches = node_matches_composite_driver(
             &parents[i],
-            &composite.primary_node.instructions,
+            &composite.primary_parent.instructions,
             &composite.symbol_table,
         );
         if primary_matches {
@@ -216,15 +216,15 @@ pub fn match_composite_properties<'a>(
     // a warning and return false if a spec node matches with multiple composite
     // driver nodes, and vice versa.
     let mut unmatched_additional_indices =
-        (0..composite.additional_nodes.len()).collect::<HashSet<_>>();
+        (0..composite.additional_parents.len()).collect::<HashSet<_>>();
     let mut unmatched_optional_indices =
-        (0..composite.optional_nodes.len()).collect::<HashSet<_>>();
+        (0..composite.optional_parents.len()).collect::<HashSet<_>>();
 
     let mut parent_names = vec![];
 
     for i in 0..parents.len() {
         if i == primary_parent_index as usize {
-            parent_names.push(composite.symbol_table[&composite.primary_node.name_id].clone());
+            parent_names.push(composite.symbol_table[&composite.primary_parent.name_id].clone());
             continue;
         }
 
@@ -236,13 +236,13 @@ pub fn match_composite_properties<'a>(
         for &j in &unmatched_additional_indices {
             let matches = node_matches_composite_driver(
                 &parents[i],
-                &composite.additional_nodes[j].instructions,
+                &composite.additional_parents[j].instructions,
                 &composite.symbol_table,
             );
             if matches {
                 matched = Some(j);
                 matched_name =
-                    Some(composite.symbol_table[&composite.additional_nodes[j].name_id].clone());
+                    Some(composite.symbol_table[&composite.additional_parents[j].name_id].clone());
                 break;
             }
         }
@@ -252,14 +252,15 @@ pub fn match_composite_properties<'a>(
             for &j in &unmatched_optional_indices {
                 let matches = node_matches_composite_driver(
                     &parents[i],
-                    &composite.optional_nodes[j].instructions,
+                    &composite.optional_parents[j].instructions,
                     &composite.symbol_table,
                 );
                 if matches {
                     from_optional = true;
                     matched = Some(j);
-                    matched_name =
-                        Some(composite.symbol_table[&composite.optional_nodes[j].name_id].clone());
+                    matched_name = Some(
+                        composite.symbol_table[&composite.optional_parents[j].name_id].clone(),
+                    );
                     break;
                 }
             }

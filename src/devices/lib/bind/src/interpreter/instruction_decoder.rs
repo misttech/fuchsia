@@ -134,7 +134,7 @@ mod test {
         bytecode.extend_from_slice(&sz.to_le_bytes());
     }
 
-    fn append_node_header(bytecode: &mut Vec<u8>, node_type: RawNodeType, node_id: u32, sz: u32) {
+    fn append_node_header(bytecode: &mut Vec<u8>, node_type: RawParentType, node_id: u32, sz: u32) {
         bytecode.push(node_type as u8);
         bytecode.extend_from_slice(&node_id.to_le_bytes());
         bytecode.extend_from_slice(&sz.to_le_bytes());
@@ -251,13 +251,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -298,13 +303,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -344,13 +354,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -390,13 +405,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -436,13 +456,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -485,13 +510,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -534,13 +564,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -583,13 +618,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -632,13 +672,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -681,13 +726,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -730,13 +780,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
@@ -776,13 +831,18 @@ mod test {
         // Add device name ID.
         bytecode.extend_from_slice(&[1, 0, 0, 0]);
 
-        append_node_header(&mut bytecode, RawNodeType::Primary, 2, primary_node_inst.len() as u32);
+        append_node_header(
+            &mut bytecode,
+            RawParentType::Primary,
+            2,
+            primary_node_inst.len() as u32,
+        );
         bytecode.extend_from_slice(&primary_node_inst);
 
         // Add the additional node.
         append_node_header(
             &mut bytecode,
-            RawNodeType::Additional,
+            RawParentType::Additional,
             3,
             additional_node_inst.len() as u32,
         );
