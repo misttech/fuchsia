@@ -74,9 +74,9 @@ class FuchsiaHostTestDataManifest:
         labels_map: dict[str, str] = {}  # maps dest_path -> label
         for info in self.infos:
             for dest_path, source_path in info.files.items():
-                source_path = bazel_execroot / source_path
-                cur_source = result.setdefault(dest_path, source_path)
-                if cur_source != source_path:
+                src_path = bazel_execroot / source_path
+                cur_source = result.setdefault(dest_path, src_path)
+                if cur_source != src_path:
                     raise ValueError(
                         """
 Conflict for destination path with multiple sources: {dest_path}
@@ -185,6 +185,7 @@ def generate_test_wrapper(
     output_runtime_dir: Path,
     output_test_runtime_deps_json: Path,
     host_test_data_manifest: T.Optional[Path],
+    host_test_wrapper_template: Path,
     data_runfiles: list[str],
     test_args: list[str],
     bazel_execroot: Path,
@@ -272,7 +273,7 @@ def generate_test_wrapper(
     output_runfiles_dir.mkdir(parents=True, exist_ok=True)
 
     output_manifest_entries: dict[str, str] = {}
-    runtime_deps_paths: list[str] = []
+    runtime_deps_paths: list[str | Path] = []
     for source_path, target_path in input_manifest.as_dict().items():
         if not target_path:
             # This is an empty file in the input runfiles dir, create an empty
@@ -333,24 +334,31 @@ def generate_test_wrapper(
     runtime_deps_paths.append(output_entry_point)
 
     # Generate the launcher script
+    # First separate the environment variables from the other arguments.
+    env_vars: list[str] = []
+    real_args: list[str] = []
+    if test_args:
+        for n, arg in enumerate(test_args):
+            varname, equal, value = arg.partition("=")
+            if equal != "=":
+                real_args = test_args[n:]
+                break
+            env_vars.append(arg)
+
+    subtitutions = {
+        "{{runtime_dir_location}}": os.path.relpath(
+            output_runtime_dir, output_launcher.parent
+        ),
+        "{{test_name}}": shlex.quote(os.path.basename(entry_point)),
+        "{{test_args}}": " ".join([shlex.quote(arg) for arg in test_args]),
+        "{{env_vars}}": " ".join(shlex.quote(v) for v in env_vars),
+    }
+    launcher_text = host_test_wrapper_template.read_text()
+    for substitution, value in subtitutions.items():
+        launcher_text = launcher_text.replace(substitution, value)
+
     output_launcher.parent.mkdir(parents=True, exist_ok=True)
-    output_launcher.write_text(
-        """#!/bin/bash
-set -e
-cd $(dirname "${{BASH_SOURCE[0]}}")/{runtime_dir_location}
-echo "TEST PWD $(pwd)"
-exec ./{entry_point_location} {test_args_prefix}"$@"
-""".format(
-            runtime_dir_location=os.path.relpath(
-                output_runtime_dir, output_launcher.parent
-            ),
-            entry_point_location=shlex.quote(os.path.basename(entry_point)),
-            test_args_prefix=" ".join([shlex.quote(arg) for arg in test_args])
-            + " "
-            if test_args
-            else "",
-        )
-    )
+    output_launcher.write_text(launcher_text)
     output_launcher.chmod(0o755)
 
     # Add all host_test_data() runtime dependencies to the runtime directory
@@ -359,7 +367,7 @@ exec ./{entry_point_location} {test_args_prefix}"$@"
     if host_test_data_manifest:
         try:
             with host_test_data_manifest.open() as f:
-                host_test_data_manifest = FuchsiaHostTestDataManifest.from_json(
+                test_data_manifest = FuchsiaHostTestDataManifest.from_json(
                     json.load(f)
                 )
         except Exception as e:
@@ -369,7 +377,7 @@ exec ./{entry_point_location} {test_args_prefix}"$@"
             )
             return 1
 
-        host_test_data_map = host_test_data_manifest.generate_final_map(
+        host_test_data_map = test_data_manifest.generate_final_map(
             bazel_execroot
         )
         for dest_path, source_path in host_test_data_map.items():
@@ -440,9 +448,16 @@ def main() -> int:
         help="An input manifest describing host_test_data() runtime dependencies.",
     )
     parser.add_argument(
+        "--host-test-wrapper-template",
+        type=Path,
+        required=True,
+        help="Input path to test wrapper script template.",
+    )
+    parser.add_argument(
         "--test-arg",
         action="append",
         type=str,
+        default=[],
         help="Extra arguments passed to the test entry point.",
     )
     parser.add_argument(
@@ -461,6 +476,7 @@ def main() -> int:
         args.output_runtime_dir,
         args.output_test_runtime_deps_json,
         args.host_test_data_manifest,
+        args.host_test_wrapper_template,
         args.data_runfile,
         args.test_arg,
         args.bazel_execroot,

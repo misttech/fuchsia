@@ -84,16 +84,20 @@ def _host_test_impl(ctx):
         #mnemonic = "FuchsiaHostTestDataManifest",
     )
 
+    host_test_wrapper_template = ctx.file.host_test_wrapper_template
+
     inputs = (
         binary_info.files.to_list() +
         binary_info.default_runfiles.files.to_list() +
         ctx.files.data +
-        ctx.files._python_modules
+        ctx.files._python_modules +
+        host_test_data_runtime_files
     ) + [
         binary_runfiles_manifest,
         binary_repo_mapping_manifest,
         host_test_data_manifest,
-    ] + host_test_data_runtime_files
+        host_test_wrapper_template,
+    ]
 
     entry_point = binary_info.files_to_run.executable
 
@@ -144,6 +148,7 @@ def _host_test_impl(ctx):
             "--output-test-runtime-deps-json={}".format(test_runtime_deps_json.path),
             "--bazel-execroot={}".format(ctx.label.workspace_root),
             "--host-test-data-manifest={}".format(host_test_data_manifest.path),
+            "--host-test-wrapper-template={}".format(host_test_wrapper_template.path),
         ] + [
             "--data-runfile={}".format(f.path)
             for f in data_runfiles.files.to_list()
@@ -244,6 +249,11 @@ host_test = rule(
         "_generate_host_test_wrapper": attr.label(
             doc = "Internal script used to generate the final test wrapper script.",
             default = "//build/bazel/scripts:generate_host_test_wrapper.py",
+            allow_single_file = True,
+        ),
+        "host_test_wrapper_template": attr.label(
+            doc = "Template file for the generated test wrapper script.",
+            default = "//build/bazel:templates/template.host_test_wrapper.sh",
             allow_single_file = True,
         ),
         "_python_modules": attr.label_list(

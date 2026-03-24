@@ -5,6 +5,10 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//build/bazel/rules:current_platform_info.bzl", "define_current_platform_info")
 
+exports_files([
+    "templates/template.host_test_wrapper.sh",
+])
+
 # Expose current build configuration's info through a CurrentPlatformInfo provider.
 define_current_platform_info(name = "current_platform")
 
