@@ -138,8 +138,8 @@ class BTree {
 
   template <typename>
   class iterator_impl;
-  using iterator = iterator_impl<typename Traits::RawType>;
-  using const_iterator = iterator_impl<typename Traits::ConstRawType>;
+  using iterator = iterator_impl<typename Traits::RefType>;
+  using const_iterator = iterator_impl<typename Traits::ConstRefType>;
 
   explicit BTree(Allocator allocator) : allocator_(std::move(allocator)) {}
   BTree() = default;
@@ -246,7 +246,7 @@ class BTree {
   iterator erase(iterator iter) {
     auto [k, v] = iter.get();
     generation_++;
-    Traits::Reclaim(std::bit_cast<typename Traits::RawType>(v));
+    Traits::Reclaim(static_cast<Traits::RawType>(v));
     iter = iterator(this, erase_internal(iter));
     BTREE_CHECK(iter == upper_bound(k));
     return iter;
@@ -257,7 +257,7 @@ class BTree {
     generation_++;
     iter = iterator(this, erase_internal(iter));
     BTREE_CHECK(iter == upper_bound(k));
-    return std::make_pair(k, Traits::Reclaim(std::bit_cast<typename Traits::RawType>(v)));
+    return std::make_pair(k, Traits::Reclaim(static_cast<Traits::RawType>(v)));
   }
   // Return an iterator to the first item whose key is strictly greater than |key|, or end() if no
   // such item.
@@ -362,7 +362,8 @@ class BTree {
       BTREE_CHECK(IsValid());
       generation_.validate();
       auto [key, value] = this->node_->get(this->index_);
-      return std::make_pair(key, std::bit_cast<RefType>(value));
+      return std::make_pair(key,
+                            static_cast<RefType>(std::bit_cast<typename Traits::RawType>(value)));
     }
     // Returns whether the iterator is one that can be dereferenced, i.e. is not the end() iterator,
     // a default constructed one, or begin() of an empty tree. If the iterator is stale due to

@@ -8,6 +8,7 @@
 
 #include <zircon/types.h>
 
+#include <type_traits>
 #include <utility>
 
 #include <fbl/ref_ptr.h>
@@ -203,7 +204,8 @@ template <typename T>
 struct DefaultTypeTraits<T*> {
   using ValueType = T*;
   using RawType = T*;
-  using ConstRawType = const T*;
+  using RefType = T*;
+  using ConstRefType = const T*;
 
   static RawType Leak(ValueType v) { return v; }
   static ValueType Reclaim(RawType raw) { return raw; }
@@ -214,7 +216,8 @@ template <typename T, typename Deleter>
 struct DefaultTypeTraits<std::unique_ptr<T, Deleter>> {
   using ValueType = std::unique_ptr<T, Deleter>;
   using RawType = T*;
-  using ConstRawType = const T*;
+  using RefType = T*;
+  using ConstRefType = const T*;
 
   static RawType Leak(ValueType& v) { return v.release(); }
   static ValueType Reclaim(RawType raw) { return ValueType(raw); }
@@ -225,21 +228,25 @@ template <typename T>
 struct DefaultTypeTraits<fbl::RefPtr<T>> {
   using ValueType = fbl::RefPtr<T>;
   using RawType = T*;
-  using ConstRawType = const T*;
+  using RefType = T*;
+  using ConstRefType = const T*;
 
   static RawType Leak(ValueType& v) { return fbl::ExportToRawPtr(&v); }
   static ValueType Reclaim(RawType ptr) { return fbl::ImportFromRawPtr(ptr); }
 };
 
-// Trait for managing plain uint64_t values.
-template <>
-struct DefaultTypeTraits<uint64_t> {
-  using ValueType = uint64_t;
+// Trait for managing integral types up to 64 bits.
+template <typename T>
+  requires(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t))
+struct DefaultTypeTraits<T> {
+  using ValueType = T;
   using RawType = uint64_t;
-  using ConstRawType = uint64_t;
+  using RefType = T;
+  using ConstRefType = T;
 
-  static RawType Leak(ValueType v) { return v; }
-  static ValueType Reclaim(RawType v) { return v; }
+  static RawType Leak(ValueType v) { return static_cast<uint64_t>(v); }
+
+  static ValueType Reclaim(RawType v) { return static_cast<ValueType>(v); }
 };
 
 // For development the BTree<> supports tracking the validity of iterators, allowing iterator misuse

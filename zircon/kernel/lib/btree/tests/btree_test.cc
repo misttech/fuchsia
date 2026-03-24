@@ -612,4 +612,31 @@ TEST(BTreeTest, Utilization) {
   EXPECT_EQ(util.nodes_in_bytes(), 0u);
 }
 
+TEST(BTreeTest, IntegralTypes) {
+  HeapTestingAllocator alloc;
+  {
+    BTree<int32_t> tree(IndirectAllocator{alloc});
+    auto it = tree.insert(1, -42);
+    EXPECT_TRUE(it != tree.end());
+    int32_t value = (*it).second;
+    EXPECT_EQ(value, -42);
+    tree.erase(it);
+  }
+  {
+    BTree<uint8_t> tree(IndirectAllocator{alloc});
+    auto it = tree.insert(1, 255);
+    EXPECT_TRUE(it != tree.end());
+    uint8_t value = (*it).second;
+    EXPECT_EQ(value, 255);
+    tree.erase(it);
+  }
+  {
+    BTree<bool> tree(IndirectAllocator{alloc});
+    auto it = tree.insert(1, true);
+    EXPECT_TRUE(it != tree.end());
+    bool value = (*it).second;
+    EXPECT_EQ(value, true);
+    tree.erase(it);
+  }
+}
 }  // namespace
