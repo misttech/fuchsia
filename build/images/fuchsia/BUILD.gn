@@ -31,6 +31,15 @@ if (is_host) {
     sources = [ "$root_build_dir/fuchsia.zbi" ]
     deps = [ ":fuchsia_assembly($default_toolchain)" ]
   }
+
+  host_test_data("zedboot_zbi_for_host_tests") {
+    # No tests should be directly using this zbi, they should be using product bundles instead
+    # This visibility list is NOT to be expanded, and all entries here should be migrated to
+    # a form that can use the product bundle with the emulator instead of directly using the zbi.
+    visibility = [ "//src/tests/disable_syscalls:*" ]
+    sources = [ "$root_build_dir/zedboot.zbi" ]
+    deps = [ "${recovery_label}(${default_toolchain})" ]
+  }
 }
 
 # The assembly operation should only be defined in the default (fuchsia)

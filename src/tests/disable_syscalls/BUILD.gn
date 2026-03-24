@@ -23,10 +23,6 @@ group("tests") {
 }
 
 if (is_linux) {
-  host_test_data("syscall_zbi") {
-    sources = [ "$root_build_dir/zedboot.zbi" ]
-  }
-
   host_test_data("misc_tools") {
     visibility = [ ":*" ]
 
@@ -58,7 +54,7 @@ if (is_linux) {
       embed = [ ":$split_name" ]
       non_go_deps = [
         ":misc_tools",
-        ":syscall_zbi",
+        "//build/images/fuchsia:zedboot_zbi_for_host_tests",
       ]
     }
   }
