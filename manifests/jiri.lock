@@ -350,6 +350,16 @@
         "instance_id": "CA9P7IyTULvLffZ1tPsIWRwpMlNC_Oi6bb8r_LloI-8C"
     },
     {
+        "package": "fuchsia/third_party/3pp/keep-sorted/linux-amd64",
+        "version": "version:2@0.8.0.1",
+        "instance_id": "spkaG4t_QjuZZE-sWql2Yal8WJbzNgs2UkE1viuSxagC"
+    },
+    {
+        "package": "fuchsia/third_party/3pp/keep-sorted/linux-arm64",
+        "version": "version:2@0.8.0.1",
+        "instance_id": "lTG_dvbWgRPfP900siwJ6wi2VBaoVq23ISg1W4I3gM4C"
+    },
+    {
         "package": "fuchsia/third_party/3pp/mcp-language-server/linux-amd64",
         "version": "version:2@0.1.1.cr0",
         "instance_id": "hFTgVo_2yEhQoxqQABn7kcd_3sV1ohWd7CSVxQWbIHwC"
@@ -523,16 +533,6 @@
         "package": "fuchsia/third_party/jq/linux-arm64",
         "version": "git_revision:a17dd3248a666d01be75f6b16be37e80e20b0954",
         "instance_id": "B99d5H538hQqnU04lmWivDAc05SEgDkZIBH8oaeqyWcC"
-    },
-    {
-        "package": "fuchsia/third_party/keep-sorted/linux-amd64",
-        "version": "version:2@0.1.1.1",
-        "instance_id": "-LFF45IJckhUsC2cQma1mP6ovYQtRwnyPpFfYlB4r08C"
-    },
-    {
-        "package": "fuchsia/third_party/keep-sorted/linux-arm64",
-        "version": "version:2@0.1.1.1",
-        "instance_id": "aWXj9CPDrH5s2VNzZ8WDTm2qf88os_g0LU0RnC_TWaYC"
     },
     {
         "package": "fuchsia/third_party/lldb/linux-amd64",
