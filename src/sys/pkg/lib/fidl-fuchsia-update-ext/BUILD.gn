@@ -11,7 +11,7 @@ rustc_library("fidl-fuchsia-update-ext") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+    "//sdk/fidl/fuchsia.update:fuchsia.update_rust_common",
     "//src/sys/pkg/lib/event-queue",
     "//third_party/rust_crates:proptest",
     "//third_party/rust_crates:proptest-derive",
@@ -26,6 +26,7 @@ rustc_library("fidl-fuchsia-update-ext") {
 
   if (is_fuchsia) {
     deps += [
+      "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
       "//sdk/rust/zx",
       "//third_party/rust_crates:anyhow",
     ]
