@@ -168,10 +168,11 @@ impl Inner {
 
     /// Updates the current memory pressure level.
     fn update_level(&self, level: MemoryPressureLevel) {
-        self.level.store(level.into_primitive(), Ordering::Release);
-
-        // Notify relaxed since reading from `self.level` is appropriately ordered
-        self.event.notify_relaxed(usize::MAX);
+        let level = level.into_primitive();
+        if self.level.swap(level, Ordering::AcqRel) != level {
+            // Notify relaxed since reading from `self.level` is appropriately ordered
+            self.event.notify_relaxed(usize::MAX);
+        }
     }
 
     fn listen(&self) -> EventListener {
