@@ -117,15 +117,6 @@ fidl::AnyTeardownObserver TeardownWatcher(size_t index, std::vector<size_t>& ind
   return fidl::ObserveTeardown([&indices = indices, index] { indices.emplace_back(index); });
 }
 
-void TestLessor::Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) {
-  auto [client, server] = fidl::Endpoints<fuchsia_power_broker::LeaseControl>::Create();
-  completer.Reply(zx::ok(std::move(client)));
-}
-
-void TestTopology::AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) {
-  completer.Reply(zx::ok());
-}
-
 TestController::TestController(TestRealm* parent, std::string_view name,
                                std::string_view collection,
                                fidl::ServerEnd<fcomponent::Controller> controller,
@@ -188,7 +179,16 @@ void TestRealm::CreateChild(CreateChildRequest& request, CreateChildCompleter::S
   }
 
   auto offers = request.args().dynamic_offers();
-  if (create_child_handler_) {
+  bool handled = false;
+  for (auto it = create_child_handlers_.rbegin(); it != create_child_handlers_.rend(); ++it) {
+    if ((*it)(request.collection(), request.decl(),
+              offers.has_value() ? offers.value() : std::vector<fdecl::Offer>{})) {
+      handled = true;
+      break;
+    }
+  }
+
+  if (!handled && create_child_handler_) {
     create_child_handler_(request.collection(), request.decl(),
                           offers.has_value() ? offers.value() : std::vector<fdecl::Offer>{});
   }
@@ -508,18 +508,18 @@ void DriverRunnerTestBase::StopDriverComponent(
 }
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
     std::string_view moniker, Driver driver, std::optional<StartDriverHandler> start_handler,
-    fidl::ClientEnd<fuchsia_io::Directory> ns_pkg,
+    fidl::ClientEnd<fuchsia_io::Directory> ns_pkg, fidl::ClientEnd<fuchsia_io::Directory> ns_svc,
     fidl::ClientEnd<fuchsia_io::Directory> driver_host_pkg) {
-  std::unique_ptr<TestDriver> started_driver;
+  auto started_driver = std::make_shared<std::unique_ptr<TestDriver>>();
   driver_host().SetStartHandler(
-      [&started_driver, dispatcher = dispatcher(), start_handler = std::move(start_handler)](
+      [started_driver, dispatcher = dispatcher(), start_handler = std::move(start_handler)](
           fdfw::DriverStartArgs start_args, fidl::ServerEnd<fdh::Driver> driver) mutable {
-        started_driver =
+        *started_driver =
             std::make_unique<TestDriver>(dispatcher, std::move(start_args.node().value()),
                                          std::move(start_args.node_token()), std::move(driver));
         start_args.node().reset();
         if (start_handler.has_value()) {
-          start_handler.value()(started_driver.get(), std::move(start_args));
+          start_handler.value()((*started_driver).get(), std::move(start_args));
         }
       });
 
@@ -569,13 +569,30 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
 
   auto start_info_builder = frunner::wire::ComponentStartInfo::Builder(arena);
 
-  fidl::VectorView<frunner::wire::ComponentNamespaceEntry> ns_entries = {};
+  size_t num_ns_entries = 0;
   if (ns_pkg.is_valid()) {
-    ns_entries.Allocate(arena, 1);
-    ns_entries[0] = frunner::wire::ComponentNamespaceEntry::Builder(arena)
-                        .path("/pkg")
-                        .directory(std::move(ns_pkg))
-                        .Build();
+    num_ns_entries++;
+  }
+  if (ns_svc.is_valid()) {
+    num_ns_entries++;
+  }
+
+  fidl::VectorView<frunner::wire::ComponentNamespaceEntry> ns_entries = {};
+  if (num_ns_entries > 0) {
+    ns_entries.Allocate(arena, num_ns_entries);
+    size_t i = 0;
+    if (ns_pkg.is_valid()) {
+      ns_entries[i++] = frunner::wire::ComponentNamespaceEntry::Builder(arena)
+                            .path("/pkg")
+                            .directory(std::move(ns_pkg))
+                            .Build();
+    }
+    if (ns_svc.is_valid()) {
+      ns_entries[i++] = frunner::wire::ComponentNamespaceEntry::Builder(arena)
+                            .path("/svc")
+                            .directory(std::move(ns_svc))
+                            .Build();
+    }
   }
 
   start_info_builder.resolved_url(driver.url)
@@ -603,17 +620,31 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
   // If the driver |Start| request is expected to fail (|driver.close| is true),
   // then we should not start the driver host.
   if (!driver.colocate && driver.use_dynamic_linker && !driver.close) {
+    auto deadline = zx::deadline_after(zx::sec(5));
+    while (!realm().HasHandles() && zx::clock::get_monotonic() < deadline) {
+      RunLoopUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
     DriverHostComponentStart(realm(), *driver_runner().driver_host_runner_for_tests(),
                              std::move(driver_host_pkg));
     RunLoopUntilIdle();
   }
 
-  return {std::move(started_driver), std::move(controller_endpoints.client)};
+  if (!driver.close) {
+    auto deadline = zx::deadline_after(zx::sec(5));
+    while (!*started_driver && zx::clock::get_monotonic() < deadline) {
+      RunLoopUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
+
+  return {std::move(*started_driver), std::move(controller_endpoints.client)};
 }
 
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriverWithConfig(
     std::string_view moniker, Driver driver, std::optional<StartDriverHandler> start_handler,
-    test_utils::TestPkg::Config driver_config, test_utils::TestPkg::Config driver_host_config) {
+    test_utils::TestPkg::Config driver_config, test_utils::TestPkg::Config driver_host_config,
+    fidl::ClientEnd<fuchsia_io::Directory> ns_svc) {
   fidl::Endpoints<fuchsia_io::Directory> child_pkg_endpoints;
   std::unique_ptr<test_utils::TestPkg> child_test_pkg;
   if (driver.use_dynamic_linker) {
@@ -629,7 +660,7 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriverWithCon
         std::move(driver_host_pkg_endpoints.server), driver_host_config);
   }
   return StartDriver(moniker, driver, std::move(start_handler),
-                     std::move(child_pkg_endpoints.client),
+                     std::move(child_pkg_endpoints.client), std::move(ns_svc),
                      std::move(driver_host_pkg_endpoints.client));
 }
 
@@ -689,6 +720,7 @@ DriverRunnerTestBase::StartRootDriverDynamicLinking(test_utils::TestPkg::Config 
                                 .use_dynamic_linker = true,
                             },
                             std::move(start_handler), std::move(pkg_endpoints.client),
+                            fidl::ClientEnd<fuchsia_io::Directory>(),
                             std::move(driver_host_pkg_endpoints.client)));
 }
 
@@ -758,7 +790,7 @@ void DriverRunnerTestBase::SetupDevfs() {
 }
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartSecondDriver(
     std::string_view moniker, bool colocate, bool host_restart_on_crash, bool use_next_vdso,
-    bool use_dynamic_linker) {
+    bool use_dynamic_linker, fidl::ClientEnd<fuchsia_io::Directory> ns_svc) {
   auto second_driver_config = kDefaultSecondDriverPkgConfig;
   std::string binary = std::string(second_driver_config.main_module.open_path);
   StartDriverHandler start_handler = [colocate, host_restart_on_crash, use_next_vdso, binary,
@@ -781,7 +813,8 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartSecondDriver(
                                    .use_next_vdso = use_next_vdso,
                                    .use_dynamic_linker = use_dynamic_linker,
                                },
-                               std::move(start_handler), second_driver_config);
+                               std::move(start_handler), second_driver_config,
+                               kDefaultDriverHostPkgConfig, std::move(ns_svc));
 }
 
 zx::event TestIntrospector::GetTokenForName(std::string_view name) {

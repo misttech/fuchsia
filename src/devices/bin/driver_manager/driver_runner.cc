@@ -1197,17 +1197,13 @@ void DriverRunner::CreatePowerElement(
     fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor, Collection for_collection,
     std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
     fit::callback<void(zx::result<bool>)> cb) {
-  if (!power_topology_.is_valid()) {
+  if (!SuspendEnabled() && !topology_client.has_value()) {
     cb(zx::ok(false));
     return;
   }
 
-  if (cpu_token_override.has_value()) {
-    cpu_callbacks_or_token_ = std::move(cpu_token_override.value());
-  }
-
   PowerDependencyToken* cpu_token = std::get_if<PowerDependencyToken>(&cpu_callbacks_or_token_);
-  if (!cpu_token) {
+  if (!cpu_token && !cpu_token_override.has_value() && SuspendEnabled()) {
     std::get<CallbackSet>(cpu_callbacks_or_token_)
         .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
                     name, element_token = std::move(element_token), deps = std::move(deps),
@@ -1233,7 +1229,7 @@ void DriverRunner::CreatePowerElement(
   // This might happen because creation of the storage power element has multiple async operations,
   // therefore it is possible that a driver from storage loads before the element is created.
   PowerDependencyToken* token = std::get_if<PowerDependencyToken>(&storage_callbacks_or_token_);
-  if (for_collection != Collection::kBoot && !token) {
+  if (for_collection != Collection::kBoot && !token && SuspendEnabled()) {
     std::get<CallbackSet>(storage_callbacks_or_token_)
         .push_back([weak_self = weak_from_this(), topology_client = std::move(topology_client),
                     name, element_token = std::move(element_token), deps = std::move(deps),
@@ -1274,24 +1270,30 @@ void DriverRunner::CreatePowerElement(
     level_deps.push_back(std::move(level_dep));
   }
 
-  fuchsia_power_broker::DependencyToken clone;
+  std::optional<fuchsia_power_broker::DependencyToken> final_cpu_token;
   if (cpu_token_override.has_value()) {
+    fuchsia_power_broker::DependencyToken clone;
     zx_status_t dupe_result =
         cpu_token_override->duplicate(ZX_RIGHT_SAME_RIGHTS, (zx::event*)&clone);
     ZX_ASSERT(dupe_result == ZX_OK);
-  } else {
+    final_cpu_token = std::move(clone);
+  } else if (SuspendEnabled()) {
+    fuchsia_power_broker::DependencyToken clone;
     ZX_ASSERT(std::get<PowerDependencyToken>(cpu_callbacks_or_token_)
                   .duplicate(ZX_RIGHT_SAME_RIGHTS, (zx::event*)&clone) == ZX_OK);
+    final_cpu_token = std::move(clone);
   }
 
-  std::vector<fuchsia_power_broker::PowerLevel> reqs_by_pref;
-  reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
+  if (final_cpu_token.has_value()) {
+    std::vector<fuchsia_power_broker::PowerLevel> reqs_by_pref;
+    reqs_by_pref.push_back(static_cast<fuchsia_power_broker::PowerLevel>(1));
 
-  fuchsia_power_broker::LevelDependency level_dep;
-  level_dep.dependent_level() = static_cast<fuchsia_power_broker::PowerLevel>(1),
-  level_dep.requires_token() = std::move(clone);
-  level_dep.requires_level_by_preference() = reqs_by_pref;
-  level_deps.push_back(std::move(level_dep));
+    fuchsia_power_broker::LevelDependency level_dep;
+    level_dep.dependent_level() = static_cast<fuchsia_power_broker::PowerLevel>(1),
+    level_dep.requires_token() = std::move(final_cpu_token.value());
+    level_dep.requires_level_by_preference() = reqs_by_pref;
+    level_deps.push_back(std::move(level_dep));
+  }
 
   // Any drivers that aren't from bootfs have a dependency on storage.
   if (for_collection != Collection::kBoot) {
@@ -1575,7 +1577,92 @@ void DriverRunner::RestartWithDictionaryAndPowerDependencies(
     std::string moniker, fuchsia_component_sandbox::DictionaryRef dictionary,
     std::vector<fuchsia_power_broker::LevelDependency> power_dependencies,
     std::optional<zx::event> cpu_token_override, zx::eventpair release_fence) {
-  // TODO(https://fxbug.dev/477354367): Complete this implementation.
+  dictionary_util_.ImportDictionary(std::move(dictionary), [this, moniker = std::move(moniker),
+                                                            power_dependencies =
+                                                                std::move(power_dependencies),
+                                                            cpu_token_override =
+                                                                std::move(cpu_token_override),
+                                                            release_fence =
+                                                                std::move(release_fence)](
+                                                               zx::result<
+                                                                   fuchsia_component_sandbox::
+                                                                       NewCapabilityId>
+                                                                   result) mutable {
+    if (result.is_error()) {
+      fdf_log::error(
+          "Failed to import dictionary for RestartWithDictionaryAndPowerDependencies: {}",
+          result.status_string());
+      return;
+    }
+
+    std::shared_ptr<driver_manager::Node> restarted_node = nullptr;
+    PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
+      if (current->MakeComponentMoniker() == moniker && current->HasDriverComponent()) {
+        if (current->HasSubtreeDictionaryRef()) {
+          fdf_log::error(
+              "RestartWithDictionaryAndPowerDependencies requested node id already contains a dictionary_ref from another restart operation.");
+          return false;
+        }
+        ZX_ASSERT_MSG(restarted_node == nullptr, "Multiple nodes with same moniker not possible.");
+        restarted_node = current;
+        current->SetSubtreeDictionaryRef(result.value());
+
+        // Clone power dependencies for the node
+        std::vector<fuchsia_power_broker::LevelDependency> deps;
+        for (const auto& dep : power_dependencies) {
+          fuchsia_power_broker::DependencyToken clone;
+          zx_status_t status = dep.requires_token().duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+          if (status != ZX_OK) {
+            fdf_log::error("Failed to duplicate power token: {}", zx_status_get_string(status));
+            continue;
+          }
+          fuchsia_power_broker::LevelDependency new_dep;
+          new_dep.dependent_level() = dep.dependent_level();
+          new_dep.requires_token() = std::move(clone);
+          new_dep.requires_level_by_preference() = dep.requires_level_by_preference();
+          deps.push_back(std::move(new_dep));
+        }
+        current->SetPowerDependencyOverrides(std::move(deps));
+
+        if (cpu_token_override.has_value()) {
+          zx::event clone;
+          zx_status_t status = cpu_token_override->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+          if (status == ZX_OK) {
+            current->SetCpuTokenOverride(std::move(clone));
+          } else {
+            fdf_log::error("Failed to duplicate CPU token override: {}",
+                           zx_status_get_string(status));
+          }
+        }
+
+        current->RestartNode();
+        return false;
+      }
+
+      return true;
+    });
+
+    if (restarted_node != nullptr) {
+      std::unique_ptr<async::WaitOnce> wait = std::make_unique<async::WaitOnce>(
+          release_fence.release(), ZX_EVENTPAIR_PEER_CLOSED | ZX_EVENTPAIR_SIGNALED);
+      async::WaitOnce* wait_ptr = wait.get();
+      zx_status_t status = wait_ptr->Begin(
+          dispatcher_, [restarted_node = std::move(restarted_node), moved_wait = std::move(wait)](
+                           async_dispatcher_t* dispatcher, async::WaitOnce* wait,
+                           zx_status_t status, const zx_packet_signal_t* signal) {
+            fdf_log::info("RestartWithDictionaryAndPowerDependencies operation released.");
+            restarted_node->SetSubtreeDictionaryRef(std::nullopt);
+            restarted_node->SetPowerDependencyOverrides(std::nullopt);
+            restarted_node->SetCpuTokenOverride(std::nullopt);
+            restarted_node->RestartNode();
+          });
+
+      if (status != ZX_OK) {
+        fdf_log::error(
+            "Failed to Begin async::Wait for RestartWithDictionaryAndPowerDependencies.");
+      }
+    }
+  });
 }
 
 std::unordered_set<const DriverHost*> DriverRunner::DriverHostsWithDriverUrl(std::string_view url) {

@@ -117,8 +117,15 @@ struct CreatedChild {
 void CheckNode(const inspect::Hierarchy& hierarchy, const NodeChecker& checker);
 
 class TestRealm;
-class TestElementControl : public fidl::testing::TestBase<fuchsia_power_broker::ElementControl> {
+class TestElementControl final
+    : public fidl::testing::TestBase<fuchsia_power_broker::ElementControl> {
  public:
+  explicit TestElementControl(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+
+  void Bind(fidl::ServerEnd<fuchsia_power_broker::ElementControl> request) {
+    bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
+  }
+
   void RegisterDependencyToken(RegisterDependencyTokenRequest& request,
                                RegisterDependencyTokenCompleter::Sync& completer) override {
     completer.Reply(zx::ok());
@@ -128,33 +135,66 @@ class TestElementControl : public fidl::testing::TestBase<fuchsia_power_broker::
       fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementControl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    printf("Not implemented: ElementControl::%s\n", name.data());
-  }
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {}
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> bindings_;
 };
 
-class TestLessor : public fidl::testing::TestBase<fuchsia_power_broker::Lessor> {
+class TestLessor final : public fidl::testing::TestBase<fuchsia_power_broker::Lessor> {
  public:
-  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override;
+  explicit TestLessor(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+
+  void Bind(fidl::ServerEnd<fuchsia_power_broker::Lessor> request) {
+    bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
+  }
+
+  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override {
+    auto endpoints = fidl::Endpoints<fuchsia_power_broker::LeaseControl>::Create();
+    // Intentionally dropping the server end, the test doesn't need to keep it alive.
+    completer.Reply(zx::ok(fuchsia_power_broker::LessorLeaseResponse(std::move(endpoints.client))));
+  }
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Lessor> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    printf("Not implemented: Lessor::%s\n", name.data());
-  }
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {}
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  fidl::ServerBindingGroup<fuchsia_power_broker::Lessor> bindings_;
 };
 
-class TestTopology : public fidl::testing::TestBase<fuchsia_power_broker::Topology> {
+class TestTopology final : public fidl::testing::TestBase<fuchsia_power_broker::Topology> {
  public:
-  void AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) override;
+  explicit TestTopology(async_dispatcher_t* dispatcher)
+      : dispatcher_(dispatcher), element_control_(dispatcher), lessor_(dispatcher) {}
+
+  void Bind(fidl::ServerEnd<fuchsia_power_broker::Topology> request) {
+    bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
+  }
+
+  void AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) override {
+    if (request.element_control().has_value()) {
+      element_control_.Bind(std::move(request.element_control().value()));
+    }
+    if (request.lessor_channel().has_value()) {
+      lessor_.Bind(std::move(request.lessor_channel().value()));
+    }
+    completer.Reply(zx::ok());
+  }
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    printf("Not implemented: Topology::%s\n", name.data());
-  }
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {}
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings_;
+  TestElementControl element_control_;
+  TestLessor lessor_;
 };
 
 class TestController final : public fidl::testing::TestBase<fuchsia_component::Controller> {
@@ -191,9 +231,19 @@ class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
   using OpenExposedDirHandler =
       fit::function<void(fdecl::ChildRef child, fidl::ServerEnd<fio::Directory> exposed_dir)>;
 
+  using CreateChildHandler2 =
+      fit::function<bool(const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                         const std::vector<fdecl::Offer>& offers)>;
+
   void SetCreateChildHandler(CreateChildHandler create_child_handler) {
     create_child_handler_ = std::move(create_child_handler);
   }
+
+  void AddCreateChildHandler(CreateChildHandler2 create_child_handler) {
+    create_child_handlers_.push_back(std::move(create_child_handler));
+  }
+
+  void ClearCreateChildHandlers() { create_child_handlers_.clear(); }
 
   void SetOpenExposedDirHandler(OpenExposedDirHandler open_exposed_dir_handler) {
     open_exposed_dir_handler_ = std::move(open_exposed_dir_handler);
@@ -202,6 +252,8 @@ class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
   void SetHandles(std::vector<fprocess::HandleInfo> handles);
 
   fidl::VectorView<fprocess::wire::HandleInfo> TakeHandles(fidl::AnyArena& arena);
+
+  bool HasHandles() const { return handles_.has_value() && !handles_->empty(); }
 
   void MarkChildDestroyed(std::string_view name, std::string_view collection);
 
@@ -221,6 +273,7 @@ class TestRealm : public fidl::testing::TestBase<fuchsia_component::Realm> {
 
   async_dispatcher_t* dispatcher_;
   CreateChildHandler create_child_handler_;
+  std::vector<CreateChildHandler2> create_child_handlers_;
   OpenExposedDirHandler open_exposed_dir_handler_;
   std::optional<std::vector<fprocess::HandleInfo>> handles_;
   std::unordered_map<std::string, TestController> controllers_;
@@ -270,6 +323,22 @@ class TestIntrospector : public fidl::testing::TestBase<fuchsia_component::Intro
 };
 
 class TestCapStore : public fidl::testing::TestBase<fuchsia_component_sandbox::CapabilityStore> {
+ public:
+  void Import(ImportRequest& request, ImportCompleter::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+  void DictionaryCopy(DictionaryCopyRequest& request,
+                      DictionaryCopyCompleter::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+  void Export(ExportRequest& request, ExportCompleter::Sync& completer) override {
+    zx::eventpair d_ep1, d_ep2;
+    ZX_ASSERT(zx::eventpair::create(0, &d_ep1, &d_ep2) == ZX_OK);
+    fuchsia_component_sandbox::DictionaryRef dict_ref{{.token = std::move(d_ep1)}};
+    completer.Reply(
+        fit::ok(fuchsia_component_sandbox::Capability::WithDictionary(std::move(dict_ref))));
+  }
+
  private:
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_component_sandbox::CapabilityStore> metadata,
@@ -291,7 +360,7 @@ class TestDirectory final : public fidl::testing::TestBase<fio::Directory> {
 
   void SetOpenHandler(OpenHandler open_handler) { open_handler_ = std::move(open_handler); }
 
-  void SetEntries(std::vector<std::string> entries) { dirents_ = std::move(entries); }
+  void SetDirents(std::vector<std::string> dirents) { dirents_ = std::move(dirents); }
 
  private:
   void Open(OpenRequest& request, OpenCompleter::Sync& completer) override;
@@ -495,6 +564,7 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
       std::string_view moniker, Driver driver,
       std::optional<StartDriverHandler> start_handler = std::nullopt,
       fidl::ClientEnd<fuchsia_io::Directory> ns_pkg = fidl::ClientEnd<fuchsia_io::Directory>(),
+      fidl::ClientEnd<fuchsia_io::Directory> ns_svc = fidl::ClientEnd<fuchsia_io::Directory>(),
       fidl::ClientEnd<fuchsia_io::Directory> driver_host_pkg =
           fidl::ClientEnd<fuchsia_io::Directory>());
 
@@ -505,16 +575,18 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
       std::string_view moniker, Driver driver,
       std::optional<StartDriverHandler> start_handler = std::nullopt,
       test_utils::TestPkg::Config driver_config = kDefaultRootDriverPkgConfig,
-      test_utils::TestPkg::Config driver_host_config = kDefaultDriverHostPkgConfig);
+      test_utils::TestPkg::Config driver_host_config = kDefaultDriverHostPkgConfig,
+      fidl::ClientEnd<fuchsia_io::Directory> ns_svc = fidl::ClientEnd<fuchsia_io::Directory>());
 
   zx::result<StartDriverResult> StartRootDriver();
   zx::result<StartDriverResult> StartRootDriverDynamicLinking(
       test_utils::TestPkg::Config driver_host_config = kDefaultDriverHostPkgConfig,
       test_utils::TestPkg::Config driver_config = kDefaultRootDriverPkgConfig);
 
-  StartDriverResult StartSecondDriver(std::string_view moniker, bool colocate = false,
-                                      bool host_restart_on_crash = false,
-                                      bool use_next_vdso = false, bool use_dynamic_linker = false);
+  StartDriverResult StartSecondDriver(
+      std::string_view moniker, bool colocate = false, bool host_restart_on_crash = false,
+      bool use_next_vdso = false, bool use_dynamic_linker = false,
+      fidl::ClientEnd<fuchsia_io::Directory> ns_svc = fidl::ClientEnd<fuchsia_io::Directory>());
 
   void Unbind();
 

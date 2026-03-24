@@ -772,6 +772,7 @@ void Node::FinishRestart() {
   ZX_ASSERT_MSG(shutdown_intent() == ShutdownIntent::kRestart,
                 "FinishRestart called when node is not restarting.");
 
+  pe_handles_.reset();
   GetNodeShutdownCoordinator().ResetShutdown();
 
   // Store previous url before we reset the state_.
@@ -1742,6 +1743,7 @@ void Node::StartDriver(
   }
 
   auto url = start_info.resolved_url().get();
+
   bool colocate =
       fdf_internal::ProgramValue(start_info.program(), "colocate").value_or("") == "true";
   bool host_restart_on_crash =
@@ -2188,7 +2190,7 @@ void Node::StartDriver(
       };
 
   // If the platform is not suspend enabled, skip the directory search below.
-  if (!(*node_manager_)->SuspendEnabled()) {
+  if (!(*node_manager_)->SuspendEnabled() && !power_dependency_overrides_.has_value()) {
     do_start_driver(zx::ok(std::nullopt));
     return;
   }

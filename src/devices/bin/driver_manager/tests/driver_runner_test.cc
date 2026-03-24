@@ -11,14 +11,17 @@
 #include <fidl/fuchsia.io/cpp/test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/defer.h>
 #include <lib/inspect/cpp/reader.h>
 #include <lib/inspect/testing/cpp/inspect.h>
+#include <lib/sync/cpp/completion.h>
 
 #include <bind/fuchsia/platform/cpp/bind.h>
 
 #include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/testing/fake_driver_index.h"
@@ -59,11 +62,13 @@ class DriverRunnerTest : public DriverRunnerTestBase, public ::testing::WithPara
     }
   }
 
-  StartDriverResult StartSecondDriver(std::string_view moniker, bool colocate = false,
-                                      bool host_restart_on_crash = false,
-                                      bool use_next_vdso = false) {
+  StartDriverResult StartSecondDriver(
+      std::string_view moniker, bool colocate = false, bool host_restart_on_crash = false,
+      bool use_next_vdso = false,
+      fidl::ClientEnd<fuchsia_io::Directory> ns_svc = fidl::ClientEnd<fuchsia_io::Directory>()) {
     return DriverRunnerTestBase::StartSecondDriver(moniker, colocate, host_restart_on_crash,
-                                                   use_next_vdso, use_dynamic_linker());
+                                                   use_next_vdso, use_dynamic_linker(),
+                                                   std::move(ns_svc));
   }
 
   // If |use_dynamic_linker| is not provided, it will be generated from the test configuration.
@@ -84,6 +89,351 @@ class DriverRunnerTest : public DriverRunnerTestBase, public ::testing::WithPara
  private:
   bool use_dynamic_linker_ = false;
 };
+
+// Test RestartWithDictionaryAndPowerDependencies supplying power dependencies and cpu override
+// token.
+TEST_P(DriverRunnerTest, RestartWithPowerDependenciesAndCpuOverride) {
+  auto cleanup = fit::defer([this]() { realm().ClearCreateChildHandlers(); });
+  SetupDriverRunner();
+
+  // Enable the introspector, required for binding.
+  EnableIntrospector();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  PrepareRealmForSecondDriverComponentStart();
+  std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  bool did_bind_1 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_1](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_1 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  EXPECT_TRUE(did_bind_1);
+  StopListener& stop_listener = ServeStopListener(std::move(controller));
+
+  // Create a dictionary and power dependencies.
+  zx::eventpair d_ep1, d_ep2;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &d_ep1, &d_ep2));
+  fuchsia_component_sandbox::wire::DictionaryRef dict_ref;
+  dict_ref.token = std::move(d_ep1);
+
+  zx::event token;
+  ASSERT_EQ(zx::event::create(0, &token), ZX_OK);
+  std::vector<fuchsia_power_broker::LevelDependency> power_deps;
+  power_deps.push_back({{
+      .dependent_level = 1,
+      .requires_token = std::move(token),
+      .requires_level_by_preference = {1},
+  }});
+
+  zx::eventpair release_fence1, release_fence2;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &release_fence1, &release_fence2));
+
+  // The second driver should be restarted.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+
+  zx::event cpu_override_token;
+  ASSERT_EQ(zx::event::create(0, &cpu_override_token), ZX_OK);
+
+  driver_runner().RestartWithDictionaryAndPowerDependencies(
+      "dev.second", fidl::ToNatural(std::move(dict_ref)), std::move(power_deps),
+      std::move(cpu_override_token), std::move(release_fence2));
+
+  // Our driver should get closed.
+  while (!stop_listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
+
+  // The node should bind again now that it is restarted.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+  bool did_bind_2 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_2](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_2 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+
+  async::Loop background_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+  background_loop.StartThread("TestTopologyLoop");
+
+  auto svc_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  auto test_topology = std::make_unique<TestTopology>(background_loop.dispatcher());
+  auto svc_dir = std::make_unique<TestDirectory>(background_loop.dispatcher());
+  bool did_connect = false;
+  svc_dir->SetDirents({"fuchsia.power.broker.Topology"});
+  svc_dir->SetOpenHandler([&test_topology, &did_connect](const std::string& path,
+                                                         fidl::ServerEnd<fuchsia_io::Node> object) {
+    if (path == "fuchsia.power.broker.Topology") {
+      test_topology->Bind(fidl::ServerEnd<fuchsia_power_broker::Topology>(object.TakeChannel()));
+      did_connect = true;
+    }
+  });
+
+  libsync::Completion bound_completion;
+  async::PostTask(background_loop.dispatcher(), [&]() {
+    svc_dir->Bind(std::move(svc_endpoints.server));
+    bound_completion.Signal();
+  });
+  bound_completion.Wait();
+
+  auto [driver_2, controller_2] =
+      StartSecondDriver("dev.second", false, false, false, std::move(svc_endpoints.client));
+  {
+    auto deadline = zx::deadline_after(zx::sec(5));
+    while (!did_bind_2 && zx::clock::get_monotonic() < deadline) {
+      RunLoopUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
+  EXPECT_TRUE(did_bind_2);
+  EXPECT_TRUE(did_connect);
+  ServeStopListener(std::move(controller_2));
+
+  // Release the fence, causing the driver to restart again without dependencies.
+  release_fence1.reset();
+  release_fence2.reset();
+  RunLoopUntilIdle();
+
+  // The node should bind again after the revert.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+  bool did_bind_3 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_3](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_3 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+  auto [driver_3, controller_3] = StartSecondDriver("dev.second");
+  {
+    auto deadline = zx::deadline_after(zx::sec(5));
+    while (!did_bind_3 && zx::clock::get_monotonic() < deadline) {
+      RunLoopUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
+  EXPECT_TRUE(did_bind_3);
+  ServeStopListener(std::move(controller_3));
+
+  libsync::Completion destroy_completion;
+  async::PostTask(background_loop.dispatcher(), [&]() {
+    svc_dir.reset();
+    test_topology.reset();
+    destroy_completion.Signal();
+  });
+  destroy_completion.Wait();
+  background_loop.Quit();
+  background_loop.JoinThreads();
+
+  StopDriverComponent(std::move(root_driver->controller));
+}
+
+// Test RestartWithDictionaryAndPowerDependencies with cpu_token_override, but empty power
+// dependencies since this is allowed.
+TEST_P(DriverRunnerTest, RestartWithCpuTokenOverrideOnly) {
+  auto cleanup = fit::defer([this]() { realm().ClearCreateChildHandlers(); });
+  SetupDriverRunner();
+
+  // Enable the introspector, required for binding.
+  EnableIntrospector();
+
+  auto root_driver = StartRootDriver();
+  ASSERT_EQ(ZX_OK, root_driver.status_value());
+
+  PrepareRealmForSecondDriverComponentStart();
+  std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild("second", false, false);
+  EXPECT_TRUE(RunLoopUntilIdle());
+
+  bool did_bind_4 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_4](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_4 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+  auto [driver, controller] = StartSecondDriver("dev.second");
+  EXPECT_TRUE(did_bind_4);
+  StopListener& stop_listener = ServeStopListener(std::move(controller));
+
+  // Create a dictionary and power dependencies.
+  zx::eventpair d_ep1, d_ep2;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &d_ep1, &d_ep2));
+  fuchsia_component_sandbox::wire::DictionaryRef dict_ref;
+  dict_ref.token = std::move(d_ep1);
+
+  zx::event cpu_override_token;
+  ASSERT_EQ(zx::event::create(0, &cpu_override_token), ZX_OK);
+
+  zx::eventpair release_fence1, release_fence2;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &release_fence1, &release_fence2));
+
+  // The second driver should be restarted.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+
+  driver_runner().RestartWithDictionaryAndPowerDependencies(
+      "dev.second", fidl::ToNatural(std::move(dict_ref)), {}, std::move(cpu_override_token),
+      std::move(release_fence2));
+
+  // Our driver should get closed.
+  while (!stop_listener.is_stopped()) {
+    RunLoopUntilIdle();
+  }
+
+  // The node should bind again now that it is restarted.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+  bool did_bind_5 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_5](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_5 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+
+  async::Loop background_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+  background_loop.StartThread("TestTopologyLoop");
+
+  auto svc_endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  auto test_topology = std::make_unique<TestTopology>(background_loop.dispatcher());
+  auto svc_dir = std::make_unique<TestDirectory>(background_loop.dispatcher());
+  bool did_connect = false;
+  svc_dir->SetDirents({"fuchsia.power.broker.Topology"});
+  svc_dir->SetOpenHandler([&test_topology, &did_connect](const std::string& path,
+                                                         fidl::ServerEnd<fuchsia_io::Node> object) {
+    if (path == "fuchsia.power.broker.Topology") {
+      test_topology->Bind(fidl::ServerEnd<fuchsia_power_broker::Topology>(object.TakeChannel()));
+      did_connect = true;
+    }
+  });
+
+  libsync::Completion bound_completion;
+  async::PostTask(background_loop.dispatcher(), [&]() {
+    svc_dir->Bind(std::move(svc_endpoints.server));
+    bound_completion.Signal();
+  });
+  bound_completion.Wait();
+
+  auto [driver_2, controller_2] =
+      StartSecondDriver("dev.second", false, false, false, std::move(svc_endpoints.client));
+  {
+    auto deadline = zx::deadline_after(zx::sec(5));
+    while (!did_bind_5 && zx::clock::get_monotonic() < deadline) {
+      RunLoopUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
+  EXPECT_TRUE(did_bind_5);
+  EXPECT_TRUE(did_connect);
+  ServeStopListener(std::move(controller_2));
+
+  // Release the fence, causing the driver to restart again and restore the CPU token.
+  release_fence1.reset();
+  release_fence2.reset();
+  RunLoopUntilIdle();
+
+  // The node should bind again after the revert.
+  realm().AddCreateChildHandler([](const fdecl::CollectionRef& collection, const fdecl::Child& decl,
+                                   const std::vector<fdecl::Offer>& offers) {
+    if (collection.name() == "boot-drivers" && decl.name().value() == "dev.second" &&
+        decl.url().value() == second_driver_url) {
+      return true;
+    }
+    return false;
+  });
+  bool did_bind_6 = false;
+  child->node_controller.value()->WaitForDriver().Then(
+      [&did_bind_6](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
+          did_bind_6 = true;
+          return;
+        }
+
+        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
+                      result.error_value().FormatDescription().c_str());
+      });
+  auto [driver_3, controller_3] = StartSecondDriver("dev.second");
+  {
+    auto deadline = zx::deadline_after(zx::sec(5));
+    while (!did_bind_6 && zx::clock::get_monotonic() < deadline) {
+      RunLoopUntilIdle();
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
+  EXPECT_TRUE(did_bind_6);
+  ServeStopListener(std::move(controller_3));
+
+  libsync::Completion destroy_completion;
+  async::PostTask(background_loop.dispatcher(), [&]() {
+    svc_dir.reset();
+    test_topology.reset();
+    destroy_completion.Signal();
+  });
+  destroy_completion.Wait();
+  background_loop.Quit();
+  background_loop.JoinThreads();
+
+  StopDriverComponent(std::move(root_driver->controller));
+}
 
 // Start the root driver.
 TEST_P(DriverRunnerTest, StartRootDriver) {

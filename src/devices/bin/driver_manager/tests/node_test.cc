@@ -440,7 +440,7 @@ TEST_F(Dfv2NodeTest, StartDriverWithNamespaceTopology) {
   node_manager->set_suspend_enabled(true);
 
   driver_runner::TestDirectory svc_dir(dispatcher());
-  svc_dir.SetEntries({fidl::DiscoverableProtocolName<fuchsia_power_broker::Topology>});
+  svc_dir.SetDirents({fidl::DiscoverableProtocolName<fuchsia_power_broker::Topology>});
 
   auto [svc_client, svc_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
   svc_dir.Bind(std::move(svc_server));
