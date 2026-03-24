@@ -63,8 +63,6 @@ class PlatformSysmemConnection {
   // handle is fuchsia.sysmem2.Allocator client_end
   static std::unique_ptr<PlatformSysmemConnection> Import2(uint32_t handle);
 #endif
-  // handle is fuchsia.sysmem.Allocator client_end
-  static std::unique_ptr<PlatformSysmemConnection> Import(uint32_t handle);
 
   virtual magma_status_t AllocateBuffer(uint32_t flags, size_t size,
                                         std::unique_ptr<magma::PlatformBuffer>* buffer_out) = 0;

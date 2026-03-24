@@ -19,16 +19,6 @@ magma_status_t magma_sysmem2_connection_import(magma_handle_t channel,
 }
 #endif
 
-magma_status_t magma_sysmem_connection_import(magma_handle_t channel,
-                                              magma_sysmem_connection_t* connection_out) {
-  auto platform_connection = magma_sysmem::PlatformSysmemConnection::Import(channel);
-  if (!platform_connection) {
-    return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "Failed to create sysmem connection (sysmem(1))");
-  }
-  *connection_out = reinterpret_cast<magma_sysmem_connection_t>(platform_connection.release());
-  return MAGMA_STATUS_OK;
-}
-
 void magma_sysmem_connection_release(magma_sysmem_connection_t connection) {
   delete reinterpret_cast<magma_sysmem::PlatformSysmemConnection*>(connection);
 }

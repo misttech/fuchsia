@@ -111,14 +111,6 @@ magma_sysmem2_connection_import(magma_handle_t handle, magma_sysmem_connection_t
 #endif
 
 ///
-/// \brief Import and take ownership of a sysmem connection
-/// \param handle A channel connected to `fuchsia.sysmem.Allocator`.
-/// \param connection_out The returned sysmem connection
-///
-MAGMA_EXPORT magma_status_t
-magma_sysmem_connection_import(magma_handle_t handle, magma_sysmem_connection_t* connection_out);
-
-///
 /// \brief Release a connection to the sysmem service. Allocated buffers are allowed to outlive the
 ///        connection.
 /// \param connection The connection to release.

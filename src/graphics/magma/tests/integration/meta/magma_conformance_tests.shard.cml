@@ -15,11 +15,6 @@
     ],
     offer: [
         {
-            protocol: "fuchsia.sysmem.Allocator",
-            from: "parent",
-            to: "#test",
-        },
-        {
             protocol: "fuchsia.sysmem2.Allocator",
             from: "parent",
             to: "#test",
