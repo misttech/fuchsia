@@ -217,16 +217,15 @@ async def find_affected_tests(
         return GatheredResult(product_board, [])
 
 
-async def show_affected_tests(
+async def get_affected_targets(
     exec_env: environment.ExecutionEnvironment,
-    flags: args.Flags,
     recorder: event.EventRecorder,
-) -> None:
+) -> list[AffectedTarget]:
     """Orchestrates discovering which tests are affected by dirty files across several different configurations."""
 
     dirty_files = await get_dirty_files(exec_env.fuchsia_dir, recorder)
     if dirty_files is None:
-        return
+        return []
 
     recorder.emit_instruction_message(
         f"Found {len(dirty_files)} modified file(s)."
@@ -276,25 +275,35 @@ async def show_affected_tests(
                 *(run_find_affected(config) for config in build_configurations)
             )
 
-            label_to_configs = clean_gathered_results(results)
+            label_to_results = clean_gathered_results(results)
+            if not label_to_results:
+                return []
 
-            if not label_to_configs:
-                recorder.emit_info_message(
-                    "\nNone of your modified files affect any known tests across the 6 major configurations."
-                )
-                return
+            return format_affected_targets(label_to_results)
 
-            recorder.emit_info_message(
-                f"\nFound {len(label_to_configs)} affected test(s) matching your uncommitted files:\n"
-            )
 
-            targets = format_affected_targets(label_to_configs)
-            for target in targets:
-                recorder.emit_verbatim_message(
-                    f"{statusinfo.highlight(target.pure_label, style=flags.style)} ({', '.join(target.pb_configs)})"
-                )
+async def show_affected_tests(
+    exec_env: environment.ExecutionEnvironment,
+    flags: args.Flags,
+    recorder: event.EventRecorder,
+) -> None:
+    """Orchestrates discovering which tests are affected by dirty files across several different configurations."""
+    targets = await get_affected_targets(exec_env, recorder)
 
-                dim_cmd = statusinfo.dim(
-                    f"  > {target.command}", style=flags.style
-                )
-                recorder.emit_verbatim_message(dim_cmd)
+    if not targets:
+        recorder.emit_info_message(
+            "\nNone of your modified files affect any known tests across the 6 major configurations."
+        )
+        return
+
+    recorder.emit_info_message(
+        f"\nFound {len(targets)} affected test(s) matching your uncommitted files:\n"
+    )
+
+    for target in targets:
+        recorder.emit_verbatim_message(
+            f"{statusinfo.highlight(target.pure_label, style=flags.style)} ({', '.join(target.pb_configs)})"
+        )
+
+        dim_cmd = statusinfo.dim(f"  > {target.command}", style=flags.style)
+        recorder.emit_verbatim_message(dim_cmd)

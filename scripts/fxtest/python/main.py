@@ -603,6 +603,28 @@ class AsyncMain:
             await find_affected.show_affected_tests(exec_env, flags, recorder)
             return 0
 
+        if flags.run_affected_tests:
+            targets = await find_affected.get_affected_targets(
+                exec_env, recorder
+            )
+            if targets:
+                labels = await self._add_affected_tests(
+                    targets, exec_env, recorder
+                )
+                if labels is None:
+                    recorder.emit_end(
+                        "Failed to add affected tests to build graph"
+                    )
+                    return 1
+                if flags.selection is None:
+                    flags.selection = []
+                for label in labels:
+                    if label not in flags.selection:
+                        flags.selection.append(label)
+            else:
+                recorder.emit_info_message("\nNo affected tests found to run.")
+                return 0
+
         # Load the list of tests to execute.
         try:
             tests = await self._load_test_list()
@@ -800,6 +822,34 @@ class AsyncMain:
 
         await end_execution()
         return 0
+
+    async def _add_affected_tests(
+        self,
+        targets: list[find_affected.AffectedTarget],
+        exec_env: environment.ExecutionEnvironment,
+        recorder: event.EventRecorder,
+    ) -> list[str] | None:
+        """Runs fx add-test commands for affected targets and returns their labels.
+
+        Returns:
+            The list of test labels to add to selection.
+        """
+        recorder.emit_instruction_message(
+            f"\nAdding {len(targets)} affected test(s) to build graph..."
+        )
+        added_labels = []
+        for target in targets:
+            cmd_args = target.command.split()[1:]
+            cmd = exec_env.fx_cmd_line(*cmd_args)
+            res = await execution.run_command(*cmd, recorder=recorder)
+            if res is None or res.return_code != 0:
+                recorder.emit_warning_message(
+                    f"\nFailed to add affected test to build graph: {target.pure_label}"
+                )
+                return None
+            added_labels.append(target.pure_label)
+
+        return added_labels
 
     async def _load_test_list(
         self,

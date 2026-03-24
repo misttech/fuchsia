@@ -22,6 +22,7 @@ from parameterized import parameterized
 import args
 import environment
 import event
+import find_affected
 import log
 import main
 import test_list_file
@@ -379,6 +380,86 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             len(selection_event.selected), self.TOTAL_TESTS_IN_INPUT
         )
+
+    @mock.patch("main.execution.run_command")
+    async def test_add_affected_tests(
+        self, mock_run_command: mock.AsyncMock
+    ) -> None:
+        """Tests that _add_affected_tests executes correct add-test commands and returns labels."""
+        mock_run_command.return_value = mock.Mock(return_code=0)
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+
+        targets = [
+            find_affected.AffectedTarget(
+                "//src/sys:foo_test",
+                ["core.x64"],
+                "fx add-test //src/sys:foo_test",
+            ),
+            find_affected.AffectedTarget(
+                "//src/sys:bar_test",
+                ["core.x64"],
+                "fx add-host-test //src/sys:bar_test",
+            ),
+        ]
+
+        exec_env = mock.Mock()
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["/path/to/fx"] + list(
+            args
+        )
+
+        recorder = mock.Mock()
+
+        labels = await app._add_affected_tests(targets, exec_env, recorder)
+
+        self.assertEqual(len(labels), 2)
+        self.assertIn("//src/sys:foo_test", labels)
+        self.assertIn("//src/sys:bar_test", labels)
+
+        self.assertEqual(mock_run_command.call_count, 2)
+
+        # Verify first call adding target test
+        first_call = mock_run_command.call_args_list[0]
+        self.assertIn("add-test", first_call[0])
+        self.assertIn("//src/sys:foo_test", first_call[0])
+
+        # Verify second call adding host test
+        second_call = mock_run_command.call_args_list[1]
+        self.assertIn("add-host-test", second_call[0])
+        self.assertIn("//src/sys:bar_test", second_call[0])
+
+    @mock.patch("main.execution.run_command")
+    async def test_add_affected_tests_failure(
+        self, mock_run_command: mock.AsyncMock
+    ) -> None:
+        """Tests that _add_affected_tests returns None if run_command fails."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        targets = [
+            find_affected.AffectedTarget(
+                "//src/sys:foo_test",
+                ["core.x64"],
+                "fx add-test //src/sys:foo_test",
+            ),
+        ]
+        exec_env = mock.Mock()
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["/path/to/fx"] + list(
+            args
+        )
+        recorder = mock.Mock()
+
+        # Case 1: run_command returns None
+        mock_run_command.return_value = None
+        labels = await app._add_affected_tests(targets, exec_env, recorder)
+        self.assertIsNone(labels)
+        recorder.emit_warning_message.assert_called_once()
+
+        # Case 2: run_command returns non-zero code
+        mock_run_command.reset_mock()
+        recorder.emit_warning_message.reset_mock()
+        mock_run_command.return_value = mock.Mock(return_code=1)
+        labels = await app._add_affected_tests(targets, exec_env, recorder)
+        self.assertIsNone(labels)
+        recorder.emit_warning_message.assert_called_once()
 
     async def test_fuzzy_dry_run(self) -> None:
         """Test a dry run of the command for fuzzy matching"""

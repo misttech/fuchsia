@@ -64,6 +64,7 @@ class Flags:
 
     dry: bool
     show_affected_tests: bool
+    run_affected_tests: bool
     list: bool
     list_runtime_deps: bool
     previous: PrevOption | None
@@ -317,6 +318,11 @@ def parse_args(
         "--show-affected-tests",
         action="store_true",
         help="Do not actually run tests. Instead print affected tests spanning from the current dirty repository state.",
+    )
+    utility.add_argument(
+        "--run-affected-tests",
+        action="store_true",
+        help="Automatically add and run tests affected by the current dirty repository state.",
     )
     utility.add_argument(
         "--dry",
