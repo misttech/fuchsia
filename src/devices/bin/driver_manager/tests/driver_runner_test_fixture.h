@@ -12,6 +12,9 @@
 #include <fidl/fuchsia.driver.host/cpp/test_base.h>
 #include <fidl/fuchsia.driver.token/cpp/test_base.h>
 #include <fidl/fuchsia.io/cpp/test_base.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
+#include <fidl/fuchsia.power.broker/cpp/test_base.h>
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fit/defer.h>
@@ -114,6 +117,46 @@ struct CreatedChild {
 void CheckNode(const inspect::Hierarchy& hierarchy, const NodeChecker& checker);
 
 class TestRealm;
+class TestElementControl : public fidl::testing::TestBase<fuchsia_power_broker::ElementControl> {
+ public:
+  void RegisterDependencyToken(RegisterDependencyTokenRequest& request,
+                               RegisterDependencyTokenCompleter::Sync& completer) override {
+    completer.Reply(zx::ok());
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementControl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: ElementControl::%s\n", name.data());
+  }
+};
+
+class TestLessor : public fidl::testing::TestBase<fuchsia_power_broker::Lessor> {
+ public:
+  void Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Lessor> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: Lessor::%s\n", name.data());
+  }
+};
+
+class TestTopology : public fidl::testing::TestBase<fuchsia_power_broker::Topology> {
+ public:
+  void AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) override;
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    printf("Not implemented: Topology::%s\n", name.data());
+  }
+};
+
 class TestController final : public fidl::testing::TestBase<fuchsia_component::Controller> {
  public:
   explicit TestController(TestRealm* parent, std::string_view name, std::string_view collection,
@@ -248,8 +291,18 @@ class TestDirectory final : public fidl::testing::TestBase<fio::Directory> {
 
   void SetOpenHandler(OpenHandler open_handler) { open_handler_ = std::move(open_handler); }
 
+  void SetEntries(std::vector<std::string> entries) { dirents_ = std::move(entries); }
+
  private:
   void Open(OpenRequest& request, OpenCompleter::Sync& completer) override;
+
+  void ReadDirents(ReadDirentsRequest& request, ReadDirentsCompleter::Sync& completer) override;
+
+  void Rewind(RewindCompleter::Sync& completer) override;
+
+  void Clone(CloneRequest& request, CloneCompleter::Sync& completer) override;
+
+  void Watch(WatchRequest& request, WatchCompleter::Sync& completer) override;
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fio::Directory>,
                              fidl::UnknownMethodCompleter::Sync&) override;
@@ -261,6 +314,9 @@ class TestDirectory final : public fidl::testing::TestBase<fio::Directory> {
   async_dispatcher_t* dispatcher_;
   fidl::ServerBindingGroup<fio::Directory> bindings_;
   OpenHandler open_handler_;
+  std::vector<std::string> dirents_;
+  bool read_dirents_called_ = false;
+  bool rewind_next_ = false;
 };
 
 struct Driver {

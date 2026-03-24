@@ -226,6 +226,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void OnMatchError(zx_status_t status);
   void OnStartError(zx_status_t status);
 
+  void SearchNamespaceSvcDirForEntry(
+      fidl::ClientEnd<fuchsia_io::Directory> svc_dir, std::string_view entry_name,
+      fit::callback<void(zx::result<fidl::ClientEnd<fuchsia_io::Directory>>)> cb);
+
   bool HasDriverComponentController() const override { return component_controller_.is_valid(); }
 
   bool is_bound() const { return std::holds_alternative<DriverComponent>(state_); }

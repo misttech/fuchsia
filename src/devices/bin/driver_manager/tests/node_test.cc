@@ -19,6 +19,7 @@
 
 #include "src/devices/bin/driver_manager/driver_host.h"
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
+#include "src/devices/bin/driver_manager/tests/driver_runner_test_fixture.h"
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -226,11 +227,16 @@ class FakeNodeManager : public TestNodeManagerBase {
       driver_manager::Collection for_collection,
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
       fit::callback<void(zx::result<bool>)> cb) override {
+    last_topology_client_ = std::move(topology_client);
     if (defer_power_element_creation_) {
       power_element_callbacks_.push_back(std::move(cb));
       return;
     }
     cb(zx::ok(false));
+  }
+
+  std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>>& last_topology_client() {
+    return last_topology_client_;
   }
 
   void CloseDriverForNode(std::string node_name) { driver_host_.CloseDriver(node_name); }
@@ -256,6 +262,9 @@ class FakeNodeManager : public TestNodeManagerBase {
   int create_driver_host_calls() const { return create_driver_host_calls_; }
   void set_defer_power_element_creation(bool defer) { defer_power_element_creation_ = defer; }
 
+  bool SuspendEnabled() override { return suspend_enabled_; }
+  void set_suspend_enabled(bool enabled) { suspend_enabled_ = enabled; }
+
   void RunPendingPowerElementCallbacks() {
     for (auto& cb : power_element_callbacks_) {
       cb(zx::ok(false));
@@ -274,7 +283,9 @@ class FakeNodeManager : public TestNodeManagerBase {
   int create_driver_host_calls_ = 0;
   std::unordered_map<std::string, driver_manager::DriverHost*> hosts_;
   bool defer_power_element_creation_ = false;
+  bool suspend_enabled_ = false;
   std::vector<fit::callback<void(zx::result<bool>)>> power_element_callbacks_;
+  std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> last_topology_client_;
 };
 
 void TestController::Destroy(DestroyCompleter::Sync& completer) {
@@ -375,6 +386,7 @@ class Dfv2NodeTest : public DriverManagerTestBase {
     node->StartDriver(fidl::ToWire(arena, std::move(start_info)),
                       std::move(component_controller_endpoints.server),
                       [node](zx::result<> result) { node->CompleteBind(result); });
+    RunLoopUntilIdle();
   }
 
  protected:
@@ -388,6 +400,21 @@ class Dfv2NodeTest : public DriverManagerTestBase {
     return {std::move(device_controller_endpoints->client), dispatcher()};
   }
 
+  void StartTestDriverWithStartInfo(const std::shared_ptr<driver_manager::Node>& node,
+                                    fuchsia_component_runner::wire::ComponentStartInfo start_info) {
+    auto component_controller_endpoints =
+        fidl::Endpoints<fuchsia_component_runner::ComponentController>::Create();
+    node_manager->AddClient(node->name(), std::move(component_controller_endpoints.client));
+
+    auto controller_endpoints = fidl::Endpoints<fuchsia_component::Controller>::Create();
+    node_manager->StoreComponentHandle(node->name(), std::move(controller_endpoints.server));
+    node->SetController(std::move(controller_endpoints.client));
+
+    node->StartDriver(std::move(start_info), std::move(component_controller_endpoints.server),
+                      [node](zx::result<> result) { node->CompleteBind(result); });
+    RunLoopUntilIdle();
+  }
+
   driver_manager::NodeManager* GetNodeManager() override { return node_manager.get(); }
 
   std::unique_ptr<FakeNodeManager> node_manager;
@@ -396,6 +423,39 @@ class Dfv2NodeTest : public DriverManagerTestBase {
   std::unique_ptr<TestRealm> realm_;
   fidl::ServerBindingGroup<fuchsia_device::Controller> device_controller_bindings_;
 };
+
+TEST_F(Dfv2NodeTest, StartDriverWithNamespaceTopology) {
+  auto node = CreateNode("test");
+
+  node_manager->set_suspend_enabled(true);
+
+  driver_runner::TestDirectory svc_dir(dispatcher());
+  svc_dir.SetEntries({fidl::DiscoverableProtocolName<fuchsia_power_broker::Topology>});
+
+  auto [svc_client, svc_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  svc_dir.Bind(std::move(svc_server));
+
+  fidl::Arena arena;
+  fidl::VectorView<fuchsia_component_runner::wire::ComponentNamespaceEntry> ns(arena, 1);
+  ns[0] = fuchsia_component_runner::wire::ComponentNamespaceEntry::Builder(arena)
+              .path("/svc")
+              .directory(std::move(svc_client))
+              .Build();
+
+  auto program = fuchsia_data::wire::Dictionary::Builder(arena).Build();
+  auto start_info = fuchsia_component_runner::wire::ComponentStartInfo::Builder(arena)
+                        .resolved_url("fuchsia-boot:///#meta/test-driver.cm")
+                        .ns(ns)
+                        .program(program)
+                        .Build();
+
+  printf("Test: ns[0].directory is_valid: %d\n", start_info.ns()[0].directory().is_valid());
+
+  StartTestDriverWithStartInfo(node, std::move(start_info));
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(node_manager->last_topology_client().has_value());
+}
 
 TEST_F(Dfv2NodeTest, StartDriverRaceCondition) {
   auto parent = CreateNode("parent");
@@ -458,6 +518,7 @@ TEST_F(Dfv2NodeTest, StartDriverRaceCondition) {
 
   // Run the callbacks.
   node_manager->RunPendingPowerElementCallbacks();
+  RunLoopUntilIdle();
 
   // Only one driver host should be created.
   ASSERT_EQ(initial_calls + 1, node_manager->create_driver_host_calls());

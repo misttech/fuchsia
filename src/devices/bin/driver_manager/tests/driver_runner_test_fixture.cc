@@ -117,6 +117,15 @@ fidl::AnyTeardownObserver TeardownWatcher(size_t index, std::vector<size_t>& ind
   return fidl::ObserveTeardown([&indices = indices, index] { indices.emplace_back(index); });
 }
 
+void TestLessor::Lease(LeaseRequest& request, LeaseCompleter::Sync& completer) {
+  auto [client, server] = fidl::Endpoints<fuchsia_power_broker::LeaseControl>::Create();
+  completer.Reply(zx::ok(std::move(client)));
+}
+
+void TestTopology::AddElement(AddElementRequest& request, AddElementCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
 TestController::TestController(TestRealm* parent, std::string_view name,
                                std::string_view collection,
                                fidl::ServerEnd<fcomponent::Controller> controller,
@@ -179,10 +188,11 @@ void TestRealm::CreateChild(CreateChildRequest& request, CreateChildCompleter::S
   }
 
   auto offers = request.args().dynamic_offers();
-  create_child_handler_(
-      std::move(request.collection()), std::move(request.decl()),
-      offers.has_value() ? std::move(offers.value()) : std::vector<fdecl::Offer>{});
-  completer.Reply(fidl::Response<fcomponent::Realm::CreateChild>(fit::ok()));
+  if (create_child_handler_) {
+    create_child_handler_(request.collection(), request.decl(),
+                          offers.has_value() ? offers.value() : std::vector<fdecl::Offer>{});
+  }
+  completer.Reply(fit::ok());
 }
 
 void TestRealm::OpenExposedDir(OpenExposedDirRequest& request,
@@ -800,9 +810,68 @@ void TestIntrospector::GetMoniker(GetMonikerRequest& request,
 void TestDirectory::Bind(fidl::ServerEnd<fio::Directory> request) {
   bindings_.AddBinding(dispatcher_, std::move(request), this, fidl::kIgnoreBindingClosure);
 }
+
 void TestDirectory::Open(OpenRequest& request, OpenCompleter::Sync& completer) {
-  open_handler_(request.path(), fidl::ServerEnd<fio::Node>(std::move(request.object())));
+  if (open_handler_) {
+    open_handler_(request.path(), fidl::ServerEnd<fio::Node>(std::move(request.object())));
+  }
 }
+
+void TestDirectory::ReadDirents(ReadDirentsRequest& request,
+                                ReadDirentsCompleter::Sync& completer) {
+  if (read_dirents_called_ || dirents_.empty()) {
+    completer.Reply(fio::DirectoryReadDirentsResponse(ZX_OK, std::vector<uint8_t>{}));
+    return;
+  }
+  read_dirents_called_ = true;
+
+  // Create directory entries according to the format in fuchsia.io/Directory.ReadDirents.
+  std::vector<uint8_t> data;
+  for (auto& name : dirents_) {
+    size_t size = name.size();
+    size_t start = data.size();
+    data.resize(start + 10 + size);
+
+    // ino = 0 (8 bytes)
+    memset(data.data() + start, 0, 8);
+    // size (1 byte)
+    data[start + 8] = static_cast<uint8_t>(size);
+    // type (1 byte, 0 = unknown)
+    data[start + 9] = 0;
+    // name
+    memcpy(data.data() + start + 10, name.data(), size);
+  }
+  completer.Reply(fio::DirectoryReadDirentsResponse(ZX_OK, data));
+}
+
+void TestDirectory::Rewind(RewindCompleter::Sync& completer) {
+  read_dirents_called_ = false;
+  rewind_next_ = true;
+  completer.Reply(fio::DirectoryRewindResponse(ZX_OK));
+}
+
+void TestDirectory::Clone(CloneRequest& request, CloneCompleter::Sync& completer) {
+  bindings_.AddBinding(dispatcher_,
+                       fidl::ServerEnd<fio::Directory>(request.request().TakeChannel()), this,
+                       fidl::kIgnoreBindingClosure);
+}
+
+void TestDirectory::Watch(WatchRequest& request, WatchCompleter::Sync& completer) {
+  std::vector<uint8_t> buffer;
+  for (const auto& entry : dirents_) {
+    buffer.push_back(static_cast<uint8_t>(fuchsia_io::wire::WatchEvent::kExisting));
+    buffer.push_back(static_cast<uint8_t>(entry.size()));
+    for (char c : entry) {
+      buffer.push_back(static_cast<uint8_t>(c));
+    }
+  }
+  buffer.push_back(static_cast<uint8_t>(fuchsia_io::wire::WatchEvent::kIdle));
+  buffer.push_back(0);
+  request.watcher().channel().write(0, buffer.data(), static_cast<uint32_t>(buffer.size()), nullptr,
+                                    0);
+  completer.Reply(ZX_OK);
+}
+
 void TestDirectory::handle_unknown_method(fidl::UnknownMethodMetadata<fio::Directory>,
                                           fidl::UnknownMethodCompleter::Sync&) {}
 void TestDriver::Stop(StopCompleter::Sync& completer) {
@@ -811,6 +880,7 @@ void TestDriver::Stop(StopCompleter::Sync& completer) {
     driver_binding_.Close(ZX_OK);
   }
 }
+
 std::shared_ptr<CreatedChild> TestDriver::AddChild(std::string_view child_name, bool owned,
                                                    bool expect_error,
                                                    const std::string& class_name) {
@@ -825,6 +895,7 @@ std::shared_ptr<CreatedChild> TestDriver::AddChild(std::string_view child_name, 
                   .Build();
   return AddChild(fidl::ToNatural(args), owned, expect_error);
 }
+
 std::shared_ptr<CreatedChild> TestDriver::AddChild(fdfw::NodeAddArgs child_args, bool owned,
                                                    bool expect_error) {
   auto controller_endpoints = fidl::Endpoints<fdfw::NodeController>::Create();
