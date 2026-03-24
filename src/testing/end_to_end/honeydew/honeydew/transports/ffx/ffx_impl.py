@@ -394,6 +394,7 @@ class FfxImpl(ffx_interface.FFX):
         include_target_name: bool = False,
         machine: MachineFormat = MachineFormat.JSON,
         log_status_on_failure: bool = True,
+        disable_controlmaster: bool = False,
     ) -> str:
         """Runs an FFX command.
 
@@ -431,6 +432,7 @@ class FfxImpl(ffx_interface.FFX):
             include_target=include_target,
             include_target_name=include_target_name,
             machine=machine,
+            disable_controlmaster=disable_controlmaster,
         )
         try:
             # TODO(b/484362368): when machine == `JSON`, we should parse the output
@@ -597,6 +599,7 @@ class FfxImpl(ffx_interface.FFX):
         self.run(
             cmd=_FFX_CMDS["TARGET_WAIT"],
             include_target_name=include_target_name,
+            disable_controlmaster=True,
         )
 
         _LOGGER.info("%s is connected to host", self._log_name)
@@ -612,7 +615,7 @@ class FfxImpl(ffx_interface.FFX):
         _LOGGER.info(
             "Waiting for %s to disconnect from host...", self._log_name
         )
-        self.run(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"])
+        self.run(cmd=_FFX_CMDS["TARGET_WAIT_DOWN"], disable_controlmaster=True)
         _LOGGER.info("%s is not connected to host", self._log_name)
 
         return
@@ -672,6 +675,7 @@ class FfxImpl(ffx_interface.FFX):
         include_target: bool = True,
         include_target_name: bool = False,
         machine: MachineFormat = MachineFormat.JSON,
+        disable_controlmaster: bool = False,
     ) -> list[str]:
         """Generates the FFX command that need to be run.
 
@@ -702,6 +706,9 @@ class FfxImpl(ffx_interface.FFX):
         # Don't add "--machine" if the machine type is already specified
         if "--machine" not in cmd:
             ffx_args.extend(["--machine", str(machine)])
+
+        if disable_controlmaster:
+            ffx_args.extend(["-c", "ssh.controlmaster.mode=none"])
 
         # Add log file path
         ffx_args.extend(["-o", str(Path(self.config.logs_dir) / "ffx.log")])
