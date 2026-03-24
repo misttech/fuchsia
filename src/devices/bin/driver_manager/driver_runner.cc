@@ -1202,6 +1202,10 @@ void DriverRunner::CreatePowerElement(
     return;
   }
 
+  if (cpu_token_override.has_value()) {
+    cpu_callbacks_or_token_ = std::move(cpu_token_override.value());
+  }
+
   PowerDependencyToken* cpu_token = std::get_if<PowerDependencyToken>(&cpu_callbacks_or_token_);
   if (!cpu_token) {
     std::get<CallbackSet>(cpu_callbacks_or_token_)

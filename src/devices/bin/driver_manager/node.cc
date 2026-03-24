@@ -1835,50 +1835,63 @@ void Node::StartDriver(
   // Only create a series of dependencies if this is a suspend-enabled platform. On non-enabled
   // platforms we'll use an empty vector for the rest of this function, which is valid. The
   // rest of the driver start code also has checks so it works properly on non-enabled platforms.
-  if ((*node_manager_)->SuspendEnabled()) {
-    std::span<const std::weak_ptr<Node>> parent_nodes = parents();
-    std::queue<std::weak_ptr<Node>> ancestors;
-    for (auto parent : parent_nodes) {
-      ancestors.push(parent);
-    }
-
-    std::unordered_set<zx_handle_t> visited_ancestor_koids;
-
-    // Collect dependencies on the most immediate ancestor nodes which have attached drivers.
-    // A parent driver might give us a valid token if:
-    //   * the parent went away after we identified it
-    //   * the parent failed registering a dependency token when it was created
-    //   * duplication of the parent's dependency token fails
-    while (!ancestors.empty()) {
-      std::shared_ptr<Node> ancestor = ancestors.front().lock();
-      ancestors.pop();
-      if (!ancestor) {
-        continue;
-      }
-
-      if (!ancestor->is_bound()) {
-        for (const auto& elder : ancestor->parents()) {
-          ancestors.push(elder);
+  if ((*node_manager_)->SuspendEnabled() || power_dependency_overrides_.has_value()) {
+    if (power_dependency_overrides_.has_value()) {
+      for (const auto& dep : power_dependency_overrides_.value()) {
+        fuchsia_power_broker::DependencyToken clone;
+        zx_status_t dupe_result = dep.requires_token().duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+        if (dupe_result != ZX_OK) {
+          fdf_log::error("Power token duplicate failed for node: {}", std::string(url));
+          cb(zx::error(dupe_result));
+          return;
         }
-        continue;
+        deps.push_back(std::move(clone));
+      }
+    } else {
+      std::span<const std::weak_ptr<Node>> parent_nodes = parents();
+      std::queue<std::weak_ptr<Node>> ancestors;
+      for (auto parent : parent_nodes) {
+        ancestors.push(parent);
       }
 
-      // Prevent multiple dependencies on the same ancestor.
-      if (visited_ancestor_koids.contains(ancestor->GetPowerTokenHandle())) {
-        // We arrived back at the same ancestors through multiple parents.
-        continue;
-      }
+      std::unordered_set<zx_handle_t> visited_ancestor_koids;
 
-      zx::event token_copy = ancestor->DuplicatePowerToken();
-      if (!token_copy.is_valid()) {
-        fdf_log::error("Power token invalid on suspend-enabled platform for node: {}",
-                       std::string(url));
-        cb(zx::error(ZX_ERR_BAD_STATE));
-        return;
-      }
+      // Collect dependencies on the most immediate ancestor nodes which have attached drivers.
+      // A parent driver might give us a valid token if:
+      //   * the parent went away after we identified it
+      //   * the parent failed registering a dependency token when it was created
+      //   * duplication of the parent's dependency token fails
+      while (!ancestors.empty()) {
+        std::shared_ptr<Node> ancestor = ancestors.front().lock();
+        ancestors.pop();
+        if (!ancestor) {
+          continue;
+        }
 
-      visited_ancestor_koids.insert(ancestor->GetPowerTokenHandle());
-      deps.push_back(std::move(token_copy));
+        if (!ancestor->is_bound()) {
+          for (const auto& elder : ancestor->parents()) {
+            ancestors.push(elder);
+          }
+          continue;
+        }
+
+        // Prevent multiple dependencies on the same ancestor.
+        if (visited_ancestor_koids.contains(ancestor->GetPowerTokenHandle())) {
+          // We arrived back at the same ancestors through multiple parents.
+          continue;
+        }
+
+        zx::event token_copy = ancestor->DuplicatePowerToken();
+        if (!token_copy.is_valid()) {
+          fdf_log::error("Power token invalid on suspend-enabled platform for node: {}",
+                         std::string(url));
+          cb(zx::error(ZX_ERR_BAD_STATE));
+          return;
+        }
+
+        visited_ancestor_koids.insert(ancestor->GetPowerTokenHandle());
+        deps.push_back(std::move(token_copy));
+      }
     }
   }
 
@@ -1903,6 +1916,14 @@ void Node::StartDriver(
 
   auto url_str = std::string(start_info.resolved_url().get());
 
+  std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override;
+  if (cpu_token_override_.has_value()) {
+    fuchsia_power_broker::DependencyToken clone_token;
+    ZX_ASSERT_MSG(cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone_token) == ZX_OK,
+                  "Event duplication failed for cpu token override");
+    cpu_token_override = std::move(clone_token);
+  }
+
   fit::callback<void(zx::result<std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>>>)>
       do_start_driver = [weak_self = weak_from_this(), handles_ptr = handles_ptr,
                          cb = std::move(cb), use_dynamic_linker = use_dynamic_linker, url = url_str,
@@ -1915,7 +1936,8 @@ void Node::StartDriver(
                          deps = std::move(deps),
                          element_control_server = std::move(element_control_server),
                          element_runner_client = std::move(element_runner_client),
-                         lessor_server = std::move(lessor_server)](
+                         lessor_server = std::move(lessor_server),
+                         cpu_token_override = std::move(cpu_token_override)](
                             zx::result<
                                 std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>>>
                                 topology_client) mutable {
@@ -1935,7 +1957,7 @@ void Node::StartDriver(
             ->CreatePowerElement(
                 std::move(topology_channel), self->name_, std::move(clone), std::move(deps),
                 std::move(element_control_server), std::move(element_runner_client),
-                std::move(lessor_server), self->collection(), std::nullopt,
+                std::move(lessor_server), self->collection(), std::move(cpu_token_override),
                 [weak_self = self->weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
                  use_dynamic_linker = use_dynamic_linker, url = url,
                  found_driver_host = found_driver_host,

@@ -228,6 +228,8 @@ class FakeNodeManager : public TestNodeManagerBase {
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
       fit::callback<void(zx::result<bool>)> cb) override {
     last_topology_client_ = std::move(topology_client);
+    last_deps_ = std::move(deps);
+    last_cpu_token_override_ = std::move(cpu_token_override);
     if (defer_power_element_creation_) {
       power_element_callbacks_.push_back(std::move(cb));
       return;
@@ -237,6 +239,12 @@ class FakeNodeManager : public TestNodeManagerBase {
 
   std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>>& last_topology_client() {
     return last_topology_client_;
+  }
+
+  const std::vector<fuchsia_power_broker::DependencyToken>& last_deps() const { return last_deps_; }
+
+  const std::optional<fuchsia_power_broker::DependencyToken>& last_cpu_token_override() const {
+    return last_cpu_token_override_;
   }
 
   void CloseDriverForNode(std::string node_name) { driver_host_.CloseDriver(node_name); }
@@ -286,6 +294,8 @@ class FakeNodeManager : public TestNodeManagerBase {
   bool suspend_enabled_ = false;
   std::vector<fit::callback<void(zx::result<bool>)>> power_element_callbacks_;
   std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> last_topology_client_;
+  std::vector<fuchsia_power_broker::DependencyToken> last_deps_;
+  std::optional<fuchsia_power_broker::DependencyToken> last_cpu_token_override_;
 };
 
 void TestController::Destroy(DestroyCompleter::Sync& completer) {
@@ -455,6 +465,51 @@ TEST_F(Dfv2NodeTest, StartDriverWithNamespaceTopology) {
 
   RunLoopUntilIdle();
   ASSERT_TRUE(node_manager->last_topology_client().has_value());
+}
+
+TEST_F(Dfv2NodeTest, StartDriverWithPowerDependencyOverrides) {
+  auto node = CreateNode("test");
+
+  zx::event cpu_token;
+  ASSERT_EQ(zx::event::create(0, &cpu_token), ZX_OK);
+  zx::event cpu_token_copy;
+  ASSERT_EQ(cpu_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &cpu_token_copy), ZX_OK);
+  node->SetCpuTokenOverride(std::move(cpu_token_copy));
+
+  zx::event dep_token;
+  ASSERT_EQ(zx::event::create(0, &dep_token), ZX_OK);
+  zx::event dep_token_copy;
+  ASSERT_EQ(dep_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &dep_token_copy), ZX_OK);
+
+  std::vector<fuchsia_power_broker::LevelDependency> overrides;
+  overrides.push_back({{
+      .dependent_level = 1,
+      .requires_token = std::move(dep_token_copy),
+      .requires_level_by_preference = {1},
+  }});
+  node->SetPowerDependencyOverrides(std::move(overrides));
+
+  StartTestDriver(node);
+
+  ASSERT_EQ(1u, node_manager->last_deps().size());
+  zx_info_handle_basic_t info;
+  ASSERT_EQ(node_manager->last_deps()[0].get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info),
+                                                  nullptr, nullptr),
+            ZX_OK);
+  zx_info_handle_basic_t expected_info;
+  ASSERT_EQ(dep_token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info), nullptr,
+                               nullptr),
+            ZX_OK);
+  ASSERT_EQ(info.koid, expected_info.koid);
+
+  ASSERT_TRUE(node_manager->last_cpu_token_override().has_value());
+  ASSERT_EQ(node_manager->last_cpu_token_override()->get_info(ZX_INFO_HANDLE_BASIC, &info,
+                                                              sizeof(info), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(cpu_token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info), nullptr,
+                               nullptr),
+            ZX_OK);
+  ASSERT_EQ(info.koid, expected_info.koid);
 }
 
 TEST_F(Dfv2NodeTest, StartDriverRaceCondition) {

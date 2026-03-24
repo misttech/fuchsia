@@ -417,6 +417,15 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     subtree_dictionary_ref_ = subtree_dictionary_ref;
   }
 
+  /// Sets the power dependency overrides for this node. These overrides will be
+  /// used instead of the default power dependencies when the driver is started.
+  /// This is primarily intended for use in tests via the driver restart flow,
+  /// allowing tests to provide isolated or custom dependencies.
+  void SetPowerDependencyOverrides(std::optional<std::vector<fuchsia_power_broker::LevelDependency>>
+                                       power_dependency_overrides) {
+    power_dependency_overrides_ = std::move(power_dependency_overrides);
+  }
+
   void MarkAsCompositeParent() { state_ = CompositeParent{}; }
 
   void UnmarkAsCompositeParent() { state_ = Unbound{}; }
@@ -429,6 +438,13 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     std::optional<fuchsia_component_sandbox::DictionaryRef> temp;
     std::swap(temp, offers_dictionary_);
     return temp;
+  }
+
+  /// Sets the CPU token override for this node. This token will be used to
+  /// create a dependency on the CPU power element when the driver is started.
+  /// Like SetPowerDependencyOverrides, this is primarily meant for test scenarios.
+  void SetCpuTokenOverride(std::optional<zx::event> token) {
+    cpu_token_override_ = std::move(token);
   }
 
   const Collection& collection() const { return collection_; }
@@ -700,6 +716,13 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // load into.
   std::string driver_host_name_for_colocation_;
   fit::nullable<DriverHost*> driver_host_;
+
+  /// Resets the power handles for this node. This should be called when the
+  /// power element needs to be recreated.
+  void ResetPowerHandles() { pe_handles_ = std::nullopt; }
+
+  std::optional<std::vector<fuchsia_power_broker::LevelDependency>> power_dependency_overrides_;
+  std::optional<zx::event> cpu_token_override_;
 
   // An outstanding rebind request.
   fit::callback<void(zx::result<>)> pending_bind_completer_;
