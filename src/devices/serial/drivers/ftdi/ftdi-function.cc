@@ -3,14 +3,8 @@
 // found in the LICENSE file.
 
 #include <assert.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/driver.h>
-#include <lib/ddk/metadata.h>
-#include <lib/ddk/platform-defs.h>
-#include <lib/zircon-internal/thread_annotations.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <lib/driver/component/cpp/node_properties.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,15 +12,11 @@
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
 
-#include <atomic>
 #include <memory>
 #include <vector>
 
-#include <ddktl/device.h>
-#include <fbl/algorithm.h>
-#include <fbl/auto_lock.h>
-#include <fbl/condition_variable.h>
-#include <fbl/mutex.h>
+#include <bind/fuchsia/cpp/bind.h>
+#include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/hid.h>
 #include <usb/peripheral.h>
 #include <usb/request-cpp.h>
@@ -35,48 +25,38 @@
 #define BULK_MAX_PACKET 512
 #define FTDI_STATUS_SIZE 2
 
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_export.h>
+
 namespace fake_ftdi_function {
 
-class FakeFtdiFunction;
-using DeviceType = ddk::Device<FakeFtdiFunction, ddk::Unbindable>;
-class FakeFtdiFunction : public DeviceType {
+class FakeFtdiFunction : public fdf::DriverBase,
+                         public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  FakeFtdiFunction(zx_device_t* parent) : DeviceType(parent), function_(parent) {}
-  zx_status_t Bind();
-  // |ddk::Device|
-  void DdkUnbind(ddk::UnbindTxn txn);
-  // |ddk::Device|
-  void DdkRelease();
+  FakeFtdiFunction(fdf::DriverStartArgs start_args,
+                   fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : fdf::DriverBase("ftdi-fake-usb", std::move(start_args), std::move(driver_dispatcher)) {}
 
-  static size_t UsbFunctionInterfaceGetDescriptorsSize(void* ctx);
+  zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  static void UsbFunctionInterfaceGetDescriptors(void* ctx, uint8_t* out_descriptors_buffer,
-                                                 size_t descriptors_size,
-                                                 size_t* out_descriptors_actual);
-  static zx_status_t UsbFunctionInterfaceControl(void* ctx, const usb_setup_t* setup,
-                                                 const uint8_t* write_buffer, size_t write_size,
-                                                 uint8_t* out_read_buffer, size_t read_size,
-                                                 size_t* out_read_actual);
-  static zx_status_t UsbFunctionInterfaceSetConfigured(void* ctx, bool configured,
-                                                       usb_speed_t speed);
-  static zx_status_t UsbFunctionInterfaceSetInterface(void* ctx, uint8_t interface,
-                                                      uint8_t alt_setting);
+  // fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface>
+  void Control(fuchsia_hardware_usb_function::UsbFunctionInterfaceControlRequest& request,
+               ControlCompleter::Sync& completer) override;
+  void SetConfigured(
+      fuchsia_hardware_usb_function::UsbFunctionInterfaceSetConfiguredRequest& request,
+      SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(fuchsia_hardware_usb_function::UsbFunctionInterfaceSetInterfaceRequest& request,
+                    SetInterfaceCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
-  int Thread();
-  void DataInComplete() TA_REQ(mtx_);
-  void DataOutComplete() TA_REQ(mtx_);
-  void RequestQueue(usb_request_t* req, const usb_request_complete_callback_t* completion);
-  void CompletionCallback(usb_request_t* req);
+  void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
+  void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
-  usb_function_interface_protocol_ops_t function_interface_ops_{
-      .get_descriptors_size = UsbFunctionInterfaceGetDescriptorsSize,
-      .get_descriptors = UsbFunctionInterfaceGetDescriptors,
-      .control = UsbFunctionInterfaceControl,
-      .set_configured = UsbFunctionInterfaceSetConfigured,
-      .set_interface = UsbFunctionInterfaceSetInterface,
-  };
-  ddk::UsbFunctionProtocolClient function_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
   struct fake_ftdi_descriptor_t {
     usb_interface_descriptor_t interface;
@@ -86,163 +66,154 @@ class FakeFtdiFunction : public DeviceType {
 
   size_t descriptor_size_ = 0;
 
-  size_t parent_req_size_ = 0;
   uint8_t bulk_out_addr_ = 0;
   uint8_t bulk_in_addr_ = 0;
 
-  std::optional<usb::Request<>> data_in_req_ TA_GUARDED(mtx_);
-  bool data_in_req_complete_ TA_GUARDED(mtx_) = false;
-
-  std::optional<usb::Request<>> data_out_req_ TA_GUARDED(mtx_);
-  bool data_out_req_complete_ TA_GUARDED(mtx_) = false;
-
-  fbl::ConditionVariable event_ TA_GUARDED(mtx_);
-  fbl::Mutex mtx_;
+  usb::EndpointClient<FakeFtdiFunction> bulk_in_ep_{usb::EndpointType::BULK, this,
+                                                    std::mem_fn(&FakeFtdiFunction::InComplete)};
+  usb::EndpointClient<FakeFtdiFunction> bulk_out_ep_{usb::EndpointType::BULK, this,
+                                                     std::mem_fn(&FakeFtdiFunction::OutComplete)};
 
   bool configured_ = false;
   bool active_ = false;
-  thrd_t thread_ = {};
-  std::atomic<int> pending_request_count_ = 0;
 };
 
-void FakeFtdiFunction::CompletionCallback(usb_request_t* req) {
-  fbl::AutoLock lock(&mtx_);
-  if (req == data_in_req_->request()) {
-    data_in_req_complete_ = true;
-  } else if (req == data_out_req_->request()) {
-    data_out_req_complete_ = true;
+void FakeFtdiFunction::InComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    if (completion.request()) {
+      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(*completion.request())));
+    }
   }
-  event_.Signal();
 }
 
-void FakeFtdiFunction::RequestQueue(usb_request_t* req,
-                                    const usb_request_complete_callback_t* completion) {
-  atomic_fetch_add(&pending_request_count_, 1);
-  function_.RequestQueue(req, completion);
+void FakeFtdiFunction::OutComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    if (completion.status() && *completion.status() != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "OutComplete error: %s",
+               zx_status_get_string(*completion.status()));
+      continue;
+    }
+
+    if (!completion.transfer_size() || *completion.transfer_size() == 0) {
+      continue;
+    }
+
+    size_t size = *completion.transfer_size();
+    std::vector<uint8_t> data(size);
+
+    usb::FidlRequest req(std::move(*completion.request()));
+    req.CopyFrom(0, data.data(), size, bulk_out_ep_.GetMappedLocked());
+
+    auto in_req = bulk_in_ep_.GetRequest();
+    if (in_req) {
+      in_req->CopyTo(FTDI_STATUS_SIZE, data.data(), size, bulk_in_ep_.GetMappedLocked());
+      auto& d = (*in_req->operator->()->data())[0];
+      d.size(size + FTDI_STATUS_SIZE);
+
+      std::vector<fuchsia_hardware_usb_request::Request> in_reqs;
+      in_reqs.push_back(in_req->take_request());
+      fit::result<fidl::OneWayError> result = bulk_in_ep_->QueueRequests({std::move(in_reqs)});
+      if (result.is_error()) {
+        FDF_LOGL(ERROR, logger(), "QueueRequests IN failed: %s",
+                 result.error_value().FormatDescription().c_str());
+      }
+    }
+
+    // Re-queue OUT request
+    auto& out_d = (*req.operator->()->data())[0];
+    out_d.size(BULK_MAX_PACKET);
+
+    std::vector<fuchsia_hardware_usb_request::Request> out_reqs;
+    out_reqs.push_back(req.take_request());
+    fit::result<fidl::OneWayError> result = bulk_out_ep_->QueueRequests({std::move(out_reqs)});
+    if (result.is_error()) {
+      FDF_LOGL(ERROR, logger(), "QueueRequests OUT failed: %s",
+               result.error_value().FormatDescription().c_str());
+    }
+  }
 }
 
-void FakeFtdiFunction::DataInComplete() {}
+void FakeFtdiFunction::Control(
+    fuchsia_hardware_usb_function::UsbFunctionInterfaceControlRequest& request,
+    ControlCompleter::Sync& completer) {
+  completer.Reply(zx::ok(fuchsia_hardware_usb_function::UsbFunctionInterfaceControlResponse()));
+}
 
-void FakeFtdiFunction::DataOutComplete() {
-  if (data_out_req_->request()->response.status != ZX_OK) {
+void FakeFtdiFunction::SetConfigured(
+    fuchsia_hardware_usb_function::UsbFunctionInterfaceSetConfiguredRequest& request,
+    SetConfiguredCompleter::Sync& completer) {
+  if (!request.configured()) {
+    configured_ = false;
+    function_->DisableEndpoint({bulk_in_addr_});
+    function_->DisableEndpoint({bulk_out_addr_});
+    completer.Reply(zx::ok());
     return;
   }
-  std::vector<uint8_t> data(data_out_req_->request()->response.actual);
-  // std::vector should zero-initialize
-  [[maybe_unused]] size_t copied =
-      usb_request_copy_from(data_out_req_->request(), data.data(), data.size(), 0);
+  if (configured_) {
+    completer.Reply(zx::ok());
+    return;
+  }
+  configured_ = true;
 
-  usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            return static_cast<FakeFtdiFunction*>(ctx)->CompletionCallback(req);
-          },
-      .ctx = this,
-  };
+  // Configure IN Endpoint
+  fuchsia_hardware_usb_function::EndpointConfiguration ep_config_in;
+  fuchsia_hardware_usb_function::EndpointDescriptor desc_in;
+  desc_in.bm_attributes(descriptor_.bulk_in.bm_attributes);
+  desc_in.w_max_packet_size(descriptor_.bulk_in.w_max_packet_size);
+  desc_in.b_interval(descriptor_.bulk_in.b_interval);
+  ep_config_in.descriptor(std::move(desc_in));
 
-  // Queue up another write.
-  RequestQueue(data_out_req_->request(), &complete);
+  fidl::Result result_in = function_->ConfigureEndpoint({bulk_in_addr_, std::move(ep_config_in)});
+  if (result_in.is_error()) {
+    FDF_LOGL(ERROR, logger(), "ConfigureEndpoint IN failed: %s",
+             result_in.error_value().FormatDescription().c_str());
+  }
 
-  // Queue up exact same read data. The first FTDI_STATUS_SIZE bytes should
-  // be left alone.
-  data_in_req_->request()->header.length = data.size() + FTDI_STATUS_SIZE;
-  data_in_req_->request()->header.ep_address = bulk_in_addr_;
+  // Configure OUT Endpoint
+  fuchsia_hardware_usb_function::EndpointConfiguration ep_config_out;
+  fuchsia_hardware_usb_function::EndpointDescriptor desc_out;
+  desc_out.bm_attributes(descriptor_.bulk_out.bm_attributes);
+  desc_out.w_max_packet_size(descriptor_.bulk_out.w_max_packet_size);
+  desc_out.b_interval(descriptor_.bulk_out.b_interval);
+  ep_config_out.descriptor(std::move(desc_out));
 
-  copied = data_in_req_->CopyTo(data.data(), data.size(), FTDI_STATUS_SIZE);
+  fidl::Result result_out =
+      function_->ConfigureEndpoint({bulk_out_addr_, std::move(ep_config_out)});
+  if (result_out.is_error()) {
+    FDF_LOGL(ERROR, logger(), "ConfigureEndpoint OUT failed: %s",
+             result_out.error_value().FormatDescription().c_str());
+  }
 
-  RequestQueue(data_in_req_->request(), &complete);
-}
-
-int FakeFtdiFunction::Thread() {
-  while (1) {
-    fbl::AutoLock lock(&mtx_);
-    if (!(data_in_req_complete_ || data_out_req_complete_ || (!active_))) {
-      event_.Wait(&mtx_);
-    }
-    if (!active_ && !atomic_load(&pending_request_count_)) {
-      return 0;
-    }
-    if (data_in_req_complete_) {
-      atomic_fetch_add(&pending_request_count_, -1);
-      data_in_req_complete_ = false;
-      DataInComplete();
-    }
-    if (data_out_req_complete_) {
-      atomic_fetch_add(&pending_request_count_, -1);
-      data_out_req_complete_ = false;
-      DataOutComplete();
+  // Queue first read on OUT endpoint
+  auto req = bulk_out_ep_.GetRequest();
+  if (req) {
+    std::vector<fuchsia_hardware_usb_request::Request> reqs;
+    reqs.push_back(req->take_request());
+    fit::result<fidl::OneWayError> result = bulk_out_ep_->QueueRequests({std::move(reqs)});
+    if (result.is_error()) {
+      FDF_LOGL(ERROR, logger(), "QueueRequests OUT failed: %s",
+               result.error_value().FormatDescription().c_str());
     }
   }
-  return 0;
+  completer.Reply(zx::ok());
 }
 
-size_t FakeFtdiFunction::UsbFunctionInterfaceGetDescriptorsSize(void* ctx) {
-  FakeFtdiFunction* func = static_cast<FakeFtdiFunction*>(ctx);
-  return func->descriptor_size_;
+void FakeFtdiFunction::SetInterface(
+    fuchsia_hardware_usb_function::UsbFunctionInterfaceSetInterfaceRequest& request,
+    SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
 }
 
-void FakeFtdiFunction::UsbFunctionInterfaceGetDescriptors(void* ctx,
-                                                          uint8_t* out_descriptors_buffer,
-                                                          size_t descriptors_size,
-                                                          size_t* out_descriptors_actual) {
-  FakeFtdiFunction* func = static_cast<FakeFtdiFunction*>(ctx);
-  memcpy(out_descriptors_buffer, &func->descriptor_,
-         std::min(descriptors_size, func->descriptor_size_));
-  *out_descriptors_actual = func->descriptor_size_;
+void FakeFtdiFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::warn("Unknown method %ld", metadata.method_ordinal);
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx_status_t FakeFtdiFunction::UsbFunctionInterfaceControl(
-    void* ctx, const usb_setup_t* setup, const uint8_t* write_buffer, size_t write_size,
-    uint8_t* out_read_buffer, size_t read_size, size_t* out_read_actual) {
-  if (out_read_actual) {
-    *out_read_actual = 0;
-  }
-  return ZX_OK;
-}
-
-zx_status_t FakeFtdiFunction::UsbFunctionInterfaceSetConfigured(void* ctx, bool configured,
-                                                                usb_speed_t speed) {
-  FakeFtdiFunction* func = static_cast<FakeFtdiFunction*>(ctx);
-  fbl::AutoLock lock(&func->mtx_);
-  zx_status_t status;
-
-  if (configured) {
-    if (func->configured_) {
-      return ZX_OK;
-    }
-    func->configured_ = true;
-
-    if ((status = func->function_.ConfigEp(&func->descriptor_.bulk_in, nullptr)) != ZX_OK ||
-        (status = func->function_.ConfigEp(&func->descriptor_.bulk_out, nullptr)) != ZX_OK) {
-      zxlogf(ERROR, "ftdi-function: usb_function_config_ep failed");
-    }
-    // queue first read on OUT endpoint
-    usb_request_complete_callback_t complete = {
-        .callback =
-            [](void* ctx, usb_request_t* req) {
-              return static_cast<FakeFtdiFunction*>(ctx)->CompletionCallback(req);
-            },
-        .ctx = ctx,
-    };
-    zxlogf(INFO, "ftdi-function: about to configure!");
-    if (func->data_out_req_) {
-      zxlogf(INFO, "We have data out!");
-    }
-    func->RequestQueue(func->data_out_req_->request(), &complete);
-  } else {
-    func->configured_ = false;
-  }
-  return ZX_OK;
-}
-
-zx_status_t FakeFtdiFunction::UsbFunctionInterfaceSetInterface(void* ctx, uint8_t interface,
-                                                               uint8_t alt_setting) {
-  return ZX_OK;
-}
-
-zx_status_t FakeFtdiFunction::Bind() {
-  fbl::AutoLock lock(&mtx_);
-
+zx::result<> FakeFtdiFunction::Start() {
   descriptor_size_ = sizeof(descriptor_);
   descriptor_.interface = {
       .b_length = sizeof(usb_interface_descriptor_t),
@@ -273,80 +244,113 @@ zx_status_t FakeFtdiFunction::Bind() {
   };
 
   active_ = true;
-  pending_request_count_ = 0;
 
-  parent_req_size_ = function_.GetRequestSize();
-
-  zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeFtdiFunction: usb_function_alloc_interface failed");
-    return status;
+  zx::result client_end =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (client_end.is_error()) {
+    FDF_LOGL(ERROR, logger(), "FakeFtdiFunction: Failed to connect FIDL protocol: %s",
+             client_end.status_string());
+    return client_end.take_error();
   }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_.bulk_in.b_endpoint_address);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeFtdiFunction: usb_function_alloc_ep failed");
-    return status;
-  }
-  status = function_.AllocEp(USB_DIR_OUT, &descriptor_.bulk_out.b_endpoint_address);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeFtdiFunction: usb_function_alloc_ep failed");
-    return status;
+  function_ = fidl::SyncClient(std::move(*client_end));
+
+  // Allocate resources
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
+  fuchsia_hardware_usb_function::EndpointResource ep_in;
+  ep_in.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+
+  zx::result ep_in_channels = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (ep_in_channels.is_error())
+    return zx::error(ep_in_channels.error_value());
+  auto [client_in, server_in] = std::move(*ep_in_channels);
+  ep_in.endpoint(std::move(server_in));
+  endpoints.push_back(std::move(ep_in));
+
+  fuchsia_hardware_usb_function::EndpointResource ep_out;
+  ep_out.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+
+  zx::result ep_out_channels = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (ep_out_channels.is_error())
+    return zx::error(ep_out_channels.error_value());
+  auto [client_out, server_out] = std::move(*ep_out_channels);
+  ep_out.endpoint(std::move(server_out));
+  endpoints.push_back(std::move(ep_out));
+
+  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
+  alloc_req.interface_count(1);
+  alloc_req.endpoints(std::move(endpoints));
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+
+  if (alloc_result.is_error()) {
+    FDF_LOGL(ERROR, logger(), "FakeFtdiFunction: AllocResources failed: %s",
+             alloc_result.error_value().FormatDescription().c_str());
+    return zx::error(alloc_result.error_value().is_framework_error()
+                         ? alloc_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
   }
 
-  bulk_in_addr_ = descriptor_.bulk_in.b_endpoint_address;
-  bulk_out_addr_ = descriptor_.bulk_out.b_endpoint_address;
+  auto& response = alloc_result.value();
+  descriptor_.interface.b_interface_number = response.interface_nums()[0];
+  bulk_in_addr_ = response.endpoint_addrs()[0];
+  bulk_out_addr_ = response.endpoint_addrs()[1];
 
-  status = usb::Request<>::Alloc(&data_out_req_, BULK_MAX_PACKET, bulk_out_addr_, parent_req_size_);
+  descriptor_.bulk_in.b_endpoint_address = bulk_in_addr_;
+  descriptor_.bulk_out.b_endpoint_address = bulk_out_addr_;
+
+  zx_status_t status = bulk_in_ep_.Init(std::move(client_in), dispatcher());
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
-  status = usb::Request<>::Alloc(&data_in_req_, BULK_MAX_PACKET, bulk_in_addr_, parent_req_size_);
+
+  status = bulk_out_ep_.Init(std::move(client_out), dispatcher());
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
-  status = DdkAdd("usb-hid-function");
-  if (status != ZX_OK) {
-    return status;
+  // Add requests to pool
+  if (bulk_in_ep_.AddRequests(2, BULK_MAX_PACKET,
+                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 2) {
+    fdf::error("Failed to allocate all IN requests");
+    return zx::error(ZX_ERR_INTERNAL);
   }
-  function_.SetInterface(this, &function_interface_ops_);
+  if (bulk_out_ep_.AddRequests(2, BULK_MAX_PACKET,
+                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 2) {
+    fdf::error("Failed to allocate all OUT requests");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
 
-  thrd_create(
-      &thread_, [](void* ctx) { return static_cast<FakeFtdiFunction*>(ctx)->Thread(); }, this);
+  // Configure
+  std::vector<uint8_t> config_buf(sizeof(descriptor_));
+  memcpy(config_buf.data(), &descriptor_, sizeof(descriptor_));
 
-  return ZX_OK;
+  zx::result endpoints_res =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (endpoints_res.is_error()) {
+    FDF_LOGL(ERROR, logger(), "Failed to create endpoints");
+    return zx::error(endpoints_res.error_value());
+  }
+  auto [iface_client, iface_server] = std::move(*endpoints_res);
+  fidl::BindServer(dispatcher(), std::move(iface_server), this);
+
+  fuchsia_hardware_usb_function::UsbFunctionConfigureRequest config_req;
+  config_req.configuration(std::move(config_buf));
+  config_req.iface(std::move(iface_client));
+
+  fidl::Result configure_result = function_->Configure(std::move(config_req));
+  if (configure_result.is_error()) {
+    FDF_LOGL(ERROR, logger(), "FakeFtdiFunction: Configure failed: %s",
+             configure_result.error_value().FormatDescription().c_str());
+    return zx::error(configure_result.error_value().is_framework_error()
+                         ? configure_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
+  }
+
+  return zx::ok();
 }
 
-void FakeFtdiFunction::DdkUnbind(ddk::UnbindTxn txn) {
-  fbl::AutoLock lock(&mtx_);
-  active_ = false;
-  event_.Signal();
-  lock.release();
-
-  int retval;
-  thrd_join(thread_, &retval);
-
-  txn.Reply();
-}
-
-void FakeFtdiFunction::DdkRelease() { delete this; }
-
-zx_status_t bind(void* ctx, zx_device_t* parent) {
-  auto dev = std::make_unique<FakeFtdiFunction>(parent);
-  zx_status_t status = dev->Bind();
-  if (status == ZX_OK) {
-    // devmgr is now in charge of the memory for dev
-    dev.release();
-  }
-  return ZX_OK;
-}
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = bind;
-  return ops;
-}();
+void FakeFtdiFunction::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
 
 }  // namespace fake_ftdi_function
 
-ZIRCON_DRIVER(ftdi_function, fake_ftdi_function::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(fake_ftdi_function::FakeFtdiFunction);
