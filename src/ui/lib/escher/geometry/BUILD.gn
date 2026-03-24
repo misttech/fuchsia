@@ -11,8 +11,5 @@ source_set("escher_geometry") {
 
   sources = [ "types.h" ]
 
-  public_configs = [
-    "//third_party/glm:enable_experimental",
-    "//third_party/glm:force_depth_zero_to_one",
-  ]
+  public_configs = [ "//third_party/glm:force_depth_zero_to_one" ]
 }

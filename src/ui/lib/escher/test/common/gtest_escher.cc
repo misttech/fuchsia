@@ -18,7 +18,7 @@ namespace {
 
 #if !ESCHER_USE_RUNTIME_GLSL
 static void LoadShadersFromDisk(HackFilesystemPtr fs) {
-  // NOTE: this and ../shaders/BUILD.gn must be kept in sync.
+  // LINT.IfChange
   const std::vector<HackFilePath> paths = {
       // Flatland renderer.
       "shaders/shaders_flatland_flat_main_frag14695981039346656037.spirv",
@@ -45,10 +45,12 @@ static void LoadShadersFromDisk(HackFilesystemPtr fs) {
       "shaders/shaders_test_main_frag12890958529260787213.spirv",
       "shaders/shaders_test_main_frag4304586084079301274.spirv",
   };
+  // LINT.ThenChange(//src/ui/lib/escher/shaders/BUILD.gn)
   FX_CHECK(fs->InitializeWithRealFiles(paths));
 }
 #else
 static void LoadShadersFromDisk(HackFilesystemPtr fs) {
+  // LINT.IfChange
   // NOTE: this and ../shaders/BUILD.gn must be kept in sync.
   const std::vector<HackFilePath> paths = {
       // Flatland renderer.
@@ -59,6 +61,7 @@ static void LoadShadersFromDisk(HackFilesystemPtr fs) {
       "shaders/flatland/flat_color_correction.frag",
       "shaders/flatland/flat_color_correction.vert",
   };
+  // LINT.ThenChange(//src/ui/lib/escher/shaders/BUILD.gn)
   FX_CHECK(fs->InitializeWithRealFiles(paths));
 }
 #endif

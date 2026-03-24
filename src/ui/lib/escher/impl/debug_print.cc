@@ -54,18 +54,6 @@ std::ostream& operator<<(std::ostream& str, const vec4& v) {
   return str << "(" << v[0] << ", " << v[1] << ", " << v[2] << ", " << v[3] << ")";
 }
 
-std::ostream& operator<<(std::ostream& str, const quat& q) {
-  return str << "(" << q.x << ", " << q.y << ", " << q.z << ", " << q.w << ")";
-}
-
-std::ostream& operator<<(std::ostream& str, const plane2& p) {
-  return str << "plane2[dir:" << p.dir() << " dist:" << p.dist() << "]";
-}
-
-std::ostream& operator<<(std::ostream& str, const plane3& p) {
-  return str << "plane3[dir:" << p.dir() << " dist:" << p.dist() << "]";
-}
-
 std::ostream& operator<<(std::ostream& str, const Rectangle2D& r) {
   return str << "Rectangle2D[origin:" << r.origin << " extent:" << r.extent << " clockwise_uvs:["
              << r.clockwise_uvs[0] << "," << r.clockwise_uvs[1] << "," << r.clockwise_uvs[2] << ","

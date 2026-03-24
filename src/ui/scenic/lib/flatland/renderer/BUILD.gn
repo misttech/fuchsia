@@ -28,6 +28,4 @@ source_set("renderer") {
     "//src/ui/scenic/lib/utils",
     "//zircon/system/ulib/trace",
   ]
-
-  configs += [ "//third_party/glm:enable_experimental" ]
 }

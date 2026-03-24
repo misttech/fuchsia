@@ -44,6 +44,9 @@ using namespace escher;
 // TODO(https://fxbug.dev/42098792): This number needs to be queried via sysmem or vulkan.
 const uint32_t kYuvSize = 64;
 
+constexpr MeshSpec kMeshSpec2D{MeshAttribute::kPosition2D | MeshAttribute::kUV};
+constexpr MeshSpec kMeshSpec3D{MeshAttribute::kPosition3D | MeshAttribute::kUV};
+
 class ShaderProgramTest : public ::testing::Test, public VulkanTester {
  protected:
   ShaderProgramTest()
@@ -56,9 +59,7 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
                 &vk_debug_utils_message_collector_),
             {}),
         vk_debug_utils_message_collector_() {}
-  const MeshSpec& mesh_spec1() const { return mesh_spec1_; }
-  const MeshSpec& mesh_spec2() const { return mesh_spec2_; }
-  const BufferPtr& dummy_buffer() const { return dummy_buffer_; }
+  const BufferPtr& placeholder_buffer() const { return placeholder_buffer_; }
 
   test::impl::VkDebugUtilsMessengerCallbackRegistry& vk_debug_utils_message_callback_registry() {
     return vk_debug_utils_message_callback_registry_;
@@ -74,8 +75,7 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
     EXPECT_TRUE(escher->Cleanup());
 
     // TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
-    auto factory = escher->shader_program_factory();
-    bool success = factory->filesystem()->InitializeWithRealFiles({
+    bool success = escher->shader_program_factory()->filesystem()->InitializeWithRealFiles({
         "shaders/model_renderer/main.vert",
         "shaders/paper/common/use.glsl",
         "shaders/test/main.frag",
@@ -84,10 +84,7 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
     });
     EXPECT_TRUE(success);
 
-    mesh_spec1_ = MeshSpec{MeshAttribute::kPosition2D | MeshAttribute::kUV};
-    mesh_spec2_ = MeshSpec{MeshAttribute::kPosition3D | MeshAttribute::kUV};
-
-    dummy_buffer_ = escher->gpu_allocator()->AllocateBuffer(
+    placeholder_buffer_ = escher->gpu_allocator()->AllocateBuffer(
         escher->resource_recycler(), 4096,
         vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer,
         vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -96,7 +93,7 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
   }
 
   void TearDown() override {
-    dummy_buffer_ = nullptr;
+    placeholder_buffer_ = nullptr;
 
     auto escher = test::GetEscher();
     escher->vk_device().waitIdle();
@@ -108,9 +105,7 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
     vk_debug_utils_message_callback_registry().DeregisterDebugUtilsMessengerCallbacks();
   }
 
-  MeshSpec mesh_spec1_;
-  MeshSpec mesh_spec2_;
-  BufferPtr dummy_buffer_;
+  BufferPtr placeholder_buffer_;
 
   test::impl::VkDebugUtilsMessengerCallbackRegistry vk_debug_utils_message_callback_registry_;
   test::impl::VkDebugUtilsMessageCollector vk_debug_utils_message_collector_;
@@ -123,13 +118,12 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
 // ShaderVariantArgs are correctly applied during shader compilation.
 VK_TEST_F(ShaderProgramTest, ShaderConstantsTest) {
   auto escher = test::GetEscher();
+  auto factory = escher->shader_program_factory();
 
-  auto program1 = escher->shader_program_factory()->GetProgram(kAmbientLightProgramData);
-  auto program2 = escher->shader_program_factory()->GetProgram(kAmbientLightProgramData);
-  auto program3 =
-      escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryDebugProgramData);
-  auto program4 =
-      escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryDebugProgramData);
+  auto program1 = factory->GetProgram(kAmbientLightProgramData);
+  auto program2 = factory->GetProgram(kAmbientLightProgramData);
+  auto program3 = factory->GetProgram(kShadowVolumeGeometryDebugProgramData);
+  auto program4 = factory->GetProgram(kShadowVolumeGeometryDebugProgramData);
 
   // The first two programs use the same variant args, so should be identical,
   // and similarly with the last two.
@@ -145,21 +139,21 @@ VK_TEST_F(ShaderProgramTest, ShaderConstantsTest) {
 // shader source code or loading in precompiled binaries.
 VK_TEST_F(ShaderProgramTest, TimingTest) {
   auto escher = test::GetEscher();
+  auto factory = escher->shader_program_factory();
 
   // Clear out the shader program factory's cache so that the test is hermetic and
   // does not change depending on whether or not previous tests have loaded these
   // shaders into the cache already.
-  escher->shader_program_factory()->Clear();
+  factory->Clear();
 
   auto start = std::chrono::high_resolution_clock::now();
-  auto program1 = escher->shader_program_factory()->GetProgram(kAmbientLightProgramData);
-  auto program2 = escher->shader_program_factory()->GetProgram(kNoLightingProgramData);
-  auto program3 = escher->shader_program_factory()->GetProgram(kPointLightProgramData);
-  auto program4 = escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryProgramData);
-  auto program5 =
-      escher->shader_program_factory()->GetProgram(kShadowVolumeGeometryDebugProgramData);
-  auto program6 = escher->shader_program_factory()->GetProgram(kFlatlandStandardProgram);
-  auto program7 = escher->shader_program_factory()->GetProgram(kFlatlandColorConversionProgram);
+  auto program1 = factory->GetProgram(kAmbientLightProgramData);
+  auto program2 = factory->GetProgram(kNoLightingProgramData);
+  auto program3 = factory->GetProgram(kPointLightProgramData);
+  auto program4 = factory->GetProgram(kShadowVolumeGeometryProgramData);
+  auto program5 = factory->GetProgram(kShadowVolumeGeometryDebugProgramData);
+  auto program6 = factory->GetProgram(kFlatlandStandardProgram);
+  auto program7 = factory->GetProgram(kFlatlandColorConversionProgram);
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
   FX_LOGS(INFO) << "Time taken to load shaders: " << duration.count() << " microseconds.";
@@ -251,6 +245,7 @@ VK_TEST_F(ShaderProgramTest, SpirvNotChangedTest) {
 
 VK_TEST_F(ShaderProgramTest, CachedVariants) {
   auto escher = test::GetEscher();
+  auto factory = escher->shader_program_factory();
 
   // TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
   ShaderVariantArgs variant1({{"USE_ATTRIBUTE_UV", "1"},
@@ -262,14 +257,10 @@ VK_TEST_F(ShaderProgramTest, CachedVariants) {
   const char* kMainVert = "shaders/model_renderer/main.vert";
   const char* kMainFrag = "shaders/test/main.frag";
 
-  auto program1 =
-      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
-  auto program2 =
-      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
-  auto program3 =
-      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
-  auto program4 =
-      escher->shader_program_factory()->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
+  auto program1 = factory->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
+  auto program2 = factory->GetGraphicsProgram(kMainVert, kMainFrag, variant1);
+  auto program3 = factory->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
+  auto program4 = factory->GetGraphicsProgram(kMainVert, kMainFrag, variant2);
 
   // The first two programs use the same variant args, so should be identical,
   // and similarly with the last two.
@@ -328,9 +319,15 @@ void SetupVertexAttributeBindingsForTest(CommandBufferPipelineState* cbps) {
   MeshSpec mesh_spec{MeshAttribute::kPosition2D | MeshAttribute::kUV};
   const uint32_t total_attribute_count = mesh_spec.total_attribute_count();
   BlockAllocator allocator(512);
-  MeshAttributeBindingLocations binding_locations = {0, 0, 1, 2, 3, 4};
+  static constexpr MeshAttributeBindingLocations kMeshAttributeBindingLocations = {
+      .position_2d = 0,
+      .position_3d = 0,
+      .position_offset = 1,
+      .uv = 2,
+      .perimeter_pos = 3,
+      .blend_weight1 = 4};
   RenderFuncs::VertexAttributeBinding* attribute_bindings = RenderFuncs::NewVertexAttributeBindings(
-      binding_locations, &allocator, mesh_spec, total_attribute_count);
+      kMeshAttributeBindingLocations, &allocator, mesh_spec, total_attribute_count);
 
   for (uint32_t i = 0; i < total_attribute_count; ++i) {
     attribute_bindings[i].Bind(cbps);
@@ -828,16 +825,15 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelines) {
   // We'll use the same texture for both meshes.
   cb->BindTexture(1, 1, noise_texture);
 
-  auto spec = mesh_spec1();
-  auto buffer = dummy_buffer();
+  auto buffer = placeholder_buffer();
 
   cb->BindIndices(buffer, 0, vk::IndexType::eUint32);
 
-  cb->BindVertices(0, buffer, 0, spec.stride(0));
+  cb->BindVertices(0, buffer, 0, kMeshSpec2D.stride(0));
   cb->SetVertexAttributes(0, 0, vk::Format::eR32G32Sfloat,
-                          spec.attribute_offset(0, MeshAttribute::kPosition2D));
+                          kMeshSpec2D.attribute_offset(0, MeshAttribute::kPosition2D));
   cb->SetVertexAttributes(0, 2, vk::Format::eR32G32Sfloat,
-                          spec.attribute_offset(0, MeshAttribute::kUV));
+                          kMeshSpec2D.attribute_offset(0, MeshAttribute::kUV));
 
   // Set the command buffer to a known default state, and obtain a pipeline.
   cb->SetToDefaultState(CommandBuffer::DefaultState::kOpaque);
@@ -863,30 +859,26 @@ VK_TEST_F(ShaderProgramTest, GeneratePipelines) {
   // obtained pipeline.
 
   // Using the same MeshSpec again, as if binding the same mesh structure
-  spec = mesh_spec1();
-
   cb->BindIndices(buffer, 0, vk::IndexType::eUint32);
 
-  cb->BindVertices(0, buffer, 0, spec.stride(0));
+  cb->BindVertices(0, buffer, 0, kMeshSpec2D.stride(0));
 
   cb->SetVertexAttributes(0, 0, vk::Format::eR32G32Sfloat,
-                          spec.attribute_offset(0, MeshAttribute::kPosition2D));
+                          kMeshSpec2D.attribute_offset(0, MeshAttribute::kPosition2D));
   cb->SetVertexAttributes(0, 2, vk::Format::eR32G32Sfloat,
-                          spec.attribute_offset(0, MeshAttribute::kUV));
+                          kMeshSpec2D.attribute_offset(0, MeshAttribute::kUV));
 
   EXPECT_EQ(depth_readonly_pipeline, ObtainGraphicsPipeline(cb));
 
   // Changing to a mesh with a different layout results in a different pipeline.
-  spec = mesh_spec2();
-
   cb->BindIndices(buffer, 0, vk::IndexType::eUint32);
 
-  cb->BindVertices(0, buffer, 0, spec.stride(0));
+  cb->BindVertices(0, buffer, 0, kMeshSpec3D.stride(0));
 
   cb->SetVertexAttributes(0, 0, vk::Format::eR32G32B32Sfloat,
-                          spec.attribute_offset(0, MeshAttribute::kPosition3D));
+                          kMeshSpec3D.attribute_offset(0, MeshAttribute::kPosition3D));
   cb->SetVertexAttributes(2, 0, vk::Format::eR32G32Sfloat,
-                          spec.attribute_offset(0, MeshAttribute::kUV));
+                          kMeshSpec3D.attribute_offset(0, MeshAttribute::kUV));
 
   EXPECT_NE(depth_readonly_pipeline, ObtainGraphicsPipeline(cb));
   EXPECT_NE(vk::Pipeline(), ObtainGraphicsPipeline(cb));

@@ -52,7 +52,6 @@ fuchsia_test_package("escher_tests") {
   deps = [
     "shaders:escher_shaders_resources",
     "shaders:escher_shaders_spirv_resources",
-    "shaders:escher_test_shaders_spirv_resources",
     "//src/lib/vulkan:vulkan_validation_layers",
     "//src/ui/examples/escher/common/assets:escher_examples_assets",
   ]
@@ -226,7 +225,6 @@ template("escher_library") {
       "shaders/util/spirv_file_util.h",
       "shape/mesh_spec.cc",
       "shape/mesh_spec.h",
-      "status.h",
       "third_party/enum_utils/enum_utils.h",
       "third_party/granite/vk/command_buffer.cc",
       "third_party/granite/vk/command_buffer.h",

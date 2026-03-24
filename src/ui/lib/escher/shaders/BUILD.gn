@@ -5,6 +5,7 @@
 import("//build/dist/resource.gni")
 import("//build/testing/host_test_data.gni")
 
+# LINT.IfChange
 shader_files = [
   # Flatland renderer.
   "flatland/flat_main.frag",
@@ -27,6 +28,9 @@ shader_files = [
   "test/shadow_map_lighting.frag",
 ]
 
+# LINT.ThenChange(//src/ui/lib/escher/test/common/gtest_escher.cc)
+
+# LINT.IfChange
 spirv_files = [
   # Flatland renderer.
   "shaders_flatland_flat_main_frag14695981039346656037.spirv",
@@ -53,9 +57,7 @@ spirv_files = [
   "shaders_test_main_frag4304586084079301274.spirv",
 ]
 
-test_spirv_files = [
-  # shader_program_unittest.cc
-]
+# LINT.ThenChange(//src/ui/lib/escher/test/common/gtest_escher.cc)
 
 if (is_linux) {
   # Copies shaders needed for escher linux tests to a specific test data
@@ -71,7 +73,7 @@ if (is_linux) {
   }
 
   host_test_data("spirvs") {
-    sources = rebase_path(spirv_files + test_spirv_files, ".", "spirv")
+    sources = rebase_path(spirv_files, ".", "spirv")
     outputs = [ "$root_out_dir/test_data/escher/shaders/{{source_file_part}}" ]
   }
 
@@ -95,10 +97,5 @@ resource_group("escher_shaders_resources") {
 
 resource("escher_shaders_spirv_resources") {
   sources = rebase_path(spirv_files, ".", "spirv")
-  outputs = [ "data/shaders/{{source_file_part}}" ]
-}
-
-resource("escher_test_shaders_spirv_resources") {
-  sources = rebase_path(test_spirv_files, ".", "spirv")
   outputs = [ "data/shaders/{{source_file_part}}" ]
 }

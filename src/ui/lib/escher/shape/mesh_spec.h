@@ -53,7 +53,7 @@ struct MeshAttributeBindingLocations {
 // Describes all of the attributes that are associated with a specific vertex binding.
 using MeshAttributes = vk::Flags<MeshAttribute>;
 
-inline MeshAttributes operator|(MeshAttribute bit0, MeshAttribute bit1) {
+constexpr MeshAttributes operator|(MeshAttribute bit0, MeshAttribute bit1) {
   return MeshAttributes(bit0) | bit1;
 }
 
