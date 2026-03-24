@@ -315,7 +315,7 @@ func (t *Emulator) Start(ctx context.Context, args []string, pbPath string, isBo
 			logger.Debugf(ctx, "failed to set %s to %s", constants.SerialLogEnvKey, logfileAbsPath)
 		}
 		serialWriter := botanist.NewLineWriter(botanist.NewTimestampWriter(serialLog), "")
-		stdout = io.MultiWriter(stdout, serialWriter)
+		stdout = io.MultiWriter(serialWriter, stdout)
 	}
 
 	if t.ptm != nil {
