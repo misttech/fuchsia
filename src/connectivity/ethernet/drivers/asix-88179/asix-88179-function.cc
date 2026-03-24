@@ -33,8 +33,6 @@
 #include <usb/usb-request.h>
 #include <usb/usb.h>
 
-#include "asix-88179-regs.h"
-
 namespace fake_usb_ax88179_function {
 
 constexpr int BULK_MAX_PACKET = 512;
@@ -45,9 +43,10 @@ constexpr size_t INTR_MAX_PACKET = 8;
 
 class FakeUsbAx88179Function;
 
-class FakeUsbAx88179Function : public fdf::DriverBase,
-                               public fidl::WireServer<fuchsia_hardware_ax88179::Hooks>,
-                               public ddk::UsbFunctionInterfaceProtocol<FakeUsbAx88179Function> {
+class FakeUsbAx88179Function
+    : public fdf::DriverBase,
+      public fidl::WireServer<fuchsia_hardware_ax88179::Hooks>,
+      public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr std::string kDriverName = "FakeUsbAx88179Function";
 
@@ -59,14 +58,13 @@ class FakeUsbAx88179Function : public fdf::DriverBase,
   zx::result<> Start() override;
 
   // UsbFunctionInterface:
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer, size_t descriptors_size,
-                                          size_t* out_descriptors_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                          size_t write_size, uint8_t* out_read_buffer,
-                                          size_t read_size, size_t* out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
+  void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
+  void SetConfigured(SetConfiguredRequest& request,
+                     SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // Hooks:
   void SetOnline(SetOnlineRequestView request, SetOnlineCompleter::Sync& completer) override;
@@ -74,9 +72,7 @@ class FakeUsbAx88179Function : public fdf::DriverBase,
  private:
   void DevfsConnect(fidl::ServerEnd<fuchsia_hardware_ax88179::Hooks> req);
 
-  void RequestQueue(usb_request_t* req, const usb_request_complete_callback_t* completion);
-
-  ddk::UsbFunctionProtocolClient function_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
   struct {
     usb_interface_descriptor_t interface;
@@ -90,8 +86,6 @@ class FakeUsbAx88179Function : public fdf::DriverBase,
 
   void IntrComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
 
-  fdf::SynchronizedDispatcher dispatcher_;
-
   usb::EndpointClient<FakeUsbAx88179Function> intr_ep_{
       usb::EndpointType::INTERRUPT, this, std::mem_fn(&FakeUsbAx88179Function::IntrComplete)};
 
@@ -99,6 +93,8 @@ class FakeUsbAx88179Function : public fdf::DriverBase,
 
   bool configured_ = false;
 
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_function::UsbFunctionInterface>>
+      binding_;
   fidl::ServerBindingGroup<fuchsia_hardware_ax88179::Hooks> bindings_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_;
   driver_devfs::Connector<fuchsia_hardware_ax88179::Hooks> connector_;
@@ -168,53 +164,64 @@ zx::result<> FakeUsbAx88179Function::Start() {
       .b_interval = 8,
   };
 
-  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    fdf::error("Could not connect to UsbFunctionProtocol: {}", function);
-    return function.take_error();
-  }
-  function_ = *function;
-
-  zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbAx88179Function: usb_function_alloc_interface failed");
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_.bulk_in.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbAx88179Function: usb_function_alloc_ep failed");
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_OUT, &descriptor_.bulk_out.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbAx88179Function: usb_function_alloc_ep failed");
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_.intr_ep.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbAx88179Function: usb_function_alloc_ep failed");
-    return zx::error(status);
-  }
-
-  intr_addr_ = descriptor_.intr_ep.b_endpoint_address;
-
-  zx::result dispatcher =
-      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                          "ep-dispatcher", [](fdf_dispatcher_t*) {});
-  if (dispatcher.is_error()) {
-    fdf::error("fdf::SynchronizedDispatcher::Create(): {}", dispatcher);
-    return dispatcher.take_error();
-  }
-  dispatcher_ = std::move(*dispatcher);
-
   zx::result func =
       incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (func.is_error()) {
     fdf::error("Failed to connect to usb endpoint service: {}", func);
     return func.take_error();
   }
+  function_.Bind(std::move(*func));
 
-  status = intr_ep_.Init(intr_addr_, func.value(), dispatcher_.async_dispatcher());
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (endpoints.is_error()) {
+    return endpoints.take_error();
+  }
+
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
+  fuchsia_hardware_usb_function::EndpointResource res1;
+  res1.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  res1.endpoint(std::move(endpoints->server));
+  resources.emplace_back(std::move(res1));
+
+  zx::result bulk_in_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_in_endpoints.is_error()) {
+    return bulk_in_endpoints.take_error();
+  }
+  fuchsia_hardware_usb_function::EndpointResource res2;
+  res2.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  res2.endpoint(std::move(bulk_in_endpoints->server));
+  resources.emplace_back(std::move(res2));
+
+  zx::result bulk_out_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_out_endpoints.is_error()) {
+    return bulk_out_endpoints.take_error();
+  }
+  fuchsia_hardware_usb_function::EndpointResource res3;
+  res3.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  res3.endpoint(std::move(bulk_out_endpoints->server));
+  resources.emplace_back(std::move(res3));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  alloc_req.interface_count(1);
+  alloc_req.endpoints(std::move(resources));
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    fdf::error("AllocResources failed: {}", alloc_result.error_value().FormatDescription());
+    return zx::error(alloc_result.error_value().is_framework_error()
+                         ? alloc_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
+  }
+
+  auto& response = alloc_result.value();
+  descriptor_.interface.b_interface_number = response.interface_nums()[0];
+  descriptor_.intr_ep.b_endpoint_address = response.endpoint_addrs()[0];
+  descriptor_.bulk_in.b_endpoint_address = response.endpoint_addrs()[1];
+  descriptor_.bulk_out.b_endpoint_address = response.endpoint_addrs()[2];
+
+  intr_addr_ = descriptor_.intr_ep.b_endpoint_address;
+
+  zx_status_t status = intr_ep_.Init(std::move(endpoints->client), dispatcher());
   if (status != ZX_OK) {
     fdf::error("Could not init usb endpoint client: {}", zx_status_get_string(status));
     return zx::error(status);
@@ -228,7 +235,7 @@ zx::result<> FakeUsbAx88179Function::Start() {
   }
 
   fuchsia_hardware_ax88179::Service::InstanceHandler handler({
-      .hooks = bindings_.CreateHandler(this, this->dispatcher(), fidl::kIgnoreBindingClosure),
+      .hooks = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
   });
   zx::result serve = outgoing()->AddService<fuchsia_hardware_ax88179::Service>(std::move(handler));
   if (serve.is_error()) {
@@ -236,7 +243,7 @@ zx::result<> FakeUsbAx88179Function::Start() {
     return serve.take_error();
   }
 
-  zx::result connector = connector_.Bind(this->dispatcher());
+  zx::result connector = connector_.Bind(dispatcher());
   if (connector.is_error()) {
     fdf::error("connector_.Bind(): {}", connector);
     return connector.take_error();
@@ -256,64 +263,89 @@ zx::result<> FakeUsbAx88179Function::Start() {
   }
   child_.Bind(std::move(*child));
 
-  status = function_.SetInterface(this, &usb_function_interface_protocol_ops_);
-  if (status != ZX_OK) {
-    fdf::error("SetInterface(): {}", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result iface_endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (iface_endpoints.is_error()) {
+    return iface_endpoints.take_error();
+  }
+  binding_ = fidl::BindServer(this->dispatcher(), std::move(iface_endpoints->server), this);
+
+  std::vector<uint8_t> descriptors_buffer(descriptor_size_);
+  memcpy(descriptors_buffer.data(), &descriptor_, descriptor_size_);
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure> config_req;
+  config_req.configuration(std::move(descriptors_buffer));
+  config_req.iface(std::move(iface_endpoints->client));
+
+  fidl::Result config_res = function_->Configure(std::move(config_req));
+  if (config_res.is_error()) {
+    fdf::error("Configure failed: {}", config_res.error_value().FormatDescription());
+    return zx::error(config_res.error_value().is_framework_error()
+                         ? config_res.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
   }
 
   return zx::ok();
 }
-
 void FakeUsbAx88179Function::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_ax88179::Hooks> req) {
   bindings_.AddBinding(dispatcher(), std::move(req), this, fidl::kIgnoreBindingClosure);
 }
 
-void FakeUsbAx88179Function::RequestQueue(usb_request_t* req,
-                                          const usb_request_complete_callback_t* completion) {
-  function_.RequestQueue(req, completion);
+void FakeUsbAx88179Function::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  completer.Reply(zx::ok(std::vector<uint8_t>{}));
 }
 
-size_t FakeUsbAx88179Function::UsbFunctionInterfaceGetDescriptorsSize() { return descriptor_size_; }
-void FakeUsbAx88179Function::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
-                                                                size_t descriptors_size,
-                                                                size_t* out_descriptors_actual) {
-  memcpy(out_descriptors_buffer, &descriptor_, std::min(descriptors_size, descriptor_size_));
-  *out_descriptors_actual = descriptor_size_;
-}
-
-zx_status_t FakeUsbAx88179Function::UsbFunctionInterfaceControl(
-    const usb_setup_t* setup, const uint8_t* write_buffer, size_t write_size,
-    uint8_t* out_read_buffer, size_t read_size, size_t* out_read_actual) {
-  if (out_read_actual) {
-    *out_read_actual = 0;
-  }
-  return ZX_OK;
-}
-
-zx_status_t FakeUsbAx88179Function::UsbFunctionInterfaceSetConfigured(bool configured,
-                                                                      usb_speed_t speed) {
+void FakeUsbAx88179Function::SetConfigured(SetConfiguredRequest& request,
+                                           SetConfiguredCompleter::Sync& completer) {
   fbl::AutoLock lock(&mtx_);
-  zx_status_t status;
 
-  if (configured) {
+  if (request.configured()) {
     if (configured_) {
-      return ZX_OK;
+      completer.Reply(zx::ok());
+      return;
+    }
+    fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
+    fuchsia_hardware_usb_function::EndpointDescriptor desc;
+    desc.bm_attributes(descriptor_.intr_ep.bm_attributes);
+    desc.w_max_packet_size(le16toh(descriptor_.intr_ep.w_max_packet_size));
+    desc.b_interval(descriptor_.intr_ep.b_interval);
+    ep_config.descriptor(std::move(desc));
+
+    fidl::Result result = function_->ConfigureEndpoint(
+        {descriptor_.intr_ep.b_endpoint_address, std::move(ep_config)});
+    if (result.is_error()) {
+      fdf::error("usb-ax88179-function: ConfigureEndpoint failed: {}",
+                 result.error_value().FormatDescription());
+      completer.Reply(zx::error(result.error_value().is_framework_error()
+                                    ? result.error_value().framework_error().status()
+                                    : ZX_ERR_INTERNAL));
+      return;
     }
     configured_ = true;
-
-    if ((status = function_.ConfigEp(&descriptor_.intr_ep, nullptr)) != ZX_OK) {
-      fdf::error("usb-ax88179-function: usb_function_config_ep failed");
-    }
   } else {
+    fidl::Result result = function_->DisableEndpoint({descriptor_.intr_ep.b_endpoint_address});
+    if (result.is_error()) {
+      fdf::error("usb-ax88179-function: DisableEndpoint failed: {}",
+                 result.error_value().FormatDescription());
+      completer.Reply(zx::error(result.error_value().is_framework_error()
+                                    ? result.error_value().framework_error().status()
+                                    : ZX_ERR_INTERNAL));
+      return;
+    }
     configured_ = false;
   }
-  return ZX_OK;
+  completer.Reply(zx::ok());
 }
 
-zx_status_t FakeUsbAx88179Function::UsbFunctionInterfaceSetInterface(uint8_t interface,
-                                                                     uint8_t alt_setting) {
-  return ZX_OK;
+void FakeUsbAx88179Function::SetInterface(SetInterfaceRequest& request,
+                                          SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
+void FakeUsbAx88179Function::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown method %ld", metadata.method_ordinal);
 }
 
 void FakeUsbAx88179Function::IntrComplete(
