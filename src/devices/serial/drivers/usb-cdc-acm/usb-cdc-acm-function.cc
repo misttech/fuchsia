@@ -2,236 +2,202 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <assert.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/driver.h>
-#include <lib/ddk/metadata.h>
-#include <lib/ddk/platform-defs.h>
-#include <lib/zircon-internal/thread_annotations.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <zircon/process.h>
-#include <zircon/syscalls.h>
+#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/fit/defer.h>
 
-#include <atomic>
-#include <memory>
 #include <vector>
 
-#include <ddktl/device.h>
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
+#include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/cdc.h>
+#include <usb/descriptors.h>
 #include <usb/hid.h>
 #include <usb/peripheral.h>
-#include <usb/request-cpp.h>
-#include <usb/usb-request.h>
 #include <usb/usb.h>
 
-#define BULK_MAX_PACKET 512
-
 namespace fake_usb_cdc_acm_function {
-
 // Acts as a fake USB device for CDC-ACM serial tests. Stores a single write's worth of data and
 // echos it back on the next read, unless the write is exactly a single '0' byte, in which case
 // the next read will be an empty response.
 class FakeUsbCdcAcmFunction;
-using DeviceType = ddk::Device<FakeUsbCdcAcmFunction, ddk::Unbindable>;
-class FakeUsbCdcAcmFunction : public DeviceType,
-                              public ddk::UsbFunctionInterfaceProtocol<FakeUsbCdcAcmFunction> {
+constexpr int kBulkMaxPacket = 512;
+
+class FakeUsbCdcAcmFunction
+    : public fdf::DriverBase,
+      public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  explicit FakeUsbCdcAcmFunction(zx_device_t* parent) : DeviceType(parent), function_(parent) {}
-  zx_status_t Bind();
+  FakeUsbCdcAcmFunction(fdf::DriverStartArgs start_args,
+                        fdf::UnownedSynchronizedDispatcher dispatcher)
+      : fdf::DriverBase("fake-usb-cdc-acm", std::move(start_args), std::move(dispatcher)) {}
 
-  // |ddk::Device| mix-in implementations.
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
+  zx::result<> Start() override;
 
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer, size_t descriptors_size,
-                                          size_t* out_descriptors_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                          size_t write_size, uint8_t* out_read_buffer,
-                                          size_t read_size, size_t* out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
+  // UsbFunctionInterface:
+  void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
+  void SetConfigured(SetConfiguredRequest& request,
+                     SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
-  int Thread();
-  void DataInComplete() TA_REQ(mtx_);
-  void DataOutComplete() TA_REQ(mtx_);
-  void RequestQueue(usb_request_t* req, const usb_request_complete_callback_t* completion);
-  void CompletionCallback(usb_request_t* req);
+  void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
+  void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
-  ddk::UsbFunctionProtocolClient function_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
-  struct FakeUscCdcAcmDescriptor {
+  usb::EndpointClient<FakeUsbCdcAcmFunction> bulk_in_ep_{
+      usb::EndpointType::BULK, this, std::mem_fn(&FakeUsbCdcAcmFunction::InComplete)};
+  usb::EndpointClient<FakeUsbCdcAcmFunction> bulk_out_ep_{
+      usb::EndpointType::BULK, this, std::mem_fn(&FakeUsbCdcAcmFunction::OutComplete)};
+
+  struct Descriptor {
     usb_interface_descriptor_t interface;
     usb_endpoint_descriptor_t bulk_in;
     usb_endpoint_descriptor_t bulk_out;
   } __PACKED descriptor_;
 
-  size_t descriptor_size_ = 0;
-
-  size_t parent_req_size_ = 0;
   uint8_t bulk_out_addr_ = 0;
   uint8_t bulk_in_addr_ = 0;
 
-  std::optional<usb::Request<>> data_in_req_ TA_GUARDED(mtx_);
-  bool data_in_req_complete_ TA_GUARDED(mtx_) = false;
-
-  std::optional<usb::Request<>> data_out_req_ TA_GUARDED(mtx_);
-  bool data_out_req_complete_ TA_GUARDED(mtx_) = false;
-
-  fbl::ConditionVariable event_ TA_GUARDED(mtx_);
   fbl::Mutex mtx_;
-
-  bool configured_ = false;
-  bool active_ = false;
-  thrd_t thread_ = {};
-  std::atomic<int> pending_request_count_ = 0;
+  bool configured_ __TA_GUARDED(mtx_) = false;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_function::UsbFunctionInterface>>
+      binding_;
 };
 
-void FakeUsbCdcAcmFunction::CompletionCallback(usb_request_t* req) {
+void FakeUsbCdcAcmFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  completer.Reply(
+      zx::ok(fuchsia_hardware_usb_function::UsbFunctionInterfaceControlResponse().read({})));
+}
+
+void FakeUsbCdcAcmFunction::SetConfigured(SetConfiguredRequest& request,
+                                          SetConfiguredCompleter::Sync& completer) {
   fbl::AutoLock lock(&mtx_);
-  if (req == data_in_req_->request()) {
-    data_in_req_complete_ = true;
-  } else if (req == data_out_req_->request()) {
-    data_out_req_complete_ = true;
-  }
-  event_.Signal();
-}
-
-void FakeUsbCdcAcmFunction::RequestQueue(usb_request_t* req,
-                                         const usb_request_complete_callback_t* completion) {
-  atomic_fetch_add(&pending_request_count_, 1);
-  function_.RequestQueue(req, completion);
-}
-
-void FakeUsbCdcAcmFunction::DataInComplete() {}
-
-void FakeUsbCdcAcmFunction::DataOutComplete() {
-  if (data_out_req_->request()->response.status != ZX_OK) {
+  if (!request.configured()) {
+    configured_ = false;
+    completer.Reply(zx::ok());
     return;
   }
-  std::vector<uint8_t> data(data_out_req_->request()->response.actual);
-  [[maybe_unused]] size_t copied =
-      usb_request_copy_from(data_out_req_->request(), data.data(), data.size(), 0);
-
-  usb_request_complete_callback_t complete = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            return static_cast<FakeUsbCdcAcmFunction*>(ctx)->CompletionCallback(req);
-          },
-      .ctx = this,
-  };
-
-  // Queue up another write.
-  RequestQueue(data_out_req_->request(), &complete);
-
-  // Queue up the exact same read data, unless the read was a single '0', in which case queue an
-  // empty response.
-  if (data.size() == 1 && data[0] == '0') {
-    data.clear();
+  if (configured_) {
+    completer.Reply(zx::ok());
+    return;
   }
-  data_in_req_->request()->header.length = data.size();
-  data_in_req_->request()->header.ep_address = bulk_in_addr_;
+  configured_ = true;
 
-  copied = data_in_req_->CopyTo(data.data(), data.size(), 0);
+  fuchsia_hardware_usb_function::EndpointConfiguration config_in;
+  fuchsia_hardware_usb_function::EndpointDescriptor desc_in;
+  desc_in.bm_attributes(descriptor_.bulk_in.bm_attributes);
+  desc_in.w_max_packet_size(descriptor_.bulk_in.w_max_packet_size);
+  desc_in.b_interval(descriptor_.bulk_in.b_interval);
+  config_in.descriptor(std::move(desc_in));
 
-  RequestQueue(data_in_req_->request(), &complete);
-}
+  function_->ConfigureEndpoint({bulk_in_addr_, std::move(config_in)});
 
-int FakeUsbCdcAcmFunction::Thread() {
-  while (true) {
-    fbl::AutoLock lock(&mtx_);
-    if (!(data_in_req_complete_ || data_out_req_complete_ || (!active_))) {
-      event_.Wait(&mtx_);
-    }
-    if (!active_ && !atomic_load(&pending_request_count_)) {
-      return 0;
-    }
-    if (data_in_req_complete_) {
-      atomic_fetch_add(&pending_request_count_, -1);
-      data_in_req_complete_ = false;
-      DataInComplete();
-    }
-    if (data_out_req_complete_) {
-      atomic_fetch_add(&pending_request_count_, -1);
-      data_out_req_complete_ = false;
-      DataOutComplete();
+  fuchsia_hardware_usb_function::EndpointConfiguration config_out;
+  fuchsia_hardware_usb_function::EndpointDescriptor desc_out;
+  desc_out.bm_attributes(descriptor_.bulk_out.bm_attributes);
+  desc_out.w_max_packet_size(descriptor_.bulk_out.w_max_packet_size);
+  desc_out.b_interval(descriptor_.bulk_out.b_interval);
+  config_out.descriptor(std::move(desc_out));
+
+  function_->ConfigureEndpoint({bulk_out_addr_, std::move(config_out)});
+
+  auto req = bulk_out_ep_.GetRequest();
+  if (req.has_value()) {
+    std::vector<fuchsia_hardware_usb_request::Request> reqs;
+    reqs.emplace_back(req->take_request());
+    fit::result<fidl::OneWayError> result = bulk_out_ep_->QueueRequests({std::move(reqs)});
+    if (result.is_error()) {
+      fdf::error("QueueRequests failed: {}", result.error_value().FormatDescription());
     }
   }
-  return 0;
+
+  completer.Reply(zx::ok());
 }
 
-size_t FakeUsbCdcAcmFunction::UsbFunctionInterfaceGetDescriptorsSize() { return descriptor_size_; }
-
-void FakeUsbCdcAcmFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
-                                                               size_t descriptors_size,
-                                                               size_t* out_descriptors_actual) {
-  memcpy(out_descriptors_buffer, &descriptor_, std::min(descriptors_size, descriptor_size_));
-  *out_descriptors_actual = descriptor_size_;
+void FakeUsbCdcAcmFunction::SetInterface(SetInterfaceRequest& request,
+                                         SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
 }
 
-zx_status_t FakeUsbCdcAcmFunction::UsbFunctionInterfaceControl(
-    const usb_setup_t* setup, const uint8_t* write_buffer, size_t write_size,
-    uint8_t* out_read_buffer, size_t read_size, size_t* out_read_actual) {
-  if (out_read_actual) {
-    *out_read_actual = 0;
+void FakeUsbCdcAcmFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown method: {}", metadata.method_ordinal);
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
+}
+
+void FakeUsbCdcAcmFunction::InComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& c : completions) {
+    bulk_in_ep_.PutRequest(usb::FidlRequest{std::move(c.request().value())});
   }
-  return ZX_OK;
 }
 
-zx_status_t FakeUsbCdcAcmFunction::UsbFunctionInterfaceSetConfigured(bool configured,
-                                                                     usb_speed_t speed) {
-  fbl::AutoLock lock(&mtx_);
-  zx_status_t status;
+void FakeUsbCdcAcmFunction::OutComplete(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  uint8_t buffer[kBulkMaxPacket];
+  std::vector<fuchsia_hardware_usb_request::Request> return_reqs;
+  for (auto& c : completions) {
+    usb::FidlRequest req(std::move(c.request().value()));
+    uint64_t size = c.transfer_size().value();
+    FDF_ASSERT(size <= kBulkMaxPacket);
+    auto put_req = fit::defer([&] { return_reqs.emplace_back(req.take_request()); });
+    if (size == 0) {
+      continue;
+    }
+    std::optional req_out = bulk_in_ep_.GetRequest();
+    if (!req_out.has_value()) {
+      fdf::error("No IN request available");
+      continue;
+    }
 
-  if (configured) {
-    if (configured_) {
-      return ZX_OK;
-    }
-    configured_ = true;
+    req.CopyFrom(0, buffer, size, bulk_out_ep_.GetMapped());
 
-    if ((status = function_.ConfigEp(&descriptor_.bulk_in, nullptr)) != ZX_OK ||
-        (status = function_.ConfigEp(&descriptor_.bulk_out, nullptr)) != ZX_OK) {
-      zxlogf(ERROR, "usb-cdc-acm-function: usb_function_config_ep failed");
+    // Queue up the exact same read data, unless the read was a single '0', in which case queue an
+    // empty response.
+    if (size == 1 && buffer[0] == '0') {
+      size = 0;
     }
-    // queue first read on OUT endpoint
-    usb_request_complete_callback_t complete = {
-        .callback =
-            [](void* ctx, usb_request_t* req) {
-              return static_cast<FakeUsbCdcAcmFunction*>(ctx)->CompletionCallback(req);
-            },
-        .ctx = this,
-    };
-    zxlogf(INFO, "usb-cdc-acm-function: about to configure!");
-    if (data_out_req_) {
-      zxlogf(INFO, "We have data out!");
+    std::vector<size_t> copied = req_out->CopyTo(0, buffer, size, bulk_in_ep_.GetMapped());
+    for (size_t i = 0; i < copied.size(); i++) {
+      req_out.value()->data()->at(i).size(copied[i]);
     }
-    RequestQueue(data_out_req_->request(), &complete);
-  } else {
-    configured_ = false;
+
+    std::vector<fuchsia_hardware_usb_request::Request> reqs;
+    reqs.emplace_back(req_out->take_request());
+    fit::result<fidl::OneWayError> result = bulk_in_ep_->QueueRequests({std::move(reqs)});
+    if (result.is_error()) {
+      fdf::error("QueueRequests IN failed: {}", result.error_value().FormatDescription());
+    }
   }
-  return ZX_OK;
+
+  if (!return_reqs.empty()) {
+    fit::result<fidl::OneWayError> result = bulk_out_ep_->QueueRequests(std::move(return_reqs));
+    if (result.is_error()) {
+      fdf::error("QueueRequests OUT failed: {}", result.error_value().FormatDescription());
+    }
+  }
 }
 
-zx_status_t FakeUsbCdcAcmFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
-                                                                    uint8_t alt_setting) {
-  return ZX_OK;
-}
-
-zx_status_t FakeUsbCdcAcmFunction::Bind() {
+zx::result<> FakeUsbCdcAcmFunction::Start() {
   fbl::AutoLock lock(&mtx_);
 
-  descriptor_size_ = sizeof(descriptor_);
+  auto svc = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (svc.is_error()) {
+    return svc.take_error();
+  }
+  function_ = fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction>(std::move(*svc));
+
   descriptor_.interface = {
       .b_length = sizeof(usb_interface_descriptor_t),
       .b_descriptor_type = USB_DT_INTERFACE,
@@ -248,7 +214,7 @@ zx_status_t FakeUsbCdcAcmFunction::Bind() {
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_IN,  // set later
       .bm_attributes = USB_ENDPOINT_BULK,
-      .w_max_packet_size = htole16(BULK_MAX_PACKET),
+      .w_max_packet_size = htole16(kBulkMaxPacket),
       .b_interval = 0,
   };
   descriptor_.bulk_out = {
@@ -256,88 +222,87 @@ zx_status_t FakeUsbCdcAcmFunction::Bind() {
       .b_descriptor_type = USB_DT_ENDPOINT,
       .b_endpoint_address = USB_ENDPOINT_OUT,  // set later
       .bm_attributes = USB_ENDPOINT_BULK,
-      .w_max_packet_size = htole16(BULK_MAX_PACKET),
+      .w_max_packet_size = htole16(kBulkMaxPacket),
       .b_interval = 0,
   };
 
-  active_ = true;
-  pending_request_count_ = 0;
-
-  parent_req_size_ = function_.GetRequestSize();
-
-  zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeUsbCdcAcmFunction: usb_function_alloc_interface failed");
-    return status;
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> ep_res;
+  zx::result bulk_in_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_in_endpoints.is_error()) {
+    return bulk_in_endpoints.take_error();
   }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_.bulk_in.b_endpoint_address);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeUsbCdcAcmFunction: usb_function_alloc_ep failed");
-    return status;
-  }
-  status = function_.AllocEp(USB_DIR_OUT, &descriptor_.bulk_out.b_endpoint_address);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "FakeUsbCdcAcmFunction: usb_function_alloc_ep failed");
-    return status;
+  zx::result bulk_out_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_out_endpoints.is_error()) {
+    return bulk_out_endpoints.take_error();
   }
 
-  bulk_in_addr_ = descriptor_.bulk_in.b_endpoint_address;
-  bulk_out_addr_ = descriptor_.bulk_out.b_endpoint_address;
+  fuchsia_hardware_usb_function::EndpointResource in_res;
+  in_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  in_res.endpoint(std::move(bulk_in_endpoints->server));
+  ep_res.emplace_back(std::move(in_res));
 
-  status = usb::Request<>::Alloc(&data_out_req_, BULK_MAX_PACKET, bulk_out_addr_, parent_req_size_);
-  if (status != ZX_OK) {
-    return status;
+  fuchsia_hardware_usb_function::EndpointResource out_res;
+  out_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  out_res.endpoint(std::move(bulk_out_endpoints->server));
+  ep_res.emplace_back(std::move(out_res));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  alloc_req.interface_count(1);
+  alloc_req.endpoints(std::move(ep_res));
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    fdf::error("failed to allocate resources: {}", alloc_result.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
   }
-  status = usb::Request<>::Alloc(&data_in_req_, BULK_MAX_PACKET, bulk_in_addr_, parent_req_size_);
-  if (status != ZX_OK) {
-    return status;
+
+  descriptor_.interface.b_interface_number = alloc_result->interface_nums()[0];
+  bulk_in_addr_ = alloc_result->endpoint_addrs()[0];
+  bulk_out_addr_ = alloc_result->endpoint_addrs()[1];
+
+  descriptor_.bulk_in.b_endpoint_address = bulk_in_addr_;
+  descriptor_.bulk_out.b_endpoint_address = bulk_out_addr_;
+
+  zx_status_t status = bulk_in_ep_.Init(std::move(bulk_in_endpoints->client), dispatcher());
+  if (status != ZX_OK)
+    return zx::error(status);
+
+  status = bulk_out_ep_.Init(std::move(bulk_out_endpoints->client), dispatcher());
+  if (status != ZX_OK)
+    return zx::error(status);
+
+  if (bulk_in_ep_.AddRequests(2, kBulkMaxPacket,
+                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 2) {
+    fdf::error("failed to allocate IN requests");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (bulk_out_ep_.AddRequests(2, kBulkMaxPacket,
+                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 2) {
+    fdf::error("failed to allocate OUT requests");
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
-  status = DdkAdd("usb-cdc-acm-function");
-  if (status != ZX_OK) {
-    return status;
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>::Create();
+  auto bind_result = fidl::BindServer(dispatcher(), std::move(server_end), this);
+  binding_ = std::move(bind_result);
+
+  std::vector<uint8_t> descriptors_buffer(sizeof(descriptor_));
+  memcpy(descriptors_buffer.data(), &descriptor_, sizeof(descriptor_));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure> config_req;
+  config_req.configuration(descriptors_buffer);
+  config_req.iface(std::move(client_end));
+
+  fidl::Result config_result = function_->Configure(std::move(config_req));
+  if (config_result.is_error()) {
+    fdf::error("failed to configure: {}", config_result.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
   }
-  function_.SetInterface(this, &usb_function_interface_protocol_ops_);
 
-  thrd_create(
-      &thread_, [](void* ctx) { return static_cast<FakeUsbCdcAcmFunction*>(ctx)->Thread(); }, this);
-
-  return ZX_OK;
+  return zx::ok();
 }
 
-void FakeUsbCdcAcmFunction::DdkUnbind(ddk::UnbindTxn txn) {
-  fbl::AutoLock lock(&mtx_);
-  active_ = false;
-  event_.Signal();
-  lock.release();
-
-  int retval;
-  thrd_join(thread_, &retval);
-
-  txn.Reply();
-}
-
-void FakeUsbCdcAcmFunction::DdkRelease() { delete this; }
-
-zx_status_t bind(void* ctx, zx_device_t* parent) {
-  zxlogf(INFO, "FakeUsbCdcAcmFunction: binding driver");
-  auto dev = std::make_unique<FakeUsbCdcAcmFunction>(parent);
-  zx_status_t status = dev->Bind();
-  if (status == ZX_OK) {
-    // devmgr is now in charge of the memory for dev
-    dev.release();
-  }
-  return ZX_OK;
-}
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = bind;
-  return ops;
-}();
+FUCHSIA_DRIVER_EXPORT(FakeUsbCdcAcmFunction);
 
 }  // namespace fake_usb_cdc_acm_function
-
-// clang-format off
-ZIRCON_DRIVER(usb_cdc_acm_function, fake_usb_cdc_acm_function::driver_ops, "zircon", "0.1");
-// clang-format on

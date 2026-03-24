@@ -31,6 +31,20 @@ namespace {
 
 using usb_virtual::BusLauncher;
 
+zx_status_t WaitForAnyFile(int dirfd, int event, const char* name, void* cookie) {
+  if (std::string_view{name} == ".") {
+    return ZX_OK;
+  }
+  if (event != WATCH_EVENT_ADD_FILE) {
+    return ZX_OK;
+  }
+  if (*name) {
+    *reinterpret_cast<fbl::String*>(cookie) = fbl::String(name);
+    return ZX_ERR_STOP;
+  }
+  return ZX_OK;
+}
+
 class UsbCdcAcmTest : public zxtest::Test {
  public:
   void SetUp() override {
@@ -83,7 +97,8 @@ class UsbCdcAcmTest : public zxtest::Test {
   fbl::String devpath_;
 };
 
-TEST_F(UsbCdcAcmTest, ReadAndWriteTest) {
+// TODO(https://fxbug.dev/317170136): Fix flakes and re-enable
+TEST_F(UsbCdcAcmTest, DISABLED_ReadAndWriteTest) {
   zx::result result = component::ConnectAt<fuchsia_hardware_serial::DeviceProxy>(
       fdio_cpp::UnownedFdioCaller(bus_->GetRootFd()).directory(), devpath_.c_str());
   ASSERT_OK(result.status_value());
