@@ -156,8 +156,6 @@ class Client final : public fidl::WireServer<fuchsia_hardware_display::Coordinat
   void GetLatestCommittedConfigStamp(
       GetLatestCommittedConfigStampCompleter::Sync& completer) override;
 
-  void SetVirtconMode(SetVirtconModeRequestView request,
-                      SetVirtconModeCompleter::Sync& completer) override;
   void ImportBufferCollection(ImportBufferCollectionRequestView request,
                               ImportBufferCollectionCompleter::Sync& completer) override;
   void SetBufferCollectionConstraints(

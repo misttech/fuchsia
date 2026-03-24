@@ -105,8 +105,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // `client` is removed from the client set and destroyed during this call.
   void OnClientDisconnected(Client* client);
 
-  void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
-
   void SubmitConfig(DisplayConfig& display_config, display::ConfigStamp client_config_stamp,
                     ClientId client_id);
 

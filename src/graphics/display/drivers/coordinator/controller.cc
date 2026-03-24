@@ -436,12 +436,6 @@ void Controller::ReleaseCaptureImage(display::DriverCaptureImageId driver_captur
   }
 }
 
-void Controller::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode) {
-  ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
-
-  clients_.SetVirtconMode(virtcon_mode);
-}
-
 void Controller::OnClientDisconnected(Client* client) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());
   ZX_DEBUG_ASSERT(client != nullptr);

@@ -274,7 +274,6 @@ class TestFidlClient {
       const fidl::WireSyncClient<fuchsia_hardware_display::Provider>& provider,
       display::ClientPriority client_priority, async_dispatcher_t* coordinator_listener_dispatcher);
 
-  zx::result<> SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
   zx::result<display::LayerId> CreateLayer();
   zx::result<> ImportBufferCollection(
       display::BufferCollectionId buffer_collection_id,
@@ -433,18 +432,6 @@ zx::result<> TestFidlClient::OpenCoordinator(
   coordinator_listener_binding_.emplace(fidl::BindServer(coordinator_listener_dispatcher,
                                                          std::move(coordinator_listener_server),
                                                          &coordinator_listener_));
-  return zx::ok();
-}
-
-zx::result<> TestFidlClient::SetVirtconMode(
-    fuchsia_hardware_display::wire::VirtconMode virtcon_mode) {
-  ZX_ASSERT(coordinator_fidl_client_.is_valid());
-
-  fidl::OneWayStatus fidl_transport_status = coordinator_fidl_client_->SetVirtconMode(virtcon_mode);
-  if (!fidl_transport_status.ok()) {
-    fdf::error("FIDL error calling SetVirtconMode: {}", fidl_transport_status.error());
-    return zx::error(fidl_transport_status.status());
-  }
   return zx::ok();
 }
 
@@ -1298,7 +1285,6 @@ TEST_F(IntegrationTest, VsyncEventAfterImageLayerConvertsToColorLayer) {
 TEST_F(IntegrationTest, DisplayOwnershipChangeEventsWithTwoClients) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
@@ -1313,7 +1299,6 @@ TEST_F(IntegrationTest, DisplayOwnershipChangeEventsWithTwoClients) {
 TEST_F(IntegrationTest, DisplayOwnershipChangeEventsWithThreeClients) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
@@ -1335,36 +1320,9 @@ TEST_F(IntegrationTest, DisplayOwnershipChangeEventsWithThreeClients) {
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 }
 
-TEST_F(IntegrationTest, VirtconForcedOverridesToolClient) {
-  std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
-  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
-
-  std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  EXPECT_FALSE(virtcon_client->state().has_display_ownership());
-  EXPECT_TRUE(primary_client->state().has_display_ownership());
-
-  std::unique_ptr<TestFidlClient> tool_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority(300));
-
-  // The display ownership change guarantees that the display ownership
-  // recomputation logic has executed. So, we know that the display ownership
-  // logic did not pick the Virtcon client that connected earlier.
-  WaitUntil([&]() { return tool_client->state().has_display_ownership(); });
-  EXPECT_FALSE(primary_client->state().has_display_ownership());
-  EXPECT_FALSE(virtcon_client->state().has_display_ownership());
-
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kForced));
-  WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
-  EXPECT_FALSE(primary_client->state().has_display_ownership());
-  EXPECT_FALSE(tool_client->state().has_display_ownership());
-}
-
 TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithImageLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kVirtconConfigStamp(1);
@@ -1390,7 +1348,6 @@ TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithImageLayers) {
 TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithColorLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =
@@ -1426,7 +1383,6 @@ TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithColorLayers) {
 TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithImageLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kVirtconConfigStamp(1);
@@ -1470,7 +1426,6 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithImageLayers) {
 TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithColorLayers) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =
@@ -1524,7 +1479,6 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithColorLayers) {
 TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   // The Virtcon client does not apply any configuration, so it will never be
@@ -1688,7 +1642,6 @@ TEST_F(IntegrationTest, ImportImageWithNonExistentBufferCollectionId) {
 TEST_F(IntegrationTest, ClampRgb) {
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   {
@@ -1737,7 +1690,6 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
   // Create and bind virtcon client.
   std::unique_ptr<TestFidlClient> virtcon_client = OpenCoordinatorTestFidlClient(
       &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kVirtcon);
-  ASSERT_OK(virtcon_client->SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode::kFallback));
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_virtcon_color_layer_result =

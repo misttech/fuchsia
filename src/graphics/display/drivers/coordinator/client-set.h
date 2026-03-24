@@ -55,9 +55,6 @@ class ClientSet {
   // Dispatches the event to all clients.
   void DispatchOnCaptureComplete();
 
-  // May change the client that owns the displays.
-  void SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode);
-
   // Connects a client at the given priority level.
   //
   // After this method completes, the client will receive an OnDisplaysChanged
@@ -116,13 +113,6 @@ class ClientSet {
 
   // The inspect node that lists all client connections.
   inspect::Node root_node_;
-
-  // Display ownership selection override.
-  //
-  // The value is reset to kFallback each time a Virtcon client connects. The
-  // client can switch to kForced.
-  fuchsia_hardware_display::wire::VirtconMode virtcon_mode_ =
-      fuchsia_hardware_display::wire::VirtconMode::kFallback;
 };
 
 }  // namespace display_coordinator

@@ -60,11 +60,6 @@ void ClientSet::DispatchOnCaptureComplete() {
   }
 }
 
-void ClientSet::SetVirtconMode(fuchsia_hardware_display::wire::VirtconMode virtcon_mode) {
-  virtcon_mode_ = virtcon_mode;
-  HandleClientOwnershipChanges();
-}
-
 namespace {
 
 void PrintChannelKoids(display::ClientPriority client_priority, const zx::channel& channel) {
@@ -115,12 +110,6 @@ zx::result<> ClientSet::ConnectClient(
   if (!alloc_checker.check()) {
     fdf::error("Failed to allocate memory for Client");
     return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  // The default Virtcon mode is fallback. Each client has to explicitly request
-  // forced mode.
-  if (client_priority == display::ClientPriority::kVirtcon) {
-    virtcon_mode_ = fuchsia_hardware_display::wire::VirtconMode::kFallback;
   }
 
   inspect::Node client_inspect_node =
@@ -183,14 +172,6 @@ void ClientSet::OnClientDisconnected(Client* client) {
 void ClientSet::HandleClientOwnershipChanges() {
   Client* new_client_owning_displays = nullptr;
   for (std::unique_ptr<Client>& client : clients_) {
-    // Special case handling for forced Virtcon mode.
-    if (client->priority() == display::ClientPriority::kVirtcon) {
-      if (virtcon_mode_ == fuchsia_hardware_display::wire::VirtconMode::kForced) {
-        new_client_owning_displays = client.get();
-        break;
-      }
-    }
-
     if (!new_client_owning_displays ||
         client->priority() > new_client_owning_displays->priority()) {
       new_client_owning_displays = client.get();

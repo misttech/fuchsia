@@ -866,19 +866,6 @@ void Client::GetLatestCommittedConfigStamp(
   completer.Reply(latest_config_stamp_.ToFidl());
 }
 
-void Client::SetVirtconMode(SetVirtconModeRequestView request,
-                            SetVirtconModeCompleter::Sync& completer) {
-  TRACE_DURATION("gfx", "Display::Client::SetVirtconMode");
-
-  if (priority_ != display::ClientPriority::kVirtcon) {
-    fdf::error("SetVirtconMode() called by non-Virtcon client with priority: {}", priority_);
-    completer.Close(ZX_ERR_BAD_STATE);
-    return;
-  }
-  controller_.SetVirtconMode(request->mode);
-  // No reply defined.
-}
-
 void Client::IsCaptureSupported(IsCaptureSupportedCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Display::Client::IsCaptureSupported");
   completer.ReplySuccess(controller_.supports_capture());

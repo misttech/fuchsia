@@ -488,12 +488,6 @@ closed protocol Coordinator {
         cookie uint64;
     });
 
-    /// Sets the visibility behavior of the virtcon.
-    ///
-    /// This must only be called from the Virtcon client.
-    strict SetVirtconMode(struct {
-        mode VirtconMode;
-    });
 
     /// Import a sysmem buffer collection token. `buffer_collection_id` must not
     /// already be in use.
