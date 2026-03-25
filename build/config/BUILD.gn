@@ -811,6 +811,10 @@ config("default_warnings") {
     # TODO(https://fxbug.dev/42073532): //third_party/spirv* need this but they
     # need it added to BUILD.gn files not in fuchsia.git
     ":Wno-deprecated-this-capture",
+
+    # TODO(https://fxbug.dev/495789303): Disable "-Wunused-but-set-variable" until
+    # all instances are fixed.
+    ":Wno-unused-but-set-variable",
   ]
 }
 
