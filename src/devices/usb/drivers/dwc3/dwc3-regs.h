@@ -392,6 +392,34 @@ class DEPCMD : public hwreg::RegisterBase<DEPCMD, uint32_t> {
   static constexpr uint32_t DEPSTARTCFG = 9;  // Start New Configuration
 };
 
+// Global SoC Bus Configuration Register 0
+class GSBUSCFG0 : public hwreg::RegisterBase<GSBUSCFG0, uint32_t> {
+ public:
+  DEF_BIT(7, INCR256BRSTENA);
+  DEF_BIT(6, INCR128BRSTENA);
+  DEF_BIT(5, INCR64BRSTENA);
+  DEF_BIT(4, INCR32BRSTENA);
+  DEF_BIT(3, INCR16BRSTENA);
+  DEF_BIT(2, INCR8BRSTENA);
+  DEF_BIT(1, INCR4BRSTENA);
+  DEF_BIT(0, INCRBRSTENA);
+  static auto Get() { return hwreg::RegisterAddr<GSBUSCFG0>(0xc100); }
+};
+
+// Global SoC Bus Configuration Register 1
+class GSBUSCFG1 : public hwreg::RegisterBase<GSBUSCFG1, uint32_t> {
+ public:
+  DEF_FIELD(31, 28, PIPETRXINFO);
+  DEF_FIELD(27, 24, PIPETWXINFO);
+  DEF_FIELD(23, 20, ENATXINFO);
+  DEF_FIELD(19, 16, ENARXINFO);
+  DEF_FIELD(15, 12, DESCRDREQINFO);
+  DEF_FIELD(11, 8, DATWRREQINFO);
+  DEF_FIELD(7, 4, DESCWRREQINFO);
+  DEF_FIELD(3, 0, DATRDREQINFO);
+  static auto Get() { return hwreg::RegisterAddr<GSBUSCFG1>(0xc104); }
+};
+
 class GSNPSID : public hwreg::RegisterBase<GSNPSID, uint32_t> {
  public:
   DEF_FIELD(31, 16, core_id);

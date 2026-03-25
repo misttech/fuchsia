@@ -794,6 +794,9 @@ zx_status_t Dwc3::ResetHw() {
     }
   }
 
+  // Fuchsia's dwc3.cc doesn't parse snps,incr-burst-type-adjustment yet.
+  GSBUSCFG0::Get().FromValue(0).set_INCR4BRSTENA(1).WriteTo(mmio);
+
   return ZX_OK;
 }
 
@@ -819,6 +822,8 @@ void Dwc3::StartPeripheralMode() {
       .ReadFrom(mmio)
       .set_USBTRDTIM(9)    // USB2.0 Turn-around time == 9 phy clocks
       .set_ULPIAUTORES(0)  // No auto resume
+      .set_ENBLSLPM(0)     // Disable PHY suspend for stability
+      .set_SUSPENDUSB20(0)
       .WriteTo(mmio);
 
   GUSB3PIPECTL::Get(0)
