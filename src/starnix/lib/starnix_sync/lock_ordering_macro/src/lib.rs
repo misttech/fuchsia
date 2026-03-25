@@ -49,7 +49,7 @@ fn build_lock_graph(
     adj_list: &BTreeMap<Ident, BTreeSet<Ident>>,
     all_paths: &mut BTreeSet<Edge>,
 ) {
-    for p in past.into_iter() {
+    for p in past.iter() {
         if p == current {
             panic!("Detected a cycle in the lock ordering graph on level {p}.");
         }

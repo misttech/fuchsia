@@ -554,7 +554,7 @@ mod tests {
         let blob_source_paths: Vec<String> = manifest_json["blobs"]
             .as_array()
             .context("checking relative manifest blobs")?
-            .into_iter()
+            .iter()
             .filter_map(|b| b["source_path"].as_str())
             .map(|p| p.to_string())
             .sorted()

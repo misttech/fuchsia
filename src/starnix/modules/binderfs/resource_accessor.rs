@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_posix as fposix;
-use fidl_fuchsia_starnix_binder as fbinder;
-use zx;
+use {fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder, zx};
 
 use starnix_core::device::mem::new_null_file;
 use starnix_core::fs::fuchsia::new_remote_file;
@@ -246,7 +244,7 @@ impl ResourceAccessor for RemoteResourceAccessor {
     fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
         for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
             self.run_file_request(fbinder::FileRequest {
-                close_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
+                close_requests: Some(chunk.iter().map(|fd| fd.raw()).collect()),
                 ..Default::default()
             })?;
         }
@@ -265,7 +263,7 @@ impl ResourceAccessor for RemoteResourceAccessor {
         self.with_remote_creds(current_task, || {
             for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
                 let response = self.run_file_request(fbinder::FileRequest {
-                    get_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
+                    get_requests: Some(chunk.iter().map(|fd| fd.raw()).collect()),
                     ..Default::default()
                 })?;
                 for fbinder::FileHandle { handle, flags, bag, .. } in
@@ -305,7 +303,7 @@ impl ResourceAccessor for RemoteResourceAccessor {
         self.with_remote_creds(current_task, || {
             for chunk in files.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
                 let mut handles = Vec::with_capacity(chunk.len());
-                for (file, _) in chunk.into_iter() {
+                for (file, _) in chunk.iter() {
                     let handle = file.to_handle(current_task);
                     let bag =
                         if handle.is_err() { Some(file.get_handles(current_task)?) } else { None };

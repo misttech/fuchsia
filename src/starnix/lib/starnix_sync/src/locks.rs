@@ -69,8 +69,7 @@ pub fn ordered_lock<'a, T>(
 /// This helps prevent deadlocks.
 pub fn ordered_lock_vec<'a, T>(mutexes: &[&'a Mutex<T>]) -> Vec<MutexGuard<'a, T>> {
     // Create a vector of tuples containing the mutex and its original index.
-    let mut indexed_mutexes =
-        mutexes.into_iter().enumerate().map(|(i, m)| (i, *m)).collect::<Vec<_>>();
+    let mut indexed_mutexes = mutexes.iter().enumerate().map(|(i, m)| (i, *m)).collect::<Vec<_>>();
 
     // Sort the indexed mutexes by their memory addresses.
     indexed_mutexes.sort_by_key(|(_, m)| *m as *const Mutex<T>);
