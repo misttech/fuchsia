@@ -37,27 +37,31 @@ impl SearchStrategy for AllDimensionsStrategy {
                 if series.remaining_artifacts.len() <= 1 {
                     continue;
                 }
-                let view = series.remaining_artifacts.clone();
-                let midpoint = view.start + view.len() / 2;
-                if test_passed {
-                    // We know [midpoint] is good, so we can remove it from the list.
-                    series.remaining_artifacts = (midpoint + 1)..view.end;
-                } else {
-                    // This version might be the culprit, so keep midpoint in the list.
-                    series.remaining_artifacts = view.start..(midpoint + 1);
-                }
+                util::halve_dimension(series, test_passed);
             }
         } else {
             // Phase 2: Bisect only the longest dimension.
-            util::halve_longest_dimension(space, test_passed);
+            let longest_series = space.iter_all_artifacts_mut().reduce(|longest, current| {
+                if longest.remaining_artifacts.len() >= current.remaining_artifacts.len() {
+                    longest
+                } else {
+                    current
+                }
+            });
+
+            if let Some(longest_series) = longest_series {
+                util::halve_dimension(longest_series, test_passed);
+            }
         }
     }
 
     fn prepare_next_step(&self, space: &mut SearchSpace) {
-        // After shrinking the search space, always update the midpoint pointers for the next step.
+        // After shrinking the search space, always update the midpoint
+        // pointers for the next step.
         for series in space.iter_all_artifacts_mut() {
             let range = &series.remaining_artifacts;
-            series.current_artifact = range.start + (range.len() / 2);
+            // If the remaining window is even, bias towards the lower half.
+            series.current_artifact = range.start + (range.len().saturating_sub(1)) / 2;
         }
     }
 
@@ -172,12 +176,12 @@ mod tests {
         strategy.prepare_next_step(&mut space);
 
         // Assert: All dimensions are shrunk to their upper half.
-        // Platform: midpoint=4, new range=(4+1)..8 = 5..8
-        assert_eq!(space.platform.remaining_artifacts, 5..8);
+        // Platform: midpoint=3, new range=(3+1)..8 = 4..8
+        assert_eq!(space.platform.remaining_artifacts, 4..8);
         // Product: midpoint=2, new range=(2+1)..5 = 3..5
         assert_eq!(space.product.remaining_artifacts, 3..5);
-        // Board: midpoint=2, new range=(2+1)..4 = 3..4
-        assert_eq!(space.board.remaining_artifacts, 3..4);
+        // Board: midpoint=1, new range=(1+1)..4 = 2..4
+        assert_eq!(space.board.remaining_artifacts, 2..4);
     }
 
     #[test]
@@ -198,12 +202,12 @@ mod tests {
         strategy.prepare_next_step(&mut space);
 
         // Assert: All dimensions are shrunk to their lower half.
-        // Platform: midpoint=4, new range=0..(4+1) = 0..5
-        assert_eq!(space.platform.remaining_artifacts, 0..5);
+        // Platform: midpoint=3, new range=0..(3+1) = 0..4
+        assert_eq!(space.platform.remaining_artifacts, 0..4);
         // Product: midpoint=2, new range=0..(2+1) = 0..3
         assert_eq!(space.product.remaining_artifacts, 0..3);
-        // Board: midpoint=2, new range=0..(2+1) = 0..3
-        assert_eq!(space.board.remaining_artifacts, 0..3);
+        // Board: midpoint=1, new range=0..(1+1) = 0..2
+        assert_eq!(space.board.remaining_artifacts, 0..2);
     }
 
     #[test]
@@ -224,7 +228,7 @@ mod tests {
         strategy.prepare_next_step(&mut space);
 
         // Assert: Only the longest dimension (platform) is shrunk.
-        // Platform: midpoint=2, new range=0..(2) = 0..2
+        // Platform: midpoint=1, new range=0..(1+1) = 0..2
         assert_eq!(space.platform.remaining_artifacts, 0..2);
         // Others are unchanged.
         assert_eq!(space.product.remaining_artifacts, 0..2);
@@ -242,7 +246,8 @@ mod tests {
         strategy.prepare_next_step(&mut space);
 
         // Long dimension is shrunk
-        assert_eq!(space.platform.remaining_artifacts, 0..4);
+        // len 6 -> midpoint (6-1)/2 = 2. fail -> 0..(2+1) = 0..3
+        assert_eq!(space.platform.remaining_artifacts, 0..3);
         // Short dimensions are not.
         assert_eq!(space.product.remaining_artifacts, 0..1);
     }

@@ -134,38 +134,6 @@ pub(super) fn halve_dimension(series: &mut ArtifactVersionSeries, test_passed: b
     }
 }
 
-/// A helper function to perform the core bisection logic on the single longest
-/// dimension of the search space.
-pub(super) fn halve_longest_dimension(space: &mut SearchSpace, test_passed: bool) {
-    // Determine which artifact has the most versions remaining to search.
-    // In the event of a tie, prefer the earlier dimension (e.g. platform over product).
-    let longest_series = space.iter_all_artifacts_mut().reduce(|longest, current| {
-        if longest.remaining_artifacts.len() >= current.remaining_artifacts.len() {
-            longest
-        } else {
-            current
-        }
-    });
-
-    if let Some(longest_series) = longest_series {
-        // If the longest version list can't be split anymore, there's nothing to do.
-        if longest_series.remaining_artifacts.len() <= 1 {
-            return;
-        }
-
-        let view = longest_series.remaining_artifacts.clone();
-        let midpoint = view.start + view.len() / 2;
-
-        // Cut the length of the longest series in half, keeping the right half if the test passed
-        // and keeping the left half if the test failed.
-        if test_passed {
-            longest_series.remaining_artifacts = (midpoint + 1)..view.end;
-        } else {
-            longest_series.remaining_artifacts = view.start..midpoint;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
