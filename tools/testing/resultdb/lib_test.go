@@ -170,43 +170,70 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 
 func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 	outputRoot := t.TempDir()
-	detail := &runtests.TestDetails{
-		Name:        "foo",
-		GNLabel:     "some label",
-		SourceLabel: "some source label",
-		Status:      runtests.TestFailure,
-		TestResult: runtests.TestResult{
-			OutputDir: "foo",
-			Cases: []runtests.TestCaseResult{
-				{
-					CaseName: "failed_case",
-					Status:   runtests.TestFailure,
-				},
-				{
-					CaseName:   "skipped_with_reason",
-					Status:     runtests.TestSkipped,
-					FailReason: "skipped for some reason",
-				},
-				{
-					CaseName: "skipped_without_reason",
-					Status:   runtests.TestSkipped,
+
+	tests := []struct {
+		name                  string
+		detail                runtests.TestDetails
+		expectedFailureReason string
+	}{
+		{
+			name: "mixed_failure_and_skipped_with_reason",
+			detail: runtests.TestDetails{
+				Name:        "foo",
+				GNLabel:     "some label",
+				SourceLabel: "some source label",
+				Status:      runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					OutputDir: "foo",
+					Cases: []runtests.TestCaseResult{
+						{CaseName: "failed_case", Status: runtests.TestFailure},
+						{CaseName: "skipped_with_reason", Status: runtests.TestSkipped, FailReason: "skipped for some reason"},
+						{CaseName: "skipped_without_reason", Status: runtests.TestSkipped},
+					},
 				},
 			},
+			expectedFailureReason: "failed_case: test case failed\nskipped_with_reason: skipped for some reason",
+		},
+		{
+			name: "all_skipped_some_with_reason",
+			detail: runtests.TestDetails{
+				Name:        "foo",
+				GNLabel:     "some label",
+				SourceLabel: "some source label",
+				Status:      runtests.TestSkipped,
+				TestResult: runtests.TestResult{
+					OutputDir: "foo",
+					Cases: []runtests.TestCaseResult{
+						{CaseName: "skipped_1", Status: runtests.TestSkipped, FailReason: "skipped reason 1"},
+						{CaseName: "skipped_2", Status: runtests.TestSkipped},
+					},
+				},
+			},
+			expectedFailureReason: "skipped_1: skipped reason 1",
 		},
 	}
 
-	extraTags := []*resultpb.StringPair{}
-	result, _, err := testDetailsToResultSink(extraTags, detail, outputRoot)
-	if err != nil {
-		t.Fatalf("Cannot parse test detail. got %s", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			extraTags := []*resultpb.StringPair{}
+			result, _, err := testDetailsToResultSink(extraTags, &tc.detail, outputRoot)
+			if err != nil {
+				t.Fatalf("Cannot parse test detail: %s", err)
+			}
 
-	expectedFailureReason := "failed_case: test case failed\nskipped_with_reason: skipped for some reason"
-	if result.FailureReason == nil {
-		t.Fatalf("Expected FailureReason to be non-nil")
-	}
-	if result.FailureReason.PrimaryErrorMessage != expectedFailureReason {
-		t.Errorf("Expected failure reason %q, got %q", expectedFailureReason, result.FailureReason.PrimaryErrorMessage)
+			if tc.expectedFailureReason == "" {
+				if result.FailureReason != nil {
+					t.Errorf("Expected nil FailureReason, got %q", result.FailureReason.PrimaryErrorMessage)
+				}
+			} else {
+				if result.FailureReason == nil {
+					t.Fatalf("Expected FailureReason to be non-nil")
+				}
+				if result.FailureReason.PrimaryErrorMessage != tc.expectedFailureReason {
+					t.Errorf("Expected failure reason %q, got %q", tc.expectedFailureReason, result.FailureReason.PrimaryErrorMessage)
+				}
+			}
+		})
 	}
 }
 

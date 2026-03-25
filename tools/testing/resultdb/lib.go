@@ -264,29 +264,17 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 
 	r.Expected = determineExpected(testStatus, resultpb.TestStatus_STATUS_UNSPECIFIED)
-	if testDetail.FailureReason != "" {
-		r.FailureReason = &resultpb.FailureReason{
-			PrimaryErrorMessage: truncateString(testDetail.FailureReason, MaxFailureReasonLength),
-		}
-	} else if hasFailedTest(testDetail) {
-		r.FailureReason = &resultpb.FailureReason{
-			PrimaryErrorMessage: createDefaultTopLevelFailureReason(testDetail),
-		}
-	}
+	r.FailureReason = createTopLevelFailureReason(testDetail)
 	setTestMetadata(&r, *testDetail)
 	return &r, testsSkipped, nil
 }
 
-func hasFailedTest(topLevelTest *runtests.TestDetails) bool {
-	for _, testCase := range topLevelTest.Cases {
-		if testCase.Status == runtests.TestFailure {
-			return true
+func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) *resultpb.FailureReason {
+	if topLevelTest.FailureReason != "" {
+		return &resultpb.FailureReason{
+			PrimaryErrorMessage: truncateString(topLevelTest.FailureReason, MaxFailureReasonLength),
 		}
 	}
-	return false
-}
-
-func createDefaultTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
 	var builder strings.Builder
 	for _, testCase := range topLevelTest.Cases {
 		if testCase.Status != runtests.TestSuccess {
@@ -305,13 +293,18 @@ func createDefaultTopLevelFailureReason(topLevelTest *runtests.TestDetails) stri
 			}
 		}
 	}
+	if builder.Len() == 0 {
+		return nil
+	}
 
 	// Truncate to max length.
 	failureReason := builder.String()
 	if len(failureReason) > MaxFailureReasonLength {
 		failureReason = failureReason[:MaxFailureReasonLength]
 	}
-	return failureReason
+	return &resultpb.FailureReason{
+		PrimaryErrorMessage: failureReason,
+	}
 }
 
 // determineExpected checks if a test result is expected.
