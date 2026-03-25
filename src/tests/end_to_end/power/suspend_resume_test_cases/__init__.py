@@ -3,10 +3,12 @@
 # found in the LICENSE file.
 
 import logging
+import pathlib
 from datetime import timedelta
+from typing import Callable
 
-from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
+import fuchsia_base_test
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.utils import control_flows, power
 from honeydew.utils.deadline import Deadline
 from mobly.asserts import assert_equal, assert_less
@@ -14,50 +16,46 @@ from mobly.asserts import assert_equal, assert_less
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SuspendResumeTestSuite(fuchsia_base_test.FuchsiaBaseTest):
-    """Suite of tests for suspend and resume."""
+class SuspendResumeTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+    """Test cases for suspend and resume."""
 
-    dut: fuchsia_device.FuchsiaDevice
+    async def setup_test(
+        self,
+    ) -> None:
+        await super().setup_test()
+        self.dut = self.mobly_test.fuchsia_devices[0]
+        self.output_file_path = self.mobly_test.output_file_path
 
-    def setup_class(self) -> None:
-        super().setup_class()
-        self.dut = self.fuchsia_devices[0]
-        assert isinstance(self.dut, fuchsia_device.FuchsiaDevice)
-
-        # TODO(https://fxbug.dev/486154863): It's weird that we're calling
-        # this private function, but that's the only way to do it at the
-        # moment.
-        usb_power_hub, usb_port = self._lookup_usb_power_hub(self.dut)
-        self.dut.set_usb_power_hub(usb_power_hub, usb_port)
-
-    def setup_test(self) -> None:
-        super().setup_test()
-        self._boot_id_before = self.dut.boot_id
+        self._boot_id_before = await self.dut.boot_id()
         _LOGGER.info(
             f"Recorded boot ID at start of test: {self._boot_id_before}"
         )
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
+        boot_id = await self.dut.boot_id()
         assert_equal(
-            self.dut.boot_id,
+            boot_id,
             self._boot_id_before,
-            f"Boot ID changed from {self._boot_id_before} to {self.dut.boot_id}",
+            f"Boot ID changed from {self._boot_id_before} to {boot_id}",
         )
-        super().teardown_test()
+        await super().teardown_test()
 
-    def test_suspend_resume(self) -> None:
-        power.suspend_resume(
+    async def test_suspend_resume(self) -> None:
+        await power.async_suspend_resume(
             self.dut, Deadline.from_timeout(timedelta(minutes=1))
         )
 
-    def test_no_suspend_on_usb(self) -> None:
-        before_on_usb_idle_stats = power.get_sag_suspend_stats(self.dut)
+    async def test_no_suspend_on_usb(self) -> None:
+        before_on_usb_idle_stats = await power.async_get_sag_suspend_stats(
+            self.dut
+        )
 
         # Then, idle a bit while plugged in to make sure we _don't_ suspend.
-        control_flows.sleep_for_duration(timedelta(seconds=60))
+        await control_flows.async_sleep_for_duration(timedelta(seconds=60))
 
         while_on_usb_stats = (
-            power.get_sag_suspend_stats(self.dut) - before_on_usb_idle_stats
+            await power.async_get_sag_suspend_stats(self.dut)
+            - before_on_usb_idle_stats
         )
 
         _LOGGER.info(

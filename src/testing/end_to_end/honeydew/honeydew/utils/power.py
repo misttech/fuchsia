@@ -7,10 +7,12 @@ import dataclasses
 import logging
 from datetime import timedelta
 
+import fuchsia_async_extension
 from mobly import asserts
 
 from honeydew import errors
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows
 from honeydew.utils.deadline import Deadline
@@ -51,6 +53,26 @@ def get_sag_suspend_stats(
 
     Args:
         device: Fuchsia device object.
+
+    Returns:
+        SagSuspendStats: Aggregate stats about suspend.
+
+    Raises:
+        errors.InspectError: If SAG inspect data is missing.
+    """
+
+    return fuchsia_async_extension.get_loop().run_until_complete(
+        async_get_sag_suspend_stats(device.as_async())
+    )
+
+
+async def async_get_sag_suspend_stats(
+    device: AsyncFuchsiaDevice,
+) -> SagSuspendStats:
+    """Returns the aggregate stats about suspend, exposed by SAG via inspect.
+
+    Args:
+        device: Async Fuchsia device object.
 
     Returns:
         SagSuspendStats: Aggregate stats about suspend.
@@ -100,6 +122,21 @@ def suspend_resume(
         device: Fuchsia device object.
         deadline: this will idle for increasing durations, up to this deadline.
     """
+    return fuchsia_async_extension.get_loop().run_until_complete(
+        async_suspend_resume(device.as_async(), deadline)
+    )
+
+
+async def async_suspend_resume(
+    device: AsyncFuchsiaDevice,
+    deadline: Deadline | None = None,
+) -> None:
+    """Disconnects USB, idles, reconnects.
+
+    Args:
+        device: Async Fuchsia device object.
+        deadline: this will idle for increasing durations, up to this deadline.
+    """
     if deadline is None:
         deadline = Deadline.from_timeout(SUSPEND_RESUME_DEFAULT_TIMEOUT)
 
@@ -116,19 +153,19 @@ def suspend_resume(
         if deadline.is_due():
             asserts.fail("SAG did not suspend during idle.")
         _LOGGER.info("Suspension attempt %s...", attempt + 1)
-        before_off_charger_stats = get_sag_suspend_stats(device)
+        before_off_charger_stats = await async_get_sag_suspend_stats(device)
 
         sleep_deadline = deadline.subdeadline_with_timeout(
             SUSPEND_RESUME_BASE_IDLE_DURATION * (2**attempt)
         )
         try:
-            device.suspend()
-            control_flows.sleep_until_deadline(sleep_deadline)
+            await device.suspend()
+            await control_flows.async_sleep_until_deadline(sleep_deadline)
         finally:
-            device.resume()
+            await device.resume()
 
         while_off_charger_stats = (
-            get_sag_suspend_stats(device) - before_off_charger_stats
+            await async_get_sag_suspend_stats(device) - before_off_charger_stats
         )
 
         _LOGGER.info(
