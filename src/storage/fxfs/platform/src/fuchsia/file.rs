@@ -481,7 +481,16 @@ impl vfs::node::Node for FxFile {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
-        let mut props = self.handle.get_properties().await.map_err(map_to_status)?;
+        let needs_props = requested_attributes.intersects(
+            !(fio::NodeAttributesQuery::PROTOCOLS
+                | fio::NodeAttributesQuery::ABILITIES
+                | fio::NodeAttributesQuery::ID),
+        );
+        let mut props = if needs_props {
+            Some(self.handle.get_properties().await.map_err(map_to_status)?)
+        } else {
+            None
+        };
 
         // In most cases, the reference count of objects can be used as the link count. There are
         // two cases where this is not the case - for unnamed temporary files and unlink files with
@@ -489,12 +498,13 @@ impl vfs::node::Node for FxFile {
         // object reference count is one as they live in the graveyard). In both cases,
         // `TO_BE_PURGED` will be set and `refs` is one.
         let to_be_purged = self.load_state().to_be_purged();
-        let link_count = if to_be_purged && props.refs == 1 { 0 } else { props.refs };
+        let link_count =
+            props.as_ref().map(|p| if to_be_purged && p.refs == 1 { 0 } else { p.refs });
 
         if requested_attributes.contains(fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE) {
             self.handle
                 .store()
-                .update_access_time(self.handle.object_id(), &mut props, || true)
+                .update_access_time(self.handle.object_id(), props.as_mut().unwrap(), || true)
                 .await
                 .map_err(map_to_status)?;
         }
@@ -510,13 +520,13 @@ impl vfs::node::Node for FxFile {
         Ok(attributes!(
             requested_attributes,
             Mutable {
-                creation_time: props.creation_time.as_nanos(),
-                modification_time: props.modification_time.as_nanos(),
-                access_time: props.access_time.as_nanos(),
-                mode: props.posix_attributes.map(|a| a.mode),
-                uid: props.posix_attributes.map(|a| a.uid),
-                gid: props.posix_attributes.map(|a| a.gid),
-                rdev: props.posix_attributes.map(|a| a.rdev),
+                creation_time: props.as_ref().map(|p| p.creation_time.as_nanos()),
+                modification_time: props.as_ref().map(|p| p.modification_time.as_nanos()),
+                access_time: props.as_ref().map(|p| p.access_time.as_nanos()),
+                mode: props.as_ref().and_then(|p| p.posix_attributes.map(|a| a.mode)),
+                uid: props.as_ref().and_then(|p| p.posix_attributes.map(|a| a.uid)),
+                gid: props.as_ref().and_then(|p| p.posix_attributes.map(|a| a.gid)),
+                rdev: props.as_ref().and_then(|p| p.posix_attributes.map(|a| a.rdev)),
                 selinux_context: self
                     .handle
                     .uncached_handle()
@@ -531,11 +541,11 @@ impl vfs::node::Node for FxFile {
                     | fio::Operations::UPDATE_ATTRIBUTES
                     | fio::Operations::READ_BYTES
                     | fio::Operations::WRITE_BYTES,
-                content_size: props.data_attribute_size,
-                storage_size: props.allocated_size,
+                content_size: self.handle.get_size(),
+                storage_size: props.as_ref().map(|p| p.allocated_size),
                 link_count: link_count,
                 id: self.handle.object_id(),
-                change_time: props.change_time.as_nanos(),
+                change_time: props.as_ref().map(|p| p.change_time.as_nanos()),
                 options: verification_options,
                 root_hash: root_hash,
                 verity_enabled: self.is_verified_file(),
@@ -796,9 +806,7 @@ mod tests {
         open_file_checked,
     };
     use anyhow::format_err;
-    use fidl_fuchsia_io as fio;
     use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
-    use fuchsia_async as fasync;
     use fuchsia_fs::file;
     use futures::join;
     use fxfs::fsck::fsck;
@@ -811,6 +819,7 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::Status;
+    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
 
