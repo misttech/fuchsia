@@ -41,4 +41,5 @@ go_binary_host_tool(
     name = "rust_test_parser",
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
 )

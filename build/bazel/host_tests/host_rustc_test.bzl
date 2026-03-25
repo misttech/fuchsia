@@ -5,6 +5,7 @@
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(":host_test.bzl", "host_test")
+load(":host_test_data.bzl", "host_test_data_files")
 
 def legacy_host_rustc_test(
         name,
@@ -42,6 +43,7 @@ def legacy_host_rustc_test(
         fail("Use `test_args` to pass test arguments instead of `args`")
 
     binary_name = binary_name if binary_name else name + "_bin"
+    binary_as_test_data = binary_name + "_as_test_data"
 
     if "manual" not in tags:
         tags = tags + ["manual"]
@@ -53,9 +55,39 @@ def legacy_host_rustc_test(
         **kwargs
     )
 
+    host_test_data_files(
+        name = binary_as_test_data,
+        srcs = [":" + binary_name],
+        testonly = True,
+        visibility = ["//visibility:private"],
+    )
+
+    # Wrap the binary invocation with //tools/rust_test_parser
+    # LINT.IfChange(rustc_test_invocation)
+    wrapper_script = "//tools/rust_test_parser:rust_test_parser_tool"
+
+    # In Bazel, and unlike GN, rustc_test() binaries always contain debug
+    # symbols (see //build/bazel/debug_symbols/README.md for details).
+    #
+    # Enable Rust stack traces by default. In GN, when an ASan or Coverage
+    # toolchain is detected, this is disabled and the test uses the stripped
+    # binary instead. This is not implemented yet  because there is no good
+    # way to track these in Bazel at the moment.
+    #
+    # TODO(https://fxbug.dev/495755822): Disable for ASan and Coverage build
+    # configurations.
+    test_args = [
+        "env RUST_BACKTRACE=1",
+        "./" + binary_name,
+    ] + test_args
+
+    test_data = test_data + [":" + binary_as_test_data]
+
+    # LINT.ThenChange(//build/rust/rustc_test.gni:rustc_test_invocation)
+
     host_test(
         name = name,
-        binary = binary_name,
+        binary = wrapper_script,
         test_name = test_name,
         test_args = test_args,
         data = test_data,
@@ -72,29 +104,15 @@ def _host_rustc_test_impl(
         test_data = [],
         tags = [],
         **kwargs):
-    binary_name = binary_name if binary_name else name + "_bin"
-
-    # Ensure this test is tagged as manual, to not appear in wildcard
-    # expansing with `bazel test`, since it does the same than the
-    # host_test() target.
-    if "manual" not in tags:
-        tags = tags + ["manual"]
-
-    rustc_test(
-        name = binary_name,
-        tags = ["manual"],
-        visibility = ["//visibility:private"],
-        **kwargs
-    )
-
-    host_test(
+    legacy_host_rustc_test(
         name = name,
-        binary = binary_name,
+        binary_name = binary_name,
         test_name = test_name,
         test_args = test_args,
-        data = test_data,
-        target_compatible_with = HOST_CONSTRAINTS,
+        test_data = test_data,
+        tags = tags,
         visibility = visibility,
+        **kwargs
     )
 
 # TODO(https://fxbug.dev/349341932): Switch to symbolic macro once the inherit_attrs error is fixed.

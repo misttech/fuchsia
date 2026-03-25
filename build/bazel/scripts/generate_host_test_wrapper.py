@@ -335,23 +335,32 @@ def generate_test_wrapper(
 
     # Generate the launcher script
     # First separate the environment variables from the other arguments.
+    # They are encoded as arguments which look like 'env VARNAME=VALUE'
+    # where the space after 'env' is intentional. They can appear in
+    # any location of test_args.
     env_vars: list[str] = []
     real_args: list[str] = []
-    if test_args:
-        for n, arg in enumerate(test_args):
-            varname, equal, value = arg.partition("=")
-            if equal != "=":
-                real_args = test_args[n:]
-                break
-            env_vars.append(arg)
+    for n, arg in enumerate(test_args):
+        if arg.startswith("env "):
+            varname, equal, value = arg[4:].partition("=")
+            assert equal == "=", f"Malformed environment argument [{arg}]"
+            env_vars.append(arg[4:])
+        else:
+            real_args.append(arg)
+
+    # If there is at least one environment variable assignment
+    # start the exec call with "env VAR1=VALUE1 VAR2=VALUE2 ..."
+    env_vars_expr = (
+        "env " + " ".join(shlex.quote(v) for v in env_vars) if env_vars else ""
+    )
 
     subtitutions = {
         "{{runtime_dir_location}}": os.path.relpath(
             output_runtime_dir, output_launcher.parent
         ),
         "{{test_name}}": shlex.quote(os.path.basename(entry_point)),
-        "{{test_args}}": " ".join([shlex.quote(arg) for arg in test_args]),
-        "{{env_vars}}": " ".join(shlex.quote(v) for v in env_vars),
+        "{{test_args}}": " ".join([shlex.quote(arg) for arg in real_args]),
+        "{{env_vars}}": env_vars_expr,
     }
     launcher_text = host_test_wrapper_template.read_text()
     for substitution, value in subtitutions.items():
