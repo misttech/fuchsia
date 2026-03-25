@@ -51,9 +51,6 @@ TexturePtr CreateDepthBuffer(Escher* escher, const ImagePtr& output_image) {
 
 RainfallDemo::RainfallDemo(escher::EscherWeakPtr escher_in, int argc, char** argv)
     : Demo(std::move(escher_in), "Rainfall Demo") {
-  // Initialize filesystem with files before creating renderer; it will
-  // use them to generate the necessary ShaderPrograms.
-  escher()->shader_program_factory()->filesystem()->InitializeWithRealFiles(kFlatlandShaderPaths);
   renderer_ = std::make_unique<escher::RectangleCompositor>(escher()->GetWeakPtr());
 }
 

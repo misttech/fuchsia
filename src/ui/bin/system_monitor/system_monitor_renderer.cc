@@ -205,7 +205,7 @@ void SystemMonitorRenderer::Initialize() {
        {},
        std::move(surface_)});
 
-  filesystem_ = escher::HackFilesystem::New();
+  filesystem_ = escher::HackFilesystem::New(nullptr);
   escher_ = std::make_unique<escher::Escher>(device_, filesystem_, nullptr);
 
   swapchain_ = CreateSwapchain(*escher_, surface_, vk::SwapchainKHR());

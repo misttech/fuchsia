@@ -60,17 +60,14 @@ bool CompileAndWriteShader(HackFilesystemPtr filesystem, ShaderProgramData progr
 
 int main(int argc, const char** argv) {
   // Register all the shader files, along with include files, that are used by Escher.
-  auto filesystem = escher::HackFilesystem::New();
+  auto filesystem = escher::HackFilesystem::New("./../../../../src/ui/lib/escher/");
+  FX_CHECK(filesystem->base_path());
 
   // The binary for this is expected to be in ./out/default/host_x64.
 
   auto paths = escher::kPaperRendererShaderPaths;
   paths.insert(paths.end(), escher::kFlatlandShaderPaths.begin(),
                escher::kFlatlandShaderPaths.end());
-
-  bool success = filesystem->InitializeWithRealFiles(paths, "./../../../../src/ui/lib/escher/");
-  FX_CHECK(success);
-  FX_CHECK(filesystem->base_path());
 
   // Ambient light program.
   if (!CompileAndWriteShader(filesystem, escher::kAmbientLightProgramData)) {

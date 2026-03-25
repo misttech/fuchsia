@@ -75,14 +75,8 @@ class ShaderProgramTest : public ::testing::Test, public VulkanTester {
     EXPECT_TRUE(escher->Cleanup());
 
     // TODO(https://fxbug.dev/42152212): remove PaperRenderer shader dependency.
-    bool success = escher->shader_program_factory()->filesystem()->InitializeWithRealFiles({
-        "shaders/model_renderer/main.vert",
-        "shaders/paper/common/use.glsl",
-        "shaders/test/main.frag",
-        "shaders/test/shadow_map_generation.frag",
-        "shaders/test/shadow_map_lighting.frag",
-    });
-    EXPECT_TRUE(success);
+    // NOTE: we used to call HackFileSystem::InitializeWithRealFiles() here; this is now unnecessary
+    // but nevertheless the tests still rely on PaperRenderer shaders, so this TODO remains.
 
     placeholder_buffer_ = escher->gpu_allocator()->AllocateBuffer(
         escher->resource_recycler(), 4096,
@@ -163,7 +157,9 @@ VK_TEST_F(ShaderProgramTest, TimingTest) {
 // sure that all their spirv can be properly found on disk.
 VK_TEST_F(ShaderProgramTest, SpirVReadFileTest) {
   auto escher = test::GetEscher();
-  auto base_path = *escher->shader_program_factory()->filesystem()->base_path() + "/shaders/";
+  HackFilesystemPtr filesystem = escher->shader_program_factory()->filesystem_for_test();
+  ASSERT_TRUE(filesystem->base_path().has_value());
+  auto base_path = *filesystem->base_path() + "/shaders/";
   auto load_and_check_program = [&](const ShaderProgramData& program) {
     for (const auto& iter : program.source_files) {
       std::vector<uint32_t> spirv;
@@ -206,7 +202,7 @@ VK_TEST_F(ShaderProgramTest, SpirVReadFileTest) {
 #if ESCHER_TEST_FOR_GLSL_SPIRV_MISMATCH
 VK_TEST_F(ShaderProgramTest, SpirvNotChangedTest) {
   auto escher = test::GetEscher();
-  auto filesystem = escher->shader_program_factory()->filesystem();
+  auto filesystem = escher->shader_program_factory()->filesystem_for_test();
 
   auto check_spirv_change = [&](const ShaderProgramData& program_data) {
     // Loop over all the shader stages for the provided program.

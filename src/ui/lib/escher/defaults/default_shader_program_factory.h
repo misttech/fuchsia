@@ -22,9 +22,9 @@ class DefaultShaderProgramFactory final : public ShaderProgramFactory {
   DefaultShaderProgramFactory(EscherWeakPtr escher, HackFilesystemPtr filesystem);
   ~DefaultShaderProgramFactory() override;
 
-  // Exposed so that the client can call InitializeWithRealFiles() upon the
-  // filesystem.  This is hacky and will change in the future.
-  const HackFilesystemPtr& filesystem() const { return filesystem_; }
+  // Exposed so that the tests can directly access the filesystem.
+  // This is hacky and will hopefully change in the future.
+  const HackFilesystemPtr& filesystem_for_test() const { return filesystem_; }
 
   // Clear all cached programs and other data.
   void Clear();

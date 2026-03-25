@@ -5,7 +5,6 @@
 import("//build/dist/resource.gni")
 import("//build/testing/host_test_data.gni")
 
-# LINT.IfChange
 shader_files = [
   # Flatland renderer.
   "flatland/flat_main.frag",
@@ -28,9 +27,6 @@ shader_files = [
   "test/shadow_map_lighting.frag",
 ]
 
-# LINT.ThenChange(//src/ui/lib/escher/test/common/gtest_escher.cc)
-
-# LINT.IfChange
 spirv_files = [
   # Flatland renderer.
   "shaders_flatland_flat_main_frag14695981039346656037.spirv",
@@ -56,8 +52,6 @@ spirv_files = [
   "shaders_test_main_frag12890958529260787213.spirv",
   "shaders_test_main_frag4304586084079301274.spirv",
 ]
-
-# LINT.ThenChange(//src/ui/lib/escher/test/common/gtest_escher.cc)
 
 if (is_linux) {
   # Copies shaders needed for escher linux tests to a specific test data

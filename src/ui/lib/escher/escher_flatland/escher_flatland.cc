@@ -426,7 +426,7 @@ EscherFlatland::EscherFlatland(async_dispatcher_t* dispatcher, std::string name)
        {},
        std::move(surface)});
 
-  auto filesystem = escher::HackFilesystem::New();
+  auto filesystem = escher::HackFilesystem::New(nullptr);
   escher_ = std::make_unique<escher::Escher>(device, filesystem, nullptr);
 
   image_extent_ = vk::Extent2D(logical_size.width(), logical_size.height());

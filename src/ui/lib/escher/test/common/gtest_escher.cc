@@ -16,56 +16,6 @@ namespace escher {
 namespace test {
 namespace {
 
-#if !ESCHER_USE_RUNTIME_GLSL
-static void LoadShadersFromDisk(HackFilesystemPtr fs) {
-  // LINT.IfChange
-  const std::vector<HackFilePath> paths = {
-      // Flatland renderer.
-      "shaders/shaders_flatland_flat_main_frag14695981039346656037.spirv",
-      "shaders/shaders_flatland_flat_main_vert14695981039346656037.spirv",
-
-      // Flatland Color Correction
-      "shaders/shaders_flatland_flat_color_correction_frag14695981039346656037.spirv",
-      "shaders/shaders_flatland_flat_color_correction_vert14695981039346656037.spirv",
-
-      // Paper renderer (kept around to test that ShaderVariantArgs are processed correctly,
-      // see shader_program_unittest.cc).
-      "shaders/shaders_model_renderer_main_vert15064700897732225279.spirv",
-      "shaders/shaders_model_renderer_main_vert4304586084079301274.spirv",
-      "shaders/shaders_model_renderer_main_vert7456302057085141907.spirv",
-      "shaders/shaders_paper_frag_main_ambient_light_frag4304586084079301274.spirv",
-      "shaders/shaders_paper_frag_main_ambient_light_frag7456302057085141907.spirv",
-      "shaders/shaders_paper_frag_main_ambient_light_frag9217636760892358205.spirv",
-      "shaders/shaders_paper_frag_main_point_light_frag15064700897732225279.spirv",
-      "shaders/shaders_paper_vert_main_shadow_volume_extrude_vert15276133142244279294.spirv",
-      "shaders/shaders_paper_vert_main_shadow_volume_extrude_vert9217636760892358205.spirv",
-
-      // Test-only
-      "shaders/shaders_model_renderer_main_vert12890958529260787213.spirv",
-      "shaders/shaders_test_main_frag12890958529260787213.spirv",
-      "shaders/shaders_test_main_frag4304586084079301274.spirv",
-  };
-  // LINT.ThenChange(//src/ui/lib/escher/shaders/BUILD.gn)
-  FX_CHECK(fs->InitializeWithRealFiles(paths));
-}
-#else
-static void LoadShadersFromDisk(HackFilesystemPtr fs) {
-  // LINT.IfChange
-  // NOTE: this and ../shaders/BUILD.gn must be kept in sync.
-  const std::vector<HackFilePath> paths = {
-      // Flatland renderer.
-      "shaders/flatland/flat_main.frag",
-      "shaders/flatland/flat_main.vert",
-
-      // Flatland Color Correction
-      "shaders/flatland/flat_color_correction.frag",
-      "shaders/flatland/flat_color_correction.vert",
-  };
-  // LINT.ThenChange(//src/ui/lib/escher/shaders/BUILD.gn)
-  FX_CHECK(fs->InitializeWithRealFiles(paths));
-}
-#endif
-
 VulkanInstance::Params GetDefaultVulkanInstanceParams() {
   VulkanInstance::Params instance_params(
       {{},
@@ -162,7 +112,6 @@ void EscherEnvironment::SetUp() {
     vulkan_device_ =
         VulkanDeviceQueues::New(vulkan_instance_, GetDefaultVulkanDeviceQueuesParams(false));
     hack_filesystem_ = HackFilesystem::New();
-    LoadShadersFromDisk(hack_filesystem_);
     escher_ = std::make_unique<Escher>(vulkan_device_, hack_filesystem_, /*gpu_allocator*/ nullptr);
     FX_CHECK(escher_);
 

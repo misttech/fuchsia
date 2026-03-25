@@ -11,7 +11,6 @@
 
 #include <memory>
 
-#include "lib/vfs/cpp/pseudo_dir.h"
 #include "src/ui/examples/escher/common/demo.h"
 #include "src/ui/lib/escher/util/trace_macros.h"
 
@@ -38,10 +37,7 @@ DemoHarnessFuchsia::DemoHarnessFuchsia(async::Loop* loop, WindowParams window_pa
       owned_loop_(loop ? nullptr : new async::Loop(&kAsyncLoopConfigAttachToCurrentThread)),
       loop_(loop ? loop : owned_loop_.get()),
       component_context_(sys::ComponentContext::CreateAndServeOutgoingDirectory()) {
-  // Provide a PseudoDir where the demo can register debugging services.
-  auto debug_dir = std::make_shared<vfs::PseudoDir>();
-  component_context()->outgoing()->debug_dir()->AddSharedEntry("demo", debug_dir);
-  filesystem_ = escher::HackFilesystem::New(debug_dir);
+  filesystem_ = escher::HackFilesystem::New();
 
   // Synchronously create trace provider so that all subsequent traces are recorded.  This is
   // necessary e.g. if the system is already tracing when this app is launched, in order to not miss

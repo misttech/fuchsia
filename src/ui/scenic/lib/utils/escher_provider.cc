@@ -6,7 +6,6 @@
 
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/vfs/cpp/pseudo_file.h>
 
 #include <sstream>
 
@@ -76,11 +75,7 @@ escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context,
     return nullptr;
   }
 
-  // Provide a PseudoDir where the gfx system can register debugging services.
-  auto debug_dir = std::make_shared<vfs::PseudoDir>();
-  app_context->outgoing()->debug_dir()->AddSharedEntry("gfx", debug_dir);
-
-  auto shader_fs = escher::HackFilesystem::New(debug_dir);
+  escher::HackFilesystemPtr shader_fs;
   {
     zx::channel client, server;
     zx::channel::create(0, &client, &server);
@@ -95,8 +90,8 @@ escher::EscherUniquePtr CreateEscher(sys::ComponentContext* app_context,
     }
     fidl::ClientEnd<fuchsia_io::Directory> dir(std::move(client));
 
-    bool success = shader_fs->InitializeWithRealFilesInDir({}, std::move(dir));
-    FX_DCHECK(success) << "Failed to init shader files.";
+    shader_fs = escher::HackFilesystem::New(std::move(dir));
+    FX_DCHECK(shader_fs) << "Failed to init shader files.";
   }
 
   // Initialize Escher.

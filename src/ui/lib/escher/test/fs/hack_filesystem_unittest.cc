@@ -23,9 +23,7 @@ using namespace escher;
 
 TEST(HackFilesystem, Init) {
   auto fs = HackFilesystem::New();
-  bool success = fs->InitializeWithRealFiles({"shaders/model_renderer/main.vert"});
 
-  EXPECT_TRUE(success);
   HackFileContents contents = fs->ReadFile("shaders/model_renderer/main.vert");
   EXPECT_GT(contents.size(), 0U);
   EXPECT_EQ(contents.substr(0, 12), "#version 450");
@@ -62,25 +60,25 @@ TEST(HackFilesystem, InitWithRealFilesInDir) {
   root_dir->AddEntry(kDir, std::move(subdir));
   root_dir->AddEntry(kFile2, std::move(file2));
 
-  // |InitializeWithRealFilesInDir| uses a SyncClient which blocks until the server (on our loop)
+  // HackFilesystem uses a SyncClient which blocks until the server (on our loop)
   // responds, so run the loop in a background thread.
   loop.StartThread("vfs-thread");
 
   {
-    auto fs = HackFilesystem::New();
     auto [client, server] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
     root_dir->Serve(fuchsia_io::kPermReadable, std::move(server), loop.dispatcher());
 
-    EXPECT_TRUE(fs->InitializeWithRealFilesInDir({kPath1, kPath2}, std::move(client)));
+    auto fs = HackFilesystem::New(std::move(client));
     EXPECT_EQ(fs->ReadFile(kPath1), kContent1);
     EXPECT_EQ(fs->ReadFile(kPath2), kContent2);
   }
   {
-    auto fs = HackFilesystem::New();
     auto [client, server] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
     root_dir->Serve(fuchsia_io::kPermReadable, std::move(server), loop.dispatcher());
 
-    EXPECT_FALSE(fs->InitializeWithRealFilesInDir({kPath1, kInvalidPath}, std::move(client)));
+    auto fs = HackFilesystem::New(std::move(client));
+    EXPECT_EQ(fs->ReadFile(kPath1), kContent1);
+    EXPECT_EQ(fs->ReadFile(kPath2), kContent2);
   }
 
   loop.Shutdown();

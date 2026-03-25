@@ -12,13 +12,11 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 
 #include "src/lib/fxl/memory/ref_counted.h"
 
 #ifdef __Fuchsia__
 #include <fidl/fuchsia.io/cpp/fidl.h>
-#include <lib/vfs/cpp/pseudo_dir.h>
 #endif
 
 namespace escher {
@@ -31,76 +29,100 @@ using HackFilePathSet = std::unordered_set<HackFilePath>;
 class HackFilesystemWatcher;
 using HackFilesystemWatcherFunc = fit::function<void(HackFilePath)>;
 
-// An in-memory file system that could be watched for content change.
+// An in-memory file system that can be watched for content change.
 class HackFilesystem : public fxl::RefCountedThreadSafe<HackFilesystem> {
  public:
-  // Create a platform-appropriate HackFileSystem (e.g. for Fuchsia or Linux).
-  static HackFilesystemPtr New();
+  // Instantiate a filesystem.
+  //
+  // Files will be loaded from the real filesystem, using the specified root directory
+  // path.  On Fuchsia the default root is "/pkg/data/"; on Linux, the default is
+  // "../test_data/escher", which points to a directory of escher test data relative
+  // to the test binary itself.
+  //
+  // If no files are needed, passing nullptr is OK.  Examples:
+  // - a test will be using `WriteFileForTest()`, so doesn't need access to the real filesystem
+  // - an application uses Escher with no shaders; e.g. when only `DebugFont` is used.
+  static HackFilesystemPtr New(const char* root =
 #ifdef __Fuchsia__
-  static HackFilesystemPtr New(const std::shared_ptr<vfs::PseudoDir>& root_dir);
+                                   "/pkg/data"
+#else
+                                   "../test_data/escher"
 #endif
-  virtual ~HackFilesystem();
+  );
+
+#ifdef __Fuchsia__
+  // Instantiate a filesystem.  Files will be loaded from the provided directory.
+  static HackFilesystemPtr New(fidl::ClientEnd<fuchsia_io::Directory> dir);
+#endif
+
+  ~HackFilesystem();
 
   // Return the contents of the file, which can be empty if the path doesn't
   // exist (HackFilesystem doesn't distinguish between empty and non-existent
   // files).
-  HackFileContents ReadFile(const HackFilePath& path) const;
-
-  // Set the file contents and notify watchers of the change.
-  void WriteFile(const HackFilePath& path, HackFileContents new_contents);
+  HackFileContents ReadFile(const HackFilePath& path);
 
   // The watcher will be notified whenever any of the paths that it cares
   // about change.  To stop watching, simply release the unique_ptr.
   std::unique_ptr<HackFilesystemWatcher> RegisterWatcher(HackFilesystemWatcherFunc func);
 
-  // Load the specified files from the real filesystem, given a root directory.
-  // On Fuchsia the default root is "/pkg/data/"; on Linux, the default is
-  // "../test_data/escher", which points to a directory of escher test data
-  // relative to the test binary itself.
-  virtual bool InitializeWithRealFiles(const std::vector<HackFilePath>& paths, const char* root =
-#ifdef __Fuchsia__
-                                                                                   "/pkg/data"
-#else
-                                                                                   "../test_data/"
-                                                                                   "escher"
-#endif
-                                       ) = 0;
-#ifdef __Fuchsia__
-  // Load the specified files from the real filesystem, given a root directory handle.
-  virtual bool InitializeWithRealFilesInDir(const std::vector<HackFilePath>& paths,
-                                            fidl::ClientEnd<fuchsia_io::Directory> dir) {
-    return false;
-  }
-#endif
-
-  // Notifies all watchers that their watched file has changed (it actually hasn't).
-  void InvalidateFile(const HackFilePath& path);
-
-  // Calls |InvalidateFile()| for each file in the filesystem.
-  void InvalidateAllFiles();
-
-  // If the hack file system was initialized with a call to |InitializeWithRealFiles|
+  // If the hack file system was initialized with a call to |InitializeWithBasePath|
   // then the member variable base_path_ is set to be the absolute path of the
   // root path that was provided. If the file system was not initialized, then the
   // optional return value will be null.
   const std::optional<std::string>& base_path() const { return base_path_; }
 
 #ifdef __Fuchsia__
-  virtual const std::optional<fidl::SyncClient<fuchsia_io::Directory>>& base_dir() const {
-    static std::optional<fidl::SyncClient<fuchsia_io::Directory>> empty;
-    return empty;
+  const std::optional<fidl::SyncClient<fuchsia_io::Directory>>& base_dir() const {
+    return base_dir_;
   }
 #endif
 
- protected:
-  HackFilesystem() = default;
-  static bool LoadFile(HackFilesystem* fs, const HackFilePath& root, const HackFilePath& path);
-
-  std::optional<std::string> base_path_;
+  // Set the file contents and notify watchers of the change.
+  void WriteFileForTest(const HackFilePath& path, HackFileContents new_contents) {
+    WriteFile(path, std::move(new_contents));
+  }
 
  private:
+  HackFilesystem() = default;
+  FRIEND_MAKE_REF_COUNTED(HackFilesystem);
   friend class HackFilesystemWatcher;
+  friend class fxl::RefCountedThreadSafe<HackFilesystem>;
 
+  // One of `LoadFile()`, `LoadFileAtDir()` is called when a file isn't found in `files_`,
+  // to attempt to populate the entry in `files_`.
+  static bool LoadFile(HackFilesystem* fs, const HackFilePath& root, const HackFilePath& path);
+#ifdef __Fuchsia__
+  static bool LoadFileAtDir(HackFilesystem* fs, const HackFilePath& path);
+#endif
+
+  // Set the file contents and notify watchers of the change.
+  void WriteFile(const HackFilePath& path, HackFileContents new_contents);
+
+  // Notifies all watchers that their watched file has changed.
+  void InvalidateFile(const HackFilePath& path);
+
+  // Load the specified files from the real filesystem, given a root directory.
+  // On Fuchsia the default root is "/pkg/data/"; on Linux, the default is
+  // "../test_data/escher", which points to a directory of escher test data
+  // relative to the test binary itself.
+  void InitializeWithBasePath(const char* root =
+#ifdef __Fuchsia__
+                                  "/pkg/data"
+#else
+                                  "../test_data/"
+                                  "escher"
+#endif
+  );
+#ifdef __Fuchsia__
+  // Load the specified files from the real filesystem, given a root directory handle.
+  void InitializeWithBaseDir(fidl::ClientEnd<fuchsia_io::Directory> dir);
+#endif
+
+  std::optional<std::string> base_path_;
+#ifdef __Fuchsia__
+  std::optional<fidl::SyncClient<fuchsia_io::Directory>> base_dir_;
+#endif
   std::unordered_map<HackFilePath, HackFileContents> files_;
   std::unordered_set<HackFilesystemWatcher*> watchers_;
 };

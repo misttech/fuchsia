@@ -73,7 +73,6 @@ class RectangleCompositorTest : public ReadbackTest {
   // |ReadbackTest|
   void SetUp() override {
     ReadbackTest::SetUp();
-    escher()->shader_program_factory()->filesystem()->InitializeWithRealFiles(kFlatlandShaderPaths);
     ren_ = std::make_unique<RectangleCompositor>(escher()->GetWeakPtr());
     frame_setup();
     auto gpu_uploader =

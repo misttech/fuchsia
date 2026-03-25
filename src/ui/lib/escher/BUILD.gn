@@ -343,8 +343,6 @@ template("escher_library") {
         "flib/fence_queue.h",
         "flib/fence_set_listener.cc",
         "flib/fence_set_listener.h",
-        "fs/fuchsia_data_source.cc",
-        "fs/fuchsia_data_source.h",
         "util/fuchsia_utils.cc",
         "util/fuchsia_utils.h",
       ]
@@ -357,7 +355,6 @@ template("escher_library") {
         "//sdk/lib/fit",
         "//sdk/lib/sys/cpp",
         "//sdk/lib/syslog/cpp",
-        "//sdk/lib/vfs/cpp",
         "//zircon/system/public",
         "//zircon/system/ulib/trace-vthread",
       ]
@@ -366,8 +363,6 @@ template("escher_library") {
 
     if (is_linux) {
       sources += [
-        "fs/linux_data_source.cc",
-        "fs/linux_data_source.h",
         "util/impl/trace_macros_impl.cc",
         "util/impl/trace_macros_impl.h",
       ]

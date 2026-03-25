@@ -120,13 +120,14 @@ vec4 ComputeVertexPosition() {
 
 void ShaderModuleTemplateTest::SetUp() {
   // Initialize filesystem.
-  filesystem_ = HackFilesystem::New();
-  filesystem_->WriteFile(HackFilePath(kMainPath), kMain);
-  filesystem_->WriteFile(HackFilePath(kPerVertexOutPath), kPerVertexOut);
-  filesystem_->WriteFile(HackFilePath(kDescriptorSetsPath), kDescriptorSets);
-  filesystem_->WriteFile(HackFilePath(kVertexAttributesPath), kVertexAttributes);
-  filesystem_->WriteFile(HackFilePath(kComputeIdentityPositionPath), kComputeIdentityPosition);
-  filesystem_->WriteFile(HackFilePath(kComputeShiftedPositionPath), kComputeShiftedPosition);
+  filesystem_ = HackFilesystem::New(nullptr);
+  filesystem_->WriteFileForTest(HackFilePath(kMainPath), kMain);
+  filesystem_->WriteFileForTest(HackFilePath(kPerVertexOutPath), kPerVertexOut);
+  filesystem_->WriteFileForTest(HackFilePath(kDescriptorSetsPath), kDescriptorSets);
+  filesystem_->WriteFileForTest(HackFilePath(kVertexAttributesPath), kVertexAttributes);
+  filesystem_->WriteFileForTest(HackFilePath(kComputeIdentityPositionPath),
+                                kComputeIdentityPosition);
+  filesystem_->WriteFileForTest(HackFilePath(kComputeShiftedPositionPath), kComputeShiftedPosition);
 
   // Initialize module template.
   auto escher = test::GetEscher();
@@ -188,17 +189,19 @@ VK_TEST_F(ShaderModuleTemplateTest, Listeners) {
 
   // This doesn't cause any problems because no variants use this file, because
   // SHIFTED_MODEL_POSITION isn't defined.
-  filesystem()->WriteFile(HackFilePath(kComputeShiftedPositionPath), "garbage glsl code");
+  filesystem()->WriteFileForTest(HackFilePath(kComputeShiftedPositionPath), "garbage glsl code");
   EXPECT_EQ(listener.update_count(), 1);
 
   // If a file that was transitively included is not actually included, the
   // module's SPIR-V will not be regenerated.
-  filesystem()->WriteFile(HackFilePath(kComputeIdentityPositionPath), kComputeIdentityPosition);
+  filesystem()->WriteFileForTest(HackFilePath(kComputeIdentityPositionPath),
+                                 kComputeIdentityPosition);
   EXPECT_EQ(listener.update_count(), 1);
 
   // Changing a file that was transitively included causes the module's SPIR-V
   // to be regenerated.
-  filesystem()->WriteFile(HackFilePath(kComputeIdentityPositionPath), kComputeShiftedPosition);
+  filesystem()->WriteFileForTest(HackFilePath(kComputeIdentityPositionPath),
+                                 kComputeShiftedPosition);
   EXPECT_EQ(listener.update_count(), 2);
 }
 }  // anonymous namespace
