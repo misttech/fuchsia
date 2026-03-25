@@ -146,22 +146,21 @@ template("fuchsia_test_package") {
     # of the test target creation steps to after the compilation of ffx, which would slow the
     # build significantly. ffx is ambiently available when these tests are run and is listed
     # as a dependency in //bundles/infra/test:host_tools.
-    host_test_component_target =
-        "//src/developer/ffx:suite_test_data($host_toolchain)"
-    host_tool_dir = get_label_info(host_test_component_target, "root_out_dir")
-    host_executable = "$host_tool_dir/ffx"
+    # Use the stable host-tools directory for ffx, resummarize, and test-pilot.
+    # This directory is variant-agnostic and contains the actual binaries
+    # even when variants (like coverage) redirect the primary host toolchain.
+    host_executable = "$host_tools_dir/ffx"
     host_executable_rebased = rebase_path(host_executable, root_build_dir)
 
     resummarize_target = "//tools/test_pilot/post_processing/resummarize:test_deps($host_toolchain)"
-    resummarize_executable = "$host_tool_dir/resummarize"
+    resummarize_executable = "$host_tools_dir/resummarize"
     resummarize_executable_rebased =
         rebase_path(resummarize_executable, root_build_dir)
 
     test_pilot_target = "//tools/test_pilot:test_deps($host_toolchain)"
-    test_pilot_dir = get_label_info(test_pilot_target, "root_out_dir")
-    test_pilot_executable = "$test_pilot_dir/test-pilot"
+    test_pilot_executable = "$host_tools_dir/test-pilot"
     test_pilot_executable_rebased =
-        "./" + rebase_path(test_pilot_executable, root_build_dir)
+        rebase_path(test_pilot_executable, root_build_dir)
 
     test_deps = []
 
@@ -209,7 +208,7 @@ template("fuchsia_test_package") {
           "{output_directory}/test/ffx.log",
           "--strict",
           "--config",
-          "ffx.subtool-search-paths=host_${host_cpu}",
+          "ffx.subtool-search-paths=host-tools",
           "--config",
           "log.dir={output_directory}/test/ffx_logs",
           "--config",
