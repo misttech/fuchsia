@@ -144,7 +144,7 @@ impl Registry {
         let Some(credential_ids) = self.credential_ids_by_element.get(element) else {
             return Vec::new();
         };
-        credential_ids.into_iter().cloned().collect()
+        credential_ids.iter().cloned().collect()
     }
 
     pub fn unregister_all_for_element(&mut self, element: &ElementID) {

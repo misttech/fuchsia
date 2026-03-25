@@ -429,7 +429,7 @@ impl MetricsLoggerServer {
             None => HashMap::new(),
             Some(c) => c.temperature_drivers.as_ref().map_or_else(
                 || HashMap::new(),
-                |d| d.into_iter().map(|m| (m.sensor_name.clone(), m.alias.clone())).collect(),
+                |d| d.iter().map(|m| (m.sensor_name.clone(), m.alias.clone())).collect(),
             ),
         };
 
@@ -452,7 +452,7 @@ impl MetricsLoggerServer {
             None => HashMap::new(),
             Some(c) => c.power_drivers.as_ref().map_or_else(
                 || HashMap::new(),
-                |d| d.into_iter().map(|m| (m.sensor_name.clone(), m.alias.clone())).collect(),
+                |d| d.iter().map(|m| (m.sensor_name.clone(), m.alias.clone())).collect(),
             ),
         };
 
@@ -474,7 +474,7 @@ impl MetricsLoggerServer {
             None => HashMap::new(),
             Some(c) => c.gpu_drivers.as_ref().map_or_else(
                 || HashMap::new(),
-                |d| d.into_iter().map(|m| (m.sensor_name.clone(), m.alias.clone())).collect(),
+                |d| d.iter().map(|m| (m.sensor_name.clone(), m.alias.clone())).collect(),
             ),
         };
 

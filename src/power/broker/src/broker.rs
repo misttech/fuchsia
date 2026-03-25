@@ -1050,12 +1050,12 @@ impl Claim {
 fn element_ids_required_by_claims<'a>(
     claims: &'a [Claim],
 ) -> impl Iterator<Item = &'a ElementID> + use<'a> {
-    claims.into_iter().map(|c| &c.requires().element_id).unique()
+    claims.iter().map(|c| &c.requires().element_id).unique()
 }
 
 /// Returns the maximum level required by claims, or None if empty.
 fn max_level_required_by_claims(claims: &[Claim]) -> Option<IndexedPowerLevel> {
-    claims.into_iter().map(|x| x.requires().level).max()
+    claims.iter().map(|x| x.requires().level).max()
 }
 
 #[derive(Debug)]

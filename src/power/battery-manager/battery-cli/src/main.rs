@@ -262,7 +262,7 @@ fn parse_command(line: String) -> ParseResult<(Command, Vec<String>)> {
     match components.split_first() {
         Some((raw_cmd, args)) => match raw_cmd.parse() {
             Ok(cmd) => {
-                let args = args.into_iter().map(|s| s.to_string()).collect();
+                let args = args.iter().map(|s| s.to_string()).collect();
                 ParseResult::Valid((cmd, args))
             }
             Err(_) => ParseResult::Error(format!("\"{}\" is not a valid command", raw_cmd)),
