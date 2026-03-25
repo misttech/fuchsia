@@ -22,6 +22,8 @@ class MockSourceFileProvider : public SourceFileProvider {
   // Sets the expected contents for the given file.
   void SetFileData(const std::string& file_name, FileData data);
 
+  ErrOr<FileMetadata> GetFileMetadata(const std::string& file_name,
+                                      const std::string& file_build_dir) const override;
   ErrOr<FileData> GetFileData(const std::string& file_name,
                               const std::string& file_build_dir) const override;
 

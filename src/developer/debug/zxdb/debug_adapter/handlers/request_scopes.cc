@@ -8,7 +8,6 @@
 #include <dap/protocol.h>
 #include <dap/session.h>
 
-#include "lib/syslog/cpp/macros.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
 #include "src/developer/debug/zxdb/client/target.h"
@@ -16,7 +15,6 @@
 #include "src/developer/debug/zxdb/debug_adapter/context.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
-#include "src/developer/debug/zxdb/symbols/variable.h"
 #include "src/developer/debug/zxdb/symbols/visit_scopes.h"
 
 namespace zxdb {
@@ -45,11 +43,11 @@ dap::ResponseOrError<dap::ScopesResponse> OnRequestScopes(DebugAdapterContext* c
   auto file_provider =
       SourceFileProviderImpl(frame->GetThread()->GetProcess()->GetTarget()->settings());
   auto data_or =
-      file_provider.GetFileData(location.file_line().file(), location.file_line().comp_dir());
-  if (!data_or.has_error()) {
+      file_provider.GetFileMetadata(location.file_line().file(), location.file_line().comp_dir());
+  if (data_or.ok()) {
     dap::Source s;
-    s.path = data_or.value().full_path;
-    source = s;
+    s.path = data_or.take_value().full_path;
+    source = std::move(s);
   }
 
   for (auto i = 0; i < static_cast<int>(VariablesType::kVariablesTypeCount); i++) {

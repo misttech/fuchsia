@@ -10,6 +10,14 @@ void MockSourceFileProvider::SetFileData(const std::string& file_name, FileData 
   contents_[file_name] = std::move(data);
 }
 
+ErrOr<SourceFileProvider::FileMetadata> MockSourceFileProvider::GetFileMetadata(
+    const std::string& file_name, const std::string& file_build_dir) const {
+  auto found = contents_.find(file_name);
+  if (found == contents_.end())
+    return Err("File not found: '%s'.", file_name.c_str());
+  return SourceFileProvider::FileMetadata(found->second);
+}
+
 ErrOr<SourceFileProvider::FileData> MockSourceFileProvider::GetFileData(
     const std::string& file_name, const std::string& file_build_dir) const {
   auto found = contents_.find(file_name);
