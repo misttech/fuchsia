@@ -90,6 +90,18 @@ class TestOperation : public OperationBase {
   std::chrono::nanoseconds timeout_;
 };
 
+class TestOperationView : public OperationBase {
+ public:
+  TestOperationView(std::string_view operation_name, std::chrono::nanoseconds timeout)
+      : operation_name_(operation_name), timeout_(timeout) {}
+  std::string_view Name() const final { return operation_name_; }
+  std::chrono::nanoseconds Timeout() const final { return timeout_; }
+
+ private:
+  std::string_view operation_name_;
+  std::chrono::nanoseconds timeout_;
+};
+
 class TestOperationTracker : public FsOperationTracker {
  public:
   TestOperationTracker(OperationBase* operation, WatchdogInterface* watchdog, bool track = true)
@@ -246,6 +258,44 @@ TEST(Watchdog, NoTimeoutsWhenDisabled) {
   ASSERT_TRUE(CheckOccurance(str, kLogMessageOperation, 0));
   ASSERT_TRUE(CheckOccurance(str, kLogMessageExceededTimeout, 0));
   ASSERT_TRUE(CheckOccurance(str, kTestOperationName1, 0));
+}
+
+TEST(Watchdog, ManualCompleteSafety) {
+  auto watchdog = CreateWatchdog(kDefaultOptions);
+  EXPECT_TRUE(watchdog->Start().is_ok());
+  {
+    TestOperation op(kTestOperationName1, kOperationTimeout);
+    TestOperationTracker tracker(&op, watchdog.get(), true);
+
+    // Explicit manual complete before destruction
+    zx::result<> res = tracker.Complete();
+    EXPECT_TRUE(res.is_ok());
+
+    // Destruction occurs here, which implicitly calls Complete() again.
+    // If the watchdog_ pointer isn't safely bypassed, this will crash.
+  }
+}
+
+TEST(Watchdog, StringViewFormatSafety) {
+  fuchsia_logging::FakeLogSink sink;
+  {
+    auto watchdog = CreateWatchdog(kDefaultOptions);
+    EXPECT_TRUE(watchdog->Start().is_ok());
+    {
+      const char memory_block[] = "SafeNameGARBAGE_READ";
+      // Only view the "SafeName" portion. If bounds protection fails, "GARBAGE_READ" leaks.
+      TestOperationView op(std::string_view(memory_block, 8), kOperationTimeout);
+      TestOperationTracker tracker(&op, watchdog.get());
+      ASSERT_TRUE(PollUntilTrueOrTimeout([&tracker]() { return tracker.TimeoutHandlerCalled(); },
+                                         kPollLimit));
+    }
+  }
+  std::string str = CollectLogs(sink);
+
+  // Must contain "SafeName" logs
+  ASSERT_TRUE(CheckOccurance(str, "SafeName", 2));
+  // Must NOT log the out-of-bounds portion
+  ASSERT_TRUE(CheckOccurance(str, "GARBAGE_READ", 0));
 }
 
 TEST(Watchdog, NoTimeoutsWhenShutDown) {

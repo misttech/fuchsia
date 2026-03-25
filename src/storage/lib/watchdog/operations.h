@@ -116,10 +116,12 @@ class FsOperationTracker : public OperationTracker {
     id_ = id_count_++;
     operation_ = operation;
     start_time_ = std::chrono::steady_clock::now();
-    watchdog_ = watchdog;
     if (track) {
+      watchdog_ = watchdog;
       auto result = watchdog_->Track(this);
       ZX_DEBUG_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
+    } else {
+      watchdog_ = nullptr;
     }
   }
 
@@ -155,9 +157,12 @@ class FsOperationTracker : public OperationTracker {
   void OnTimeOut(FILE* out_stream) const override {}
 
   zx::result<> Complete() {
-    auto ret = watchdog_->Untrack(GetId());
-    watchdog_ = nullptr;
-    return ret;
+    if (watchdog_) {
+      auto ret = watchdog_->Untrack(GetId());
+      watchdog_ = nullptr;
+      return ret;
+    }
+    return zx::ok();
   }
 
  private:

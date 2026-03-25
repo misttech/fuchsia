@@ -19,10 +19,10 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -35,11 +35,18 @@ namespace {
 
 // Current syslog implementation has a buffer limit per call. This forces us to
 // split and log the messages.
-void DumpLog(const char* log_tag, const char* str) {
-  std::istringstream stream(str);
-  std::string line;
-  while (std::getline(stream, line)) {
-    FX_LOG_KV(INFO, line.c_str(), FX_KV("tag", log_tag));
+void DumpLog(std::string_view log_tag, std::string_view str) {
+  size_t start = 0;
+  while (start < str.length()) {
+    size_t newline = str.find('\n', start);
+    std::string_view line = str.substr(start, newline - start);
+    if (!line.empty()) {
+      FX_LOG_KV(INFO, line, FX_KV("tag", log_tag));
+    }
+    if (newline == std::string_view::npos) {
+      break;
+    }
+    start = newline + 1;
   }
 }
 
@@ -136,9 +143,8 @@ zx::result<> Watchdog::Untrack(OperationTrackerId id) {
   auto now = std::chrono::steady_clock::now();
   auto time_elapsed = now - tracker->StartTime();
   FX_LOGST(INFO, options_.log_tag.c_str())
-      << "Timeout " << tracker->Timeout().count()
-      << " exceeded operation:" << tracker->Name().data() << " id: " << tracker->GetId()
-      << " completed(" << time_elapsed.count() << "ns).";
+      << "Timeout " << tracker->Timeout().count() << " exceeded operation:" << tracker->Name()
+      << " id: " << tracker->GetId() << " completed(" << time_elapsed.count() << "ns).";
   return zx::ok();
 }
 
@@ -187,16 +193,19 @@ void Watchdog::Run() {
           out_stream = {fmemopen(log_buffer.get(), options_.log_buffer_size, "r+"), &fclose};
         }
 
-        fprintf(out_stream.get(), "Operation:%s id:%lu exceeded timeout(%lluns < %lluns)\n",
-                tracker->Name().data(), tracker->GetId(), tracker->Timeout().count(),
-                time_elapsed.count());
+        fprintf(out_stream.get(), "Operation:%.*s id:%lu exceeded timeout(%lluns < %lluns)\n",
+                static_cast<int>(tracker->Name().length()), tracker->Name().data(),
+                tracker->GetId(), tracker->Timeout().count(), time_elapsed.count());
         tracker->OnTimeOut(out_stream.get());
       }
     }
     if (out_stream) {
       inspector_print_debug_info_for_all_threads(out_stream.get(), zx_process_self());
       fflush(out_stream.get());
-      DumpLog(options_.log_tag.c_str(), log_buffer.get());
+      // Create a precisely bound string_view using the exact bytes written to the stream,
+      // avoiding any manual null-termination overrides or implicit strlen() buffer over-reads.
+      size_t bytes_written = ftell(out_stream.get());
+      DumpLog(options_.log_tag, std::string_view(log_buffer.get(), bytes_written));
     }
   }
 }

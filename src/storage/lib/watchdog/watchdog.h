@@ -67,7 +67,7 @@ constexpr fuchsia_logging::LogSeverity kDefaultLogSeverity = fuchsia_logging::Lo
 
 // Log messages are buffered before they are sent to logging subsystem.
 // This is default size of that buffer.
-constexpr size_t kDefaultLogBufferSize = 1024 * 1024;
+constexpr size_t kDefaultLogBufferSize = 1024ULL * 1024ULL;
 
 const std::string kDefaultLogTag = "fs_watchdog";
 
