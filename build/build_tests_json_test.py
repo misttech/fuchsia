@@ -173,6 +173,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             "runtime_deps_json_execroot_path": "d1",
             "os": "linux",
             "cpu": "x64",
+            "list_cases_argument": "list_cases_1",
         }
         test2 = {
             "name": "test2",
@@ -182,6 +183,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             "runtime_deps_json_execroot_path": "d2",
             "os": "linux",
             "cpu": "x64",
+            "list_cases_argument": "",
         }
         mock_runner.push_result(
             stdout=json.dumps(test1) + "\n" + json.dumps(test2)
@@ -203,6 +205,7 @@ class BuildTestsJsonTest(unittest.TestCase):
                     "runtime_deps": f"{self.execroot_path}/d1",
                     "os": "linux",
                     "cpu": "x64",
+                    "list_cases_argument": "list_cases_1",
                 },
             },
             {
@@ -252,6 +255,7 @@ class BuildTestsJsonTest(unittest.TestCase):
             "runtime_deps_json_execroot_path": "d1",
             "os": "linux",
             "cpu": "x64",
+            "list_cases_argument": "",
         }
         mock_runner.push_result(stdout=json.dumps(test1))
 

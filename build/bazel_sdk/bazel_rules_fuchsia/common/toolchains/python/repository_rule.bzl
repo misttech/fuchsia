@@ -189,7 +189,7 @@ def _compact_python_runtime_impl(repo_ctx):
         # where PYTHONPATH and PYTHONHOME are ignored, but this forces sys.path to
         # strictly hard-coded values that are unusable here.
         #
-        python3_launcher = "python" + python_version
+        python3_launcher = "python3"
         repo_ctx.file(
             python3_launcher,
             content = '''\

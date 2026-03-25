@@ -52,6 +52,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
             "runtime_deps_json_execroot_path": "bin/my_test.runtime_deps.json",
             "os": "linux",
             "cpu": "x64",
+            "list_cases_argument": "",
         }
 
         mock_runner.push_result(stdout=json.dumps(test_info))
@@ -91,6 +92,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
             "runtime_deps_json_execroot_path": "d1",
             "os": "linux",
             "cpu": "x64",
+            "list_cases_argument": "",
         }
         test2 = {
             "name": "test2",
@@ -100,6 +102,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
             "runtime_deps_json_execroot_path": "d2",
             "os": "linux",
             "cpu": "x64",
+            "list_cases_argument": "list_mock_unittests",
         }
 
         mock_runner.push_result(
@@ -144,6 +147,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
                     "runtime_deps": f"{execroot_path}/d2",
                     "os": "linux",
                     "cpu": "x64",
+                    "list_cases_argument": "list_mock_unittests",
                 },
             },
         )

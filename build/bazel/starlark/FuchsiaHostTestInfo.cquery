@@ -30,6 +30,7 @@ def format(target):
         "runtime_deps_json_execroot_path": host_test_info.test_runtime_deps_json.path,
         "os": host_test_info.os,
         "cpu": host_test_info.cpu,
+        "list_cases_argument": host_test_info.list_cases_argument,
         # LINT.ThenChange(//build/bazel/scripts/bazel_tests_utils.py:cquery_output_schema)
     }
     return json.encode(result)

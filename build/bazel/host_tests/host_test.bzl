@@ -20,6 +20,7 @@ FuchsiaHostTestInfo = provider(
         "test_runtime_deps_json": "A File value for the runtime_deps.json file for the test.",
         "os": "The OS of the test, using Fuchsia conventions",
         "cpu": "The CPU of the test, using Fuchsia conventions.",
+        "list_cases_argument": "Optional command line argument to list test cases.",
     },
 )
 
@@ -97,7 +98,7 @@ def _host_test_impl(ctx):
         binary_repo_mapping_manifest,
         host_test_data_manifest,
         host_test_wrapper_template,
-    ]
+    ] + ctx.files.host_test_wrapper_generator_deps
 
     entry_point = binary_info.files_to_run.executable
 
@@ -136,6 +137,12 @@ def _host_test_impl(ctx):
         print(files_list_dump("data_runfiles", data_runfiles.files.to_list()))
         print(files_list_dump("host_test_data_runtime_files", host_test_data_runtime_files))
 
+    # Ensure $(location <label>) expressions are expanded for the generator arguments.
+    generator_args = [
+        ctx.expand_location(arg, ctx.attr.host_test_wrapper_generator_deps)
+        for arg in ctx.attr.host_test_wrapper_generator_args
+    ]
+
     generate_python_build_action(
         ctx = ctx,
         py_script = ctx.file._generate_host_test_wrapper,
@@ -155,7 +162,7 @@ def _host_test_impl(ctx):
         ] + [
             "--test-arg={}".format(arg)
             for arg in test_args
-        ],
+        ] + generator_args,
         outputs = outputs,
         inputs = inputs,
         # Don't run in a sandbox to ensure the current path is the execroot. This is required
@@ -186,6 +193,7 @@ def _host_test_impl(ctx):
             test_runtime_deps_json = test_runtime_deps_json,
             os = current_platform.os,
             cpu = current_platform.cpu,
+            list_cases_argument = ctx.attr.list_cases_argument,
         ),
     ]
 
@@ -246,6 +254,10 @@ host_test = rule(
             allow_files = True,
             aspects = [collect_fuchsia_host_test_data_aspect],
         ),
+        "list_cases_argument": attr.string(
+            doc = "Optional command argument to list test cases. Only used by host_py_test()",
+            default = "",
+        ),
         "_generate_host_test_wrapper": attr.label(
             doc = "Internal script used to generate the final test wrapper script.",
             default = "//build/bazel/scripts:generate_host_test_wrapper.py",
@@ -255,6 +267,16 @@ host_test = rule(
             doc = "Template file for the generated test wrapper script.",
             default = "//build/bazel:templates/template.host_test_wrapper.sh",
             allow_single_file = True,
+        ),
+        "host_test_wrapper_generator_args": attr.string_list(
+            doc = "Extra arguments to pass to the test wrapper generator script. " +
+                  "This can include $(location <label>) expressions, if these are labels " +
+                  "listed in host_test_wrapper_generator_deps.",
+            default = [],
+        ),
+        "host_test_wrapper_generator_deps": attr.label_list(
+            doc = "Dependencies of the test wrapper generator invocation.",
+            default = [],
         ),
         "_python_modules": attr.label_list(
             doc = "Python modules imported by _host_test_wrapper.",

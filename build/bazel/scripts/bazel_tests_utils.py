@@ -74,25 +74,29 @@ def generate_tests_json(
         #    paths relative to the Bazel execroot instead of the Ninja build directory.
         cquery_test = json.loads(line)
         # LINT.IfChange(cquery_output_schema)
-        tests_json.append(
-            {
-                "environments": [],
-                "expects_ssh": False,
-                "test": {
-                    "name": cquery_test["name"],
-                    "label": cquery_test["label"],
-                    "source_label": cquery_test["source_label"],
-                    "path": make_execroot_path_relative_to_ninja_build_dir(
-                        cquery_test["launcher_execroot_path"]
-                    ),
-                    "runtime_deps": make_execroot_path_relative_to_ninja_build_dir(
-                        cquery_test["runtime_deps_json_execroot_path"]
-                    ),
-                    "os": cquery_test["os"],
-                    "cpu": cquery_test["cpu"],
-                },
-            }
-        )
+        test_spec = {
+            "environments": [],
+            "expects_ssh": False,
+            "test": {
+                "name": cquery_test["name"],
+                "label": cquery_test["label"],
+                "source_label": cquery_test["source_label"],
+                "path": make_execroot_path_relative_to_ninja_build_dir(
+                    cquery_test["launcher_execroot_path"]
+                ),
+                "runtime_deps": make_execroot_path_relative_to_ninja_build_dir(
+                    cquery_test["runtime_deps_json_execroot_path"]
+                ),
+                "os": cquery_test["os"],
+                "cpu": cquery_test["cpu"],
+            },
+        }
+        if cquery_test["list_cases_argument"]:
+            test_spec["test"]["list_cases_argument"] = cquery_test[
+                "list_cases_argument"
+            ]
+
+        tests_json.append(test_spec)
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaHostTestInfo.cquery:cquery_output_schema)
 
     return tests_json, {starlark_input}
