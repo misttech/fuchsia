@@ -16,7 +16,7 @@
   mov  sp,x0
 
   // Restore the FPU register pointer
-  ldr x0, [sp, #16*6 + 8]
+  ldr x0, [sp, #16*7 + 8]
 
   // Save the FPU register state if we were provided a non-null FPU register pointer
   cbz x0, .after_store_fpu_registers

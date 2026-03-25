@@ -45,6 +45,41 @@
   str x16, [x0]
 .endm
 
+.macro twiddle_fpu_registers
+  shl v0.16b, v0.16b, #1
+  shl v1.16b, v1.16b, #1
+  shl v2.16b, v2.16b, #1
+  shl v3.16b, v3.16b, #1
+  shl v4.16b, v4.16b, #1
+  shl v5.16b, v5.16b, #1
+  shl v6.16b, v6.16b, #1
+  shl v7.16b, v7.16b, #1
+  shl v8.16b, v8.16b, #1
+  shl v9.16b, v9.16b, #1
+  shl v10.16b, v10.16b, #1
+  shl v11.16b, v11.16b, #1
+  shl v12.16b, v12.16b, #1
+  shl v13.16b, v13.16b, #1
+  shl v14.16b, v14.16b, #1
+  shl v15.16b, v15.16b, #1
+  shl v16.16b, v16.16b, #1
+  shl v17.16b, v17.16b, #1
+  shl v18.16b, v18.16b, #1
+  shl v19.16b, v19.16b, #1
+  shl v20.16b, v20.16b, #1
+  shl v21.16b, v21.16b, #1
+  shl v22.16b, v22.16b, #1
+  shl v23.16b, v23.16b, #1
+  shl v24.16b, v24.16b, #1
+  shl v25.16b, v25.16b, #1
+  shl v26.16b, v26.16b, #1
+  shl v27.16b, v27.16b, #1
+  shl v28.16b, v28.16b, #1
+  shl v29.16b, v29.16b, #1
+  shl v30.16b, v30.16b, #1
+  shl v31.16b, v31.16b, #1
+.endm
+
 // This binary exports several of the symbols below for use in the restricted
 // mode core-test found in ../restricted-mode.cc.
 //
@@ -79,6 +114,7 @@
 .function syscall_bounce, export
 .Lsyscall_bounce:
   twiddle_registers
+  twiddle_fpu_registers
   mov x16, xzr
   add x16, x16, #64
   svc #0
@@ -88,6 +124,7 @@
 
 .function exception_bounce, export
   twiddle_registers
+  twiddle_fpu_registers
 .label exception_bounce_exception_address, export
 .Lexception_bounce_exception_address:
   udf #0
@@ -115,6 +152,7 @@
 .Lwait_then_syscall_loop:
   ldar    w8, [x1]
   cbz     w8, .Lwait_then_syscall_loop
+  twiddle_fpu_registers
   svc     #0
   brk     #0x1
 .end_function

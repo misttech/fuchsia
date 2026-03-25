@@ -29,10 +29,22 @@
   str r7, [r0]
 .endm
 
+.macro twiddle_fpu_registers
+  vshl.u8 q0, q0, #1
+  vshl.u8 q1, q1, #1
+  vshl.u8 q2, q2, #1
+  vshl.u8 q3, q3, #1
+  vshl.u8 q4, q4, #1
+  vshl.u8 q5, q5, #1
+  vshl.u8 q6, q6, #1
+  vshl.u8 q7, q7, #1
+.endm
+
 .function syscall_bounce, export
   // do something to all the registers so we can read
   // the state on the way out
   twiddle_registers
+  twiddle_fpu_registers
 .Lsyscall_only:
   mov r7, #64
   svc #0
@@ -44,6 +56,7 @@
   // do something to all the registers so we can read
   // the state on the way out
   twiddle_registers
+  twiddle_fpu_registers
 .label exception_bounce_exception_address, export
 .Lexception_bounce_exception_address:
   udf #0
@@ -71,6 +84,7 @@
   ldr     r7, [r1]
   cmp     r7, #0
   beq     .Lwait_then_syscall_loop
+  twiddle_fpu_registers
   svc     #0
   bkpt    #0x1
 .end_function

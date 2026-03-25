@@ -237,6 +237,16 @@ TEST_P(RestrictedMode, FloatingPointState) {
     }
 
     // Validate that the FPU contains the expected contents.
+    if (this->machine() == restricted_machine::MachineType::kAarch64) {
+      for (size_t i = 0; i < 32 * 16; i++) {
+        expected_fpu_registers[i] = static_cast<uint8_t>(expected_fpu_registers[i] << 1);
+      }
+    } else if (this->machine() == restricted_machine::MachineType::kArm) {
+      for (size_t i = 0; i < 8 * 16; i++) {
+        expected_fpu_registers[i] = static_cast<uint8_t>(expected_fpu_registers[i] << 1);
+      }
+    }
+
     if (memcmp(expected_fpu_registers.data(), machine.FpuRegisters()->data(),
                expected_fpu_registers.size()) != 0) {
       statuses[thread_num] = ZX_ERR_BAD_STATE;
