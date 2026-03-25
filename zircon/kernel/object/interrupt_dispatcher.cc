@@ -313,6 +313,7 @@ zx_status_t InterruptDispatcher::Bind(fbl::RefPtr<PortDispatcher> port_dispatche
     SendPacketLocked(timestamp_);
     state_ = InterruptState::NEEDACK;
   }
+
   return ZX_OK;
 }
 
@@ -322,6 +323,7 @@ zx_status_t InterruptDispatcher::Unbind(fbl::RefPtr<PortDispatcher> port_dispatc
   fbl::RefPtr<PortDispatcher> dispatcher;
   {
     Guard<SpinLock, IrqSave> guard{&spinlock_};
+
     if (port_dispatcher_ != port_dispatcher) {
       // This case also covers the HasVcpu() case.
       return ZX_ERR_NOT_FOUND;
@@ -332,9 +334,25 @@ zx_status_t InterruptDispatcher::Unbind(fbl::RefPtr<PortDispatcher> port_dispatc
     // Remove the packet for this interrupt from this port on an unbind before actually
     // doing the unbind. This protects against the case where the interrupt dispatcher
     // goes away between an unbind and a port_wait.
-    port_dispatcher_->RemoveInterruptPacket(&port_packet_);
+    const bool removed_packet = port_dispatcher_->RemoveInterruptPacket(&port_packet_);
     port_packet_.key = 0;
     dispatcher.swap(port_dispatcher_);
+
+    // If we were in the NEEDACK state, and we successfully removed the packet
+    // from the port, then revert back to the TRIGGERED state.  No one has
+    // managed to process this interrupt yet, and we don't want to lose it.
+    // Someone can either wait on this interrupt, or re-bind it to a new port,
+    // and they should still be able to process the interrupt which has not
+    // _technically_ been delivered yet.
+    //
+    // If the packet has already been read, then just stay in the NEEDACK state.
+    // Someone has already processed the packet.
+    if ((state_ == InterruptState::NEEDACK) && removed_packet) {
+      state_ = InterruptState::TRIGGERED;
+      timestamp_ = port_packet_.timestamp;
+      port_packet_.key = 0;
+      port_packet_.timestamp = 0;
+    }
   }
   return ZX_OK;
 }

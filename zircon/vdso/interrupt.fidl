@@ -22,20 +22,29 @@ closed protocol Interrupt {
     ///
     /// ## Description
     ///
-    /// `zx_interrupt_create()` creates an interrupt object that represents a physical
-    /// or virtual interrupt.
+    /// `zx_interrupt_create()` creates an interrupt object that represents a
+    /// (physical)[Interrupts#physical-interrupts] or (virtual)[Interrupts#virtual-interrupts]
+    /// interrupt.  Users of Zircon interrupt objects are *strongly* encouraged to read the
+    /// (Interrupt Object)[Interrupts] overview documentation to become familiar with the
+    /// operational model for interrupt objects before making use of them in code.
     ///
-    /// If *options* is `ZX_INTERRUPT_VIRTUAL`, *src_obj* and *src_num* are ignored and
-    /// a virtual interrupt is returned.
+    /// To create a physical interrupt, users must:
+    /// + Pass a handle to a suitable resource for creating platform interrupts, or a handle to a
+    ///   PCI object, via the *src_obj* parameter.
+    /// + Pass the associated interrupt number via the *src_num* parameter.
     ///
-    /// Otherwise *src_obj* must be a suitable resource for creating platform interrupts
-    /// or a PCI object, and *src_num* is the associated interrupt number.  This restricts
-    /// the creation of interrupts to the internals of the Driver Framework.
-    /// Physical interrupts are obtained by drivers through various Driver Framework APIs.
+    /// Requiring a platform resource or PCI object handle largely restricts the creation of
+    /// interrupts to the internals of the [Driver Framework]. Physical interrupts are typically
+    /// obtained by drivers through various [Driver Framework] APIs.
     ///
     /// Physical interrupts honor the options `ZX_INTERRUPT_MODE_EDGE_LOW`,
     /// `ZX_INTERRUPT_MODE_EDGE_HIGH`, `ZX_INTERRUPT_MODE_LEVEL_LOW`,
     /// `ZX_INTERRUPT_MODE_LEVEL_HIGH`, and `ZX_INTERRUPT_REMAP_IRQ`.
+    ///
+    /// To create a virtual interrupt, users may pass the `ZX_INTERRUPT_VIRTUAL` flag via the
+    /// *options* parameter.  Virtual interrupts always behave as edge triggered interrupts, whose
+    /// polarity does not need to be specified as they are triggered by software via a call to
+    /// [`zx_interrupt_trigger()`] instead of a hardware signal.
     ///
     /// Both physical and virtual interrupts honor the option `ZX_INTERRUPT_TIMESTAMP_MONO`.
     /// An interrupt created with this option will return a monotonic timestamp from
@@ -47,13 +56,17 @@ closed protocol Interrupt {
     /// `ZX_RIGHT_WRITE` (required for [`zx_interrupt_ack()`]), `ZX_RIGHT_WAIT` (required for
     /// [`zx_interrupt_wait()`], and `ZX_RIGHT_SIGNAL` (required for [`zx_interrupt_trigger()`]).
     ///
-    /// Interrupts are said to be "triggered" when the underlying physical interrupt occurs
-    /// or when [`zx_interrupt_trigger()`] is called on a virtual interrupt.  A triggered interrupt,
-    /// when bound to a port with [`zx_interrupt_bind()`], causes a packet to be delivered to the port.
+    /// Interrupts are said to be "triggered" when the underlying physical interrupt occurs or when
+    /// [`zx_interrupt_trigger()`] is called on a virtual interrupt.  A triggered interrupt, when
+    /// bound to a port with [`zx_interrupt_bind()`], causes a packet to be delivered to the port.
+    /// Alternatively, if the interrupt is not bound to a port, users may block a thread on an
+    /// interrupt until it is triggered, using a call to [`zx_interrupt_wait()`].
     ///
-    /// If not bound to a port, an interrupt object may be waited on with [`zx_interrupt_wait()`].
-    ///
-    /// Interrupts cannot be waited on with the `zx_object_wait_` family of calls.
+    /// Receiving a notification that an interrupt has occurred, either from port packets or from
+    /// calls to [`zx_interrupt_wait()`], and subsequently acknowledging the interrupt when
+    /// processing is complete is a moderately complicated process which depends on a number of
+    /// factors.  Please see (here)[Interrupts#waiting-for-and-acknowledging-interrupts] for
+    /// details.
     ///
     /// ## Rights
     ///
@@ -81,6 +94,8 @@ closed protocol Interrupt {
     ///
     /// ## See also
     ///
+    ///  - [Interrupts]
+    ///  - [Driver Framework]
     ///  - [`zx_handle_close()`]
     ///  - [`zx_interrupt_ack()`]
     ///  - [`zx_interrupt_bind()`]
@@ -88,6 +103,11 @@ closed protocol Interrupt {
     ///  - [`zx_interrupt_wait()`]
     ///  - [`zx_port_wait()`]
     ///
+    /// [Interrupts]: /docs/reference/kernel_objects/interrupts.md
+    /// [Interrupts#physical-interrupts]: /docs/reference/kernel_objects/interrupts.md#physical-interrupts
+    /// [Interrupts#virtual-interrupts]: /docs/reference/kernel_objects/interrupts.md#virtual-interrupts
+    /// [Interrupts#waiting-for-and-acknowledging-interrupts]: /docs/reference/kernel_objects/interrupts.md#waiting-for-and-acknowledging-interrupts
+    /// [Driver Framework]: /docs/concepts/drivers/driver_framework.md
     /// [`zx_channel_write()`]: channel_write.md
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_interrupt_ack()`]: interrupt_ack.md
@@ -143,11 +163,12 @@ closed protocol Interrupt {
     /// *port_handle* is required but the *key* is ignored. Unbinding the port removes previously
     /// queued packets to the port.
     ///
-    /// Before another packet may be delivered, the bound interrupt must be re-armed using the
-    /// [`zx_interrupt_ack()`] syscall.  This is (in almost all cases) best done after the interrupt
-    /// packet has been fully processed.  Especially in the case of multiple threads reading
-    /// packets from a port, if the processing thread re-arms the interrupt and it has triggered,
-    /// a packet will immediately be delivered to a waiting thread.
+    /// When a interrupt has been bound to a port, and an interrupt packet has been delivered to the
+    /// port and read by the user, the interrupt will need to be acknowledged before another packet
+    /// may be delivered. Port-bound interrupts are acknowledged with a call to the
+    /// [`zx_interrupt_ack()`] syscall. Please see
+    /// (here)[Interrupts#asynchronous-waiting-and-acknowledgement] for details of how to receive
+    /// and acknowledge interrupts when using port-bound interrupt objects.
     ///
     /// Interrupt packets are delivered via a dedicated queue on ports and are higher priority
     /// than non-interrupt packets.
@@ -184,6 +205,7 @@ closed protocol Interrupt {
     ///
     /// ## See also
     ///
+    ///  - [Interrupts]
     ///  - [`zx_handle_close()`]
     ///  - [`zx_interrupt_ack()`]
     ///  - [`zx_interrupt_create()`]
@@ -192,6 +214,8 @@ closed protocol Interrupt {
     ///  - [`zx_interrupt_wait()`]
     ///  - [`zx_port_wait()`]
     ///
+    /// [Interrupts]: /docs/reference/kernel_objects/interrupts.md
+    /// [Interrupts#asynchronous-waiting-and-acknowledgement]: /docs/reference/kernel_objects/interrupts.md#asynchronous-waiting-and-acknowledgement
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_interrupt_ack()`]: interrupt_ack.md
     /// [`zx_interrupt_create()`]: interrupt_create.md
@@ -220,14 +244,21 @@ closed protocol Interrupt {
     ///
     /// ## Description
     ///
-    /// `zx_interrupt_wait()` is a blocking syscall that causes the caller to
-    /// wait until an interrupt is triggered.  It can only be used on interrupt
-    /// objects that have not been bound to a port with [`zx_interrupt_bind()`]
+    /// `zx_interrupt_wait()` is a blocking syscall that causes the caller to wait until an
+    /// interrupt is triggered.  It can only be used on interrupt objects that have not been bound
+    /// to a port with [`zx_interrupt_bind()`].
     ///
-    /// It also, before the waiting begins, will acknowledge the interrupt object,
-    /// as if [`zx_interrupt_ack()`] were called on it.
+    /// If a thread was notified of an interrupt becoming triggered by returning from a call to
+    /// `zx_interrupt_wait()`, then the next call to `zx_interrupt_wait()` will also acknowledge
+    /// the interrupt object, in addition to waiting for the next trigger event.  Please note that
+    /// waiting on the interrupt object again is the _only_ way to acknowledge a non-port-bound
+    /// interrupt object. [`zx_interrupt_ack()`] does not change the state of non-port bound
+    /// interrupts.  Please see (here)[Interrupts#synchronous-waiting-and-acknowledgement]
+    /// for details about how to properly wait for and acknowledge interrupts when using
+    /// `zx_interrupt_wait()`.
     ///
-    /// The wait may be aborted with [`zx_interrupt_destroy()`] or by closing the handle.
+    /// The wait may be aborted with [`zx_interrupt_destroy()`] or by closing the final handle to
+    /// the interrupt object.
     ///
     /// ## Rights
     ///
@@ -258,6 +289,7 @@ closed protocol Interrupt {
     ///
     /// ## See also
     ///
+    ///  - [Interrupts]
     ///  - [`zx_handle_close()`]
     ///  - [`zx_interrupt_ack()`]
     ///  - [`zx_interrupt_bind()`]
@@ -266,6 +298,8 @@ closed protocol Interrupt {
     ///  - [`zx_interrupt_trigger()`]
     ///  - [`zx_port_wait()`]
     ///
+    /// [Interrupts]: /docs/reference/kernel_objects/interrupts.md
+    /// [Interrupts#synchronous-waiting-and-acknowledgement]: /docs/reference/kernel_objects/interrupts.md#synchronous-waiting-and-acknowledgement
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_interrupt_ack()`]: interrupt_ack.md
     /// [`zx_interrupt_bind()`]: interrupt_bind.md
@@ -332,6 +366,7 @@ closed protocol Interrupt {
     ///
     /// ## See also
     ///
+    ///  - [Interrupts]
     ///  - [`zx_handle_close()`]
     ///  - [`zx_interrupt_ack()`]
     ///  - [`zx_interrupt_bind()`]
@@ -340,6 +375,7 @@ closed protocol Interrupt {
     ///  - [`zx_interrupt_wait()`]
     ///  - [`zx_port_wait()`]
     ///
+    /// [Interrupts]: /docs/reference/kernel_objects/interrupts.md
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_interrupt_ack()`]: interrupt_ack.md
     /// [`zx_interrupt_bind()`]: interrupt_bind.md
@@ -365,19 +401,20 @@ closed protocol Interrupt {
     ///
     /// ## Description
     ///
-    /// `zx_interrupt_ack()` acknowledges an interrupt object, causing it to be eligible
-    /// to trigger again (and delivering a packet to the port it is bound to).
+    /// `zx_interrupt_ack()` acknowledges a port-bound interrupt object which was previously
+    /// triggered, causing it to reset to the untriggered state and be eligible to trigger again,
+    /// delivering a packet to the port it is bound to in the process.
     ///
-    /// If the interrupt object is a physical interrupt, if it is a level interrupt and
-    /// still asserted, or is an edge interrupt that has been asserted since it last
-    /// triggered, the interrupt will trigger immediately, delivering a packet to the
-    /// port it is bound to.
+    /// If the interrupt object is a physical level-triggered interrupt which is still asserted, or
+    /// is an edge or virtual interrupt that has been asserted since it was last triggered, the
+    /// interrupt will immediately trigger again delivering a packet to the port it is bound to.
     ///
-    /// Virtual interrupts behave as edge interrupts.
-    ///
-    /// This syscall only operates on interrupts bound to a port.  Interrupts
-    /// being waited upon with [`zx_interrupt_wait()`] do not need to be re-armed with this
-    /// call -- it happens automatically when [`zx_interrupt_wait()`] is called.
+    /// This syscall only operates on interrupts bound to a port.  Interrupts being waited upon with
+    /// [`zx_interrupt_wait()`] cannot be re-armed with this call -- it happens automatically when
+    /// [`zx_interrupt_wait()`] is called again after a previous [`zx_interrupt_wait()`] operation
+    /// has been satisfied.  Please see (here)[Interrupts#asynchronous-waiting-and-acknowledgement]
+    /// for details on how to properly wait for and acknowledge interrupt events when using a
+    /// port-bound interrupt object.
     ///
     /// ## Rights
     ///
@@ -402,6 +439,7 @@ closed protocol Interrupt {
     ///
     /// ## See also
     ///
+    ///  - [Interrupts]
     ///  - [`zx_handle_close()`]
     ///  - [`zx_interrupt_bind()`]
     ///  - [`zx_interrupt_create()`]
@@ -410,6 +448,8 @@ closed protocol Interrupt {
     ///  - [`zx_interrupt_wait()`]
     ///  - [`zx_port_wait()`]
     ///
+    /// [Interrupts]: /docs/reference/kernel_objects/interrupts.md
+    /// [Interrupts#asynchronous-waiting-and-acknowledgement]: /docs/reference/kernel_objects/interrupts.md#asynchronous-waiting-and-acknowledgement
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_interrupt_bind()`]: interrupt_bind.md
     /// [`zx_interrupt_create()`]: interrupt_create.md
@@ -447,6 +487,17 @@ closed protocol Interrupt {
     /// the interrupt was created with the `ZX_INTERRUPT_TIMESTAMP_MONO` option, then this
     /// timestamp will be interpreted as a timestamp on `ZX_CLOCK_MONOTONIC`.
     ///
+    /// `zx_interrupt_trigger()` is only valid when the underlying object is a virtual interrupt
+    /// created explicitly using the `ZX_INTERRUPT_VIRTUAL` option, and may not be used to
+    /// force-trigger a physical interrupt.
+    ///
+    /// Virtual interrupts also support a Zircon signal, `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED`, which
+    /// can be used along with the standard Zircon signal waiting mechanisms (*not*
+    /// [`zx_interrupt_wait()`]) to inform the triggering driver of when the interrupt consumer has
+    /// processed and acknowledged the interrupt trigger event.  Please see
+    /// (here)[Interrupts#virtual-interrupts-and-the-untriggered-signal] for the details of how to
+    /// use the `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal.
+    ///
     /// ## Rights
     ///
     /// *handle* must be of type `ZX_OBJ_TYPE_INTERRUPT` and have `ZX_RIGHT_SIGNAL`.
@@ -472,6 +523,7 @@ closed protocol Interrupt {
     ///
     /// ## See also
     ///
+    ///  - [Interrupts]
     ///  - [`zx_handle_close()`]
     ///  - [`zx_interrupt_ack()`]
     ///  - [`zx_interrupt_bind()`]
@@ -480,6 +532,8 @@ closed protocol Interrupt {
     ///  - [`zx_interrupt_wait()`]
     ///  - [`zx_port_wait()`]
     ///
+    /// [Interrupts]: /docs/reference/kernel_objects/interrupts.md
+    /// [Interrupts#virtual-interrupts-and-the-untriggered-signal]: /docs/reference/kernel_objects/interrupts.md#virtual-interrupts-and-the-untriggered-signal
     /// [`zx_handle_close()`]: handle_close.md
     /// [`zx_interrupt_ack()`]: interrupt_ack.md
     /// [`zx_interrupt_bind()`]: interrupt_bind.md

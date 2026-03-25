@@ -476,4 +476,169 @@ TEST_F(InterruptTest, UntriggeredSignalPortsAndAck) {
   EXPECT_EQ(port.wait(zx::time::infinite_past(), &out), ZX_ERR_TIMED_OUT);
 }
 
+TEST_F(InterruptTest, PacketDeliveredAfterBind) {
+  zx::interrupt interrupt;
+  zx::port port;
+
+  // Create a new interrupt object and a new port, but *don't bind them* yet.
+  constexpr uint64_t kInterruptPortKey = 0xDeadBeefBaadF00d;
+  ASSERT_OK(zx::interrupt::create(*irq_resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port));
+
+  // Fetch the initial signal state.  We expect the
+  // ZX_VIRTUAL_INTERRUPT_UNTRIGGERED to be asserted.
+  zx_signals_t pending = 0;
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED);
+
+  // Trigger the interrupt, then verify that the UNTRIGGERED signal is de-asserted.
+  const zx::time_boot expected_trigger_time = zx::clock::get_boot();
+  EXPECT_OK(interrupt.trigger(0, expected_trigger_time));
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0);
+
+  // Now bind the interrupt.  We expect a port packet to be delivered to our port immediately.
+  ASSERT_OK(interrupt.bind(port, kInterruptPortKey, 0));
+
+  // Reading and validate the port packet which we are expecting.
+  auto VerifyInterruptPacket = [kInterruptPortKey](const zx_port_packet& packet,
+                                                   const zx::time_boot& ett) {
+    EXPECT_EQ(kInterruptPortKey, packet.key);
+    ASSERT_EQ(ZX_PKT_TYPE_INTERRUPT, packet.type);
+    EXPECT_EQ(ett.get(), packet.interrupt.timestamp);
+  };
+
+  zx_port_packet_t out;
+  ASSERT_OK(port.wait(zx::time::infinite_past(), &out));
+  VerifyInterruptPacket(out, expected_trigger_time);
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0);
+
+  // Even though we have received our packet, the interrupt does not re-enter the UNTRIGGERED state
+  // until after we have ack'ed it.
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0);
+
+  // Now ack the interrupt and confirm that UNTRIGGERED is now asserted.
+  EXPECT_OK(interrupt.ack());
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED);
+}
+
+// Test to be sure that an un-read interrupt packet will be preserved across a
+// rebind operation.
+//
+// If:
+// 1) An interrupt is bound to a port.
+// 2) The interrupt has been triggered and a packet has been queued to the bound
+//    port, not yet read.
+// 3) The interrupt is unbound from the port, and re-bound to a different port.
+// 4) The packet which had been queued to the port first port will have been
+//    moved to the new port and be available for read.
+//
+TEST_F(InterruptTest, PacketFollowsRebindToNewPort) {
+  zx::interrupt interrupt;
+  zx::port port;
+  zx::port port2;
+
+  // Create a new interrupt object and a two ports.  Bind the interrupt to the first port.
+  constexpr uint64_t kInterruptPortKey = 0xDeadBeefBaadF00d;
+  constexpr uint64_t kInterruptPortKey2 = 0xBadDecafC0ffee;
+  ASSERT_OK(zx::interrupt::create(*irq_resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port));
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port2));
+  ASSERT_OK(interrupt.bind(port, kInterruptPortKey, 0));
+
+  // Fetch the initial signal state.  We expect the
+  // ZX_VIRTUAL_INTERRUPT_UNTRIGGERED to be asserted.
+  zx_signals_t pending = 0;
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED);
+
+  // Trigger the interrupt, then verify that the UNTRIGGERED signal is de-asserted.
+  const zx::time_boot expected_trigger_time = zx::clock::get_boot();
+  EXPECT_OK(interrupt.trigger(0, expected_trigger_time));
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0);
+
+  // There should be a packet waiting for us to read, but don't read it yet.
+  // Instead, unbind our interrupt from the first port and re-bind it to the
+  // second port.
+  ASSERT_OK(interrupt.bind(port, kInterruptPortKey, ZX_INTERRUPT_UNBIND));
+  ASSERT_OK(interrupt.bind(port2, kInterruptPortKey2, 0));
+
+  // Now try to read the packet from the first port.  This should fail.  Then
+  // try to read the packet and verify from the second port.  Our packet should
+  // be waiting for us there.
+  zx_port_packet_t out;
+  EXPECT_EQ(ZX_ERR_TIMED_OUT, port.wait(zx::time::infinite_past(), &out));
+  EXPECT_OK(port2.wait(zx::time::infinite_past(), &out));
+  EXPECT_EQ(kInterruptPortKey2, out.key);
+  ASSERT_EQ(ZX_PKT_TYPE_INTERRUPT, out.type);
+  EXPECT_EQ(expected_trigger_time.get(), out.interrupt.timestamp);
+}
+
+// Test to be sure that an un-read interrupt packet will be preserved across a
+// unbind operation followed by a zx_interrupt_wait.
+//
+// If:
+// 1) An interrupt is bound to a port.
+// 2) The interrupt has been triggered and a packet has been queued to the bound
+//    port, not yet read.
+// 3) The interrupt is unbound from the port, but not rebound.
+// 4) Someone then waits on the interrupt object using zx_interrupt_wait.
+// 5) The original interrupt will be delivered to the waiter with the original
+//    timestamp.
+//
+TEST_F(InterruptTest, PacketFollowsUnbindToWait) {
+  zx::interrupt interrupt;
+  zx::port port;
+
+  // Create a new interrupt object and a port.  Bind the interrupt to the port.
+  constexpr uint64_t kInterruptPortKey = 0xDeadBeefBaadF00d;
+  ASSERT_OK(zx::interrupt::create(*irq_resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+  ASSERT_OK(zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &port));
+  ASSERT_OK(interrupt.bind(port, kInterruptPortKey, 0));
+
+  // Fetch the initial signal state.  We expect the
+  // ZX_VIRTUAL_INTERRUPT_UNTRIGGERED to be asserted.
+  zx_signals_t pending = 0;
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED);
+
+  // Trigger the interrupt, then verify that the UNTRIGGERED signal is de-asserted.
+  zx::time_boot expected_trigger_time = zx::clock::get_boot();
+  EXPECT_OK(interrupt.trigger(0, expected_trigger_time));
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0);
+
+  // There should be a packet waiting for us to read, but we are not going to
+  // read it.  Instead, unbind the interrupt from its port.
+  ASSERT_OK(interrupt.bind(port, kInterruptPortKey, ZX_INTERRUPT_UNBIND));
+
+  // Now wait on the interrupt object.  We should immediately succeed the wait
+  // operation and be given the timestamp which was used to trigger the
+  // interrupt.
+  zx::time_boot actual_trigger_time;
+  ASSERT_OK(interrupt.wait(&actual_trigger_time));
+  EXPECT_EQ(expected_trigger_time.get(), actual_trigger_time.get());
+
+  // The interrupt object's UNTRIGGERED signal should still not be asserted
+  // since it has not been ack'ed yet.
+  EXPECT_EQ(interrupt.wait_one(0, zx::time::infinite_past(), &pending), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0);
+
+  // Create a thread to block on the interrupt object once again.  This will
+  // acknowledge the interrupt and should re-assert the UNTRIGGERED signal.
+  std::thread waiter_thread([&]() { interrupt.wait(&actual_trigger_time); });
+  EXPECT_OK(interrupt.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite(), &pending));
+  EXPECT_EQ(pending, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED);
+
+  // trigger our interrupt once again to release our thread, and then exit.
+  expected_trigger_time += zx::msec(1500);
+  EXPECT_OK(interrupt.trigger(0, expected_trigger_time));
+  waiter_thread.join();
+  EXPECT_EQ(expected_trigger_time.get(), actual_trigger_time.get());
+}
+
 }  // namespace

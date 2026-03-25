@@ -109,13 +109,17 @@ immediately.  Otherwise, the thread will remain blocked until an IRQ is
 asserted, or the interrupt object is destroyed using a call to
 `zx_interrupt_destroy()`.
 
-When an interrupt object is triggered, it will release either the current thread
-waiting on it, or the next thread to wait on it.  Even after that thread
-unblocks, however, the interrupt is still logically triggered, and will not be
-re-armed and re-enabled until it has been acknowledged.  Synchronous users of
-interrupt objects acknowledge their IRQs by waiting on the interrupt object
-_again_.  The interrupt object will be re-armed at the interrupt controller
-level, and the thread will be unblocked when the next IRQ is asserted.
+When an interrupt object is triggered, if there is a thread currently waiting on
+it, that thread will be woken.  Otherwise, if there is not already a thread
+waiting on the interrupt object, the next thread to call `zx_interrupt_wait` on
+the object will be immediately woken. Even after that thread wakes, the
+interrupt remains logically triggered and will not be re-armed and re-enabled
+until it has been acknowledged. A wait call will not return until the interrupt
+object is in a triggered state.  Additionally, after a thread has returned from
+wait, a subsequent call to wait will acknowledge the previously triggered
+interrupt, causing the interrupt to become untriggered once again.  The
+interrupt object will be re-armed at the interrupt controller level, and the
+thread will be unblocked when the next IRQ is asserted.
 
 #### Asynchronous waiting and acknowledgement
 
@@ -158,7 +162,7 @@ standard set of eight "user signals" which can be set and cleared using calls to
 `zx_object_wait_many()`, and `zx_object_wait_async()`, provided that the caller
 has a handle with sufficient rights.
 
-### Virtual interrupts and `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED`
+### Virtual interrupts and the UNTRIGGERED signal
 
 In addition to user signals, virtual interrupt objects define one other standard
 zircon signal called `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED`.
@@ -186,9 +190,8 @@ The rules pertaining to the `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal are:
   asserted.
 + A call to `zx_interrupt_trigger()` will cause an interrupt object to enter the
   triggered state, and de-assert the `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal.
-+ The signal will remain de-asserted until it has become ack'ed by the consumer,
-  either via the next call to `zx_interrupt_wait()` (synchronous usage), or via
-  a call to `zx_interrupt_ack()` (asynchronous usage).
++ The signal will remain de-asserted until it has become acknowledged by the
+  consumer.  See ("Waiting for and acknowledging interrupts")[#waiting-for-and-acknowledging-interrupts].
 + Observers of the signal use the standard `zx_object_wait_one()`,
   `zx_object_wait_many()`, and `zx_object_wait_async()` syscalls.
 
