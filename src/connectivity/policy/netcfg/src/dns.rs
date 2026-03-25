@@ -107,7 +107,7 @@ pub(super) async fn create_rdnss_stream(
                     match entry.try_parse_as_rdnss() {
                         fnet_ndp_ext::TryParseAsOptionResult::Parsed(option) => Some(Ok(option
                             .iter_addresses()
-                            .into_iter()
+                            .iter()
                             .map(|addr| fnet_name::DnsServer_ {
                                 address: Some(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
                                     address: fnet::Ipv6Address { addr: addr.ipv6_bytes() },

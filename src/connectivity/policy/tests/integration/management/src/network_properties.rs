@@ -477,7 +477,7 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                             .servers
                             .as_ref()
                             .unwrap()
-                            .into_iter()
+                            .iter()
                             .map(|server| server.address)
                             .collect::<HashSet<_>>()
                     })

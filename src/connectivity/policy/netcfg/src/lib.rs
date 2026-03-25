@@ -34,27 +34,22 @@ use fuchsia_fs::directory as fvfs_watcher;
 
 use crate::network::PropertyUpdate;
 
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_dhcp as fnet_dhcp;
-use fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext;
-use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
-use fidl_fuchsia_net_filter as fnet_filter;
-use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
-use fidl_fuchsia_net_masquerade as fnet_masquerade;
-use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_name as fnet_name;
-use fidl_fuchsia_net_ndp as fnet_ndp;
-use fidl_fuchsia_net_policy_properties as fnp_properties;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
-use fidl_fuchsia_net_resources as fnet_resources;
-use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
-use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
-use fidl_fuchsia_net_stack as fnet_stack;
-use fidl_fuchsia_net_virtualization as fnet_virtualization;
-use fuchsia_async as fasync;
+use {
+    fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
+    fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
+    fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
+    fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_masquerade as fnet_masquerade,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_name as fnet_name,
+    fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_policy_properties as fnp_properties,
+    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_net_resources as fnet_resources,
+    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_stack as fnet_stack,
+    fidl_fuchsia_net_virtualization as fnet_virtualization, fuchsia_async as fasync,
+};
 
 use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
@@ -3955,11 +3950,12 @@ async fn install_locally_provisioned_network_rule_set<
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext;
     use fidl_fuchsia_net_ext::FromExt as _;
-    use fidl_fuchsia_net_routes as fnet_routes;
-    use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
-    use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+    use {
+        fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext, fidl_fuchsia_net_routes as fnet_routes,
+        fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+        fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+    };
 
     use assert_matches::assert_matches;
     use futures::future::{self, FutureExt as _};
@@ -5974,7 +5970,7 @@ mod tests {
         interfaces: &[(InterfaceId, interface::ProvisioningType)],
         nth: usize,
     ) -> Option<InterfaceId> {
-        interfaces.into_iter().filter_map(|(id, action)| (*action == Local).then_some(*id)).nth(nth)
+        interfaces.iter().filter_map(|(id, action)| (*action == Local).then_some(*id)).nth(nth)
     }
 
     const INTERFACE_ID2: InterfaceId = InterfaceId::new(2).unwrap();
@@ -6203,7 +6199,7 @@ mod tests {
         final_event: fnet_interfaces::Event,
     ) {
         let interfaces: Vec<(InterfaceId, interface::ProvisioningType)> =
-            interface_ids.into_iter().map(|id| (*id, Local)).collect();
+            interface_ids.iter().map(|id| (*id, Local)).collect();
         fuchsia_networks_fallback_helper(&interfaces, final_event).await
     }
 
