@@ -36,7 +36,6 @@ import("//build/fidl/fidlc.gni")
 #   available (required)
 #   sources (required)
 #   experimental_flags
-#   goldens_dir
 #   non_fidl_deps
 #   public_deps
 #   testonly
@@ -63,7 +62,6 @@ template("fidl_ir") {
     forward_variables_from(invoker,
                            "*",
                            [
-                             "goldens_dir",
                              "out_json_summary",
                              "visibility",
                              "target_api_level",

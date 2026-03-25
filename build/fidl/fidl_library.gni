@@ -527,7 +527,6 @@ template("fidl_library") {
 
         available = [ "fuchsia:${level}" ]
         target_api_level = level
-        goldens_dir = goldens_dir
 
         gen_dir = level_gen_dir
         json_representation = "${level_gen_dir}/${main_target_name}.fidl.json"
