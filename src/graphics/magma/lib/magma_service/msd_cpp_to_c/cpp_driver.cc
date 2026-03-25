@@ -5,7 +5,6 @@
 #include "cpp_driver.h"
 
 #include <lib/magma/platform/platform_logger.h>
-#include <lib/magma/platform/platform_trace.h>
 #include <lib/magma/util/macros.h>
 
 #include <mutex>
@@ -22,15 +21,6 @@ static void log(int32_t level, const char* file, int32_t line, const char* str) 
                              str);
 }
 
-static void trace_vthread_duration(magma_bool_t begin, const char* category, const char* name,
-                                   const char* vthread, uint64_t vthread_id, uint64_t timestamp) {
-  if (begin) {
-    TRACE_VTHREAD_DURATION_BEGIN(category, name, vthread, vthread_id, timestamp);
-  } else {
-    TRACE_VTHREAD_DURATION_END(category, name, vthread, vthread_id, timestamp);
-  }
-}
-
 }  // namespace
 
 CppDriver::CppDriver() {
@@ -39,7 +29,6 @@ CppDriver::CppDriver() {
   std::call_once(flag, [] {
     MsdDriverCallbacks callbacks = {
         .log = log,
-        .trace_vthread_duration = trace_vthread_duration,
     };
     msd_driver_register_callbacks(&callbacks);
   });

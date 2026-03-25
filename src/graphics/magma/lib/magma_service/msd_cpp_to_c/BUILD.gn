@@ -19,7 +19,6 @@ source_set("msd_cpp_to_c") {
   ]
   public_deps = [
     "//src/graphics/magma:msd",
-    "//src/graphics/magma/lib/magma/platform:trace",
     "//src/graphics/magma/lib/magma/util:macros",
   ]
 }
