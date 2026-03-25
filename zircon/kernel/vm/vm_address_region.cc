@@ -369,8 +369,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
     return ZX_ERR_NO_MEMORY;
   }
 
-  zx_status_t status = UnmapInternalLocked(base, size, false /* can_destroy_regions */,
-                                           false /* allow_partial_vmar */);
+  zx_status_t status = UnmapInternalLocked(base, size, false /* can_destroy_regions */);
   if (status != ZX_OK) {
     return status;
   }
@@ -855,31 +854,11 @@ zx_status_t VmAddressRegion::Unmap(vaddr_t base, size_t size,
   }
 
   return UnmapInternalLocked(
-      base, size, op_children == VmAddressRegionOpChildren::Yes /* can_destroy_regions */,
-      false /* allow_partial_vmar */);
-}
-
-zx_status_t VmAddressRegion::UnmapAllowPartial(vaddr_t base, size_t size) {
-  canary_.Assert();
-
-  size = RoundUpPageSize(size);
-  if (size == 0 || !IsPageRounded(base)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  Guard<CriticalMutex> region_guard{region_lock()};
-  Guard<CriticalMutex> guard{lock()};
-  if (state_ != LifeCycleState::ALIVE) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  return UnmapInternalLocked(base, size, true /* can_destroy_regions */,
-                             true /* allow_partial_vmar */);
+      base, size, op_children == VmAddressRegionOpChildren::Yes /* can_destroy_regions */);
 }
 
 zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
-                                                 bool can_destroy_regions,
-                                                 bool allow_partial_vmar) {
+                                                 bool can_destroy_regions) {
   if (!is_in_range(base, size)) {
     return ZX_ERR_INVALID_ARGS;
   }
@@ -901,109 +880,51 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
   auto end = subregions_.UpperBound(end_addr_byte);
   auto begin = subregions_.IncludeOrHigher(base);
 
-  if (!allow_partial_vmar) {
-    // Check if we're partially spanning a subregion, or aren't allowed to
-    // destroy regions and are spanning a region, and bail if we are.
-    for (auto itr = begin; itr != end; ++itr) {
-      vaddr_t itr_end_byte = 0;
-      AssertHeld((itr->lock_ref()));
-      DEBUG_ASSERT(itr->size() > 0);
-      overflowed = add_overflow(itr->base(), itr->size() - 1, &itr_end_byte);
-      ASSERT(!overflowed);
-      if (!itr->is_mapping() &&
-          (!can_destroy_regions || itr->base() < base || itr_end_byte > end_addr_byte)) {
-        return ZX_ERR_INVALID_ARGS;
-      }
+  // Check if we're partially spanning a subregion, or aren't allowed to
+  // destroy regions and are spanning a region, and bail if we are.
+  for (auto itr = begin; itr != end; ++itr) {
+    vaddr_t itr_end_byte = 0;
+    AssertHeld((itr->lock_ref()));
+    DEBUG_ASSERT(itr->size() > 0);
+    overflowed = add_overflow(itr->base(), itr->size() - 1, &itr_end_byte);
+    ASSERT(!overflowed);
+    if (!itr->is_mapping() &&
+        (!can_destroy_regions || itr->base() < base || itr_end_byte > end_addr_byte)) {
+      return ZX_ERR_INVALID_ARGS;
     }
   }
 
-  bool at_top = true;
   for (auto itr = begin; itr != end;) {
-    uint64_t curr_base;
-    VmAddressRegion* up;
-    {
-      // Create a copy of the iterator. It lives in this sub-scope as at the end we may have
-      // destroyed. As such we stash a copy of its base in a variable in our outer scope.
-      auto curr = itr++;
-      AssertHeld(curr->lock_ref());
-      AssertHeld(curr->region_lock_ref());
-      curr_base = curr->base();
-      // The parent will keep living even if we destroy curr so can place that in the outer scope.
-      up = curr->parent_;
+    // Create a copy of the iterator so we can increment it as we may destroy the currently pointed
+    // at object.
+    auto curr = itr++;
+    AssertHeld(curr->lock_ref());
+    AssertHeld(curr->region_lock_ref());
 
-      if (VmMapping* mapping = curr->as_vm_mapping_ptr(); mapping) {
-        AssertHeld(mapping->lock_ref());
-        AssertHeld(mapping->region_lock_ref());
-        vaddr_t curr_end_byte = 0;
-        DEBUG_ASSERT(curr->size() > 1);
-        overflowed = add_overflow(curr->base(), curr->size() - 1, &curr_end_byte);
-        ASSERT(!overflowed);
-        const vaddr_t unmap_base = ktl::max(curr->base(), base);
-        const vaddr_t unmap_end_byte = ktl::min(curr_end_byte, end_addr_byte);
-        size_t unmap_size;
-        overflowed = add_overflow(unmap_end_byte - unmap_base, 1, &unmap_size);
-        ASSERT(!overflowed);
-
-        if (unmap_base == curr->base() && unmap_size == curr->size()) {
-          // If we're unmapping the entire region, just call Destroy
-          [[maybe_unused]] zx_status_t status = curr->DestroyLocked();
-          DEBUG_ASSERT(status == ZX_OK);
-        } else {
-          // Unmapping can fail if an allocation needed to happen. Nothing can be done to rollback
-          // here so the only option is to propagate the ZX_ERR_NO_MEMORY up. If this is happening
-          // in response to a user request then they will most likely panic, as users have no
-          // ability to resolve ZX_ERR_NO_MEMORY.
-          zx_status_t status = mapping->UnmapLocked(unmap_base, unmap_size);
-          if (status != ZX_OK) {
-            ASSERT(status == ZX_ERR_NO_MEMORY);
-            return status;
-          }
-        }
-      } else {
-        vaddr_t unmap_base = 0;
-        size_t unmap_size = 0;
-        [[maybe_unused]] bool intersects =
-            GetIntersect(base, size, curr->base(), curr->size(), &unmap_base, &unmap_size);
-        DEBUG_ASSERT(intersects);
-        if (allow_partial_vmar) {
-          // If partial VMARs are allowed, we descend into sub-VMARs.
-          VmAddressRegion* vmar = curr->as_vm_address_region_ptr();
-          AssertHeld(vmar->lock_ref());
-          AssertHeld(vmar->region_lock_ref());
-          if (!vmar->subregions_.IsEmpty()) {
-            begin = vmar->subregions_.IncludeOrHigher(base);
-            end = vmar->subregions_.UpperBound(end_addr_byte);
-            itr = begin;
-            at_top = false;
-          }
-        } else if (unmap_base == curr->base() && unmap_size == curr->size()) {
-          [[maybe_unused]] zx_status_t status = curr->DestroyLocked();
-          DEBUG_ASSERT(status == ZX_OK);
-        }
+    vaddr_t unmap_base = 0;
+    size_t unmap_size = 0;
+    [[maybe_unused]] bool intersects =
+        GetIntersect(base, size, curr->base(), curr->size(), &unmap_base, &unmap_size);
+    DEBUG_ASSERT(intersects);
+    if (unmap_base == curr->base() && unmap_size == curr->size()) {
+      [[maybe_unused]] zx_status_t status = curr->DestroyLocked();
+      DEBUG_ASSERT(status == ZX_OK);
+    } else {
+      VmMapping* mapping = curr->as_vm_mapping_ptr();
+      // Already validated in the loop above that the only kind of region we can partially span is
+      // a mapping.
+      ASSERT(mapping);
+      AssertHeld(mapping->lock_ref());
+      AssertHeld(mapping->region_lock_ref());
+      // Unmapping can fail if an allocation needed to happen. Nothing can be done to rollback
+      // here so the only option is to propagate the ZX_ERR_NO_MEMORY up. If this is happening
+      // in response to a user request then they will most likely panic, as users have no
+      // ability to resolve ZX_ERR_NO_MEMORY.
+      zx_status_t status = mapping->UnmapLocked(unmap_base, unmap_size);
+      if (status != ZX_OK) {
+        ASSERT(status == ZX_ERR_NO_MEMORY);
+        return status;
       }
-    }
-
-    if (allow_partial_vmar && !at_top && itr == end) {
-      AssertHeld(up->lock_ref());
-      AssertHeld(up->region_lock_ref());
-      // If partial VMARs are allowed, and we have reached the end of a
-      // sub-VMAR range, we ascend and continue iteration.
-      do {
-        // Use the stashed curr_base as if curr was a mapping we may have destroyed it.
-        begin = up->subregions_.UpperBound(curr_base);
-        if (begin.IsValid()) {
-          break;
-        }
-        at_top = up == this;
-        up = up->parent_;
-      } while (!at_top);
-      if (!begin.IsValid()) {
-        // If we have reached the end after ascending all the way up,
-        // break out of the loop.
-        break;
-      }
-      end = up->subregions_.UpperBound(end_addr_byte);
-      itr = begin;
     }
   }
 

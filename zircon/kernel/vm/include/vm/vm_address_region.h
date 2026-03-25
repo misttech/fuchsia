@@ -681,11 +681,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   // the range, Unmap() will fail.
   zx_status_t Unmap(vaddr_t base, size_t size, VmAddressRegionOpChildren op_children);
 
-  // Same as Unmap, but allows for subregions that are partially in the range.
-  // Additionally, sub-VMARs that are completely within the range will not be
-  // destroyed.
-  zx_status_t UnmapAllowPartial(vaddr_t base, size_t size);
-
   // Change protections on a subset of the region of memory in the containing
   // address space. If the requested range overlaps with a subregion and op_children is No,
   // Protect() will fail, otherwise the mapping permissions in the sub-region may only be reduced.
@@ -778,11 +773,9 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
 
   // Implementation for Unmap() and OverwriteVmMapping() that does not hold
   // the aspace lock. If |can_destroy_regions| is true, then this may destroy
-  // VMARs that it completely covers. If |allow_partial_vmar| is true, then
-  // this can handle the situation where only part of the VMAR is contained
-  // within the region and will not destroy any VMARs.
-  zx_status_t UnmapInternalLocked(vaddr_t base, size_t size, bool can_destroy_regions,
-                                  bool allow_partial_vmar) TA_REQ(region_lock()) TA_REQ(lock());
+  // VMARs that it completely covers.
+  zx_status_t UnmapInternalLocked(vaddr_t base, size_t size, bool can_destroy_regions)
+      TA_REQ(region_lock()) TA_REQ(lock());
 
   // If the allocation between the given children can be met this returns a virtual address of the
   // base address of that allocation, otherwise a nullopt is returned.
