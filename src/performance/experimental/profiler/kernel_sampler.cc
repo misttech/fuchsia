@@ -184,13 +184,6 @@ zx::result<> profiler::KernelSampler::Stop() {
   }
   session_.reset();
 
-  zx_info_iob_t info;
-  zx_status_t res = buffers.get_info(ZX_INFO_IOB, &info, sizeof(info), nullptr, nullptr);
-  if (res != ZX_OK) {
-    FX_PLOGS(ERROR, res) << "Failed to get info about iob";
-    return zx::error(res);
-  }
-
   // Flatten the watched threads so that we can filter out the records that aren't relevant.
   std::unordered_set<zx_koid_t> profiled_threads;
 
