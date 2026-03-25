@@ -117,6 +117,7 @@ if (is_host) {
       "//tools/debug/covargs:verify_bazel2gn",
       "//tools/debug/elflib:verify_bazel2gn",
       "//tools/debug/symbolize:verify_bazel2gn",
+      "//tools/fidl/fidl_api_diff:verify_bazel2gn",
       "//tools/fidl/fidl_api_summarize:verify_bazel2gn",
       "//tools/fidl/fidl_ir:verify_bazel2gn",
       "//tools/fidl/fidlc:verify_bazel2gn",

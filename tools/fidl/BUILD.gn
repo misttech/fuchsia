@@ -7,7 +7,6 @@ group("fidl") {
     ":fidl-lint",
     ":fidlfmt",
     "compat_audit($host_toolchain)",
-    "fidl_api_diff:host",
     "fidl_api_summarize:host",
     "fidl_ir",
     "fidlc:host",
@@ -25,6 +24,7 @@ group("fidl") {
     "gidl-format:host",
     "lib:lib($host_toolchain)",
     "measure-tape/src:host",
+    "//build/bazel/host:bazel_root_host_tools.fidl_api_diff.host_tool($host_toolchain)",
   ]
 }
 

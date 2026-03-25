@@ -51,11 +51,8 @@ if (is_host) {
   go_library("gopkg") {
     sources = [
       "apidiff.go",
-      "apidiff_test.go",
       "diff.go",
-      "diff_test.go",
       "report.go",
-      "report_test.go",
     ]
     visibility = [ "//tools/fidl/*" ]
     deps = [
@@ -67,6 +64,11 @@ if (is_host) {
 }
 if (is_host) {
   fidlgentest_go_test("apidiff_test") {
+    sources = [
+      "apidiff_test.go",
+      "diff_test.go",
+      "report_test.go",
+    ]
     embed = [ ":gopkg" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts" ]
   }

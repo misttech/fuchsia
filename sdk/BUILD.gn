@@ -1069,7 +1069,6 @@ copy("idk_build_tools") {
     "//tools/bindc:bin($host_toolchain)",
     "//tools/cmc:cmc($host_toolchain)",
     "//tools/configc:configc($host_toolchain)",
-    "//tools/fidl/fidl_api_diff($host_toolchain)",
     "//tools/fidl/fidl_api_summarize($host_toolchain)",
     "//tools/fidl/fidlc:fidl-format($host_toolchain)",
     "//tools/fidl/fidlc:fidl-lint($host_toolchain)",
@@ -1083,7 +1082,10 @@ copy("idk_build_tools") {
 
   # The following tools are generated directly from Bazel.
   sources += [ "${host_out_dir}/json_validator_valico" ]
-  deps += [ "//build/bazel/host:bazel_root_host_tools.json_validator_valico($host_toolchain)" ]
+  deps += [
+    "//build/bazel/host:bazel_root_host_tools.fidl_api_diff($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.json_validator_valico($host_toolchain)",
+  ]
 }
 
 # Controls the maximum number of simultaneous subbuilds.

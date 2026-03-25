@@ -12,7 +12,7 @@ template("fidl_api_compatibility_test") {
 
   policy = invoker.policy
 
-  fidl_api_diff_tool_target = "//tools/fidl/fidl_api_diff:host"
+  fidl_api_diff_tool_target = "//build/bazel/host:bazel_root_host_tools.fidl_api_diff.host_tool($host_toolchain)"
   fidl_api_diff_tool_path = "$root_build_dir/host-tools/fidl_api_diff"
 
   # Run the test.

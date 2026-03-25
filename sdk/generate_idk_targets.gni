@@ -316,7 +316,7 @@ template("generate_idk_targets") {
         # interface(s), which would likely mean that the code must be built at
         # each API level and should be in a different molecule.
         assert_no_deps = [
-          "//tools/fidl/fidl_api_diff:host",
+          "//build/bazel/host:bazel_root_host_tools.fidl_api_diff.host_tool",
           "//tools/fidl/fidl_api_summarize:fidl_api_summarize($host_toolchain)",
           "//tools/fidl/fidlc:fidl-lint.host",
         ]

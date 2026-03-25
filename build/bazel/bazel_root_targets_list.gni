@@ -41,6 +41,16 @@ declare_args() {
                                         ]
                                       },
                                       {
+                                        bazel_label = "//tools/fidl/fidl_api_diff:fidl_api_diff"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidl_api_diff_/fidl_api_diff"
+                                            ninja = "fidl_api_diff"
+                                          },
+                                        ]
+                                        install_host_tool = true
+                                      },
+                                      {
                                         bazel_label = "//tools/go_test_parser:go_test_parser"
                                         copy_outputs = [
                                           {
