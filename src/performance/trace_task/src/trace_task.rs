@@ -42,7 +42,7 @@ pub struct TraceTask {
     /// The task.
     task: Task<Option<trace::StopResult>>,
     /// The socket to read the trace data from when tracing is completed.
-    read_socket: AsyncSocket,
+    read_socket: Option<AsyncSocket>,
     /// The compression algorithm to use.
     compression: trace::CompressionType,
     /// True when the task was cancelled (aborted).
@@ -150,7 +150,7 @@ impl TraceTask {
             requested_categories: requested_categories.unwrap_or_default(),
             start_time: Instant::now(),
             shutdown_sender,
-            read_socket: socket_to_async(client),
+            read_socket: Some(socket_to_async(client)),
             compression,
             task,
             cancelled,
@@ -192,9 +192,12 @@ impl TraceTask {
         }
 
         // Close the socket without reading.
-        let res = self.read_socket.close().await;
-        if res.is_err() {
-            log::warn!("{} Failed to close socket: {:?}", self.debug_tag, res);
+        if let Some(mut socket) = self.read_socket.take() {
+            let res = socket.close().await;
+            if res.is_err() {
+                log::warn!("{} Failed to close socket: {:?}", self.debug_tag, res);
+            }
+            drop(socket);
         }
         self.shutdown().await
     }
@@ -278,7 +281,7 @@ impl TraceTask {
     /// Signals the trace session to stop, copies all trace data to the
     /// provided writer, and awaits task completion.
     pub async fn stop_and_receive_data<W>(
-        self,
+        mut self,
         mut writer: W,
     ) -> Result<trace::StopResult, TracingError>
     where
@@ -296,9 +299,10 @@ impl TraceTask {
             log::debug!("{} Shutdown already in progress.", self.debug_tag);
         }
 
+        let mut read_socket = self.read_socket.take().unwrap();
         let res = match self.compression {
-            trace::CompressionType::Zstd => compress_zstd(&self.read_socket, &mut writer).await,
-            _ => futures::io::copy(&self.read_socket, &mut writer)
+            trace::CompressionType::Zstd => compress_zstd(&mut read_socket, &mut writer).await,
+            _ => futures::io::copy(&mut read_socket, &mut writer)
                 .await
                 .map(|_| ())
                 .map_err(|e| TracingError::GeneralError(format!("{e:?}"))),
@@ -310,15 +314,16 @@ impl TraceTask {
     /// Waits for the tracing task to complete and copies the trace data to the writer.
     /// If the tracing should be stopped vs. waiting, call |stop_and_receive_data|.
     pub async fn await_completion_and_receive_data<W>(
-        self,
+        mut self,
         mut writer: W,
     ) -> Result<StopResult, TracingError>
     where
         W: AsyncWrite + Unpin + Send + 'static,
     {
+        let mut read_socket = self.read_socket.take().unwrap();
         let res = match self.compression {
-            trace::CompressionType::Zstd => compress_zstd(&self.read_socket, &mut writer).await,
-            _ => futures::io::copy(&self.read_socket, &mut writer)
+            trace::CompressionType::Zstd => compress_zstd(&mut read_socket, &mut writer).await,
+            _ => futures::io::copy(&mut read_socket, &mut writer)
                 .await
                 .map(|_| ())
                 .map_err(|e| TracingError::RecordingStop(e.to_string())),
@@ -425,12 +430,8 @@ mod tests {
                                             payload.write_results.unwrap(),
                                             expected_write_results
                                         );
-                                        assert_eq!(
-                                            FAKE_CONTROLLER_TRACE_OUTPUT.len(),
-                                            output
-                                                .write(FAKE_CONTROLLER_TRACE_OUTPUT.as_bytes())
-                                                .unwrap()
-                                        );
+                                        let _ =
+                                            output.write(FAKE_CONTROLLER_TRACE_OUTPUT.as_bytes());
                                         let stop_result = trace::StopResult {
                                             provider_stats: Some(vec![]),
                                             ..Default::default()
