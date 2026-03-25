@@ -19,11 +19,7 @@ void ExceptionDecoder::Decode() {
     Destroy();
     return;
   }
-  if (thread->GetStack().has_all_frames()) {
-    Decoded();
-  } else {
-    thread->GetStack().SyncFrames({}, [this](const zxdb::Err& /*err*/) { Decoded(); });
-  }
+  thread->GetStack().EnsureFrames({}, [this](const zxdb::Err& /*err*/) { Decoded(); });
 }
 
 void ExceptionDecoder::Decoded() {

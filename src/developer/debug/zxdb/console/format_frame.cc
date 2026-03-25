@@ -152,19 +152,14 @@ FormatStackOptions FormatStackOptions::GetFrameOptions(Target* target, bool verb
 
 fxl::RefPtr<AsyncOutputBuffer> FormatStack(Thread* thread, const FormatStackOptions& opts) {
   auto out = fxl::MakeRefCounted<AsyncOutputBuffer>();
-  if (!opts.sync_options.force_update && thread->GetStack().has_all_frames()) {
-    out->Complete(ListCompletedFrames(thread, opts));
-    return out;
-  }
 
-  // Request a stack update.
-  thread->GetStack().SyncFrames(opts.sync_options,
-                                [thread = thread->GetWeakPtr(), opts, out](const Err& err) {
-                                  if (!err.has_error() && thread)
-                                    out->Complete(ListCompletedFrames(thread.get(), opts));
-                                  else
-                                    out->Complete("Thread exited, no frames.\n");
-                                });
+  thread->GetStack().EnsureFrames(opts.sync_options,
+                                  [thread = thread->GetWeakPtr(), opts, out](const Err& err) {
+                                    if (!err.has_error() && thread)
+                                      out->Complete(ListCompletedFrames(thread.get(), opts));
+                                    else
+                                      out->Complete("Thread exited, no frames.\n");
+                                  });
   return out;
 }
 

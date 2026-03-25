@@ -65,11 +65,7 @@ void RunVerbUp(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) {
     OutputFrameInfoForChange(cmd_context.get(), thread->GetStack()[id], id);
   };
 
-  if (cmd.thread()->GetStack().has_all_frames()) {
-    on_has_frames(Err());
-  } else {
-    cmd.thread()->GetStack().SyncFrames({}, std::move(on_has_frames));
-  }
+  cmd.thread()->GetStack().EnsureFrames({}, std::move(on_has_frames));
 }
 
 }  // namespace

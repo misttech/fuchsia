@@ -17,6 +17,7 @@
 #include "src/developer/debug/zxdb/client/mock_thread.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/common/err.h"
+#include "src/developer/debug/zxdb/console/async_output_buffer_test_util.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/console_context.h"
 #include "src/developer/debug/zxdb/console/format_frame.h"
@@ -284,6 +285,10 @@ TEST(CommandUtils, AssertStoppedThreadWithFrameCommand) {
 }
 
 TEST(CommandUtils, FormatAllThreadStacks) {
+  debug::PlatformMessageLoop loop;
+  std::string error_message;
+  FX_CHECK(loop.Init(&error_message)) << error_message;
+
   Session session;
   MockConsole console(&session);
   console.Init();
@@ -337,11 +342,8 @@ TEST(CommandUtils, FormatAllThreadStacks) {
   opts.pretty_stack = console.context().pretty_stack_manager();
 
   auto out = FormatAllThreadStacks(cmd.all_threads(), opts, cmd_context);
-
-  // The threads have their entire stack and we are not forcing an update, so this should be
-  // synchronous.
-  FX_CHECK(out->is_complete());
-  cmd_context->Output(out->DestructiveFlatten());
+  OutputBuffer final_output = LoopUntilAsyncOutputBufferComplete(out);
+  cmd_context->Output(std::move(final_output));
 
   event = console.GetOutputEvent();
   EXPECT_EQ(
@@ -355,6 +357,7 @@ TEST(CommandUtils, FormatAllThreadStacks) {
       "  2 function5() • file5.cc:200\n"
       "  3 function6() • file6.cc:400\n",
       event.output.AsString());
+  loop.Cleanup();
 }
 
 }  // namespace zxdb

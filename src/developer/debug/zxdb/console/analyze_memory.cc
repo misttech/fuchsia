@@ -65,16 +65,12 @@ void MemoryAnalysis::Schedule(const AnalyzeMemoryOptions& opts) {
   if (opts.thread) {
     // Request stack dump.
     if (!have_frames_) {
-      if (opts.thread->GetStack().has_all_frames()) {
-        OnFrames(opts.thread->GetWeakPtr());
-      } else {
-        opts.thread->GetStack().SyncFrames(
-            {}, [this_ref, weak_thread = opts.thread->GetWeakPtr()](const Err&) {
-              // Can ignore the error, the frames will be re-queried from the thread and we'll check
-              // the weak pointer in case its destroyed.
-              this_ref->OnFrames(weak_thread);
-            });
-      }
+      opts.thread->GetStack().EnsureFrames(
+          {}, [this_ref, weak_thread = opts.thread->GetWeakPtr()](const Err&) {
+            // Can ignore the error, the frames will be re-queried from the thread and we'll check
+            // the weak pointer in case its destroyed.
+            this_ref->OnFrames(weak_thread);
+          });
     }
   } else {
     // Mark these as complete so we can continue when everything else is done.
