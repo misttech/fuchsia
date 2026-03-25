@@ -587,6 +587,33 @@ impl From<crate::arch32::kgsl_perfcounter_put> for crate::kgsl_perfcounter_put {
 }
 
 #[rustfmt::skip]
+impl TryFrom<crate::kgsl_perfcounter_query> for crate::arch32::kgsl_perfcounter_query {
+    type Error = ();
+    fn try_from(f: crate::kgsl_perfcounter_query) -> Result<Self, ()> {
+        Ok(Self {
+            groupid: f.groupid.into(),
+            countables: crate::uaddr32::try_from(f.countables.addr).map_err(|_| ())?.into(),
+            count: f.count.into(),
+            max_counters: f.max_counters.into(),
+            ..Default::default()
+        })
+    }
+}
+
+#[rustfmt::skip]
+impl From<crate::arch32::kgsl_perfcounter_query> for crate::kgsl_perfcounter_query {
+    fn from(f: crate::arch32::kgsl_perfcounter_query) -> Self {
+        Self {
+            groupid: f.groupid.into(),
+            countables: f.countables.addr.into(),
+            count: f.count.into(),
+            max_counters: f.max_counters.into(),
+            ..Default::default()
+        }
+    }
+}
+
+#[rustfmt::skip]
 impl From<crate::kgsl_perfcounter_read_group> for crate::arch32::kgsl_perfcounter_read_group {
     fn from(f: crate::kgsl_perfcounter_read_group) -> Self {
         zerocopy::transmute!(f)
@@ -597,6 +624,54 @@ impl From<crate::kgsl_perfcounter_read_group> for crate::arch32::kgsl_perfcounte
 impl From<crate::arch32::kgsl_perfcounter_read_group> for crate::kgsl_perfcounter_read_group {
     fn from(f: crate::arch32::kgsl_perfcounter_read_group) -> Self {
         zerocopy::transmute!(f)
+    }
+}
+
+#[rustfmt::skip]
+impl TryFrom<crate::kgsl_perfcounter_read> for crate::arch32::kgsl_perfcounter_read {
+    type Error = ();
+    fn try_from(f: crate::kgsl_perfcounter_read) -> Result<Self, ()> {
+        Ok(Self {
+            reads: crate::uaddr32::try_from(f.reads.addr).map_err(|_| ())?.into(),
+            count: f.count.into(),
+            ..Default::default()
+        })
+    }
+}
+
+#[rustfmt::skip]
+impl From<crate::arch32::kgsl_perfcounter_read> for crate::kgsl_perfcounter_read {
+    fn from(f: crate::arch32::kgsl_perfcounter_read) -> Self {
+        Self {
+            reads: f.reads.addr.into(),
+            count: f.count.into(),
+            ..Default::default()
+        }
+    }
+}
+
+#[rustfmt::skip]
+impl TryFrom<crate::kgsl_gpumem_sync_cache_bulk> for crate::arch32::kgsl_gpumem_sync_cache_bulk {
+    type Error = ();
+    fn try_from(f: crate::kgsl_gpumem_sync_cache_bulk) -> Result<Self, ()> {
+        Ok(Self {
+            id_list: crate::uaddr32::try_from(f.id_list.addr).map_err(|_| ())?.into(),
+            count: f.count.into(),
+            op: f.op.into(),
+            ..Default::default()
+        })
+    }
+}
+
+#[rustfmt::skip]
+impl From<crate::arch32::kgsl_gpumem_sync_cache_bulk> for crate::kgsl_gpumem_sync_cache_bulk {
+    fn from(f: crate::arch32::kgsl_gpumem_sync_cache_bulk) -> Self {
+        Self {
+            id_list: f.id_list.addr.into(),
+            count: f.count.into(),
+            op: f.op.into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -650,6 +725,8 @@ crate::arch_translate_data! {
         size,
     }
 }
+
+// kgsl_submit_commands contains user references to arch-dependent types and must be translated manually.
 
 #[rustfmt::skip]
 crate::arch_translate_data! {
