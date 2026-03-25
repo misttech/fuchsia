@@ -25,20 +25,15 @@ _BAZEL_CPU_ALIASES = {
 }
 
 
-# LINT.IfChange(comp_mode)
-def compilation_mode(gn_args: dict[str, Any]) -> str:
-    optimization = gn_args.get("optimize", "none")
-    # Sometimes the optimization is escape quoted so we clean it up.
-    opt = _OPT_PATTERN.sub("", optimization)
-    if opt == "debug":
-        return "dbg"
-    elif opt in ("size", "speed", "profile", "size_lto", "size_thinlto"):
-        return "opt"
-    else:
-        return "fastbuild"
-
-
-# LINT.ThenChange(//build/bazel/config/bazel_args.gni:comp_mode)
+def get_bazel_compilation_mode(bazel_args: dict[str, Any]) -> str:
+    build_args = bazel_args.get("build", [])
+    for arg in build_args:
+        if arg.startswith("--compilation_mode="):
+            return arg.split("=")[1]
+    print(
+        "WARNING: No compilation mode found in bazel args. Defaulting to fastbuild"
+    )
+    return "fastbuild"
 
 
 def map_bazel_cpu(cpu: str) -> str | None:
@@ -218,12 +213,17 @@ def main(argv: Sequence[str]) -> None:
 
     info("Refreshing compdb for Bazel targets: {}".format(labels))
 
-    with open(args.build_dir / "args.json", "r") as f:
-        gn_args = json.load(f)
+    # TODO(https://fxbug.dev/495869705): Currently it assumes all targets are
+    # Fuchsia targets. However, a bazel target may be for host. We should
+    # determine the optimize mode for each target individually.
+    with open(args.build_dir / "bazel_args" / "fuchsia.json") as f:
+        fuchsia_bazel_args = json.load(f)
+
+    bazel_optimize_mode = get_bazel_compilation_mode(fuchsia_bazel_args)
 
     bazel_config_args = [
-        "--compilation_mode={}".format(compilation_mode(gn_args)),
-        "--cpu={}".format(map_bazel_cpu(gn_args["target_cpu"])),
+        "--compilation_mode={}".format(bazel_optimize_mode),
+        "--cpu={}".format(map_bazel_cpu(fuchsia_bazel_args["current_cpu"])),
     ]
 
     new_compile_commands = bazel_compdb_utils.compdb_for_labels(
