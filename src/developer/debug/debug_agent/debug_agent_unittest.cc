@@ -1098,4 +1098,63 @@ TEST_F(DebugAgentTests, OnResumeDoesNotSuspendNewThreads) {
   EXPECT_FALSE(thread3->is_client_suspended());
 }
 
+TEST_F(DebugAgentTests, OnThreadsUpdatesThreadsForProcess) {
+  MockDebugAgentHarness harness;
+  RemoteAPI* remote_api = harness.debug_agent();
+
+  constexpr uint64_t kProcessKoid = 9876;
+  constexpr uint64_t kThread1Koid = 9877;
+  constexpr uint64_t kThread2Koid = 9878;
+  constexpr uint64_t kThread3Koid = 9879;
+
+  MockProcessHandle* mock_process_handle_ptr;
+  {
+    // Manually setup a mock process and thread handle so we can
+    MockThreadHandle initial_thread(kThread1Koid);
+
+    auto mock_process_handle = std::make_unique<MockProcessHandle>(kProcessKoid);
+    mock_process_handle->set_threads({std::move(initial_thread)});
+
+    DebuggedProcessCreateInfo create_info(std::move(mock_process_handle));
+
+    auto mock_process =
+        std::make_unique<MockProcess>(harness.debug_agent(), std::move(create_info));
+
+    mock_process_handle_ptr = reinterpret_cast<MockProcessHandle*>(&mock_process->process_handle());
+
+    harness.debug_agent()->InjectProcessForTest(std::move(mock_process));
+  }
+
+  // Now we have the pointer to the mock source of truth in the thread handle. We're going to update
+  // the MockProcessHandle's thread list WITHOUT sending notifications to the DebuggedProcess
+  // object. This situation can happen when we're recursively weakly attached to a job and enumerate
+  // processes, but do not receive thread starting exceptions and are required to manually
+  // synchronize with the underlying source of truth.
+
+  {
+    // Inject the new state of the process to have additional threads that have stared since we last
+    // synchronized.
+    MockThreadHandle initial_thread(kThread1Koid);
+    MockThreadHandle thread2(kThread2Koid);
+    MockThreadHandle thread3(kThread3Koid);
+
+    mock_process_handle_ptr->set_threads(
+        {std::move(initial_thread), std::move(thread2), std::move(thread3)});
+  }
+
+  // Now send a ThreadsRequest, which should send back the synchronized list of threads.
+  debug_ipc::ThreadsRequest request;
+  request.process_koid = kProcessKoid;
+  debug_ipc::ThreadsReply reply;
+  remote_api->OnThreads(request, &reply);
+
+  ASSERT_EQ(reply.threads.size(), 3u);
+  EXPECT_EQ(reply.threads[0].id.process, kProcessKoid);
+  EXPECT_EQ(reply.threads[0].id.thread, kThread1Koid);
+  EXPECT_EQ(reply.threads[1].id.process, kProcessKoid);
+  EXPECT_EQ(reply.threads[1].id.thread, kThread2Koid);
+  EXPECT_EQ(reply.threads[2].id.process, kProcessKoid);
+  EXPECT_EQ(reply.threads[2].id.thread, kThread3Koid);
+}
+
 }  // namespace debug_agent

@@ -8,9 +8,12 @@
 
 #include "src/developer/debug/zxdb/client/memory_dump.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
+#include "src/developer/debug/zxdb/client/process_observer.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
+#include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/developer/debug/zxdb/symbols/elf_symbol.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 
@@ -340,6 +343,54 @@ TEST_F(ProcessImplTest, ReadMemoryAutomation) {
                            });
 
   loop().RunUntilNoTasks();
+}
+
+TEST_F(ProcessImplTest, ObserverOrder) {
+  // An observer that requires the process to be created before any threads are created.
+  class EnforceOrderObserver : public ProcessObserver, public ThreadObserver {
+   public:
+    void DidCreateProcess(Process* process, uint64_t timestamp) override {
+      process_created = true;
+      last_process = process;
+    }
+    void DidCreateThread(Thread* thread) override {
+      // This is the core requirement: Process should be created before threads.
+      EXPECT_TRUE(process_created);
+      EXPECT_EQ(last_process, thread->GetProcess());
+      thread_created = true;
+      last_thread_koid = thread->GetKoid();
+    }
+
+    bool process_created = false;
+    bool thread_created = false;
+    Process* last_process = nullptr;
+    uint64_t last_thread_koid = 0;
+  };
+
+  EnforceOrderObserver observer;
+  session().process_observers().AddObserver(&observer);
+  session().thread_observers().AddObserver(&observer);
+
+  constexpr uint64_t kProcessKoid = 1234;
+  constexpr uint64_t kThreadKoid = 5678;
+
+  debug_ipc::ProcessRecord record;
+  record.process_koid = kProcessKoid;
+  record.process_name = "process";
+  record.threads.resize(1);
+  record.threads[0].id = {.process = kProcessKoid, .thread = kThreadKoid};
+
+  TargetImpl* target = session().system().GetTargetImpls()[0];
+  auto process = ProcessImpl::FromPreviousProcess(target, record);
+
+  EXPECT_TRUE(observer.process_created);
+  EXPECT_TRUE(observer.thread_created);
+
+  EXPECT_EQ(process.get(), observer.last_process);
+  EXPECT_EQ(kThreadKoid, observer.last_thread_koid);
+
+  session().process_observers().RemoveObserver(&observer);
+  session().thread_observers().RemoveObserver(&observer);
 }
 
 }  // namespace zxdb

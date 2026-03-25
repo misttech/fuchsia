@@ -298,9 +298,6 @@ void TargetImpl::AssignPreviousConnectedProcess(const debug_ipc::ProcessRecord& 
   process_ = ProcessImpl::FromPreviousProcess(this, record);
 
   state_ = State::kRunning;
-  for (auto& observer : session()->process_observers()) {
-    observer.DidCreateProcess(process_.get(), 0);
-  }
 
   // We won't get a modules notification, since DebugAgent is already attached to this process, so
   // we must request them explicitly. We don't need to do anything in the callback, failure modes

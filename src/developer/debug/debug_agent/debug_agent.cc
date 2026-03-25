@@ -404,6 +404,7 @@ void DebugAgent::OnThreads(const debug_ipc::ThreadsRequest& request,
   if (found == procs_.end())
     return;
 
+  found->second->PopulateCurrentThreads();
   reply->threads = found->second->GetThreadRecords();
 }
 

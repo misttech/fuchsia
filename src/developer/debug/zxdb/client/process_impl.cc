@@ -73,6 +73,10 @@ std::unique_ptr<ProcessImpl> ProcessImpl::FromPreviousProcess(
                                                StartType::kAttach, record.components,
                                                record.shared_address_space);
 
+  for (auto& observer : target->session()->process_observers()) {
+    observer.DidCreateProcess(process.get(), 0);
+  }
+
   process->UpdateThreads(record.threads);
 
   return process;
