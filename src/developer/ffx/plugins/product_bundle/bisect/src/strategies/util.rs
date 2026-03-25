@@ -118,7 +118,6 @@ pub(super) fn should_continue(space: &SearchSpace, results: &Vec<StepResult>) ->
 /// Halves the search space for a single artifact dimension based on the test result.
 /// Keeps the right half (newer versions) if the test passed, and the left half
 /// (older versions) if the test failed.
-#[allow(dead_code)]
 pub(super) fn halve_dimension(series: &mut ArtifactVersionSeries, test_passed: bool) {
     // If the version list can't be split anymore, there's nothing to do.
     if series.remaining_artifacts.len() <= 1 {

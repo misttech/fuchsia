@@ -12,15 +12,28 @@ pub struct LongestDimensionStrategy;
 
 impl SearchStrategy for LongestDimensionStrategy {
     fn process_result(&self, space: &mut SearchSpace, test_passed: bool) {
-        util::halve_longest_dimension(space, test_passed);
+        // Determine which artifact has the most versions remaining to search.
+        // In the event of a tie, prefer the earlier dimension (e.g. platform over product).
+        let longest_series = space.iter_all_artifacts_mut().reduce(|longest, current| {
+            if longest.remaining_artifacts.len() >= current.remaining_artifacts.len() {
+                longest
+            } else {
+                current
+            }
+        });
+
+        if let Some(longest_series) = longest_series {
+            util::halve_dimension(longest_series, test_passed);
+        }
     }
 
     fn prepare_next_step(&self, space: &mut SearchSpace) {
-        // Now that we've reduced the size of the remaining search window, go through and update
-        // the midpoint pointers to reflect that change.
+        // Now that we've reduced the size of the remaining search window,
+        // go through and update the midpoint pointers to reflect that change.
         for series in space.iter_all_artifacts_mut() {
             let range = &series.remaining_artifacts;
-            series.current_artifact = range.start + (range.len() / 2);
+            // If the remaining range is even, bias towards the lower half.
+            series.current_artifact = range.start + (range.len().saturating_sub(1)) / 2;
         }
     }
 
@@ -126,18 +139,18 @@ mod tests {
         let strategy = LongestDimensionStrategy;
         strategy.prepare_next_step(&mut space);
 
-        // Initial state: platform is longest (len 8), range is 0..8, current is 4.
+        // Initial state: platform is longest (len 8), range is 0..8, current is 3.
         assert_eq!(space.platform.remaining_artifacts, 0..8);
-        assert_eq!(space.platform.current_artifact, 4);
+        assert_eq!(space.platform.current_artifact, 3);
 
         // Action: Report a passing test.
         strategy.process_result(&mut space, true);
         strategy.prepare_next_step(&mut space);
 
         // Assert: Platform's range is now the upper half, and current is updated.
-        // The new range is (midpoint + 1)..end = 5..8. The new current is 5 + (3 / 2) = 6.
-        assert_eq!(space.platform.remaining_artifacts, 5..8);
-        assert_eq!(space.platform.current_artifact, 6);
+        // The new range is (midpoint + 1)..end = 4..8. The new current is 4 + (4 - 1)/2 = 5.
+        assert_eq!(space.platform.remaining_artifacts, 4..8);
+        assert_eq!(space.platform.current_artifact, 5);
         // Other dimensions are unchanged.
         assert_eq!(space.product.remaining_artifacts, 0..2);
         assert_eq!(space.board.remaining_artifacts, 0..2);
@@ -155,18 +168,18 @@ mod tests {
         let strategy = LongestDimensionStrategy;
         strategy.prepare_next_step(&mut space);
 
-        // Initial state: platform is longest (len 8), range is 0..8, current is 4.
+        // Initial state: platform is longest (len 8), range is 0..8, current is 3.
         assert_eq!(space.platform.remaining_artifacts, 0..8);
-        assert_eq!(space.platform.current_artifact, 4);
+        assert_eq!(space.platform.current_artifact, 3);
 
         // Action: Report a failing test.
         strategy.process_result(&mut space, false);
         strategy.prepare_next_step(&mut space);
 
         // Assert: Platform's range is now the lower half, and current is updated.
-        // The new range is start..midpoint = 0..4. The new current is 0 + (4/2) = 2.
+        // The new range is start..(midpoint+1) = 0..4. The new current is 0 + (4-1)/2 = 1.
         assert_eq!(space.platform.remaining_artifacts, 0..4);
-        assert_eq!(space.platform.current_artifact, 2);
+        assert_eq!(space.platform.current_artifact, 1);
         // Other dimensions are unchanged.
         assert_eq!(space.product.remaining_artifacts, 0..2);
         assert_eq!(space.board.remaining_artifacts, 0..2);
@@ -230,7 +243,7 @@ mod tests {
         assert_eq!(space_odd.platform.remaining_artifacts, 0..7);
         strategy.process_result(&mut space_odd, false); // Fail -> lower half
         strategy.prepare_next_step(&mut space_odd);
-        assert_eq!(space_odd.platform.remaining_artifacts, 0..3); // Midpoint is 3. Range is 0..3.
+        assert_eq!(space_odd.platform.remaining_artifacts, 0..4); // Midpoint is 3. Range is 0..4.
 
         // Even length (8)
         let mut space_even =
@@ -238,7 +251,7 @@ mod tests {
         assert_eq!(space_even.platform.remaining_artifacts, 0..8);
         strategy.process_result(&mut space_even, true); // Pass -> upper half
         strategy.prepare_next_step(&mut space_even);
-        assert_eq!(space_even.platform.remaining_artifacts, 5..8); // Midpoint is 4. Range is 5..8.
+        assert_eq!(space_even.platform.remaining_artifacts, 4..8); // Midpoint is 3. Range is 4..8.
     }
 
     #[test]
