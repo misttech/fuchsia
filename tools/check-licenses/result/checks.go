@@ -213,7 +213,8 @@ func AllLicensePatternUsagesMustBeApproved() error {
 		description = fmt.Sprintf("%sthen an allowlist entry must exist granting that project explicit privilege to use it.\n", description)
 		description = fmt.Sprintf("%sEncountered license texts that were not approved for usage:\n\n%v", description, result)
 		description = fmt.Sprintf("%s\nEither remove the projects / licenses, or add an allowlist entry", description)
-		description = fmt.Sprintf("%s\nto //tools/check-licenses/assets/allowlists/* and have it reviewed by the OSRB team.\n", description)
+		description = fmt.Sprintf("%s\nto //tools/check-licenses/assets/allowlists/*. Note: All allowlist changes require OSRB review via a filed bug.\n", description)
+
 		return fmt.Errorf("%s", description)
 	}
 	return nil
