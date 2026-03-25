@@ -22,7 +22,9 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.math:fuchsia.math",
     "//sdk/fidl/fuchsia.mediastreams:fuchsia.mediastreams",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
+    "//sdk/fidl/fuchsia.url:fuchsia.url",
     "//zircon/vdso/zx:zx",
     # keep-sorted: end
 ]
@@ -82,7 +84,9 @@ filegroup(
         "//sdk/fidl/fuchsia.math:__pkg__",
         "//sdk/fidl/fuchsia.mediastreams:__pkg__",
         "//sdk/fidl/fuchsia.mem:__pkg__",
+        "//sdk/fidl/fuchsia.sysmem:__pkg__",
         "//sdk/fidl/fuchsia.sysmem2:__pkg__",
+        "//sdk/fidl/fuchsia.url:__pkg__",
         "//zircon/vdso/zx:__pkg__",
     ],
 )
