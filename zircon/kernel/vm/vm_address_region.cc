@@ -946,18 +946,13 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
           [[maybe_unused]] zx_status_t status = curr->DestroyLocked();
           DEBUG_ASSERT(status == ZX_OK);
         } else {
-          // VmMapping::Unmap should only fail if it needs to allocate,
-          // which only happens if it is unmapping from the middle of a
-          // region.  That can only happen if there is only one region
-          // being operated on here, so we can just forward along the
-          // error without having to rollback.
-          //
-          // TODO(teisenbe): Technically arch_mmu_unmap() itself can also
-          // fail.  We need to rework the system so that is no longer
-          // possible.
+          // Unmapping can fail if an allocation needed to happen. Nothing can be done to rollback
+          // here so the only option is to propagate the ZX_ERR_NO_MEMORY up. If this is happening
+          // in response to a user request then they will most likely panic, as users have no
+          // ability to resolve ZX_ERR_NO_MEMORY.
           zx_status_t status = mapping->UnmapLocked(unmap_base, unmap_size);
-          DEBUG_ASSERT(status == ZX_OK || curr == begin);
           if (status != ZX_OK) {
+            ASSERT(status == ZX_ERR_NO_MEMORY);
             return status;
           }
         }
