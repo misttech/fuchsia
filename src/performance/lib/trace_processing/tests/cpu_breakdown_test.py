@@ -176,6 +176,54 @@ class CpuBreakdownTest(unittest.TestCase):
             )
 
         model.scheduling_records = {2: records_2, 3: records_3, 5: records_5}
+
+        # Simulate processing rate shifts on CPU 2
+        power_configs = [
+            # "thread-1" is active from 0 - 1500 ms.
+            (0, 1000),
+            (400000, 798),
+            (800000, 506),
+            (1200000, 360),
+            # "small-thread" is active from 1500 - 2000 ms.
+            (1500000, 1000),
+            (1600000, 798),
+            (1700000, 506),
+            (1800000, 360),
+            # Idle/Skipped from 2000 - 3000 ms.
+            (2000000, 506),
+            # "thread-2" is active from 3000 - 8000 ms.
+            (3000000, 798),
+            (4000000, 1000),
+            (5000000, 798),
+            (6000000, 506),
+            (7000000, 360),
+        ]
+        power_events = [
+            trace_model.CounterEvent.consume_dict(
+                {
+                    "cat": "kernel:power",
+                    "name": "Processing Rate:2",
+                    "id": "2",
+                    "pid": 0,
+                    "tid": 0,
+                    "ts": ts,
+                    "args": {"CPU": rate},
+                }
+            )
+            for ts, rate in power_configs
+        ]
+
+        dvfs_process = trace_model.Process(
+            9999,
+            "KernelPower",
+            [
+                trace_model.Thread(
+                    9999, "DVFS", cast(list[trace_model.Event], power_events)
+                )
+            ],
+        )
+        model.processes.append(dvfs_process)
+
         return model
 
     def construct_trace_model_with_skips(self) -> trace_model.Model:
@@ -269,6 +317,10 @@ class CpuBreakdownTest(unittest.TestCase):
         # Make it easier to compare breakdown results.
         for b in breakdown:
             b["percent"] = round(cast(float, b["percent"]), 3)
+            if "normalized_percent" in b:
+                b["normalized_percent"] = round(
+                    cast(float, b["normalized_percent"]), 3
+                )
 
         # Each process: thread has the correct numbers for each CPU.
         # Sorted by descending cpu and descending percent.
@@ -284,6 +336,9 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 5,
                     "percent": 54.545,
                     "duration": 3000.0,
+                    "normalized_percent": 54.545,
+                    "normalized_duration": 3000.0,
+                    "duration_per_rate": {"1000": 3000.0},
                 },
                 {
                     "process_name": "big_process",
@@ -292,6 +347,9 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 3,
                     "percent": 33.333,
                     "duration": 1000.0,
+                    "normalized_percent": 33.333,
+                    "normalized_duration": 1000.0,
+                    "duration_per_rate": {"1000": 1000.0},
                 },
                 {
                     "process_name": "big_process",
@@ -300,6 +358,14 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 2,
                     "percent": 62.5,
                     "duration": 5000.0,
+                    "normalized_percent": 65.321,
+                    "normalized_duration": 3462.0,
+                    "duration_per_rate": {
+                        "1000": 1000.0,
+                        "798": 2000.0,
+                        "506": 1000.0,
+                        "360": 1000.0,
+                    },
                 },
                 {
                     "process_name": "big_process",
@@ -308,6 +374,14 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 2,
                     "percent": 18.75,
                     "duration": 1500.0,
+                    "normalized_percent": 19.426,
+                    "normalized_duration": 1029.6,
+                    "duration_per_rate": {
+                        "1000": 400.0,
+                        "798": 400.0,
+                        "506": 400.0,
+                        "360": 300.0,
+                    },
                 },
                 {
                     "process_name": "small_process",
@@ -316,6 +390,14 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 2,
                     "percent": 6.25,
                     "duration": 500.0,
+                    "normalized_percent": 5.706,
+                    "normalized_duration": 302.4,
+                    "duration_per_rate": {
+                        "1000": 100.0,
+                        "798": 100.0,
+                        "506": 100.0,
+                        "360": 200.0,
+                    },
                 },
             ],
         )
@@ -332,6 +414,10 @@ class CpuBreakdownTest(unittest.TestCase):
         # Make it easier to compare breakdown results.
         for b in consolidated_breakdown:
             b["percent"] = round(cast(float, b["percent"]), 3)
+            if "normalized_percent" in b:
+                b["normalized_percent"] = round(
+                    cast(float, b["normalized_percent"]), 3
+                )
 
         # Each process has been consolidated.
         # Sorted by descending cpu and descending percent.
@@ -343,24 +429,46 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 5,
                     "percent": 54.545,
                     "duration": 3000.0,
+                    "normalized_percent": 54.545,
+                    "normalized_duration": 3000.0,
+                    "duration_per_rate": {"1000": 3000.0},
                 },
                 {
                     "process_name": "big_process",
                     "cpu": 3,
                     "percent": 33.333,
                     "duration": 1000.0,
+                    "normalized_percent": 33.333,
+                    "normalized_duration": 1000.0,
+                    "duration_per_rate": {"1000": 1000.0},
                 },
                 {
                     "process_name": "big_process",
                     "cpu": 2,
                     "percent": 81.25,
                     "duration": 6500.0,
+                    "normalized_percent": 84.747,
+                    "normalized_duration": 4491.6,
+                    "duration_per_rate": {
+                        "1000": 1400.0,
+                        "798": 2400.0,
+                        "506": 1400.0,
+                        "360": 1300.0,
+                    },
                 },
                 {
                     "process_name": "small_process",
                     "cpu": 2,
                     "percent": 6.25,
                     "duration": 500.0,
+                    "normalized_percent": 5.706,
+                    "normalized_duration": 302.4,
+                    "duration_per_rate": {
+                        "1000": 100.0,
+                        "798": 100.0,
+                        "506": 100.0,
+                        "360": 200.0,
+                    },
                 },
             ],
         )
@@ -390,6 +498,9 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 2,
                     "percent": 30.0,
                     "duration": 1500.0,
+                    "normalized_percent": 30.0,
+                    "normalized_duration": 1500.0,
+                    "duration_per_rate": {"1000": 1500.0},
                 },
                 {
                     "process_name": "process",
@@ -398,6 +509,9 @@ class CpuBreakdownTest(unittest.TestCase):
                     "cpu": 2,
                     "percent": 20.0,
                     "duration": 1000.0,
+                    "normalized_percent": 20.0,
+                    "normalized_duration": 1000.0,
+                    "duration_per_rate": {"1000": 1000.0},
                 },
             ],
         )

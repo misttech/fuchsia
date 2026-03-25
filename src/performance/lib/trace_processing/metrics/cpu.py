@@ -9,7 +9,16 @@ import dataclasses
 import itertools
 import logging
 import sys
-from typing import Any, Iterable, Iterator, MutableSequence, Self, TypeAlias
+from typing import (
+    Iterable,
+    Iterator,
+    MutableSequence,
+    NotRequired,
+    Self,
+    TypeAlias,
+    TypedDict,
+    cast,
+)
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
@@ -22,6 +31,22 @@ _PROCESSING_RATE_EVENT_NAME = "Processing Rate"
 _DEFAULT_PROCESSING_RATE = 1000.0
 _DEFAULT_PERCENT_CUTOFF = 0.0
 _ONE_S_IN_NS = 1_000_000_000
+_NS_PER_MS = 1_000_000.0
+
+
+class BreakdownMetric(TypedDict):
+    """Internal representation of a single CPU breakdown entry."""
+
+    process_name: str
+    thread_name: NotRequired[str]
+    tid: NotRequired[int]
+    cpu: int
+    percent: float
+    duration: float
+    normalized_percent: NotRequired[float]
+    normalized_duration: NotRequired[float]
+    duration_per_rate: NotRequired[dict[str, float]]
+
 
 Breakdown: TypeAlias = list[dict[str, metrics.JSON]]
 
@@ -31,7 +56,7 @@ class ProcessingRateSample:
     """A single processing rate sample at a given timestamp."""
 
     timestamp_ms: float
-    rate: float
+    rate: float  # ranges from 0 to 1000, where 1000 represents 100% processing rate of the CPU.
 
 
 @dataclasses.dataclass(frozen=True)
@@ -206,18 +231,54 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                 "of percentages. Data may be truncated."
             )
 
+        results: list[metrics.TestCaseResult] = []
+        # Calculate metrics without normalization
         if self.aggregates_only:
-            return trace_utils.standard_metrics_set(
-                values=cpu_percentages,
-                label_prefix="Cpu",
-                unit=metrics.Unit.percent,
-                durations=cpu_durations,
+            results.extend(
+                trace_utils.standard_metrics_set(
+                    values=cpu_percentages,
+                    label_prefix="Cpu",
+                    unit=metrics.Unit.percent,
+                    durations=cpu_durations,
+                )
             )
-        return [
-            metrics.TestCaseResult(
-                "CpuLoad", metrics.Unit.percent, cpu_percentages
+        else:
+            results.append(
+                metrics.TestCaseResult(
+                    "CpuLoad", metrics.Unit.percent, cpu_percentages
+                )
             )
-        ]
+
+        # Calculate normalized metrics if Processing Rate events are present
+        cpu_timelines = self._get_cpu_rates(model)
+        if cpu_timelines:
+            total_cpu_count = max(1, len(model.scheduling_records))
+            norm_percentages = self._calculate_normalized_percentages(
+                cpu_starts=cpu_starts,
+                cpu_durations=cpu_durations,
+                cpu_percentages=cpu_percentages,
+                cpu_timelines=cpu_timelines,
+                total_cpu_count=total_cpu_count,
+            )
+            if self.aggregates_only:
+                results.extend(
+                    trace_utils.standard_metrics_set(
+                        values=norm_percentages,
+                        label_prefix="CpuNormalized",
+                        unit=metrics.Unit.percent,
+                        durations=cpu_durations,
+                    )
+                )
+            else:
+                results.append(
+                    metrics.TestCaseResult(
+                        "CpuNormalizedLoad",
+                        metrics.Unit.percent,
+                        norm_percentages,
+                    )
+                )
+
+        return results
 
     def process_freeform_metrics(
         self, model: trace_model.Model
@@ -258,17 +319,21 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                 tid_to_process_name[t.tid] = p.name
                 tid_to_thread_name[t.tid] = t.name
 
+        # Parse Processing rate events for DVFS CPU normalization.
+        cpu_timelines = self._get_cpu_rates(model)
+
         # Calculate durations for each CPU for each tid.
         durations = DurationsBreakdown.calculate(
             model.scheduling_records,
             tid_to_thread_name,
+            cpu_timelines,
         )
 
         # Calculate the percent of time the thread spent on this CPU,
         # compared to the total CPU duration.
         # If the percent spent is at or above our cutoff, add metric to
         # breakdown.
-        full_breakdown: list[dict[str, metrics.JSON]] = []
+        full_breakdown: list[BreakdownMetric] = []
         for tid, cpu_stats_map in durations.tid_to_stats.items():
             if tid in tid_to_thread_name:
                 for cpu, stats in cpu_stats_map.items():
@@ -278,14 +343,35 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
                         if durations.cpu_to_total_duration[cpu] > 0
                         else 0.0
                     )
+
+                    normalized_duration = stats.normalized_duration
+                    normalized_percent = (
+                        normalized_duration
+                        / durations.cpu_to_total_normalized_duration[cpu]
+                        * 100
+                        if durations.cpu_to_total_normalized_duration[cpu] > 0
+                        else 0.0
+                    )
+
                     if percent >= self._percent_cutoff:
-                        metric: dict[str, metrics.JSON] = {
+                        metric: BreakdownMetric = {
                             "process_name": tid_to_process_name[tid],
                             "thread_name": tid_to_thread_name[tid],
                             "tid": tid,
                             "cpu": cpu,
                             "percent": percent,
                             "duration": duration,
+                            "normalized_percent": normalized_percent,
+                            "normalized_duration": normalized_duration,
+                            "duration_per_rate": dict(
+                                sorted(
+                                    stats.rate_stats.duration_per_rate.items(),
+                                    key=lambda item: int(
+                                        item[0]
+                                    ),  # Sort by rate (as int)
+                                    reverse=True,
+                                )
+                            ),
                         }
                         full_breakdown.append(metric)
 
@@ -300,7 +386,108 @@ class CpuMetricsProcessor(trace_metrics.MetricsProcessor):
             key=lambda m: (m["cpu"], m["percent"]),
             reverse=True,
         )
-        return full_breakdown, durations.max_timestamp - durations.min_timestamp
+        return (
+            cast(Breakdown, full_breakdown),
+            durations.max_timestamp - durations.min_timestamp,
+        )
+
+    def _get_cpu_rates(
+        self, model: trace_model.Model
+    ) -> dict[int, CpuProcessingRateTimeline]:
+        """Extracts DVFS processing rate events from the trace model for all CPUs.
+
+        Args:
+            model: The input trace model containing 'kernel:power' events.
+
+        Returns:
+            A dictionary keyed by cpu_index, containing CpuProcessingRateTimeline objects.
+        """
+        power_events = list(
+            e
+            for e in trace_utils.filter_events(
+                model.all_events(),
+                category="kernel:power",
+                type=trace_model.CounterEvent,
+            )
+            if e.name and e.name.startswith(_PROCESSING_RATE_EVENT_NAME)
+        )
+
+        rates_by_cpu: dict[int, list[ProcessingRateSample]] = {}
+        for event in power_events:
+            # For "Processing Rate" events, the CPU index is encoded in `event.id`.
+            # When the CPU index is 0, the `event.id` field is omitted from the trace.
+            cpu_idx = event.id if event.id is not None else 0
+            rate = event.args.get("CPU", _DEFAULT_PROCESSING_RATE)
+
+            rates_by_cpu.setdefault(cpu_idx, []).append(
+                ProcessingRateSample(
+                    timestamp_ms=DurationsBreakdown._timestamp_ms(event.start),
+                    rate=rate,
+                )
+            )
+
+        return {
+            cpu_idx: CpuProcessingRateTimeline(rates)
+            for cpu_idx, rates in rates_by_cpu.items()
+        }
+
+    def _calculate_normalized_percentages(
+        self,
+        *,
+        cpu_starts: list[float],
+        cpu_durations: list[float],
+        cpu_percentages: list[float],
+        cpu_timelines: dict[int, CpuProcessingRateTimeline],
+        total_cpu_count: int,
+    ) -> list[float]:
+        """Computes the normalized CPU percentages for periodic aggregate windows.
+
+        For each reporting window (e.g., 1-second buckets), this calculates the exact
+        normalized CPU utilization by comparing the DVFS-weighted CPU time against
+        the total wall-clock time of the window.
+
+        Args:
+            cpu_starts: Start timestamps (in ns) of the reporting windows.
+            cpu_durations: Durations (in ns) of the reporting windows.
+            cpu_percentages: The raw (unnormalized) CPU percentages for the windows.
+            cpu_timelines: The processing rate timelines for each CPU.
+            total_cpu_count: The total number of CPUs in the system.
+
+        Returns:
+            A list of normalized CPU percentages corresponding to each window.
+        """
+        norm_percentages = []
+        cpu_count = max(1, total_cpu_count)
+        missing_cpus = max(0, cpu_count - len(cpu_timelines))
+
+        for start_ns, dur_ns, pct in zip(
+            cpu_starts, cpu_durations, cpu_percentages
+        ):
+            start_ms = start_ns / _NS_PER_MS
+            end_ms = (start_ns + dur_ns) / _NS_PER_MS
+            total_dur = dur_ns / _NS_PER_MS
+
+            total_norm_dur = 0.0
+
+            if total_dur > 0 and cpu_timelines:
+                for timeline in cpu_timelines.values():
+                    virtual_slices = timeline.get_virtual_slices(
+                        start_ms, end_ms
+                    )
+                    total_norm_dur += sum(
+                        s.duration * (s.rate / _DEFAULT_PROCESSING_RATE)
+                        for s in virtual_slices
+                    )
+                # Add full capacity duration for CPUs without rate events
+                total_norm_dur += missing_cpus * total_dur
+
+                avg_norm_dur = total_norm_dur / cpu_count
+                avg_rate_ratio = avg_norm_dur / total_dur
+            else:
+                avg_rate_ratio = 1.0
+
+            norm_percentages.append(pct * avg_rate_ratio)
+        return norm_percentages
 
 
 class DurationsBreakdown:
@@ -313,6 +500,8 @@ class DurationsBreakdown:
         )
         # Map of CPU to total duration used (ms).
         self.cpu_to_total_duration: dict[int, float] = {}
+        # Map of CPU to total normalized duration used (ms).
+        self.cpu_to_total_normalized_duration: dict[int, float] = {}
         self.cpu_to_skipped_duration: dict[int, float] = {}
         self.min_timestamp: float = sys.float_info.max
         self.max_timestamp: float = 0
@@ -322,6 +511,7 @@ class DurationsBreakdown:
         cpu: int,
         records: list[trace_model.ContextSwitch],
         tid_to_thread_name: dict[int, str],
+        rate_timeline: CpuProcessingRateTimeline | None,
     ) -> None:
         """
         Calculates the total duration for each thread, on a particular CPU.
@@ -338,6 +528,19 @@ class DurationsBreakdown:
         total_duration = largest_timestamp - smallest_timestamp
         skipped_duration = 0.0
         self.cpu_to_total_duration[cpu] = total_duration
+
+        if rate_timeline:
+            virtual_slices = rate_timeline.get_virtual_slices(
+                smallest_timestamp, largest_timestamp
+            )
+            self.cpu_to_total_normalized_duration[cpu] = sum(
+                s.duration * (s.rate / _DEFAULT_PROCESSING_RATE)
+                for s in virtual_slices
+            )
+        else:
+            self.cpu_to_total_normalized_duration[cpu] = (
+                largest_timestamp - smallest_timestamp
+            )
 
         for prev_record, curr_record in itertools.pairwise(records):
             # Check that the previous ContextSwitch's incoming_tid ("this thread is starting work
@@ -356,10 +559,27 @@ class DurationsBreakdown:
                 stop_ts = self._timestamp_ms(curr_record.start)
                 duration = stop_ts - start_ts
                 assert duration >= 0
+
                 if curr_record.outgoing_tid in tid_to_thread_name:
                     # Add stats to the total duration for that tid and CPU.
                     cpu_stats = self.tid_to_stats[curr_record.outgoing_tid][cpu]
                     cpu_stats.duration += duration
+
+                    if rate_timeline:
+                        virtual_slices = rate_timeline.get_virtual_slices(
+                            start_ts, stop_ts
+                        )
+                        for s in virtual_slices:
+                            norm_dur = s.duration * (
+                                s.rate / _DEFAULT_PROCESSING_RATE
+                            )
+                            cpu_stats.normalized_duration += norm_dur
+                            cpu_stats.rate_stats.add(s.rate, s.duration)
+                    else:
+                        cpu_stats.normalized_duration += duration
+                        cpu_stats.rate_stats.add(
+                            _DEFAULT_PROCESSING_RATE, duration
+                        )
 
         if skipped_duration > 0:
             self.cpu_to_skipped_duration[cpu] = skipped_duration
@@ -378,6 +598,7 @@ class DurationsBreakdown:
             int, list[trace_model.SchedulingRecord]
         ],
         tid_to_thread_name: dict[int, str],
+        cpu_timelines: dict[int, CpuProcessingRateTimeline],
     ) -> Self:
         durations = cls()
         for cpu, records in per_cpu_scheduling_records.items():
@@ -390,6 +611,7 @@ class DurationsBreakdown:
                     key=lambda record: record.start,
                 ),
                 tid_to_thread_name,
+                cpu_timelines.get(cpu),
             )
         return durations
 
@@ -399,35 +621,73 @@ def group_by_process_name(breakdown: Breakdown) -> Breakdown:
     Given a breakdown, group the metrics by process_name only,
     ignoring thread name.
     """
-    breakdown.sort(key=lambda m: (m["cpu"], m["process_name"]))
-    if not breakdown:
+    # Cast to internal type for better type safety inside this function.
+    typed_breakdown = cast(list[BreakdownMetric], breakdown)
+    if not typed_breakdown:
         return []
-    consolidated_breakdown: Breakdown = [breakdown[0]]
-    for metric in breakdown[1:]:
-        if (
-            metric["cpu"] == consolidated_breakdown[-1]["cpu"]
-            and metric["process_name"]
-            == consolidated_breakdown[-1]["process_name"]
-        ):
-            consolidated_breakdown[-1] = _merge(
-                metric, consolidated_breakdown[-1]
-            )
-        else:
-            metric.pop("thread_name", None)
-            metric.pop("tid", None)
-            consolidated_breakdown.append(metric)
 
-    return sorted(
-        consolidated_breakdown,
-        key=lambda m: (m["cpu"], m["percent"]),
-        reverse=True,
+    # Group metrics by (cpu, process_name)
+    grouped: collections.defaultdict[
+        tuple[int, str], list[BreakdownMetric]
+    ] = collections.defaultdict(list)
+    for metric in typed_breakdown:
+        grouped[(metric["cpu"], metric["process_name"])].append(metric)
+
+    consolidated_breakdown: list[BreakdownMetric] = [
+        _aggregate_metrics(metrics) for metrics in grouped.values()
+    ]
+
+    return cast(
+        Breakdown,
+        sorted(
+            consolidated_breakdown,
+            key=lambda m: (m["cpu"], m["percent"]),
+            reverse=True,
+        ),
     )
 
 
-def _merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "process_name": a["process_name"],
-        "cpu": a["cpu"],
-        "duration": a["duration"] + b["duration"],
-        "percent": a["percent"] + b["percent"],
+def _aggregate_metrics(metrics: list[BreakdownMetric]) -> BreakdownMetric:
+    """
+    Combines a list of thread-level metrics into a single process-level metric.
+
+    The combination rules are as follows:
+    - Numerical fields (`percent`, `duration`, `normalized_percent`, `normalized_duration`)
+      are combined by adding them together.
+    - The `duration_per_rate` dictionaries are merged by summing their corresponding rate values.
+    - The returned metric retains the `process_name` and `cpu` keys from the first metric.
+    - Thread-specific keys (`thread_name`, `tid`) are intentionally omitted as this operates
+      at the process level.
+
+    Args:
+        metrics: A non-empty list of BreakdownMetrics for the same process and CPU.
+
+    Returns:
+        A single aggregated BreakdownMetric.
+    """
+    first = metrics[0]
+    merged: BreakdownMetric = {
+        "process_name": first["process_name"],
+        "cpu": first["cpu"],
+        "percent": sum(m["percent"] for m in metrics),
+        "duration": sum(m["duration"] for m in metrics),
     }
+
+    if "normalized_duration" in first:
+        merged["normalized_percent"] = sum(
+            m.get("normalized_percent", 0.0) for m in metrics
+        )
+        merged["normalized_duration"] = sum(
+            m.get("normalized_duration", 0.0) for m in metrics
+        )
+
+    if "duration_per_rate" in first:
+        rates: dict[str, float] = {}
+        for m in metrics:
+            for k, v in m.get("duration_per_rate", {}).items():
+                rates[k] = rates.get(k, 0.0) + v
+        merged["duration_per_rate"] = dict(
+            sorted(rates.items(), key=lambda x: int(x[0]), reverse=True)
+        )
+
+    return merged
