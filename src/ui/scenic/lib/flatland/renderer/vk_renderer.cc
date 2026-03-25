@@ -860,7 +860,15 @@ void VkRenderer::Render(const ImageMetadata& render_target, const std::vector<En
   for (size_t i = 0; i < images.size(); ++i) {
     const EngineLayerImage& image = images[i];
     const EngineLayer& layer = layers[i];
-    const escher::TexturePtr& texture_ptr = local_texture_map.at(image.image_id);
+    const auto texture_it = local_texture_map.find(image.image_id);
+    if (texture_it == local_texture_map.end()) {
+      // TODO(https://fxbug.dev/496160334): the image wasn't found, probably (hopefully) because it
+      // was removed by `TrustedFlatland.ReleaseImageImmediately()`, otherwise for unknown reasons.
+      // Either way, there's nothing we can do but ignore it.
+      FX_LOGS(WARNING) << "VkRenderer::Render missing image: " << image.image_id;
+      continue;
+    }
+    const escher::TexturePtr& texture_ptr = texture_it->second;
 
     // When we are not in protected mode, replace any protected content with black solid color.
     if (!render_in_protected_mode && texture_ptr->image()->use_protected_memory()) {
@@ -1044,9 +1052,16 @@ bool VkRenderer::RequiresRenderInProtected(const std::vector<EngineLayerImage>& 
   std::scoped_lock lock(lock_);
 
   for (const auto& image : images) {
-    FX_DCHECK(texture_map_.contains(image.image_id));
-    if (texture_map_.at(image.image_id)->image()->use_protected_memory()) {
-      return true;
+    auto it = texture_map_.find(image.image_id);
+    if (it != texture_map_.end()) {
+      if (it->second->image()->use_protected_memory()) {
+        return true;
+      }
+    } else {
+      // TODO(https://fxbug.dev/496160334): the image wasn't found, probably (hopefully) because it
+      // was removed by `TrustedFlatland.ReleaseImageImmediately()`, otherwise for unknown reasons.
+      // Either way, it doesn't require protected render so we can safely ignore it.
+      FX_LOGS(WARNING) << "VkRenderer::RequiresRenderInProtected missing image: " << image.image_id;
     }
   }
   return false;

@@ -550,6 +550,9 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
         ApplyLayerImage(layers[i], data.layers[i], data.images[i],
                         /*wait_id*/ display::kInvalidEventId);
       } else {
+        // TODO(https://fxbug.dev/496160334): Previously, the only way this could happen is if the
+        // image couldn't be displayed directly by the display driver (e.g. for formats that Vulkan
+        // can handle, but not the display driver).
         TRACE_INSTANT("gfx", "scenic_d2d_failed: image not imported for direct-display",
                       TRACE_SCOPE_THREAD);
         FLATLAND_VERBOSE_LOG
