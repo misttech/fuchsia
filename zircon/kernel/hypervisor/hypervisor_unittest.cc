@@ -195,15 +195,9 @@ static bool guest_physical_aspace_unmap_range_sub_region() {
   status = create_mapping(root_vmar, vmo3, kPageSize * 3);
   EXPECT_EQ(ZX_OK, status, "Failed to create mapping\n");
 
-  // Unmap pages from [kPageSize, kPageSize * 4).
+  // Cannot unmap spanning across two different sub-vmars.
   auto result = gpa->UnmapRange(kPageSize, kPageSize * 3);
-  EXPECT_EQ(ZX_OK, result.status_value(),
-            "Failed to multiple unmap pages from GuestPhysicalAspace\n");
-
-  // Verify IsMapped for unmapped addresses fails.
-  for (zx_gpaddr_t addr = 0; addr < kPageSize * 4; addr += kPageSize) {
-    EXPECT_FALSE(gpa->IsMapped(addr), "Expected address to be unmapped\n");
-  }
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, result.status_value());
 
   // Verify IsMapped for mapped addresses succeeds.
   EXPECT_TRUE(gpa->IsMapped(kPageSize * 4), "Expected address to be mapped\n");

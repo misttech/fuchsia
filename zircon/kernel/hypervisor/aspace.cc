@@ -85,7 +85,16 @@ zx::result<> GuestPhysicalAspace::MapInterruptController(zx_gpaddr_t guest_paddr
 }
 
 zx::result<> GuestPhysicalAspace::UnmapRange(zx_gpaddr_t guest_paddr, size_t len) {
-  zx_status_t status = RootVmar()->UnmapAllowPartial(guest_paddr, len);
+  // Walk from the root down through any child VMARs for this range so we can do an unmap.
+  fbl::RefPtr<VmAddressRegion> vmar = RootVmar();
+  while (true) {
+    fbl::RefPtr<VmAddressRegionOrMapping> next = vmar->FindRegion(guest_paddr);
+    if (!next || next->is_mapping()) {
+      break;
+    }
+    vmar = next->as_vm_address_region();
+  }
+  zx_status_t status = vmar->Unmap(guest_paddr, len, VmAddressRegionOpChildren::No);
   return zx::make_result(status);
 }
 
