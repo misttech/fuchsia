@@ -253,27 +253,44 @@ async def get_affected_targets(
                 ),
             ]
 
+            group_id = recorder.emit_event_group(
+                "Finding affected tests",
+                queued_events=len(build_configurations),
+            )
+
             async def run_find_affected(
                 config: BuildConfig,
             ) -> GatheredResult:
-                pb_slug = config.product_board.replace(".", "_")
-                out_dir = os.path.join(out_tmp_dir, pb_slug)
-
-                return await find_affected_tests(
-                    exec_env.fuchsia_dir,
-                    config.product_board,
-                    out_dir,
-                    config.with_args,
-                    dirty_files_path,
+                child_id = recorder.emit_event_group(
+                    f"Checking {config.product_board}", parent=group_id
                 )
+                try:
+                    pb_slug = config.product_board.replace(".", "_")
+                    out_dir = os.path.join(out_tmp_dir, pb_slug)
+
+                    return await find_affected_tests(
+                        exec_env.fuchsia_dir,
+                        config.product_board,
+                        out_dir,
+                        config.with_args,
+                        dirty_files_path,
+                    )
+                finally:
+                    recorder.emit_end(id=child_id)
 
             recorder.emit_instruction_message(
                 f"Spawning parallel evaluations for {len(build_configurations)} product/board configurations (this might take a minute)..."
             )
 
-            results = await asyncio.gather(
-                *(run_find_affected(config) for config in build_configurations)
-            )
+            try:
+                results = await asyncio.gather(
+                    *(
+                        run_find_affected(config)
+                        for config in build_configurations
+                    )
+                )
+            finally:
+                recorder.emit_end(id=group_id)
 
             label_to_results = clean_gathered_results(results)
             if not label_to_results:
