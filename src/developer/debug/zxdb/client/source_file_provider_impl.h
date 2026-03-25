@@ -22,6 +22,8 @@ class SourceFileProviderImpl : public SourceFileProvider {
   explicit SourceFileProviderImpl(const std::vector<std::string>& source_map);
   explicit SourceFileProviderImpl(const SettingStore& settings);
 
+  ErrOr<FileMetadata> GetFileMetadata(const std::string& file_name,
+                                      const std::string& file_build_dir) const override;
   ErrOr<FileData> GetFileData(const std::string& file_name,
                               const std::string& file_build_dir) const override;
 

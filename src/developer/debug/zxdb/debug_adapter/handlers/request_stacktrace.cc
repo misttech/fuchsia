@@ -37,11 +37,10 @@ dap::StackTraceResponse PopulateStackTraceResponse(DebugAdapterContext* ctx, Thr
     frame.source = dap::Source{};
 
     // Try to get the source path.
-    // TODO(https://fxbug.dev/494582844): Skip reading source file content.
-    auto data_or =
-        file_provider.GetFileData(location.file_line().file(), location.file_line().comp_dir());
-    if (!data_or.has_error()) {
-      frame.source->path = data_or.value().full_path;
+    auto file_metadata =
+        file_provider.GetFileMetadata(location.file_line().file(), location.file_line().comp_dir());
+    if (!file_metadata.has_error()) {
+      frame.source->path = file_metadata.take_value().full_path;
     }
 
     frame.line = location.file_line().line();

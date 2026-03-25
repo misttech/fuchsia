@@ -134,11 +134,10 @@ void AsyncBacktraceSubscription::CollectAndReportAsyncBacktrace(Thread* thread) 
               node->name = task.GetIdentifier().GetFullName();
               const zxdb::Location& location = task.GetLocation();
               if (location.file_line().is_valid()) {
-                // TODO(https://fxbug.dev/494582844): Skip reading source file content.
-                auto data_or = file_provider.GetFileData(location.file_line().file(),
-                                                         location.file_line().comp_dir());
-                if (!data_or.has_error()) {
-                  node->file = std::move(data_or.value().full_path);
+                auto file_metadata = file_provider.GetFileMetadata(location.file_line().file(),
+                                                                   location.file_line().comp_dir());
+                if (!file_metadata.has_error()) {
+                  node->file = file_metadata.take_value().full_path;
                   node->line = location.file_line().line();
                 }
               }

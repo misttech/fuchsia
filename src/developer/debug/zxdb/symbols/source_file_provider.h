@@ -7,7 +7,6 @@
 
 #include <ctime>
 #include <string>
-#include <vector>
 
 #include "src/developer/debug/zxdb/common/err_or.h"
 
@@ -17,12 +16,10 @@ namespace zxdb {
 // SourceFileProviderImpl.
 class SourceFileProvider {
  public:
-  struct FileData {
-    FileData() = default;
-    FileData(std::string c, std::string path, std::time_t mtime)
-        : contents(std::move(c)), full_path(std::move(path)), modification_time(mtime) {}
-
-    std::string contents;
+  struct FileMetadata {
+    FileMetadata() = default;
+    FileMetadata(std::string path, std::time_t mtime)
+        : full_path(std::move(path)), modification_time(mtime) {}
 
     // Resolved file path. This will be concatenated with the search path. If the search path
     // is system-absolute, this path will be, but if the search path is relative to the current
@@ -32,10 +29,27 @@ class SourceFileProvider {
     std::time_t modification_time = 0;
   };
 
+  struct FileData : public FileMetadata {
+    FileData() = default;
+    FileData(std::string c, FileMetadata metadata)
+        : FileMetadata(std::move(metadata)), contents(std::move(c)) {}
+    FileData(std::string c, std::string path, std::time_t mtime)
+        : FileMetadata(std::move(path), mtime), contents(std::move(c)) {}
+
+    std::string contents;
+  };
+
   virtual ~SourceFileProvider() = default;
 
-  // Attempts to read the contents of the given file. It is provided the file's build dir as
-  // reported by the symbols (for in-tree-built files, this is not useful).
+  // Attempts to get the metadata of the given file. The compilation directory referenced by this
+  // file's symbols can be specified as `file_build_dir` for out of tree use.
+  virtual ErrOr<FileMetadata> GetFileMetadata(const std::string& file_name,
+                                              const std::string& file_build_dir) const {
+    return Err("Source metadata not available.");
+  }
+
+  // Attempts to read the metadata and contents of the given file. The compilation directory
+  // referenced by this file's symbols can be specified as `file_build_dir` for out of tree use.
   virtual ErrOr<FileData> GetFileData(const std::string& file_name,
                                       const std::string& file_build_dir) const {
     return Err("Source not available.");
