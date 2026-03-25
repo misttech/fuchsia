@@ -1437,6 +1437,10 @@ struct Thread : public ChainLockable {
       return Thread::Current::Get()->memory_allocation_state_;
     }
 
+    static cpu_mask_t SetCpuAffinity(cpu_mask_t affinity) {
+      return Thread::Current::Get()->SetCpuAffinity(affinity);
+    }
+
     // If a restricted kick is pending on this thread, clear it and return true.
     // Otherwise return false.
     // Must be called with interrupts disabled.
