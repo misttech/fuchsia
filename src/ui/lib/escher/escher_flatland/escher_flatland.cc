@@ -184,7 +184,8 @@ void escher::EscherFlatland::RenderFrame(RenderFrameFn render_frame) {
 
 void escher::EscherFlatland::RenderLoop(RenderFrameFn render_frame) {
   RenderFrame(render_frame);
-  async::PostTask(dispatcher_, [&] { RenderLoop(render_frame); });
+  async::PostTask(dispatcher_,
+                  [this, render_frame = std::move(render_frame)] { RenderLoop(render_frame); });
 }
 
 zx::eventpair escher::EscherFlatland::ConnectPowerResources() {
