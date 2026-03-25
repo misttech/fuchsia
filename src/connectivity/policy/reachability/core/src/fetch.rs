@@ -44,22 +44,24 @@ pub enum FetchError {
 
 impl FetchError {
     /// Returns a short, simplified string describing the error.
+    /// Each string should only take at most 14 characters, else the row labels for the
+    /// `fetch_results` time series in internal visualization tool would be truncated.
     pub fn short_name(&self) -> String {
         let (name, os_err) = match self {
-            Self::CreateSocket(err) => ("CreateSocket", err.raw_os_error()),
-            Self::BindSocket { err, .. } => ("BindSocket", err.raw_os_error()),
-            Self::ConnectTcpStream(err) => ("ConnectTcpStream", err.raw_os_error()),
-            Self::ConnectTcpStreamTimeout => return "ConnectTcpStreamTimeout".to_string(),
-            Self::WriteTcpStream(err) => ("WriteTcpStream", err.raw_os_error()),
-            Self::WriteTcpStreamTimeout => return "WriteTcpStreamTimeout".to_string(),
-            Self::ReadTcpStream(err) => ("ReadTcpStream", err.raw_os_error()),
-            Self::ReadTcpStreamTimeout => return "ReadTcpStreamTimeout".to_string(),
+            Self::CreateSocket(err) => ("CreateSock", err.raw_os_error()),
+            Self::BindSocket { err, .. } => ("BindSock", err.raw_os_error()),
+            Self::ConnectTcpStream(err) => ("ConnectTcp", err.raw_os_error()),
+            Self::ConnectTcpStreamTimeout => return "ConnTcpTimeout".to_string(),
+            Self::WriteTcpStream(err) => ("WriteTcp", err.raw_os_error()),
+            Self::WriteTcpStreamTimeout => return "WriteTcpTOut".to_string(),
+            Self::ReadTcpStream(err) => ("ReadTcp", err.raw_os_error()),
+            Self::ReadTcpStreamTimeout => return "ReadTcpTimeout".to_string(),
             Self::ParseUtf8(_) => return "ParseUtf8".to_string(),
-            Self::MalformedHeader { .. } => return "MalformedHeader".to_string(),
-            Self::ParseStatusCode(_) => return "ParseStatusCode".to_string(),
+            Self::MalformedHeader { .. } => return "BadHeader".to_string(),
+            Self::ParseStatusCode(_) => return "ParseStatus".to_string(),
         };
 
-        if let Some(code) = os_err { format!("{name}(os_err={code})") } else { name.to_string() }
+        if let Some(code) = os_err { format!("{name}_{code}") } else { name.to_string() }
     }
 }
 

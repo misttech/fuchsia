@@ -44,10 +44,13 @@ pub enum PingError {
 
 impl PingError {
     /// Returns a short, simplified string describing the error.
+    /// Each string should only take at most 14 characters, else the row labels for the
+    /// `gateway_ping_results` and `internet_ping_results` time series in internal visualization
+    /// tool would be truncated.
     pub fn short_name(&self) -> String {
         let (name, os_err) = match self {
-            Self::CreateSocket(err) => ("CreateSocket", err.raw_os_error()),
-            Self::BindSocket { err, .. } => ("BindSocket", err.raw_os_error()),
+            Self::CreateSocket(err) => ("CreateSock", err.raw_os_error()),
+            Self::BindSocket { err, .. } => ("BindSock", err.raw_os_error()),
             Self::SendPing { err, .. } => {
                 let os_err = match err {
                     ping::PingError::Send(io) => io.raw_os_error(),
@@ -56,21 +59,21 @@ impl PingError {
                 };
                 ("SendPing", os_err)
             }
-            Self::SendPingTimeout { .. } => return "SendPingTimeout".to_string(),
+            Self::SendPingTimeout { .. } => return "SendTimeout".to_string(),
             Self::ReceivePing(err) => {
                 let os_err = match err {
                     ping::PingError::Send(io) => io.raw_os_error(),
                     ping::PingError::Recv(io) => io.raw_os_error(),
                     _ => None,
                 };
-                ("ReceivePing", os_err)
+                ("RecvPing", os_err)
             }
-            Self::StreamEndedUnexpectedly => return "StreamEndedUnexpectedly".to_string(),
-            Self::UnexpectedSequenceNumber { .. } => return "UnexpectedSequenceNumber".to_string(),
+            Self::StreamEndedUnexpectedly => return "StreamEnded".to_string(),
+            Self::UnexpectedSequenceNumber { .. } => return "BadSeqNum".to_string(),
             Self::NoReply => return "NoReply".to_string(),
         };
 
-        if let Some(code) = os_err { format!("{name}(os_err={code})") } else { name.to_string() }
+        if let Some(code) = os_err { format!("{name}_{code}") } else { name.to_string() }
     }
 }
 

@@ -200,7 +200,7 @@ impl PerIfaceIdentifierInspectEvents {
     ///       host_and_path = www.gstatic.com/generate_204
     ///       resolved_address = [IP_ADDRESS]
     ///       interface_name = wlan
-    ///       result = Completed(status=204)
+    ///       result = Completed_204
     /// ```
     pub(crate) fn log_fetch_result(
         &mut self,
@@ -212,7 +212,7 @@ impl PerIfaceIdentifierInspectEvents {
             resolved_address: format!("{}", fetch_parameters.ip),
             interface_name: fetch_parameters.interface_name.clone(),
             result: match result {
-                Ok(code) => format!("Completed(status={})", code),
+                Ok(code) => format!("Completed_{}", code),
                 Err(e) => format!("e_{}", e.short_name()),
             },
         };
@@ -380,7 +380,7 @@ mod tests {
                                 host_and_path: "example.com/",
                                 interface_name: "test_if",
                                 resolved_address: "192.168.0.1",
-                                result: "Completed(status=204)",
+                                result: "Completed_204",
                             }
                         }
                     }
