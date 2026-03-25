@@ -226,7 +226,7 @@ impl LeaseManager {
 
         let lease_token = server_token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
 
-        log::debug!("Acquiring lease for '{}'", name);
+        log::debug!("Acquiring application activity lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
         let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
         sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
@@ -280,7 +280,7 @@ impl LeaseManager {
         fasync::Task::local(async move {
             // Keep lease alive for as long as the client keeps it alive.
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
-            log::debug!("Dropping lease for '{}'", name);
+            log::debug!("Dropping application activity lease for '{}'", name);
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
             drop(inspect_lease_node);
         })
@@ -297,7 +297,7 @@ impl LeaseManager {
         let suspend_blocker = match self.suspend_block_manager.try_get_blocker() {
             None => {
                 log::info!(
-                    "Acquisition of wake lease {} temporarily blocked by suspend attempt",
+                    "Acquisition of wake lease '{}' temporarily blocked by suspend attempt",
                     &name
                 );
                 self.suspend_block_manager.get_blocker().await
@@ -309,6 +309,7 @@ impl LeaseManager {
         let inspect_node = self.inspect_node.clone_weak();
         let execution_state_lessor = self.execution_state_lessor.clone();
 
+        log::debug!("Acquiring wake lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
         let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
         sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
@@ -1275,16 +1276,20 @@ impl SuspendResumeListener for SystemActivityGovernor {
 
     async fn notify_on_suspend(&self) {
         fuchsia_trace::duration!("power", "system-activity-governor:suspend_callbacks");
+        log::debug!("notify_on_suspend");
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseStarted);
         self.update_suspend_blockers(true).await;
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseEnded);
+        log::debug!("update_suspend_blockers(true) done");
     }
 
     async fn notify_on_resume(&self) {
         fuchsia_trace::duration!("power", "system-activity-governor:resume_callbacks");
+        log::debug!("notify_on_resume");
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseStarted);
         self.update_suspend_blockers(false).await;
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseEnded);
+        log::debug!("update_suspend_blockers(false) done");
     }
 }
 
