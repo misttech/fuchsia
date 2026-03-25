@@ -183,8 +183,14 @@
         event_code: 48,
     },
     {
+        name: "MemoryTooling",
+        process: "memory_monitor2?\\.cm|memory_pressure_signaler\\.cm",
+        vmo: "",
+        event_code: 86,
+    },
+    {
         name: "EngTools",
-        process: "/boot/bin/sh|/pkg/bin/sshd|memory_monitor2?\\.cm|overnetstack\\.cm|memory_pressure_signaler\\.cm|remote.*|sh:console|sshd-host\\.cm",
+        process: "/boot/bin/sh|/pkg/bin/sshd|overnetstack\\.cm|remote.*|sh:console|sshd-host\\.cm",
         vmo: "",
         event_code: 64,
     },
