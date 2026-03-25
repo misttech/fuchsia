@@ -76,6 +76,7 @@ impl BrokerSvc {
                 let debug_info = format!("Lessor<{}:{}>", &element_name, &element_id);
                 match request {
                     LessorRequest::Lease { level, responder } => {
+                        fuchsia_trace::duration!(c"power-broker", c"Lessor::Lease");
                         log::debug!("{debug_info}: Leasing @ {level}");
                         let (client, server_end) =
                             fidl::endpoints::create_endpoints::<LeaseControlMarker>();
@@ -145,6 +146,7 @@ impl BrokerSvc {
                         last_status,
                         responder,
                     } => {
+                        fuchsia_trace::duration!(c"power-broker", c"LeaseControl::WatchStatus");
                         log::debug!(
                             "WatchStatus({:?}, {:?})",
                             lease_id,
@@ -257,11 +259,16 @@ impl BrokerSvc {
         let debug_info = format!("ElementControl<{}:{}>", &element_name, &element_id);
         match request {
             ElementControlRequest::OpenStatusChannel { status_channel, .. } => {
+                fuchsia_trace::duration!(c"power-broker", c"ElementControl::OpenStatusChannel");
                 log::debug!("{debug_info}: OpenStatusChannel");
                 let svc = self.clone();
                 svc.create_status_channel_handler(element_id.clone(), status_channel).await
             }
             ElementControlRequest::RegisterDependencyToken { token, responder, .. } => {
+                fuchsia_trace::duration!(
+                    c"power-broker",
+                    c"ElementControl::RegisterDependencyToken"
+                );
                 log::debug!("{debug_info}: RegisterDependencyToken({token:?})");
                 let mut broker = self.broker.borrow_mut();
                 let res = broker.register_dependency_token(element_id, token.into());
@@ -271,6 +278,10 @@ impl BrokerSvc {
                 responder.send(res.map_err(Into::into)).context("send failed")
             }
             ElementControlRequest::UnregisterDependencyToken { token, responder } => {
+                fuchsia_trace::duration!(
+                    c"power-broker",
+                    c"ElementControl::UnregisterDependencyToken"
+                );
                 log::debug!("{debug_info}: UnregisterDependencyToken({token:?})");
                 let mut broker = self.broker.borrow_mut();
                 let res = broker.unregister_dependency_token(element_id, token.into());
@@ -410,6 +421,7 @@ impl BrokerSvc {
             .try_for_each(|request| async {
                 match request {
                     TopologyRequest::AddElement { payload, responder } => {
+                        fuchsia_trace::duration!(c"power-broker", c"Topology::AddElement");
                         log::debug!("AddElement({:?})", &payload);
                         let Ok((
                             element_name,
@@ -574,6 +586,7 @@ impl BrokerSvc {
                         }
                     }
                     TopologyRequest::Lease { payload, responder } => {
+                        fuchsia_trace::duration!(c"power-broker", c"Topology::Lease");
                         log::debug!("Lease({:?})", &payload);
                         let Ok((
                             lease_token,
@@ -693,6 +706,7 @@ impl ElementRunnerHandler {
                     required_level = receiver.next() => {
                         match required_level {
                             Some(Some(required_level)) => {
+                                fuchsia_trace::duration!(c"power-broker", c"ElementRunner::required_level");
                                 // While an initial_lease is pending, suppress any SetLevel calls
                                 // that are for a lower power level than the one we are waiting for.
                                 // This allows us to support adding an element with an
@@ -719,6 +733,7 @@ impl ElementRunnerHandler {
                                     }
                                 });
 
+                                fuchsia_trace::duration!(c"power-broker", c"ElementRunner::SetLevel call");
                                 if let Err(err) = element_runner.set_level(required_level.level).await {
                                     log::warn!("{debug_info}: set_level error: {:?}", err);
                                 } else {
@@ -782,8 +797,10 @@ impl StatusChannelHandler {
         request: StatusRequest,
         subscriber: &CurrentLevelSubscriber,
     ) -> Result<(), Error> {
+        fuchsia_trace::duration!(c"power-broker", c"StatusChannel::handle_request");
         match request {
             StatusRequest::WatchPowerLevel { responder } => {
+                fuchsia_trace::duration!(c"power-broker", c"StatusRequest::WatchPowerLevel");
                 subscriber.register(responder)?;
                 Ok(())
             }
