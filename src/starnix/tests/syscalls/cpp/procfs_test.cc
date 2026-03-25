@@ -170,10 +170,10 @@ class ProcSysNetTest : public ProcTestBase,
 };
 
 TEST_P(ProcSysNetTest, Write) {
-  constexpr char kWriteBuf[] = "1";
-  ASSERT_EQ(write(fd_.get(), &kWriteBuf, sizeof(kWriteBuf)),
-            static_cast<ssize_t>(sizeof(kWriteBuf)))
-      << strerror(errno);
+  // Notably does not include a null terminator, which the kernel will reject.
+  const char kWriteBuf[] = {'1'};
+  ssize_t n = write(fd_.get(), kWriteBuf, sizeof(kWriteBuf));
+  ASSERT_EQ(n, static_cast<ssize_t>(sizeof(kWriteBuf))) << "Failed to write: " << strerror(errno);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -785,6 +785,27 @@ TEST_F(ProcfsTest, VmStatFile) {
   EXPECT_THAT(content, ContainsRegex("(\n|^)nr_active_file [0-9]+\n"));
   EXPECT_THAT(content, ContainsRegex("(\n|^)pgscan_direct [0-9]+\n"));
   EXPECT_THAT(content, ContainsRegex("(\n|^)pgscan_kswapd [0-9]+\n"));
+}
+
+// Verify that writing invalid data to a numeric sysctl results in EINVAL.
+TEST_F(ProcfsTest, ProcSysNetInvalidWriteReturnsEinval) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Requires CAP_SYS_ADMIN to write to net interfaces, skipping.";
+  }
+
+  // This particular interface is an example of one which requires int-only values.
+  std::string path = "/proc/sys/net/ipv4/neigh/default/ucast_solicit";
+  fbl::unique_fd fd(open(path.c_str(), O_WRONLY));
+  ASSERT_TRUE(fd.is_valid());
+
+  // "As she is spoke," the Linux kernel rejects null terminated values. This is true even if the
+  // data value itself is an integer. The presence of non-numerical data alone causes rejection.
+  const char kBadBuf[] = {'1', '\0'};
+  ssize_t n = write(fd.get(), kBadBuf, sizeof(kBadBuf));
+
+  EXPECT_EQ(n, -1);
+  EXPECT_EQ(errno, EINVAL) << "Expected EINVAL when writing non-numeric data to " << path
+                           << " but got: " << strerror(errno);
 }
 
 class ProcSelfFdTest : public ProcTestBase {

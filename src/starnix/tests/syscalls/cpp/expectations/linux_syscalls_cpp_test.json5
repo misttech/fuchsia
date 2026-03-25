@@ -30,12 +30,6 @@
                 "PerfEventOpenTest.MmapFirstRecordPageIsValid",
                 "PerfEventOpenTest.MmapMetadataPageIsValid",
 
-                // TODO(https://fxbug.dev/436978535): I believe the test is wrong. Most of these
-                // fail outright, but a couple of the permutations (Write/8 and Write/20) seem to
-                // pass. Rather than clutter this file further with every permutation which fails,
-                // we'll just skip these entirely.
-                "ProcSysNetTest/ProcSysNetTest.Write/*",
-
                 // TODO(https://fxbug.dev/436914153): This is flakey.
                 "Pty.EchoFlags",
                 "Pty.EchoModes",
@@ -77,6 +71,22 @@
                 "BpfMapTest.GetObjFile",
                 "BpfMapTest.FreezeMmapInteraction",
                 "BpfMapTest.PinAccessCheck",
+
+                // WONTFIX(https://fxbug.dev/436978535): These look for the "all" subdirectory,
+                // which I understand to only exist when an external network interface is available.
+                // In the case of Machina, no such network interface will ever exist.
+                "ProcSysNetTest/ProcSysNetTest.Write/0",
+                "ProcSysNetTest/ProcSysNetTest.Write/1",
+                "ProcSysNetTest/ProcSysNetTest.Write/2",
+                "ProcSysNetTest/ProcSysNetTest.Write/7",
+                "ProcSysNetTest/ProcSysNetTest.Write/9",
+                "ProcSysNetTest/ProcSysNetTest.Write/10",
+                "ProcSysNetTest/ProcSysNetTest.Write/11",
+
+                // TODO(https://fxbug.dev/436978535): This permutation tries to write to
+                // stable_secret, and I believe that particular node has heightened security
+                // permissions. It's possible that this test is incorrect and should be removed.
+                "ProcSysNetTest/ProcSysNetTest.Write/19",
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",

@@ -135,6 +135,9 @@
                 // TODO(https://fxbug.dev/398654361)
                 "BinderWithoutSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
+                // TODO(https://fxbug.dev/495916611)
+                "ProcfsTest.ProcSysNetInvalidWriteReturnsEinval",
+
                 // TODO(https://fxbug.dev/445790710): Implement ptrace poke across 2 mappings.
                 "PtraceTest.PokeAcrossMappings",
 
