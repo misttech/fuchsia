@@ -17,6 +17,8 @@ toc:
     path: /docs/development/drivers/dfv2-overview.md
   - title: "Write a minimal DFv2 driver"
     path: /docs/development/drivers/developer_guide/write-a-minimal-dfv2-driver.md
+  - title: "Handle interrupts in a driver"
+    path: /docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md
   - title: "Driver examples"
     path: /docs/development/drivers/developer_guide/driver-examples.md
   - title: "Tutorials"
