@@ -77,13 +77,13 @@ class FlatlandPresenterImpl final : public FlatlandPresenter,
 
   Fences accumulated_fences_;
 
-  // Ask for 8 frames of information for GetFuturePresentationInfos().
-  const int64_t kDefaultPredictionInfos = 8;
+  // The number of frames to request from GetFuturePresentationInfos().
+  const int64_t kFuturePresentationInfoCount = 2;
 
   // The default frame interval assumes a 60Hz display.
   const zx::duration kDefaultFrameInterval = zx::usec(16'667);
 
-  const zx::duration kDefaultPredictionSpan = kDefaultFrameInterval * kDefaultPredictionInfos;
+  const zx::duration kDefaultPredictionSpan = kDefaultFrameInterval * kFuturePresentationInfoCount;
 };
 
 }  // namespace flatland

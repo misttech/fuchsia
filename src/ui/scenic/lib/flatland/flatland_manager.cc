@@ -277,8 +277,7 @@ void FlatlandManager::SendHintsToStartRendering() {
   TRACE_DURATION("gfx", "FlatlandManager::SendHintsToStartRendering");
   CheckIsOnMainThread();
 
-  // Get 8 frames of data, which we then pass onto all Flatland instances that had updates this
-  // frame.
+  // Compute future frame info and send it to all Flatland instances that had updates this frame.
   //
   // `this` is safe to capture, as the callback is guaranteed to run on the calling thread.
   const std::vector<scheduling::FuturePresentationInfo> presentation_infos =
