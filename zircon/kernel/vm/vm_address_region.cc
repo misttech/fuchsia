@@ -145,9 +145,13 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       return ZX_ERR_ACCESS_DENIED;
     }
 
+    // Extract the creation only flags out of vmar_flags, leaving the remaining to be stored
+    // permanently in the object.
     const bool is_specific_overwrite = vmar_flags & VMAR_FLAG_SPECIFIC_OVERWRITE;
     const bool is_specific = (vmar_flags & VMAR_FLAG_SPECIFIC) || is_specific_overwrite;
     const bool is_upper_bound = vmar_flags & VMAR_FLAG_OFFSET_IS_UPPER_LIMIT;
+    vmar_flags &=
+        ~(VMAR_FLAG_SPECIFIC_OVERWRITE | VMAR_FLAG_SPECIFIC | VMAR_FLAG_OFFSET_IS_UPPER_LIMIT);
     if (is_specific && is_upper_bound) {
       return ZX_ERR_INVALID_ARGS;
     }
@@ -356,7 +360,6 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
     arch_mmu_flags_t arch_mmu_flags, fbl::RefPtr<VmAddressRegionOrMapping>* out) {
   canary_.Assert();
   DEBUG_ASSERT(vmo);
-  DEBUG_ASSERT(vmar_flags & VMAR_FLAG_SPECIFIC_OVERWRITE);
 
   fbl::AllocChecker ac;
   fbl::RefPtr<VmMapping> vmar;

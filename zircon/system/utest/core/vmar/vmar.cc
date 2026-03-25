@@ -3248,4 +3248,56 @@ TEST(Vmar, FaultBeyondStreamSizeRange) {
   EXPECT_BYTES_EQ(vmo_buffer_half, buffer_half, zx_system_get_page_size() * 2);
 }
 
+TEST(Vmar, SpecificOverwriteMergeMappings) {
+  size_t page_size = zx_system_get_page_size();
+
+  // Allocate a 16-pages VMAR.
+  zx::vmar vmar;
+  zx_vaddr_t vmar_base;
+  ASSERT_OK(zx::vmar::root_self()->allocate(
+      ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_CAN_MAP_SPECIFIC, 0, 6 * page_size, &vmar,
+      &vmar_base));
+
+  // Create a "placeholder" empty VMO and another VMO with 2 pages.
+  zx::vmo placeholder, vmo;
+  ASSERT_OK(zx::vmo::create(0, 0, &placeholder));
+  placeholder.set_property(ZX_PROP_NAME, "placeholder", 11);
+  ASSERT_OK(zx::vmo::create(2 * page_size, ZX_VMO_RESIZABLE, &vmo));
+  vmo.set_property(ZX_PROP_NAME, "example", 7);
+
+  // Reserve 4 pages by mapping the placeholder.
+  zx_vaddr_t base_addr;
+  ASSERT_OK(vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_ALLOW_FAULTS | ZX_VM_SPECIFIC, 0,
+                     placeholder, 0, 4 * page_size, &base_addr));
+
+  // Map 3 pages of the VMO at `base_addr + PageSize`.
+  zx_vaddr_t addr1;
+  ASSERT_OK(
+      vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC_OVERWRITE | ZX_VM_ALLOW_FAULTS,
+               base_addr + page_size - vmar_base, vmo, 0, 3 * page_size, &addr1));
+
+  // Map two more pages of the VMO right after (`base_addr + PageSize + 3 * PageSize`).
+  zx_vaddr_t addr2;
+  ASSERT_OK(vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC | ZX_VM_ALLOW_FAULTS,
+                     base_addr + (4 * page_size) - vmar_base, vmo, 3 * page_size, 2 * page_size,
+                     &addr2));
+
+  // Resize VMO to make its size equal to 4 pages.
+  EXPECT_OK(vmo.set_size(4 * page_size));
+
+  // Fetch the mapping info
+  // Should be exactly three entries, these being our VMAR, remainder of the placeholder mapping and
+  // a single merged mapping to the final vmo.
+  size_t actual, avail;
+  zx_info_maps_t maps[3];
+  ASSERT_OK(vmar.get_info(ZX_INFO_VMAR_MAPS, maps, 3 * sizeof(zx_info_maps_t), &actual, &avail));
+  ASSERT_EQ(actual, 3u);
+
+  EXPECT_EQ(maps[0].type, ZX_INFO_MAPS_TYPE_VMAR);
+  EXPECT_EQ(maps[1].type, ZX_INFO_MAPS_TYPE_MAPPING);
+  EXPECT_EQ(maps[1].size, page_size);
+  EXPECT_EQ(maps[2].type, ZX_INFO_MAPS_TYPE_MAPPING);
+  EXPECT_EQ(maps[2].size, page_size * 5);
+}
+
 }  // namespace
