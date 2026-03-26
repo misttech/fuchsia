@@ -80,6 +80,24 @@ pub trait BlobFilesystem: CacheClearableFilesystem {
             .expect("failed to get vmo")
     }
 
+    async fn remove_blob(&self, name: &Hash) {
+        let root = fuchsia_fs::directory::open_directory(
+            self.exposed_dir(),
+            "root",
+            fio::PERM_READABLE | fio::PERM_WRITABLE,
+        )
+        .await
+        .expect("failed to open blob directory");
+        root.unlink(&name.to_string(), &fio::UnlinkOptions::default())
+            .await
+            .expect("transport error on Directory.Unlink")
+            .expect("failed to unlink blob");
+        root.sync()
+            .await
+            .expect("transport error on Directory.Sync")
+            .expect("failed to sync blob directory");
+    }
+
     /// Direct access to the BlobCreator protocol.
     fn blob_creator(&self) -> &BlobCreatorProxy;
 

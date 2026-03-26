@@ -26,7 +26,7 @@ use storage_benchmarks::{BenchmarkSet, add_benchmarks};
 mod blob_benchmarks;
 mod blob_loader;
 
-const FXFS_VOLUME_SIZE: u64 = 64 * 1024 * 1024;
+const FXFS_VOLUME_SIZE: u64 = 55 * 1024 * 1024;
 
 /// Fuchsia Filesystem Benchmarks
 #[derive(argh::FromArgs)]
