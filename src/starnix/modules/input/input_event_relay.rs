@@ -14,6 +14,8 @@ use fidl_fuchsia_ui_pointer::{
     TouchPointerSample, TouchResponse as FidlTouchResponse, TouchResponseType,
     {self as fuipointer},
 };
+use fidl_fuchsia_ui_policy as fuipolicy;
+use fidl_fuchsia_ui_views as fuiviews;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::{self, Sender};
 use futures::executor::block_on;
@@ -39,7 +41,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
-use {fidl_fuchsia_ui_policy as fuipolicy, fidl_fuchsia_ui_views as fuiviews};
 
 const INPUT_RELAY_ROLE_NAME: &str = "fuchsia.starnix.kthread.input_relay";
 
@@ -495,6 +496,13 @@ impl InputEventsRelay {
         let mut function_was_pressed_after = false;
         match button_event {
             fuipolicy::MediaButtonsListenerRequest::OnEvent { event, responder } => {
+                if let Some(trace_flow_id) = event.trace_flow_id {
+                    trace_flow_end!(
+                        "input",
+                        "dispatch_media_buttons_to_listeners",
+                        trace_flow_id.into()
+                    );
+                }
                 trace_duration!("input", "starnix_process_media_button_event");
 
                 let batch =

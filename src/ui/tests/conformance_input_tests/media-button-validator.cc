@@ -191,7 +191,17 @@ class MediaButtonConformanceTest : public ui_conformance_test_base::ConformanceT
 
 std::string ToString(const fui::MediaButtonsEvent& e) {
   std::stringstream ss;
-  ss << e;
+  // ignore trace_flow_id in comparison
+  fui::MediaButtonsEvent e_copy({
+      .volume = e.volume().value_or(0),
+      .mic_mute = e.mic_mute().value_or(false),
+      .pause = e.pause().value_or(false),
+      .camera_disable = e.camera_disable().value_or(false),
+      .power = e.power().value_or(false),
+      .function = e.function().value_or(false),
+      .device_id = e.device_id().value_or(0),
+  });
+  ss << e_copy;
   return ss.str();
 }
 

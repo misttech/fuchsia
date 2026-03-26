@@ -11,15 +11,15 @@ use crate::{
 };
 use assert_matches::assert_matches;
 use fidl::endpoints::{ProtocolMarker, Proxy};
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_fuchsia_ui_input3 as fidl_ui_input3;
+use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use futures::{FutureExt as _, TryFutureExt, TryStreamExt};
 use log::error;
 use maplit::hashmap;
 use std::collections::{HashMap, HashSet};
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_input3 as fidl_ui_input3, fidl_fuchsia_ui_pointerinjector as pointerinjector,
-    zx,
-};
+use zx;
 
 pub use diagnostics_assertions;
 
@@ -992,10 +992,11 @@ macro_rules! assert_input_event_sequence_generates_media_buttons_events {
             while let Some(request) = stream.next().await {
                 match request {
                     Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
-                        event,
+                        mut event,
                         responder,
                     }) => {
                         let expected_command = expected_command_iter.next().unwrap();
+                        event.trace_flow_id = None;
                         pretty_assertions::assert_eq!(&event, expected_command);
                         let _ = responder.send();
 

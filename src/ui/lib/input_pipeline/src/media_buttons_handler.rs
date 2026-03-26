@@ -126,6 +126,10 @@ impl MediaButtonsHandler {
     }
 
     fn clone_event(event: &fidl_ui_input::MediaButtonsEvent) -> fidl_ui_input::MediaButtonsEvent {
+        // each copy of the event should have a unique trace flow id.
+        let trace_flow_id = fuchsia_trace::Id::random();
+        fuchsia_trace::flow_begin!("input", "dispatch_media_buttons_to_listeners", trace_flow_id);
+
         fidl_ui_input::MediaButtonsEvent {
             volume: event.volume,
             mic_mute: event.mic_mute,
@@ -139,6 +143,7 @@ impl MediaButtonsHandler {
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("failed to duplicate event pair")
             }),
+            trace_flow_id: Some(trace_flow_id.into()),
             ..Default::default()
         }
     }
@@ -436,9 +441,10 @@ mod tests {
         let assert_fut = async {
             match listener_stream.next().await {
                 Some(Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
-                    event,
+                    mut event,
                     responder,
                 })) => {
+                    event.trace_flow_id = None;
                     assert_eq!(event, expected_event);
                     responder.send().expect("responder failed.");
                 }
@@ -616,9 +622,10 @@ mod tests {
             if let Some(request) = first_listener_stream.next().await {
                 match request {
                     Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
-                        event,
+                        mut event,
                         responder: _,
                     }) => {
+                        event.trace_flow_id = None;
                         pretty_assertions::assert_eq!(event, expected_media_buttons_event);
 
                         // No need to send response because we want to simulate reader getting stuck.
@@ -633,9 +640,10 @@ mod tests {
             if let Some(request) = second_listener_stream.next().await {
                 match request {
                     Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
-                        event,
+                        mut event,
                         responder,
                     }) => {
+                        event.trace_flow_id = None;
                         pretty_assertions::assert_eq!(event, expected_media_buttons_event);
                         let _ = responder.send();
                     }
@@ -714,7 +722,11 @@ mod tests {
         // Ensure handle_input_event attempts to send event to first listener.
         if let Some(request) = first_listener_stream.next().await {
             match request {
-                Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent { event, responder }) => {
+                Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
+                    mut event,
+                    responder,
+                }) => {
+                    event.trace_flow_id = None;
                     pretty_assertions::assert_eq!(event, first_expected_media_buttons_event);
 
                     // No need to send response because we want to simulate reader getting stuck.
@@ -731,7 +743,11 @@ mod tests {
         // Ensure handle_input_event still sends event to second listener when reader for first listener is stuck.
         if let Some(request) = second_listener_stream.next().await {
             match request {
-                Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent { event, responder }) => {
+                Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
+                    mut event,
+                    responder,
+                }) => {
+                    event.trace_flow_id = None;
                     pretty_assertions::assert_eq!(event, first_expected_media_buttons_event);
                     let _ = responder.send();
                 }
@@ -775,7 +791,11 @@ mod tests {
         // Ensure events are still sent to listeners if a listener stalls on a previous event.
         if let Some(request) = second_listener_stream.next().await {
             match request {
-                Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent { event, responder }) => {
+                Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
+                    mut event,
+                    responder,
+                }) => {
+                    event.trace_flow_id = None;
                     pretty_assertions::assert_eq!(event, second_expected_media_buttons_event);
                     let _ = responder.send();
                 }
@@ -793,9 +813,10 @@ mod tests {
                 if let Some(request) = first_listener_stream.next().await {
                     match request {
                         Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
-                            event,
+                            mut event,
                             responder: _,
                         }) => {
+                            event.trace_flow_id = None;
                             pretty_assertions::assert_eq!(
                                 event,
                                 second_expected_media_buttons_event
@@ -1009,5 +1030,17 @@ mod tests {
         assert_eq!(event_without_lease.function, cloned_event.function);
         assert_eq!(event_without_lease.device_id, cloned_event.device_id);
         assert!(cloned_event.wake_lease.is_none());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn clone_event_sets_trace_flow_id() {
+        let event = fidl_ui_input::MediaButtonsEvent { volume: Some(1), ..Default::default() };
+
+        let cloned_event_1 = MediaButtonsHandler::clone_event(&event);
+        let cloned_event_2 = MediaButtonsHandler::clone_event(&event);
+
+        assert!(cloned_event_1.trace_flow_id.is_some());
+        assert!(cloned_event_2.trace_flow_id.is_some());
+        assert_ne!(cloned_event_1.trace_flow_id, cloned_event_2.trace_flow_id);
     }
 }

@@ -187,6 +187,9 @@ type MediaButtonsEvent = resource table {
 
     /// Optional wake lease for power baton passing.
     8: wake_lease zx.Handle:EVENTPAIR;
+
+    /// Optional trace flow ID to connect the event flow.
+    9: trace_flow_id uint64;
 };
 
 @strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
