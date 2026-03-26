@@ -20,6 +20,11 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "src/strategies/longest_dimension.rs",
     "src/strategies/mod.rs",
     "src/strategies/util.rs",
+    "src/v2/controller.rs",
+    "src/v2/dimension.rs",
+    "src/v2/mod.rs",
+    "src/v2/search_space.rs",
+    "src/v2/strategy.rs",
     "src/versioned_artifact_set.rs",
   ]
 

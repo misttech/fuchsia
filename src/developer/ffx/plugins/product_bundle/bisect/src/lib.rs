@@ -9,6 +9,9 @@
 use crate::bisection_controller::BisectionController;
 use anyhow::{Context, Result};
 use assembly_artifact_cache::{ArtifactCache, MOSClient};
+use assembly_config_schema as _;
+use assembly_container as _;
+use assembly_platform_artifacts as _;
 use assembly_util::{sanitize_for_mos_apis, shorten_path};
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
@@ -19,15 +22,14 @@ use fho::{FfxMain, FfxTool};
 use gcs::client::Client as GcsClient;
 use pbms::handle_new_access_token;
 use std::fs;
-use {
-    assembly_config_schema as _, assembly_container as _, assembly_platform_artifacts as _,
-    structured_ui,
-};
+use structured_ui;
 
 mod bisection_controller;
 mod bisection_plan;
 mod search_space;
 mod strategies;
+/// The v2 bisection logic state machine.
+pub mod v2;
 mod versioned_artifact_set;
 
 /// The ffx tool for bisecting product bundles.
