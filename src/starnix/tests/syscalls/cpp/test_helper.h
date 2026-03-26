@@ -175,6 +175,7 @@ class ScopedTempFD {
 class ScopedTempDir {
  public:
   ScopedTempDir();
+  explicit ScopedTempDir(const std::string &parent_path);
   ~ScopedTempDir();
 
   ScopedTempDir(const ScopedTempDir &) = delete;

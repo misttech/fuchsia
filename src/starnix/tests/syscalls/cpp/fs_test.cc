@@ -989,7 +989,7 @@ TEST_P(FsMountTest, ChownMinusOneOnSIDFileFails) {
   EXPECT_TRUE(helper.WaitForChildren());
 
   // The file should still be set-user-ID even after failure.
-  struct stat file_stat {};
+  struct stat file_stat{};
   SAFE_SYSCALL(stat(user1_file.c_str(), &file_stat));
   EXPECT_NE(file_stat.st_mode & S_ISUID, 0U);
 
@@ -1060,7 +1060,7 @@ TEST_P(FsMountTest, ChownOnSUIDFileDropsSUIDBit) {
       SAFE_SYSCALL(chmod(user1_file.c_str(), S_ISUID | mode));
       SAFE_SYSCALL(chown(user1_file.c_str(), -1, -1));
 
-      struct stat file_stat {};
+      struct stat file_stat{};
       SAFE_SYSCALL(stat(user1_file.c_str(), &file_stat));
       EXPECT_EQ(file_stat.st_mode & S_ISUID, 0U);
     }
@@ -1084,7 +1084,7 @@ TEST_P(FsMountTest, ChownOnSGIDFileDropsSGIDBit) {
       SAFE_SYSCALL(chmod(user1_file.c_str(), S_ISGID | mode));
       SAFE_SYSCALL(chown(user1_file.c_str(), -1, -1));
 
-      struct stat file_stat {};
+      struct stat file_stat{};
       SAFE_SYSCALL(stat(user1_file.c_str(), &file_stat));
       if (mode & S_IXGRP) {
         // The set-group-ID bit only takes effect if the file is
@@ -1323,6 +1323,83 @@ TEST(LinkTest, FileLinkCount) {
 
   // Clean up.
   ASSERT_EQ(rmdir(test_folder.c_str()), 0);
+}
+
+TEST(FsTest, DeepPathLookup) {
+  char *dir = getenv("MUTABLE_STORAGE");
+  test_helper::ScopedTempDir test_folder(dir == nullptr ? "/tmp" : dir);
+  std::string base_path = test_folder.path();
+
+  std::string deep_path = base_path + "/a/b/c/d/e";
+
+  // Create deep directory structure
+  ASSERT_EQ(mkdir((base_path + "/a").c_str(), 0777), 0);
+  ASSERT_EQ(mkdir((base_path + "/a/b").c_str(), 0777), 0);
+  ASSERT_EQ(mkdir((base_path + "/a/b/c").c_str(), 0777), 0);
+  ASSERT_EQ(mkdir((base_path + "/a/b/c/d").c_str(), 0777), 0);
+  ASSERT_EQ(mkdir((base_path + "/a/b/c/d/e").c_str(), 0777), 0);
+
+  // Create a symlink
+  ASSERT_EQ(symlink("d/e", (base_path + "/a/b/c/symlink_to_e").c_str()), 0);
+
+  // Create a symlink that uses ..
+  ASSERT_EQ(symlink("../d/e", (base_path + "/a/b/c/d/symlink_dotdot").c_str()), 0);
+
+  // Create a symlink loop
+  ASSERT_EQ(symlink("symlink_loop", (base_path + "/a/b/c/symlink_loop").c_str()), 0);
+
+  // Create a file at the end
+  std::string file_path = deep_path + "/f";
+  fbl::unique_fd fd(creat(file_path.c_str(), S_IRWXU));
+  ASSERT_TRUE(fd.is_valid());
+  fd.reset();
+
+  // Test we can open the file via the deep path directly
+  fbl::unique_fd fd2(open(file_path.c_str(), O_RDONLY));
+  EXPECT_TRUE(fd2.is_valid()) << "Failed to open deep file path: " << strerror(errno);
+
+  // Test opening a directory
+  fbl::unique_fd dir_fd(open(deep_path.c_str(), O_RDONLY | O_DIRECTORY));
+  EXPECT_TRUE(dir_fd.is_valid()) << "Failed to open deep directory path: " << strerror(errno);
+
+  // Test stat on the deep file
+  struct stat st;
+  EXPECT_EQ(stat(file_path.c_str(), &st), 0);
+  EXPECT_TRUE(S_ISREG(st.st_mode));
+
+  // Test stat on the deep dir
+  EXPECT_EQ(stat(deep_path.c_str(), &st), 0);
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+
+  // Test ".."
+  std::string dotdot_path = deep_path + "/../e/f";
+  fbl::unique_fd fd3(open(dotdot_path.c_str(), O_RDONLY));
+  EXPECT_TRUE(fd3.is_valid()) << "Failed to open path with ..: " << strerror(errno);
+
+  // Test symlink
+  std::string symlink_path = base_path + "/a/b/c/symlink_to_e/f";
+  fbl::unique_fd fd4(open(symlink_path.c_str(), O_RDONLY));
+  EXPECT_TRUE(fd4.is_valid()) << "Failed to open path with symlink: " << strerror(errno);
+
+  // Test symlink with ..
+  std::string symlink_dotdot_path = base_path + "/a/b/c/d/symlink_dotdot/f";
+  fbl::unique_fd fd5(open(symlink_dotdot_path.c_str(), O_RDONLY));
+  EXPECT_TRUE(fd5.is_valid()) << "Failed to open path with symlink using ..: " << strerror(errno);
+
+  // Test symlink loop
+  std::string symlink_loop_path = base_path + "/a/b/c/symlink_loop/f";
+  EXPECT_EQ(open(symlink_loop_path.c_str(), O_RDONLY), -1);
+  EXPECT_EQ(errno, ELOOP);
+
+  // Test missing path component
+  std::string missing_path = base_path + "/a/b/missing/d/e/f";
+  EXPECT_EQ(open(missing_path.c_str(), O_RDONLY), -1);
+  EXPECT_EQ(errno, ENOENT);
+
+  // Test path ending in missing component
+  std::string missing_end_path = deep_path + "/g";
+  EXPECT_EQ(open(missing_end_path.c_str(), O_RDONLY), -1);
+  EXPECT_EQ(errno, ENOENT);
 }
 
 }  // namespace

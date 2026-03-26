@@ -251,8 +251,10 @@ ScopedTempFD::ScopedTempFD() : name_("/tmp/proc_test_file_XXXXXX") {
   fd_ = fbl::unique_fd(mkstemp(mut_name));
 }
 
-ScopedTempDir::ScopedTempDir() {
-  path_ = get_tmp_path() + "/testdirXXXXXX";
+ScopedTempDir::ScopedTempDir() : ScopedTempDir(get_tmp_path()) {}
+
+ScopedTempDir::ScopedTempDir(const std::string &parent_path) {
+  path_ = parent_path + "/testdirXXXXXX";
   if (!mkdtemp(path_.data())) {
     path_.clear();
   }
@@ -512,25 +514,54 @@ void RecursiveUnmountAndRemove(const std::string &path) {
     } while (errno != EINVAL);
   }
 
-  int dir_fd = open(path.c_str(), O_DIRECTORY | O_NOFOLLOW);
+  int dir_fd = open(path.c_str(), O_DIRECTORY | O_NOFOLLOW | O_RDONLY);
   if (dir_fd >= 0) {
-    DIR *dir = fdopendir(dir_fd);
-    EXPECT_NE(dir, nullptr) << "fdopendir: " << std::strerror(errno);
-    while (struct dirent *entry = readdir(dir)) {
-      std::string name(entry->d_name);
-      if (name == "." || name == "..")
-        continue;
-      std::string subpath = std::string(path) + "/" + name;
-      if (entry->d_type == DT_DIR) {
+    std::vector<std::pair<std::string, unsigned char>> entries;
+
+    // Use getdents64 directly to avoid EOVERFLOW on 32-bit architectures
+    // when the filesystem returns 64-bit inode numbers or offsets.
+    struct linux_dirent64 {
+      uint64_t d_ino;
+      int64_t d_off;
+      unsigned short d_reclen;
+      unsigned char d_type;
+      char d_name[];
+    };
+
+    std::vector<uint8_t> buffer(32768);
+    while (true) {
+      long nread = syscall(SYS_getdents64, dir_fd, buffer.data(), buffer.size());
+      if (nread == -1) {
+        ADD_FAILURE() << "getdents64 failed: " << std::strerror(errno);
+        break;
+      }
+      if (nread == 0) {
+        break;
+      }
+
+      long bpos = 0;
+      while (bpos < nread) {
+        ASSERT_EQ(bpos % 8, 0);
+        auto d = reinterpret_cast<linux_dirent64 *>(buffer.data() + bpos);
+        std::string name(d->d_name);
+        if (name != "." && name != "..") {
+          entries.push_back({name, d->d_type});
+        }
+        bpos += d->d_reclen;
+      }
+    }
+
+    for (const auto &entry : entries) {
+      std::string subpath = std::string(path) + "/" + entry.first;
+      if (entry.second == DT_DIR) {
         RecursiveUnmountAndRemove(subpath);
       } else {
         EXPECT_THAT(unlink(subpath.c_str()), SyscallSucceeds()) << subpath;
       }
     }
-    EXPECT_EQ(closedir(dir), 0) << "closedir: " << std::strerror(errno);
+    close(dir_fd);
+    EXPECT_THAT(rmdir(path.c_str()), SyscallSucceeds()) << path;
   }
-
-  EXPECT_THAT(rmdir(path.c_str()), SyscallSucceeds());
 }
 
 int MemFdCreate(const char *name, unsigned int flags) {
