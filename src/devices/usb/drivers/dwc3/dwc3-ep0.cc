@@ -248,6 +248,12 @@ void Dwc3::HandleEp0Setup(size_t length) {
       .Then(
           [this, is_out, fail, length, setup](
               fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>& result) {
+            if (!power_on_ || !controller_started_) {
+              // Return in case the core was powered off or disabled between the setup event and
+              // the reply from our child.
+              return;
+            }
+
             if (!result.ok()) {
               fdf::error("(framework) Control(): {}", result.status_string());
               fail();
@@ -260,12 +266,6 @@ void Dwc3::HandleEp0Setup(size_t length) {
                 fdf::debug("Control(): {}", zx_status_get_string(result->error_value()));
               }
               fail();
-              return;
-            }
-
-            if (!power_on_) {
-              // Return in case the core was powered off between the setup event and the reply from
-              // our child.
               return;
             }
 
