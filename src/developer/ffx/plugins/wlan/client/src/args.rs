@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_wlan_policy as wlan_policy;
 use ffx_core::ffx_command;
 use ffx_wlan_common::args::{CredentialType, SecurityType};
-use fidl_fuchsia_wlan_policy as wlan_policy;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -195,7 +195,7 @@ pub struct RemoveNetwork {
 
 /// A conversion function is provided to get donut lib type args since it is the easiest way to
 /// keep the logic for constructing the credential in one place and reuse it here.
-impl From<RemoveNetwork> for donut_lib::opts::RemoveArgs {
+impl From<RemoveNetwork> for donut_lib_fdomain::opts::RemoveArgs {
     fn from(arg: RemoveNetwork) -> Self {
         Self {
             ssid: arg.ssid,
@@ -206,23 +206,25 @@ impl From<RemoveNetwork> for donut_lib::opts::RemoveArgs {
     }
 }
 
-fn donut_security_from_security(security_type: SecurityType) -> donut_lib::opts::SecurityTypeArg {
+fn donut_security_from_security(
+    security_type: SecurityType,
+) -> donut_lib_fdomain::opts::SecurityTypeArg {
     match security_type {
-        SecurityType::None => donut_lib::opts::SecurityTypeArg::None,
-        SecurityType::Wep => donut_lib::opts::SecurityTypeArg::Wep,
-        SecurityType::Wpa => donut_lib::opts::SecurityTypeArg::Wpa,
-        SecurityType::Wpa2 => donut_lib::opts::SecurityTypeArg::Wpa2,
-        SecurityType::Wpa3 => donut_lib::opts::SecurityTypeArg::Wpa3,
+        SecurityType::None => donut_lib_fdomain::opts::SecurityTypeArg::None,
+        SecurityType::Wep => donut_lib_fdomain::opts::SecurityTypeArg::Wep,
+        SecurityType::Wpa => donut_lib_fdomain::opts::SecurityTypeArg::Wpa,
+        SecurityType::Wpa2 => donut_lib_fdomain::opts::SecurityTypeArg::Wpa2,
+        SecurityType::Wpa3 => donut_lib_fdomain::opts::SecurityTypeArg::Wpa3,
     }
 }
 
 fn donut_credential_from_credential(
     credential_type: CredentialType,
-) -> donut_lib::opts::CredentialTypeArg {
+) -> donut_lib_fdomain::opts::CredentialTypeArg {
     match credential_type {
-        CredentialType::None => donut_lib::opts::CredentialTypeArg::None,
-        CredentialType::Psk => donut_lib::opts::CredentialTypeArg::Psk,
-        CredentialType::Password => donut_lib::opts::CredentialTypeArg::Password,
+        CredentialType::None => donut_lib_fdomain::opts::CredentialTypeArg::None,
+        CredentialType::Psk => donut_lib_fdomain::opts::CredentialTypeArg::Psk,
+        CredentialType::Password => donut_lib_fdomain::opts::CredentialTypeArg::Password,
     }
 }
 
