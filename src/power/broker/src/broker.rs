@@ -244,26 +244,28 @@ impl Broker {
                     if dependency.requires.element_id == *element_id {
                         claim_on_broken_element = true;
                     }
-                    self.catalog
+                    let affected_claims: Vec<ClaimID> = self.catalog
                         .claims
                         .activated
                         .for_lease(&lease_id)
-                        .into_iter()
                         .filter(|c| c.dependency == dependency)
-                        .for_each(|c| {
-                            // Eagerly deactivate these claims, instead of simply
-                            // marking them for deactivation. This ensures that they
-                            // drop their level immediately.
-                            if !claim_on_broken_element {
-                                self.catalog.claims.deactivate_claim(&c.id);
-                            }
-                            affected_elements.insert(c.requires().element_id);
-                            affected_leases.insert(lease_id.clone());
-                        });
+                        .map(|c| c.id)
+                        .collect();
+
+                    for _ in &affected_claims {
+                        affected_elements.insert(dependency.requires.element_id.clone());
+                        affected_leases.insert(lease_id.clone());
+                    }
+
+                    if !claim_on_broken_element {
+                        for id in affected_claims {
+                            self.catalog.claims.deactivate_claim(&id);
+                        }
+                    }
                 }
             });
         affected_elements.remove(&element_id);
-        let affected_elements = affected_elements.into_iter().collect::<Vec<_>>();
+        let affected_elements: Vec<ElementID> = affected_elements.into_iter().collect();
         self.update_required_levels(affected_elements.iter(), &mut EagerInspectWriter);
         if affected_elements.len() > 1 {
             self.update_required_level(&element_id, prev_level.clone(), &mut EagerInspectWriter);
@@ -294,28 +296,17 @@ impl Broker {
             log::debug!(
                 "update_current_level({element_id}): level increased from {prev_level:?} to {level:?}"
             );
-            let claims_for_required_element: Vec<Claim> = self
+            // Find claims that are newly satisfied by the new level of this element:
+            let claims_satisfied: Vec<Claim> = self
                 .catalog
                 .claims
                 .activated
                 .for_required_element(element_id)
-                .into_iter()
-                .collect();
-            log::debug!(
-                "update_current_level({element_id}): claims_for_required_element = {}",
-                &claims_for_required_element.iter().join(", ")
-            );
-            // Find claims that are newly satisfied by level:
-            let claims_satisfied: Vec<Claim> = claims_for_required_element
-                .into_iter()
                 .filter(|c| {
                     level.satisfies(c.requires().level) && !prev_level.satisfies(c.requires().level)
                 })
+                .cloned()
                 .collect();
-            log::debug!(
-                "update_current_level({element_id}): claims_satisfied = {}",
-                &claims_satisfied.iter().join(", ")
-            );
             // Find the set of dependents for all claims satisfied:
             let dependents_of_claims_satisfied: HashSet<ElementID> =
                 claims_satisfied.iter().map(|c| c.dependent().element_id.clone()).collect();
@@ -329,17 +320,13 @@ impl Broker {
             // so, activate the pending claims on dependent, raising its
             // required level:
             for dependent in dependents_of_claims_satisfied {
-                let pending_claims_on_dependent =
-                    self.catalog.claims.pending.for_required_element(&dependent);
-                log::debug!(
-                    "update_current_level({element_id}): pending_claims_on_dependent({dependent}) = {}",
-                    &pending_claims_on_dependent.iter().join(", ")
-                );
+                let pending_claims_on_dependent: Vec<Claim> =
+                    self.catalog.claims.pending.for_required_element(&dependent).cloned().collect();
                 self.activate_claims_if_dependencies_satisfied(pending_claims_on_dependent);
             }
             // Find the set of leases for all claims satisfied:
             let leases_to_check_if_satisfied: HashSet<LeaseID> =
-                claims_satisfied.into_iter().map(|c| c.lease_id).collect();
+                claims_satisfied.iter().map(|c| c.lease_id).collect();
             // Update the status of all leases whose claims were satisfied.
             log::debug!(
                 "update_current_level({element_id}): leases_to_check_if_satisfied = {:?}",
@@ -360,8 +347,13 @@ impl Broker {
                 "update_current_level({element_id}): level decreased from {prev_level:?} to {level:?}"
             );
 
-            let claims_marked_to_deactivate =
-                self.catalog.claims.activated.marked_to_deactivate_for_element(element_id);
+            let claims_marked_to_deactivate: Vec<Claim> = self
+                .catalog
+                .claims
+                .activated
+                .marked_to_deactivate_for_element(element_id)
+                .cloned()
+                .collect();
             let claims_with_no_dependents =
                 self.find_claims_to_drop_or_deactivate(&claims_marked_to_deactivate);
             self.drop_or_deactivate_claims(&claims_with_no_dependents);
@@ -606,7 +598,7 @@ impl Broker {
 
     fn calculate_lease_status(&self, lease_id: &LeaseID) -> LeaseStatus {
         // If the lease has any Pending claims, it is still Pending.
-        if !self.catalog.claims.pending.for_lease(lease_id).is_empty() {
+        if self.catalog.claims.pending.for_lease(lease_id).next().is_some() {
             return LeaseStatus::Pending;
         }
 
@@ -671,7 +663,7 @@ impl Broker {
 
     fn update_required_levels<'a, I>(
         &mut self,
-        element_ids: impl Iterator<Item = &'a ElementID>,
+        element_ids: impl IntoIterator<Item = &'a ElementID>,
         inspect_writer: &mut I,
     ) where
         I: InspectUpdateLevel,
@@ -690,30 +682,26 @@ impl Broker {
     /// For example, let us imagine elements A, B, C and D where A depends on B
     /// and B depends on C and D. In order to activate the A->B claim, all
     /// dependencies of B (i.e. B->C and B->D) must first be satisfied.
-    fn activate_claims_if_dependencies_satisfied(&mut self, pending_claims: Vec<Claim>) {
-        log::debug!(
-            "activate_claims_if_dependencies_satisfied: pending_claims[{}]",
-            pending_claims.iter().join(", ")
-        );
-        let claims_to_activate: Vec<Claim> = pending_claims
-            .into_iter()
-            .filter(|c| {
-                // If the required element is already at the required level,
-                // then the claim can immediately be activated (and is
-                // already satisfied).
-                self.current_level_satisfies(c.requires())
+    fn activate_claims_if_dependencies_satisfied(
+        &mut self,
+        pending_claims: impl IntoIterator<Item = Claim>,
+    ) {
+        let claims_to_activate = pending_claims.into_iter().filter(|c| {
+            // If the required element is already at the required level,
+            // then the claim can immediately be activated (and is
+            // already satisfied).
+            self.current_level_satisfies(c.requires())
                 // Otherwise, it can only be activated if all of its
                 // dependencies are satisfied.
-                || self.all_dependencies_satisfied(&c.requires())
-            })
-            .collect();
-        for claim in &claims_to_activate {
-            self.catalog.claims.activate_claim(&claim.id);
+                || self.all_dependencies_satisfied(c.requires())
+        });
+        let (claim_ids, element_ids): (Vec<ClaimID>, Vec<ElementID>) =
+            claims_to_activate.map(|c| (c.id, c.requires().element_id)).unzip();
+        for claim_id in &claim_ids {
+            self.catalog.claims.activate_claim(claim_id);
         }
-        self.update_required_levels(
-            element_ids_required_by_claims(&claims_to_activate),
-            &mut EagerInspectWriter,
-        );
+
+        self.update_required_levels(element_ids.iter(), &mut EagerInspectWriter);
     }
 
     /// Examines the direct dependencies of an element level
@@ -736,7 +724,7 @@ impl Broker {
         )
     }
 
-    /// Examines a Vec of claims and returns any that no longer have any
+    /// Examines a slice of claims and returns any that no longer have any
     /// other claims within their lease that require their dependent.
     fn find_claims_to_drop_or_deactivate(&mut self, claims: &[Claim]) -> Vec<Claim> {
         log::debug!("find_claims_to_drop_or_deactivate: [{}]", claims.iter().join("; "));
@@ -762,10 +750,8 @@ impl Broker {
                     .claims
                     .activated
                     .for_required_element(&claim_to_check.requires().element_id)
-                    .into_iter()
                     .filter(|c| c.lease_id != claim_to_check.lease_id)
-                    .filter(|c| !self.catalog.is_lease_dropped(&c.lease_id))
-                    .into_iter();
+                    .filter(|c| !self.catalog.is_lease_dropped(&c.lease_id));
                 let related_claim = related_claims.find(|related_claim| {
                     related_claim.dependent().satisfies(claim_to_check.dependent())
                         && related_claim.requires().satisfies(claim_to_check.requires())
@@ -805,7 +791,7 @@ impl Broker {
         claims_to_drop_or_deactivate
     }
 
-    /// Takes a Vec of claims, deactivates them if their lease is open,
+    /// Takes a slice of claims, deactivates them if their lease is open,
     /// or drops them if their lease has been dropped. Then updates lease
     /// status of leases affected and required levels of elements affected.
     fn drop_or_deactivate_claims(&mut self, claims: &[Claim]) {
@@ -817,9 +803,8 @@ impl Broker {
                 self.catalog.claims.deactivate_claim(&claim.id);
             }
         }
-        let element_ids_affected = element_ids_required_by_claims(claims).collect::<Vec<_>>();
         self.update_required_levels(
-            element_ids_affected.iter().map(|id| *id),
+            element_ids_required_by_claims(claims.iter()),
             &mut EagerInspectWriter,
         );
     }
@@ -1046,16 +1031,21 @@ impl Claim {
     }
 }
 
-/// Returns a Vec of unique ElementIDs required by claims.
-fn element_ids_required_by_claims<'a>(
-    claims: &'a [Claim],
-) -> impl Iterator<Item = &'a ElementID> + use<'a> {
-    claims.iter().map(|c| &c.requires().element_id).unique()
+/// Returns an iterator of unique ElementIDs required by claims.
+fn element_ids_required_by_claims<'a, I>(
+    claims: I,
+) -> impl Iterator<Item = &'a ElementID> + use<'a, I>
+where
+    I: IntoIterator<Item = &'a Claim>,
+{
+    claims.into_iter().map(|c| &c.requires().element_id).unique()
 }
 
 /// Returns the maximum level required by claims, or None if empty.
-fn max_level_required_by_claims(claims: &[Claim]) -> Option<IndexedPowerLevel> {
-    claims.iter().map(|x| x.requires().level).max()
+fn max_level_required_by_claims<'a>(
+    claims: impl IntoIterator<Item = &'a Claim>,
+) -> Option<IndexedPowerLevel> {
+    claims.into_iter().map(|x| x.requires().level).max()
 }
 
 #[derive(Debug)]
@@ -1114,7 +1104,7 @@ impl Catalog {
         let minimum_level = self.minimum_level(element_id);
         let activated_claims = self.claims.activated.for_required_element(element_id);
         max(
-            max_level_required_by_claims(&activated_claims).unwrap_or(minimum_level),
+            max_level_required_by_claims(activated_claims).unwrap_or(minimum_level),
             self.calculate_level_required_by_leases(element_id).unwrap_or(minimum_level),
         )
     }
@@ -1264,17 +1254,19 @@ impl Catalog {
         }
         log::debug!("dropping lease({:?})", &lease);
         // Pending claims should be dropped immediately.
-        let pending_claims = self.claims.pending.for_lease(&lease.id);
-        for claim in pending_claims {
-            if let Some(removed) = self.claims.pending.remove(&claim.id) {
+        let pending_claims: Vec<ClaimID> =
+            self.claims.pending.for_lease(&lease.id).map(|c| c.id.clone()).collect::<Vec<_>>();
+        for claim_id in pending_claims {
+            if let Some(removed) = self.claims.pending.remove(&claim_id) {
                 log::debug!("removing pending claim: {:?}", &removed);
             } else {
-                log::error!("cannot remove pending claim: not found: {}", claim.id);
+                log::error!("cannot remove pending claim: not found: {}", claim_id);
             }
         }
         // Claims should be marked to deactivate in an orderly sequence.
         log::debug!("drop(lease:{lease_id}): marking activated claims to deactivate");
-        let claims_to_deactivate = self.claims.activated.mark_to_deactivate(&lease.id);
+        let claims_to_deactivate: Vec<Claim> =
+            self.claims.activated.mark_to_deactivate(&lease.id).collect();
         Ok((lease, claims_to_deactivate))
     }
 
@@ -1433,12 +1425,12 @@ impl ClaimLookup {
     /// They will be deactivated in an orderly sequence (each claim will be
     /// deactivated only once all claims dependent on it have already been
     /// deactivated).
-    /// Returns a Vec of Claims marked to drop.
-    fn mark_to_deactivate(&mut self, lease_id: &LeaseID) -> Vec<Claim> {
-        let claims_marked = self.for_lease(lease_id);
+    /// Returns an iterator of Claims marked to drop.
+    fn mark_to_deactivate(&mut self, lease_id: &LeaseID) -> impl Iterator<Item = Claim> {
+        let claims_marked: Vec<Claim> = self.for_lease(lease_id).cloned().collect();
         log::debug!(
             "marking claims to deactivate for lease {lease_id}: [{}]",
-            &claims_marked.iter().join(", ")
+            claims_marked.iter().join(", ")
         );
         for claim in &claims_marked {
             self.claims_to_deactivate_by_element_id
@@ -1446,7 +1438,7 @@ impl ClaimLookup {
                 .or_insert(Vec::new())
                 .push(claim.id.clone());
         }
-        claims_marked
+        claims_marked.into_iter()
     }
 
     /// Removes claim from this lookup, and adds it to recipient.
@@ -1456,31 +1448,40 @@ impl ClaimLookup {
         }
     }
 
-    fn for_claim_ids(&self, claim_ids: &[ClaimID]) -> Vec<Claim> {
-        claim_ids.iter().map(|id| self.claims.get(id)).filter_map(|f| f).cloned().collect()
+    fn for_claim_ids<'a>(
+        &'a self,
+        claim_ids: &'a [ClaimID],
+    ) -> impl Iterator<Item = &'a Claim> + 'a {
+        claim_ids.iter().filter_map(|id| self.claims.get(id))
     }
 
-    fn for_required_element(&self, element_id: &ElementID) -> Vec<Claim> {
-        let Some(claim_ids) = self.claims_by_required_element_id.get(element_id) else {
-            return Vec::new();
-        };
-        self.for_claim_ids(claim_ids)
+    fn for_required_element<'a>(
+        &'a self,
+        element_id: &ElementID,
+    ) -> impl Iterator<Item = &'a Claim> + 'a {
+        self.claims_by_required_element_id
+            .get(element_id)
+            .into_iter()
+            .flat_map(move |claim_ids| self.for_claim_ids(claim_ids))
     }
 
-    fn for_lease(&self, lease_id: &LeaseID) -> Vec<Claim> {
-        let Some(claim_ids) = self.claims_by_lease.get(lease_id) else {
-            return Vec::new();
-        };
-        self.for_claim_ids(claim_ids)
+    fn for_lease<'a>(&'a self, lease_id: &LeaseID) -> impl Iterator<Item = &'a Claim> + 'a {
+        self.claims_by_lease
+            .get(lease_id)
+            .into_iter()
+            .flat_map(move |claim_ids| self.for_claim_ids(claim_ids))
     }
 
     /// Claims with element_id as a dependent that belong to leases which have
     /// been dropped. See ClaimLookup::mark_to_deactivate for more details.
-    fn marked_to_deactivate_for_element(&self, element_id: &ElementID) -> Vec<Claim> {
-        let Some(claim_ids) = self.claims_to_deactivate_by_element_id.get(element_id) else {
-            return Vec::new();
-        };
-        self.for_claim_ids(claim_ids)
+    fn marked_to_deactivate_for_element<'a>(
+        &'a self,
+        element_id: &ElementID,
+    ) -> impl Iterator<Item = &'a Claim> + 'a {
+        self.claims_to_deactivate_by_element_id
+            .get(element_id)
+            .into_iter()
+            .flat_map(move |claim_ids| self.for_claim_ids(claim_ids))
     }
 }
 
@@ -1616,11 +1617,15 @@ mod tests {
             "{lease_id} still in catalog.lease_status"
         );
         assert_eq!(
-            catalog.claims.activated.for_lease(lease_id),
-            vec![],
+            catalog.claims.activated.for_lease(lease_id).count(),
+            0,
             "claims.activated not empty"
         );
-        assert_eq!(catalog.claims.pending.for_lease(lease_id), vec![], "claims.pending not empty");
+        assert_eq!(
+            catalog.claims.pending.for_lease(lease_id).count(),
+            0,
+            "claims.pending not empty"
+        );
     }
 
     #[fuchsia::test]
@@ -1783,7 +1788,10 @@ mod tests {
         lookup.add(claim_a_1_b_1.clone());
         lookup.add(claim_a_2_b_2.clone());
 
-        lookup.mark_to_deactivate(&claim_a_2_b_2.lease_id);
+        assert_eq!(
+            lookup.mark_to_deactivate(&claim_a_2_b_2.lease_id).collect::<Vec<_>>(),
+            vec![claim_a_1_b_1.clone(), claim_a_2_b_2.clone()]
+        );
 
         assert_eq!(lookup.remove(&claim_a_1_b_1.id), Some(claim_a_1_b_1.clone()));
         assert_eq!(lookup.remove(&claim_a_2_b_2.id), Some(claim_a_2_b_2.clone()));
