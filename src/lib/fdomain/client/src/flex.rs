@@ -50,3 +50,8 @@ pub use fuchsia_async::emulated_handle::MessageBuf;
 pub mod fidl {
     pub use ::fidl::endpoints::*;
 }
+
+#[cfg(feature = "fdomain")]
+pub type ClientArg = std::sync::Arc<fdomain_client::Client>;
+#[cfg(not(feature = "fdomain"))]
+pub type ClientArg = ::fidl::endpoints::ZirconClient;
