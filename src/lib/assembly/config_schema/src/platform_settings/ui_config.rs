@@ -107,6 +107,11 @@ pub struct PlatformUiConfig {
     /// Enables merging move only touch events in the input pipeline.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_merge_touch_events: bool,
+
+    /// Enables experimental "clown car" configuration to cohost certain components in dso_runner
+    /// (https://fxbug.dev/403545512)
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub enable_experimental_dso: bool,
 }
 
 impl Default for PlatformUiConfig {
@@ -133,6 +138,7 @@ impl Default for PlatformUiConfig {
             enable_mouse_baton_passing: false,
             enable_touch_baton_passing: false,
             enable_merge_touch_events: false,
+            enable_experimental_dso: false,
         }
     }
 }

@@ -28,13 +28,22 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             Config::new(ConfigValueType::Uint8, visual_debugging_level.into()),
         )?;
 
+        if ui_config.enable_experimental_dso {
+            // Supports ui_*_dso bundles below
+            builder.platform_bundle("dso_runner")?;
+        }
+
         if !ui_config.enabled {
             return Ok(());
         }
         match context.build_type {
             BuildType::Eng => {
                 builder.platform_bundle("ui")?;
-                builder.icu_platform_bundle("ui_eng")?;
+                if ui_config.enable_experimental_dso {
+                    builder.icu_platform_bundle("ui_eng_dso")?;
+                } else {
+                    builder.icu_platform_bundle("ui_eng")?;
+                }
                 match &ui_config.with_synthetic_device_support {
                     true => {
                         builder.platform_bundle(
@@ -48,7 +57,11 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             }
             BuildType::UserDebug => {
                 builder.platform_bundle("ui")?;
-                builder.icu_platform_bundle("ui_user_and_userdebug")?;
+                if ui_config.enable_experimental_dso {
+                    builder.icu_platform_bundle("ui_userdebug_dso")?;
+                } else {
+                    builder.icu_platform_bundle("ui_user_and_userdebug")?;
+                }
                 match &ui_config.with_synthetic_device_support {
                     true => {
                         builder.platform_bundle(
@@ -61,6 +74,10 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
                 }
             }
             BuildType::User => {
+                ensure!(
+                    !ui_config.enable_experimental_dso,
+                    "experimental dso must not be enabled on user builds"
+                );
                 builder.platform_bundle("ui")?;
                 builder.icu_platform_bundle("ui_user_and_userdebug")?;
                 builder.platform_bundle("ui_package_user_and_userdebug")?;

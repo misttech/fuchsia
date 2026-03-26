@@ -7,9 +7,22 @@ import("//build/rust/rustc_binary.gni")
 
 assert(is_host, "Assembly libraries are host-only")
 
+declare_args() {
+  # If true, components that have an experimental dso version enabled
+  # (//src/sys/runners/dso) will be included in place of the standard version.
+  # This flag exists to support experimental dso builders, for more information
+  # see https://fxbug.dev/403545512
+  experimental_dso_enabled = false
+}
+
 rustc_binary("assembly") {
   with_unit_tests = true
   edition = "2024"
+
+  features = []
+  if (experimental_dso_enabled) {
+    features += [ "experimental_dso" ]
+  }
 
   deps = [
     "//src/lib/assembly/assembled_system",
