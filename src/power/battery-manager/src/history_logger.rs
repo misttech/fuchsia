@@ -237,8 +237,9 @@ impl FaultDetector {
             if now - last_update >= timeout {
                 self_clone.record_fault_change(FaultState::NoUpdate);
                 warn!(
-                    "FAULT DETECTED: No battery updates received for more than {:?}. (Last update: {:?}) nanos",
-                    timeout, last_update
+                    "FAULT DETECTED: No battery updates received for more than {}s. Last update was {}s ago.",
+                    timeout.into_seconds(),
+                    (now - last_update).into_seconds()
                 );
             }
         }));
