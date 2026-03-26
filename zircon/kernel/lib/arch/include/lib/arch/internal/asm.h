@@ -11,6 +11,28 @@
 
 #ifdef __ASSEMBLER__  // clang-format off
 
+// Set ELF symbol visibility and binding, which represent scope.
+.macro _.scope name, scope
+  .ifnb \scope
+    .ifnc \scope, local
+      .ifc \scope, weak
+        .weak \name
+       .else
+        .globl \name
+        .ifc \scope, global
+#ifdef __ELF__
+          .hidden \name
+#endif
+        .else
+          .ifnc \scope, export
+            .error "`scope` argument `\scope` not `local`, `global`, `export`, or `weak`"
+          .endif
+        .endif
+      .endif
+    .endif
+  .endif
+.endm  // _.scope
+
 // This macro is purged and redefined to indicate whether the assembly
 // is currently between an entity-defining macro and its matching `.end_*`.
 .macro _.entity.assert

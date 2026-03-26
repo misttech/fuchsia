@@ -527,6 +527,7 @@ libc_impl_label = ":libc.so($libc_toolchain)"
 source_set("asm-linkage") {
   visibility = [ "./*" ]
   public = [ "asm-linkage.h" ]
+  public_deps = [ "//zircon/kernel/lib/arch:headers" ]
 }
 
 source_set("weak") {

@@ -75,25 +75,7 @@
   .type \name, %\type
 #endif
 
-  // Set ELF symbol visibility and binding, which represent scope.
-  .ifnb \scope
-    .ifnc \scope, local
-      .ifc \scope, weak
-        .weak \name
-       .else
-        .globl \name
-        .ifc \scope, global
-#ifdef __ELF__
-          .hidden \name
-#endif
-        .else
-          .ifnc \scope, export
-            .error "`scope` argument `\scope` not `local`, `global`, `export`, or `weak`"
-          .endif
-        .endif
-      .endif
-    .endif
-  .endif
+  _.scope \name, \scope
 
   // Define the label itself.
   .ifb \value
@@ -102,6 +84,26 @@
     \name = \value
   .endif
 .endm  // .label
+
+/// Defines an ELF symbol with the same value, size, and type as another.
+///
+/// Parameters
+///
+///   * name
+///     - Required: Symbol name to define.
+///
+///   * target
+///     - Required: Symbol name to alias.  This need not already be defined.
+///     The value, type, and size eventually assigned to this will be copied.
+///
+///   * scope
+///     - Optional: See `.label`; only the default differs here.
+///     - Default: `global`
+///
+.macro .alias name, target, scope=global
+  _.scope \name, \scope
+  \name = \target
+.endm  // .alias
 
 /// Define a function that extends until `.end_function`.
 ///

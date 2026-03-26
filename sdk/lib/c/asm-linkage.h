@@ -5,6 +5,8 @@
 #ifndef LIB_C_ASM_LINKAGE_H_
 #define LIB_C_ASM_LINKAGE_H_
 
+#include <lib/arch/asm.h>
+
 // LIBC_ASM_LINKAGE(SymbolName) is used as the linkage name for some
 // LIBC_NAMESPACE::SymbolName that needs to be referenced either directly from
 // assembly code or across an hermetic partial link boundary (where the build
@@ -57,8 +59,8 @@
 .endm
 
 // This makes a namespaced alias of an `.llvm_libc_function`-defined symbol.
-.macro .llvm_libc_alias name, alias, type=function
-  .label LIBC_ASM_LINKAGE(\alias), global, \type, LIBC_ASM_LINKAGE(\name)
+.macro .llvm_libc_alias name, alias
+  .alias LIBC_ASM_LINKAGE(\alias), LIBC_ASM_LINKAGE(\name)
 .endm
 
 // This puts an `.llvm_libc_function`-defined symbol into the public libc ABI.

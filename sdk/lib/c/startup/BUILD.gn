@@ -199,10 +199,10 @@ source_set("headers") {
     "startup-trampoline.h",
   ]
   public_deps = [
+    "..:asm-linkage",
     "../zircon:vmar.headers",
     "//zircon/system/ulib/zx",
   ]
-  deps = [ "..:asm-linkage" ]
 }
 
 # :startup-random-impl is a basic ABI hermetic_source_set() defining this
