@@ -45,6 +45,7 @@ fidl("fuchsia.io") {
     "locking.fidl",
     "node-protocols.fidl",
     "node.fidl",
+    "openable.fidl",
     "rights-abilities.fidl",
     "symlink.fidl",
   ]

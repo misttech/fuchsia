@@ -74,8 +74,13 @@ constexpr zx::result<std::tuple<fio::Rights, fio::Rights>> ValidateRequestRights
   return zx::ok(std::tuple{requested_rights & parent_rights, optional_rights & parent_rights});
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void ForwardRequestToRemote(fio::wire::OpenableOpenRequest* request, Vfs::OpenResult open_result,
+                            fio::Rights parent_rights) {
+#else
 void ForwardRequestToRemote(fio::wire::DirectoryOpenRequest* request, Vfs::OpenResult open_result,
                             fio::Rights parent_rights) {
+#endif
   ZX_DEBUG_ASSERT(open_result.vnode()->IsRemote());
   // Update the request path to point only to the remaining segment.
   request->path = fidl::StringView::FromExternal(open_result.path());

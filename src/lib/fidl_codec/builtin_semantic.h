@@ -11,7 +11,7 @@ namespace fidl_codec::semantic {
 
 constexpr std::string_view kBuiltinSemantics =
     "library fuchsia.io {\n"
-    "  Directory::Open {\n"
+    "  Openable::Open {\n"
     "    request.object = handle / request.path;\n"
     "    input_field: request.path;\n"
     "    result: request.object;\n"

@@ -227,6 +227,11 @@ impl<T: Symlink> Connection<T> {
                     Ok(info) => responder.send(0, Some(&info))?,
                 }
             }
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            fio::SymlinkRequest::Open { object, .. } => {
+                use fidl::epitaph::ChannelEpitaphExt;
+                let _ = object.close_with_epitaph(Status::NOT_DIR);
+            }
             fio::SymlinkRequest::_UnknownMethod { ordinal: _ordinal, .. } => {
                 #[cfg(any(test, feature = "use_log"))]
                 log::warn!(_ordinal; "Received unknown method")
@@ -615,5 +620,29 @@ mod tests {
             client_end.get_extended_attribute(b"foo").await.unwrap().unwrap_err(),
             Status::NOT_FOUND.into_raw(),
         );
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    #[fuchsia::test]
+    async fn test_open() {
+        use fidl::endpoints::Proxy;
+
+        let client_end = serve_test_symlink().await;
+
+        let (object, server_end) = fidl::Channel::create();
+        client_end
+            .open("path", fio::Flags::empty(), &fio::Options::default(), server_end)
+            .expect("fidl failed");
+
+        let requests = fio::NodeProxy::from_channel(fuchsia_async::Channel::from_channel(object));
+
+        let error = requests
+            .take_event_stream()
+            .next()
+            .await
+            .expect("no event")
+            .expect_err("error expected");
+
+        assert_matches!(error, fidl::Error::ClientChannelClosed { status: Status::NOT_DIR, .. });
     }
 }

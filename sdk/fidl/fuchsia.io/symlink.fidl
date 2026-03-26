@@ -27,6 +27,14 @@ open protocol Symlink {
     compose Linkable;
     compose Node;
 
+    /// The symlink protocol allows Open so that you can send a pipelined request to a node that
+    /// might be a symbolic link or a directory. If it's a symbolic link, the `object` argument to
+    /// the open call, will be closed with an epitaph error of `ZX_ERR_NOT_DIR`, but the connection
+    /// the symlink protocol will remain. The caller is then free to resolve the symbolic link
+    /// however it likes.
+    @available(added=HEAD)
+    compose Openable;
+
     @selector("fuchsia.io/Symlink.Describe")
     flexible Describe() -> (SymlinkInfo);
 };

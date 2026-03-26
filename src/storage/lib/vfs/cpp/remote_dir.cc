@@ -43,7 +43,11 @@ void RemoteDir::DeprecatedOpenRemote(fio::OpenFlags flags, fio::ModeType mode,
                         ", response=", status.FormatDescription());
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void RemoteDir::OpenRemote(fuchsia_io::wire::OpenableOpenRequest request) const {
+#else
 void RemoteDir::OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const {
+#endif
   // We consume the |request| channel when making the wire call to the remote end, so on failure
   // there isn't anywhere for us to propagate the error.
   [[maybe_unused]] auto status =

@@ -258,10 +258,10 @@
     {
         "kind": "protocol/member",
         "name": "fuchsia.io/Directory.Open",
-        "strictness": "strict",
+        "strictness": "flexible",
         "ordinal": "6236883748953765593",
         "direction": "one_way",
-        "request": "fuchsia.io/DirectoryOpenRequest"
+        "request": "fuchsia.io/OpenableOpenRequest"
     },
     {
         "kind": "protocol/member",
@@ -495,35 +495,6 @@
     {
         "kind": "struct",
         "name": "fuchsia.io/DirectoryObject"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.io/DirectoryOpenRequest.flags",
-        "ordinal": "2",
-        "type": "fuchsia.io/Flags"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.io/DirectoryOpenRequest.object",
-        "ordinal": "4",
-        "type": "zx/Handle:CHANNEL"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.io/DirectoryOpenRequest.options",
-        "ordinal": "3",
-        "type": "fuchsia.io/Options"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.io/DirectoryOpenRequest.path",
-        "ordinal": "1",
-        "type": "string:4095"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.io/DirectoryOpenRequest",
-        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
@@ -2267,6 +2238,49 @@
         "name": "fuchsia.io/OpenFlags",
         "strictness": "strict",
         "type": "uint32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.io/Openable.Open",
+        "strictness": "flexible",
+        "ordinal": "6236883748953765593",
+        "direction": "one_way",
+        "request": "fuchsia.io/OpenableOpenRequest"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.io/Openable",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.io/OpenableOpenRequest.flags",
+        "ordinal": "2",
+        "type": "fuchsia.io/Flags"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.io/OpenableOpenRequest.object",
+        "ordinal": "4",
+        "type": "zx/Handle:CHANNEL"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.io/OpenableOpenRequest.options",
+        "ordinal": "3",
+        "type": "fuchsia.io/Options"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.io/OpenableOpenRequest.path",
+        "ordinal": "1",
+        "type": "string:4095"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.io/OpenableOpenRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "bits/member",

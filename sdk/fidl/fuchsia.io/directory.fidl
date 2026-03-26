@@ -368,6 +368,8 @@ type WatchMask = strict bits : uint32 {
 open protocol Directory {
     compose AdvisoryLocking;
     compose Node;
+    @available(added=NEXT)
+    compose Openable;
 
     /// Opens a new object relative to this directory object.
     ///
@@ -435,7 +437,7 @@ open protocol Directory {
     /// Errors:
     /// * `ZX_ERR_BAD_PATH` if `path` is invalid
     /// * See [`Flags`] for other errors which may be communicated based on `flags`
-    @available(added=27)
+    @available(added=27, replaced=NEXT)
     @selector("fuchsia.io/Directory.Open3")
     strict Open(resource struct {
         path Path;

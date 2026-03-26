@@ -212,6 +212,8 @@ ECHO_REALM_MONIKER = "/core/ffx-laboratory:fidlcat_test_echo_realm"
 
 
 class FidlcatE2eTests(unittest.TestCase):
+    maxDiff = None
+
     @classmethod
     def setUpClass(cls: Any) -> None:
         Fidlcat.setup()
@@ -384,7 +386,7 @@ class FidlcatE2eTests(unittest.TestCase):
   startup Channel:25de241f(dir:/pkg)
 
   startup Channel:25de25ff(dir:/svc)
-      32.413004 write request  fuchsia.io/Directory.Open(".")
+      32.413004 write request  fuchsia.io/Openable.Open(".")
         -> 252e2acb
 
   startup Channel:252e2df7(directory-request:/)
@@ -402,7 +404,7 @@ class FidlcatE2eTests(unittest.TestCase):
   startup Vmo:20ee265f(stack-vmo)
 
   Channel:25fe2aef(channel:0)
-      32.462118 write request  fuchsia.io/Directory.Open("test.placeholders.Echo")
+      32.462118 write request  fuchsia.io/Openable.Open("test.placeholders.Echo")
         -> 257e2a53
 
   Channel:24ce2c27()
@@ -421,11 +423,11 @@ class FidlcatE2eTests(unittest.TestCase):
   startup Channel:88b11863(dir:/pkg)
 
   startup Channel:8bf11e73(dir:/svc)
-      33.093308 write request  fuchsia.io/Directory.Open(".")
+      33.093308 write request  fuchsia.io/Openable.Open(".")
         -> 8be11273
 
   startup Channel:8bb11d3b(directory-request:/)
-      33.140662 read  request  fuchsia.io/Directory.Open("svc/test.placeholders.Echo")
+      33.140662 read  request  fuchsia.io/Openable.Open("svc/test.placeholders.Echo")
         -> Channel:8b811f73(directory-request:/svc/test.placeholders.Echo)
 
   startup Clock:8b311e27()
@@ -442,7 +444,7 @@ class FidlcatE2eTests(unittest.TestCase):
 
   Channel:8b811f73(directory-request:/svc/test.placeholders.Echo)
     linked to Channel:24ce2c27() in process echo_client.cm:38724
-    created by Channel:8bb11d3b(directory-request:/) receiving fuchsia.io/Directory.Open
+    created by Channel:8bb11d3b(directory-request:/) receiving fuchsia.io/Openable.Open
       33.192134 read  request  test.placeholders/Echo.EchoString
       33.241406 write response test.placeholders/Echo.EchoString
 """,
@@ -456,11 +458,11 @@ class FidlcatE2eTests(unittest.TestCase):
             fidlcat.stdout,
             """\
 --------------------------------------------------------------------------------echo_client.cm 38724: 4 events
-  fuchsia.io/Directory: 2 events
+  fuchsia.io/Openable: 2 events
     Open: 2 events
-      32.413004 write request  fuchsia.io/Directory.Open(Channel:25de25ff(dir:/svc), ".")
+      32.413004 write request  fuchsia.io/Openable.Open(Channel:25de25ff(dir:/svc), ".")
         -> 252e2acb
-      32.462118 write request  fuchsia.io/Directory.Open(Channel:25fe2aef(channel:0), "test.placeholders.Echo")
+      32.462118 write request  fuchsia.io/Openable.Open(Channel:25fe2aef(channel:0), "test.placeholders.Echo")
         -> 257e2a53
 
   test.placeholders/Echo: 2 events
@@ -469,11 +471,11 @@ class FidlcatE2eTests(unittest.TestCase):
       33.267383 read  response test.placeholders/Echo.EchoString(Channel:24ce2c27())
 
 --------------------------------------------------------------------------------echo_server.cm 39310: 4 events
-  fuchsia.io/Directory: 2 events
+  fuchsia.io/Openable: 2 events
     Open: 2 events
-      33.093308 write request  fuchsia.io/Directory.Open(Channel:8bf11e73(dir:/svc), ".")
+      33.093308 write request  fuchsia.io/Openable.Open(Channel:8bf11e73(dir:/svc), ".")
         -> 8be11273
-      33.140662 read  request  fuchsia.io/Directory.Open(Channel:8bb11d3b(directory-request:/), "svc/test.placeholders.Echo")
+      33.140662 read  request  fuchsia.io/Openable.Open(Channel:8bb11d3b(directory-request:/), "svc/test.placeholders.Echo")
         -> Channel:8b811f73(directory-request:/svc/test.placeholders.Echo)
 
   test.placeholders/Echo: 2 events

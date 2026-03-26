@@ -120,7 +120,7 @@ class FakeDirectory : public fidl::testing::WireTestBase<fuchsia_io::Directory> 
   }
   void ExpectGetAttributes(fuchsia_io::wire::NodeAttributes2 attr) { expect_get_attr_.push(attr); }
 
-  void Open(fuchsia_io::wire::DirectoryOpenRequest* request,
+  void Open(fuchsia_io::wire::OpenableOpenRequest* request,
             OpenCompleter::Sync& completer) override {
     file_.BindServer(dispatcher_, std::move(request->object));
   }

@@ -266,7 +266,7 @@ void ShaderModuleTemplate::Variant::UpdateModule() {
 #ifdef __Fuchsia__
     zx::channel client, server;
     zx::channel::create(0, &client, &server);
-    fuchsia_io::DirectoryOpenRequest request;
+    fuchsia_io::OpenableOpenRequest request;
     request.path("shaders");
     request.flags(fuchsia_io::Flags::kProtocolDirectory | fuchsia_io::kPermReadable);
     request.options(fuchsia_io::Options{});

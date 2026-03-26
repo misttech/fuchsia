@@ -120,7 +120,7 @@ bool ReadSpirvFromDiskAtDir(const ShaderVariantArgs& args,
   zx::channel client, server;
   zx::channel::create(0, &client, &server);
   {
-    fuchsia_io::DirectoryOpenRequest open_request;
+    fuchsia_io::OpenableOpenRequest open_request;
     open_request.path(hash_name);
     open_request.flags(fuchsia_io::Flags::kProtocolFile | fuchsia_io::kPermReadable);
     open_request.options(fuchsia_io::Options{});

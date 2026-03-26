@@ -13,6 +13,7 @@ fidl_library(
         "locking.fidl",
         "node.fidl",
         "node-protocols.fidl",
+        "openable.fidl",
         "rights-abilities.fidl",
         "symlink.fidl",
     ],

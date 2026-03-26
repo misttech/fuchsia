@@ -207,7 +207,7 @@ TEST_F(BuiltinSemanticTest, Open) {
   ASSERT_NE(library, nullptr);
   library->DecodeTypes();
   Protocol* protocol = nullptr;
-  library->GetProtocolByName("fuchsia.io/Directory", &protocol);
+  library->GetProtocolByName("fuchsia.io/Openable", &protocol);
   ASSERT_NE(protocol, nullptr);
   ProtocolMethod* method = protocol->GetMethodByName("Open");
   ASSERT_NE(method, nullptr);
@@ -239,7 +239,7 @@ TEST_F(BuiltinSemanticTest, OpenShortDisplay) {
   ASSERT_NE(library, nullptr);
   library->DecodeTypes();
   Protocol* protocol = nullptr;
-  library->GetProtocolByName("fuchsia.io/Directory", &protocol);
+  library->GetProtocolByName("fuchsia.io/Openable", &protocol);
   ASSERT_NE(protocol, nullptr);
   ProtocolMethod* method = protocol->GetMethodByName("Open");
   ASSERT_NE(method, nullptr);

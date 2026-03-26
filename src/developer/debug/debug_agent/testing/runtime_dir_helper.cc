@@ -36,9 +36,9 @@ fbl::RefPtr<fs::PseudoDir> MakeElfJobIdFile(zx_koid_t job) {
   return job_dir;
 }
 
-fuchsia_io::DirectoryOpenRequest MakeDirOpenRequest(
+fuchsia_io::OpenableOpenRequest MakeDirOpenRequest(
     std::string_view dirname, fidl::ServerEnd<fuchsia_io::Directory> server_end) {
-  fuchsia_io::DirectoryOpenRequest r;
+  fuchsia_io::OpenableOpenRequest r;
   r.path(std::string{dirname});
   r.flags(fuchsia_io::kPermReadable);
   r.object(server_end.TakeChannel());
