@@ -117,6 +117,7 @@ class Machine {
         RM_LOG(ERROR) << "unexpected system call seen: " << registers_->syscall_number();
       } else {
         RM_LOG(ERROR) << "unexpected return reason seen: " << result.value();
+        LogState();
       }
     } else {
       RM_LOG(ERROR) << "error entering restricted mode";
