@@ -51,6 +51,7 @@ group("tests") {
     "starnix_uapi:tests",
     "syncio:tests",
     "third_party:tests",
+    "thread_create_vmars:tests",
     "usercopy:tests",
   ]
 }
