@@ -534,8 +534,11 @@ TEST_F(BtHciBroadcomInitializedTest, GetCrashParameters) {
   ASSERT_FALSE(result->is_error());
 
   auto params = result->value();
-  ASSERT_TRUE(params->has_vendor_subevent_code());
-  EXPECT_EQ(params->vendor_subevent_code(), 0x1B);
+  ASSERT_TRUE(params->has_crash_events());
+  EXPECT_EQ(params->crash_events().size(), 1u);
+  EXPECT_EQ(params->crash_events()[0].size(), 2u);
+  EXPECT_EQ(params->crash_events()[0][0], 0x1B);
+  EXPECT_EQ(params->crash_events()[0][1], 0x03);
 
   ASSERT_TRUE(params->has_program_name());
   EXPECT_EQ(params->program_name().get(), std::string_view("bt-hci-broadcom"));

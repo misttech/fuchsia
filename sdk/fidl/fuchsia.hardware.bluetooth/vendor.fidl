@@ -62,12 +62,17 @@ type VendorCommand = flexible union {
     1: set_acl_priority VendorSetAclPriorityParams;
 };
 
+@available(added=NEXT)
+alias VendorCrashEventPrefix = vector<byte>:8;
+
 /// Parameters for filing controller crash reports.
 @available(added=NEXT)
 type VendorCrashParameters = table {
-    /// The value of the subevent code field in crash dump vendor events.
-    /// Required.
-    1: vendor_subevent_code uint8;
+    /// The prefixes of the vendor event payloads to match. For example, this could
+    /// be the subevent code. If the prefix is empty, all vendor debug events will be
+    /// treated as crash events.
+    /// Required. At least one prefix must be specified.
+    1: crash_events vector<VendorCrashEventPrefix>:MAX;
     /// The program name to use in the crash report.
     /// Required.
     2: program_name string:1024;

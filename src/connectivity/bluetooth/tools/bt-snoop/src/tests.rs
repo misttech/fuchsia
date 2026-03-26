@@ -431,7 +431,7 @@ async fn test_handle_packet_crash_report_rate_limit() {
         device_id.clone(),
         CrashState {
             parameters: hardware_bt::VendorCrashParameters {
-                vendor_subevent_code: Some(0x1B),
+                crash_events: Some(vec![vec![0x1B]]),
                 program_name: Some("test_program".to_string()),
                 crash_signature: Some("test_sig".to_string()),
                 ..Default::default()

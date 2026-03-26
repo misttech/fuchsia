@@ -1537,6 +1537,17 @@
         "strictness": "flexible"
     },
     {
+        "kind": "alias",
+        "name": "fuchsia.hardware.bluetooth/VendorCrashEventPrefix",
+        "type": "vector<uint8>:8"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.crash_events",
+        "ordinal": "1",
+        "type": "vector<vector<uint8>:8>"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.crash_signature",
         "ordinal": "3",
@@ -1547,12 +1558,6 @@
         "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.program_name",
         "ordinal": "2",
         "type": "string:1024"
-    },
-    {
-        "kind": "table/member",
-        "name": "fuchsia.hardware.bluetooth/VendorCrashParameters.vendor_subevent_code",
-        "ordinal": "1",
-        "type": "uint8"
     },
     {
         "kind": "table",

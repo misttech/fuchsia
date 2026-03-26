@@ -100,7 +100,8 @@ constexpr zx::duration kFirmwareDownloadDelay = zx::msec(50);
 // firmware load.
 constexpr zx::duration kBaudRateSwitchDelay = zx::msec(200);
 
-constexpr uint8_t kCrashVendorSubeventCode = 0x1B;
+// 0x1B = DBFW subevent code, 0x03 = the dump type is "core dump"
+constexpr std::array<uint8_t, 2> kCrashVendorSubeventPrefix = {0x1B, 0x03};
 constexpr char kCrashProgramName[] = "bt-hci-broadcom";
 constexpr char kCrashSignature[] = "bt-hci-broadcom-core-dump";
 
@@ -372,7 +373,13 @@ void BtHciBroadcom::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
 void BtHciBroadcom::GetCrashParameters(GetCrashParametersCompleter::Sync& completer) {
   fidl::Arena arena;
   auto builder = fhbt::wire::VendorCrashParameters::Builder(arena);
-  builder.vendor_subevent_code(kCrashVendorSubeventCode);
+
+  auto inner_view = fidl::VectorView<uint8_t>::FromExternal(
+      const_cast<uint8_t*>(kCrashVendorSubeventPrefix.data()), kCrashVendorSubeventPrefix.size());
+  std::array<fidl::VectorView<uint8_t>, 1> crash_events_array = {inner_view};
+
+  builder.crash_events(fidl::VectorView<fidl::VectorView<uint8_t>>::FromExternal(
+      crash_events_array.data(), crash_events_array.size()));
   builder.program_name(kCrashProgramName);
   builder.crash_signature(kCrashSignature);
   completer.ReplySuccess(builder.Build());

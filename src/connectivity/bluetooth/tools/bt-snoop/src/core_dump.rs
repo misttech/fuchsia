@@ -58,9 +58,11 @@ impl CrashState {
 
     pub(crate) fn is_crash_event(&self, packet: &SnoopPacket) -> bool {
         packet.format == PacketFormat::Event
-            && packet.payload.len() >= 3
+            && packet.payload.len() >= 2
             && packet.payload[0] == VENDOR_EVENT_CODE
-            && self.parameters.vendor_subevent_code == Some(packet.payload[2])
+            && self.parameters.crash_events.as_ref().map_or(false, |events| {
+                events.iter().any(|prefix| packet.payload[2..].starts_with(prefix))
+            })
     }
 
     fn maybe_start_new_crash(&mut self) -> bool {
@@ -279,5 +281,50 @@ mod tests {
         };
 
         futures::join!(server, collector.file_report(&proxy));
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_crash_state_is_crash_event_with_multibyte_prefix() {
+        let state = CrashState {
+            parameters: fidl_fuchsia_hardware_bluetooth::VendorCrashParameters {
+                crash_events: Some(vec![vec![0x1b, 0x03]]),
+                ..Default::default()
+            },
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        };
+
+        let matching_packet = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0xFF, 0x02, 0x1B, 0x03],
+        );
+        assert!(state.is_crash_event(&matching_packet));
+
+        let non_matching_packet = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0xFF, 0x02, 0x1B, 0x04],
+        );
+        assert!(!state.is_crash_event(&non_matching_packet));
+
+        let short_packet = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0xFF, 0x01, 0x1B],
+        );
+        assert!(!state.is_crash_event(&short_packet));
+
+        let non_vendor_event = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0x01, 0x02, 0x1B, 0x03],
+        );
+        assert!(!state.is_crash_event(&non_vendor_event));
     }
 }
