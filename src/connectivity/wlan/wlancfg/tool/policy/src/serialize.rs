@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
-use fidl_fuchsia_wlan_policy as wlan_policy;
-use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
+use anyhow::{Error, format_err};
+use flex_fuchsia_wlan_policy as wlan_policy;
+use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

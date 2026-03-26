@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use ::fidl as _;
+use anyhow::{Error, format_err};
 use eui48::MacAddress;
-use fidl::endpoints::create_proxy;
-use futures::future::LocalBoxFuture;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_net as net;
+use flex_fuchsia_wlan_policy as wlan_policy;
+use flex_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated;
 use futures::TryStreamExt;
-use {
-    fidl_fuchsia_wlan_policy as wlan_policy,
-    fidl_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated,
-};
+use futures::future::LocalBoxFuture;
 
 pub mod opts;
 pub mod serialize;
@@ -19,17 +19,17 @@ pub mod serialize;
 
 /// Returns the SSID and security type of a network identifier as strings.
 fn extract_network_id(
-    network_id: Option<fidl_fuchsia_wlan_policy::NetworkIdentifier>,
+    network_id: Option<wlan_policy::NetworkIdentifier>,
 ) -> Result<(String, String), Error> {
     match network_id {
         Some(id) => {
             let ssid = std::string::String::from_utf8(id.ssid).unwrap();
             let security_type = match id.type_ {
-                fidl_fuchsia_wlan_policy::SecurityType::None => "",
-                fidl_fuchsia_wlan_policy::SecurityType::Wep => "wep",
-                fidl_fuchsia_wlan_policy::SecurityType::Wpa => "wpa",
-                fidl_fuchsia_wlan_policy::SecurityType::Wpa2 => "wpa2",
-                fidl_fuchsia_wlan_policy::SecurityType::Wpa3 => "wpa3",
+                wlan_policy::SecurityType::None => "",
+                wlan_policy::SecurityType::Wep => "wep",
+                wlan_policy::SecurityType::Wpa => "wpa",
+                wlan_policy::SecurityType::Wpa2 => "wpa2",
+                wlan_policy::SecurityType::Wpa3 => "wpa3",
             };
             return Ok((ssid, security_type.to_string()));
         }
@@ -158,17 +158,17 @@ fn handle_request_status(status: wlan_policy::RequestStatus) -> Result<(), Error
 /// epitaph if another component already holds a controller.  This macro wraps proxy API calls
 /// and provides context to the caller.
 async fn run_proxy_command<'a, T>(
-    fut: LocalBoxFuture<'a, Result<T, fidl::Error>>,
+    fut: LocalBoxFuture<'a, Result<T, ::fidl::Error>>,
 ) -> Result<T, Error> {
     fut.await.map_err(|e| {
         match e {
-            fidl::Error::ClientChannelClosed{ .. } => format_err!(
+            ::fidl::Error::ClientChannelClosed { .. } => format_err!(
                 "Failed to obtain a WLAN policy controller. Your command was not executed.\n\n\
                 Help: Only one component may hold a policy controller at once. You can try killing\n\
                 other holders with:\n\
                 * ffx component destroy /core/session-manager/session:session\n"
             ),
-            e => format_err!("{}", e)
+            e => format_err!("{}", e),
         }
     })
 }
@@ -195,11 +195,15 @@ pub async fn handle_connect(
         if saved_networks.len() == 1 {
             saved_networks.pop().unwrap().id.unwrap()
         } else if saved_networks.is_empty() {
-            return Err(format_err!("Failed to find a saved network with the provided name. Please check that the name is correct or make sure the network with the provided name is saved."));
+            return Err(format_err!(
+                "Failed to find a saved network with the provided name. Please check that the name is correct or make sure the network with the provided name is saved."
+            ));
         // If there are more than one matching network, do not assume which one to use and
         // ask the caller to specify.
         } else {
-            return Err(format_err!("Multiple saved networks were found matching the provided name, please specify the security type of the network to connect to."));
+            return Err(format_err!(
+                "Multiple saved networks were found matching the provided name, please specify the security type of the network to connect to."
+            ));
         }
     };
 
@@ -260,7 +264,8 @@ pub async fn handle_connect(
 pub async fn handle_get_saved_networks(
     client_controller: &wlan_policy::ClientControllerProxy,
 ) -> Result<Vec<wlan_policy::NetworkConfig>, Error> {
-    let (client_proxy, server_end) = create_proxy::<wlan_policy::NetworkConfigIteratorMarker>();
+    let (client_proxy, server_end) =
+        client_controller.domain().create_proxy::<wlan_policy::NetworkConfigIteratorMarker>();
     let fut = async { client_controller.get_saved_networks(server_end) };
     run_proxy_command(Box::pin(fut)).await?;
 
@@ -407,7 +412,9 @@ pub async fn handle_remove_network(
         if matching_networks.len() == 1 {
             matching_networks.pop().unwrap()
         } else if matching_networks.is_empty() {
-            return Err(format_err!("Failed to find a saved network with the provided arguments. Please check that the arguments are correct if there should be one saved."));
+            return Err(format_err!(
+                "Failed to find a saved network with the provided arguments. Please check that the arguments are correct if there should be one saved."
+            ));
         // If there are more than one matching network, do not assume which one to use and
         // ask the caller to specify.
         } else {
@@ -517,7 +524,8 @@ async fn save_network(
 pub async fn handle_scan(
     client_controller: wlan_policy::ClientControllerProxy,
 ) -> Result<Vec<wlan_policy::ScanResult>, Error> {
-    let (client_proxy, server_end) = create_proxy::<wlan_policy::ScanResultIteratorMarker>();
+    let (client_proxy, server_end) =
+        client_controller.domain().create_proxy::<wlan_policy::ScanResultIteratorMarker>();
     let fut = async { client_controller.scan_for_networks(server_end) };
     run_proxy_command(Box::pin(fut)).await?;
 
@@ -702,7 +710,7 @@ pub async fn handle_suggest_ap_mac(
     configurator: wlan_deprecated::DeprecatedConfiguratorProxy,
     mac: MacAddress,
 ) -> Result<(), Error> {
-    let mac = fidl_fuchsia_net::MacAddress { octets: mac.to_array() };
+    let mac = net::MacAddress { octets: mac.to_array() };
     let result = configurator.suggest_access_point_mac_address(&mac).await?;
     result.map_err(|e| format_err!("suggesting MAC failed: {:?}", e))
 }
@@ -901,7 +909,7 @@ mod tests {
     }
 
     /// Creates a NetworkIdentifier for use in tests.
-    fn create_network_id(ssid: &str) -> fidl_fuchsia_wlan_policy::NetworkIdentifier {
+    fn create_network_id(ssid: &str) -> wlan_policy::NetworkIdentifier {
         wlan_policy::NetworkIdentifier {
             ssid: ssid.as_bytes().to_vec(),
             type_: wlan_policy::SecurityType::Wpa2,
@@ -909,7 +917,7 @@ mod tests {
     }
 
     /// Creates a NetworkConfig for use in tests.
-    fn create_network_config(ssid: &str) -> fidl_fuchsia_wlan_policy::NetworkConfig {
+    fn create_network_config(ssid: &str) -> wlan_policy::NetworkConfig {
         wlan_policy::NetworkConfig {
             id: Some(create_network_id(ssid)),
             credential: Some(create_password(TEST_PASSWORD)),
@@ -917,7 +925,7 @@ mod tests {
         }
     }
 
-    fn create_password(val: &str) -> fidl_fuchsia_wlan_policy::Credential {
+    fn create_password(val: &str) -> wlan_policy::Credential {
         wlan_policy::Credential::Password(val.as_bytes().to_vec())
     }
 
@@ -925,7 +933,7 @@ mod tests {
     fn create_network_config_with_security(
         ssid: &str,
         security: wlan_policy::SecurityType,
-    ) -> fidl_fuchsia_wlan_policy::NetworkConfig {
+    ) -> wlan_policy::NetworkConfig {
         let id = wlan_policy::NetworkIdentifier { ssid: ssid.as_bytes().to_vec(), type_: security };
         wlan_policy::NetworkConfig { id: Some(id), credential: None, ..Default::default() }
     }
@@ -1982,7 +1990,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut configurator_stream.next()),
             Poll::Ready(Some(Ok(wlan_deprecated::DeprecatedConfiguratorRequest::SuggestAccessPointMacAddress {
-                mac: fidl_fuchsia_net::MacAddress { octets: [0, 1, 2, 3, 4, 5] }, responder
+                mac: net::MacAddress { octets: [0, 1, 2, 3, 4, 5] }, responder
             }))) => {
                 assert!(responder.send(Ok(())).is_ok());
             }
@@ -2006,7 +2014,7 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut configurator_stream.next()),
             Poll::Ready(Some(Ok(wlan_deprecated::DeprecatedConfiguratorRequest::SuggestAccessPointMacAddress {
-                mac: fidl_fuchsia_net::MacAddress { octets: [0, 1, 2, 3, 4, 5] }, responder
+                mac: net::MacAddress { octets: [0, 1, 2, 3, 4, 5] }, responder
             }))) => {
                 assert!(responder.send(Err(wlan_deprecated::SuggestMacAddressError::InvalidArguments)).is_ok());
             }

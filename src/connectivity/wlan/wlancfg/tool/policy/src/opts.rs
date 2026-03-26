@@ -5,7 +5,8 @@
 use anyhow::{Error, format_err};
 use clap::{Parser, Subcommand};
 use eui48::MacAddress;
-use {fidl_fuchsia_wlan_common as wlan_common, fidl_fuchsia_wlan_policy as wlan_policy};
+use flex_fuchsia_wlan_common as wlan_common;
+use flex_fuchsia_wlan_policy as wlan_policy;
 
 #[derive(PartialEq, Copy, Clone, Debug, clap::ValueEnum)]
 pub enum RoleArg {
