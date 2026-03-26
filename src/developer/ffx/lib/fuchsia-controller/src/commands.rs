@@ -471,7 +471,7 @@ impl LibraryCommand {
                 };
                 // Any handle that has a peer can be converted into an EventPair.
                 let ep = handle.as_unowned::<fdomain_client::EventPair>();
-                let status = match ep.signal_peer(set_mask, clear_mask).await {
+                let status = match ep.signal_peer(clear_mask, set_mask).await {
                     Ok(_) => FcTransportStatus::OK,
                     Err(e) => {
                         lib.write_fdomain_err(&e);

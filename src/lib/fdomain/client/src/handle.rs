@@ -195,8 +195,8 @@ pub trait Peered: HandleBased {
     /// Assert and deassert signals on this handle's peer.
     fn signal_peer(
         &self,
-        set: fidl::Signals,
         clear: fidl::Signals,
+        set: fidl::Signals,
     ) -> impl Future<Output = Result<(), Error>> {
         let handle = self.as_handle_ref().proto();
         let client = self.as_handle_ref().client();
