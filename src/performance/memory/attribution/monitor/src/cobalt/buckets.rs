@@ -29,7 +29,7 @@ const UPTIME_LEVEL_INDEX: &[(zx::BootDuration, TimeSinceBoot)] = &[
 fn get_uptime_event_code(capture_time: zx::BootInstant) -> TimeSinceBoot {
     let uptime = zx::Duration::from_nanos(capture_time.into_nanos());
     UPTIME_LEVEL_INDEX
-        .into_iter()
+        .iter()
         .find(|&&(time, _)| uptime < time)
         .map(|(_, code)| *code)
         .unwrap_or(TimeSinceBoot::UpSixDays)

@@ -226,7 +226,7 @@ impl Digest {
                                                 committed_size: vmo.committed_size,
                                                 principals: vmo
                                                     .principals
-                                                    .into_iter()
+                                                    .iter()
                                                     .map(|&name| name.to_owned())
                                                     .collect(),
                                             });
@@ -273,7 +273,7 @@ impl Digest {
                                 committed_size: vmo.committed_size,
                                 principals: vmo
                                     .principals
-                                    .into_iter()
+                                    .iter()
                                     .map(|&name| name.to_owned())
                                     .collect(),
                             })
