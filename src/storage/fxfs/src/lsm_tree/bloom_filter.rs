@@ -216,7 +216,7 @@ impl<V: FuzzyHash> BloomFilterWriter<V> {
     // invalid bloom filter.
     #[cfg(test)]
     pub(crate) fn clear(&mut self) {
-        self.data.clear();
+        self.data.fill(false);
     }
 }
 
