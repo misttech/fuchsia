@@ -4036,11 +4036,20 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_fstat_tmp_file() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Create the file that will be used to stat.
-            let file_path = "data/testfile.txt";
-            let _file_handle =
-                current_task.open_file(locked, file_path.into(), OpenFlags::RDONLY).unwrap();
+            let file_path = "testfile.txt";
+            let _file_handle = current_task
+                .open_file_at(
+                    locked,
+                    FdNumber::AT_FDCWD,
+                    file_path.into(),
+                    OpenFlags::RDWR | OpenFlags::CREAT,
+                    FileMode::ALLOW_ALL,
+                    ResolveFlags::empty(),
+                    AccessCheck::default(),
+                )
+                .unwrap();
 
             // Write the path to user memory.
             let path_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
@@ -4059,9 +4068,17 @@ mod tests {
             assert_eq!(sys_statfs(locked, current_task, user_path, user_stat.into()), Ok(()));
 
             let returned_stat = current_task.read_object(user_stat).expect("failed to read struct");
-            assert_eq!(
-                returned_stat.as_bytes(),
-                default_statfs(u32::from_be_bytes(*b"f.io")).as_bytes()
+            let expected_stat = starnix_uapi::statfs {
+                f_blocks: 0x100000000,
+                f_bavail: 0x100000000,
+                f_bfree: 0x100000000,
+                ..default_statfs(starnix_uapi::TMPFS_MAGIC)
+            };
+            assert!(
+                returned_stat.as_bytes() == expected_stat.as_bytes(),
+                "Expected {:?}, got {:?}",
+                expected_stat,
+                returned_stat
             );
         })
         .await;
@@ -4112,11 +4129,20 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_rename_noreplace() {
-        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Create the file that will be renamed.
-            let old_user_path = "data/testfile.txt";
-            let _old_file_handle =
-                current_task.open_file(locked, old_user_path.into(), OpenFlags::RDONLY).unwrap();
+            let old_user_path = "testfile.txt";
+            let _old_file_handle = current_task
+                .open_file_at(
+                    locked,
+                    FdNumber::AT_FDCWD,
+                    old_user_path.into(),
+                    OpenFlags::RDWR | OpenFlags::CREAT,
+                    FileMode::ALLOW_ALL,
+                    ResolveFlags::empty(),
+                    AccessCheck::default(),
+                )
+                .unwrap();
 
             // Write the path to user memory.
             let old_path_addr =
@@ -4126,9 +4152,18 @@ mod tests {
                 .expect("failed to clear struct");
 
             // Create a second file that we will attempt to rename to.
-            let new_user_path = "data/testfile2.txt";
-            let _new_file_handle =
-                current_task.open_file(locked, new_user_path.into(), OpenFlags::RDONLY).unwrap();
+            let new_user_path = "testfile2.txt";
+            let _new_file_handle = current_task
+                .open_file_at(
+                    locked,
+                    FdNumber::AT_FDCWD,
+                    new_user_path.into(),
+                    OpenFlags::RDWR | OpenFlags::CREAT,
+                    FileMode::ALLOW_ALL,
+                    ResolveFlags::empty(),
+                    AccessCheck::default(),
+                )
+                .unwrap();
 
             // Write the path to user memory.
             let new_path_addr =
