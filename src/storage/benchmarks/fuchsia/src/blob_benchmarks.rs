@@ -223,7 +223,6 @@ impl<T: BlobFilesystem> Benchmark<T> for WriteBlob {
             let total_duration = OperationTimer::start();
             fs.write_blob(&blob).await;
             durations.push(total_duration.stop());
-            fs.remove_blob(&blob.name).await;
         }
         durations
     }
