@@ -85,4 +85,4 @@ specified in size limits as:
 [config-schema]: /src/lib/assembly/config_schema/src/product_config.rs
 [configure-product]: /src/lib/assembly/platform_configuration/src/lib.rs
 [gn-doc]: structured_config.md#define--package-configuration-values-using-gn
-[core-limits]: /products/common/core_size_limits.gni
+[core-limits]: /products/core/size_checker.json

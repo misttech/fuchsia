@@ -26,5 +26,5 @@
 # This product configuration is "core" with size limits defined. The limits can
 # be enforced by running size_checker.
 
-import("//products/common/core_size_limits.gni")
 import("//products/core.gni")
+enable_core_size_check = true
