@@ -40,20 +40,58 @@ where
     I: structured_ui::Interface,
 {
     log::debug!("mint_new_access_token");
-    let credentials = Credentials::load_or_new().await;
-
-    match auth::new_access_token(&credentials.gcs_credentials()).await {
-        Ok(a) => Ok(a),
-        Err(GcsError::NeedNewRefreshToken) => {
-            update_refresh_token(auth_flow, ui).await.context("Updating refresh token")?;
-            // Make one additional attempt now that the refresh token
-            // is updated.
-            let credentials = credentials::Credentials::load_or_new().await;
-            auth::new_access_token(&credentials.gcs_credentials())
-                .await
-                .map_err(|e| AuthError::AccessToken(e).into())
+    match auth_flow {
+        AuthFlowChoice::Gcloud => {
+            // Shell out to gcloud to get an access token.
+            // This approach natively supports headless environments
+            // and does not require maintaining our own OAuth tokens.
+            let output = std::process::Command::new("gcloud")
+                .args(["auth", "print-access-token"])
+                .output()
+                .map_err(AuthError::IoError)?;
+            if !output.status.success() {
+                return Err(AuthError::AccessToken(GcsError::ExecForAccessFailed(
+                    "gcloud".into(),
+                    output.status,
+                    format!(
+                        "{}\nHint: You may need to run `gcloud auth login` to authenticate.",
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                ))
+                .into());
+            }
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
         }
-        Err(e) => Err(AuthError::AccessToken(e).into()),
+        AuthFlowChoice::Exec(exec) => {
+            let output = std::process::Command::new(exec).output().map_err(AuthError::IoError)?;
+            if !output.status.success() {
+                return Err(AuthError::AccessToken(GcsError::ExecForAccessFailed(
+                    exec.into(),
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).to_string(),
+                ))
+                .into());
+            }
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        }
+        AuthFlowChoice::Default | AuthFlowChoice::Pkce | AuthFlowChoice::Device => {
+            let credentials = Credentials::load_or_new().await;
+
+            match auth::new_access_token(&credentials.gcs_credentials()).await {
+                Ok(a) => Ok(a),
+                Err(GcsError::NeedNewRefreshToken) => {
+                    update_refresh_token(auth_flow, ui).await.context("Updating refresh token")?;
+                    // Make one additional attempt now that the refresh token
+                    // is updated.
+                    let credentials = credentials::Credentials::load_or_new().await;
+                    auth::new_access_token(&credentials.gcs_credentials())
+                        .await
+                        .map_err(|e| AuthError::AccessToken(e).into())
+                }
+                Err(e) => Err(AuthError::AccessToken(e).into()),
+            }
+        }
+        AuthFlowChoice::NoAuth => Err(AuthError::AccessToken(GcsError::AuthRequired).into()),
     }
 }
 
@@ -62,7 +100,7 @@ where
     I: structured_ui::Interface,
 {
     let refresh_token = match auth_flow {
-        AuthFlowChoice::Default | AuthFlowChoice::Pkce => {
+        AuthFlowChoice::Pkce => {
             auth::pkce::new_refresh_token(ui).await.map_err(|e| AuthError::UpdateRefreshToken(e))
         }
         _ => Err(AuthError::AuthFlow),

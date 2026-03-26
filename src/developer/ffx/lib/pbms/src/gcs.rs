@@ -72,6 +72,29 @@ where
 {
     log::debug!("handle_new_access_token");
     let access_token = match auth_flow {
+        AuthFlowChoice::Gcloud => {
+            let output = std::process::Command::new("gcloud")
+                .args(["auth", "print-access-token"])
+                .output()
+                .with_context(|| "Executing gcloud auth print-access-token")?;
+            if !output.status.success() {
+                log::error!(
+                    "The gcloud process to get an access token returned {} with stderr:\n{}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                return Err(GcsError::ExecForAccessFailed(
+                    "gcloud".into(),
+                    output.status,
+                    format!(
+                        "{}\nHint: You may need to run `gcloud auth login` to authenticate.",
+                        String::from_utf8_lossy(&output.stderr)
+                    ),
+                )
+                .into());
+            }
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
         AuthFlowChoice::Default | AuthFlowChoice::Pkce | AuthFlowChoice::Device => {
             let credentials = credentials::Credentials::load_or_new().await;
             let access_token = match auth::new_access_token(&credentials.gcs_credentials()).await {
@@ -223,8 +246,10 @@ where
         AuthFlowChoice::Device => {
             auth::device::new_refresh_token(ui).await.context("get device refresh token")?
         }
-        AuthFlowChoice::Exec(_) => {
-            bail!("There's no refresh token used with an executable for auth.");
+        AuthFlowChoice::Exec(_) | AuthFlowChoice::Gcloud => {
+            // gcloud and Exec flows manage their own credentials.
+            // They do not write or use the ~/.boto file managed by this library.
+            bail!("There's no refresh token used with gcloud or an executable for auth.");
         }
         AuthFlowChoice::NoAuth => {
             bail!("The refresh token should not be updated when no-auth is used.");

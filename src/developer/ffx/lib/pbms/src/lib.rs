@@ -49,6 +49,10 @@ pub enum AuthFlowChoice {
     Device,
     Exec(PathBuf),
     Pkce,
+    /// Authenticate using `gcloud auth print-access-token`.
+    /// This natively supports headless environments (e.g., when a
+    /// developer is connected via SSH).
+    Gcloud,
 }
 
 const PRODUCT_BUNDLE_PATH_KEY: &str = "product.path";
@@ -67,13 +71,14 @@ impl FromStr for AuthFlowChoice {
             "default" => Ok(AuthFlowChoice::Default),
             "device-experimental" => Ok(AuthFlowChoice::Device),
             "pkce" => Ok(AuthFlowChoice::Pkce),
+            "gcloud" => Ok(AuthFlowChoice::Gcloud),
             exec => {
                 let path = Path::new(exec);
                 if path.is_file() {
                     Ok(AuthFlowChoice::Exec(path.to_path_buf()))
                 } else {
                     Err("Unknown auth flow choice. Use one of \
-                        device-experimental, pkce, default, a path to an \
+                        device-experimental, pkce, default, gcloud, a path to an \
                         executable which prints an access token to stdout, or \
                         no-auth to enforce that no auth flow will be used."
                         .to_string())
