@@ -60,13 +60,19 @@ class FakeSerialDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::Dev
     MaybeRespondToWrite();
   }
 
+  void set_info_result(zx::result<fuchsia_hardware_serial::wire::SerialPortInfo> result) {
+    info_result_ = result;
+  }
+
+  void set_enable_result(zx::result<> result) { enable_result_ = result; }
+
   // fuchsia_hardware_serialimpl::Device FIDL implementation.
   void GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& completer) override {
-    fuchsia_hardware_serial::wire::SerialPortInfo info = {
-        .serial_class = fuchsia_hardware_serial::Class::kBluetoothHci,
-    };
-
-    completer.buffer(arena).ReplySuccess(info);
+    if (info_result_.is_error()) {
+      completer.buffer(arena).ReplyError(info_result_.error_value());
+      return;
+    }
+    completer.buffer(arena).ReplySuccess(info_result_.value());
   }
   void Config(ConfigRequestView request, fdf::Arena& arena,
               ConfigCompleter::Sync& completer) override {
@@ -75,6 +81,10 @@ class FakeSerialDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::Dev
 
   void Enable(EnableRequestView request, fdf::Arena& arena,
               EnableCompleter::Sync& completer) override {
+    if (enable_result_.is_error()) {
+      completer.buffer(arena).ReplyError(enable_result_.error_value());
+      return;
+    }
     enabled_ = request->enable;
     completer.buffer(arena).ReplySuccess();
   }
@@ -157,6 +167,12 @@ class FakeSerialDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::Dev
   std::queue<std::vector<uint8_t>> read_rsp_queue_;
   std::vector<std::vector<uint8_t>> writes_;
 
+  zx::result<fuchsia_hardware_serial::wire::SerialPortInfo> info_result_ =
+      zx::ok(fuchsia_hardware_serial::wire::SerialPortInfo{
+          .serial_class = fuchsia_hardware_serial::Class::kBluetoothHci,
+      });
+  zx::result<> enable_result_ = zx::ok();
+
   fdf::ServerBindingGroup<fuchsia_hardware_serialimpl::Device> binding_group_;
 };
 
@@ -181,35 +197,70 @@ class BtTransportUartTest : public ::testing::Test {
  public:
   BtTransportUartTest() = default;
 
-  void SetUp() override {
+  void SetUp() override {}
+
+  zx::result<> StartDriver() {
     zx::result<> result =
         driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
           bt_transport_uart_config::Config config;
           config.enable_suspend() = false;
           args.config(config.ToVmo());
         });
-    ASSERT_EQ(ZX_OK, result.status_value());
+    if (result.is_error()) {
+      return result;
+    }
     EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
         [](FixtureBasedTestEnvironment& env) { return env.serial_device_.enabled(); }));
+    driver_started_ = true;
+    return result;
   }
 
   void TearDown() override {
-    // Only PrepareStop() will be called in driver_test().StopDriver(), Stop() won't be called.
-    zx::result prepare_stop_result = driver_test().StopDriver();
-    EXPECT_EQ(ZX_OK, prepare_stop_result.status_value());
+    if (driver_started_) {
+      // Only PrepareStop() will be called in driver_test().StopDriver(), Stop() won't be called.
+      zx::result prepare_stop_result = driver_test().StopDriver();
+      EXPECT_EQ(ZX_OK, prepare_stop_result.status_value());
 
-    EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
-        [](FixtureBasedTestEnvironment& env) { return env.serial_device_.canceled(); }));
+      EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
+          [](FixtureBasedTestEnvironment& env) { return env.serial_device_.canceled(); }));
+    }
   }
 
   fdf_testing::BackgroundDriverTest<BackgroundFixtureConfig>& driver_test() { return driver_test_; }
 
  protected:
   fdf_testing::BackgroundDriverTest<BackgroundFixtureConfig> driver_test_;
+  bool driver_started_ = false;
 
   // The FIDL client used in the test to call into dut Hci server.
   fidl::WireSyncClient<fhbt::Hci> hci_client_;
 };
+
+TEST_F(BtTransportUartTest, GetInfoError) {
+  driver_test().RunInEnvironmentTypeContext([](FixtureBasedTestEnvironment& env) {
+    env.serial_device_.set_info_result(zx::error(ZX_ERR_INTERNAL));
+  });
+  zx::result<> result = StartDriver();
+  EXPECT_EQ(ZX_ERR_INTERNAL, result.status_value());
+}
+
+TEST_F(BtTransportUartTest, WrongSerialClass) {
+  driver_test().RunInEnvironmentTypeContext([](FixtureBasedTestEnvironment& env) {
+    env.serial_device_.set_info_result(zx::ok(fuchsia_hardware_serial::wire::SerialPortInfo{
+        .serial_class = fuchsia_hardware_serial::Class::kGeneric,
+    }));
+  });
+  zx::result<> result = StartDriver();
+  EXPECT_EQ(ZX_ERR_INTERNAL, result.status_value());
+}
+
+TEST_F(BtTransportUartTest, EnableError) {
+  driver_test().RunInEnvironmentTypeContext([](FixtureBasedTestEnvironment& env) {
+    env.serial_device_.set_enable_result(zx::error(ZX_ERR_NOT_SUPPORTED));
+  });
+  zx::result<> result = StartDriver();
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, result.status_value());
+}
 
 class BtTransportUartHciTransportProtocolTest
     : public BtTransportUartTest,
@@ -219,6 +270,9 @@ class BtTransportUartHciTransportProtocolTest
  public:
   void SetUp() override {
     BtTransportUartTest::SetUp();
+
+    zx::result<> start_result = StartDriver();
+    ASSERT_EQ(ZX_OK, start_result.status_value());
 
     zx::result hci_transport_result = driver_test().Connect<fhbt::HciService::HciTransport>();
     ASSERT_EQ(ZX_OK, hci_transport_result.status_value());
@@ -1126,6 +1180,29 @@ TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveIsoPacketsIn2Parts) {
   for (uint8_t i = 0; i < kNumPackets; i++) {
     EXPECT_EQ(snoop_received_iso_packets()[i], kIsoBuffer);
   }
+}
+
+TEST_F(BtTransportUartTest, UnsupportedMethods) {
+  zx::result<> start_result = StartDriver();
+  ASSERT_EQ(ZX_OK, start_result.status_value());
+
+  zx::result serialimpl_result =
+      driver_test().Connect<fuchsia_hardware_serialimpl::Service::Device>();
+  ASSERT_EQ(ZX_OK, serialimpl_result.status_value());
+  fdf::WireSyncClient<fuchsia_hardware_serialimpl::Device> serialimpl_client(
+      std::move(serialimpl_result.value()));
+  fdf::Arena arena('TEST');
+
+  auto enable_result = serialimpl_client.buffer(arena)->Enable(true);
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, enable_result.value().error_value());
+
+  auto read_result = serialimpl_client.buffer(arena)->Read();
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, read_result.value().error_value());
+
+  std::vector<uint8_t> data = {0x01};
+  auto data_view = fidl::VectorView<uint8_t>::FromExternal(data);
+  auto write_result = serialimpl_client.buffer(arena)->Write(data_view);
+  EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, write_result.value().error_value());
 }
 
 }  // namespace
