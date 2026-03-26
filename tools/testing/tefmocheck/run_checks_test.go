@@ -198,3 +198,75 @@ func TestRunChecks(t *testing.T) {
 		})
 	}
 }
+
+type syntheticCheck struct {
+	baseCheck
+}
+
+func (c syntheticCheck) Check(*TestingOutputs) bool {
+	return true
+}
+
+func (c syntheticCheck) Name() string {
+	return "synthetic_check"
+}
+
+func (c syntheticCheck) EmitSyntheticTestCase() bool {
+	return true
+}
+
+func (c syntheticCheck) FailureReason() string {
+	return "synthetic failure"
+}
+
+func TestRunChecks_EmitSyntheticTestCase(t *testing.T) {
+	summary := runtests.TestSummary{
+		Tests: []runtests.TestDetails{
+			{
+				Name:   "passing_test",
+				Status: runtests.TestSuccess,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+			{
+				Name:   "failing_test",
+				Status: runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+		},
+	}
+	to := TestingOutputs{
+		TestSummary: &summary,
+	}
+	outputsDir := t.TempDir()
+	check := syntheticCheck{}
+
+	_, err := RunChecks([]FailureModeCheck{check}, &to, outputsDir)
+	if err != nil {
+		t.Fatalf("RunChecks() failed: %v", err)
+	}
+
+	// Passing test should have NO synthetic case.
+	if got := len(summary.Tests[0].Cases); got != 0 {
+		t.Errorf("summary.Tests[0].Cases length = %d, want 0", got)
+	}
+
+	// Failing test should have exactly ONE synthetic case.
+	if got := len(summary.Tests[1].Cases); got != 1 {
+		t.Errorf("summary.Tests[1].Cases length = %d, want 1", got)
+	} else {
+		tc := summary.Tests[1].Cases[0]
+		if tc.SuiteName != "tefmocheck" {
+			t.Errorf("TestCase.SuiteName = %q, want %q", tc.SuiteName, "tefmocheck")
+		}
+		if tc.CaseName != check.Name() {
+			t.Errorf("TestCase.CaseName = %q, want %q", tc.CaseName, check.Name())
+		}
+		if tc.FailReason != check.FailureReason() {
+			t.Errorf("TestCase.FailReason = %q, want %q", tc.FailReason, check.FailureReason())
+		}
+	}
+}

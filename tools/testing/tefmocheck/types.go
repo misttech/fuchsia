@@ -58,6 +58,9 @@ type FailureModeCheck interface {
 	IsInfraFailure() bool
 	// FailureReason is the human-readable error message.
 	FailureReason() string
+	// EmitSyntheticTestCase is true if the check should add a synthetic
+	// test case to every failed test.
+	EmitSyntheticTestCase() bool
 }
 
 // baseCheck provides default implementations of the FailureModeCheck interface.
@@ -95,4 +98,8 @@ func (c baseCheck) IsInfraFailure() bool {
 
 func (c baseCheck) FailureReason() string {
 	return ""
+}
+
+func (c baseCheck) EmitSyntheticTestCase() bool {
+	return false
 }

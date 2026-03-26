@@ -67,6 +67,8 @@ type stringInLogCheck struct {
 	AddTag bool
 	// InfraFailure is true if the check is related to infra.
 	InfraFailure bool
+	// If true, add a synthetic test case to every failed test.
+	emitSyntheticTestCase bool
 
 	swarmingResult *SwarmingRpcsTaskResult
 	testName       string
@@ -323,6 +325,10 @@ func (c *stringInLogCheck) FailureReason() string {
 	return c.line
 }
 
+func (c *stringInLogCheck) EmitSyntheticTestCase() bool {
+	return c.emitSyntheticTestCase
+}
+
 // StringInLogsChecks returns checks to detect bad strings in certain logs.
 func StringInLogsChecks() []FailureModeCheck {
 	ret := []FailureModeCheck{
@@ -450,8 +456,9 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			// LINT.IfChange(sysmem_allocation_timeout)
 			String: "timed out. Waiting for (connected) tokens",
 			// LINT.ThenChange(//src/sysmem/server/logical_buffer_collection.cc:sysmem_allocation_timeout)
-			Type:               syslogType,
-			SkipAllPassedTests: true,
+			Type:                  syslogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
 		},
 		&stringInLogCheck{
 			// LINT.IfChange

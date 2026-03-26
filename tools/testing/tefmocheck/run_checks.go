@@ -36,6 +36,29 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 		if failed := check.Check(to); !failed {
 			continue
 		}
+
+		// Some checks are difficult to attribute to a single test (e.g. syslogs and serial logs).
+		// However, we would still like the check's FailureReason to be associated with a top-level
+		// test's FailureReason.
+		// By emitting a synthetic test case for every failed test, we can attempt to attribute
+		// potential failures to specific failure modes in our tracking systems (e.g. ResultDB),
+		// making it easier to group and route failures.
+		// See https://fxbug.dev/488476740 for context.
+		if check.EmitSyntheticTestCase() && to.TestSummary != nil {
+			for i := range to.TestSummary.Tests {
+				test := &to.TestSummary.Tests[i]
+				if runtests.IsFailure(test.Status) {
+					test.Cases = append(test.Cases, runtests.TestCaseResult{
+						DisplayName: "tefmocheck: " + check.Name(),
+						SuiteName:   "tefmocheck",
+						CaseName:    check.Name(),
+						Status:      runtests.TestFailure,
+						FailReason:  check.FailureReason(),
+					})
+				}
+			}
+		}
+
 		testDetails := runtests.TestDetails{
 			Name:                 path.Join(checkTestNamePrefix, check.Name()),
 			IsTestingFailureMode: true,
