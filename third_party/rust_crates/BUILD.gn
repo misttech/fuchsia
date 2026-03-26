@@ -829,7 +829,7 @@ group("regex-lite") {
 }
 
 group("regex-syntax") {
-  public_deps = [ ":regex-syntax-v0_8_9" ]
+  public_deps = [ ":regex-syntax-v0_8_10" ]
 }
 
 group("ring") {
@@ -13662,7 +13662,7 @@ rustc_library("proptest-v1_7_0") {
   deps += [ ":rand-v0_9_2" ]
   deps += [ ":rand_chacha-v0_9_0" ]
   deps += [ ":rand_xorshift-v0_4_0" ]
-  deps += [ ":regex-syntax-v0_8_9" ]
+  deps += [ ":regex-syntax-v0_8_10" ]
   deps += [ ":rusty-fork-v0_3_0" ]
   deps += [ ":tempfile-v3_2_0" ]
   deps += [ ":unarray-v0_1_4" ]
@@ -15160,19 +15160,20 @@ rustc_library("regex-syntax-v0_6_29") {
   applicable_licenses = [ ":regex-syntax-v0_6_29.license" ]
 }
 
-license("regex-syntax-v0_8_9.license") {
+license("regex-syntax-v0_8_10.license") {
   public_package_name = "regex_syntax"
   license_files = [
-    "//third_party/rust_crates/vendor/regex-syntax-0.8.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/regex-syntax-0.8.9/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/regex-syntax-0.8.9/src/unicode_tables/LICENSE-UNICODE",
+    "//third_party/rust_crates/vendor/regex-syntax-0.8.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/regex-syntax-0.8.10/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/regex-syntax-0.8.10/src/unicode_tables/LICENSE-UNICODE",
   ]
 }
 
-rustc_library("regex-syntax-v0_8_9") {
+rustc_library("regex-syntax-v0_8_10") {
   crate_name = "regex_syntax"
-  source_root = "//third_party/rust_crates/vendor/regex-syntax-0.8.9/src/lib.rs"
-  output_name = "regex_syntax-59e61df3efb144c9"
+  source_root =
+      "//third_party/rust_crates/vendor/regex-syntax-0.8.10/src/lib.rs"
+  output_name = "regex_syntax-4ea927ac7ef00c58"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -15184,8 +15185,8 @@ rustc_library("regex-syntax-v0_8_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=59e61df3efb144c9",
-    "-Cextra-filename=-59e61df3efb144c9",
+    "-Cmetadata=4ea927ac7ef00c58",
+    "-Cextra-filename=-4ea927ac7ef00c58",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"unicode\"",
@@ -15200,7 +15201,7 @@ rustc_library("regex-syntax-v0_8_9") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":regex-syntax-v0_8_9.license" ]
+  applicable_licenses = [ ":regex-syntax-v0_8_10.license" ]
 }
 
 license("remain-v0_2_15.license") {
