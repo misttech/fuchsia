@@ -179,6 +179,10 @@ struct ThreadBlockSize {
 //    - Traditional implementations have used it just like the first two words
 //      past $tp on x86: a $tp self-pointer (though nothing uses that); and the
 //      DTV (a private implementation detail).
+//  * align-pad: Padding to ensure $tp or any other field in the TCB is aligned
+//    - This is for ensuring fields are maximally aligned to the largest TLSn
+//      p_align.
+//
 // TCB is used to refer to the whole Thread object and also sometimes to
 // distinguish FC and psABI from the rest of the Thread object.  A future
 // implementation might have clearer distinctions in the data structures.
@@ -194,11 +198,11 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   static_assert(TlsTraits::kTpSelfPointer);
   static_assert(TlsTraits::kTlsLocalExecOffset == 0);
 
-  // *----------------------------------------------------------------------*
-  // |     unused    | TLSn | ... | TLS1 | $tp . (DTV) . FC . TCB | (align) |
-  // *---------------^------^-----^------^-----^-------^----^-----*---------*
-  // |               Sn     S2    S1    $tp=T  +8      +16  +32             |
-  // *----------------------------------------------------------------------*
+  // *--------------------------------------------------------------------------*
+  // |     unused    | TLSn | ... | TLS1 | $tp . (DTV) . FC . TCB | (align-pad) |
+  // *---------------^------^-----^------^-----^-------^----^-----*-------------*
+  // |               Sn     S2    S1    $tp=T  +8      +16  +32                 |
+  // *--------------------------------------------------------------------------*
   // Note: T == $tp
   //
   // TLS offsets are negative, but the layout size is computed ascending from
@@ -253,12 +257,14 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // This style of layout is used on all machines other than x86.
   // The kTlsLocalExecOffset value differs by machine.
   //
-  // *----------------------------------------------------------------------*
-  // |  (align) | TCB, FC | [psABI] | TLS1 | ... | TLSn |     unused        |
-  // *----------^---------^---------^------^-----^------^-------------------*
-  // |          T        $tp        S1     S2    Sn     (Sn+p_memsz)        |
-  // *----------------------------------------------------------------------*
-  // Note: T == $tp + kTlsLocalExecOffset - sizeof(Thread)
+  // *--------------------------------------------------------------------------*
+  // |  (align-pad) | TCB, FC | [psABI] | TLS1 | ... | TLSn |     unused        |
+  // *--------------^---------^---------^------^-----^------^-------------------*
+  // |              T        $tp        S1     S2    Sn     (Sn+p_memsz)        |
+  // *--------------------------------------------------------------------------*
+  // Note: $tp - T == sizeof(Thread) - kTlsLocalExecOffset
+  //         and
+  //       $tp == AlignUp(sizeof(Thread) - kTlsLocalExecOffset, max_p_align)
   //
   // TLS offsets are positive, so the TCB (Thread) will sit just below $tp.
   // Any ABI-specified reserved area (ABI) is the tail of the layout of
@@ -279,33 +285,66 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // Note also that the 16 bytes just _below_ $tp are reserved by the Fuchsia
   // Compiler ABI for the two <zircon/tls.h> slots.
   //
-  // If the TLS layout's required alignment is less than alignof(Thread), the
-  // allocation will be aligned for Thread.  Otherwise, the allocation will
-  // be aligned for the TLS layout and may include unused padding bytes at
-  // the start so the TCB sits at exactly `$tp - sizeof(Thread)` while still
-  // meeting the TLS alignment requirement for $tp.
-  //
   // Since the allocation will be in whole pages, there will often be some
   // unused space still available off the end of the last TLSn.  This layout
-  // makes it easy to just iteratively do another static_tls_layout.Assign to
+  // makes it easy to just iteratively do another static_tls_layout.  Assign to
   // see if a correctly-placed new block fits in the space left over.  There
   // may also be space at the beginning of the block if the TLS alignment is
   // greater than alignof(Thread), which will not be recovered for reuse.
-  constexpr size_t kThreadToTp =  // Size from Thread* (T) to $tp.
-      sizeof(Thread) - TlsTraits::kTlsLocalExecOffset;
-  const size_t aligned_thread_size = static_tls_layout.Align(  //
-      kThreadToTp, alignof(Thread));
-  auto tls_layout_size = [static_tls_layout]() -> size_t {
-    if (static_tls_layout.size_bytes() == 0) {
-      return 0;
-    }
-    // The TLS layout size includes the reserved area, already part of Thread.
-    assert(static_tls_layout.size_bytes() > TlsTraits::kTlsLocalExecOffset);
-    return static_tls_layout.size_bytes() - TlsTraits::kTlsLocalExecOffset;
-  };
+
+  // The actual size of the ThreadBlockSize must fit two components.
+  //
+  // First, the TCB, which is just the implementation-specific Thread object.
+  //
+  // Recall the psABI reserved space is counted as the beginning of the overall
+  // TLS area for size and alignment purposes, though it's not part of any TLSn
+  // segment. So the TCB size can be reduced by this amount.
+  constexpr size_t tcb_allocation_size = sizeof(Thread) - TlsTraits::kTlsLocalExecOffset;
+  static_assert(offsetof(Thread, abi.stack_guard) - tcb_allocation_size ==
+                ZX_TLS_STACK_GUARD_OFFSET);
+
+  // To guarantee $tp remains maximally aligned to the largest TLSn alignment,
+  // round up the TCB allocation size to this alignment such that $tp can
+  // always remain maximally aligned. Due to rounding, it's possible that size
+  // taken out of the `tcb_allocation_size` could be readded, potentially causing
+  // `tcb_allocation_size` to either be `sizeof(Thread)` or larger than
+  // `sizeof(Thread)`. If it's larger, then alignment padding will appear before
+  // the TCB portion (shown in the diagram above).
+  //
+  // Thus, it's $tp that is aligned to the maximum alignment of any TLS segment,
+  // not the TLS1 segment. (When TLS1 is from the executable, the psABI + alignment
+  // gap between $tp and TLS1 is counted in the static link-time LE offset
+  // calculations for TLS1 even though it's not part of TLS1's own size.)
+  //
+  // If the TLS layout's required alignment is less than `alignof(Thread)`, the
+  // allocation will be aligned for Thread but this still meets alignment
+  // requirements.
+  const size_t aligned_tcb_allocation_size =
+      static_tls_layout.Align(tcb_allocation_size, alignof(Thread));
+
+  // Second, the TLS, which contains all the actual thread-specific data as well as any
+  // required ABI offsets. When kTlsLocalExecOffset is non-zero, it straddles the
+  // TCB, but this was accounted for earlier by removing it from the `tcb_allocation_size`.
+  const size_t tls_size = static_tls_layout.size_bytes();
+
+  // The TLS layout size is missing the TLS local exec offset. If there is no TLS
+  // at all, then the `tls_size` will be zero. Otherwise, kTlsLocalExecOffset
+  // is included in the size.
+  assert(tls_size == 0 || tls_size > TlsTraits::kTlsLocalExecOffset);
+
+  const size_t block_size = aligned_tcb_allocation_size + tls_size;
+
+  // Check fundamental invariants: whatever block size we use, it must always
+  // minimally be able to fit the whole Thread object (excluding the straddle),
+  // and the TLS.
+  assert(block_size >= sizeof(Thread) - TlsTraits::kTlsLocalExecOffset + tls_size);
+
   return {
-      .size{aligned_thread_size + tls_layout_size()},
-      .tp_offset = aligned_thread_size,
+      .size{block_size},  // This is aligned up to the nearest page size.
+
+      // The location of $tp relative to the start of this thread block is simply
+      // the TCB allocation size, which we ensured as maximally aligned earlier.
+      .tp_offset = aligned_tcb_allocation_size,
   };
 }
 

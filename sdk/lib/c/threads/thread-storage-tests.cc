@@ -10,6 +10,7 @@
 #include <lib/zx/process.h>
 #include <lib/zx/vmar.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <map>
@@ -182,6 +183,8 @@ void CheckThread(Thread* thread) {
   EXPECT_EQ(thread->abi.stack_guard, 0u);
   thread->abi.stack_guard = 0xdeadbeef;
   EXPECT_EQ(*Launder(&thread->abi.stack_guard), 0xdeadbeefu);
+  EXPECT_EQ(ld::TpRelative<uintptr_t>(ZX_TLS_STACK_GUARD_OFFSET, pthread_to_tp(thread)),
+            &thread->abi.stack_guard);
 }
 
 // A stack should be accessible and mutable within; guarded below if it grows
@@ -540,6 +543,70 @@ TEST_F(LibcThreadTests, ThreadStorageCreateHandles) {
     CheckVmar("unsafe stack", security_stack.vmar().borrow(),
               std::as_bytes(storage.unsafe_stack()));
   }
+}
+
+void CheckThreadBlockForLayout(const TlsLayout& layout, thrd_zx_create_handles_t handles) {
+  LibcThreadTests::gTlsLayout = layout;
+
+  std::span<std::byte> found_thread_block;
+  size_t found_tp_offset;
+  LibcThreadTests::gInitializeTls =  //
+      [&found_thread_block, &found_tp_offset](std::span<std::byte> thread_block, size_t tp_offset) {
+        // Just record the resulting thread block calculations.
+        found_thread_block = thread_block;
+        found_tp_offset = tp_offset;
+      };
+
+  ThreadStorage storage;
+  auto result = storage.Allocate(handles, kVmoName, kOnePage, kOnePage);
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+
+  // The entire block should be valid. CheckStorage eventually checks the TCB portion.
+  // The TLS portion should be readable and zero.
+  const ptrdiff_t kTlsBias =
+      static_cast<ptrdiff_t>(TlsTraits::kTlsLocalExecOffset) -
+      (TlsTraits::kTlsNegative ? static_cast<ptrdiff_t>(layout.size_bytes()) : 0);
+  std::span<std::byte> tls_portion =
+      found_thread_block.subspan(found_tp_offset + kTlsBias, layout.size_bytes());
+  EXPECT_TRUE(std::all_of(tls_portion.begin(), tls_portion.end(),
+                          [](std::byte b) { return b == std::byte{0}; }));
+
+  CheckStorage(kOnePage, kOnePage, storage, *result);
+
+  EXPECT_EQ(ld::TpRelative(-found_tp_offset, pthread_to_tp(*result)), found_thread_block.data())
+      << "Expected the tp offset to point to the start of the thread block";
+
+  ASSERT_EQ(found_thread_block.size() % kOnePage.get(), 0);
+  EXPECT_GE(found_thread_block.size(), layout.size_bytes())
+      << "Insufficient block size to hold the full TLS layout";
+}
+
+// This is a minimal reproducer for the issue at https://fxbug.dev/492277399.
+// Prior, this used to page fault when accessing dtv[1] due to the VMO for
+// the thread block being too small and accessing a guard page. This is a
+// regression test using the specific TLS values found in the bug.
+//
+// TODO(https://fxbug.dev/496386493): We should refactor the other
+// TLS layout cases into a generalized table-driven way that allows running
+// a set of layouts over the same tests.
+TEST_F(LibcThreadTests, ThreadStorage_b492277399_RegressionTest) {
+  // This is the layout used which led to the issue described in
+  // https://fxbug.dev/492277399.
+  constexpr TlsLayout kInterestingLayout{
+      6992,
+      32,
+  };
+  CheckThreadBlockForLayout(kInterestingLayout, CreateHandles());
+
+  // 1232 is sizeof(Thread) at the time of writing this test. sizeof(Thread)
+  // can change over time which affects arithmetic and different rounding
+  // effects which may uncover new bugs, so this test may capture then as
+  // Thread changes.
+  constexpr TlsLayout kInterestingLayoutThreadSize{
+      6992 - 1232 + sizeof(Thread),
+      32,
+  };
+  CheckThreadBlockForLayout(kInterestingLayoutThreadSize, CreateHandles());
 }
 
 }  // namespace
