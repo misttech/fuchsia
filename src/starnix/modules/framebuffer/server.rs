@@ -35,12 +35,11 @@ use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::sync::mpsc::channel;
 use std::thread;
 use {
     fidl_fuchsia_element as felement, fidl_fuchsia_images2 as fimages2, fidl_fuchsia_math as fmath,
-    fidl_fuchsia_ui_composition as fuicomposition, fidl_fuchsia_ui_views as fuiviews,
-    fuchsia_async as fasync,
+    fidl_fuchsia_sysmem2 as fsysmem2, fidl_fuchsia_ui_composition as fuicomposition,
+    fidl_fuchsia_ui_views as fuiviews, fuchsia_async as fasync,
 };
 
 /// The offset at which the framebuffer will be placed.
@@ -145,56 +144,41 @@ fn init_fb_scene(
         .map_err(|_| anyhow!("error setting root transform"))?;
 
     let buffer_tokens = BufferCollectionTokenPair::new();
-    let (allocation_sender, allocation_receiver) = channel();
     // This thread is spawned to deal with the mix of asynchronous and synchronous proxies.
     // In particular, we want to keep Framebuffer creation synchronous, while still making use of
-    // BufferCollectionAllocator (which exposes an async api).
-    //
-    // The spawned thread will execute the futures and send results back to this thread via a
-    // channel.
-    thread::scope(|s| {
+    // BufferCollectionAllocator (which exposes an async API).
+    let allocation = thread::scope(|s| {
         thread::Builder::new()
             .name("kthread-fb-alloc".to_string())
-            .spawn_scoped(s, move || -> Result<(), anyhow::Error> {
-                let mut executor = fasync::LocalExecutor::default();
+            .spawn_scoped(s, || -> Result<fsysmem2::BufferCollectionInfo, anyhow::Error> {
+                fasync::LocalExecutor::default().run_singlethreaded(async {
+                    let mut buffer_allocator = BufferCollectionAllocator::new(
+                        width,
+                        height,
+                        fimages2::PixelFormat::R8G8B8A8,
+                        FrameUsage::Cpu,
+                        1,
+                    )?;
+                    buffer_allocator.set_name(100, "Starnix View")?;
+                    let sysmem_buffer_collection_token = buffer_allocator.duplicate_token().await?;
 
-                let mut buffer_allocator = BufferCollectionAllocator::new(
-                    width,
-                    height,
-                    fimages2::PixelFormat::R8G8B8A8,
-                    FrameUsage::Cpu,
-                    1,
-                )?;
-                buffer_allocator.set_name(100, "Starnix View")?;
+                    let args = fuicomposition::RegisterBufferCollectionArgs {
+                        export_token: Some(buffer_tokens.export_token),
+                        buffer_collection_token2: Some(sysmem_buffer_collection_token),
+                        ..Default::default()
+                    };
+                    allocator
+                        .register_buffer_collection(args, zx::MonotonicInstant::INFINITE)
+                        .map_err(|_| anyhow!("FIDL error registering buffer collection"))?
+                        .map_err(|_| anyhow!("Error registering buffer collection"))?;
 
-                let sysmem_buffer_collection_token =
-                    executor.run_singlethreaded(buffer_allocator.duplicate_token())?;
-
-                let args = fuicomposition::RegisterBufferCollectionArgs {
-                    export_token: Some(buffer_tokens.export_token),
-                    buffer_collection_token2: Some(sysmem_buffer_collection_token),
-                    ..Default::default()
-                };
-
-                allocator
-                    .register_buffer_collection(args, zx::MonotonicInstant::INFINITE)
-                    .map_err(|_| anyhow!("FIDL error registering buffer collection"))?
-                    .map_err(|_| anyhow!("Error registering buffer collection"))?;
-
-                let allocation =
-                    executor.run_singlethreaded(buffer_allocator.allocate_buffers(true))?;
-
-                // Notify the main thread that the buffer allocation completed.
-                allocation_sender.send(allocation).expect("Failed to send allocation");
-
-                Ok(())
+                    buffer_allocator.allocate_buffers(true).await
+                })
             })
-            .expect("able to create threads");
-    });
-
-    // Wait for the buffer allocation to complete.
-    let allocation =
-        allocation_receiver.recv().map_err(|_| anyhow!("Error receiving buffer allocation"))?;
+            .expect("Error spawning thread")
+            .join()
+            .expect("Error joining thread")
+    })?;
 
     let image_props = fuicomposition::ImageProperties {
         size: Some(fmath::SizeU { width, height }),
