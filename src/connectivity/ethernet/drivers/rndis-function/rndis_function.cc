@@ -5,27 +5,19 @@
 #include "src/connectivity/ethernet/drivers/rndis-function/rndis_function.h"
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <zircon/status.h>
 
-#include <algorithm>
-
-#include <fbl/auto_lock.h>
 #include <usb/request-cpp.h>
 
 #include "src/connectivity/ethernet/lib/rndis/rndis.h"
 
-size_t RndisFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptors_); }
+namespace frequest = fuchsia_hardware_usb_request;
+namespace fendpoint = fuchsia_hardware_usb_endpoint;
 
-void RndisFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
-                                                       size_t descriptors_size,
-                                                       size_t* out_descriptors_actual) {
-  memcpy(out_descriptors_buffer, &descriptors_,
-         std::min(descriptors_size, UsbFunctionInterfaceGetDescriptorsSize()));
-  *out_descriptors_actual = UsbFunctionInterfaceGetDescriptorsSize();
-}
+constexpr uint32_t kArenaTag = 'RNDS';
 
 std::optional<std::vector<uint8_t>> RndisFunction::QueryOid(uint32_t oid, void* input,
                                                             size_t length) {
@@ -213,28 +205,27 @@ zx_status_t RndisFunction::SetOid(uint32_t oid, const uint8_t* buffer, size_t le
   switch (oid) {
     case OID_GEN_CURRENT_PACKET_FILTER: {
       bool indicate_status = false;
-      {
-        fbl::AutoLock lock(&lock_);
-        rndis_ready_ = true;
-        if (ifc_.is_valid()) {
-          ifc_.Status(ETHERNET_STATUS_ONLINE);
-          // Call IndicateConnectionStatus outside the lock.
-          indicate_status = true;
-        }
+      rndis_ready_ = true;
+      if (netdevice_ifc_.is_valid()) {
+        UpdatePortStatus();
+        indicate_status = true;
+      }
 
-        std::optional<usb::Request<>> pending_request;
-        size_t request_length = usb::Request<>::RequestSize(usb_request_size_);
-        while ((pending_request = free_read_pool_.Get(request_length))) {
-          pending_requests_++;
-          function_.RequestQueue(pending_request->take(), &read_request_complete_);
-        }
+      std::vector<frequest::Request> requests;
+      while (std::optional req = bulk_out_ep_.GetRequest()) {
+        req.value().reset_buffers(bulk_out_ep_.GetMapped());
+        requests.emplace_back(req.value().take_request());
+      }
+      fit::result<fidl::OneWayError> status = bulk_out_ep_->QueueRequests({std::move(requests)});
+      if (!status.is_ok()) {
+        fdf::error("Failed to queue requests: {}", status.error_value().FormatDescription());
       }
 
       if (indicate_status) {
-        fdf::error("IndidcateStatus from SetOid");
+        fdf::error("IndicateStatus from SetOid");
         IndicateConnectionStatus(true);
       } else {
-        fdf::error("No IndidcateStatus from SetOid");
+        fdf::error("No IndicateStatus from SetOid");
       }
       return ZX_OK;
     }
@@ -369,9 +360,8 @@ std::vector<uint8_t> KeepaliveResponse(uint32_t request_id, uint32_t status) {
 
 zx_status_t RndisFunction::HandleCommand(const void* buffer, size_t size) {
   if (size < sizeof(rndis_header)) {
-    fbl::AutoLock lock(&lock_);
     control_responses_.push(InvalidMessageResponse(buffer, size));
-    NotifyLocked();
+    Notify();
     return ZX_OK;
   }
 
@@ -468,399 +458,549 @@ zx_status_t RndisFunction::HandleCommand(const void* buffer, size_t size) {
   if (!response.has_value()) {
     return ZX_OK;
   }
-  fbl::AutoLock lock(&lock_);
   control_responses_.push(std::move(response.value()));
-  NotifyLocked();
+  Notify();
   return ZX_OK;
 }
 
-zx_status_t ErrorResponse(void* buffer, size_t size, size_t* actual) {
+zx::result<std::vector<uint8_t>> ErrorResponse(size_t size) {
   if (size < 1) {
-    *actual = 0;
-    return ZX_ERR_BUFFER_TOO_SMALL;
+    return zx::error(ZX_ERR_BUFFER_TOO_SMALL);
   }
   // From
   // https://docs.microsoft.com/en-au/windows-hardware/drivers/network/control-channel-characteristics:
   // If for some reason the device receives a GET_ENCAPSULATED_RESPONSE and is unable to respond
   // with a valid data on the Control endpoint, then it should return a one-byte packet set to
   // 0x00, rather than stalling the Control endpoint.
-  memset(buffer, 0x00, 1);
-  *actual = 1;
-  return ZX_OK;
+  return zx::ok(std::vector<uint8_t>{0x00});
 }
 
-zx_status_t RndisFunction::HandleResponse(void* buffer, size_t size, size_t* actual) {
-  fbl::AutoLock lock(&lock_);
+zx::result<std::vector<uint8_t>> RndisFunction::HandleResponse(size_t size) {
   if (control_responses_.empty()) {
     fdf::warn("Host tried to read a control response when none was available.");
-    return ErrorResponse(buffer, size, actual);
+    return ErrorResponse(size);
   }
 
-  auto packet = control_responses_.front();
+  auto& packet = control_responses_.front();
   if (size < packet.size()) {
     fdf::warn(
         "Buffer too small to read a control response. Packet size is {} but the buffer is {}.",
         packet.size(), size);
-    return ErrorResponse(buffer, size, actual);
+    return ErrorResponse(size);
   }
 
-  memcpy(buffer, packet.data(), packet.size());
-  *actual = packet.size();
-
+  std::vector<uint8_t> response = std::move(packet);
   control_responses_.pop();
-  return ZX_OK;
+  return zx::ok(std::move(response));
 }
 
 zx_status_t RndisFunction::Halt() {
   Reset();
 
-  fbl::AutoLock lock(&lock_);
-  zx_status_t status = function_.DisableEp(NotificationAddress());
-  if (status != ZX_OK) {
-    fdf::error("Failed to disable control endpoint: {}", zx_status_get_string(status));
-    return status;
-  }
-  status = function_.DisableEp(BulkInAddress());
-  if (status != ZX_OK) {
-    fdf::error("Failed to disable data in endpoint: {}", zx_status_get_string(status));
-    return status;
-  }
-  status = function_.DisableEp(BulkOutAddress());
-  if (status != ZX_OK) {
-    fdf::error("Failed to disable data out endpoint: {}", zx_status_get_string(status));
-    return status;
+  for (auto ep_info : GetEndpoints()) {
+    fidl::Result result = function_->DisableEndpoint({ep_info.address});
+    if (result.is_error()) {
+      fdf::error("Failed to disable {} endpoint: {}", ep_info.name,
+                 result.error_value().FormatDescription());
+      return result.error_value().is_framework_error()
+                 ? result.error_value().framework_error().status()
+                 : ZX_ERR_INTERNAL;
+    }
   }
   return ZX_OK;
 }
 
 void RndisFunction::Reset() {
-  fbl::AutoLock lock(&lock_);
-
-  function_.CancelAll(BulkInAddress());
-  function_.CancelAll(BulkOutAddress());
-  function_.CancelAll(NotificationAddress());
-
+  CancelAllRequests();
   while (!control_responses_.empty()) {
     control_responses_.pop();
   }
 
   rndis_ready_ = false;
   link_speed_ = 0;
-  if (ifc_.is_valid()) {
-    ifc_.Status(0);
-  }
+  UpdatePortStatus();
 }
 
-zx_status_t RndisFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
-                                                       const uint8_t* write_buffer,
-                                                       size_t write_size, uint8_t* out_read_buffer,
-                                                       size_t read_size, size_t* out_read_actual) {
-  if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-      setup->b_request == USB_CDC_SEND_ENCAPSULATED_COMMAND) {
-    if (out_read_actual) {
-      *out_read_actual = 0;
-    }
-    zx_status_t status = HandleCommand(write_buffer, write_size);
+void RndisFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  auto& setup = request.setup();
+  auto& write_buffer = request.write();
+
+  uint8_t bm_request_type = setup.bm_request_type();
+  uint8_t b_request = setup.b_request();
+
+  if (bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
+      b_request == USB_CDC_SEND_ENCAPSULATED_COMMAND) {
+    zx_status_t status = HandleCommand(write_buffer.data(), write_buffer.size());
     if (status != ZX_OK) {
       fdf::error("Error handling command: {}", zx_status_get_string(status));
-      return status;
+      completer.Reply(zx::error(status));
+      return;
     }
-    return ZX_OK;
-  } else if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-             setup->b_request == USB_CDC_GET_ENCAPSULATED_RESPONSE) {
-    size_t actual;
-    zx_status_t status = HandleResponse(out_read_buffer, read_size, &actual);
-    if (out_read_actual) {
-      *out_read_actual = actual;
-    }
-    return status;
+    completer.Reply(zx::ok(std::vector<uint8_t>{}));
+    return;
+  }
+  if (bm_request_type == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
+      b_request == USB_CDC_GET_ENCAPSULATED_RESPONSE) {
+    completer.Reply(HandleResponse(request.setup().w_length()));
+    return;
   }
 
   fdf::warn("Unrecognised control interface transfer: bm_request_type {} b_request {}",
-            setup->bm_request_type, setup->b_request);
-  return ZX_ERR_NOT_SUPPORTED;
+            bm_request_type, b_request);
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
-zx_status_t RndisFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed) {
-  if (!configured) {
-    return Halt();
+void RndisFunction::SetConfigured(SetConfiguredRequest& request,
+                                  SetConfiguredCompleter::Sync& completer) {
+  if (!request.configured()) {
+    completer.Reply(zx::make_result(Halt()));
+    return;
   }
 
-  zx_status_t status = function_.ConfigEp(&descriptors_.notification_ep, nullptr);
+  auto config_ep = [&](const usb_endpoint_descriptor_t& desc) -> zx_status_t {
+    fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
+    fuchsia_hardware_usb_function::EndpointDescriptor ep_desc;
+    ep_desc.bm_attributes(desc.bm_attributes);
+    ep_desc.w_max_packet_size(le16toh(desc.w_max_packet_size));
+    ep_desc.b_interval(desc.b_interval);
+    ep_config.descriptor(std::move(ep_desc));
+
+    fidl::Result result =
+        function_->ConfigureEndpoint({desc.b_endpoint_address, std::move(ep_config)});
+    if (result.is_error()) {
+      fdf::error("Failed to configure endpoint: {}", result.error_value().FormatDescription());
+      return result.error_value().is_framework_error()
+                 ? result.error_value().framework_error().status()
+                 : ZX_ERR_INTERNAL;
+    }
+    return ZX_OK;
+  };
+
+  zx_status_t status = config_ep(descriptors_.notification_ep);
   if (status != ZX_OK) {
     fdf::error("Failed to configure control endpoint: {}", zx_status_get_string(status));
-    return status;
+    completer.Reply(zx::error(status));
+    return;
   }
 
-  status = function_.ConfigEp(&descriptors_.in_ep, nullptr);
+  status = config_ep(descriptors_.in_ep);
   if (status != ZX_OK) {
     fdf::error("Failed to configure bulk in endpoint: {}", zx_status_get_string(status));
-    return status;
+    completer.Reply(zx::error(status));
+    return;
   }
-  status = function_.ConfigEp(&descriptors_.out_ep, nullptr);
+  status = config_ep(descriptors_.out_ep);
   if (status != ZX_OK) {
     fdf::error("Failed to configure bulk out endpoint: {}", zx_status_get_string(status));
-    return status;
+    completer.Reply(zx::error(status));
+    return;
   }
 
-  fbl::AutoLock lock(&lock_);
-  // Set the speed optimistically to roughly the capacity of the bus. We report link speed in
-  // units of 100bps.
-  switch (speed) {
-    case USB_SPEED_LOW:
+  switch (request.speed()) {
+    case fuchsia_hardware_usb_descriptor::UsbSpeed::kLow:
       link_speed_ = 15'000;
       break;
-    case USB_SPEED_FULL:
+    case fuchsia_hardware_usb_descriptor::UsbSpeed::kFull:
       link_speed_ = 120'000;
       break;
-    case USB_SPEED_HIGH:
+    case fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh:
       link_speed_ = 4'800'000;
       break;
-    case USB_SPEED_SUPER:
+    case fuchsia_hardware_usb_descriptor::UsbSpeed::kSuper:
       link_speed_ = 50'000'000;
       break;
     default:
       link_speed_ = 0;
       break;
   }
-  return ZX_OK;
+  completer.Reply(zx::ok());
 }
 
-zx_status_t RndisFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
-                                                            uint8_t alt_setting) {
-  return ZX_OK;
+void RndisFunction::SetInterface(SetInterfaceRequest& request,
+                                 SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
 }
 
-zx_status_t RndisFunction::EthernetImplQuery(uint32_t options, ethernet_info_t* info) {
-  if (options) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  if (info) {
-    *info = {};
-    info->mtu = kMtu - sizeof(rndis_packet_header);
-    memcpy(info->mac, mac_addr_.data(), mac_addr_.size());
-    info->netbuf_size = eth::BorrowedOperation<>::OperationSize(sizeof(ethernet_netbuf_t));
-  }
-
-  return ZX_OK;
+void RndisFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown method %ld", metadata.method_ordinal);
 }
 
-void RndisFunction::EthernetImplStop() {
-  IndicateConnectionStatus(false);
-  fbl::AutoLock lock(&lock_);
-  ifc_.clear();
+void RndisFunction::Init(InitRequestView request, fdf::Arena& arena,
+                         InitCompleter::Sync& completer) {
+  fdf::info("RndisFunction::Init called");
+  netdevice_ifc_.Bind(std::move(request->iface), driver_dispatcher()->get());
+
+  auto [client, server] = fdf::Endpoints<fnetdev::NetworkPort>::Create();
+  fdf::BindServer(driver_dispatcher()->get(), std::move(server), this);
+
+  netdevice_ifc_.buffer(arena)
+      ->AddPort(kPortId, std::move(client))
+      .ThenExactlyOnce(
+          [completer = completer.ToAsync()](
+              fdf::WireUnownedResult<fnetdev::NetworkDeviceIfc::AddPort>& result) mutable {
+            fdf::Arena arena(kArenaTag);
+            if (!result.ok()) {
+              fdf::error("AddPort failed: {}", result.FormatDescription());
+              completer.buffer(arena).Reply(result.status());
+              return;
+            }
+            if (result->status != ZX_OK) {
+              fdf::error("AddPort returned error: {}", zx_status_get_string(result->status));
+            }
+            completer.buffer(arena).Reply(result->status);
+          });
 }
 
-zx_status_t RndisFunction::EthernetImplStart(const ethernet_ifc_protocol_t* ifc) {
-  {
-    fbl::AutoLock lock(&lock_);
-    if (ifc_.is_valid()) {
-      return ZX_ERR_ALREADY_BOUND;
-    }
-
-    ifc_ = ddk::EthernetIfcProtocolClient(ifc);
-    ifc_.Status(Online() ? ETHERNET_STATUS_ONLINE : 0);
-  }
+void RndisFunction::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
   IndicateConnectionStatus(true);
-  return ZX_OK;
+  completer.buffer(arena).Reply(ZX_OK);
 }
 
-void RndisFunction::EthernetImplQueueTx(uint32_t options, ethernet_netbuf_t* netbuf,
-                                        ethernet_impl_queue_tx_callback completion_cb,
-                                        void* cookie) {
-  eth::BorrowedOperation<> op(netbuf, completion_cb, cookie, sizeof(ethernet_netbuf_t));
-
-  size_t length = op.operation()->data_size;
-  if (length > kMtu - sizeof(rndis_packet_header)) {
-    op.Complete(ZX_ERR_INVALID_ARGS);
-    transmit_errors_ += 1;
-    return;
-  }
-
-  fbl::AutoLock lock(&lock_);
-  if (!Online()) {
-    op.Complete(ZX_ERR_SHOULD_WAIT);
-    return;
-  }
-
-  std::optional<usb::Request<>> request;
-  request = free_write_pool_.Get(usb::Request<>::RequestSize(usb_request_size_));
-  if (!request) {
-    fdf::debug("No available TX requests");
-    op.Complete(ZX_ERR_SHOULD_WAIT);
-    transmit_no_buffer_ += 1;
-    return;
-  }
-  pending_requests_++;
-
-  rndis_packet_header header{};
-  header.msg_type = RNDIS_PACKET_MSG;
-  header.msg_length = static_cast<uint32_t>(sizeof(header) + length);
-  header.data_offset = sizeof(header) - offsetof(rndis_packet_header, data_offset);
-  header.data_length = static_cast<uint32_t>(length);
-
-  size_t offset = 0;
-  ssize_t copied = request->CopyTo(&header, sizeof(header), 0);
-  if (copied < 0) {
-    fdf::error("Failed to copy TX header: {}", copied);
-    op.Complete(ZX_ERR_INTERNAL);
-    transmit_errors_ += 1;
-    free_write_pool_.Add(*std::move(request));
-    pending_requests_--;
-    return;
-  }
-  offset += copied;
-
-  size_t result = request->CopyTo(op.operation()->data_buffer, length, offset);
-  ZX_ASSERT(result == length);
-  if (copied < 0) {
-    fdf::error("Failed to copy TX data: {}", copied);
-    op.Complete(ZX_ERR_INTERNAL);
-    transmit_errors_ += 1;
-    free_write_pool_.Add(*std::move(request));
-    pending_requests_--;
-    return;
-  }
-  request->request()->header.length = sizeof(header) + length;
-
-  function_.RequestQueue(request->take(), &write_request_complete_);
-  op.Complete(ZX_OK);
-  transmit_ok_ += 1;
+void RndisFunction::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
+  DiscardPendingTxBuffers(ZX_ERR_CANCELED);
+  ReturnPendingRxSpace();
+  IndicateConnectionStatus(false);
+  completer.buffer(arena).Reply();
 }
 
-zx_status_t RndisFunction::EthernetImplSetParam(uint32_t param, int32_t value, const uint8_t* data,
-                                                size_t data_size) {
-  return ZX_ERR_NOT_SUPPORTED;
+void RndisFunction::GetInfo(
+    fdf::Arena& arena,
+    fdf::WireServer<fnetdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) {
+  fnetdev::wire::DeviceImplInfo info = fnetdev::wire::DeviceImplInfo::Builder(arena)
+                                           .tx_depth(kRequestPoolSize)
+                                           .rx_depth(kRequestPoolSize)
+                                           .rx_threshold(kRequestPoolSize / 2)
+                                           .max_buffer_parts(1)
+                                           .max_buffer_length(RNDIS_MAX_XFER_SIZE)
+                                           .buffer_alignment(1)
+                                           .min_rx_buffer_length(kMtu)
+                                           .min_tx_buffer_length(0)
+                                           .Build();
+
+  completer.buffer(arena).Reply(info);
 }
 
-void RndisFunction::ReceiveLocked(usb::Request<>& request) {
-  auto& response = request.request()->response;
+void RndisFunction::QueueTx(QueueTxRequestView request, fdf::Arena& arena,
+                            QueueTxCompleter::Sync& completer) {
+  std::array<fnetdev::wire::TxResult, kRequestPoolSize> results;
+  auto results_iter = results.begin();
+  std::array<frequest::wire::Request, kRequestPoolSize> reqs;
+  auto reqs_iter = reqs.begin();
 
-  uint8_t* data;
-  zx_status_t status = request.Mmap(reinterpret_cast<void**>(&data));
-  if (status != ZX_OK) {
-    fdf::error("Failed to map RX data: {}", zx_status_get_string(status));
-    receive_errors_ += 1;
-    return;
+  bool offline = shutting_down_ || !Online();
+
+  for (const auto& buffer : request->buffers) {
+    if (offline) {
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_BAD_STATE};
+      transmit_errors_++;
+      continue;
+    }
+    if (buffer.data.size() != 1) {
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
+      transmit_errors_++;
+      continue;
+    }
+    const auto& region = buffer.data[0];
+
+    std::optional<usb::FidlRequest> tx_req = bulk_in_ep_.GetRequest();
+    if (!tx_req.has_value()) {
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_NO_RESOURCES};
+      transmit_no_buffer_++;
+      continue;
+    }
+    auto return_request = fit::defer([&]() { bulk_in_ep_.PutRequest(std::move(tx_req.value())); });
+
+    auto* stored_vmo = vmo_store_.GetVmo(region.vmo);
+    if (!stored_vmo) {
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
+      transmit_errors_++;
+      continue;
+    }
+    std::span<uint8_t> data = stored_vmo->data();
+    if (region.offset + region.length > data.size()) {
+      *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
+      transmit_errors_++;
+      continue;
+    }
+
+    rndis_packet_header header{};
+    header.msg_type = RNDIS_PACKET_MSG;
+    header.msg_length = static_cast<uint32_t>(sizeof(header) + region.length);
+    header.data_offset = sizeof(header) - offsetof(rndis_packet_header, data_offset);
+    header.data_length = static_cast<uint32_t>(region.length);
+
+    tx_req->clear_buffers();
+    size_t offset = 0;
+    std::vector<size_t> copied =
+        tx_req->CopyTo(0, &header, sizeof(header), bulk_in_ep_.GetMapped());
+    for (size_t i = 0; i < copied.size(); i++) {
+      tx_req.value()->data()->at(i).size(copied[i]);
+      offset += copied[i];
+    }
+    copied =
+        tx_req->CopyTo(offset, data.data() + region.offset, region.length, bulk_in_ep_.GetMapped());
+    for (size_t i = 0; i < copied.size(); i++) {
+      auto& data = tx_req.value()->data()->at(i);
+      data.size(data.size().value() + copied[i]);
+    }
+
+    return_request.cancel();
+    tx_completion_queue_.push(buffer.id);
+    tx_req->CacheFlush(bulk_in_ep_.GetMapped());
+    *reqs_iter++ = fidl::ToWire(arena, tx_req->take_request());
+    transmit_ok_++;
   }
 
-  size_t remaining = response.actual;
-  while (remaining >= sizeof(rndis_packet_header)) {
-    const auto* header = reinterpret_cast<const rndis_packet_header*>(data);
-    if (header->msg_type != RNDIS_PACKET_MSG) {
-      fdf::warn("Received invalid packet type {}.", header->msg_type);
-      fdf::warn("header length {}.", request.request()->header.length);
-      fdf::warn("actual size {}.", response.actual);
-      fdf::warn("header->msg_length {}.", header->msg_length);
-      fdf::warn("header->data_offset {}.", header->data_offset);
-      receive_errors_ += 1;
-      return;
+  if (results_iter != results.begin()) {
+    fidl::OneWayStatus status = netdevice_ifc_.buffer(arena)->CompleteTx(
+        fidl::VectorView<fnetdev::wire::TxResult>::FromExternal(
+            results.data(), std::distance(results.begin(), results_iter)));
+    if (!status.ok()) {
+      fdf::error("failed to complete tx: {}", status.FormatDescription());
     }
-    if (header->msg_length > remaining) {
-      fdf::warn("Received packet with invalid length {}: only {} bytes left in frame.",
-                header->msg_length, remaining);
-      receive_errors_ += 1;
-      return;
-    }
-    if (header->msg_length < sizeof(rndis_packet_header)) {
-      fdf::warn("Received packet with invalid length {}: less than header length.",
-                header->msg_length);
-      receive_errors_ += 1;
-      return;
-    }
-    if (header->data_offset > header->msg_length - offsetof(rndis_packet_header, data_offset) ||
-        header->data_length >
-            header->msg_length - offsetof(rndis_packet_header, data_offset) - header->data_offset) {
-      fdf::warn("Received packet with invalid data.");
-      receive_errors_ += 1;
-      return;
-    }
-
-    size_t offset = offsetof(rndis_packet_header, data_offset) + header->data_offset;
-    ifc_.Recv(data + offset, header->data_length, /*flags=*/0);
-    receive_ok_ += 1;
-
-    if (header->oob_data_offset != 0) {
-      fdf::warn("Packet contained unsupported out of band data.");
-    }
-    if (header->per_packet_info_offset != 0) {
-      fdf::warn("Packet contained unsupported per packet information.");
-    }
-
-    data = data + header->msg_length;
-    remaining -= header->msg_length;
   }
-}
 
-void RndisFunction::ReadComplete(usb_request_t* usb_request) {
-  fbl::AutoLock lock(&lock_);
-  usb::Request<> request(usb_request, usb_request_size_);
-  if (usb_request->response.status == ZX_ERR_IO_NOT_PRESENT) {
-    pending_requests_--;
-    if (shutting_down_) {
-      request.Release();
-      if (pending_requests_ == 0) {
-        lock.release();
-        ShutdownComplete();
+  if (reqs_iter != reqs.begin()) {
+    fidl::OneWayStatus queue_status = bulk_in_ep_.client().wire()->QueueRequests(
+        fidl::VectorView<frequest::wire::Request>::FromExternal(
+            reqs.data(), std::distance(reqs.begin(), reqs_iter)));
+
+    if (!queue_status.ok()) {
+      fdf::error("failed to queue tx requests: {}", queue_status.FormatDescription());
+      for (auto it = reqs.begin(); it != reqs_iter; it++) {
+        bulk_in_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(*it)));
       }
-      return;
     }
-    free_read_pool_.Add(std::move(request));
-    return;
-  }
-
-  if (usb_request->response.status == ZX_ERR_IO_REFUSED) {
-    fdf::error("ReadComplete refused");
-  } else if (usb_request->response.status != ZX_OK) {
-    fdf::error("ReadComplete not ok");
-  } else if (ifc_.is_valid()) {
-    ReceiveLocked(request);
-  }
-
-  if (Online()) {
-    function_.RequestQueue(request.take(), &read_request_complete_);
-  } else {
-    if (shutting_down_) {
-      request.Release();
-      pending_requests_--;
-      if (pending_requests_ == 0) {
-        lock.release();
-        ShutdownComplete();
-      }
-      return;
-    }
-    free_read_pool_.Add(std::move(request));
   }
 }
 
-void RndisFunction::NotifyLocked() {
-  std::optional<usb::Request<>> request;
-  request = free_notify_pool_.Get(usb::Request<>::RequestSize(usb_request_size_));
-  if (!request) {
+void RndisFunction::QueueRxSpace(QueueRxSpaceRequestView request, fdf::Arena& arena,
+                                 QueueRxSpaceCompleter::Sync& completer) {
+  for (const auto& buffer : request->buffers) {
+    rx_space_buffers_.push(buffer);
+  }
+  FDF_ASSERT_MSG(rx_space_buffers_.size() <= kRequestPoolSize, "rx space buffers too large",
+                 rx_space_buffers_.size());
+
+  if (rx_completion_queue_.empty()) {
+    return;
+  }
+  // Take over all pending completions and process them. We'll re-queue if
+  // not enough space available.
+  ProcessRxCompletions(std::move(rx_completion_queue_));
+}
+
+void RndisFunction::PrepareVmo(PrepareVmoRequestView request, fdf::Arena& arena,
+                               PrepareVmoCompleter::Sync& completer) {
+  zx_status_t status = vmo_store_.RegisterWithKey(request->id, std::move(request->vmo));
+  completer.buffer(arena).Reply(status);
+}
+
+void RndisFunction::ReleaseVmo(ReleaseVmoRequestView request, fdf::Arena& arena,
+                               ReleaseVmoCompleter::Sync& completer) {
+  zx::result result = vmo_store_.Unregister(request->id);
+  if (result.is_error()) {
+    fdf::error("failed to unregister vmo {}: {}", request->id, result.status_string());
+  }
+  completer.buffer(arena).Reply();
+}
+
+void RndisFunction::NotifyComplete(std::vector<fendpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    notification_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+  }
+  ContinueStop();
+}
+
+void RndisFunction::TxComplete(std::vector<fendpoint::Completion> completions) {
+  std::array<fnetdev::wire::TxResult, kRequestPoolSize> results;
+  auto results_iter = results.begin();
+
+  for (auto& completion : completions) {
+    bulk_in_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+    if (tx_completion_queue_.empty()) {
+      fdf::error("received tx completion without pending tx");
+      continue;
+    }
+    uint32_t id = tx_completion_queue_.front();
+    tx_completion_queue_.pop();
+
+    *results_iter++ = {.id = id, .status = *completion.status()};
+  }
+
+  if (results_iter != results.begin()) {
+    fdf::Arena arena(kArenaTag);
+    fidl::OneWayStatus status = netdevice_ifc_.buffer(arena)->CompleteTx(
+        fidl::VectorView<fnetdev::wire::TxResult>::FromExternal(
+            results.data(), std::distance(results.begin(), results_iter)));
+    if (!status.ok()) {
+      fdf::error("failed to complete tx: {}", status.FormatDescription());
+    }
+  }
+
+  ContinueStop();
+}
+
+void RndisFunction::RxComplete(std::vector<fendpoint::Completion> completions) {
+  if (shutting_down_) {
+    for (auto& completion : completions) {
+      bulk_out_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+    }
+    ContinueStop();
+    return;
+  }
+
+  ProcessRxCompletions(std::move(completions));
+}
+
+void RndisFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> completions) {
+  fdf::Arena arena(kArenaTag);
+
+  std::array<frequest::wire::Request, kRequestPoolSize> reqs;
+  auto reqs_iter = reqs.begin();
+
+  std::array<fnetdev::wire::RxBuffer, kRequestPoolSize> rx_buffers;
+  auto rx_buffers_iter = rx_buffers.begin();
+
+  std::array<fnetdev::wire::RxBufferPart, kRequestPoolSize> rx_buffers_parts;
+  auto rx_buffers_parts_iter = rx_buffers_parts.begin();
+
+  auto reset_and_enqueue = [&](usb::FidlRequest req) {
+    req.reset_buffers(bulk_out_ep_.GetMapped());
+    *reqs_iter++ = fidl::ToWire(arena, req.take_request());
+  };
+
+  for (auto& completion : completions) {
+    zx_status_t status = *completion.status();
+    if (status == ZX_ERR_IO_NOT_PRESENT) {
+      bulk_out_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
+      continue;
+    }
+
+    if (status != ZX_OK) {
+      fdf::error("rx_completion: {}", zx_status_get_string(status));
+      reset_and_enqueue(usb::FidlRequest{std::move(completion.request().value())});
+      continue;
+    }
+
+    if (rx_space_buffers_.empty()) {
+      rx_completion_queue_.push_back(std::move(completion));
+      continue;
+    }
+
+    usb::FidlRequest req(std::move(completion.request().value()));
+    req.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
+
+    rndis_packet_header header;
+    std::vector<size_t> copied = req.CopyFrom(0, &header, sizeof(header), bulk_out_ep_.GetMapped());
+    size_t header_copied = std::accumulate(copied.begin(), copied.end(), 0);
+    if (header_copied < sizeof(header)) {
+      reset_and_enqueue(std::move(req));
+      fdf::error("failed to retrieve header from request: {} bytes copied, want {}", header_copied,
+                 sizeof(header));
+      continue;
+    }
+
+    if (header.msg_type != RNDIS_PACKET_MSG) {
+      reset_and_enqueue(std::move(req));
+      fdf::warn("unrecognized message type: {}", header.msg_type);
+      continue;
+    }
+
+    fnetdev::wire::RxSpaceBuffer space = rx_space_buffers_.front();
+    auto* stored_vmo = vmo_store_.GetVmo(space.region.vmo);
+    if (!stored_vmo) {
+      reset_and_enqueue(std::move(req));
+      continue;
+    }
+
+    uint32_t data_offset = header.data_offset + offsetof(rndis_packet_header, data_offset);
+    uint32_t data_length = header.data_length;
+
+    if (data_length > space.region.length) {
+      reset_and_enqueue(std::move(req));
+      continue;
+    }
+
+    req.CopyFrom(data_offset,
+                 reinterpret_cast<void*>(stored_vmo->data().data() + space.region.offset),
+                 data_length, bulk_out_ep_.GetMapped());
+
+    *rx_buffers_parts_iter = fnetdev::wire::RxBufferPart{
+        .id = space.id,
+        .offset = 0,
+        .length = header.data_length,
+    };
+    *rx_buffers_iter++ = {
+        .meta =
+            {
+                .port = kPortId,
+                .frame_type = fuchsia_hardware_network::FrameType::kEthernet,
+            },
+        .data =
+            fidl::VectorView<fnetdev::wire::RxBufferPart>::FromExternal(&*rx_buffers_parts_iter, 1),
+    };
+
+    rx_buffers_parts_iter++;
+    rx_space_buffers_.pop();
+
+    reset_and_enqueue(std::move(req));
+  }
+
+  if (rx_buffers_iter != rx_buffers.begin()) {
+    fidl::OneWayStatus status = netdevice_ifc_.buffer(arena)->CompleteRx(
+        fidl::VectorView<fnetdev::wire::RxBuffer>::FromExternal(
+            rx_buffers.data(), std::distance(rx_buffers.begin(), rx_buffers_iter)));
+    if (!status.ok()) {
+      fdf::error("failed to complete rx: {}", status.FormatDescription());
+    }
+    receive_ok_ += static_cast<uint32_t>(std::distance(rx_buffers.begin(), rx_buffers_iter));
+  }
+
+  if (reqs_iter != reqs.begin()) {
+    fidl::OneWayStatus queue_status = bulk_out_ep_.client().wire()->QueueRequests(
+        fidl::VectorView<frequest::wire::Request>::FromExternal(
+            reqs.data(), std::distance(reqs.begin(), reqs_iter)));
+    if (!queue_status.ok()) {
+      fdf::error("failed to queue rx requests: {}", queue_status.FormatDescription());
+    }
+  }
+}
+
+void RndisFunction::Notify() {
+  std::optional<usb::FidlRequest> req = notification_ep_.GetRequest();
+  if (!req) {
     fdf::error("No notify request available");
     return;
   }
-  pending_requests_++;
 
   rndis_notification notification{
       .notification = htole32(1),
       .reserved = 0,
   };
 
-  ssize_t copied = request->CopyTo(&notification, sizeof(notification), 0);
-  if (copied < 0) {
-    fdf::error("Failed to copy notification");
-    pending_requests_--;
-    free_notify_pool_.Add(*std::move(request));
-    return;
+  std::vector<size_t> copied =
+      req->CopyTo(0, &notification, sizeof(notification), notification_ep_.GetMapped());
+  for (size_t i = 0; i < copied.size(); i++) {
+    req.value()->data()->at(i).size(copied[i]);
   }
-  request->request()->header.length = sizeof(notification);
-  function_.RequestQueue(request->take(), &notification_request_complete_);
+  req->CacheFlush(notification_ep_.GetMapped());
+
+  fdf::Arena arena(kArenaTag);
+  frequest::wire::Request req_wire = fidl::ToWire(arena, req->take_request());
+
+  fidl::OneWayStatus queue_status = notification_ep_.client().wire()->QueueRequests(
+      fidl::VectorView<frequest::wire::Request>::FromExternal(&req_wire, 1));
+
+  if (!queue_status.ok()) {
+    fdf::error("failed to queue notify requests: {}", queue_status.FormatDescription());
+    notification_ep_.PutRequest(std::move(*req));
+  }
 }
 
 void RndisFunction::IndicateConnectionStatus(bool connected) {
-  fbl::AutoLock lock(&lock_);
   if (!rndis_ready_) {
     return;
   }
@@ -880,96 +1020,115 @@ void RndisFunction::IndicateConnectionStatus(bool connected) {
   memcpy(buffer.data(), &status, sizeof(rndis_indicate_status));
 
   control_responses_.push(std::move(buffer));
-  NotifyLocked();
-}
-
-void RndisFunction::WriteComplete(usb_request_t* usb_request) {
-  usb::Request<> request(usb_request, usb_request_size_);
-  fbl::AutoLock lock(&lock_);
-  pending_requests_--;
-  if (shutting_down_) {
-    request.Release();
-    if (pending_requests_ == 0) {
-      lock.release();
-      ShutdownComplete();
-    }
-    return;
-  }
-  free_write_pool_.Add(std::move(request));
-}
-
-void RndisFunction::NotificationComplete(usb_request_t* usb_request) {
-  usb::Request<> request(usb_request, usb_request_size_);
-  fbl::AutoLock lock(&lock_);
-  pending_requests_--;
-  if (shutting_down_) {
-    request.Release();
-    if (pending_requests_ == 0) {
-      lock.release();
-      ShutdownComplete();
-    }
-    return;
-  }
-  free_notify_pool_.Add(std::move(request));
+  Notify();
 }
 
 zx::result<> RndisFunction::Start() {
-  zx::result<ddk::UsbFunctionProtocolClient> function =
-      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    fdf::error("Failed to connect to usb function protocol: {}", function);
-    return function.take_error();
+  zx::result func =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (func.is_error()) {
+    fdf::error("Failed to connect to UsbFunctionService: {}", func);
+    return func.take_error();
   }
-  function_ = std::move(function.value());
+  function_.Bind(std::move(*func));
 
-  compat::DeviceServer::BanjoConfig config{.default_proto_id = ZX_PROTOCOL_ETHERNET_IMPL};
-  config.callbacks[ZX_PROTOCOL_ETHERNET_IMPL] = ethernet_impl_banjo_server_.callback();
-  config.callbacks[ZX_PROTOCOL_USB_FUNCTION] = usb_function_interface_banjo_server_.callback();
-
-  zx::result<> result =
-      compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName,
-                                compat::ForwardMetadata::None(), std::move(config));
-  if (result.is_error()) {
-    fdf::error("Failed to initialize compat server: {}", result);
-    return result.take_error();
+  if (zx_status_t status = vmo_store_.Reserve(fuchsia_hardware_network_driver::wire::kMaxVmos);
+      status != ZX_OK) {
+    fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
+    return zx::error(status);
   }
 
+  zx::result intr_ep_res = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (intr_ep_res.is_error()) {
+    return intr_ep_res.take_error();
+  }
+
+  zx::result in_ep_res = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (in_ep_res.is_error()) {
+    return in_ep_res.take_error();
+  }
+
+  zx::result out_ep_res = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (out_ep_res.is_error()) {
+    return out_ep_res.take_error();
+  }
+
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
+  fuchsia_hardware_usb_function::EndpointResource res_intr;
+  res_intr.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  res_intr.endpoint(std::move(intr_ep_res->server));
+  resources.emplace_back(std::move(res_intr));
+
+  fuchsia_hardware_usb_function::EndpointResource res_in;
+  res_in.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  res_in.endpoint(std::move(in_ep_res->server));
+  resources.emplace_back(std::move(res_in));
+
+  fuchsia_hardware_usb_function::EndpointResource res_out;
+  res_out.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  res_out.endpoint(std::move(out_ep_res->server));
+  resources.emplace_back(std::move(res_out));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  alloc_req.interface_count(2);
+  alloc_req.endpoints(std::move(resources));
+  alloc_req.strings({
+      "RNDIS Communications Control",
+      "RNDIS Ethernet Data",
+      "RNDIS",
+  });
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    fdf::error("AllocResources failed: {}", alloc_result.error_value().FormatDescription());
+    return zx::error(alloc_result.error_value().is_framework_error()
+                         ? alloc_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
+  }
+
+  auto& response = alloc_result.value();
+  uint8_t comm_intf_num = response.interface_nums()[0];
+  uint8_t data_intf_num = response.interface_nums()[1];
+
+  uint8_t notification_addr = response.endpoint_addrs()[0];
+  uint8_t bulk_in_addr = response.endpoint_addrs()[1];
+  uint8_t bulk_out_addr = response.endpoint_addrs()[2];
+
+  // Initialize Descriptors
   descriptors_.assoc = usb_interface_assoc_descriptor_t{
       .b_length = sizeof(usb_interface_assoc_descriptor_t),
       .b_descriptor_type = USB_DT_INTERFACE_ASSOCIATION,
-      .b_first_interface = 0,  // set later
+      .b_first_interface = comm_intf_num,
       .b_interface_count = 2,
       .b_function_class = USB_CLASS_WIRELESS,
       .b_function_sub_class = USB_SUBCLASS_WIRELESS_MISC,
       .b_function_protocol = USB_PROTOCOL_WIRELESS_MISC_RNDIS,
-      .i_function = 0,  // set later
+      .i_function = response.string_indices()[2],
   };
   descriptors_.communication_interface = usb_interface_descriptor_t{
       .b_length = sizeof(usb_interface_descriptor_t),
       .b_descriptor_type = USB_DT_INTERFACE,
-      .b_interface_number = 0,  // set later
+      .b_interface_number = comm_intf_num,
       .b_alternate_setting = 0,
       .b_num_endpoints = 1,
       .b_interface_class = USB_CLASS_WIRELESS,
       .b_interface_sub_class = USB_SUBCLASS_WIRELESS_MISC,
       .b_interface_protocol = USB_PROTOCOL_WIRELESS_MISC_RNDIS,
-      .i_interface = 0,
+      .i_interface = response.string_indices()[0],
   };
-  descriptors_.cdc_header =
-      usb_cs_header_interface_descriptor_t{
-          .bLength = sizeof(usb_cs_header_interface_descriptor_t),
-          .bDescriptorType = USB_DT_CS_INTERFACE,
-          .bDescriptorSubType = USB_CDC_DST_HEADER,
-          .bcdCDC = htole16(0x0110),
-      },
-  descriptors_.call_mgmt =
-      usb_cs_call_mgmt_interface_descriptor_t{
-          .bLength = sizeof(usb_cs_call_mgmt_interface_descriptor_t),
-          .bDescriptorType = USB_DT_CS_INTERFACE,
-          .bDescriptorSubType = USB_CDC_DST_CALL_MGMT,
-          .bmCapabilities = 0x00,
-          .bDataInterface = 0x01,
-      },
+  descriptors_.cdc_header = usb_cs_header_interface_descriptor_t{
+      .bLength = sizeof(usb_cs_header_interface_descriptor_t),
+      .bDescriptorType = USB_DT_CS_INTERFACE,
+      .bDescriptorSubType = USB_CDC_DST_HEADER,
+      .bcdCDC = htole16(0x0110),
+  };
+  descriptors_.call_mgmt = usb_cs_call_mgmt_interface_descriptor_t{
+      .bLength = sizeof(usb_cs_call_mgmt_interface_descriptor_t),
+      .bDescriptorType = USB_DT_CS_INTERFACE,
+      .bDescriptorSubType = USB_CDC_DST_CALL_MGMT,
+      .bmCapabilities = 0x00,
+      .bDataInterface = data_intf_num,
+  };
   descriptors_.acm = usb_cs_abstract_ctrl_mgmt_interface_descriptor_t{
       .bLength = sizeof(usb_cs_abstract_ctrl_mgmt_interface_descriptor_t),
       .bDescriptorType = USB_DT_CS_INTERFACE,
@@ -980,33 +1139,32 @@ zx::result<> RndisFunction::Start() {
       .bLength = sizeof(usb_cs_union_interface_descriptor_1_t),
       .bDescriptorType = USB_DT_CS_INTERFACE,
       .bDescriptorSubType = USB_CDC_DST_UNION,
-      .bControlInterface = 0,      // set later
-      .bSubordinateInterface = 0,  // set later
+      .bControlInterface = comm_intf_num,
+      .bSubordinateInterface = data_intf_num,
   };
   descriptors_.notification_ep = usb_endpoint_descriptor_t{
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
-      .b_endpoint_address = 0,  // set later
+      .b_endpoint_address = notification_addr,
       .bm_attributes = USB_ENDPOINT_INTERRUPT,
       .w_max_packet_size = htole16(kNotificationMaxPacketSize),
       .b_interval = 1,
   };
-
   descriptors_.data_interface = usb_interface_descriptor_t{
       .b_length = sizeof(usb_interface_descriptor_t),
       .b_descriptor_type = USB_DT_INTERFACE,
-      .b_interface_number = 0,  // set later
+      .b_interface_number = data_intf_num,
       .b_alternate_setting = 0,
       .b_num_endpoints = 2,
       .b_interface_class = USB_CLASS_CDC,
       .b_interface_sub_class = 0,
       .b_interface_protocol = 0,
-      .i_interface = 0,
+      .i_interface = response.string_indices()[1],
   };
   descriptors_.in_ep = usb_endpoint_descriptor_t{
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
-      .b_endpoint_address = 0,  // set later
+      .b_endpoint_address = bulk_in_addr,
       .bm_attributes = USB_ENDPOINT_BULK,
       .w_max_packet_size = htole16(512),
       .b_interval = 0,
@@ -1014,66 +1172,13 @@ zx::result<> RndisFunction::Start() {
   descriptors_.out_ep = usb_endpoint_descriptor_t{
       .b_length = sizeof(usb_endpoint_descriptor_t),
       .b_descriptor_type = USB_DT_ENDPOINT,
-      .b_endpoint_address = 0,  // set later
+      .b_endpoint_address = bulk_out_addr,
       .bm_attributes = USB_ENDPOINT_BULK,
       .w_max_packet_size = htole16(512),
       .b_interval = 0,
   };
 
-  zx_status_t status = function_.AllocStringDesc("RNDIS Communications Control",
-                                                 &descriptors_.communication_interface.i_interface);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate string descriptor: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  status =
-      function_.AllocStringDesc("RNDIS Ethernet Data", &descriptors_.data_interface.i_interface);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate string descriptor: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  status = function_.AllocStringDesc("RNDIS", &descriptors_.assoc.i_function);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate string descriptor: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  status = function_.AllocInterface(&descriptors_.communication_interface.b_interface_number);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate communication interface: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  status = function_.AllocInterface(&descriptors_.data_interface.b_interface_number);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate data interface: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-  descriptors_.assoc.b_first_interface = descriptors_.communication_interface.b_interface_number;
-  descriptors_.cdc_union.bControlInterface =
-      descriptors_.communication_interface.b_interface_number;
-  descriptors_.cdc_union.bSubordinateInterface = descriptors_.data_interface.b_interface_number;
-
-  status = function_.AllocEp(USB_DIR_OUT, &descriptors_.out_ep.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate bulk out interface: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  status = function_.AllocEp(USB_DIR_IN, &descriptors_.in_ep.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate bulk in interface: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  status = function_.AllocEp(USB_DIR_IN, &descriptors_.notification_ep.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("Failed to allocate notification interface: {}", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
+  // Get MAC address
   zx::result metadata_result =
       fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
   if (metadata_result.is_error()) {
@@ -1092,53 +1197,60 @@ zx::result<> RndisFunction::Start() {
     zx_cprng_draw(mac_addr_.data(), mac_addr_.size());
     mac_addr_[0] = 0x02;
   }
-
   fdf::info("MAC address: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", mac_addr_[0], mac_addr_[1],
             mac_addr_[2], mac_addr_[3], mac_addr_[4], mac_addr_[5]);
 
-  usb_request_size_ = function_.GetRequestSize();
-
-  fbl::AutoLock lock(&lock_);
-  for (size_t i = 0; i < kRequestPoolSize; i++) {
-    std::optional<usb::Request<>> request;
-    status = usb::Request<>::Alloc(&request, kNotificationMaxPacketSize, NotificationAddress(),
-                                   usb_request_size_);
-    if (status != ZX_OK) {
-      fdf::error("Allocating notify request failed: {}", status);
-      return zx::error(status);
-    }
-    free_notify_pool_.Add(*std::move(request));
-  }
-
-  for (size_t i = 0; i < kRequestPoolSize; i++) {
-    std::optional<usb::Request<>> request;
-    status =
-        usb::Request<>::Alloc(&request, RNDIS_MAX_XFER_SIZE, BulkOutAddress(), usb_request_size_);
-    if (status != ZX_OK) {
-      fdf::error("Allocating reads failed: {}", status);
-      return zx::error(status);
-    }
-    free_read_pool_.Add(*std::move(request));
-  }
-
-  for (size_t i = 0; i < kRequestPoolSize; i++) {
-    std::optional<usb::Request<>> request;
-    status =
-        usb::Request<>::Alloc(&request, RNDIS_MAX_XFER_SIZE, BulkInAddress(), usb_request_size_);
-    if (status != ZX_OK) {
-      fdf::error("Allocating writes failed: {}", status);
-      return zx::error(status);
-    }
-    free_write_pool_.Add(*std::move(request));
-  }
-
-  status = loop_.StartThread("rndis-function");
+  // Init endpoint clients
+  zx_status_t status = notification_ep_.Init(std::move(intr_ep_res->client), dispatcher());
   if (status != ZX_OK) {
-    fdf::error("Failed to start thread: {}", zx_status_get_string(status));
+    fdf::error("Could not init intr endpoint client: {}", zx_status_get_string(status));
     return zx::error(status);
   }
+  if (notification_ep_.AddRequests(kRequestPoolSize, kNotificationMaxPacketSize,
+                                   fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) !=
+      kRequestPoolSize) {
+    fdf::error("Failed to allocate intr requests");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
 
-  std::vector offers = compat_server_.CreateOffers2();
+  status = bulk_in_ep_.Init(std::move(in_ep_res->client), dispatcher());
+  if (status != ZX_OK) {
+    fdf::error("Could not init in endpoint client: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  if (bulk_in_ep_.AddRequests(kRequestPoolSize, RNDIS_MAX_XFER_SIZE,
+                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) !=
+      kRequestPoolSize) {
+    fdf::error("Failed to allocate in requests");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  status = bulk_out_ep_.Init(std::move(out_ep_res->client), dispatcher());
+  if (status != ZX_OK) {
+    fdf::error("Could not init out endpoint client: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  if (bulk_out_ep_.AddRequests(kRequestPoolSize, RNDIS_MAX_XFER_SIZE,
+                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) !=
+      kRequestPoolSize) {
+    fdf::error("Failed to allocate out requests");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  auto protocol = [this](fdf::ServerEnd<fnetdev::NetworkDeviceImpl> server_end) mutable {
+    fdf::BindServer(driver_dispatcher()->get(), std::move(server_end), this);
+  };
+  fnetdev::Service::InstanceHandler handler({.network_device_impl = std::move(protocol)});
+
+  if (zx::result status = outgoing()->AddService<fnetdev::Service>(std::move(handler));
+      status.is_error()) {
+    fdf::error("Failed to add service: {}", status);
+    return status.take_error();
+  }
+
+  std::vector<fuchsia_driver_framework::Offer> offers;
+  offers.push_back(fdf::MakeOffer2<fnetdev::Service>());
+
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (child.is_error()) {
@@ -1147,43 +1259,222 @@ zx::result<> RndisFunction::Start() {
   }
   child_ = std::move(child.value());
 
-  function_.SetInterface(this, &usb_function_interface_protocol_ops_);
+  zx::result iface_endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (iface_endpoints.is_error()) {
+    return iface_endpoints.take_error();
+  }
+  fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
+
+  std::vector<uint8_t> descriptors_buffer(sizeof(descriptors_));
+  memcpy(descriptors_buffer.data(), &descriptors_, sizeof(descriptors_));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure> config_req;
+  config_req.configuration(std::move(descriptors_buffer));
+  config_req.iface(std::move(iface_endpoints->client));
+
+  fidl::Result config_res = function_->Configure(std::move(config_req));
+  if (config_res.is_error()) {
+    fdf::error("Configure failed: {}", config_res.error_value().FormatDescription());
+    return zx::error(config_res.error_value().is_framework_error()
+                         ? config_res.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
+  }
 
   return zx::ok();
 }
 
-void RndisFunction::Shutdown() {
-  fbl::AutoLock lock(&lock_);
-  function_.CancelAll(BulkInAddress());
-  function_.CancelAll(BulkOutAddress());
-  function_.CancelAll(NotificationAddress());
+void RndisFunction::GetInfo(
+    fdf::Arena& arena, fdf::WireServer<fnetdev::NetworkPort>::GetInfoCompleter::Sync& completer) {
+  static constexpr fuchsia_hardware_network::wire::FrameType kRxTypes[] = {
+      fuchsia_hardware_network::wire::FrameType::kEthernet};
+  static constexpr fuchsia_hardware_network::wire::FrameTypeSupport kTxTypes[] = {{
+      .type = fuchsia_hardware_network::wire::FrameType::kEthernet,
+      .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
+  }};
 
-  free_notify_pool_.Release();
-  free_read_pool_.Release();
-  free_write_pool_.Release();
+  fuchsia_hardware_network::wire::PortBaseInfo info =
+      fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+          .port_class(fuchsia_hardware_network::wire::PortClass::kEthernet)
+          .rx_types(fidl::VectorView<fuchsia_hardware_network::wire::FrameType>::FromExternal(
+              const_cast<fuchsia_hardware_network::wire::FrameType*>(kRxTypes), 1))
+          .tx_types(
+              fidl::VectorView<fuchsia_hardware_network::wire::FrameTypeSupport>::FromExternal(
+                  const_cast<fuchsia_hardware_network::wire::FrameTypeSupport*>(kTxTypes), 1))
+          .Build();
 
-  shutting_down_ = true;
-  ifc_.clear();
+  completer.buffer(arena).Reply(info);
+}
 
-  if (pending_requests_ == 0) {
-    lock.release();
-    ShutdownComplete();
-  } else {
-    fdf::error("Shutdown with {} pending", pending_requests_);
+void RndisFunction::GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(fidl::ToWire(arena, ReadStatus()));
+}
+
+void RndisFunction::SetActive(SetActiveRequestView request, fdf::Arena& arena,
+                              SetActiveCompleter::Sync& completer) {
+  FDF_ASSERT(!completer.is_reply_needed());
+}
+
+void RndisFunction::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
+  auto [client, server] = fdf::Endpoints<fnetdev::MacAddr>::Create();
+  fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server), this);
+  completer.buffer(arena).Reply(std::move(client));
+}
+
+void RndisFunction::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {}
+
+void RndisFunction::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
+  fuchsia_net::wire::MacAddress mac;
+  static_assert(sizeof(mac.octets) == sizeof(mac_addr_), "MAC address size mismatch");
+  memcpy(mac.octets.data(), mac_addr_.data(), sizeof(mac_addr_));
+  completer.buffer(arena).Reply(mac);
+}
+
+void RndisFunction::GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) {
+  fnetdev::wire::Features features =
+      fnetdev::wire::Features::Builder(arena)
+          .multicast_filter_count(0)
+          .supported_modes(fnetdev::wire::SupportedMacFilterMode::kPromiscuous)
+          .Build();
+  completer.buffer(arena).Reply(features);
+}
+
+void RndisFunction::SetMode(SetModeRequestView request, fdf::Arena& arena,
+                            SetModeCompleter::Sync& completer) {
+  completer.buffer(arena).Reply();
+}
+
+fuchsia_hardware_network::PortStatus RndisFunction::ReadStatus() const {
+  fuchsia_hardware_network::PortStatus status;
+  status.mtu(kMtu);
+  fuchsia_hardware_network::StatusFlags flags;
+  if (Online()) {
+    flags |= fuchsia_hardware_network::StatusFlags::kOnline;
+  }
+  status.flags(flags);
+  return status;
+}
+
+void RndisFunction::UpdatePortStatus() {
+  if (!netdevice_ifc_.is_valid()) {
+    return;
+  }
+  fdf::Arena arena(kArenaTag);
+  fidl::OneWayStatus status =
+      netdevice_ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, ReadStatus()));
+  if (!status.ok()) {
+    fdf::error("Failed to update port status: {}", status.FormatDescription());
   }
 }
 
-void RndisFunction::ShutdownComplete() {
-  if (prepare_stop_completer_.has_value()) {
-    std::move(prepare_stop_completer_).value()(zx::ok());
-  } else {
-    fdf::warn("ShutdownComplete called but there was no shutdown callback");
+void RndisFunction::ContinueStop() {
+  if (!shutting_down_ || !prepare_stop_completer_.has_value()) {
+    return;
   }
+
+  for (auto& ep_info : GetEndpoints()) {
+    if (!ep_info.ep.RequestsFull()) {
+      fdf::info("waiting for {} requests to complete", ep_info.name);
+      return;
+    }
+    ep_info.ep.Close();
+  }
+
+  auto completer = std::move(prepare_stop_completer_.value());
+  prepare_stop_completer_.reset();
+  completer(zx::ok());
 }
 
 void RndisFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
+  shutting_down_ = true;
   prepare_stop_completer_.emplace(std::move(completer));
-  Shutdown();
+
+  for (auto& c : rx_completion_queue_) {
+    bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(c.request().value())));
+  }
+  rx_completion_queue_.clear();
+
+  DiscardPendingTxBuffers(ZX_ERR_CANCELED);
+  ReturnPendingRxSpace();
+  CancelAllRequests();
+  ContinueStop();
+}
+
+void RndisFunction::CancelAllRequests() {
+  for (auto& ep_info : GetEndpoints()) {
+    // No need to cancel, nothing in flight.
+    if (ep_info.ep.RequestsFull()) {
+      continue;
+    }
+    fidl::WireResult result = ep_info.ep.client().wire_sync()->CancelAll();
+    if (!result.ok()) {
+      fdf::error("Failed to cancel {} requests: {}", ep_info.name,
+                 result.error().FormatDescription());
+    } else if (!result.value().is_ok()) {
+      fdf::error("Failed to cancel {} requests: {}", ep_info.name,
+                 zx_status_get_string(result.value().error_value()));
+    }
+  }
+}
+
+void RndisFunction::DiscardPendingTxBuffers(zx_status_t status) {
+  std::array<fnetdev::wire::TxResult, kRequestPoolSize> results;
+  auto results_iter = results.begin();
+  while (!tx_completion_queue_.empty()) {
+    uint32_t id = tx_completion_queue_.front();
+    *results_iter++ = {.id = id, .status = status};
+    tx_completion_queue_.pop();
+  }
+  if (results_iter == results.begin() || !netdevice_ifc_.is_valid()) {
+    return;
+  }
+  fdf::Arena arena(kArenaTag);
+  fidl::OneWayStatus fidl_status = netdevice_ifc_.buffer(arena)->CompleteTx(
+      fidl::VectorView<fnetdev::wire::TxResult>::FromExternal(
+          results.data(), std::distance(results.begin(), results_iter)));
+  if (!fidl_status.ok()) {
+    fdf::error("Failed to complete tx: {}", fidl_status.FormatDescription());
+  }
+}
+
+void RndisFunction::ReturnPendingRxSpace() {
+  fdf::Arena arena(kArenaTag);
+
+  std::array<fnetdev::wire::RxBuffer, kRequestPoolSize> rx_buffers;
+  auto rx_buffers_iter = rx_buffers.begin();
+
+  std::array<fnetdev::wire::RxBufferPart, kRequestPoolSize> rx_buffers_parts;
+  auto rx_buffers_parts_iter = rx_buffers_parts.begin();
+
+  while (!rx_space_buffers_.empty()) {
+    *rx_buffers_parts_iter = {
+        .id = rx_space_buffers_.front().id,
+        .offset = 0,
+        .length = 0,
+    };
+    rx_space_buffers_.pop();
+    *rx_buffers_iter++ = {
+        .meta =
+            {
+                .port = kPortId,
+                .frame_type = fuchsia_hardware_network::FrameType::kEthernet,
+            },
+        .data =
+            fidl::VectorView<fnetdev::wire::RxBufferPart>::FromExternal(&*rx_buffers_parts_iter, 1),
+    };
+    rx_buffers_parts_iter++;
+  }
+
+  if (rx_buffers_iter == rx_buffers.begin() || !netdevice_ifc_.is_valid()) {
+    return;
+  }
+
+  fidl::OneWayStatus fidl_status = netdevice_ifc_.buffer(arena)->CompleteRx(
+      fidl::VectorView<fnetdev::wire::RxBuffer>::FromExternal(
+          rx_buffers.data(), std::distance(rx_buffers.begin(), rx_buffers_iter)));
+  if (!fidl_status.ok()) {
+    fdf::error("Failed to complete rx: {}", fidl_status.error());
+  }
 }
 
 FUCHSIA_DRIVER_EXPORT(RndisFunction);
