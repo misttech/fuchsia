@@ -1025,7 +1025,7 @@ mod tests {
     use fidl_fuchsia_fxfs::{BytesAndNodes, ProjectIdMarker};
     use fidl_fuchsia_io as fio;
     use fs_inspect::FsInspectVolume;
-    use fuchsia_async as fasync;
+    use fuchsia_async::{self as fasync, TimeoutExt as _};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder};
@@ -2563,7 +2563,7 @@ mod tests {
                 // Ensure that nothing is paged in right now.
                 for hash in &hashes {
                     let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                    assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
+                    assert_eq!(blob.vmo().info().unwrap().populated_bytes, 0);
                 }
 
                 fixture
@@ -2601,15 +2601,21 @@ mod tests {
                 }
 
                 // Await all data being played back by checking that things have paged in.
-                for hash in &hashes {
-                    // Fetch vmo this way as well to ensure that the open is counting the file as
-                    // used in the current recording.
-                    let _vmo = fixture.get_blob_vmo(*hash).await;
-                    let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                    while blob.vmo().info().unwrap().committed_bytes == 0 {
-                        fasync::Timer::new(Duration::from_millis(25)).await;
+                async {
+                    for hash in &hashes {
+                        // Fetch vmo this way as well to ensure that the open is counting the file
+                        // as used in the current recording.
+                        let _vmo = fixture.get_blob_vmo(*hash).await;
+                        let blob = fixture.get_blob(*hash).await.expect("Opening blob");
+                        while blob.vmo().info().unwrap().populated_bytes == 0 {
+                            fasync::Timer::new(Duration::from_millis(25)).await;
+                        }
                     }
                 }
+                .on_timeout(std::time::Duration::from_secs(120), || {
+                    panic!("Replay did not page in for all VMOs")
+                })
+                .await;
 
                 // Complete the recording.
                 fixture.volume().volume().stop_profile_tasks().await;
@@ -2750,7 +2756,7 @@ mod tests {
                         .into_any()
                         .downcast::<FxFile>()
                         .expect("Should be file");
-                    assert_eq!(crypt_file.vmo().info().unwrap().committed_bytes, 0);
+                    assert_eq!(crypt_file.vmo().info().unwrap().populated_bytes, 0);
                 }
                 for (_, id) in &hashes {
                     let file = volume
@@ -2760,7 +2766,7 @@ mod tests {
                         .into_any()
                         .downcast::<FxFile>()
                         .expect("Should be file");
-                    assert_eq!(file.vmo().info().unwrap().committed_bytes, 0);
+                    assert_eq!(file.vmo().info().unwrap().populated_bytes, 0);
                 }
 
                 fixture
@@ -2798,18 +2804,24 @@ mod tests {
                 }
 
                 // Await all data being played back by checking that things have paged in.
-                for (_, id) in &hashes {
-                    let file = volume
-                        .get_or_load_node(*id, ObjectDescriptor::File, None)
-                        .await
-                        .expect("Opening file internally")
-                        .into_any()
-                        .downcast::<FxFile>()
-                        .expect("Should be file");
-                    while file.vmo().info().unwrap().committed_bytes == 0 {
-                        fasync::Timer::new(Duration::from_millis(25)).await;
+                async {
+                    for (_, id) in &hashes {
+                        let file = volume
+                            .get_or_load_node(*id, ObjectDescriptor::File, None)
+                            .await
+                            .expect("Opening file internally")
+                            .into_any()
+                            .downcast::<FxFile>()
+                            .expect("Should be file");
+                        while file.vmo().info().unwrap().populated_bytes == 0 {
+                            fasync::Timer::new(Duration::from_millis(25)).await;
+                        }
                     }
                 }
+                .on_timeout(std::time::Duration::from_secs(120), || {
+                    panic!("Replay did not page in for all VMOs")
+                })
+                .await;
                 // The crypt file access should not have been recorded or replayed.
                 {
                     let crypt_file = volume
@@ -2819,7 +2831,7 @@ mod tests {
                         .into_any()
                         .downcast::<FxFile>()
                         .expect("Should be file");
-                    assert_eq!(crypt_file.vmo().info().unwrap().committed_bytes, 0);
+                    assert_eq!(crypt_file.vmo().info().unwrap().populated_bytes, 0);
                 }
 
                 // Open all the files to show that they have been used.
@@ -2894,7 +2906,7 @@ mod tests {
             // Ensure that nothing is paged in right now.
             for hash in &hashes {
                 let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
+                assert_eq!(blob.vmo().info().unwrap().populated_bytes, 0);
             }
 
             let volume = fixture.volume().volume();
@@ -2905,13 +2917,17 @@ mod tests {
                 .expect("Replaying");
 
             // Await all data being played back by checking that things have paged in.
-            {
+            async {
                 let hash = &hashes[0];
                 let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                while blob.vmo().info().unwrap().committed_bytes == 0 {
+                while blob.vmo().info().unwrap().populated_bytes == 0 {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
             }
+            .on_timeout(std::time::Duration::from_secs(120), || {
+                panic!("Replay did not page in for all VMOs")
+            })
+            .await;
 
             let original_recorded = RECORDED.load(Ordering::Relaxed);
 
@@ -2942,7 +2958,7 @@ mod tests {
             // Ensure that nothing is paged in right now.
             for hash in &hashes {
                 let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
+                assert_eq!(blob.vmo().info().unwrap().populated_bytes, 0);
             }
 
             fixture
@@ -2953,13 +2969,17 @@ mod tests {
                 .expect("Replaying");
 
             // Await all data being played back by checking that things have paged in.
-            {
+            async {
                 let hash = &hashes[1];
                 let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                while blob.vmo().info().unwrap().committed_bytes == 0 {
+                while blob.vmo().info().unwrap().populated_bytes == 0 {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
             }
+            .on_timeout(std::time::Duration::from_secs(30), || {
+                panic!("Replay did not page in for all VMOs")
+            })
+            .await;
 
             // Complete the recording.
             fixture.volume().volume().stop_profile_tasks().await;
@@ -2968,7 +2988,7 @@ mod tests {
             {
                 let hash = &hashes[0];
                 let blob = fixture.get_blob(*hash).await.expect("Opening blob");
-                assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
+                assert_eq!(blob.vmo().info().unwrap().populated_bytes, 0);
             }
         }
         fixture.close().await;
