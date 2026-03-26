@@ -29,7 +29,6 @@ use fuchsia_runtime::{
 };
 use mapped_clock::MappedClock;
 use starnix_logging::{log_info, log_warn};
-use starnix_sync::Mutex;
 use std::sync::LazyLock;
 use zx::{self as zx, HandleBased, Rights, Unowned};
 
@@ -234,18 +233,16 @@ impl UtcClock {
     }
 }
 
-static UTC_CLOCK: LazyLock<Mutex<UtcClock>> = LazyLock::new(|| {
-    Mutex::new(UtcClock::new(duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap()))
-});
+static UTC_CLOCK: LazyLock<UtcClock> =
+    LazyLock::new(|| UtcClock::new(duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap()));
 
 /// Creates a copy of the UTC clock handle currently in use in Starnix.
 ///
 /// Ensure that you are not reading UTC clock for Starnix use from this clock,
 /// use the [utc_now] function instead.
 pub fn duplicate_real_utc_clock_handle() -> Result<UtcClockHandle, zx::Status> {
-    let lock = (*UTC_CLOCK).lock();
     // Maybe reduce rights here?
-    (*lock).duplicate_real_utc_clock_handle(zx::Rights::SAME_RIGHTS)
+    (*UTC_CLOCK).duplicate_real_utc_clock_handle(zx::Rights::SAME_RIGHTS)
 }
 
 /// Returns the current UTC time based on the Starnix UTC clock.
@@ -267,7 +264,7 @@ pub fn utc_now() -> UtcInstant {
             return test_time;
         }
     }
-    (*UTC_CLOCK).lock().now()
+    (*UTC_CLOCK).now()
 }
 
 /// Estimates the boot time corresponding to `utc`, based on the currently
@@ -287,7 +284,7 @@ pub fn estimate_boot_deadline_from_utc(utc: UtcInstant) -> (zx::BootInstant, boo
             return (test_time, true);
         }
     }
-    (*UTC_CLOCK).lock().estimate_boot_time(utc)
+    (*UTC_CLOCK).estimate_boot_time(utc)
 }
 
 #[cfg(test)]
