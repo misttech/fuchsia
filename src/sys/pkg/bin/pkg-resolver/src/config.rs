@@ -10,10 +10,10 @@ use std::io::{BufReader, Read};
 use thiserror::Error;
 
 /// Static service configuration options.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Config {
     enable_dynamic_configuration: bool,
-    persisted_repos_dir: String,
+    persisted_repos_dir: Option<String>,
 }
 
 impl Config {
@@ -22,42 +22,36 @@ impl Config {
     }
 
     pub fn persisted_repos_dir(&self) -> Option<&str> {
-        match self.persisted_repos_dir.as_str() {
-            "" => None,
-            _ => Some(&self.persisted_repos_dir),
-        }
+        self.persisted_repos_dir.as_deref()
     }
 
-    pub fn load_from_config_data_or_default() -> Config {
-        let dynamic_config = match File::open("/config/data/config.json") {
+    pub fn load_from_config_data_or_default() -> Self {
+        let enable_dynamic_configuration = match File::open("/config/data/config.json") {
             Ok(f) => Self::load_enable_dynamic_config(BufReader::new(f)).unwrap_or_else(|e| {
-                error!("unable to load config, using defaults: {:#}", anyhow!(e));
-                Config::default()
+                error!("unable to load config, disabling dynamic config: {:#}", anyhow!(e));
+                false
             }),
             Err(e) => {
-                info!("no config found, using defaults: {:#}", anyhow!(e));
-                Config::default()
+                info!("no config found, disabling dynamic config: {:#}", anyhow!(e));
+                false
             }
         };
 
-        let repo_config = match File::open("/config/data/persisted_repos_dir.json") {
+        let persisted_repos_dir = match File::open("/config/data/persisted_repos_dir.json") {
             Ok(f) => Self::load_persisted_repos_config(BufReader::new(f)).unwrap_or_else(|e| {
-                error!("unable to load config, using defaults: {:#}", anyhow!(e));
-                Config::default()
+                error!("unable to load config, disabling persisted repos: {:#}", anyhow!(e));
+                None
             }),
             Err(e) => {
-                info!("no config found, using defaults: {:#}", anyhow!(e));
-                Config::default()
+                info!("no config found, disabling persisted repos: {:#}", anyhow!(e));
+                None
             }
         };
 
-        Config {
-            enable_dynamic_configuration: dynamic_config.enable_dynamic_configuration,
-            persisted_repos_dir: repo_config.persisted_repos_dir,
-        }
+        Self { enable_dynamic_configuration, persisted_repos_dir }
     }
 
-    fn load_enable_dynamic_config(r: impl Read) -> Result<Config, ConfigLoadError> {
+    fn load_enable_dynamic_config(r: impl Read) -> Result<bool, ConfigLoadError> {
         #[derive(Debug, Deserialize)]
         #[serde(deny_unknown_fields)]
         struct ParseConfig {
@@ -66,13 +60,10 @@ impl Config {
 
         let parse_config = serde_json::from_reader::<_, ParseConfig>(r)?;
 
-        Ok(Config {
-            enable_dynamic_configuration: parse_config.enable_dynamic_configuration,
-            ..Default::default()
-        })
+        Ok(parse_config.enable_dynamic_configuration)
     }
 
-    fn load_persisted_repos_config(r: impl Read) -> Result<Config, ConfigLoadError> {
+    fn load_persisted_repos_config(r: impl Read) -> Result<Option<String>, ConfigLoadError> {
         #[derive(Debug, Deserialize)]
         #[serde(deny_unknown_fields)]
         struct ParseConfig {
@@ -81,7 +72,8 @@ impl Config {
 
         let parse_config = serde_json::from_reader::<_, ParseConfig>(r)?;
 
-        Ok(Config { persisted_repos_dir: parse_config.persisted_repos_dir, ..Default::default() })
+        Ok((!parse_config.persisted_repos_dir.is_empty())
+            .then_some(parse_config.persisted_repos_dir))
     }
 }
 
@@ -98,7 +90,7 @@ mod tests {
     use assert_matches::assert_matches;
     use serde_json::json;
 
-    fn verify_load_dyn(input: serde_json::Value, expected: Config) {
+    fn verify_load_dyn(input: serde_json::Value, expected: bool) {
         assert_eq!(
             Config::load_enable_dynamic_config(input.to_string().as_bytes())
                 .expect("json value to be valid"),
@@ -106,7 +98,7 @@ mod tests {
         );
     }
 
-    fn verify_load_repo(input: serde_json::Value, expected: Config) {
+    fn verify_load_repo(input: serde_json::Value, expected: Option<String>) {
         assert_eq!(
             Config::load_persisted_repos_config(input.to_string().as_bytes())
                 .expect("json value to be valid"),
@@ -121,7 +113,7 @@ mod tests {
                 json!({
                     "enable_dynamic_configuration": *val,
                 }),
-                Config { enable_dynamic_configuration: *val, ..Default::default() },
+                *val,
             );
         }
 
@@ -129,8 +121,15 @@ mod tests {
             json!({
                 "persisted_repos_dir": "boo",
             }),
-            Config { persisted_repos_dir: "boo".to_string(), ..Default::default() },
-        )
+            Some("boo".into()),
+        );
+
+        verify_load_repo(
+            json!({
+                "persisted_repos_dir": "",
+            }),
+            None,
+        );
     }
 
     #[test]
@@ -157,20 +156,5 @@ mod tests {
             ),
             Err(ConfigLoadError::Parse(_))
         );
-    }
-
-    #[test]
-    fn test_no_config_data_is_default() {
-        assert_eq!(Config::load_from_config_data_or_default(), Config::default());
-    }
-
-    #[test]
-    fn test_default_disables_dynamic_configuration() {
-        assert_eq!(Config::default().enable_dynamic_configuration, false);
-    }
-
-    #[test]
-    fn test_default_disables_persisted_repos() {
-        assert_eq!(Config::default().persisted_repos_dir(), None);
     }
 }
