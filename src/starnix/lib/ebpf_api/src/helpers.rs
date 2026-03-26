@@ -7,14 +7,15 @@ use ebpf::{BpfValue, EbpfHelperImpl, EbpfProgramContext, FromBpfValue, HelperSet
 use inspect_stubs::track_stub;
 use linux_uapi::{
     bpf_func_id_BPF_FUNC_get_current_pid_tgid, bpf_func_id_BPF_FUNC_get_current_uid_gid,
-    bpf_func_id_BPF_FUNC_get_smp_processor_id, bpf_func_id_BPF_FUNC_get_socket_cookie,
-    bpf_func_id_BPF_FUNC_get_socket_uid, bpf_func_id_BPF_FUNC_ktime_get_boot_ns,
-    bpf_func_id_BPF_FUNC_ktime_get_coarse_ns, bpf_func_id_BPF_FUNC_ktime_get_ns,
-    bpf_func_id_BPF_FUNC_map_delete_elem, bpf_func_id_BPF_FUNC_map_lookup_elem,
-    bpf_func_id_BPF_FUNC_map_update_elem, bpf_func_id_BPF_FUNC_probe_read_str,
-    bpf_func_id_BPF_FUNC_probe_read_user, bpf_func_id_BPF_FUNC_probe_read_user_str,
-    bpf_func_id_BPF_FUNC_ringbuf_discard, bpf_func_id_BPF_FUNC_ringbuf_reserve,
-    bpf_func_id_BPF_FUNC_ringbuf_submit, bpf_func_id_BPF_FUNC_sk_fullsock,
+    bpf_func_id_BPF_FUNC_get_retval, bpf_func_id_BPF_FUNC_get_smp_processor_id,
+    bpf_func_id_BPF_FUNC_get_socket_cookie, bpf_func_id_BPF_FUNC_get_socket_uid,
+    bpf_func_id_BPF_FUNC_ktime_get_boot_ns, bpf_func_id_BPF_FUNC_ktime_get_coarse_ns,
+    bpf_func_id_BPF_FUNC_ktime_get_ns, bpf_func_id_BPF_FUNC_map_delete_elem,
+    bpf_func_id_BPF_FUNC_map_lookup_elem, bpf_func_id_BPF_FUNC_map_update_elem,
+    bpf_func_id_BPF_FUNC_probe_read_str, bpf_func_id_BPF_FUNC_probe_read_user,
+    bpf_func_id_BPF_FUNC_probe_read_user_str, bpf_func_id_BPF_FUNC_ringbuf_discard,
+    bpf_func_id_BPF_FUNC_ringbuf_reserve, bpf_func_id_BPF_FUNC_ringbuf_submit,
+    bpf_func_id_BPF_FUNC_set_retval, bpf_func_id_BPF_FUNC_sk_fullsock,
     bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
     bpf_func_id_BPF_FUNC_trace_printk, gid_t, pid_t, uid_t,
 };
@@ -468,6 +469,30 @@ fn bpf_sk_fullsock<C: EbpfProgramContext>(
     0.into()
 }
 
+fn bpf_set_retval<C: EbpfProgramContext>(
+    _context: &mut C::RunContext<'_>,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_set_retval");
+    0.into()
+}
+
+fn bpf_get_retval<C: EbpfProgramContext>(
+    _context: &mut C::RunContext<'_>,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_get_retval");
+    0.into()
+}
+
 fn get_common_helpers<C: MapsProgramContext>() -> impl Iterator<Item = (u32, EbpfHelperImpl<C>)> {
     [
         (bpf_func_id_BPF_FUNC_ktime_get_boot_ns, EbpfHelperImpl(bpf_ktime_get_boot_ns)),
@@ -534,11 +559,16 @@ pub trait CgroupSockAddrProgramContext:
 
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKOPT` programs.
-pub trait CgroupSockOptProgramContext:
-    MapsProgramContext + CurrentTaskProgramContext
-{
+pub trait CgroupSockOptProgramContext: MapsProgramContext + CurrentTaskProgramContext {
     fn get_helpers() -> HelperSet<Self> {
-        get_common_helpers().chain(get_current_task_helpers()).collect()
+        [
+            (bpf_func_id_BPF_FUNC_set_retval, EbpfHelperImpl(bpf_set_retval)),
+            (bpf_func_id_BPF_FUNC_get_retval, EbpfHelperImpl(bpf_get_retval)),
+        ]
+        .into_iter()
+        .chain(get_common_helpers())
+        .chain(get_current_task_helpers())
+        .collect()
     }
 }
 

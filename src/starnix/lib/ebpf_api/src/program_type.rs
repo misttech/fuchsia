@@ -629,6 +629,40 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     },
                 },
             ),
+            (
+                vec![
+                    ProgramType::CgroupDevice,
+                    ProgramType::CgroupSockopt,
+                    ProgramType::CgroupSysctl,
+                ]
+                .into(),
+                EbpfHelperDefinition {
+                    index: bpf_func_id_BPF_FUNC_sk_fullsock,
+                    name: "set_retval",
+                    signature: FunctionSignature {
+                        args: vec![Type::ScalarValueParameter],
+                        return_value: Type::UNKNOWN_SCALAR,
+                        invalidate_array_bounds: false,
+                    },
+                },
+            ),
+            (
+                vec![
+                    ProgramType::CgroupDevice,
+                    ProgramType::CgroupSockopt,
+                    ProgramType::CgroupSysctl,
+                ]
+                .into(),
+                EbpfHelperDefinition {
+                    index: bpf_func_id_BPF_FUNC_sk_fullsock,
+                    name: "get_retval",
+                    signature: FunctionSignature {
+                        args: vec![],
+                        return_value: Type::UNKNOWN_SCALAR,
+                        invalidate_array_bounds: false,
+                    },
+                },
+            ),
         ]
     });
 
