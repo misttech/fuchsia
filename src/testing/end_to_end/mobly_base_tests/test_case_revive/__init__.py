@@ -10,7 +10,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_async_extension
+from fuchsia_base_test import AsyncFuchsiaBaseTest
 from honeydew.auxiliary_devices.power_switch import power_switch
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -116,12 +117,12 @@ def tag_test(
     return tags_decorator
 
 
-class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
+class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
     """Async version of TestCaseRevive."""
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
-        super().pre_run()
+        await super().pre_run()
 
         self._test_case_revive: bool = self.user_params.get(
             "test_case_revive", False
@@ -166,14 +167,18 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
                 fuchsia_device_operation
                 == FuchsiaDeviceOperation.IDLE_SUSPEND_TIMER_RESUME
             ):
-                fuchsia_device.system_power_state_controller.idle_suspend_timer_based_resume(
-                    duration=self.user_params["resume_timer_duration_sec"],
-                    verify_duration=self.user_params.get(
-                        "verify_duration", True
-                    ),
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    fuchsia_device.system_power_state_controller.idle_suspend_timer_based_resume(
+                        duration=self.user_params["resume_timer_duration_sec"],
+                        verify_duration=self.user_params.get(
+                            "verify_duration", True
+                        ),
+                    )
                 )
             elif fuchsia_device_operation == FuchsiaDeviceOperation.SOFT_REBOOT:
-                fuchsia_device.reboot()
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    fuchsia_device.reboot()
+                )
             elif fuchsia_device_operation in [
                 FuchsiaDeviceOperation.HARD_REBOOT,
                 FuchsiaDeviceOperation.POWER_CYCLE,
@@ -196,8 +201,10 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
                     power_switch_class(device_name=fuchsia_device.device_name)
                 )
 
-                fuchsia_device.power_cycle(
-                    power_switch=self._power_switch, outlet=None
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    fuchsia_device.power_cycle(
+                        power_switch=self._power_switch, outlet=None
+                    )
                 )
             elif (
                 fuchsia_device_operation
@@ -249,7 +256,7 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
                 )
                 res = pre_test_execution_fn(**pre_test_execution_fn_kwargs)
                 if inspect.iscoroutine(res):
-                    res
+                    fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
                 _LOGGER.info(
                     "[AsyncTestCaseRevive] - Calling %s which is the first step in the revived test sequence...",
@@ -257,7 +264,7 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
                 )
                 res = pre_test_execution_fn()
                 if inspect.iscoroutine(res):
-                    res
+                    fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if test_method_execution_frequency in [
             TestMethodExecutionFrequency.PRE_AND_POST,
@@ -270,14 +277,18 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
             )
             res = getattr(self, test_case)()
             if inspect.iscoroutine(res):
-                res
+                fuchsia_async_extension.get_loop().run_until_complete(res)
 
         _LOGGER.info(
             "[AsyncTestCaseRevive] - Performing %s operation on all Fuchsia devices "
             "that are part of the testbed...",
             fuchsia_device_operation,
         )
-        self._perform_op(fuchsia_device_operation=fuchsia_device_operation)
+        res = self._perform_op(
+            fuchsia_device_operation=fuchsia_device_operation
+        )
+        if inspect.iscoroutine(res):
+            fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if test_method_execution_frequency in [
             TestMethodExecutionFrequency.PRE_AND_POST,
@@ -290,7 +301,7 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
             )
             res = getattr(self, test_case)()
             if inspect.iscoroutine(res):
-                res
+                fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if post_test_execution_fn:
             if post_test_execution_fn_kwargs:
@@ -301,7 +312,7 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
                 )
                 res = post_test_execution_fn(**post_test_execution_fn_kwargs)
                 if inspect.iscoroutine(res):
-                    res
+                    fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
                 _LOGGER.info(
                     "[AsyncTestCaseRevive] - Calling %s which is the last step in the revived test sequence...",
@@ -309,7 +320,7 @@ class AsyncTestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
                 )
                 res = post_test_execution_fn()
                 if inspect.iscoroutine(res):
-                    res
+                    fuchsia_async_extension.get_loop().run_until_complete(res)
 
     def _revived_test_case_name_func(
         self,
