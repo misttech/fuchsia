@@ -1,4 +1,4 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,18 +12,15 @@ use askama::Template as _;
 use fidl_ir::Library;
 use fidlgen::trim_trailing_whitespace;
 
-mod config;
+mod context;
 mod templates;
 
-/// Generate Rust bindings from FIDL IR
+/// Generate conversion functions between old and new FIDL bindings.
 #[derive(FromArgs)]
-pub struct Fidlgen {
+pub struct Args {
     /// source JSON IR file path
     #[argh(option)]
     json: PathBuf,
-    /// source config file path
-    #[argh(option)]
-    config: PathBuf,
     /// output file path
     #[argh(option)]
     output_filename: PathBuf,
@@ -33,30 +30,29 @@ pub struct Fidlgen {
     /// rustfmt configuration file path
     #[argh(option)]
     rustfmt_config: PathBuf,
-    /// name of the common crate, which contains the POD parts of this library.
+    /// name of the rust bindings crate
     #[argh(option)]
-    common_lib: Option<String>,
+    rust_crate: String,
+    /// name of the rust_next bindings crate
+    #[argh(option)]
+    rust_next_crate: String,
 }
 
 fn main() {
-    let args = argh::from_env::<Fidlgen>();
+    let args = argh::from_env::<Args>();
 
-    let file = File::open(&args.json).expect("failed to open source JSON IR file");
+    let file = File::open(&args.json).expect("failed to open JSON IR file");
     let library = serde_json::from_reader::<_, Library>(BufReader::new(file))
         .expect("failed to parse source JSON IR");
 
-    let file = File::open(&args.config).expect("failed to open source JSON config file");
-    let mut config = serde_json::from_reader::<_, self::config::Config>(BufReader::new(file))
-        .expect("failed to parse source JSON IR");
-    config.common_lib = args.common_lib;
-
-    if config.is_common && config.common_lib.is_some() {
-        panic!("Common crate cannot have a common crate");
-    }
-
-    let context = templates::Context::new(library, config);
-    let result =
-        templates::LibraryTemplate::new(&context).render().expect("failed to emit FIDL bindings");
+    let context = context::Context {
+        library,
+        rust_crate: args.rust_crate,
+        rust_next_crate: args.rust_next_crate,
+    };
+    let result = templates::LibraryTemplate::new(&context)
+        .render()
+        .expect("failed to emit FIDL conversions");
     let result = trim_trailing_whitespace(&result);
 
     std::fs::write(&args.output_filename, result).expect("failed to write to output file");

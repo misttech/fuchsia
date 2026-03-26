@@ -78,6 +78,7 @@ if (is_host || is_fidl_toolchain) {
                 "_next",
                 "_next_common",
                 "_fdomain_next",
+                "_next_convert",
               ]) {
         visibility += [
           "${target}_rust${rust_fidl_suffix}.actual",

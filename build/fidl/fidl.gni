@@ -573,6 +573,31 @@ template("fidl") {
         ]
         fidl_gen_dir += "/rust_next"
       }
+
+      if (enable_rust) {
+        # Define conversion crates
+        rust_dep = "${target_name}_rust"
+        rust_next_dep = "${target_name}_rust_next"
+        fidl_rust_next_convert("${target_name}_rust_next_convert") {
+          forward_variables_from(invoker,
+                                 [
+                                   "applicable_licenses",
+                                   "testonly",
+                                   "visibility",
+                                   "disable_rustdoc",
+                                 ])
+          forward_variables_from(common_parameters, "*")
+          rust_crate = "fidl_" + string_replace(library_name, ".", "_")
+          rust_next_crate =
+              "fidl_next_" + string_replace(library_name, ".", "_")
+          deps = [
+            ":$rust_dep",
+            ":$rust_next_dep",
+            "//sdk/categories:marker-${marker_category}",
+          ]
+          fidl_gen_dir += "/rust_next"
+        }
+      }
     }
 
     if (enable_bindlib) {

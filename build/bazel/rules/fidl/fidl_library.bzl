@@ -329,7 +329,7 @@ def _fidl_library_impl(
         pass
 
     if enable_rust_next:
-        # TODO(https://fxbug.dev/454452299): Implement next-generation Rust bindings.
+        # TODO(https://fxbug.dev/454452299): Implement next-generation Rust bindings and conversions.
         print("Next-generation Rust bindings are not yet supported (https://fxbug.dev/454452299): %s." % library_name)
 
     if enable_bindlib:
