@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_wlan_policy as wlan_policy;
 use ffx_core::ffx_command;
 use ffx_wlan_common::args::{CredentialType, SecurityType};
-use fidl_fuchsia_wlan_policy as wlan_policy;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
