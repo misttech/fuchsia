@@ -148,7 +148,13 @@ void Dwc3::CmdEpEndTransfer(const Endpoint& ep) {
       .set_HIPRI_FORCERM(1)
       .WriteTo(mmio);
 
-  WaitForCmdAct(__func__, ep_num);
+  if (poll_end_xfer_) {
+    WaitForCmdAct(__func__, ep_num);
+  } else {
+    // Rather than synchronize against a CommandComplete endpoint event, just give the core some
+    // time to complete halting any DMA.
+    zx::nanosleep(zx::deadline_after(zx::msec(1)));
+  }
 }
 
 void Dwc3::CmdEpSetStall(const Endpoint& ep) {

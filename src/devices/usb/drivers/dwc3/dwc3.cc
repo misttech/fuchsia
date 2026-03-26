@@ -758,6 +758,9 @@ zx_status_t Dwc3::CheckHwVersion() {
   const uint8_t rev = n4;
 
   if (core_id == 0x5533) {
+    // Only valid on core versions 3.10a+
+    poll_end_xfer_ = major >= 3 && minor >= 10 && rev >= 0xa;
+
     fdf::info("Detected Synopsys DWC_usb3 core version {}.{:02d}{:x}", major, minor, rev);
     return ZX_OK;
   }
@@ -784,6 +787,10 @@ zx_status_t Dwc3::ResetHw() {
 
   // Fuchsia's dwc3.cc doesn't parse snps,incr-burst-type-adjustment yet.
   GSBUSCFG0::Get().FromValue(0).set_INCR4BRSTENA(1).WriteTo(mmio);
+
+  if (poll_end_xfer_) {
+    GUCTL2::Get().ReadFrom(mmio).set_Rst_actbitlater(1).WriteTo(mmio);
+  }
 
   return ZX_OK;
 }
@@ -1291,6 +1298,7 @@ void Dwc3::EpReset(Endpoint& ep) {
   EpSetConfig(ep, false);
   ep.got_not_ready = false;
   ep.rsrc_id = Endpoint::kInvalidResourceId;
+  ep.xfer_in_progress = false;
 }
 
 void Dwc3::UserEpReset(UserEndpoint& uep) {
@@ -1301,7 +1309,7 @@ void Dwc3::UserEpReset(UserEndpoint& uep) {
 
 void Dwc3::Ep0Reset() {
   TRACE_DURATION("dwc3", "Dwc3::Ep0Reset");
-  if (ep0_.transfer_in_progress_) {
+  if (ep0_.in.xfer_in_progress || ep0_.out.xfer_in_progress) {
     bool is_out = (ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT;
     if (ep0_.state == Ep0::State::Status) {
       // Flip direction for status.
@@ -1314,7 +1322,6 @@ void Dwc3::Ep0Reset() {
   ep0_.cur_setup = {};
   ep0_.cur_speed = fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined;
   ep0_.state = Ep0::State::None;
-  ep0_.transfer_in_progress_ = false;
   ep0_.shared_fifo.Clear();
 }
 
@@ -1322,6 +1329,9 @@ void Dwc3::ResetEndpoints() {
   TRACE_DURATION("dwc3", "Dwc3::ResetEndpoints");
   Ep0Reset();
   for (UserEndpoint& uep : user_endpoints_) {
+    if (uep.ep.xfer_in_progress) {
+      CmdEpEndTransfer(uep.ep);
+    }
     UserEpReset(uep);
   }
 }

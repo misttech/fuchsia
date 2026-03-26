@@ -66,6 +66,7 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
   zx_paddr_t trb_phys = fifo.Write(trb);
 
   CmdEpStartTransfer(ep, trb_phys);
+  ep.xfer_in_progress = true;
 }
 
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
@@ -76,6 +77,7 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
   if (current_req.has_value()) {
     dwc3_->CmdEpEndTransfer(uep_->ep);
     RequestComplete(reason, 0, std::move(*current_req));
+    uep_->ep.xfer_in_progress = false;
     current_req.reset();
   }
 
@@ -131,6 +133,7 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
       std::move(*uep->server->current_req));
   uep->server->current_req.reset();
   uep->fifo.AdvanceRead();
+  uep->ep.xfer_in_progress = false;
 }
 
 void Dwc3::HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {

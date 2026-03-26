@@ -116,6 +116,9 @@ class Dwc3 : public fdf::DriverBase,
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_policy::Controller> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override { /* no-op */ }
 
+  // For testing.
+  bool poll_end_xfer() const { return poll_end_xfer_; }
+
  private:
   const std::string_view kScheduleProfileRole = "fuchsia.devices.usb.drivers.dwc3.interrupt";
   static inline const uint32_t kEp0BufferSize = UINT16_MAX + 1;
@@ -186,6 +189,7 @@ class Dwc3 : public fdf::DriverBase,
 
     bool got_not_ready{false};
     bool stalled{false};
+    bool xfer_in_progress{false};
   };
 
   struct UserEndpoint {
@@ -311,7 +315,6 @@ class Dwc3 : public fdf::DriverBase,
     fuchsia_hardware_usb_descriptor::wire::UsbSetup cur_setup;
     fuchsia_hardware_usb_descriptor::wire::UsbSpeed cur_speed{
         fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined};
-    bool transfer_in_progress_ = false;
   };
 
   friend struct std::formatter<Ep0::State>;
@@ -425,6 +428,11 @@ class Dwc3 : public fdf::DriverBase,
   // `StopController()` was called most recently.
   bool controller_started_{false};
   bool power_on_{true};
+
+  // True if the EndTransfer core command can be polled via CmdAct instead of waiting on a
+  // CommandComplete endpoint irq event. Only available to core versions >= 3.10a. Set during
+  // initialization based on core version.
+  bool poll_end_xfer_{false};
 
   Ep0 ep0_;
   UserEndpointCollection user_endpoints_;

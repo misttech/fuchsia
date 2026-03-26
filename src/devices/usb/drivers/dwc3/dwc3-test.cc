@@ -358,17 +358,32 @@ TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
 }
 
 typedef struct {
+  // Full core_id + versioning information.
   uint32_t version_register;
+
+  // True if the driver is expected to start.
   bool should_start;
+
+  // True if the driver is expected to poll CmdAct on EndTransfer commands.
+  bool poll_end_xfer;
 } Param;
 
+// clang-format off
 const auto kCases = testing::Values(
-    Param{0x00000000, false},
-    Param{0xffffffff, false},
-    Param{0x5500101a, false},
-    Param{0x5532101a, false},
-    Param{0x5533101a, true},
-    Param{0x5534101a, false});
+    Param{0x00000000, false, false},
+    Param{0xffffffff, false, false},
+    Param{0x5500101a, false, false},
+    Param{0x5532101a, false, false},
+    Param{0x5533101a, true, false},
+    Param{0x5533101a, true, false},
+    Param{0x5533308a, true, false},
+    Param{0x5533309a, true, false},
+    Param{0x5533309b, true, false},
+    Param{0x5533310a, true, true},  // Driver polls in version 3.10a+
+    Param{0x5533310b, true, true},
+    Param{0x5533311a, true, true},
+    Param{0x5534101a, false, false});
+// clang-format on
 
 using Parameterized = TestFixture<false, testing::TestWithParam<Param>>;
 
@@ -389,10 +404,12 @@ TEST_P(Parameterized, TestHwVersion) {
   EXPECT_EQ(ZX_OK, WaitForPhy());
 
   if (p.should_start) {
+    dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_EQ(p.poll_end_xfer, drv.poll_end_xfer()); });
     EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
   }
 }
 
+// clang-format off
 INSTANTIATE_TEST_SUITE_P(
     HwVersioningTest,
     Parameterized,
@@ -405,5 +422,6 @@ INSTANTIATE_TEST_SUITE_P(
 
       return test_name.str();
     });
+// clang-format on
 
 }  // namespace dwc3
