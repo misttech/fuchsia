@@ -16,7 +16,8 @@ use std::io::Write as _;
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
+use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
 
 mod server;
 mod server_impl;

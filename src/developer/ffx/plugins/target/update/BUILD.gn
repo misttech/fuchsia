@@ -11,11 +11,11 @@ ffx_plugin("ffx_update") {
   with_unit_tests = true
   args_with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
-    "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
-    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
-    "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
+    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_fdomain",
+    "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_fdomain",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
+    "//sdk/fidl/fuchsia.update:fuchsia.update_rust_fdomain",
+    "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust_fdomain",
     "//sdk/rust/zx-status",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/fho:lib",
@@ -25,11 +25,12 @@ ffx_plugin("ffx_update") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/repository/server/start:ffx_repository_server_start",
     "//src/developer/ffx/plugins/repository/server/start:ffx_repository_server_start_args",
+    "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
-    "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext",
-    "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+    "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext:fidl-fuchsia-pkg-rewrite-ext_fdomain",
+    "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust_fdomain",
     "//src/sys/pkg/lib/fidl-fuchsia-update-ext",
     "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
     "//third_party/rust_crates:async-trait",
@@ -42,11 +43,16 @@ ffx_plugin("ffx_update") {
 
   test_deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+    "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/behavior:lib",
+    "//src/lib/fdomain/client",
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
-    "//src/sys/pkg/testing/mock-installer",
+    "//src/sys/pkg/testing/mock-installer:mock-installer_fdomain",
     "//third_party/rust_crates:assert_matches",
   ]
 

@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy as _};
+use fdomain_fuchsia_pkg::RepositoryManagerMarker;
+use fdomain_fuchsia_pkg_rewrite::{EngineMarker, EngineProxy};
+use fdomain_fuchsia_sys2::OpenDirType;
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Deferred, FfxMain, Result, bug, return_bug, return_user_error, user_error};
-use fidl::endpoints::DiscoverableProtocolMarker;
-use fidl_fuchsia_pkg::RepositoryManagerMarker;
 use fidl_fuchsia_pkg_ext::RepositoryRegistrationAliasConflictMode;
-use fidl_fuchsia_pkg_rewrite::{EngineMarker, EngineProxy};
-use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
-use fidl_fuchsia_sys2::OpenDirType;
 use fuchsia_async::{Task, Timer};
 use std::io::{Error, ErrorKind};
 use std::net::Ipv6Addr;
@@ -18,7 +17,8 @@ use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
+use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
 use timeout::timeout;
 use zx_status::Status;
 
@@ -173,34 +173,38 @@ pub(crate) async fn unregister_pb_repo_server(
 ) -> Result<()> {
     let mut retry = true;
 
-    let mut repo_manager_proxy = match connect_to_capability::<RepositoryManagerMarker>(
-        rcs_proxy_connector.clone(),
-        Duration::from_secs(500),
-    )
-    .await
-    {
-        Ok(proxy) => proxy,
-        Err(err) => {
-            log::info!("repo manager proxy closed, retrying");
-            if retry {
-                fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
-                connect_to_capability::<RepositoryManagerMarker>(
-                    rcs_proxy_connector.clone(),
-                    Duration::from_secs(500),
-                )
-                .await?
-            } else {
-                return_bug!("Could not list servers on device: {err}")
+    let mut repo_manager_proxy: fdomain_fuchsia_pkg::RepositoryManagerProxy =
+        match connect_to_capability::<RepositoryManagerMarker>(
+            rcs_proxy_connector.clone(),
+            Duration::from_secs(500),
+        )
+        .await
+        {
+            Ok(proxy) => proxy,
+            Err(err) => {
+                log::info!("repo manager proxy closed, retrying");
+                if retry {
+                    fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
+                    connect_to_capability::<RepositoryManagerMarker>(
+                        rcs_proxy_connector.clone(),
+                        Duration::from_secs(500),
+                    )
+                    .await?
+                } else {
+                    return_bug!("Could not list servers on device: {err}")
+                }
             }
-        }
-    };
+        };
 
     let mut names: Vec<String> = vec![];
 
     retry = true;
 
     loop {
-        let (repo_iterator, repo_iterator_server) = fidl::endpoints::create_proxy();
+        let (repo_iterator, repo_iterator_server): (
+            fdomain_fuchsia_pkg::RepositoryIteratorProxy,
+            _,
+        ) = repo_manager_proxy.domain().create_proxy();
         match repo_manager_proxy.list(repo_iterator_server) {
             Ok(_) => {
                 loop {
@@ -252,10 +256,11 @@ async fn is_server_registered(
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     time_to_wait: Duration,
 ) -> Result<bool> {
-    let repo_manager_proxy =
+    let repo_manager_proxy: fdomain_fuchsia_pkg::RepositoryManagerProxy =
         connect_to_capability::<RepositoryManagerMarker>(rcs_proxy_connector, time_to_wait).await?;
 
-    let (repo_iterator, repo_iterator_server) = fidl::endpoints::create_proxy();
+    let (repo_iterator, repo_iterator_server): (fdomain_fuchsia_pkg::RepositoryIteratorProxy, _) =
+        repo_manager_proxy.domain().create_proxy();
     repo_manager_proxy.list(repo_iterator_server).map_err(|e| bug!(e))?;
     loop {
         let repos = repo_iterator.next().await.map_err(|e| bug!(e))?;
@@ -287,23 +292,24 @@ async fn deregister_standalone(
     };
     log::info!("Removing server {repo_url}");
 
-    let repo_proxy = match connect_to_capability::<RepositoryManagerMarker>(
-        rcs_proxy_connector.clone(),
-        time_to_wait,
-    )
-    .await
-    {
-        Ok(proxy) => proxy,
-        Err(e) => {
-            log::warn!("Got error getting repo_manager_proxy: {e}, retrying");
-            Timer::new(Duration::from_secs(1)).await;
-            connect_to_capability::<RepositoryManagerMarker>(
-                rcs_proxy_connector.clone(),
-                time_to_wait,
-            )
-            .await?
-        }
-    };
+    let repo_proxy: fdomain_fuchsia_pkg::RepositoryManagerProxy =
+        match connect_to_capability::<RepositoryManagerMarker>(
+            rcs_proxy_connector.clone(),
+            time_to_wait,
+        )
+        .await
+        {
+            Ok(proxy) => proxy,
+            Err(e) => {
+                log::warn!("Got error getting repo_manager_proxy: {e}, retrying");
+                Timer::new(Duration::from_secs(1)).await;
+                connect_to_capability::<RepositoryManagerMarker>(
+                    rcs_proxy_connector.clone(),
+                    time_to_wait,
+                )
+                .await?
+            }
+        };
 
     match repo_proxy.remove(repo_url).await {
         Ok(Ok(())) => (),
@@ -345,10 +351,11 @@ async fn deregister_standalone(
     remove_aliases(repo_name, rewrite_proxy).await
 }
 
+use fdomain_fuchsia_pkg_rewrite_ext::{EditTransaction, Rule, do_transaction};
 async fn remove_aliases(repo_url: &str, rewrite_proxy: EngineProxy) -> Result<()> {
     log::info!("Removing aliases for {repo_url}");
     // Check flag here for "overwrite" style
-    do_transaction(&rewrite_proxy, |transaction| async {
+    do_transaction(&rewrite_proxy, |transaction: EditTransaction| async {
         // Prepend the alias rules to the front so they take priority.
         let mut rules: Vec<Rule> = vec![];
 
@@ -360,7 +367,7 @@ async fn remove_aliases(repo_url: &str, rewrite_proxy: EngineProxy) -> Result<()
         transaction.reset_all()?;
 
         // Keep rules that do not match the repo being removed.
-        rules.retain(|r| r.host_replacement() != repo_url);
+        rules.retain(|r: &Rule| r.host_replacement() != repo_url);
 
         // Add the rules back into the transaction. We do it in reverse, because `.add()`
         // always inserts rules into the front of the list.
@@ -384,7 +391,7 @@ async fn connect_to_capability<T: DiscoverableProtocolMarker>(
 ) -> Result<T::Proxy> {
     let rcs_proxy = try_rcs_proxy_connection(rcs_proxy_connector, time_to_wait).await?;
     // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-    let (proxy, server) = fidl::endpoints::create_proxy::<T>();
+    let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
     rcs_proxy
         .connect_capability(
             &REPOSITORY_MANAGER_MONIKER,
@@ -432,6 +439,7 @@ mod tests {
     use ffx_config::TestEnv;
     use ffx_target::TargetInfoQuery;
     use fho::{FhoEnvironment, TryFromEnv as _};
+    use fidl::endpoints::DiscoverableProtocolMarker;
     use fidl_fuchsia_developer_remotecontrol::{
         ConnectCapabilityError, RemoteControlProxy, RemoteControlRequest,
     };
@@ -447,23 +455,49 @@ mod tests {
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
     use std::sync::{Arc, Mutex};
     use target_behavior::ConnectionBehavior;
-    use target_holders::{FakeInjector, HostAddrHolder, RemoteControlProxyHolder, fake_proxy};
+    use target_holders::fdomain::RemoteControlProxyHolder;
+    use target_holders::{FakeInjector, HostAddrHolder};
 
     struct FakeTestEnv {
         pub context: EnvironmentContext,
         pub rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
         pub host_address: Deferred<HostAddrHolder>,
         pub target_spec: Deferred<TargetInfoQueryHolder>,
+        pub _client: Arc<fdomain_client::Client>,
     }
 
     impl FakeTestEnv {
         async fn new(test_env: &TestEnv) -> Self {
             let fake_rcs_proxy: RemoteControlProxy =
-                fake_proxy(move |req| handle_rcs_proxy_request(req));
+                target_holders::fake_proxy(move |req| handle_rcs_proxy_request(req));
+            let fdomain_client = fdomain_local::local_client(move || {
+                let (client_end, mut stream) = fidl::endpoints::create_request_stream::<
+                    fidl_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                >();
+                fuchsia_async::Task::local(async move {
+                    while let Ok(Some(req)) = stream.try_next().await {
+                        handle_rcs_proxy_request(req);
+                    }
+                })
+                .detach();
+                Ok(client_end.into_channel().into())
+            });
+            let fcc = fdomain_client.clone();
             let fake_injector = FakeInjector {
                 remote_factory_closure: Box::new(move || {
                     let value = fake_rcs_proxy.clone();
                     Box::pin(async move { Ok(value) })
+                }),
+                remote_factory_closure_f: Box::new(move || {
+                    let fdomain_client = fcc.clone();
+                    Box::pin(async move {
+                        Ok(fdomain_client::fidl::ClientEnd::<
+                            fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                        >::from(
+                            fdomain_client.namespace().await.unwrap()
+                        )
+                        .into_proxy())
+                    })
                 }),
                 ..Default::default()
             };
@@ -485,6 +519,7 @@ mod tests {
                 rcs_proxy_connector,
                 host_address,
                 target_spec,
+                _client: fdomain_client,
             }
         }
     }

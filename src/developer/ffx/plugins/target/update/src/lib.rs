@@ -2,28 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! A tool to update the target device.
+
 use async_trait::async_trait;
+use fdomain_client::AsHandleRef;
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy as _};
+use fdomain_fuchsia_update::{
+    CheckOptions, CommitStatusProviderProxy, Initiator, ManagerMarker, ManagerProxy, MonitorMarker,
+    MonitorRequest, MonitorRequestStream,
+};
+use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
+use fdomain_fuchsia_update_installer::{self as finstaller, InstallerProxy};
 use ffx_config::EnvironmentContext;
+use ffx_update_args as args;
 use ffx_update_args::ForceInstall;
 use ffx_writer::SimpleWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result, bug, deferred, return_user_error};
 use fidl::Signals;
-use fidl::endpoints::DiscoverableProtocolMarker;
-use fidl_fuchsia_update::{
-    CheckOptions, CommitStatusProviderProxy, Initiator, ManagerMarker, ManagerProxy, MonitorMarker,
-    MonitorRequest, MonitorRequestStream,
-};
-use fidl_fuchsia_update_channelcontrol::ChannelControlProxy;
 use fidl_fuchsia_update_ext::State;
-use fidl_fuchsia_update_installer::{self as finstaller, InstallerProxy};
+use fidl_fuchsia_update_installer_ext as installer;
 use fuchsia_async::Timer;
 use futures::future::{FusedFuture as _, FutureExt as _};
 use futures::{TryStreamExt, pin_mut, select};
 use std::path::PathBuf;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder, moniker};
-use {ffx_update_args as args, fidl_fuchsia_update_installer_ext as installer};
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
+use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
 
 mod server;
 
@@ -54,7 +59,7 @@ impl FfxMain for UpdateTool {
     type Writer = SimpleWriter;
 
     /// Main entry point for the `update` subcommand.
-    async fn main(self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: SimpleWriter) -> Result<()> {
         let update = self.cmd.clone();
 
         match update.cmd {
@@ -169,8 +174,8 @@ impl UpdateTool {
         // This is needed for product bundles to make sure the package server continues to run
         // until the update is completed.
         let (monitor_client, monitor_server) = if do_monitor {
-            let (client_end, request_stream) =
-                fidl::endpoints::create_request_stream::<MonitorMarker>();
+            let client = update_manager_proxy.domain();
+            let (client_end, request_stream) = client.create_request_stream::<MonitorMarker>();
             (Some(client_end), Some(request_stream))
         } else {
             (None, None)
@@ -277,10 +282,11 @@ impl UpdateTool {
             allow_attach_to_existing_attempt: true,
         };
 
+        let client = installer_proxy.domain();
         let (reboot_controller, reboot_controller_server_end) =
-            fidl::endpoints::create_proxy::<finstaller::RebootControllerMarker>();
+            client.create_proxy::<finstaller::RebootControllerMarker>();
 
-        let mut update_attempt = installer::start_update(
+        let mut update_attempt: installer::UpdateAttemptFDomain = installer::start_update_fdomain(
             &pkg_url,
             options,
             &installer_proxy,
@@ -428,25 +434,27 @@ fn write_progress<W: std::io::Write>(s: &str, writer: &mut W) -> Result<()> {
 }
 
 /// Handle subcommands for `update channel`.
+/// Handle subcommands for `update channel`.
 async fn handle_channel_control_cmd<W: std::io::Write>(
     cmd: &args::channel::Command,
-    channel_control: fidl_fuchsia_update_channelcontrol::ChannelControlProxy,
+    channel_control: fdomain_fuchsia_update_channelcontrol::ChannelControlProxy,
     writer: &mut W,
 ) -> Result<()> {
     match cmd {
         args::channel::Command::Get(_) => {
-            let channel = channel_control.get_current().await.map_err(|e| bug!(e))?;
+            let channel = channel_control.get_current().await.map_err(|e: fidl::Error| bug!(e))?;
             writeln!(writer, "current channel: {}", channel).map_err(|e| bug!(e))?;
         }
         args::channel::Command::Target(_) => {
-            let channel = channel_control.get_target().await.map_err(|e| bug!(e))?;
+            let channel = channel_control.get_target().await.map_err(|e: fidl::Error| bug!(e))?;
             writeln!(writer, "target channel: {}", channel).map_err(|e| bug!(e))?;
         }
         args::channel::Command::Set(args::channel::Set { channel }) => {
-            channel_control.set_target(&channel).await.map_err(|e| bug!(e))?;
+            channel_control.set_target(&channel).await.map_err(|e: fidl::Error| bug!(e))?;
         }
         args::channel::Command::List(_) => {
-            let channels = channel_control.get_target_list().await.map_err(|e| bug!(e))?;
+            let channels =
+                channel_control.get_target_list().await.map_err(|e: fidl::Error| bug!(e))?;
             if channels.is_empty() {
                 writeln!(writer, "known channels list is empty.").map_err(|e| bug!(e))?;
             } else {
@@ -567,8 +575,9 @@ impl<W: std::io::Write> CommitObserver for Printer<W> {
 /// Waits for the system to commit (e.g. when the EventPair observes a signal).
 async fn wait_for_commit(proxy: &CommitStatusProviderProxy) -> Result<()> {
     let p = proxy.is_current_system_committed().await.bug_context("while obtaining EventPair")?;
-    fuchsia_async::OnSignalsRef::new(&p, Signals::USER_0)
+    fdomain_client::OnFDomainSignals::new(&p.as_handle_ref(), Signals::USER_0)
         .await
+        .map_err(|e: fdomain_client::Error| bug!(e))
         .bug_context("while waiting for the commit")?;
     Ok(())
 }
@@ -608,20 +617,20 @@ async fn handle_wait_for_commit(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use fdomain_client::Peered;
+    use fdomain_fuchsia_update::{CommitStatusProviderRequest, ManagerRequest};
+    use fdomain_fuchsia_update_channelcontrol::ChannelControlRequest;
     use ffx_target::TargetInfoQuery;
     use ffx_update_args::Update;
     use ffx_writer::TestBuffers;
     use fho::{FhoEnvironment, TryFromEnv};
-    use fidl::endpoints::create_proxy_and_stream;
-    use fidl::{EventPair, Peered, Signals};
     use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-    use fidl_fuchsia_update::{CommitStatusProviderRequest, ManagerRequest};
-    use fidl_fuchsia_update_channelcontrol::ChannelControlRequest;
     use futures::prelude::*;
-    use mock_installer::MockUpdateInstallerService;
+    use mock_installer_fdomain::MockUpdateInstallerService;
     use std::sync::Arc;
     use target_behavior::ConnectionBehavior;
-    use target_holders::{FakeInjector, fake_async_proxy, fake_proxy};
+    use target_holders::FakeInjector;
+    use target_holders::fdomain::{fake_async_proxy, fake_proxy};
 
     async fn perform_channel_control_test<V, O>(
         argument: args::channel::Command,
@@ -631,8 +640,10 @@ mod tests {
         V: Fn(ChannelControlRequest),
         O: Fn(String),
     {
-        let (proxy, mut stream) =
-            create_proxy_and_stream::<fidl_fuchsia_update_channelcontrol::ChannelControlMarker>();
+        let client = fdomain_local::local_client_empty();
+        let (proxy, mut stream) = client
+            .create_proxy_and_stream::<fdomain_fuchsia_update_channelcontrol::ChannelControlMarker>(
+            );
         let mut buf = Vec::new();
         let fut = async {
             assert_matches!(handle_channel_control_cmd(&argument, proxy, &mut buf).await, Ok(()));
@@ -729,18 +740,24 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_check_now() {
+        let client = fdomain_local::local_client_empty();
         let test_env = ffx_config::test_init().expect("test env");
 
-        let fake_installer_proxy = Deferred::from_output(Ok(fake_proxy(move |req| {
-            panic!("Unexpected request: {:?}", req)
-        })));
+        let fake_installer_proxy =
+            Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            })));
         let fake_channel_control_proxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_rcs_proxy: RemoteControlProxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
-        let fake_update_manager_proxy = fake_proxy(move |req| {
+            target_holders::fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+        let fake_rcs_proxy_f: fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy =
+            target_holders::fdomain::fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            });
+        let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
             match req {
                 ManagerRequest::CheckNow { responder, .. } => {
                     responder.send(Ok(())).expect("send ok")
@@ -752,6 +769,10 @@ mod tests {
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let value = fake_rcs_proxy.clone();
+                Box::pin(async move { Ok(value) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let value = fake_rcs_proxy_f.clone();
                 Box::pin(async move { Ok(value) })
             }),
             ..Default::default()
@@ -799,6 +820,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_force_install() {
+        let client = fdomain_local::local_client_empty();
         let test_env = ffx_config::test_init().expect("test env");
         let update_info = installer::UpdateInfo::builder().download_size(1000).build();
         let mock_installer = Arc::new(MockUpdateInstallerService::with_states(vec![
@@ -819,7 +841,7 @@ mod tests {
             ),
             installer::State::WaitToReboot(installer::UpdateInfoAndProgress::done(update_info)),
         ]));
-        let fake_installer_proxy = mock_installer.spawn_installer_service();
+        let fake_installer_proxy = mock_installer.spawn_installer_service(Arc::clone(&client));
 
         let args = ForceInstall {
             reboot: true,
@@ -830,17 +852,25 @@ mod tests {
         };
 
         let fake_update_manager_proxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_channel_control_proxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_rcs_proxy: RemoteControlProxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+            target_holders::fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+        let fake_rcs_proxy_f: fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy =
+            target_holders::fdomain::fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            });
 
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let value = fake_rcs_proxy.clone();
+                Box::pin(async move { Ok(value) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let value = fake_rcs_proxy_f.clone();
                 Box::pin(async move { Ok(value) })
             }),
             ..Default::default()
@@ -907,15 +937,17 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_wait_for_commit() {
-        let proxy = fake_async_proxy(async move |req| {
+        let client = fdomain_local::local_client_empty();
+        let client_clone = Arc::clone(&client);
+        let proxy = fake_async_proxy(Arc::clone(&client), async move |req| {
             let CommitStatusProviderRequest::IsCurrentSystemCommitted { responder } = req;
 
-            let (lhs, rhs) = EventPair::create();
+            let (lhs, rhs) = client_clone.create_event_pair();
             let () = responder.send(lhs).unwrap();
 
             fuchsia_async::Timer::new(Duration::from_millis(500)).await;
 
-            let () = rhs.signal_peer(Signals::NONE, Signals::USER_0).unwrap();
+            let () = rhs.signal_peer(Signals::NONE, Signals::USER_0).await.unwrap();
 
             ()
         });

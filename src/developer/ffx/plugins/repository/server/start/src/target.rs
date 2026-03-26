@@ -6,17 +6,17 @@
 
 use anyhow::{Context, anyhow};
 use camino::Utf8Path;
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_pkg::{RepositoryManagerMarker, RepositoryManagerProxy};
+use fdomain_fuchsia_pkg_rewrite::{EngineMarker, EngineProxy};
 use ffx_command_error::{Result, return_user_error};
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
 use ffx_target::{KnockError, RcsKnocker, TargetInfoQuery};
-use ffx_target_net::TargetTcpStream;
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_pkg::RepositoryManagerMarker;
+use ffx_target_net::socket_provider_fdomain::{SocketProvider, TargetTcpStream};
 use fidl_fuchsia_pkg_ext::{
     RepositoryRegistrationAliasConflictMode, RepositoryStorageType, RepositoryTarget,
 };
-use fidl_fuchsia_pkg_rewrite::EngineMarker;
 use fuchsia_repo::manager::RepositoryManager;
 use fuchsia_repo::server::ConnectionStream;
 use futures::channel::mpsc::{self, UnboundedSender};
@@ -28,7 +28,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use timeout::timeout;
 
 // The monikers are used in calls to rcs::toolbox::connect_with_timeout
@@ -49,15 +49,16 @@ async fn connect_to_target(
     alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
     tunnel_addr: SocketAddr,
 ) -> Result<impl Stream<Item = anyhow::Result<TargetTcpStream>>, anyhow::Error> {
-    let repo_proxy = rcs::toolbox::connect_with_timeout::<RepositoryManagerMarker>(
-        &rcs_proxy,
-        Some(REPOSITORY_MANAGER_MONIKER),
-        connect_timeout,
-    )
-    .await
-    .with_context(|| format!("connecting to repository manager on {:?}", target_spec))?;
+    let repo_proxy: RepositoryManagerProxy =
+        rcs_fdomain::toolbox::connect_with_timeout::<RepositoryManagerMarker>(
+            &rcs_proxy,
+            Some(REPOSITORY_MANAGER_MONIKER),
+            connect_timeout,
+        )
+        .await
+        .with_context(|| format!("connecting to repository manager on {:?}", target_spec))?;
 
-    let engine_proxy = rcs::toolbox::connect_with_timeout::<EngineMarker>(
+    let engine_proxy: EngineProxy = rcs_fdomain::toolbox::connect_with_timeout::<EngineMarker>(
         &rcs_proxy,
         Some(ENGINE_MONIKER),
         connect_timeout,
@@ -65,7 +66,7 @@ async fn connect_to_target(
     .await
     .with_context(|| format!("binding engine to stream on {:?}", target_spec))?;
 
-    let port_forward = ffx_target_net::SocketProvider::new_with_rcs(connect_timeout, &rcs_proxy)
+    let port_forward = SocketProvider::new_with_rcs(connect_timeout, &rcs_proxy)
         .await
         .with_context(|| format!("connecting to socket provider protocols {:?}", target_spec))?;
 
@@ -208,7 +209,7 @@ async fn inner_connect_loop(
             );
             let mut proxy_drive = pin!(
                 proxy_stream
-                    .map(|t| Ok(t.map(ConnectionStream::TargetTcp)))
+                    .map(|t| Ok(t.map(ConnectionStream::TargetFdomainTcp)))
                     .forward(
                         connection_sink.sink_map_err(|e| anyhow!("connection sink error: {e:?}")),
                     )

@@ -33,7 +33,8 @@ use std::fs;
 use std::sync::Arc;
 use target_connector::Connector;
 use target_errors::FfxTargetError;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
+use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
 use tuf::metadata::RawSignedMetadata;
 
 const REPO_CONNECT_TIMEOUT_CONFIG: &str = "repository.connect_timeout_secs";
@@ -568,19 +569,20 @@ mod test {
     use crate::ServerStartTool;
     use assert_matches::assert_matches;
     use discovery::query::TargetInfoQuery;
+    use fdomain_fuchsia_pkg_rewrite_ext::Rule;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_config::{ConfigLevel, TestEnv};
     use ffx_target::TargetProxy;
     use ffx_target_net_testutil::FakeNetstack;
     use ffx_writer::{Format, TestBuffers};
     use fho::{FfxMain, FhoEnvironment, TryFromEnv, user_error};
-    use fidl::endpoints::DiscoverableProtocolMarker;
+    use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
     use fidl_fuchsia_developer_ffx::{
         RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
         TargetIpPort, TargetRequest, TargetState,
     };
     use fidl_fuchsia_developer_remotecontrol::{self as frcs, RemoteControlProxy};
-    use fidl_fuchsia_net::{IpAddress, Ipv4Address};
+    use fidl_fuchsia_net__common::{IpAddress, Ipv4Address};
     use fidl_fuchsia_pkg::{
         MirrorConfig, RepositoryConfig, RepositoryManagerMarker, RepositoryManagerRequest,
         RepositoryManagerRequestStream,
@@ -592,7 +594,6 @@ mod test {
         EditTransactionRequest, EngineMarker, EngineRequest, EngineRequestStream,
         RuleIteratorRequest,
     };
-    use fidl_fuchsia_pkg_rewrite_ext::Rule;
     use frcs::RemoteControlMarker;
     use fuchsia_repo::repo_builder::RepoBuilder;
     use fuchsia_repo::repo_keys::RepoKeys;
@@ -718,7 +719,7 @@ mod test {
             let mut knock_counter = 0;
             let knock_skip = if let Some(k) = knock_skip { k } else { vec![] };
 
-            let target_proxy: TargetProxy = fake_proxy(move |req| match req {
+            let target_proxy: TargetProxy = target_holders::fake_proxy(move |req| match req {
                 TargetRequest::Identity { responder, .. } => {
                     let mut sender = sender.clone();
                     let events_closure = events_closure.clone();
@@ -976,12 +977,37 @@ mod test {
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             target_factory_closure: Box::new(move || {
                 let fake_target_proxy = fake_target_proxy.clone();
@@ -1013,6 +1039,18 @@ mod test {
                     )
                 })
             }),
+            remote_factory_closure_f: Box::new(|| {
+                Box::pin(async move {
+                    Err::<_, anyhow::Error>(
+                        FfxTargetError::OpenTargetError {
+                            err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
+                            target: None,
+                            targets: vec![],
+                        }
+                        .into(),
+                    )
+                })
+            }),
             ..Default::default()
         };
 
@@ -1030,6 +1068,18 @@ mod test {
             remote_factory_closure: Box::new(|| {
                 Box::pin(async move {
                     Err::<RemoteControlProxy, anyhow::Error>(
+                        FfxTargetError::OpenTargetError {
+                            err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
+                            target: None,
+                            targets: vec!["foo".to_string(), "bar".to_string()],
+                        }
+                        .into(),
+                    )
+                })
+            }),
+            remote_factory_closure_f: Box::new(|| {
+                Box::pin(async move {
+                    Err::<_, anyhow::Error>(
                         FfxTargetError::OpenTargetError {
                             err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
                             target: None,
@@ -1567,12 +1617,37 @@ mod test {
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             target_factory_closure: Box::new(move || {
                 let fake_target_proxy = fake_target_proxy.clone();
@@ -1667,7 +1742,7 @@ mod test {
                     root_version: Some(1),
                     root_threshold: Some(1),
                     use_local_mirror: Some(false),
-                    storage_type: Some(fidl_fuchsia_pkg::RepositoryStorageType::Ephemeral),
+                    storage_type: Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral),
                     ..Default::default()
                 }
             }],
@@ -1732,12 +1807,37 @@ mod test {
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             ..Default::default()
         };
@@ -1830,7 +1930,7 @@ mod test {
                     root_version: Some(1),
                     root_threshold: Some(1),
                     use_local_mirror: Some(false),
-                    storage_type: Some(fidl_fuchsia_pkg::RepositoryStorageType::Ephemeral),
+                    storage_type: Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral),
                     ..Default::default()
                 }
             }],
@@ -1922,12 +2022,37 @@ mod test {
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             target_factory_closure: Box::new(move || {
                 let fake_target_proxy = fake_target_proxy.clone();
@@ -2085,12 +2210,37 @@ mod test {
         let fake_netstack = Arc::new(FakeNetstack::new());
         let socket_provider = fake_netstack.new_socket_provider();
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             target_factory_closure: Box::new(move || {
                 let fake_target_proxy = ftpc.clone();
@@ -2150,6 +2300,7 @@ mod test {
         // Future resolves once repo server communicates with them.
         let _timeout = timeout(time::Duration::from_secs(10), async {
             let _ = fake_repo_rx.next().await.unwrap();
+            let _ = fake_repo_rx.next().await.unwrap();
         })
         .await
         .unwrap();
@@ -2177,7 +2328,7 @@ mod test {
                     root_version: Some(1),
                     root_threshold: Some(1),
                     use_local_mirror: Some(false),
-                    storage_type: Some(fidl_fuchsia_pkg::RepositoryStorageType::Ephemeral),
+                    storage_type: Some(fdomain_fuchsia_pkg::RepositoryStorageType::Ephemeral),
                     ..Default::default()
                 }
             },)
@@ -2292,12 +2443,37 @@ mod test {
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             target_factory_closure: Box::new(move || {
                 let fake_target_proxy = fake_target_proxy.clone();
@@ -2376,12 +2552,37 @@ mod test {
         let fec = fake_engine.clone();
         let fake_netstack = Arc::new(FakeNetstack::new());
 
+        let fdomain_client = fdomain_local::local_client(move || {
+            let fake_repo = frc.clone();
+            let fake_engine = fec.clone();
+            let fake_netstack = fake_netstack.clone();
+            Ok(fidl::endpoints::ClientEnd::from(
+                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
+                    .into_channel()
+                    .unwrap()
+                    .into_zx_channel(),
+            ))
+        });
+
+        let frc = fake_repo.clone();
+        let fec = fake_engine.clone();
+        let fake_netstack = Arc::new(FakeNetstack::new());
+
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(move || {
                 let fake_repo = frc.clone();
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let fdomain_client = fdomain_client.clone();
+                Box::pin(async move {
+                    Ok(fdomain_client::fidl::ClientEnd::<
+                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
+                    >::from(fdomain_client.namespace().await.unwrap())
+                    .into_proxy())
+                })
             }),
             target_factory_closure: Box::new(move || {
                 let fake_target_proxy = fake_target_proxy.clone();

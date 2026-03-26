@@ -17,7 +17,8 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
+use target_holders::fdomain::RemoteControlProxyHolder;
+use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
 
 pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
     let mut argv: Vec<String> = vec![];
