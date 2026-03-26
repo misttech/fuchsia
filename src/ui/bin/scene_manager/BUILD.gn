@@ -110,10 +110,23 @@ fuchsia_component_manifest("manifest") {
   manifest = "meta/scene_manager.bin.cml"
 }
 
-icu_fuchsia_component("scene_manager_component") {
+fuchsia_component_manifest("manifest_dso") {
+  component_name = "scene_manager"
+  manifest = "meta/scene_manager.dso.cml"
+}
+
+icu_fuchsia_component("component") {
   cm_label = ":manifest"
   icu_deps = [
     ":bin",
+    "//src/lib/icu:icudtl",
+  ]
+}
+
+icu_fuchsia_component("component_dso") {
+  cm_label = ":manifest_dso"
+  icu_deps = [
+    ":dso",
     "//src/lib/icu:icudtl",
   ]
 }
@@ -122,14 +135,20 @@ icu_fuchsia_component("scene_manager_component") {
 # default config values are available.
 group("scene_manager_component_for_test") {
   deps = [
+    ":component",
     ":config_for_test",
-    ":scene_manager_component",
   ]
 }
 
 icu_fuchsia_package("scene_manager") {
   validate_structured_config = false
-  icu_deps = [ ":scene_manager_component" ]
+  icu_deps = [ ":component" ]
+}
+
+icu_fuchsia_package("scene_manager_dso") {
+  package_name = "scene_manager"
+  validate_structured_config = false
+  icu_deps = [ ":component_dso" ]
 }
 
 fuchsia_unittest_package("scene_manager_tests") {

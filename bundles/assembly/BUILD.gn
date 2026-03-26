@@ -1648,6 +1648,16 @@ assembly_input_bundle("core_realm_eng") {
   ]
 }
 
+assembly_input_bundle("dso_runner") {
+  experimental = true
+  allowed_in = [
+    "userdebug",
+    "eng",
+  ]
+  base_packages = [ "//src/sys/runners/dso:package" ]
+  core_shards = [ "//src/sys/runners/dso/meta/dso_runner.core_shard.cml" ]
+}
+
 # This is common across all user and userdebug products that include the core
 # realm.
 #
@@ -3765,6 +3775,24 @@ icu_assembly_input_bundle("ui_eng") {
   ]
 }
 
+# UI support for eng build types, with dso components
+icu_assembly_input_bundle("ui_eng_dso") {
+  experimental = true
+  allowed_in = [
+    "eng",
+
+    # Experimental AIBs must be allowed on userdebug
+    "userdebug",
+  ]
+  icu_cache_packages = [ "//src/ui/a11y/bin/a11y_manager:a11y-manager" ]
+  cache_packages = [
+    "//src/ui/bin/text:text_manager",
+    "//src/ui/scenic:scenic_pkg_dso",
+    "//src/ui/bin/scene_manager:scene_manager_dso",
+    "//src/ui/bin/virtual_keyboard_manager",
+  ]
+}
+
 # UI support for user and userdebug build types
 icu_assembly_input_bundle("ui_user_and_userdebug") {
   allowed_in = [
@@ -3779,6 +3807,19 @@ icu_assembly_input_bundle("ui_user_and_userdebug") {
   base_packages = [
     "//src/ui/bin/text:text_manager",
     "//src/ui/scenic:scenic_pkg",
+    "//src/ui/bin/virtual_keyboard_manager",
+  ]
+}
+
+# UI support for user and userdebug build types, with dso components
+icu_assembly_input_bundle("ui_userdebug_dso") {
+  experimental = true
+  allowed_in = [ "userdebug" ]
+  icu_base_packages = [ "//src/ui/a11y/bin/a11y_manager:a11y-manager" ]
+  base_packages = [
+    "//src/ui/bin/text:text_manager",
+    "//src/ui/scenic:scenic_pkg_dso",
+    "//src/ui/bin/scene_manager:scene_manager_dso",
     "//src/ui/bin/virtual_keyboard_manager",
   ]
 }

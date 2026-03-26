@@ -313,11 +313,15 @@ platform_aib_names =
       # UI
       "ui",
       "ui_user_and_userdebug",
+      "ui_userdebug_dso",
+      "ui_userdebug_dso.icu_default_${icu_git_info.default}",
+      "ui_userdebug_dso.icu_latest_${icu_git_info.latest}",
       "ui_user_and_userdebug.icu_default_${icu_git_info.default}",
       "ui_user_and_userdebug.icu_latest_${icu_git_info.latest}",
       "ui_package_user_and_userdebug",
       "ui_package_eng_userdebug_with_synthetic_device_support",
       "brightness_manager",
+      "dso_runner",
 
       # Drivers
       "radar_proxy_without_injector",
@@ -442,6 +446,9 @@ platform_aib_names =
       "ui_eng.icu_latest_${icu_git_info.latest}",
       "ui_package_eng",
       "ui_package_eng_userdebug_with_synthetic_device_support",
+      "ui_eng_dso",
+      "ui_eng_dso.icu_default_${icu_git_info.default}",
+      "ui_eng_dso.icu_latest_${icu_git_info.latest}",
 
       # Example AIB
       "example_assembly_bundle",

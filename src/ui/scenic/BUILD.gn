@@ -42,9 +42,6 @@ group("tests") {
     ":screenshot_unittests",
     ":view_tree_unittests",
     "tests",
-
-    # not a test, but we want to ensure it gets built
-    "bin:dso",
   ]
 }
 
@@ -311,22 +308,33 @@ fuchsia_component_manifest("scenic_manifest") {
   manifest = "bin/meta/scenic.bin.cml"
 }
 
-fuchsia_component("component_v2") {
-  cm_label = ":scenic_manifest"
-  deps = [
-    "bin",
-    "//src/ui/scenic/lib/image-compression:component",
-  ]
+fuchsia_component_manifest("scenic_dso_manifest") {
+  component_name = "scenic"
+  manifest = "bin/meta/scenic.dso.cml"
+}
 
+_component = {
+  deps = [ "//src/ui/scenic/lib/image-compression:component" ]
   if (escher_use_runtime_glsl) {
     deps += [ "//src/ui/lib/escher/shaders:escher_shaders_resources" ]
   } else {
     deps += [ "//src/ui/lib/escher/shaders:escher_shaders_spirv_resources" ]
   }
-
   if (scenic_enable_vulkan_validation) {
     deps += [ "//src/lib/vulkan:vulkan_validation_layers" ]
   }
+}
+
+fuchsia_component("component") {
+  forward_variables_from(_component, "*")
+  cm_label = ":scenic_manifest"
+  deps += [ "bin" ]
+}
+
+fuchsia_component("component_dso") {
+  forward_variables_from(_component, "*")
+  cm_label = ":scenic_dso_manifest"
+  deps += [ "bin:dso" ]
 }
 
 fuchsia_structured_config_cpp_elf_lib("scenic_structured_config") {
@@ -343,13 +351,19 @@ fuchsia_structured_config_values2("scenic_config") {
 fuchsia_package("scenic_pkg") {
   package_name = "scenic"
   validate_structured_config = false
-  deps = [ ":component_v2" ]
+  deps = [ ":component" ]
+}
+
+fuchsia_package("scenic_pkg_dso") {
+  package_name = "scenic"
+  validate_structured_config = false
+  deps = [ ":component_dso" ]
 }
 
 group("scenic_with_default_config") {
   testonly = true
   deps = [
-    ":component_v2",
+    ":component",
     ":scenic_config",
   ]
 }
