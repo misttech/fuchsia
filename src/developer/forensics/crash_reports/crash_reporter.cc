@@ -257,12 +257,6 @@ void CrashReporter::ScheduleHourlySnapshot(const zx::duration delay) {
       [this]() {
         auto schedule_next = ::fit::defer([this] { ScheduleHourlySnapshot(zx::hour(1)); });
 
-        if (queue_.HasHourlyReport()) {
-          FX_LOGS(INFO) << "Skipping hourly snapshot as the last one has not been uploaded yet "
-                           "– connectivity issues?";
-          return;
-        }
-
         fuchsia::feedback::CrashReport report;
         report.set_program_name(kHourlySnapshotProgramName)
             .set_program_uptime(clock_->MonotonicNow().get())

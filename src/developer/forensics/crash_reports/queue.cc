@@ -101,14 +101,26 @@ bool Queue::Contains(const ReportId report_id) const {
          (active_report_ && active_report_->report_id == report_id);
 }
 
-bool Queue::HasHourlyReport() const {
-  return (std::find_if(ready_reports_.cbegin(), ready_reports_.cend(),
-                       [=](const PendingReport& r) { return r.is_hourly_report; }) !=
-          ready_reports_.cend()) ||
-         (std::find_if(blocked_reports_.cbegin(), blocked_reports_.cend(),
-                       [=](const PendingReport& r) { return r.is_hourly_report; }) !=
-          blocked_reports_.cend()) ||
-         (active_report_ && active_report_->is_hourly_report);
+bool Queue::HasOlderAndNewerHourlyReports(const PendingReport& report) const {
+  bool has_older = active_report_->is_hourly_report && active_report_->report_id < report.report_id;
+  bool has_newer = active_report_->is_hourly_report && active_report_->report_id > report.report_id;
+
+  auto check_queue = [&report, &has_older, &has_newer](const std::deque<PendingReport>& reports) {
+    for (const PendingReport& r : reports) {
+      if (r.is_hourly_report && r.report_id < report.report_id) {
+        has_older = true;
+      }
+
+      if (r.is_hourly_report && r.report_id > report.report_id) {
+        has_newer = true;
+      }
+    }
+  };
+
+  check_queue(ready_reports_);
+  check_queue(blocked_reports_);
+
+  return has_older && has_newer;
 }
 
 bool Queue::IsPeriodicUploadScheduled() const {
@@ -135,11 +147,6 @@ void Queue::StopUploading() {
 }
 
 bool Queue::Add(Report report, FilingResultFn callback) {
-  // Only allow a single hourly report in the queue at a time.
-  if (report.IsHourlyReport()) {
-    FX_CHECK(!HasHourlyReport());
-  }
-
   // Remove clients with special case snapshots. These clients will be present in
   // |snapshot_clients_|, but will be listed under their intended snapshot uuid rather than under
   // the special case snapshot uuid.
@@ -317,6 +324,9 @@ void Queue::Upload(const bool set_network_reachable_on_success) {
             if (active_report_->delete_post_upload) {
               Retire(std::move(*active_report_), RetireReason::kDelete,
                      FilingResult::kReportNotFiledUserOptedOut);
+            } else if (active_report_->is_hourly_report &&
+                       HasOlderAndNewerHourlyReports(*active_report_)) {
+              Retire(std::move(*active_report_), RetireReason::kDelete);
             } else {
               // If the report isn't deleted and should be added to the store post-upload, its
               // content should still be present, e.g., DeleteAll didn't delete it.

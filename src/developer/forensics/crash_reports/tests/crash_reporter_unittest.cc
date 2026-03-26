@@ -897,31 +897,6 @@ TEST_F(CrashReporterTest, Upload_HourlySnapshot) {
   CheckAttachmentsOnServer({kDefaultAttachmentBundleKey});
 }
 
-TEST_F(CrashReporterTest, Skip_HourlySnapshotIfPending) {
-  SetUpDataProviderServer(
-      std::make_unique<stubs::DataProvider>(kFeedbackAnnotations, kDefaultAttachmentBundleKey));
-  SetUpCrashReporterDefaultConfig({
-      // Initial upload attempt.
-      kUploadFailed,
-
-      // 4 failed periodic uploads by the queue.
-      kUploadFailed,
-      kUploadFailed,
-      kUploadFailed,
-      kUploadFailed,
-  });
-
-  RunLoopFor(zx::min(5));
-  RunLoopFor(zx::hour(1));
-
-  EXPECT_THAT(crash_server_->latest_annotations().Raw(),
-              IsSupersetOf(Linearize(std::map<std::string, testing::Matcher<std::string>>({
-                  {"ptime", Not(IsEmpty())},
-                  {"signature", kHourlySnapshotSignature},
-              }))));
-  CheckAttachmentsOnServer({kDefaultAttachmentBundleKey});
-}
-
 TEST_F(CrashReporterTest, Skip_HourlySnapshotIfNegativeConsent) {
   SetUpDataProviderServer(
       std::make_unique<stubs::DataProvider>(kFeedbackAnnotations, kDefaultAttachmentBundleKey));

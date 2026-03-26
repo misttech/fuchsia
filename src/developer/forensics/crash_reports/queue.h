@@ -55,10 +55,6 @@ class Queue {
   bool Contains(ReportId report_id) const;
   bool IsPeriodicUploadScheduled() const;
 
-  // Returns true if there is an hourly report already an hourly report anywhere in the queue, i.e.
-  // active, ready or blocked.
-  bool HasHourlyReport() const;
-
   // Forces the queue to automatically put all reports in the store and stop all uploads.
   void StopUploading();
 
@@ -137,6 +133,10 @@ class Queue {
   // Deletes the snapshot referred to by |uuid| if there are no reports associated with the snapshot
   // in |snapshot_clients_|. Returns true if the snapshot was deleted.
   bool DeleteSnapshotIfNoClients(const std::string& uuid);
+
+  // Returns true if there is both an older and a newer hourly report in the queue relative to
+  // |report|.
+  bool HasOlderAndNewerHourlyReports(const PendingReport& report) const;
 
   // Returns the number of crash reports that use the snapshot referred to by |uuid|.
   //
