@@ -92,44 +92,67 @@ void I2cDriver::Transact(uint16_t address, TransferRequestView request,
                          TransferCompleter::Sync& completer) {
   TRACE_DURATION("i2c", "I2cDevice Process Queued Transacts");
 
-  const auto& transactions = request->transactions;
-  if (zx_status_t status = GrowContainersIfNeeded(transactions); status != ZX_OK) {
-    completer.ReplyError(status);
+  if (request->transactions.size() < 1) {
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+  if (request->transactions.size() > fuchsia_hardware_i2c::wire::kMaxCountTransactions) {
+    completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
     return;
   }
 
-  for (size_t i = 0; i < transactions.size(); ++i) {
-    auto& impl_op = impl_ops_[i];
-    const auto& transaction = transactions[i];
+  impl_ops_.clear();
+  size_t total_transfer_size = 0;
+  for (const auto& transaction : request->transactions) {
+    if (!transaction.has_data_transfer()) {
+      completer.ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
+    }
 
-    // Same address for all ops, since there is one address per channel.
-    impl_op.address = address;
-    impl_op.stop = transaction.has_stop() && transaction.stop();
+    fuchsia_hardware_i2cimpl::wire::I2cImplOp impl_op{
+        // Same address for all ops, since there is one address per channel.
+        .address = address,
+        .stop = transaction.has_stop() && transaction.stop(),
+    };
 
     auto& data_transfer = transaction.data_transfer();
     if (data_transfer.is_read_size()) {
+      if (data_transfer.read_size() > max_transfer_) {
+        completer.ReplyError(ZX_ERR_INVALID_ARGS);
+        return;
+      }
+
       impl_op.type =
           fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(data_transfer.read_size());
-
-      if (impl_op.type.read_size() > max_transfer_) {
+      total_transfer_size += data_transfer.read_size();
+    } else if (data_transfer.is_write_data()) {
+      if (data_transfer.write_data().empty()) {
         completer.ReplyError(ZX_ERR_INVALID_ARGS);
         return;
       }
-    } else {
+
       impl_op.type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
           fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&data_transfer.write_data()));
-      if (impl_op.type.write_data().empty()) {
-        completer.ReplyError(ZX_ERR_INVALID_ARGS);
-        return;
-      }
+      total_transfer_size += data_transfer.write_data().size();
+    } else {
+      completer.ReplyError(ZX_ERR_INVALID_ARGS);
+      return;
     }
+
+    if (total_transfer_size > fuchsia_hardware_i2c::kMaxTransferSize) {
+      completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
+      return;
+    }
+
+    impl_ops_.push_back(impl_op);
   }
-  impl_ops_[transactions.size() - 1].stop = true;
+  impl_ops_.back().stop = true;
 
   fdf::Arena arena('I2CI');
   fdf::WireUnownedResult result = i2c_.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(
-          impl_ops_.data(), transactions.size()));
+      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(impl_ops_));
+  impl_ops_.clear();
+
   if (!result.ok()) {
     FDF_LOG(ERROR, "Failed to send Transfer request: %s", result.status_string());
     completer.ReplyError(result.status());
@@ -144,55 +167,12 @@ void I2cDriver::Transact(uint16_t address, TransferRequestView request,
   }
 
   read_vectors_.clear();
-  size_t read_buffer_offset = 0;
   for (const auto& read : result.value()->read) {
-    auto dst = read_buffer_.data() + read_buffer_offset;
-    auto len = read.data.size();
-    memcpy(dst, read.data.data(), len);
-    read_vectors_.emplace_back(fidl::VectorView<uint8_t>::FromExternal(dst, len));
-    read_buffer_offset += len;
+    read_vectors_.emplace_back(read.data);
   }
+
   completer.ReplySuccess(fidl::VectorView<fidl::VectorView<uint8_t>>::FromExternal(read_vectors_));
-}
-
-zx_status_t I2cDriver::GrowContainersIfNeeded(
-    const fidl::VectorView<fuchsia_hardware_i2c::wire::Transaction>& transactions) {
-  if (transactions.size() < 1) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  if (transactions.size() > fuchsia_hardware_i2c::wire::kMaxCountTransactions) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  size_t total_read_size = 0, total_write_size = 0;
-  for (const auto transaction : transactions) {
-    if (!transaction.has_data_transfer()) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-
-    if (transaction.data_transfer().is_write_data()) {
-      total_write_size += transaction.data_transfer().write_data().size();
-    } else if (transaction.data_transfer().is_read_size()) {
-      total_read_size += transaction.data_transfer().read_size();
-    } else {
-      return ZX_ERR_INVALID_ARGS;
-    }
-  }
-
-  if (total_read_size + total_write_size > fuchsia_hardware_i2c::wire::kMaxTransferSize) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  // Allocate space for all ops up front, if needed.
-  if (transactions.size() > impl_ops_.size() || transactions.size() > read_vectors_.size()) {
-    impl_ops_.resize(transactions.size());
-    read_vectors_.resize(transactions.size());
-  }
-  if (total_read_size > read_buffer_.capacity()) {
-    read_buffer_.resize(total_read_size);
-  }
-
-  return ZX_OK;
+  read_vectors_.clear();
 }
 
 }  // namespace i2c
