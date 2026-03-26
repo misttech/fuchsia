@@ -29,6 +29,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         ":go_test_parser_lib",
+        "//tools/lib/jsonutil",
         "//tools/lib/subprocess",
         "//tools/testing/runtests",
         "//tools/testing/testrunner:constants",
