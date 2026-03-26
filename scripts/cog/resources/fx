@@ -29,7 +29,7 @@ fi
 diff_output=$("${GIT_CITC_PATH}" cli.diff "${base_commit_hash}" @)
 
 # Copy over any added or modified files to the CartFS.
-added_or_modified_files=$(echo "${diff_output}" | grep '^\[[AM]\]' | awk '{print $2}')
+added_or_modified_files=($(echo "${diff_output}" | grep '^\[[AM]\]' | awk '{print $2}'))
 for file in "${added_or_modified_files[@]}"; do
   if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
     continue
@@ -46,8 +46,8 @@ for file in "${added_or_modified_files[@]}"; do
 done
 
 # Delete files in CartFS
-deleted_files=$(echo "${diff_output}" | grep '^\[D\]' | awk '{print $2}')
-for file in ${deleted_files[@]}; do
+deleted_files=($(echo "${diff_output}" | grep '^\[D\]' | awk '{print $2}'))
+for file in "${deleted_files[@]}"; do
   if [[ -f "${CARTFS_FUCHSIA_DIR}/${file}" ]]; then
     rm "${CARTFS_FUCHSIA_DIR}/${file}"
   fi
