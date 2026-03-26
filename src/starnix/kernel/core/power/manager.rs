@@ -65,6 +65,20 @@ pub struct WakeupSource {
     last_change: zx::MonotonicInstant,
 }
 
+impl WakeupSource {
+    /// Returns the amount of time passed since this wake source was last
+    /// recorded as active. For active wake sources, this is exactly the time
+    /// since the source became active. For inactive sources it's zero.
+    pub fn active_duration(&self) -> zx::MonotonicDuration {
+        if self.active_since == zx::MonotonicInstant::ZERO {
+            zx::MonotonicDuration::default()
+        } else {
+            let now = zx::MonotonicInstant::get();
+            now - self.active_since
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum WakeupSourceOrigin {
     WakeLock(String),
@@ -330,6 +344,9 @@ impl SuspendResumeManagerInner {
             child.record_uint("wakeup_count", source.wakeup_count);
             child.record_uint("expire_count", source.expire_count);
             child.record_int("active_since (ns)", source.active_since.into_nanos());
+            // Records how long has this wakeup source been active for. If the source is currently
+            // active, this is how long it's been currently active.
+            child.record_int("active_duration_mono (ns)", source.active_duration().into_nanos());
             child.record_int("total_time (ms)", source.total_time.into_millis());
             child.record_int("max_time (ms)", source.max_time.into_millis());
             child.record_int("last_change (ns)", source.last_change.into_nanos());
