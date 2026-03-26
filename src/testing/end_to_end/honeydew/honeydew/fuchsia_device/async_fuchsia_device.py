@@ -998,6 +998,9 @@ class AsyncFuchsiaDevice(
                 fn()
 
         _LOGGER.info("Disconnecting USB from %s...", self.device_name)
+
+        self.fuchsia_controller.before_usb_disconnect()
+
         self._usb_power_hub.power_off(self._usb_power_hub_port)
         self.wait_for_offline()
 
@@ -1018,6 +1021,8 @@ class AsyncFuchsiaDevice(
         _LOGGER.info("Connecting USB to %s...", self.device_name)
         self._usb_power_hub.power_on(self._usb_power_hub_port)
         await self.wait_for_online()
+
+        self.fuchsia_controller.after_usb_reconnect()
 
         for fn in self._on_device_resume_fns:
             if inspect.iscoroutinefunction(fn):

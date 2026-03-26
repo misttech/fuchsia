@@ -68,3 +68,11 @@ class FuchsiaController(abc.ABC):
 
         Raises: FuchsiaControllerError: On failure to create the sockets.
         """
+
+    @abc.abstractmethod
+    def before_usb_disconnect(self) -> None:
+        """Callback method that gets invoked before USB disconnect."""
+
+    @abc.abstractmethod
+    def after_usb_reconnect(self) -> None:
+        """Callback method that gets invoked after USB reconnect."""

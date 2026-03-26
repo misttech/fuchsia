@@ -169,6 +169,14 @@ class FuchsiaControllerImpl(fuchsia_controller_interface.FuchsiaController):
         self.create_context()
         self.check_connection()
 
+    def before_usb_disconnect(self) -> None:
+        """Callback method that gets invoked before USB disconnect."""
+
+    def after_usb_reconnect(self) -> None:
+        """Callback method that gets invoked after USB reconnect."""
+        self.create_context()
+        self.check_connection()
+
     def channel_create(
         self,
     ) -> Tuple[fuchsia_controller.Channel, fuchsia_controller.Channel]:
