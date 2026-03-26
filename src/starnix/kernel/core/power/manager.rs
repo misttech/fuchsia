@@ -11,7 +11,11 @@ use std::sync::{Arc, Weak};
 
 use anyhow::{Context, anyhow};
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_power_observability as fobs;
+use fidl_fuchsia_session_power as fpower;
+use fidl_fuchsia_starnix_runner as frunner;
 use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::ArrayProperty;
 use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
@@ -26,10 +30,6 @@ use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::fmt;
 use zx::{HandleBased, Peered};
-use {
-    fidl_fuchsia_power_observability as fobs, fidl_fuchsia_session_power as fpower,
-    fidl_fuchsia_starnix_runner as frunner, fuchsia_inspect as inspect,
-};
 
 /// Wake source persistent info, exposed in inspect diagnostics.
 #[derive(Debug, Default)]
@@ -139,6 +139,9 @@ pub struct SuspendResumeManagerInner {
 
     /// The external wake sources that are registered with the runner.
     external_wake_sources: HashMap<zx::Koid, ExternalWakeSource>,
+
+    /// The last time a suspend attempt was logged.
+    pub last_suspend_log_time: Option<zx::BootInstant>,
 }
 
 #[derive(Debug)]
@@ -152,6 +155,19 @@ struct ExternalWakeSource {
 }
 
 impl SuspendResumeManager {
+    pub fn check_and_update_suspend_log_time(&self) -> bool {
+        let mut inner = self.lock();
+        let now = zx::BootInstant::get();
+        let should = inner
+            .last_suspend_log_time
+            .map(|t| now - t > zx::BootDuration::from_seconds(5))
+            .unwrap_or(true);
+        if should {
+            inner.last_suspend_log_time = Some(now);
+        }
+        should
+    }
+
     pub fn add_external_wake_source(
         &self,
         handle: zx::NullableHandle,
@@ -239,6 +255,7 @@ impl Default for SuspendResumeManagerInner {
             active_wakeup_source_count: 0,
             total_wakeup_source_event_count: 0,
             external_wake_sources: Default::default(),
+            last_suspend_log_time: None,
         }
     }
 }
@@ -557,6 +574,8 @@ impl SuspendResumeManager {
         &self,
         locked: &mut Locked<FileOpsCore>,
         suspend_state: SuspendState,
+        suspend_debounce_duration: zx::BootDuration,
+        should_log: bool,
     ) -> Result<(), Errno> {
         let suspend_start_time = zx::BootInstant::get();
         let mut state = self.lock();
@@ -605,17 +624,20 @@ impl SuspendResumeManager {
         );
         let wake_lock_event = Some(self.duplicate_lock_event());
 
-        log_info!("Requesting container suspension.");
+        if should_log {
+            log_info!("Requesting container suspension.");
+        }
         match manager.suspend_container(
             frunner::ManagerSuspendContainerRequest {
                 container_job,
                 wake_locks: wake_lock_event,
+                suspend_debounce_duration: Some(suspend_debounce_duration.into_nanos()),
                 ..Default::default()
             },
             zx::Instant::INFINITE,
         ) {
             Ok(Ok(res)) => {
-                self.report_container_resumed(suspend_start_time, res);
+                self.report_container_resumed(suspend_start_time, res, should_log);
             }
             e => {
                 let state = self.lock();
@@ -630,12 +652,15 @@ impl SuspendResumeManager {
         &self,
         suspend_start_time: zx::BootInstant,
         res: frunner::ManagerSuspendContainerResponse,
+        should_log: bool,
     ) {
         let wake_time = zx::BootInstant::get();
         // The "0" here is to mimic the expected power management success string,
         // while we don't have IRQ numbers to report.
         let resume_reason = res.resume_reason.clone().map(|s| format!("0 {}", s));
-        log_info!("Resuming from container suspension: {:?}", resume_reason);
+        if should_log {
+            log_info!("Resuming from container suspension: {:?}", resume_reason);
+        }
         let mut state = self.lock();
         state.update_suspend_stats(|suspend_stats| {
             suspend_stats.success_count += 1;
@@ -973,9 +998,10 @@ mod test {
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_test_placeholders::{EchoMarker, EchoRequest};
+    use fuchsia_async as fasync;
+    use fuchsia_inspect as inspect;
     use futures::StreamExt;
     use zx::{self, HandleBased};
-    use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
     #[::fuchsia::test]
     fn test_counter_zero_initialization() {

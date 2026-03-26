@@ -36,7 +36,10 @@ use fidl::endpoints::{
 };
 use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentStopInfo};
 use fidl_fuchsia_feedback::CrashReporterProxy;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
 use fidl_fuchsia_time_external::AdjustSynchronousProxy;
+use fuchsia_async as fasync;
 use fuchsia_inspect::ArrayProperty;
 use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
@@ -59,10 +62,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::CpuFeatureFlags;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
-    fuchsia_async as fasync,
-};
 
 /// Kernel features are specified in the component manifest of the starnix container
 /// or explicitly provided to the kernel constructor in tests.
@@ -130,6 +129,9 @@ pub struct KernelFeatures {
     /// Whether to expose a stub '/dev/ion' node, as a temporary workaround for compatibility.
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
     pub fake_ion: bool,
+
+    /// The duration to debounce suspend attempts, in milliseconds.
+    pub suspend_debounce_duration_ms: u64,
 }
 
 impl KernelFeatures {

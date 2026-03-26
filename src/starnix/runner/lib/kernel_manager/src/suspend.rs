@@ -47,6 +47,8 @@ pub type WakeSources = std::collections::HashMap<zx::Koid, WakeSource>;
 pub struct SuspendContext {
     pub wake_sources: Arc<Mutex<WakeSources>>,
     pub wake_watchers: Arc<Mutex<Vec<zx::EventPair>>>,
+    pub last_resume_time: Mutex<Option<zx::BootInstant>>,
+    pub last_debounce_log_time: Mutex<Option<zx::BootInstant>>,
 }
 
 /// Suspends the container specified by the `payload`.
@@ -66,6 +68,35 @@ pub async fn suspend_container(
         );
         return Ok(Err(fstarnixrunner::SuspendError::SuspendFailure));
     };
+
+    let debounce_duration = payload
+        .suspend_debounce_duration
+        .map(zx::BootDuration::from_nanos)
+        .unwrap_or_else(|| zx::BootDuration::from_seconds(0));
+    let now = zx::BootInstant::get();
+    let wait_time = {
+        let last_resume_time = *suspend_context.last_resume_time.lock();
+        last_resume_time.map(|t| (t + debounce_duration) - now).filter(|&d| d.into_nanos() > 0)
+    };
+    if let Some(wait) = wait_time {
+        let should_log = {
+            let mut last_log = suspend_context.last_debounce_log_time.lock();
+            let should =
+                last_log.map(|t| now - t > zx::BootDuration::from_seconds(5)).unwrap_or(true);
+            if should {
+                *last_log = Some(now);
+            }
+            should
+        };
+        if should_log {
+            log::info!("Debouncing suspend for {:?}", wait);
+        }
+        return Ok(Ok(fstarnixrunner::ManagerSuspendContainerResponse {
+            suspend_time: Some(0),
+            resume_reason: Some("starnix-debounce".to_string()),
+            ..Default::default()
+        }));
+    }
 
     // These handles need to kept alive until the end of the block, as they will
     // resume the kernel when dropped.
@@ -175,6 +206,8 @@ pub async fn suspend_container(
             true
         }
     });
+
+    *suspend_context.last_resume_time.lock() = Some(zx::BootInstant::get());
 
     log::info!("Returning successfully from suspend container");
     Ok(Ok(fstarnixrunner::ManagerSuspendContainerResponse {

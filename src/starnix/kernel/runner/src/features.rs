@@ -170,6 +170,7 @@ impl Features {
                         cached_zx_map_info_bytes,
                         dirent_cache_size,
                         fake_ion,
+                        suspend_debounce_duration_ms,
                     },
                 system_limits,
                 selinux,
@@ -295,6 +296,8 @@ impl Features {
                     inspect_node.record_bool("wakeup_test", *wakeup_test);
                     inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
                     inspect_node.record_bool("fake_ion", *fake_ion);
+                    inspect_node
+                        .record_uint("suspend_debounce_duration_ms", *suspend_debounce_duration_ms);
                 });
             }
         });
@@ -319,6 +322,7 @@ pub fn parse_features(
         ui_visual_debugging_level,
         additional_mounts,
         dirent_cache_size,
+        suspend_debounce_duration_ms,
     } = &start_info.config;
 
     let mut features = Features::default();
@@ -485,6 +489,7 @@ pub fn parse_features(
     features.kernel.crash_report_throttling = *crash_report_throttling;
     features.kernel.cached_zx_map_info_bytes = *cached_zx_map_info_bytes;
     features.kernel.dirent_cache_size = *dirent_cache_size;
+    features.kernel.suspend_debounce_duration_ms = *suspend_debounce_duration_ms;
 
     Ok(features)
 }

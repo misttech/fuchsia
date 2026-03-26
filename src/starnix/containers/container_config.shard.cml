@@ -111,5 +111,12 @@
             // See https://fxbug.dev/379782290 for context.
             availability: "transitional",
         },
+        {
+            config: "fuchsia.starnix.config.container.SuspendDebounceDurationMs",
+            key: "suspend_debounce_duration_ms",
+            type: "uint64",
+            default: 30000,
+            availability: "transitional",
+        },
     ],
 }

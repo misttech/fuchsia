@@ -21,6 +21,9 @@ open protocol Manager {
         /// The event that is used to signal whether or not there are any active wake locks
         /// in the container.
         2: wake_locks zx.Handle:EVENTPAIR;
+
+        /// The debounce duration for suspends
+        3: suspend_debounce_duration zx.Duration;
     }) -> (table {
         /// The amount of time spent in the suspend state.
         ///
