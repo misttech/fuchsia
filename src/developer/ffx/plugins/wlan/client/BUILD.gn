@@ -16,7 +16,7 @@ ffx_plugin("ffx_wlan_client") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common-fdomain",
+    "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
   ]
@@ -24,7 +24,7 @@ ffx_plugin("ffx_wlan_client") {
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain",
     "//src/connectivity/wlan/wlancfg/tool/policy:donut-lib-fdomain",
     "//src/developer/ffx/core:lib",
-    "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common-fdomain",
+    "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common",
     "//third_party/rust_crates:argh",
   ]
 

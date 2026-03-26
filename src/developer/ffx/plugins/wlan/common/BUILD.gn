@@ -5,39 +5,23 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-template("ffx_wlan_common_target") {
-  rustc_library(target_name) {
-    edition = "2024"
-    name = "ffx_wlan_common"
-    version = "0.1.0"
-    with_unit_tests = true
-    forward_variables_from(invoker, [ "features" ])
+rustc_library("ffx-wlan-common") {
+  edition = "2024"
+  name = "ffx_wlan_common"
+  version = "0.1.0"
+  with_unit_tests = true
 
-    deps = [
-             "//third_party/rust_crates:anyhow",
-             "//third_party/rust_crates:hex",
-           ] + invoker.deps
-
-    sources = [
-      "src/args.rs",
-      "src/lib.rs",
-    ]
-  }
-}
-
-ffx_wlan_common_target("ffx-wlan-common") {
   deps = [
-    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_flex",
-    "//src/lib/fdomain/client:flex_fidl",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain",
+    "//src/lib/fdomain/client",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:hex",
   ]
-}
 
-ffx_wlan_common_target("ffx-wlan-common-fdomain") {
-  deps = [
-    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain_flex",
-    "//src/lib/fdomain/client:flex_fdomain",
+  sources = [
+    "src/args.rs",
+    "src/lib.rs",
   ]
-  features = [ "fdomain" ]
 }
 
 fuchsia_unittest_package("ffx-wlan-common-tests") {

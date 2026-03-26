@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use flex_client::ProxyHasDomain;
-use flex_fuchsia_wlan_policy as wlan_policy;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_wlan_policy as wlan_policy;
 
 pub mod args;
 
