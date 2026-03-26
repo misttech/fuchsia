@@ -4,13 +4,11 @@
 
 use anyhow::Error;
 use async_trait::async_trait;
+use fdomain_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated;
+use ffx_wlan_deprecated_args as arg_types;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use target_holders::moniker;
-use {
-    ffx_wlan_deprecated_args as arg_types,
-    fidl_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated,
-};
+use target_holders::fdomain::moniker;
 
 #[derive(FfxTool)]
 pub struct DeprecatedTool {
@@ -37,7 +35,7 @@ async fn handle_deprecated_command(
 ) -> Result<(), Error> {
     match cmd.subcommand {
         arg_types::DeprecatedSubCommand::SuggestMac(mac) => {
-            donut_lib::handle_suggest_ap_mac(proxy, mac.mac).await
+            donut_lib_fdomain::handle_suggest_ap_mac(proxy, mac.mac).await
         }
     }
 }
