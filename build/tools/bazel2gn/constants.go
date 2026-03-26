@@ -149,6 +149,7 @@ var rustCommonAttrMap = map[string]string{
 	"compile_data":         "inputs",
 	"crate_features":       "features",
 	"with_host_unit_tests": "with_unit_tests",
+	"rustc_flags":          "rustflags",
 }
 
 // rustBinMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
