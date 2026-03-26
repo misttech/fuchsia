@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fetch::FetchError;
-use crate::ping::PingError;
-use crate::telemetry::processors::link_properties_state::InterfaceIdentifier;
+use crate::fetch::{FetchError, fetch_result_short_name};
+use crate::ping::{PingError, ping_result_short_name};
+use crate::telemetry::processors::InterfaceIdentifier;
 use crate::{FetchParameters, LinkState, PingParameters, Proto};
 use fuchsia_inspect::Node;
 use fuchsia_inspect_contrib::inspect_log;
@@ -181,10 +181,7 @@ impl PerIfaceIdentifierInspectEvents {
         let ping_result = PingResult {
             address: format!("{}", ping_parameters.addr),
             interface_name: ping_parameters.interface_name.clone(),
-            result: match result {
-                Ok(()) => "Success".to_string(),
-                Err(e) => format!("e_{}", e.short_name()),
-            },
+            result: ping_result_short_name(result),
         };
         ping_results_node.insert(ping_result);
     }
@@ -211,10 +208,7 @@ impl PerIfaceIdentifierInspectEvents {
             host_and_path: format!("{}{}", fetch_parameters.domain, fetch_parameters.path),
             resolved_address: format!("{}", fetch_parameters.ip),
             interface_name: fetch_parameters.interface_name.clone(),
-            result: match result {
-                Ok(code) => format!("Completed_{}", code),
-                Err(e) => format!("e_{}", e.short_name()),
-            },
+            result: fetch_result_short_name(result),
         };
         self.fetch_results.insert(fetch_result);
     }
@@ -223,7 +217,7 @@ impl PerIfaceIdentifierInspectEvents {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::link_properties_state::InterfaceType;
+    use crate::telemetry::processors::InterfaceType;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
 

@@ -7,27 +7,33 @@ mod inspect;
 pub mod processors;
 
 use self::inspect::{Stats, inspect_record_stats};
-use crate::{IpVersions, LinkState, State};
-use processors::link_properties_state::{
-    InterfaceIdentifier, InterfaceTimeSeriesGrouping, InterfaceType, LinkProperties,
-    LinkPropertiesStateLogger,
+use crate::fetch::FetchError;
+use crate::ping::PingError;
+use crate::telemetry::processors::link_properties_state::{
+    LinkProperties, LinkPropertiesStateLogger,
 };
+use crate::telemetry::processors::{
+    InterfaceIdentifier, InterfaceTimeSeriesGrouping, InterfaceType,
+};
+use crate::{FetchParameters, IpVersions, LinkState, PingParameters, State};
+use processors::interface_aware_logger::InterfaceAwareLogger;
 
 use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
 use fidl_fuchsia_metrics::MetricEvent;
+use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::{Future, StreamExt, select};
 use log::{info, warn};
+use network_policy_metrics_registry as metrics;
 use static_assertions::const_assert_eq;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use windowed_stats::aggregations::SumAndCount;
 use windowed_stats::experimental::inspect::TimeMatrixClient;
-use {fuchsia_async as fasync, network_policy_metrics_registry as metrics};
 
 #[cfg(test)]
 mod testing;
@@ -156,6 +162,21 @@ pub enum TelemetryEvent {
         interface_identifiers: Vec<InterfaceIdentifier>,
         link_state: IpVersions<LinkState>,
     },
+    GatewayPingResult {
+        interface_identifiers: Vec<InterfaceIdentifier>,
+        ping_parameters: PingParameters,
+        gateway_ping_result: Result<(), PingError>,
+    },
+    InternetPingResult {
+        interface_identifiers: Vec<InterfaceIdentifier>,
+        ping_parameters: PingParameters,
+        internet_ping_result: Result<(), PingError>,
+    },
+    FetchResult {
+        interface_identifiers: Vec<InterfaceIdentifier>,
+        fetch_parameters: FetchParameters,
+        fetch_result: Result<u16, FetchError>,
+    },
     /// Get the TimeSeries held by telemetry loop. Intended for test only.
     GetTimeSeries {
         sender: oneshot::Sender<Arc<Mutex<Stats>>>,
@@ -180,7 +201,6 @@ pub fn serve_telemetry(
     let time_matrix_client =
         TimeMatrixClient::new(link_properties_state_time_series_node.clone_weak());
 
-    inspect_node.record(inspect_time_series_node);
     inspect_node.record(link_properties_state_time_series_node);
     let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
     let link_properties_state_logger = LinkPropertiesStateLogger::new(
@@ -189,11 +209,25 @@ pub fn serve_telemetry(
         InterfaceTimeSeriesGrouping::Type(vec![InterfaceType::Ethernet, InterfaceType::WlanClient]),
         &time_matrix_client,
     );
-    // Record the metadata node so it does not get dropped.
+
+    let interface_aware_logger_node = inspect_time_series_node.create_child("interfaces");
+    let interface_aware_logger = InterfaceAwareLogger::new(
+        &inspect_metadata_node,
+        &format!("root/telemetry/{METADATA_NODE_NAME}"),
+        InterfaceTimeSeriesGrouping::Type(vec![InterfaceType::Ethernet, InterfaceType::WlanClient]),
+        interface_aware_logger_node,
+    );
+
+    // Record the time series and metadata nodes so they do not get dropped.
+    inspect_node.record(inspect_time_series_node);
     inspect_node.record(inspect_metadata_node);
 
-    let (sender, fut) =
-        serve_telemetry_inner(cobalt_proxy, inspect_node, link_properties_state_logger);
+    let (sender, fut) = serve_telemetry_inner(
+        cobalt_proxy,
+        inspect_node,
+        link_properties_state_logger,
+        interface_aware_logger,
+    );
     (sender, fut)
 }
 
@@ -201,6 +235,7 @@ fn serve_telemetry_inner(
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     inspect_node: InspectNode,
     link_properties_state_logger: LinkPropertiesStateLogger,
+    interface_aware_logger: InterfaceAwareLogger,
 ) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
     let (sender, mut receiver) = mpsc::channel::<TelemetryEvent>(TELEMETRY_EVENT_BUFFER_SIZE);
     let sender = TelemetrySender::new(sender);
@@ -216,8 +251,13 @@ fn serve_telemetry_inner(
             (ONE_MINUTE.into_nanos() / TELEMETRY_QUERY_INTERVAL.into_nanos()) as u64;
         const INTERVAL_TICKS_PER_HR: u64 = INTERVAL_TICKS_PER_MINUTE * 60;
         let mut interval_tick = 0u64;
-        let mut telemetry =
-            Telemetry::new(cloned_sender, cobalt_proxy, link_properties_state_logger, inspect_node);
+        let mut telemetry = Telemetry::new(
+            cloned_sender,
+            cobalt_proxy,
+            link_properties_state_logger,
+            interface_aware_logger,
+            inspect_node,
+        );
         loop {
             select! {
                 event = receiver.next() => {
@@ -284,6 +324,7 @@ struct Telemetry {
     network_config: Option<NetworkConfig>,
     network_config_last_refreshed: fasync::MonotonicInstant,
     link_properties_state_logger: LinkPropertiesStateLogger,
+    interface_aware_logger: InterfaceAwareLogger,
 
     _inspect_node: InspectNode,
     stats: Arc<Mutex<Stats>>,
@@ -294,6 +335,7 @@ impl Telemetry {
         _telemetry_sender: TelemetrySender,
         cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
         link_properties_state_logger: LinkPropertiesStateLogger,
+        interface_aware_logger: InterfaceAwareLogger,
         inspect_node: InspectNode,
     ) -> Self {
         let stats = Arc::new(Mutex::new(Stats::new()));
@@ -307,6 +349,7 @@ impl Telemetry {
             network_config: None,
             network_config_last_refreshed: fasync::MonotonicInstant::now(),
             link_properties_state_logger,
+            interface_aware_logger,
             _inspect_node: inspect_node,
             stats,
         }
@@ -369,6 +412,39 @@ impl Telemetry {
             TelemetryEvent::LinkStateUpdate { interface_identifiers, link_state } => {
                 self.link_properties_state_logger
                     .update_link_state(interface_identifiers, &link_state);
+            }
+            TelemetryEvent::GatewayPingResult {
+                interface_identifiers,
+                ping_parameters,
+                gateway_ping_result,
+            } => {
+                self.interface_aware_logger.log_gateway_ping_result(
+                    interface_identifiers,
+                    &ping_parameters,
+                    &gateway_ping_result,
+                );
+            }
+            TelemetryEvent::InternetPingResult {
+                interface_identifiers,
+                ping_parameters,
+                internet_ping_result,
+            } => {
+                self.interface_aware_logger.log_internet_ping_result(
+                    interface_identifiers,
+                    &ping_parameters,
+                    &internet_ping_result,
+                );
+            }
+            TelemetryEvent::FetchResult {
+                interface_identifiers,
+                fetch_parameters,
+                fetch_result,
+            } => {
+                self.interface_aware_logger.log_fetch_result(
+                    interface_identifiers,
+                    &fetch_parameters,
+                    &fetch_result,
+                );
             }
             TelemetryEvent::GetTimeSeries { sender } => {
                 let _result = sender.send(Arc::clone(&self.stats));
@@ -1292,8 +1368,24 @@ mod tests {
             &mock_time_matrix_client,
         );
 
-        let (telemetry_sender, test_fut) =
-            serve_telemetry_inner(cobalt_proxy, inspect_node, link_properties_state_logger);
+        let interface_aware_logger_node = inspect_node.create_child("interfaces");
+        inspect_node.record(interface_aware_logger_node.clone_weak());
+        let interface_aware_logger = InterfaceAwareLogger::new(
+            &inspect_metadata_node,
+            &format!("root/telemetrytest/{METADATA_NODE_NAME}"),
+            InterfaceTimeSeriesGrouping::Type(vec![
+                InterfaceType::Ethernet,
+                InterfaceType::WlanClient,
+            ]),
+            interface_aware_logger_node,
+        );
+
+        let (telemetry_sender, test_fut) = serve_telemetry_inner(
+            cobalt_proxy,
+            inspect_node,
+            link_properties_state_logger,
+            interface_aware_logger,
+        );
         let mut test_fut = Box::pin(test_fut);
 
         assert_matches::assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);

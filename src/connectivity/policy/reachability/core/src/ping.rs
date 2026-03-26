@@ -77,6 +77,13 @@ impl PingError {
     }
 }
 
+pub(crate) fn ping_result_short_name(result: &Result<(), PingError>) -> String {
+    match result {
+        Ok(()) => "Success".to_string(),
+        Err(e) => format!("e_{}", e.short_name()),
+    }
+}
+
 async fn ping<I>(interface_name: &str, addr: I::SockAddr) -> Result<(), PingError>
 where
     I: ping::FuchsiaIpExt,

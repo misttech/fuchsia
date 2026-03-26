@@ -17,10 +17,13 @@ pub mod watchdog;
 mod testutil;
 
 use crate::route_table::{Route, RouteTable};
-use crate::telemetry::processors::link_properties_state::{self, LinkProperties};
+use crate::telemetry::processors::link_properties_state::LinkProperties;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::anyhow;
+use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{self as fnet_ext, IpExt};
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{Inspector, Node as InspectNode};
 use futures::channel::mpsc;
 use inspect::InspectInfo;
@@ -30,14 +33,10 @@ use net_declare::{fidl_subnet, std_ip};
 use net_types::ScopeableAddress as _;
 use num_derive::FromPrimitive;
 use std::collections::hash_map::{Entry, HashMap};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fuchsia_async as fasync,
-};
 
 use crate::inspect::PerIfaceIdentifierInspectInfo;
 use std::net::IpAddr;
-use telemetry::processors::link_properties_state::InterfaceIdentifier;
+use telemetry::processors::InterfaceIdentifier;
 
 pub use neighbor_cache::{InterfaceNeighborCache, NeighborCache};
 
@@ -619,7 +618,7 @@ impl From<TelemetryContext> for PersistentNetworkCheckContext {
 struct TelemetryContext {
     // The interface identifiers derived from the interface's PortClass. Used
     // to determine which TimeSeries are applicable to the current interface.
-    interface_identifiers: Vec<link_properties_state::InterfaceIdentifier>,
+    interface_identifiers: Vec<telemetry::processors::InterfaceIdentifier>,
     has_v4_address: bool,
     has_default_ipv4_route: bool,
     has_v6_address: bool,
@@ -633,7 +632,7 @@ impl TelemetryContext {
         has_default_ipv4_route: bool,
         has_default_ipv6_route: bool,
     ) -> Self {
-        let interface_identifiers = link_properties_state::identifiers_from_port_class(port_class);
+        let interface_identifiers = telemetry::processors::identifiers_from_port_class(port_class);
         // Whether the interface has a globally routable v4 / v6 address.
         // v6 address must not be link local.
         let (has_v4_address, has_v6_address) = {
@@ -1394,8 +1393,29 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                     }
                 }
 
+                // Grab `ping_is_ok` before `result` is moved into `telemetry_sender.send`.
+                let ping_is_ok = result.is_ok();
+
+                if let Some(telemetry_sender) = &mut self.telemetry_sender {
+                    let interface_identifiers =
+                        ctx.persistent_context.telemetry.interface_identifiers.clone();
+                    if let NetworkCheckState::PingInternet = ctx.checker_state {
+                        telemetry_sender.send(TelemetryEvent::InternetPingResult {
+                            interface_identifiers,
+                            ping_parameters: parameters.clone(),
+                            internet_ping_result: result,
+                        });
+                    } else {
+                        telemetry_sender.send(TelemetryEvent::GatewayPingResult {
+                            interface_identifiers,
+                            ping_parameters: parameters.clone(),
+                            gateway_ping_result: result,
+                        });
+                    }
+                }
+
                 let PingParameters { interface_name, addr, .. } = parameters;
-                if result.is_ok() {
+                if ping_is_ok {
                     let () = Self::handle_ping_success(ctx, &addr);
                 }
 
@@ -1526,8 +1546,23 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                     node.log_fetch_result(&parameters, &result);
                 }
 
+                // Grab `fetch_ok_status` before `result` is moved into `telemetry_sender.send`.
+                let fetch_ok_status = result.as_ref().copied().ok();
+
+                if let Some(telemetry_sender) = &mut self.telemetry_sender {
+                    telemetry_sender.send(TelemetryEvent::FetchResult {
+                        interface_identifiers: ctx
+                            .persistent_context
+                            .telemetry
+                            .interface_identifiers
+                            .clone(),
+                        fetch_parameters: parameters.clone(),
+                        fetch_result: result,
+                    });
+                }
+
                 let FetchParameters { interface_name, ip, expected_statuses, .. } = parameters;
-                if let Ok(status) = result {
+                if let Some(status) = fetch_ok_status {
                     if expected_statuses.contains(&status) {
                         let () = Self::handle_fetch_success(ctx, ip);
                     }
@@ -1637,16 +1672,15 @@ mod tests {
     use crate::ping::Ping;
     use async_trait::async_trait;
     use diagnostics_assertions::assert_data_tree;
+    use fidl_fuchsia_net as fnet;
+    use fidl_fuchsia_net_interfaces as fnet_interfaces;
+    use fuchsia_async as fasync;
     use futures::StreamExt as _;
     use net_declare::{fidl_ip, fidl_subnet, std_ip, std_socket_addr};
     use net_types::ip;
     use std::pin::pin;
     use std::task::Poll;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-        fuchsia_async as fasync,
-    };
 
     const ETHERNET_INTERFACE_NAME: &str = "eth1";
     const ID1: u64 = 1;
@@ -3463,5 +3497,101 @@ mod tests {
         let final_state = monitor.state().get(ID1).unwrap();
         assert_eq!(final_state.ipv4.state.link, LinkState::Removed);
         assert_eq!(final_state.ipv6.state.link, LinkState::Removed);
+    }
+
+    #[test]
+    fn test_ping_and_fetch_telemetry_events_sent() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let time = fasync::MonotonicInstant::from_nanos(1_000_000_000);
+        let () = exec.set_fake_time(time.into());
+
+        let (action_sender, action_receiver) = mpsc::unbounded();
+        let mut monitor = Monitor::new_with_time_provider(
+            action_sender,
+            FakeTime {
+                increment: zx::MonotonicDuration::from_nanos(10),
+                time: zx::MonotonicInstant::get(),
+            },
+        )
+        .unwrap();
+
+        let (telemetry_tx, mut telemetry_rx) = mpsc::channel(100);
+        monitor.set_telemetry_sender(TelemetrySender::new(telemetry_tx));
+
+        let properties = &fnet_interfaces_ext::Properties {
+            id: ID1.try_into().unwrap(),
+            name: ETHERNET_INTERFACE_NAME.to_string(),
+            port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            online: true,
+            addresses: vec![],
+            has_default_ipv4_route: true,
+            has_default_ipv6_route: false,
+            port_identity_koid: Default::default(),
+        };
+
+        let net_gateway = fidl_ip!("192.168.0.254");
+        let net_gateway_std = std_ip!("192.168.0.254");
+
+        // Needs to have at least a default route so it attempts internet test
+        let routes = testutil::build_route_table_from_flattened_routes([Route {
+            destination: UNSPECIFIED_V4,
+            outbound_interface: ID1,
+            next_hop: Some(net_gateway),
+        }]);
+
+        // Setup neighbors for gateway caching
+        let neighbors_map = [(
+            net_gateway,
+            NeighborState::new(NeighborHealth::Healthy {
+                last_observed: zx::MonotonicInstant::default(),
+            }),
+        )]
+        .into_iter()
+        .collect::<HashMap<fnet::IpAddress, NeighborState>>();
+        let neighbors = InterfaceNeighborCache { neighbors: neighbors_map };
+
+        let view = InterfaceView { properties, routes: &routes, neighbors: Some(&neighbors) };
+
+        let mut network_check_responder = NetworkCheckTestResponder::new(action_receiver);
+
+        let pinger = FakePing {
+            gateway_addrs: vec![net_gateway_std].into_iter().collect(),
+            gateway_response: true,
+            internet_response: true,
+        };
+        let digger = FakeDig::new(vec![std_ip!("1.2.3.0")]);
+        let fetcher = FakeFetch::default();
+
+        let network_check_fut = async {
+            match monitor.begin(view) {
+                Ok(NetworkCheckerOutcome::MustResume) => {
+                    let () = network_check_responder
+                        .respond_to_messages(&mut monitor, pinger, digger, fetcher)
+                        .await;
+                }
+                _ => panic!("Expected MustResume"),
+            }
+        };
+
+        let mut network_check_fut = pin!(network_check_fut);
+        match exec.run_until_stalled(&mut network_check_fut) {
+            Poll::Ready(()) => {}
+            Poll::Pending => panic!("network_check blocked unexpectedly"),
+        }
+
+        let mut events = Vec::new();
+        while let Poll::Ready(Some(event)) = exec.run_until_stalled(&mut telemetry_rx.next()) {
+            events.push(event);
+        }
+
+        let has_gateway =
+            events.iter().any(|e| matches!(e, TelemetryEvent::GatewayPingResult { .. }));
+        let has_internet =
+            events.iter().any(|e| matches!(e, TelemetryEvent::InternetPingResult { .. }));
+        let has_fetch = events.iter().any(|e| matches!(e, TelemetryEvent::FetchResult { .. }));
+
+        assert!(has_gateway, "Expected GatewayPingResult telemetry event");
+        assert!(has_internet, "Expected InternetPingResult telemetry event");
+        assert!(has_fetch, "Expected FetchResult telemetry event");
     }
 }

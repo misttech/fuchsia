@@ -65,6 +65,13 @@ impl FetchError {
     }
 }
 
+pub(crate) fn fetch_result_short_name(result: &Result<u16, FetchError>) -> String {
+    match result {
+        Ok(code) => format!("Completed_{}", code),
+        Err(e) => format!("e_{}", e.short_name()),
+    }
+}
+
 fn http_request(path: &str, host: &str) -> String {
     [
         &format!("HEAD {path} HTTP/1.1"),
