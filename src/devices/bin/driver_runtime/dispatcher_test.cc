@@ -3291,7 +3291,7 @@ TEST_F(DispatcherTest, ExtraThreadIsReused) {
   ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 0);
 }
 
-TEST_F(DispatcherTest, MaximumTenThreads) {
+TEST_F(DispatcherTest, MaximumThreads) {
   {
     void* driver = reinterpret_cast<void*>(uintptr_t(1));
     thread_context::PushDriver(driver);
@@ -3299,7 +3299,8 @@ TEST_F(DispatcherTest, MaximumTenThreads) {
 
     ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
 
-    constexpr uint32_t kNumDispatchers = 11;
+    constexpr uint32_t kNumDispatchers =
+        driver_runtime::Dispatcher::ThreadPool::kDefaultThreadLimit + 1;
 
     std::array<driver_runtime::Dispatcher*, kNumDispatchers> dispatchers;
     std::array<DispatcherShutdownObserver, kNumDispatchers> observers;

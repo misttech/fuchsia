@@ -1743,8 +1743,11 @@ zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatc
       return ZX_ERR_BAD_STATE;
     }
   }
-  driver_state->AddDispatcher(dispatcher);
-  return dispatcher->thread_pool()->OnDispatcherAdded(*dispatcher);
+  zx_status_t res = dispatcher->thread_pool()->OnDispatcherAdded(*dispatcher);
+  if (res == ZX_OK) {
+    driver_state->AddDispatcher(dispatcher);
+  }
+  return res;
 }
 
 // static
@@ -2157,11 +2160,15 @@ zx_status_t Dispatcher::ThreadPool::OnDispatcherSealed() {
 
 zx_status_t Dispatcher::ThreadPool::OnDispatcherAdded(Dispatcher& dispatcher) {
   fbl::AutoLock lock(&lock_);
-  num_dispatchers_++;
-
   if (dispatcher.allow_sync_calls()) {
-    allow_sync_call_dispatchers_++;
+    if ((allow_sync_call_dispatchers_ + 1) > thread_limit_) {
+      LOGF(WARNING,
+           "Dispatcher that allows sync calls created when already at thread pool thread limit");
+    }
+    ++allow_sync_call_dispatchers_;
   }
+
+  ++num_dispatchers_;
 
   if (g_dynamic_thread_spawning) {
     // only start a new thread if we're not dynamically managing threads

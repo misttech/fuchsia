@@ -204,7 +204,7 @@ class Dispatcher : public async_dispatcher_t,
     std::string_view scheduler_role() const { return scheduler_role_; }
     async::Loop* loop() { return &loop_; }
 
-    const static uint32_t kDefaultThreadLimit = 10;
+    const static uint32_t kDefaultThreadLimit = 20;
 
    private:
     // This stores irqs to avoid destroying them immediately after unbinding.

@@ -5,18 +5,18 @@
 use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice};
 use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
 use block_server::{BlockInfo, DeviceInfo};
+use fidl_fuchsia_hardware_ramdisk as framdisk;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
 use fs_management::format::constants::FVM_PARTITION_LABEL;
+use fuchsia_async as fasync;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use test_case::test_case;
 use vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions};
 use zx::HandleBased as _;
-use {
-    fidl_fuchsia_hardware_ramdisk as framdisk, fidl_fuchsia_io as fio,
-    fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync,
-};
 
 // Make the block device big enough so that we can have a request which creates more than
 // block_server::MAX_REQUESTS.
@@ -730,8 +730,6 @@ async fn test_barriers_and_fua_rust_server(case: BarrierFuaTestCase) {
 #[test_case(BarrierFuaTestCase::Barrier; "barrier")]
 #[test_case(BarrierFuaTestCase::SimulatedFua; "simulated_fua")]
 #[test_case(BarrierFuaTestCase::Fua; "fua")]
-// TODO(https://fxbug.dev/466455535): FUA/barrier tests causes deadlocks in the ramdisk driver
-#[ignore]
 #[fuchsia::test]
 async fn test_barriers_and_fua_cpp_server(case: BarrierFuaTestCase) {
     let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
