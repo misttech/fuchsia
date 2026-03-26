@@ -60,36 +60,7 @@ zx::result<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion> GetBufferRegion(zx_h
   return zx::ok(std::move(buffer_region));
 }
 
-zx::result<fuchsia_hardware_power::ComponentPowerConfiguration> GetAllPowerConfigs(
-    const fdf::Namespace& ns) {
-  zx::result open_result = ns.Open<fuchsia_io::File>("/pkg/data/sdmmc_power_config.fidl",
-                                                     fuchsia_io::Flags::kPermReadBytes);
-  if (!open_result.is_ok() || !open_result->is_valid()) {
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-  return power_config::Load(std::move(open_result.value()));
-}
-
 }  // namespace
-
-zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> SdmmcBlockDevice::AcquireInitLease(
-    const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client) {
-  const fidl::WireResult result = lessor_client->Lease(SdmmcBlockDevice::kPowerLevelBoot);
-  if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Call to Lease failed: %s", result.status_string());
-    return zx::error(result.status());
-  }
-  if (result->is_error()) {
-    FDF_LOGL(ERROR, logger(), "Lease returned error: %s",
-             fdf_power::LeaseErrorToString(result->error_value()));
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-  if (!result->value()->lease_control.is_valid()) {
-    FDF_LOGL(ERROR, logger(), "Lease returned invalid lease control client end.");
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  return zx::ok(std::move(result->value()->lease_control));
-}
 
 fdf::Logger& ReadWriteMetadata::logger() { return block_device->logger(); }
 
@@ -151,12 +122,14 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
 
   const bool cq_enabled = (sdmmc_->host_info().caps & SDMMC_HOST_CAP_COMMAND_QUEUEING &&
                            parent_->config().command_queueing_enabled());
+  suspend_supported_ =
+      !is_sd_ && parent_->config().storage_power_management_enabled() && !cq_enabled;
 
-  if (!is_sd_ && !cq_enabled && parent_->config().storage_power_management_enabled()) {
+  if (suspend_supported_) {
     zx::result result = ConfigurePowerManagement();
 
     if (result.is_ok()) {
-      FDF_LOGL(INFO, logger(), "Configured power management successfully.");
+      FDF_LOGL(INFO, logger(), "Configured power management successfully (sdmmc).");
     } else if (parent_->config().enable_suspend()) {
       // Only log and return error on a failed power configuration if enable_suspend and
       // storage_power_management_enabled were true.
@@ -363,56 +336,8 @@ zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
 }
 
 zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
-  // Load our config from the package.
-  zx::result power_configs = GetAllPowerConfigs(*parent_->driver_incoming());
-  if (power_configs.is_error()) {
-    FDF_LOGL(INFO, logger(), "Error getting power configs: %s", power_configs.status_string());
+  if (!parent_->power_element_token().has_value()) {
     return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  std::vector<fdf_power::PowerElementConfiguration> element_configs;
-  for (const fuchsia_hardware_power::PowerElementConfiguration& element_config :
-       power_configs.value().power_elements()) {
-    auto converted = fdf_power::PowerElementConfiguration::FromFidl(element_config);
-    if (converted.is_error()) {
-      FDF_LOGL(INFO, logger(), "Failed to convert power element config: %s",
-               converted.status_string());
-      return converted.take_error();
-    }
-    element_configs.push_back(std::move(converted.value()));
-  }
-
-  fit::result<fdf_power::Error, std::vector<fdf_power::ElementDesc>> config_result =
-      fdf_power::ApplyPowerConfiguration(*parent_->driver_incoming(), element_configs,
-                                         /*use_element_runner=*/true);
-
-  if (config_result.is_error()) {
-    FDF_LOGL(INFO, logger(), "Failed to apply power config: %s",
-             fdf_power::ErrorToString(config_result.error_value()));
-    return fdf_power::ErrorToZxError(config_result.error_value());
-  }
-
-  std::vector<fdf_power::ElementDesc> elements = std::move(config_result.value());
-
-  // Register power configs with the Power Broker.
-  for (size_t i = 0; i < elements.size(); ++i) {
-    fdf_power::ElementDesc& description = elements.at(i);
-
-    if (description.element_config.element.name == kHardwarePowerElementName) {
-      hardware_power_element_control_client_ =
-          fidl::WireSyncClient<fuchsia_power_broker::ElementControl>(
-              std::move(description.element_control_client.value()));
-      hardware_power_lessor_client_ = fidl::WireSyncClient<fuchsia_power_broker::Lessor>(
-          std::move(description.lessor_client.value()));
-      hardware_power_element_runner_server_binding_.emplace(
-          fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-          std::move(description.element_runner_server.value()), this, fidl::kIgnoreBindingClosure);
-      hardware_power_element_assertive_token_ = std::move(description.assertive_token);
-    } else {
-      FDF_SLOG(ERROR, "Unexpected power element.", KV("index", i),
-               KV("element-name", description.element_config.element.name));
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
   }
 
   zx::result connect_to_cpu_element_manager =
@@ -422,15 +347,11 @@ zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
              zx_status_get_string(connect_to_cpu_element_manager.error_value()));
     return connect_to_cpu_element_manager.take_error();
   }
-
   fidl::SyncClient<fuchsia_power_system::CpuElementManager> cpu_element_manager(
       std::move(connect_to_cpu_element_manager.value()));
-  zx::event clone;
-  ZX_ASSERT(hardware_power_element_assertive_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) ==
-            ZX_OK);
   fidl::Result<fuchsia_power_system::CpuElementManager::AddExecutionStateDependency> result =
       cpu_element_manager->AddExecutionStateDependency(
-          {{.dependency_token = std::move(clone), .power_level = 1}});
+          {{.dependency_token = parent_->power_element_token(), .power_level = 1}});
   if (result.is_error()) {
     FDF_LOGL(ERROR, logger(), "CpuElementManager token registration failed: %s",
              result.error_value().FormatDescription().c_str());
@@ -448,42 +369,26 @@ zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
     }
   }
 
-  // The lease request on the hardware power element remains until we register
-  // our power element token with the CpuElementManager protocol
-  zx::result lease_control_client_end = AcquireInitLease(hardware_power_lessor_client_);
-  if (!lease_control_client_end.is_ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to acquire lease on hardware power: %s",
-             zx_status_get_string(lease_control_client_end.status_value()));
-    return lease_control_client_end.take_error();
-  }
-  hardware_power_lease_control_client_end_ = std::move(lease_control_client_end.value());
-
   return zx::success();
 }
 
-void SdmmcBlockDevice::SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
-                                SetLevelCompleter::Sync& set_level_completer) {
-  const fuchsia_power_broker::PowerLevel required_level = request.level();
-  // TODO(424264756): Remove this case when we're able to get a lease at the time the PE is
-  // created.
-  if (hardware_power_lease_control_client_end_.is_valid()) {
-    // Power Framework will immediately call SetLevel(OFF) followed by SetLevel(BOOT). These
-    // calls can be ignored while we still have a lease on the BOOT level.
-
-    if (required_level == kPowerLevelOn) {
-      // If we're rising above the boot power level, it must because an
-      // external lease raised our power level. This means we can drop
-      // our self-lease and allow the external entity to drive our power
-      // state.
-      hardware_power_lease_control_client_end_.reset();
-    }
-    set_level_completer.Reply();
-    return;
+void SdmmcBlockDevice::Suspend(fdf_power::SuspendCompleter completer) {
+  if (suspend_supported_) {
+    SetLevel(kPowerLevelOff);
   }
+  completer();
+}
 
-  switch (required_level) {
-    case kPowerLevelOn:
-    case kPowerLevelBoot: {
+void SdmmcBlockDevice::Resume(fdf_power::ResumeCompleter completer) {
+  if (suspend_supported_) {
+    SetLevel(kPowerLevelOn);
+  }
+  completer();
+}
+
+void SdmmcBlockDevice::SetLevel(uint8_t level) {
+  switch (level) {
+    case kPowerLevelOn: {
       const zx::time start = zx::clock::get_monotonic();
 
       fbl::AutoLock lock(&worker_lock_);
@@ -497,8 +402,6 @@ void SdmmcBlockDevice::SetLevel(fuchsia_power_broker::ElementRunnerSetLevelReque
       }
 
       // Communicate to Power Broker that the hardware power level has been raised.
-      set_level_completer.Reply();
-
       worker_condition_.Broadcast();
       break;
     }
@@ -511,20 +414,12 @@ void SdmmcBlockDevice::SetLevel(fuchsia_power_broker::ElementRunnerSetLevelReque
         return;
       }
       // Communicate to Power Broker that the hardware power level has been lowered.
-      set_level_completer.Reply();
       break;
     }
     default:
-      FDF_LOGL(ERROR, logger(), "Unexpected power level for hardware power element: %u",
-               required_level);
+      FDF_LOGL(ERROR, logger(), "Unexpected power level for hardware power element: %u", level);
       return;
   }
-}
-
-void SdmmcBlockDevice::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-    fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOGL(ERROR, logger(), "ElementRunner received unknown method %lu", metadata.method_ordinal);
 }
 
 void SdmmcBlockDevice::HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) {

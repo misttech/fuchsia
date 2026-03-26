@@ -88,6 +88,53 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
   }
 };
 
+class FakeActivityGovernor : public fidl::Server<fuchsia_power_system::ActivityGovernor> {
+ public:
+  void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
+    completer.Reply({});
+  }
+  void TakeWakeLease(TakeWakeLeaseRequest& request,
+                     TakeWakeLeaseCompleter::Sync& completer) override {
+    zx::eventpair token, peer;
+    zx::eventpair::create(0, &token, &peer);
+    completer.Reply(std::move(token));
+  }
+  void AcquireWakeLease(AcquireWakeLeaseRequest& request,
+                        AcquireWakeLeaseCompleter::Sync& completer) override {
+    zx::eventpair token, peer;
+    zx::eventpair::create(0, &token, &peer);
+    completer.Reply(fit::success(std::move(token)));
+  }
+  void AcquireWakeLeaseWithToken(AcquireWakeLeaseWithTokenRequest& request,
+                                 AcquireWakeLeaseWithTokenCompleter::Sync& completer) override {
+    completer.Reply(fit::success());
+  }
+  void TakeApplicationActivityLease(
+      TakeApplicationActivityLeaseRequest& request,
+      TakeApplicationActivityLeaseCompleter::Sync& completer) override {
+    zx::eventpair token, peer;
+    zx::eventpair::create(0, &token, &peer);
+    completer.Reply(std::move(token));
+  }
+  void RegisterSuspendBlocker(RegisterSuspendBlockerRequest& request,
+                              RegisterSuspendBlockerCompleter::Sync& completer) override {
+    zx::eventpair token, peer;
+    zx::eventpair::create(0, &token, &peer);
+    completer.Reply(fit::success(std::move(token)));
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_system::ActivityGovernor> md,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+  fidl::ProtocolHandler<fuchsia_power_system::ActivityGovernor> CreateHandler() {
+    return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                   fidl::kIgnoreBindingClosure);
+  }
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings_;
+};
+
 class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
                         public fidl::Server<fuchsia_power_broker::Lessor>,
                         public fidl::testing::TestBase<fuchsia_power_broker::ElementControl>,
@@ -121,6 +168,18 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
 
   std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>> TakeElementRunnerClientEnds() {
     return std::move(element_runner_client_ends_);
+  }
+
+  void AddHardwarePowerElement(
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> element_control_server_end,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner_client_end,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor_server_end) {
+    element_control_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                         std::move(element_control_server_end), this,
+                                         fidl::kIgnoreBindingClosure);
+    element_runner_client_ends_.push_back(std::move(element_runner_client_end));
+    lessor_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                std::move(lessor_server_end), this, fidl::kIgnoreBindingClosure);
   }
 
  private:
@@ -275,6 +334,12 @@ class Environment : public fdf_testing::Environment {
     if (zx::result result = fake_power_broker_.Serve(to_driver_vfs); result.is_error()) {
       return result.take_error();
     }
+    if (zx::result result =
+            to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::ActivityGovernor>(
+                activity_governor_.CreateHandler());
+        result.is_error()) {
+      return result.take_error();
+    }
 
     auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
     zx_status_t status = fdio_open3("/pkg/", static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
@@ -292,6 +357,7 @@ class Environment : public fdf_testing::Environment {
   fidl::Arena<> arena_;
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server_;
   FakePowerBroker fake_power_broker_;
+  FakeActivityGovernor activity_governor_;
 };
 
 class TestConfig final {
@@ -343,12 +409,45 @@ class SdioControllerDeviceTest : public ::testing::Test {
     ASSERT_OK(result);
   }
 
-  zx_status_t StartDriver() {
+  zx_status_t StartDriver(bool supply_power_framework = false) {
+    std::optional<fuchsia_driver_framework::PowerElementArgs> power_args;
+
+    if (supply_power_framework) {
+      auto [element_control_client, element_control_server] =
+          fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+      auto [element_runner_client, element_runner_server] =
+          fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+      auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
+      fuchsia_power_broker::DependencyToken element_token;
+      fuchsia_power_broker::DependencyToken element_token_copy;
+      EXPECT_OK(zx::event::create(0, &element_token));
+      EXPECT_OK(element_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &element_token_copy));
+
+      fuchsia_driver_framework::PowerElementArgs local_power_args;
+      local_power_args.control_client() = std::move(element_control_client);
+      local_power_args.runner_server() = std::move(element_runner_server);
+      local_power_args.lessor_client() = std::move(lessor_client);
+      local_power_args.token() = std::move(element_token);
+
+      power_args = std::move(local_power_args);
+
+      driver_test().RunInEnvironmentTypeContext<void>(
+          [control_server = std::move(element_control_server),
+           runner_client = std::move(element_runner_client),
+           lessor_server = std::move(lessor_server)](Environment& env) mutable {
+            env.fake_power_broker().AddHardwarePowerElement(
+                std::move(control_server), std::move(runner_client), std::move(lessor_server));
+          });
+    }
+
     zx::result<> result =
-        driver_test().StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
+        driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& start_args) mutable {
           sdmmc_config::Config fake_config;
-          fake_config.enable_suspend() = true;
+          fake_config.enable_suspend() = supply_power_framework;
           start_args.config(fake_config.ToVmo());
+          if (supply_power_framework) {
+            start_args.power_element_args(std::move(power_args.value()));
+          }
         });
     if (result.is_error()) {
       return result.status_value();
@@ -2183,7 +2282,7 @@ TEST_F(SdioControllerDeviceTest, ConfigurePowerManagement) {
 
   // Call the driver's Start() method, and verify that it acquired leases on all three function
   // power elements at the BOOT level.
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
 
   std::vector<uint8_t> lease_power_levels =
       driver_test().RunInEnvironmentTypeContext(fit::callback<std::vector<uint8_t>(Environment&)>(
@@ -2197,6 +2296,7 @@ TEST_F(SdioControllerDeviceTest, ConfigurePowerManagement) {
       fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
           Environment&)>(
           [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 3ul);
 
   fidl::Client<fuchsia_power_broker::ElementRunner> function1(
@@ -2240,7 +2340,7 @@ TEST_F(SdioControllerDeviceTest, OnStateDropsBootLease) {
       .max_transfer_size = 0x1000,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
 
   std::vector lease_control_server_ends = driver_test().RunInEnvironmentTypeContext(
       fit::callback<std::vector<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>>(Environment&)>(
@@ -2267,6 +2367,7 @@ TEST_F(SdioControllerDeviceTest, OnStateDropsBootLease) {
       fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
           Environment&)>(
           [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 3ul);
 
   fidl::Client<fuchsia_power_broker::ElementRunner> function1(
@@ -2318,7 +2419,7 @@ TEST_F(SdioControllerDeviceTest, GetToken) {
       .max_transfer_size = 0x1000,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_power::PowerTokenProvider>> client_end1 =
       driver_test().Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
@@ -2402,13 +2503,14 @@ TEST_F(SdioControllerDeviceTest, PowerOnProbesDevice) {
       .max_transfer_size = 0x1000,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
   EXPECT_EQ(probe_count, 1u);
 
   std::vector element_runner_client_ends = driver_test().RunInEnvironmentTypeContext(
       fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
           Environment&)>(
           [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 3ul);
 
   std::vector<fidl::Client<fuchsia_power_broker::ElementRunner>> function_runners;
@@ -2487,7 +2589,7 @@ TEST_F(SdioControllerDeviceTest, DoRwByteFailsWhenFunctionPoweredOff) {
       .max_transfer_size = 16,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
 
   std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>> element_runner_client_ends =
       driver_test().RunInEnvironmentTypeContext(
@@ -2495,6 +2597,7 @@ TEST_F(SdioControllerDeviceTest, DoRwByteFailsWhenFunctionPoweredOff) {
               Environment&)>([](Environment& env) {
             return env.fake_power_broker().TakeElementRunnerClientEnds();
           }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 3ul);
 
   fidl::Client<fuchsia_power_broker::ElementRunner> function1_runner(
@@ -2558,7 +2661,7 @@ TEST_F(SdioControllerDeviceTest, Function0AccessesSucceedWhenFunctionPoweredOff)
       .max_transfer_size = 16,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
 
   std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>> element_runner_client_ends =
       driver_test().RunInEnvironmentTypeContext(
@@ -2566,6 +2669,7 @@ TEST_F(SdioControllerDeviceTest, Function0AccessesSucceedWhenFunctionPoweredOff)
               Environment&)>([](Environment& env) {
             return env.fake_power_broker().TakeElementRunnerClientEnds();
           }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 3ul);
 
   std::vector<fidl::Client<fuchsia_power_broker::ElementRunner>> function_runners;
@@ -2662,13 +2766,14 @@ TEST_F(SdioControllerDeviceTest, NoProbeAfterControllerOffToOn) {
       .max_transfer_size = 0x1000,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
   EXPECT_EQ(probe_count, 1u);
 
   std::vector element_runner_client_ends = driver_test().RunInEnvironmentTypeContext(
       fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
           Environment&)>(
           [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 2ul);
 
   fidl::Client<fuchsia_power_broker::ElementRunner> runner_1(
@@ -2725,13 +2830,14 @@ TEST_F(SdioControllerDeviceTest, ProbeAfterControllerOffToOn) {
       .max_transfer_size = 0x1000,
   });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(true));
   EXPECT_EQ(probe_count, 1u);
 
   std::vector element_runner_client_ends = driver_test().RunInEnvironmentTypeContext(
       fit::callback<std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>>(
           Environment&)>(
           [](Environment& env) { return env.fake_power_broker().TakeElementRunnerClientEnds(); }));
+  element_runner_client_ends.erase(element_runner_client_ends.begin());
   ASSERT_EQ(element_runner_client_ends.size(), 2ul);
 
   fidl::Client<fuchsia_power_broker::ElementRunner> runner_1(

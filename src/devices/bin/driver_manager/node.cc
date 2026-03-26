@@ -1077,6 +1077,11 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
   };
   std::shared_ptr child =
       std::make_shared<Node>(name, weak_from_this(), *node_manager_, dispatcher_);
+  if (cpu_token_override_.has_value()) {
+    zx::event token_copy;
+    ZX_ASSERT(cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy) == ZX_OK);
+    child->SetCpuTokenOverride(std::move(token_copy));
+  }
 
   auto& fdf_offers = args.offers2();
   std::vector<fuchsia_driver_framework::NodeProperty2> properties;
@@ -1834,10 +1839,14 @@ void Node::StartDriver(
       DriverHost::DriverStartArgs(properties, symbols, offers, start_info);
   std::vector<fuchsia_power_broker::DependencyToken> deps;
 
+  bool suspend_enabled_for_node = (*node_manager_)->SuspendEnabled() ||
+                                  power_dependency_overrides_.has_value() ||
+                                  cpu_token_override_.has_value();
+
   // Only create a series of dependencies if this is a suspend-enabled platform. On non-enabled
   // platforms we'll use an empty vector for the rest of this function, which is valid. The
   // rest of the driver start code also has checks so it works properly on non-enabled platforms.
-  if ((*node_manager_)->SuspendEnabled() || power_dependency_overrides_.has_value()) {
+  if (suspend_enabled_for_node) {
     if (power_dependency_overrides_.has_value()) {
       for (const auto& dep : power_dependency_overrides_.value()) {
         fuchsia_power_broker::DependencyToken clone;
@@ -2190,7 +2199,7 @@ void Node::StartDriver(
       };
 
   // If the platform is not suspend enabled, skip the directory search below.
-  if (!(*node_manager_)->SuspendEnabled() && !power_dependency_overrides_.has_value()) {
+  if (!suspend_enabled_for_node) {
     do_start_driver(zx::ok(std::nullopt));
     return;
   }

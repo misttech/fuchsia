@@ -13,6 +13,7 @@
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/power/cpp/power-support.h>
+#include <lib/driver/power/cpp/suspend.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -106,27 +107,24 @@ struct ReadWriteMetadata {
   SdmmcBlockDevice* const block_device;
 };
 
-class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner>,
-                         public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
+class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
                          public fidl::WireServer<fuchsia_hardware_inlineencryption::Device> {
  public:
   static constexpr char kHardwarePowerElementName[] = "sdmmc-hardware";
 
   // Power levels for the sdmmc-hardware element.
-  static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOff = 0;
-  static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
-  // Note that this power level actually represents a LOWER power
-  // state than kPowerLevelOn, based on the order the level is
-  // supplied when the element is created.
-  static constexpr fuchsia_power_broker::PowerLevel kPowerLevelBoot = 2;
+  static constexpr uint8_t kPowerLevelOff = 0;
+  static constexpr uint8_t kPowerLevelOn = 1;
 
   // Implement fuchsia.power.broker.ElementRunner, allowing Power Broker
   // to set this device's power level.
-  void SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
-                SetLevelCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override;
+  void SetLevel(uint8_t level);
+
+  void Suspend(fdf_power::SuspendCompleter completer);
+  void Resume(fdf_power::ResumeCompleter completer);
+  // We always return true here, if our config says that we don't support power
+  // management, suspend and resume will be no-ops.
+  bool SuspendEnabled() { return true; }
 
   // fuchsia.hardware.cqhci.Cqhci
   void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
@@ -317,13 +315,6 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   bool shutdown_ TA_GUARDED(worker_lock_) = false;
   trace_async_id_t trace_async_id_;
 
-  fidl::WireSyncClient<fuchsia_power_broker::ElementControl> hardware_power_element_control_client_;
-  fidl::WireSyncClient<fuchsia_power_broker::Lessor> hardware_power_lessor_client_;
-  zx::event hardware_power_element_assertive_token_;
-  fidl::ClientEnd<fuchsia_power_broker::LeaseControl> hardware_power_lease_control_client_end_;
-  std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
-      hardware_power_element_runner_server_binding_;
-
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> cqhci_controller_;
   fdf::ServerBindingGroup<fuchsia_hardware_cqhci::Cqhci> cqhci_bindings_;
   // Only used when CQHCI is enabled.
@@ -380,6 +371,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
 
   fuchsia_hardware_sdmmc::SdmmcMetadata metadata_;
   fdf::WireSyncClient<fuchsia_hardware_inlineencryption::DriverDevice> inline_encryption_client_;
+  bool suspend_supported_ = false;
 };
 
 }  // namespace sdmmc

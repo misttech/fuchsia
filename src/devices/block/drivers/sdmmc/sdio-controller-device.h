@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fuchsia/hardware/sdio/c/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/completion.h>
@@ -55,6 +56,10 @@ class SdioControllerDevice : public fdf::WireServer<fuchsia_hardware_sdmmc::InBa
   // Returns the SdmmcDevice. Used if this SdioControllerDevice fails to probe (i.e., no eligible
   // device present).
   std::unique_ptr<SdmmcDevice> TakeSdmmcDevice() { return std::move(sdmmc_); }
+
+  void Suspend(fdf_power::SuspendCompleter completer) { completer(); }
+  void Resume(fdf_power::ResumeCompleter completer) { completer(); }
+  bool SuspendEnabled() { return false; }
 
   zx_status_t Probe(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata);
   zx_status_t AddDevice();

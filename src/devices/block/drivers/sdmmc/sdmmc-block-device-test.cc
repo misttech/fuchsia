@@ -5,6 +5,7 @@
 #include "sdmmc-block-device.h"
 
 #include <endian.h>
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.sdmmc/cpp/fidl.h>
@@ -174,27 +175,15 @@ class PowerElement {
   fidl::ServerBindingRef<fuchsia_power_broker::Lessor> lessor_;
 };
 
-class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
+class FakePowerBroker {
  public:
-  fidl::ProtocolHandler<fuchsia_power_broker::Topology> CreateHandler() {
-    return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                   fidl::kIgnoreBindingClosure);
-  }
-
-  void AddElement(fuchsia_power_broker::ElementSchema& req,
-                  AddElementCompleter::Sync& completer) override {
-    // Get channels from request.
-    fidl::ServerEnd<fuchsia_power_broker::Lessor>& lessor_server_end = req.lessor_channel().value();
-    fidl::ServerEnd<fuchsia_power_broker::ElementControl>& element_control_server_end =
-        req.element_control().value();
-
+  void AddHardwarePowerElement(
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> element_control_server_end,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner_client_end,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor_server_end) {
     // Instantiate (fake) element control implementation.
     auto element_control_impl = std::make_unique<FakeElementControl>();
-    if (req.element_name() == SdmmcBlockDevice::kHardwarePowerElementName) {
-      hardware_power_element_control_ = element_control_impl.get();
-    } else {
-      ZX_ASSERT_MSG(0, "Unexpected power element.");
-    }
+    hardware_power_element_control_ = element_control_impl.get();
     fidl::ServerBindingRef<fuchsia_power_broker::ElementControl> element_control_binding =
         fidl::BindServer<fuchsia_power_broker::ElementControl>(
             fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -204,11 +193,7 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
 
     // Instantiate (fake) lessor implementation.
     auto lessor_impl = std::make_unique<FakeLessor>();
-    if (req.element_name() == SdmmcBlockDevice::kHardwarePowerElementName) {
-      hardware_power_lessor_ = lessor_impl.get();
-    } else {
-      ZX_ASSERT_MSG(0, "Unexpected power element.");
-    }
+    hardware_power_lessor_ = lessor_impl.get();
     fidl::ServerBindingRef<fuchsia_power_broker::Lessor> lessor_binding =
         fidl::BindServer<fuchsia_power_broker::Lessor>(
             fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(lessor_server_end),
@@ -217,52 +202,15 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
                fidl::ServerEnd<fuchsia_power_broker::Lessor> server_end) mutable {});
 
     hardware_power_element_runner_client_ = fidl::Client<fuchsia_power_broker::ElementRunner>(
-        std::move(req.element_runner().value()), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+        std::move(element_runner_client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
 
     servers_.emplace_back(std::move(element_control_binding), std::move(lessor_binding));
-
-    completer.Reply(fit::success());
   }
-
-  void Lease(LeaseRequest& req, LeaseCompleter::Sync& completer) override {
-    completer.Reply(fit::success());
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> md,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   FakeElementControl* hardware_power_element_control_ = nullptr;
   FakeLessor* hardware_power_lessor_ = nullptr;
   fidl::Client<fuchsia_power_broker::ElementRunner> hardware_power_element_runner_client_;
-
- private:
-  fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings_;
-
   std::vector<PowerElement> servers_;
-};
-
-class FakePowerTokenProvider : public fidl::Server<fuchsia_hardware_power::PowerTokenProvider> {
- public:
-  fuchsia_hardware_power::PowerTokenService::InstanceHandler GetInstanceHandler() {
-    return fuchsia_hardware_power::PowerTokenService::InstanceHandler({
-        .token_provider = bindings_.CreateHandler(
-            this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
-    });
-  }
-
-  void GetToken(GetTokenCompleter::Sync& completer) override {
-    zx::event token;
-    ASSERT_OK(zx::event::create(0, &token));
-    completer.Reply(
-        fit::success(fuchsia_hardware_power::PowerTokenProviderGetTokenResponse{std::move(token)}));
-  }
-
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_hardware_power::PowerTokenProvider> md,
-      fidl::UnknownMethodCompleter::Sync& completer) override {}
-
- private:
-  fidl::ServerBindingGroup<fuchsia_hardware_power::PowerTokenProvider> bindings_;
 };
 
 class TestEnvironment : public fdf_testing::Environment {
@@ -270,20 +218,6 @@ class TestEnvironment : public fdf_testing::Environment {
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     zx::result result =
         metadata_server.Serve(to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
-    if (result.is_error()) {
-      return result.take_error();
-    }
-
-    // Serve (fake) power_broker.
-    result = to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
-        power_broker.CreateHandler());
-    if (result.is_error()) {
-      return result.take_error();
-    }
-
-    // Serve (fake) power_token_provider.
-    result = to_driver_vfs.AddService<fuchsia_hardware_power::PowerTokenService>(
-        std::move(power_token_provider.GetInstanceHandler()), "default");
     if (result.is_error()) {
       return result.take_error();
     }
@@ -323,7 +257,6 @@ class TestEnvironment : public fdf_testing::Environment {
 
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server;
   FakePowerBroker power_broker;
-  FakePowerTokenProvider power_token_provider;
   FakeCpuElementManager cpu_element_manager;
 };
 
@@ -424,6 +357,36 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     driver_test_.RunInEnvironmentTypeContext(
         [&](TestEnvironment& env) mutable { env.SetMetadata(is_sd, speed_capabilities); });
 
+    std::optional<fuchsia_driver_framework::PowerElementArgs> power_args;
+
+    if (supply_power_framework) {
+      auto [element_control_client, element_control_server] =
+          fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+      auto [element_runner_client, element_runner_server] =
+          fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+      auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
+      fuchsia_power_broker::DependencyToken element_token;
+      EXPECT_EQ(zx::event::create(0, &element_token), ZX_OK);
+
+      fuchsia_driver_framework::PowerElementArgs local_power_args;
+
+      local_power_args.control_client() = std::move(element_control_client);
+      local_power_args.runner_server() = std::move(element_runner_server);
+      local_power_args.lessor_client() = std::move(lessor_client);
+      local_power_args.token() = std::move(element_token);
+
+      power_args = std::move(local_power_args);
+
+      // TODO, store the other side of the objects
+      driver_test_.RunInEnvironmentTypeContext<void>(
+          [control_server = std::move(element_control_server),
+           runner_client = std::move(element_runner_client),
+           lessor_server = std::move(lessor_server)](TestEnvironment& env) mutable {
+            env.power_broker.AddHardwarePowerElement(
+                std::move(control_server), std::move(runner_client), std::move(lessor_server));
+          });
+    }
+
     // Start driver
     zx::result result =
         driver_test_.StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
@@ -431,6 +394,9 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
           fake_config.enable_suspend() = supply_power_framework;
           fake_config.storage_power_management_enabled() = supply_power_framework;
           args.config(fake_config.ToVmo());
+          if (supply_power_framework) {
+            args.power_element_args(std::move(power_args.value()));
+          }
         });
     if (result.is_error()) {
       return result.status_value();
@@ -2457,13 +2423,6 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   });
   EXPECT_TRUE(dependency_added);
 
-  auto lease_control_server_end =
-      driver_test_.RunInEnvironmentTypeContext<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>>(
-          [](TestEnvironment& env) {
-            return env.power_broker.hardware_power_lessor_->TakeLeaseControlServerEnd();
-          });
-  ASSERT_TRUE(lease_control_server_end.is_valid());
-
   inspect::InspectTestHelper inspector;
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2475,13 +2434,6 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   ASSERT_NOT_NULL(power_suspended);
   EXPECT_FALSE(power_suspended->value());
   EXPECT_FALSE(in_sleep_state);
-
-  // The driver should have obtained a lease on kPowerLevelBoot.
-  zx_signals_t observed{};
-  EXPECT_EQ(lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
-                                                        zx::time::infinite_past(), &observed),
-            ZX_ERR_TIMED_OUT);
-  EXPECT_FALSE(observed & ZX_CHANNEL_PEER_CLOSED);
 
   libsync::Completion set_level_complete;
   // Trigger power level change to kPowerLevelOff.
@@ -2495,12 +2447,6 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   });
   driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
-  // The lease should still be held after moving to kPowerLevelOff.
-  EXPECT_EQ(lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
-                                                        zx::time::infinite_past(), &observed),
-            ZX_ERR_TIMED_OUT);
-  EXPECT_FALSE(observed & ZX_CHANNEL_PEER_CLOSED);
-
   inspector.ReadInspect(block_device_->inspect());
 
   root = inspector.hierarchy().GetByPath({"sdmmc_core"});
@@ -2513,23 +2459,17 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   EXPECT_FALSE(in_sleep_state);
 
   set_level_complete.Reset();
-  // Trigger power level change to kPowerLevelBoot.
+  // Trigger power level change to kPowerLevelOn.
 
   driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
     env.power_broker.hardware_power_element_runner_client_
-        ->SetLevel(SdmmcBlockDevice::kPowerLevelBoot)
+        ->SetLevel(SdmmcBlockDevice::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
           set_level_complete.Signal();
         });
   });
   driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
-
-  // The lease should still be held after moving to kPowerLevelBoot.
-  EXPECT_EQ(lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
-                                                        zx::time::infinite_past(), &observed),
-            ZX_ERR_TIMED_OUT);
-  EXPECT_FALSE(observed & ZX_CHANNEL_PEER_CLOSED);
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2542,8 +2482,7 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   EXPECT_FALSE(in_sleep_state);
 
   set_level_complete.Reset();
-  // Trigger power level change to kPowerLevelOn. This should be a no-op other than dropping the
-  // lease.
+  // Trigger power level change to kPowerLevelOn. This should be a no-op.
 
   driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
     env.power_broker.hardware_power_element_runner_client_
@@ -2554,18 +2493,8 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
         });
   });
 
-  // Wait until the lease has been dropped.
-  driver_test_.runtime().PerformBlockingWork(
-      [&, lease_control_server_end = std::move(lease_control_server_end)] {
-        set_level_complete.Wait();
-
-        zx_status_t status;
-        zx_signals_t observed;
-        do {
-          status = lease_control_server_end.channel().wait_one(
-              ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
-        } while (status != ZX_OK || !(observed & ZX_CHANNEL_PEER_CLOSED));
-      });
+  // Wait until the level has been set.
+  driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2651,31 +2580,18 @@ TEST_P(SdmmcBlockDeviceTest, PowerOffNotification) {
     return env.cpu_element_manager.execution_state_dependency_added();
   }));
 
-  auto lease_control_server_end =
-      driver_test_.RunInEnvironmentTypeContext<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>>(
-          [](TestEnvironment& env) {
-            return env.power_broker.hardware_power_lessor_->TakeLeaseControlServerEnd();
-          });
-  ASSERT_TRUE(lease_control_server_end.is_valid());
-
+  libsync::Completion set_level_complete;
   // Move to the ON state so that the transition to OFF can be made after.
-  driver_test_.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
     env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
+          set_level_complete.Signal();
         });
   });
 
-  driver_test_.runtime().PerformBlockingWork(
-      [lease_control_server_end = std::move(lease_control_server_end)] {
-        zx_status_t status;
-        zx_signals_t observed;
-        do {
-          status = lease_control_server_end.channel().wait_one(
-              ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
-        } while (status != ZX_OK || !(observed & ZX_CHANNEL_PEER_CLOSED));
-      });
+  driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
   EXPECT_FALSE(in_sleep_state);
 

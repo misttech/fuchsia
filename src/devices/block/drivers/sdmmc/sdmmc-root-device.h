@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fuchsia/hardware/sdmmc/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/power/cpp/suspend.h>
 #include <lib/zx/result.h>
 
 #include "sdio-controller-device.h"
@@ -20,7 +21,7 @@ constexpr uint32_t kInitializationFrequencyHz = 400'000;
 
 class SdmmcDevice;
 
-class SdmmcRootDevice : public fdf::DriverBase {
+class SdmmcRootDevice : public fdf::DriverBase, public fdf_power::Suspendable<SdmmcRootDevice> {
  public:
   SdmmcRootDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : fdf::DriverBase("sdmmc", std::move(start_args), std::move(dispatcher)),
@@ -50,6 +51,41 @@ class SdmmcRootDevice : public fdf::DriverBase {
   child_device() const {
     return child_device_;
   }
+
+  void Suspend(fdf_power::SuspendCompleter completer) override {
+    const auto* block_device = std::get_if<std::unique_ptr<SdmmcBlockDevice>>(&child_device_);
+
+    if (block_device && block_device->get()->SuspendEnabled()) {
+      block_device->get()->Suspend(std::move(completer));
+      return;
+    }
+    const auto* sdio_device = std::get_if<std::unique_ptr<SdioControllerDevice>>(&child_device_);
+    if (sdio_device && sdio_device->get()->SuspendEnabled()) {
+      sdio_device->get()->Suspend(std::move(completer));
+      return;
+    }
+
+    completer();
+  }
+
+  void Resume(fdf_power::ResumeCompleter completer) override {
+    const auto* block_device = std::get_if<std::unique_ptr<SdmmcBlockDevice>>(&child_device_);
+
+    if (block_device && block_device->get()->SuspendEnabled()) {
+      block_device->get()->Resume(std::move(completer));
+      return;
+    }
+
+    const auto* sdio_device = std::get_if<std::unique_ptr<SdioControllerDevice>>(&child_device_);
+    if (sdio_device && sdio_device->get()->SuspendEnabled()) {
+      sdio_device->get()->Resume(std::move(completer));
+      return;
+    }
+
+    completer();
+  }
+
+  bool SuspendEnabled() override { return has_power_args(); }
 
  protected:
   virtual zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata);

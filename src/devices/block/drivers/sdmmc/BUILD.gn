@@ -131,11 +131,6 @@ fuchsia_structured_config_values("sc-values") {
   }
 }
 
-power_config("sdmmc-power-config") {
-  output_name = "sdmmc_power_config.fidl"
-  value_file = "sdmmc_power_config.json5"
-}
-
 power_config("sdio-power-config") {
   output_name = "sdio_power_config.fidl"
   value_file = "sdio_power_config.json5"
@@ -147,7 +142,6 @@ fuchsia_driver_package("package") {
   deps = [
     ":sc-values",
     ":sdio-power-config",
-    ":sdmmc-power-config",
   ]
 }
 
@@ -186,10 +180,7 @@ test("sdmmc-block-test-bin") {
 }
 
 fuchsia_unittest_package("sdmmc-block-test") {
-  deps = [
-    ":sdmmc-block-test-bin",
-    ":sdmmc-power-config",
-  ]
+  deps = [ ":sdmmc-block-test-bin" ]
   test_specs = {
     environments = basic_envs
     log_settings = {

@@ -74,7 +74,7 @@ TEST_F(PowerSystemIntegration, StorageSuspendResumeTest) {
       "topology", "fuchsia.inspect.Graph",
       "topology", aml_sdmmc_element_id.value(),
       "meta",     "current_level"};
-  const auto core_sdmmc_element_id = GetPowerElementId(test_reader, pb_moniker, "sdmmc-hardware");
+  const auto core_sdmmc_element_id = GetPowerElementId(test_reader, pb_moniker, "aml-sd-emmc");
   ASSERT_TRUE(core_sdmmc_element_id.is_ok());
   const std::vector<std::string> core_sdmmc_required_level = {
       "root",     "broker",
