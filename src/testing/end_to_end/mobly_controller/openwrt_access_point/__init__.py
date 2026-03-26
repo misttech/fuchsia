@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List
+from enum import StrEnum
+from typing import Any, Dict, Final, List, Literal
 
 from antlion import utils
 from libs.ssh import connection, settings
@@ -18,6 +19,8 @@ from mobly import logger
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 
@@ -66,11 +69,9 @@ def get_info(objects: List["OpenWrtAP"]) -> List[Json]:
     return [ap.ssh_settings.hostname for ap in objects]
 
 
-RADIO_2G = "radio0"
-RADIO_5G = "radio1"
-
-DEFAULT_2G_INTERFACE = "default_radio0"
-DEFAULT_5G_INTERFACE = "default_radio1"
+class Radio(StrEnum):
+    RADIO_2G = "radio0"
+    RADIO_5G = "radio1"
 
 
 class OpenWrtAP:
@@ -88,34 +89,57 @@ class OpenWrtAP:
         self.ssh = connection.SshConnection(self.ssh_settings)
         self.reset_wifi_config()
 
+    def _clear_all_bss(self) -> None:
+        """Removes all virtual wireless interfaces (BSSs) from the configuration.
+
+        This effectively deletes all 'wifi-iface' sections, including defaults
+        like 'default_radio0' and 'default_radio1', to ensure a clean slate.
+        """
+        self.ssh.run("while uci -q delete wireless.@wifi-iface[0]; do :; done")
+
+    def _configure_bss(self, bss: BssSettings, radio: Radio) -> None:
+        """Configures a BSS on the Access Point.
+
+        Args:
+            bss: The BSS configuration containing SSID, password, band, etc.
+        """
+        self.ssh.run(f"uci set wireless.{bss.name}='wifi-iface'")
+        self.ssh.run(f"uci set wireless.{bss.name}.device='{radio}'")
+        self.ssh.run(f"uci set wireless.{bss.name}.network='lan'")
+        self.ssh.run(f"uci set wireless.{bss.name}.mode='ap'")
+        self.ssh.run(f"uci set wireless.{bss.name}.ssid='{bss.ssid}'")
+        self.ssh.run(
+            f"uci set wireless.{bss.name}.encryption='{bss.security.value}'"
+        )
+        if bss.password:
+            self.ssh.run(f"uci set wireless.{bss.name}.key='{bss.password}'")
+        if bss.security == Security.NONE:
+            self.ssh.run(f"uci delete wireless.{bss.name}.key || true")
+
+        hidden = "1" if bss.hidden else "0"
+        self.ssh.run(f"uci set wireless.{bss.name}.hidden='{hidden}'")
+
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
 
         Args:
-            config: The Wi-Fi configuration containing SSID, password, band, etc.
+            config: The Wi-Fi configuration containing multiple radios.
         """
-        match config.band:
-            case Band.BAND_2G:
-                radio = RADIO_2G
-                iface = DEFAULT_2G_INTERFACE
-            case Band.BAND_5G:
-                radio = RADIO_5G
-                iface = DEFAULT_5G_INTERFACE
+        self._clear_all_bss()
+        for radio_config in config.radios:
+            match radio_config.band:
+                case Band.BAND_2G:
+                    radio = Radio.RADIO_2G
+                case Band.BAND_5G:
+                    radio = Radio.RADIO_5G
+            self.ssh.run(f"uci set wireless.{radio}.disabled='0'")
+            self.ssh.run(
+                f"uci set wireless.{radio}.channel='{radio_config.channel}'"
+            )
+            if radio_config.bss_settings:
+                for bss in radio_config.bss_settings:
+                    self._configure_bss(bss, radio)
 
-        self.ssh.run(f"uci set wireless.{radio}.disabled='0'")
-        self.ssh.run(f"uci set wireless.{iface}.mode='ap'")
-        self.ssh.run(f"uci set wireless.{iface}.ssid='{config.ssid}'")
-        self.ssh.run(
-            f"uci set wireless.{iface}.encryption='{config.security.value}'"
-        )
-        if config.password:
-            self.ssh.run(f"uci set wireless.{iface}.key='{config.password}'")
-        # Explicitly clear the password when using 'none' encryption
-        if config.security == Security.NONE:
-            self.ssh.run(f"uci delete wireless.{iface}.key || true")
-        self.ssh.run(f"uci set wireless.{radio}.channel='{config.channel}'")
-        hidden = "1" if config.hidden else "0"
-        self.ssh.run(f"uci set wireless.{iface}.hidden='{hidden}'")
         self.ssh.run("uci commit wireless")
         self.start_wifi()
 
@@ -127,7 +151,7 @@ class OpenWrtAP:
             or if the status command fails.
         """
         try:
-            radio = RADIO_2G if band == Band.BAND_2G else RADIO_5G
+            radio = Radio.RADIO_2G if band == Band.BAND_2G else Radio.RADIO_5G
             result = self.ssh.run(f"wifi status {radio}").stdout.decode()
             radio_data = json.loads(result)
             return radio_data[radio]["up"]

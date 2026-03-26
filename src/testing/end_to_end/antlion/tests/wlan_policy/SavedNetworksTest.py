@@ -30,6 +30,8 @@ from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -120,11 +122,23 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         """
         # Put together the security configuration of the network to be broadcasted.
         if hasattr(self, "openwrt_ap"):
-            config = AccessPointConfig.generate(
-                security=security,
-                band=Band.BAND_5G,
-                ssid=ssid,
-                password=(password if security != Security.NONE else None),
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=Band.BAND_5G,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=(
+                                    password
+                                    if security != Security.NONE
+                                    else None
+                                ),
+                            )
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)

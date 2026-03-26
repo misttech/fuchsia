@@ -24,6 +24,8 @@ from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -124,10 +126,18 @@ class PingTest(base_test.WifiBaseTest):
         security = Security.NONE
 
         if hasattr(self, "openwrt_ap"):
-            config = AccessPointConfig.generate(
-                band=band,
-                ssid=self.ssid,
-                security=security,
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=band,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.ssid,
+                                security=security,
+                            )
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band)

@@ -21,6 +21,8 @@ from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -61,11 +63,19 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         password: str | None = None,
     ) -> None:
         if hasattr(self, "openwrt_ap"):
-            config = AccessPointConfig.generate(
-                band=band,
-                ssid=ssid,
-                password=password,
-                security=security,
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=band,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=band)

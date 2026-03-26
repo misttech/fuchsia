@@ -5,6 +5,7 @@
 import dataclasses
 import enum
 import random
+import re
 import string
 
 
@@ -29,27 +30,95 @@ class Security(enum.StrEnum):
     WEP = "wep"
 
 
+@dataclasses.dataclass
+class BssSettings:
+    """Settings for a BSS (Multiple SSIDs on the same radio).
+
+    Attributes:
+        ssid: The Service Set Identifier (network name)
+        security: The security encryption protocol
+        password: The passphrase or key for the network
+    """
+
+    ssid: str
+    security: Security
+    password: str | None = None
+    hidden: bool = False
+
+    @property
+    def name(self) -> str:
+        """
+        Returns a UCI-safe section name based on the SSID.
+        Example: "Guest Wi-Fi!" -> "bss_guest_wi_fi"
+        """
+        # 1. Convert to lowercase
+        normalized = self.ssid.lower()
+
+        # 2. Replace non-alphanumeric characters with underscores
+        normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+
+        # 3. Strip leading/trailing underscores and prefix it
+        # Prefixing (e.g., 'bss_') prevents issues if an SSID starts with a digit
+        safe_name = normalized.strip("_")
+
+        return f"bss_{safe_name}"
+
+
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
 # default 2g/5g channels.
+@dataclasses.dataclass
+class RadioConfig:
+    """Configuration required to set up a specific radio on an Access Point.
+
+    Attributes:
+        band: The Wi-Fi frequency band
+        channel: The specific channel within the band
+        bss_settings: The settings for all additional bss
+    """
+
+    band: Band
+    channel: int
+    bss_settings: list[BssSettings] | None = None
+
+    @classmethod
+    def generate(
+        cls,
+        band: Band,
+        bss_settings: list[BssSettings] | None = None,
+    ) -> "RadioConfig":
+        """Creates a RadioConfig, optionally randomizing the SSID and password.
+
+        Args:
+            band: The Wi-Fi frequency band.
+            bss_settings: Optional list of additional BSS settings.
+
+        Returns:
+            A RadioConfig object.
+        """
+        if band == Band.BAND_2G:
+            channel = 1
+        elif band == Band.BAND_5G:
+            channel = 36
+
+        if bss_settings is None:
+            bss_settings = []
+
+        return cls(
+            band=band,
+            channel=channel,
+            bss_settings=bss_settings,
+        )
+
+
 @dataclasses.dataclass
 class AccessPointConfig:
     """Configuration required to set up an Access Point.
 
     Attributes:
-        ssid: The Service Set Identifier (network name)
-        password: The passphrase or key for the network
-        band: The Wi-Fi frequency band
-        channel: The specific channel within the band
-        security: The security encryption protocol
-        hidden: Whether the network should be hidden
+        radios: A list of RadioConfig objects defining the radios to configure.
     """
 
-    ssid: str
-    band: Band
-    channel: int
-    security: Security
-    password: str | None = None
-    hidden: bool = False
+    radios: list[RadioConfig]
 
     @classmethod
     def random_string(cls, length: int = 8) -> str:
@@ -68,39 +137,17 @@ class AccessPointConfig:
     @classmethod
     def generate(
         cls,
-        security: Security,
-        band: Band,
-        ssid: str,
-        password: str | None = None,
-        hidden: bool = False,
+        radios: list[RadioConfig] | None = None,
     ) -> "AccessPointConfig":
-        """Creates an AccessPointConfig, optionally randomizing the SSID and password.
+        """Creates an AccessPointConfig containing the specified radio configurations.
 
         Args:
-            security: The security protocol to use.
-            band: The Wi-Fi frequency band.
-            ssid: The Service Set Identifier. Randomized if not provided.
-            password: The password. Randomized if not provided and security requires it.
-            hidden: Whether the network should be hidden. Defaults to False.
+            radios: A list of RadioConfig objects.
 
         Returns:
             An AccessPointConfig object.
         """
-        if password is None and security != Security.NONE:
-            raise ValueError(f"Password required for security {security}")
-        if password is not None and security == Security.NONE:
-            raise ValueError("Password not required for security NONE")
+        if radios is None:
+            radios = []
 
-        if band == Band.BAND_2G:
-            channel = 1
-        elif band == Band.BAND_5G:
-            channel = 36
-
-        return cls(
-            ssid=ssid,
-            password=password,
-            band=band,
-            channel=channel,
-            security=security,
-            hidden=hidden,
-        )
+        return cls(radios=radios)

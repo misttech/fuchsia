@@ -31,6 +31,8 @@ from mobly.records import TestResultRecord
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -134,11 +136,19 @@ class WlanScanTest(base_test.WifiBaseTest):
             else None
         )
         if hasattr(self, "openwrt_ap"):
-            config = AccessPointConfig.generate(
-                band=t.band,
-                ssid=ssid,
-                password=password,
-                security=t.security,
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=t.band,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=t.security,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=t.band)
@@ -224,10 +234,18 @@ class WlanScanTest(base_test.WifiBaseTest):
         """Verify a general scan trigger returns at least one result"""
         ssid = AccessPointConfig.random_string(20)
         if hasattr(self, "openwrt_ap"):
-            config = AccessPointConfig.generate(
-                band=Band.BAND_2G,
-                ssid=ssid,
-                security=Security.NONE,
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=Band.BAND_2G,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=Security.NONE,
+                            )
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)

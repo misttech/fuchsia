@@ -19,6 +19,13 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from mobly import asserts, signals, test_runner
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
 
 
 class PolicyScanTest(base_test.WifiBaseTest):
@@ -39,57 +46,102 @@ class PolicyScanTest(base_test.WifiBaseTest):
             raise signals.TestFailure("No fuchsia devices found.")
         for fd in self.fuchsia_devices:
             fd.configure_wlan(association_mechanism="policy")
-        if len(self.access_points) < 1:
-            raise signals.TestFailure("No access points found.")
-        # Prepare the AP
-        self.access_point = self.access_points[0]
-        self.access_point.stop_all_aps()
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
+        else:
+            raise signals.TestAbortClass(
+                "Requires at least one access point and one Fuchsia device"
+            )
+
         # Generate network params.
-        bss_settings_2g: list[hostapd_bss_settings.BssSettings] = []
-        bss_settings_5g: list[hostapd_bss_settings.BssSettings] = []
+
         open_network = self.get_open_network(False, [])
         self.open_network_2g = open_network["2g"]
         self.open_network_5g = open_network["5g"]
         wpa2_settings = self.get_psk_network(False, [])
         self.wpa2_network_2g = wpa2_settings["2g"]
         self.wpa2_network_5g = wpa2_settings["5g"]
-        bss_settings_2g.append(
-            hostapd_bss_settings.BssSettings(
-                name=self.wpa2_network_2g["SSID"],
-                ssid=self.wpa2_network_2g["SSID"],
-                security=hostapd_security.Security(
-                    security_mode=self.wpa2_network_2g["security"],
-                    password=self.wpa2_network_2g["password"],
-                ),
+
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=Band.BAND_2G,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.open_network_2g["SSID"],
+                                security=Security.NONE,
+                            ),
+                            BssSettings(
+                                ssid=self.wpa2_network_2g["SSID"],
+                                security=Security.WPA2,
+                                password=self.wpa2_network_2g["password"],
+                            ),
+                        ],
+                    ),
+                    RadioConfig.generate(
+                        band=Band.BAND_5G,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.open_network_5g["SSID"],
+                                security=Security.NONE,
+                            ),
+                            BssSettings(
+                                ssid=self.wpa2_network_5g["SSID"],
+                                security=Security.WPA2,
+                                password=self.wpa2_network_5g["password"],
+                            ),
+                        ],
+                    ),
+                ]
             )
-        )
-        bss_settings_5g.append(
-            hostapd_bss_settings.BssSettings(
-                name=self.wpa2_network_5g["SSID"],
-                ssid=self.wpa2_network_5g["SSID"],
-                security=hostapd_security.Security(
-                    security_mode=self.wpa2_network_5g["security"],
-                    password=self.wpa2_network_5g["password"],
-                ),
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
+        elif self.access_point:
+            bss_settings_2g: list[hostapd_bss_settings.BssSettings] = []
+            bss_settings_5g: list[hostapd_bss_settings.BssSettings] = []
+            bss_settings_2g.append(
+                hostapd_bss_settings.BssSettings(
+                    name=self.wpa2_network_2g["SSID"],
+                    ssid=self.wpa2_network_2g["SSID"],
+                    security=hostapd_security.Security(
+                        security_mode=self.wpa2_network_2g["security"],
+                        password=self.wpa2_network_2g["password"],
+                    ),
+                )
             )
-        )
-        self.ap_2g = hostapd_ap_preset.create_ap_preset(
-            iface_wlan_2g=self.access_points[0].wlan_2g,
-            iface_wlan_5g=self.access_points[0].wlan_5g,
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.open_network_2g["SSID"],
-            bss_settings=bss_settings_2g,
-        )
-        self.ap_5g = hostapd_ap_preset.create_ap_preset(
-            iface_wlan_2g=self.access_points[0].wlan_2g,
-            iface_wlan_5g=self.access_points[0].wlan_5g,
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.open_network_5g["SSID"],
-            bss_settings=bss_settings_5g,
-        )
-        # Start the networks
-        self.access_point.start_ap(hostapd_config=self.ap_2g)
-        self.access_point.start_ap(hostapd_config=self.ap_5g)
+            bss_settings_5g.append(
+                hostapd_bss_settings.BssSettings(
+                    name=self.wpa2_network_5g["SSID"],
+                    ssid=self.wpa2_network_5g["SSID"],
+                    security=hostapd_security.Security(
+                        security_mode=self.wpa2_network_5g["security"],
+                        password=self.wpa2_network_5g["password"],
+                    ),
+                )
+            )
+            self.ap_2g = hostapd_ap_preset.create_ap_preset(
+                iface_wlan_2g=self.access_points[0].wlan_2g,
+                iface_wlan_5g=self.access_points[0].wlan_5g,
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.open_network_2g["SSID"],
+                bss_settings=bss_settings_2g,
+            )
+            self.ap_5g = hostapd_ap_preset.create_ap_preset(
+                iface_wlan_2g=self.access_points[0].wlan_2g,
+                iface_wlan_5g=self.access_points[0].wlan_5g,
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.open_network_5g["SSID"],
+                bss_settings=bss_settings_5g,
+            )
+            # Start the networks
+            self.access_point.start_ap(hostapd_config=self.ap_2g)
+            self.access_point.start_ap(hostapd_config=self.ap_5g)
+
         # List of test SSIDs started by APs
         self.all_ssids = [
             self.open_network_2g["SSID"],

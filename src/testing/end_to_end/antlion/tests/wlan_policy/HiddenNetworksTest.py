@@ -29,6 +29,8 @@ from mobly import signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 
@@ -57,17 +59,26 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
         # is complete.
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
-            config = AccessPointConfig.generate(
-                band=Band.BAND_2G,
-                security=Security.WPA2,
-                ssid=AccessPointConfig.random_string(),
-                password=AccessPointConfig.random_string(),
-                hidden=True,
+            self.hidden_ssid = AccessPointConfig.random_string()
+            self.hidden_password = AccessPointConfig.random_string()
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=Band.BAND_2G,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.hidden_ssid,
+                                security=Security.WPA2,
+                                password=self.hidden_password,
+                                hidden=True,
+                            )
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
-            self.hidden_ssid = config.ssid
-            self.hidden_password = config.password
+
         elif self.access_points:
             self.hidden_ssid = rand_ascii_str(
                 hostapd_constants.AP_SSID_LENGTH_2G
