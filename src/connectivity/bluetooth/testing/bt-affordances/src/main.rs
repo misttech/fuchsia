@@ -5,7 +5,8 @@
 use anyhow::{Context, Error};
 use fidl_fuchsia_bluetooth_affordances::{
     HostControllerRequest, HostControllerRequestStream, HostControllerSetDiscoverabilityRequest,
-    PeerControllerRequest, PeerControllerRequestStream, PeerControllerSetDiscoveryRequest,
+    PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
+    PeerControllerSetDiscoveryRequest, PeerSelector,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -16,6 +17,19 @@ use std::sync::Arc;
 pub enum Services {
     Peer(PeerControllerRequestStream),
     Host(HostControllerRequestStream),
+}
+
+macro_rules! selector_to_peer_id {
+    ($method:expr, $selector:expr, $responder:expr) => {
+        match $selector {
+            PeerSelector { id: Some(id), .. } => id,
+            _ => {
+                error!("{} encountered error: id not set", $method);
+                $responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                return Ok(());
+            }
+        }
+    };
 }
 
 async fn handle_peer_request(
@@ -41,7 +55,8 @@ async fn handle_peer_request(
                             }
                         }
                     }
-                    PeerControllerRequest::ConnectPeer { id, responder } => {
+                    PeerControllerRequest::ConnectPeer { payload, responder } => {
+                        let id = selector_to_peer_id!("ConnectPeer", payload, responder);
                         match worker.connect_peer(id).await {
                             Ok(_) => {
                                 responder.send(Ok(()))?;
@@ -54,7 +69,8 @@ async fn handle_peer_request(
                             }
                         }
                     }
-                    PeerControllerRequest::DisconnectPeer { id, responder } => {
+                    PeerControllerRequest::DisconnectPeer { payload, responder } => {
+                        let id = selector_to_peer_id!("DisconnectPeer", payload, responder);
                         match worker.disconnect_peer(id).await {
                             Ok(_) => {
                                 responder.send(Ok(()))?;
@@ -67,7 +83,19 @@ async fn handle_peer_request(
                             }
                         }
                     }
-                    PeerControllerRequest::Pair { id, options, responder } => {
+                    PeerControllerRequest::Pair { payload, responder } => {
+                        let PeerControllerPairRequest {
+                            selector: Some(selector),
+                            options: Some(options),
+                            ..
+                        } = payload
+                        else {
+                            error!("Pair encountered error: payload missing required fields");
+                            responder
+                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                            return Ok(());
+                        };
+                        let id = selector_to_peer_id!("Pair", selector, responder);
                         match worker.pair(id, options).await {
                             Ok(_) => {
                                 responder.send(Ok(()))?;
@@ -80,7 +108,8 @@ async fn handle_peer_request(
                             }
                         }
                     }
-                    PeerControllerRequest::ForgetPeer { id, responder } => {
+                    PeerControllerRequest::ForgetPeer { payload, responder } => {
+                        let id = selector_to_peer_id!("ForgetPeer", payload, responder);
                         match worker.forget_peer(id).await {
                             Ok(_) => {
                                 responder.send(Ok(()))?;

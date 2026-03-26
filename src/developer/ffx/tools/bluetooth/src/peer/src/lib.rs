@@ -6,7 +6,9 @@ use ::async_trait::async_trait;
 use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Transport};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth::PeerId as FidlPeerId;
-use fdomain_fuchsia_bluetooth_affordances::PeerControllerProxy;
+use fdomain_fuchsia_bluetooth_affordances::{
+    PeerControllerPairRequest, PeerControllerProxy, PeerSelector,
+};
 use fdomain_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLevel};
 use ffx_bluetooth_common::PeerIdOrAddr;
 use ffx_writer::{SimpleWriter, ToolIO as _};
@@ -162,9 +164,10 @@ impl PeerTool {
 
     async fn connect_peer(&self, id: PeerId) -> Result<()> {
         let fidl_peer_id: FidlPeerId = id.into();
+        let selector = PeerSelector { id: Some(fidl_peer_id), ..Default::default() };
         Ok(self
             .peer_controller
-            .connect_peer(&fidl_peer_id)
+            .connect_peer(&selector)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
@@ -176,9 +179,10 @@ impl PeerTool {
 
     async fn disconnect_peer(&self, id: PeerId) -> Result<()> {
         let fidl_peer_id: FidlPeerId = id.into();
+        let selector = PeerSelector { id: Some(fidl_peer_id), ..Default::default() };
         Ok(self
             .peer_controller
-            .disconnect_peer(&fidl_peer_id)
+            .disconnect_peer(&selector)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
@@ -190,9 +194,10 @@ impl PeerTool {
 
     async fn forget_peer(&self, id: PeerId) -> Result<()> {
         let fidl_peer_id: FidlPeerId = id.into();
+        let selector = PeerSelector { id: Some(fidl_peer_id), ..Default::default() };
         Ok(self
             .peer_controller
-            .forget_peer(&fidl_peer_id)
+            .forget_peer(&selector)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
@@ -204,9 +209,15 @@ impl PeerTool {
 
     async fn pair(&self, id: PeerId, options: PairingOptions) -> Result<(), fho::Error> {
         let fidl_peer_id: FidlPeerId = id.into();
+        let selector = PeerSelector { id: Some(fidl_peer_id), ..Default::default() };
+        let request = PeerControllerPairRequest {
+            selector: Some(selector),
+            options: Some(options),
+            ..Default::default()
+        };
         Ok(self
             .peer_controller
-            .pair(&fidl_peer_id, &options)
+            .pair(&request)
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {
@@ -300,10 +311,11 @@ fn to_identifier(peers: &Vec<Peer>, key: &PeerIdOrAddr) -> Option<PeerId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fdomain_fuchsia_bluetooth as fbt;
+    use fdomain_fuchsia_bluetooth_sys as fsys;
     use ffx_bluetooth_common::{BdAddr, PeerIdOrAddr};
     use fuchsia_bluetooth::types::Address;
     use regex::Regex;
-    use {fdomain_fuchsia_bluetooth as fbt, fdomain_fuchsia_bluetooth_sys as fsys};
 
     fn named_peer(id: PeerId, address: Address, name: Option<String>) -> Peer {
         Peer {
