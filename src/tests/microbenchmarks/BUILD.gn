@@ -49,6 +49,7 @@ if (is_linux) {
     # function does not return a real process ID.
     "getpid.cc",
     "process_spawn_posix.cc",
+    "unshare.cc",
   ]
 }
 

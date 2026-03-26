@@ -87,3 +87,10 @@ fuchsia.microbenchmarks.starnix: Stdcompat/CopySpan/64Kbytes/128Mbytes
 fuchsia.microbenchmarks.starnix: Stdcompat/CopySpan/64bytes/128Mbytes
 fuchsia.microbenchmarks.starnix: TraceFs/WriteDisabled
 fuchsia.microbenchmarks.starnix: TraceFs/WriteEvent
+fuchsia.microbenchmarks.starnix: Unshare/All/Baseline
+fuchsia.microbenchmarks.starnix: Unshare/All/Complex
+fuchsia.microbenchmarks.starnix: Unshare/Files/1000
+fuchsia.microbenchmarks.starnix: Unshare/Files/Baseline
+fuchsia.microbenchmarks.starnix: Unshare/Fs/Baseline
+fuchsia.microbenchmarks.starnix: Unshare/NewNS/50
+fuchsia.microbenchmarks.starnix: Unshare/NewNS/Baseline
