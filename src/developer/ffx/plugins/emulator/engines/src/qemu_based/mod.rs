@@ -54,7 +54,9 @@ pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<
                 name,
                 error
             );
-            let mut ffx_path = std::env::current_exe()
+            let mut ffx_path = context
+                .rerun_bin()
+                .or_else(|_| std::env::current_exe())
                 .map_err(|e| bug!("getting current ffx exe path for host tool {name}: {e}"))?;
             ffx_path = std::fs::canonicalize(ffx_path.clone())
                 .map_err(|e| bug!("canonicalizing ffx path {ffx_path:?}: {e}"))?;

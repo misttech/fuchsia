@@ -225,7 +225,9 @@ fn find_exe_path() -> Result<PathBuf> {
     // get the 'real' binary path, which may have symlinks resolved, as well
     // as the command this was run as and the cwd
     let cwd = std::env::current_dir().context("FFX was run from an invalid working directory")?;
-    let binary_path = std::env::current_exe()
+    let binary_path = std::env::var("FFX_BIN")
+        .map(PathBuf::from)
+        .or_else(|_| std::env::current_exe())
         .and_then(|p| p.canonicalize())
         .context("FFX Binary doesn't exist in the file system")?;
     let args_path = match std::env::args_os().next() {
