@@ -127,6 +127,7 @@
                 "fuchsia.feedback.CrashReportingProductRegister",
                 "fuchsia.feedback.DataProvider",
                 "fuchsia.feedback.LastRebootInfoProvider",
+                "fuchsia.firmware.crash.Watcher",
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.hardware.radar.RadarBurstReaderProvider",
                 "fuchsia.hardware.sensors.Playback",

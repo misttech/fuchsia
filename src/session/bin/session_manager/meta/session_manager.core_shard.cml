@@ -835,5 +835,11 @@
             to: "self/toolbox",
             target_availability: "unknown",
         },
+        {
+            protocol: "fuchsia.firmware.crash.Watcher",
+            from: "parent",
+            to: "#session-manager",
+            availability: "same_as_target",
+        },
     ],
 }
