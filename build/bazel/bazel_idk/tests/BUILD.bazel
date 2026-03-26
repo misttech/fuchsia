@@ -937,6 +937,8 @@ filegroup(
         "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_cpp",
         # TODO(https://fxbug.dev/454452299): Uncomment once Rust bindings are implemented.
         # "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust",
+        # Tests linting exemptions and a source file with the same base name as the target name.
+        "//sdk/fidl/zbi",
 
         # Non-IDK targets.
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.

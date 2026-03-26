@@ -330,7 +330,7 @@ template("fidl_library") {
 
   # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:determine_fidlc_versioned_arg)
 
-  # LINT.IfChange(fidl_library)
+  # LINT.IfChange(ir_compilation)
 
   # Note that this file name may be different from those used for compatibility
   # tests below.
@@ -359,6 +359,8 @@ template("fidl_library") {
     }
   }
 
+  # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:ir_compilation)
+
   plasa_fragment_fidl(plasa_fragment_target_name) {
     testonly = testonly
     visibility = [
@@ -373,6 +375,7 @@ template("fidl_library") {
   # Additional dependencies to add when this target is published in an SDK.
   sdk_atom_deps = [ ":$plasa_fragment_target_name" ]
 
+  # LINT.IfChange(lint)
   action(lint_target_name) {
     forward_variables_from(invoker,
                            [
@@ -452,12 +455,12 @@ template("fidl_library") {
       }
 
       if (excluded_checks != []) {
-        # Add path to fidl-lint executable, and --must-find-excluded-checks option, so fidl-lint
-        # will return an error if any excluded check is no longer required. Excluded checks are only
-        # allowed if the target files still violate those checks. After updating the FIDL files to
-        # resolve a lint error, remove the check-id from the list of excluded checks in the fidl()
-        # target to prevent the same lint errors from creeping back in, in
-        # the future.
+        # Cause `fidl-lint` to return an error if any excluded check is no
+        # longer required. Excluded checks are only allowed if the target
+        # files still violate those checks.
+        # After updating the FIDL files to resolve a lint error, remove the
+        # check ID from the `excluded_checks` list in the `fidl()`
+        # target to prevent the same lint errors from creeping back in.
         args += [ "--must-find-excluded-checks" ]
 
         foreach(excluded_check, excluded_checks) {
@@ -486,6 +489,9 @@ template("fidl_library") {
     }
   }
 
+  # LINT.ThenChange(//build/bazel/rules/fidl/fidl_ir.bzl:lint)
+
+  # LINT.IfChange(compatibility_tests)
   # Enforce compatibility checks for all FIDL libraries included in the IDK with
   # platform `fuchsia`.
   if (requires_compatibility_tests) {
@@ -561,6 +567,8 @@ template("fidl_library") {
     }
   }
 
+  # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:compatibility_tests)
+
   validate_json(verification_target_name) {
     forward_variables_from(invoker, [ "applicable_licenses" ])
     testonly = testonly
@@ -594,6 +602,8 @@ template("fidl_library") {
              ":$verification_target_name",
            ] + category_allowlist_deps
   }
+
+  # LINT.IfChange(idk_atom)
 
   if (defined(invoker.sdk_category)) {
     # Process sources.
@@ -696,4 +706,4 @@ template("fidl_library") {
     not_needed([ "sdk_atom_deps" ])
   }
 }
-# LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl)
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:idk_atom)

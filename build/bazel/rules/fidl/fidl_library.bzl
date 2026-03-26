@@ -282,6 +282,7 @@ def _fidl_library_impl(
         testonly = testonly,
     )
 
+    # LINT.IfChange(ir_compilation)
     fidl_ir(
         name = fidl_ir_target_name,
         library_name = library_name,
@@ -291,10 +292,13 @@ def _fidl_library_impl(
         available = available,
         versioned = fidlc_versioned_arg,
         experimental_flags = experimental_flags,
+        experimental_checks = experimental_checks,
+        excluded_checks = excluded_checks,
         testonly = testonly,
         # Other FIDL libraries depend on the IR target.
         visibility = visibility,
     )
+    # LINT.ThenChange(//build/fidl/fidl_library.gni:ir_compilation)
 
     fidl_summary(
         name = "%s_summary_json" % name,
@@ -306,9 +310,12 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/417306131): Implement PlaSA support.
 
+    # LINT.IfChange(compatibility_tests)
     if requires_compatibility_tests:
         # TODO(https://fxbug.dev/428285014): Implement compatibility tests.
         pass
+
+    # LINT.ThenChange(//build/fidl/fidl_library.gni:compatibility_tests)
 
     if enable_cpp or enable_hlcpp:
         fidl_cpp_family(
@@ -358,8 +365,7 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 
-    atom_type = "fidl_library"
-
+    # LINT.IfChange(idk_atom)
     if category:
         idk_name = library_name
 
@@ -409,7 +415,9 @@ def _fidl_library_impl(
             visibility = get_atom_visibility(visibility, is_fidl_library = True),
         )
 
-        # TODO(https://fxbug.dev/428285014): Implmenent sdk_fidl_json_data.
+        # TODO(https://fxbug.dev/428285014): Implement sdk_fidl_json_data.
+
+    # LINT.ThenChange(//build/fidl/fidl_library.gni:idk_atom)
 
 _fidl_library = macro(
     doc = """Declares a FIDL library.

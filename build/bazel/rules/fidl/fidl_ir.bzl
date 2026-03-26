@@ -142,6 +142,141 @@ _fidlc = rule(
     },
 )
 
+# LINT.IfChange(lint)
+
+def _is_exempt_from_linting(package):
+    """
+    Returns True if the given FIDL library is exempt from linting.
+    """
+
+    # Unlike GN, where `/*` is used to include all subdirectories, this
+    # implementation uses an exact match of the target's package path.
+    # It's possible subdirectories of the packages below will need to be added.
+
+    # Don't lint FIDL libraries used to test FIDL itself.
+    _fidl_test_packages = [
+        "//sdk/lib/fidl/cpp/tests",
+        "//sdk/testing/fidl",
+        "//src/devices/tools/fidlgen_banjo/tests/fidl",
+        "//src/lib/fidl",
+        "//src/tests/benchmarks/fidl/benchmark_suite",
+        "//src/tests/fidl",
+        "//tools/fidl/fidlc/testdata",
+    ]
+    _packages_with_known_warnings = [
+        # TODO(https://fxbug.dev/381096879): Fix lint warnings in the following packages.
+        "//examples/fidl",
+        "//sdk/banjo/fuchsia.hardware.block.partition",
+        "//sdk/fidl/fuchsia.bluetooth.snoop",
+        "//sdk/fidl/fuchsia.component.internal",
+        "//sdk/fidl/fuchsia.net.masquerade",
+        "//sdk/fidl/zbi",
+        "//src/connectivity/overnet/tests/integration",
+        "//src/connectivity/wlan/tests/helpers/realm-factory",
+        "//src/diagnostics/sampler/testing/fidl",
+        "//src/lib/component",
+        "//src/lib/diagnostics/inspect/contrib/self_profiles_report/tests",
+        "//src/lib/fidl_table_validation",
+        "//src/lib/process_builder",
+        "//src/sys/component_manager/tests/security_policy/capability_allowlist",
+        "//src/sys/component_manager/tests/utc-time",
+        "//zircon/tools/zither",
+    ]
+
+    package_path = "//" + package
+
+    if package_path in _fidl_test_packages or \
+       package_path in _packages_with_known_warnings:
+        return True
+
+    # TODO(https://fxbug.dev/381163466): Fix lint warnings in vendor repos.
+    if package_path.startswith("//vendor/"):
+        return True
+
+    return False
+
+def _fidl_lint_impl(ctx):
+    stamp_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".linted")
+
+    executable = ctx.executable._fidl_lint
+
+    args = ctx.actions.args()
+
+    # By default, run fidl-lint. The stamp part of the command is added below.
+    command = "{fidl_lint} $@ && ".format(
+        fidl_lint = executable.path,
+    )
+
+    # TODO(https://fxbug.dev/381096879): Implement NOOP logic based on the package name.
+    # In GN, some directories skip linting by passing ":" as the tool which is a NOOP.
+    # We should implement a similar check here using ctx.label.package.
+    if (_is_exempt_from_linting(ctx.label.package)):
+        # NOOP - Nothing to lint. Skip running fidl-lint but touch the stamp
+        # file, which will be added to `command` below.
+        command = ""
+    else:
+        if ctx.attr.excluded_checks:
+            # Cause `fidl-lint` to return an error if any excluded check is no
+            # longer required. Excluded checks are only allowed if the target
+            # files still violate those checks.
+            # After updating the FIDL files to resolve a lint error, remove the
+            # check ID from the `excluded_checks` list in the `fidl_library()`
+            # target to prevent the same lint errors from creeping back in.
+            args.add("--must-find-excluded-checks")
+
+            for excluded_check in ctx.attr.excluded_checks:
+                args.add("-e", excluded_check)
+
+        for experimental_check in ctx.attr.experimental_checks:
+            args.add("-x", experimental_check)
+
+        for src in ctx.files.srcs:
+            args.add(src)
+
+    command += "touch {stamp}".format(
+        stamp = stamp_file.path,
+    )
+
+    ctx.actions.run_shell(
+        inputs = ctx.files.srcs,
+        outputs = [stamp_file],
+        tools = [executable],
+        arguments = [args],
+        command = command,
+        mnemonic = "FidlLint",
+        progress_message = "Linting %{label}",
+    )
+
+    return [DefaultInfo(files = depset([stamp_file]))]
+
+_fidl_lint = rule(
+    implementation = _fidl_lint_impl,
+    attrs = {
+        "fidl_library_target_name": attr.string(
+            doc = "Name of the `fidl_library()` target. Used in the name of some generated files.",
+            mandatory = True,
+        ),
+        "srcs": attr.label_list(
+            allow_files = True,
+            mandatory = True,
+        ),
+        "experimental_checks": attr.string_list(
+            doc = "List of `fidl-lint` check IDs to include (by passing the " +
+                  "command line flag `-x some-check-id` for each value).",
+        ),
+        "excluded_checks": attr.string_list(
+            doc = "List of `fidl-lint` check IDs to ignore (by passing the " +
+                  "command line flag `-e some-check-id` for each value).",
+        ),
+        "_fidl_lint": attr.label(
+            default = Label("//tools/fidl/fidlc:fidl-lint_tool"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+# LINT.ThenChange(//build/fidl/fidl_library.gni:lint)
+
 def _validated_ir_file_impl(ctx):
     return [
         # Allow the target to be used as the IR file.
@@ -169,12 +304,17 @@ _validated_ir_file = rule(
     },
 )
 
-def fidl_ir(name, deps, testonly, visibility, **kwargs):
-    """Compiles a FIDL library to IR and returns the validated IR file.
+def fidl_ir(name, fidl_library_target_name, srcs, deps, testonly, visibility, experimental_checks, excluded_checks, **kwargs):
+    """Compiles a FIDL library to IR and returns the validated IR JSON file.
 
     Args:
       name: Standard meaning.
+      srcs: List of `.fidl` source files.
       deps: List of labels of other FIDL libraries on which this library depends.
+      experimental_checks: List of `fidl-lint` check IDs to include (by passing
+                  the command line flag `-x some-check-id` for each value)
+      excluded_checks: List of `fidl-lint` check IDs to ignore (by passing
+                  the command line flag `-e some-check-id` for each value)
       testonly: Standard meaning.
       visibility: Standard meaning.
 
@@ -184,6 +324,8 @@ def fidl_ir(name, deps, testonly, visibility, **kwargs):
 
     _fidlc(
         name = fidlc_target_name,
+        fidl_library_target_name = fidl_library_target_name,
+        srcs = srcs,
         # IMPORTANT: The deps must be a label list that was passed to the
         # top-most symbolic macro in order for visibility to be checked
         # correctly. The reason for this is that label strings defined within
@@ -202,7 +344,18 @@ def fidl_ir(name, deps, testonly, visibility, **kwargs):
         **kwargs
     )
 
-    validate_json_target_name = "%s_validate_json" % name
+    lint_target_name = "%s_lint_source_files" % name
+    _fidl_lint(
+        name = lint_target_name,
+        fidl_library_target_name = fidl_library_target_name,
+        srcs = srcs,
+        experimental_checks = experimental_checks,
+        excluded_checks = excluded_checks,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    validate_json_target_name = "%s_validate_ir_json" % name
     validate_json(
         name = validate_json_target_name,
         data = fidlc_target_name,
@@ -211,15 +364,13 @@ def fidl_ir(name, deps, testonly, visibility, **kwargs):
         visibility = ["//visibility:private"],
     )
 
-    # TODO(https://fxbug.dev/428285014): Implement linting of `srcs`.
-
     # IMPORTANT: The name of this target must be the the same as the name that
     # will be used in the `deps` of other FIDL libraries so that `deps` can be
     # used unmodified as explained above.
     _validated_ir_file(
         name = name,
         unvalidated_file = fidlc_target_name,
-        validation_targets = [validate_json_target_name],
+        validation_targets = [lint_target_name, validate_json_target_name],
         testonly = testonly,
         visibility = visibility,
     )
