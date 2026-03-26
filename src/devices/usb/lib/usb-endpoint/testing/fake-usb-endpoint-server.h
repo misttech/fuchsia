@@ -13,6 +13,7 @@
 
 #include <mutex>
 #include <queue>
+#include <variant>
 
 #ifdef USE_ZXTEST
 #include <zxtest/zxtest.h>
@@ -40,14 +41,11 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
   // RequestComplete: responds to the next request. If there are any requests in the request queue,
   // respond to that. If not, save this response and respond with the next incoming request.
   void RequestComplete(zx_status_t status, size_t actual) {
-    std::lock_guard<std::mutex> _(lock_);
-    auto completion = RequestCompleteLocked(status, actual);
-    if (completion.has_value()) {
-      ASSERT_TRUE(binding_ref_);
-      std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
-      completions.emplace_back(std::move(completion.value()));
-      EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
-    }
+    RequestCompleteAny(status, QueuedRequestComplete(actual));
+  }
+
+  void RequestComplete(zx_status_t status, std::vector<uint8_t> data) {
+    RequestCompleteAny(status, QueuedRequestComplete(std::move(data)));
   }
 
   // GetInfo: responds according to previous calls of ExpectGetInfo() and returns
@@ -78,12 +76,13 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
     // Reply if there is a completion saved for it already.
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
     while (!completions_.empty() && !requests_.empty()) {
-      auto completion =
-          RequestCompleteLocked(completions_.front().first, completions_.front().second);
+      zx_status_t status = completions_.front().first;
+      auto data = std::move(completions_.front().second);
+      completions_.pop();
+      auto completion = RequestCompleteLocked(status, std::move(data));
       if (!completion.has_value()) {
         break;
       }
-      completions_.pop();
       completions.emplace_back(std::move(completion.value()));
     }
     if (completions.empty()) {
@@ -108,24 +107,45 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
     completer.Reply(fit::ok());
   }
 
-  // RegisterVmos: succeeds without checking anything.
+  // RegisterVmos: creates VMOs on demand.
   void RegisterVmos(RegisterVmosRequest& request, RegisterVmosCompleter::Sync& completer) override {
+    std::lock_guard<std::mutex> _(lock_);
     std::vector<fuchsia_hardware_usb_endpoint::VmoHandle> ret;
     for (const auto& vmo_id : request.vmo_ids()) {
+      if (vmos_.contains(vmo_id.id().value())) {
+        continue;
+      }
       zx::vmo vmo;
-      auto status = zx::vmo::create(*vmo_id.size(), 0, &vmo);
+      zx_status_t status = zx::vmo::create(*vmo_id.size(), 0, &vmo);
       if (status != ZX_OK) {
         continue;
       }
+      zx::vmo duplicate;
+      status = vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate);
+      if (status != ZX_OK) {
+        continue;
+      }
+      vmos_.emplace(*vmo_id.id(), std::move(vmo));
       ret.emplace_back(std::move(
-          fuchsia_hardware_usb_endpoint::VmoHandle().id(*vmo_id.id()).vmo(std::move(vmo))));
+          fuchsia_hardware_usb_endpoint::VmoHandle().id(vmo_id.id()).vmo(std::move(duplicate))));
     }
     completer.Reply(std::move(ret));
   }
   // UnregisterVmos: succeeds without checking anything.
   void UnregisterVmos(UnregisterVmosRequest& request,
                       UnregisterVmosCompleter::Sync& completer) override {
-    completer.Reply({{}, {}});
+    std::lock_guard<std::mutex> _(lock_);
+    fuchsia_hardware_usb_endpoint::EndpointUnregisterVmosResponse response;
+    std::vector<zx_status_t>& errors = response.errors();
+    std::vector<fuchsia_hardware_usb_request::VmoId>& failed_vmo_ids = response.failed_vmo_ids();
+    for (const auto& vmo_id : request.vmo_ids()) {
+      size_t erased = vmos_.erase(vmo_id);
+      if (erased == 0) {
+        errors.emplace_back(ZX_ERR_NOT_FOUND);
+        failed_vmo_ids.emplace_back(vmo_id);
+      }
+    }
+    completer.Reply(std::move(response));
   }
 
   // ExpectGetInfo
@@ -140,21 +160,142 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
     return requests_.size();
   }
 
+  // Duplicates and returns a previously registered VMO with vmo_id.
+  zx::result<zx::vmo> GetVmo(fuchsia_hardware_usb_request::VmoId vmo_id) {
+    std::lock_guard<std::mutex> _(lock_);
+    auto it = vmos_.find(vmo_id);
+    if (it == vmos_.end()) {
+      return zx::error(ZX_ERR_NOT_FOUND);
+    }
+    zx::vmo duplicate;
+    zx_status_t status = it->second.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(std::move(duplicate));
+  }
+
+  // Reads the value of the pending request at the front of the queue.
+  zx::result<std::vector<uint8_t>> ReadPendingRequestData() {
+    std::lock_guard<std::mutex> _(lock_);
+    if (requests_.empty()) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    std::vector<uint8_t> ret;
+    const fuchsia_hardware_usb_request::Request& request = requests_.front();
+    if (!request.data().has_value()) {
+      return zx::error(ZX_ERR_IO_INVALID);
+    }
+    for (auto& region : request.data().value()) {
+      if (!region.buffer().has_value()) {
+        return zx::error(ZX_ERR_IO_INVALID);
+      }
+      auto& buffer = region.buffer().value();
+      switch (buffer.Which()) {
+        case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId: {
+          if (!region.offset().has_value() || !region.size().has_value()) {
+            return zx::error(ZX_ERR_IO_INVALID);
+          }
+          auto it = vmos_.find(buffer.vmo_id().value());
+          if (it == vmos_.end()) {
+            return zx::error(ZX_ERR_NOT_FOUND);
+          }
+          zx::vmo& vmo = it->second;
+          ret.resize(ret.size() + region.size().value());
+          zx_status_t status = vmo.read(ret.data() + ret.size() - region.size().value(),
+                                        region.offset().value(), region.size().value());
+          if (status != ZX_OK) {
+            return zx::error(status);
+          }
+        } break;
+        case fuchsia_hardware_usb_request::Buffer::Tag::kData: {
+          const std::vector<uint8_t>& data = buffer.data().value();
+          ret.insert(ret.end(), data.begin(), data.end());
+        } break;
+        default:
+          return zx::error(ZX_ERR_NOT_SUPPORTED);
+      }
+    }
+    return zx::ok(std::move(ret));
+  }
+
  private:
-  std::optional<fuchsia_hardware_usb_endpoint::Completion> RequestCompleteLocked(zx_status_t status,
-                                                                                 size_t actual)
-      __TA_REQUIRES(lock_) {
+  using QueuedRequestComplete = std::variant<size_t, std::vector<uint8_t>>;
+
+  void RequestCompleteAny(zx_status_t status, QueuedRequestComplete actual_or_data) {
+    std::lock_guard<std::mutex> _(lock_);
+    auto completion = RequestCompleteLocked(status, std::move(actual_or_data));
+    if (completion.has_value()) {
+      ASSERT_TRUE(binding_ref_);
+      std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+      completions.emplace_back(std::move(completion.value()));
+      EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
+    }
+  }
+
+  std::optional<fuchsia_hardware_usb_endpoint::Completion> RequestCompleteLocked(
+      zx_status_t status, QueuedRequestComplete actual_or_data) __TA_REQUIRES(lock_) {
     if (requests_.empty()) {
       // Save completion for next incoming request.
-      completions_.emplace(status, actual);
+      completions_.emplace(status, std::move(actual_or_data));
       return std::nullopt;
+    }
+
+    fuchsia_hardware_usb_request::Request& request = requests_.front();
+    size_t transfer_size = 0;
+
+    if (std::holds_alternative<size_t>(actual_or_data)) {
+      transfer_size = std::get<size_t>(actual_or_data);
+    } else {
+      std::vector<uint8_t>& vec = std::get<std::vector<uint8_t>>(actual_or_data);
+      transfer_size = vec.size();
+
+      size_t written = 0;
+      for (auto& region : request.data().value()) {
+        auto& buffer = region.buffer().value();
+        switch (buffer.Which()) {
+          case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId: {
+            if (written >= transfer_size) {
+              region.size(0);
+            } else {
+              auto it = vmos_.find(buffer.vmo_id().value());
+              if (it != vmos_.end()) {
+                zx::vmo& vmo = it->second;
+                size_t chunk = std::min(region.size().value(), transfer_size - written);
+                vmo.write(vec.data() + written, region.offset().value(), chunk);
+                written += chunk;
+                region.size(chunk);
+              }
+            }
+          } break;
+          case fuchsia_hardware_usb_request::Buffer::Tag::kData: {
+            if (written >= transfer_size) {
+              region.buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::vector<uint8_t>{}));
+              region.size(0);
+            } else {
+              size_t chunk =
+                  std::min(static_cast<size_t>(fuchsia_hardware_usb_request::kMaxTransferSize),
+                           transfer_size - written);
+              auto start_it = vec.begin() + static_cast<std::ptrdiff_t>(written);
+              auto end_it = vec.begin() + static_cast<std::ptrdiff_t>(written + chunk);
+              std::vector<uint8_t> chunk_vec(start_it, end_it);
+              region.buffer(fuchsia_hardware_usb_request::Buffer::WithData(std::move(chunk_vec)));
+              region.size(chunk);
+              written += chunk;
+            }
+          } break;
+          default:
+            ZX_PANIC("unsupported buffer type %d", buffer.Which());
+            break;
+        }
+      }
     }
 
     // Respond to the next request in the queue.
     auto completion = std::move(fuchsia_hardware_usb_endpoint::Completion()
-                                    .request(std::move(requests_.front()))
+                                    .request(std::move(request))
                                     .status(status)
-                                    .transfer_size(actual));
+                                    .transfer_size(transfer_size));
     requests_.erase(requests_.begin());
     return std::move(completion);
   }
@@ -165,7 +306,8 @@ class FakeEndpoint : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint
   std::queue<std::pair<zx_status_t, fuchsia_hardware_usb_endpoint::EndpointInfo>>
       expected_get_info_;
   std::vector<fuchsia_hardware_usb_request::Request> requests_ __TA_GUARDED(lock_);
-  std::queue<std::pair<zx_status_t, size_t>> completions_ __TA_GUARDED(lock_);
+  std::queue<std::pair<zx_status_t, QueuedRequestComplete>> completions_ __TA_GUARDED(lock_);
+  std::unordered_map<uint64_t, zx::vmo> vmos_ __TA_GUARDED(lock_);
 };
 
 template <typename ProtocolType, typename FakeEndpointType>
