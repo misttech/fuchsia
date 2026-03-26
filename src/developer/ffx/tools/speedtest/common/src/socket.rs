@@ -171,7 +171,7 @@ impl Transfer {
 
             let send = buffer_len.min(data_len);
             data_len -= send;
-            Some(socket.write_all(&buffer[..send]))
+            Some(socket.fdomain_write_all(&buffer[..send]))
         }))
         .buffered(writes_in_flight.get() as usize);
 

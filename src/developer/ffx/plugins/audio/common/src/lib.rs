@@ -198,7 +198,7 @@ pub mod tests {
                     payload.wav_data.ok_or_else(|| anyhow!("Socket argument missing.")).unwrap();
 
                 fuchsia_async::Task::local(async move {
-                    wav_socket.write_all(SINE_WAV).await.unwrap();
+                    wav_socket.fdomain_write_all(SINE_WAV).await.unwrap();
                 })
                 .detach();
 

@@ -929,7 +929,7 @@ mod test {
     use super::*;
     use fdomain_client::HandleBased;
     use fidl_codec_fdomain::Rights;
-    use futures::{AsyncReadExt, FutureExt};
+    use futures::{AsyncReadExt, AsyncWriteExt, FutureExt};
 
     #[test]
     fn compare() {

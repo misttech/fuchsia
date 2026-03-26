@@ -108,7 +108,7 @@ async fn socket() {
     let (a, b) = client.create_stream_socket();
     const TEST_STR: &[u8] = b"Feral Cats Move In Mysterious Ways";
 
-    a.write_all(TEST_STR).await.unwrap();
+    a.fdomain_write_all(TEST_STR).await.unwrap();
 
     let mut got = Vec::with_capacity(TEST_STR.len());
     let mut buf = [0u8; TEST_STR.len()];
@@ -129,8 +129,8 @@ async fn datagram_socket() {
     const TEST_STR_1: &[u8] = b"Feral Cats Move In Mysterious Ways";
     const TEST_STR_2: &[u8] = b"Joyous Throbbing! Jubilant Pulsing!";
 
-    a.write_all(TEST_STR_1).await.unwrap();
-    a.write_all(TEST_STR_2).await.unwrap();
+    a.fdomain_write_all(TEST_STR_1).await.unwrap();
+    a.fdomain_write_all(TEST_STR_2).await.unwrap();
 
     let mut buf = [0u8; 2];
 
@@ -151,8 +151,8 @@ async fn datagram_socket_underflow() {
     const TEST_STR_1: &[u8] = b"Feral Cats Move In Mysterious Ways";
     const TEST_STR_2: &[u8] = b"Joyous Throbbing! Jubilant Pulsing!";
 
-    a.write_all(TEST_STR_1).await.unwrap();
-    a.write_all(TEST_STR_2).await.unwrap();
+    a.fdomain_write_all(TEST_STR_1).await.unwrap();
+    a.fdomain_write_all(TEST_STR_2).await.unwrap();
 
     const MAX_LEN: usize =
         if TEST_STR_1.len() > TEST_STR_2.len() { TEST_STR_1.len() } else { TEST_STR_2.len() };
@@ -177,7 +177,7 @@ async fn channel() {
     const TEST_STR_2: &[u8] = b"Joyous Throbbing! Jubilant Pulsing!";
 
     a.fdomain_write(TEST_STR_1, vec![c.into()]).await.unwrap();
-    d.write_all(TEST_STR_2).await.unwrap();
+    d.fdomain_write_all(TEST_STR_2).await.unwrap();
 
     let mut msg = b.recv_msg().await.unwrap();
 
@@ -235,15 +235,15 @@ async fn socket_async() {
         assert_eq!(TEST_STR_A, got.as_slice());
 
         for _ in 0..5 {
-            a.write_all(TEST_STR_A).await.unwrap();
+            a.fdomain_write_all(TEST_STR_A).await.unwrap();
             fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
-            a.write_all(TEST_STR_B).await.unwrap();
+            a.fdomain_write_all(TEST_STR_B).await.unwrap();
             fuchsia_async::Timer::new(std::time::Duration::from_millis(10)).await;
         }
 
         fault_injector.inject(TestError("Connection failed".to_owned()));
 
-        let err = a.write_all(TEST_STR_A).await.unwrap_err();
+        let err = a.fdomain_write_all(TEST_STR_A).await.unwrap_err();
         let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
 
         let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
@@ -300,7 +300,7 @@ async fn socket_drop_read_fut() {
     assert!(fut2.poll_unpin(&mut null_cx).is_pending());
     assert!(fut3.poll_unpin(&mut null_cx).is_pending());
 
-    a.write_all(b"abcd").await.unwrap();
+    a.fdomain_write_all(b"abcd").await.unwrap();
 
     assert_eq!(2, fut1.await.unwrap());
     std::mem::drop(fut2);
@@ -679,13 +679,13 @@ async fn waker_reentrancy_test() {
     unsafe fn wake(data: *const ()) {
         let data = unsafe { Box::from_raw(data.cast_mut().cast::<WakerData>()) };
         let data = *data;
-        let _ = data.sock.write_all(b"Woken");
+        let _ = data.sock.fdomain_write_all(b"Woken");
         data.real_waker.wake();
     }
 
     unsafe fn wake_by_ref(data: *const ()) {
         let data = unsafe { &*data.cast_mut().cast::<WakerData>() };
-        let _ = data.sock.write_all(b"Woken");
+        let _ = data.sock.fdomain_write_all(b"Woken");
         data.real_waker.wake_by_ref();
     }
 
@@ -717,7 +717,7 @@ async fn waker_reentrancy_test() {
         Poll::Ready(Result::<(), crate::Error>::Ok(()))
     }));
 
-    b.write_all(b"Message").await.unwrap();
+    b.fdomain_write_all(b"Message").await.unwrap();
     task.await.unwrap();
     let mut buf = [0u8; b"Woken".len()];
     notification.read_exact(&mut buf).await.unwrap();

@@ -412,7 +412,7 @@ mod tests {
             QueryRequest::WriteJsonProcessesData { socket, .. } => {
                 fuchsia_async::Task::local(async move {
                     socket
-                        .write_all(&serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap())
+                        .fdomain_write_all(&serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap())
                         .await
                         .unwrap();
                 })

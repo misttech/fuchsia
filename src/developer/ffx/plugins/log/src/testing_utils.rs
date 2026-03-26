@@ -392,7 +392,10 @@ async fn handle_archive_accessor(mut stream: ArchiveAccessorRequestStream, state
         }
         // Ignore the result, because the client may choose to close the channel.
         let _ = responder.send();
-        stream.write_all(serde_json::to_string(&state.messages).unwrap().as_bytes()).await.unwrap();
+        stream
+            .fdomain_write_all(serde_json::to_string(&state.messages).unwrap().as_bytes())
+            .await
+            .unwrap();
 
         match parameters.stream_mode.unwrap() {
             StreamMode::Snapshot => {}

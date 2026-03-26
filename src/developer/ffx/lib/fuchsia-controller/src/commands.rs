@@ -567,7 +567,7 @@ impl LibraryCommand {
                     }
                 };
                 let socket = handle.as_unowned::<fdomain_client::Socket>();
-                let status = match socket.write_all(&buf).await {
+                let status = match socket.fdomain_write_all(&buf).await {
                     Ok(()) => FcTransportStatus::OK,
                     Err(e) => {
                         lib.write_fdomain_err(&e);

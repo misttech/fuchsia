@@ -11,6 +11,11 @@ use blocking::Unblock;
 use fac::DEFAULT_RING_BUFFER_ELEMENT_ID;
 use fdomain_client::HandleBased;
 use fdomain_client::fidl::{Proxy, ServerEnd};
+use fdomain_fuchsia_audio_controller as fac;
+use fdomain_fuchsia_audio_device as fadevice;
+use fdomain_fuchsia_hardware_audio as fhaudio;
+use fdomain_fuchsia_io as fio;
+use fdomain_fuchsia_media as fmedia;
 use ffx_audio_device_args::{DeviceCommand, RecordCommand, SetCommand, SetSubCommand, SubCommand};
 use ffx_command_error::{Result, user_error};
 use ffx_optional_moniker::{exposed_dir, optional_moniker};
@@ -23,11 +28,6 @@ use serde::Serialize;
 use std::io::{Read, Write};
 use target_holders::fdomain::moniker;
 use zx_status::Status;
-use {
-    fdomain_fuchsia_audio_controller as fac, fdomain_fuchsia_audio_device as fadevice,
-    fdomain_fuchsia_hardware_audio as fhaudio, fdomain_fuchsia_io as fio,
-    fdomain_fuchsia_media as fmedia,
-};
 
 mod connect;
 mod control;
@@ -405,7 +405,7 @@ mod tests {
         let async_play_local =
             play_local.duplicate_handle(fidl::Rights::SAME_RIGHTS).await.unwrap();
 
-        async_play_local.write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
+        async_play_local.fdomain_write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
 
         device_play(
             audio_player,

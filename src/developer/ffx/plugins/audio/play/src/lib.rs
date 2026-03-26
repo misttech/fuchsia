@@ -133,7 +133,7 @@ mod tests {
         };
 
         let (play_remote, play_local) = client.create_datagram_socket();
-        play_local.write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
+        play_local.fdomain_write_all(ffx_audio_common::tests::WAV_HEADER_EXT).await.unwrap();
         let result = play_impl(
             controller.clone(),
             play_local,

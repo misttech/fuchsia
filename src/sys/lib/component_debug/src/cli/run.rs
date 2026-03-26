@@ -13,16 +13,16 @@ use anyhow::{Result, bail, format_err};
 #[allow(unused)]
 use flex_client::ProxyHasDomain;
 use flex_client::{HandleBased, Socket};
+use flex_fuchsia_component as fcomponent;
+use flex_fuchsia_component_decl as fdecl;
+use flex_fuchsia_process as fprocess;
+use flex_fuchsia_sys2 as fsys;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::future::BoxFuture;
 #[allow(unused)]
 use futures::{AsyncReadExt, AsyncWriteExt};
 use moniker::Moniker;
 use std::io::Read;
-use {
-    flex_fuchsia_component as fcomponent, flex_fuchsia_component_decl as fdecl,
-    flex_fuchsia_process as fprocess, flex_fuchsia_sys2 as fsys,
-};
 
 // This value is fairly arbitrary. The value matches `MAX_BUF` from `fuchsia.io`, but that
 // constant is for `fuchsia.io.File` transfers, which are unrelated to these `zx::socket`
@@ -97,8 +97,7 @@ impl Stdio {
         let local_out = self.local_out;
         let local_err = self.local_err;
 
-        #[cfg(not(feature = "fdomain"))]
-        let mut local_in = fuchsia_async::Socket::from_socket(local_in);
+        let mut local_in = flex_client::socket_to_async(local_in);
 
         std::thread::spawn(move || {
             let mut term_in = std::io::stdin().lock();

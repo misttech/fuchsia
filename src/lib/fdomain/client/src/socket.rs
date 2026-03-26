@@ -61,7 +61,10 @@ impl Socket {
     }
 
     /// Write all of the given data to the socket.
-    pub fn write_all(&self, bytes: &[u8]) -> impl Future<Output = Result<(), Error>> + use<> {
+    pub fn fdomain_write_all(
+        &self,
+        bytes: &[u8],
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         let data = bytes.to_vec();
         let len = bytes.len();
         let hid = self.0.proto();
@@ -118,7 +121,7 @@ pub struct SocketWriter(Arc<Socket>);
 impl SocketWriter {
     /// Write all of the given data to the socket.
     pub fn write_all(&self, bytes: &[u8]) -> impl Future<Output = Result<(), Error>> {
-        self.0.write_all(bytes)
+        self.0.fdomain_write_all(bytes)
     }
 }
 
@@ -202,7 +205,7 @@ impl futures::AsyncWrite for Socket {
         _cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        let _ = self.write_all(buf);
+        let _ = self.fdomain_write_all(buf);
         Poll::Ready(Ok(buf.len()))
     }
 

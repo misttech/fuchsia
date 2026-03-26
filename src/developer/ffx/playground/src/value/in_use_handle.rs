@@ -440,7 +440,7 @@ impl std::fmt::Display for InUseHandle {
 #[cfg(test)]
 mod test {
     use fuchsia_async as fasync;
-    use futures::AsyncReadExt;
+    use futures::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
 
@@ -467,7 +467,7 @@ mod test {
         };
         assert_eq!(ObjectType::Socket, a_ty);
         const TEST_STR: &[u8] = b"Why were we programmed to get bored anyway?";
-        let a = fdomain_client::Socket::from(a);
+        let mut a = fdomain_client::Socket::from(a);
         fasync::Task::spawn(async move {
             a.write_all(TEST_STR).await.unwrap();
         })
