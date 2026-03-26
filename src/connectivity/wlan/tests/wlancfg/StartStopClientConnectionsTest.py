@@ -20,6 +20,15 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from mobly import asserts, signals, test_runner
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,32 +52,56 @@ class StartStopClientConnectionsTest(
         self.device = self.fuchsia_devices[0]
 
         access_points = await self.register_controller(
-            access_point, required=True, min_number=1
+            access_point,
+            required=False,
         )
-        if not access_points:
-            raise EnvironmentError("No access points found.")
-        assert len(access_points) == 1
-
-        self.access_point = access_points[0]
+        openwrt_aps: list[OpenWrtAP] = await self.register_controller(
+            openwrt_access_point,
+            required=False,
+        )
+        if openwrt_aps:
+            self.openwrt_ap = openwrt_aps[0]
+        elif access_points:
+            self.access_point = access_points[0]
+        else:
+            raise signals.TestAbortClass("Requires at least one access point.")
 
         self.ssid = rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
         self.password = rand_ascii_str(
             hostapd_constants.AP_PASSPHRASE_LENGTH_2G
         )
         self.security_type = SecurityType.WPA2
-        security = hostapd_security.Security(
-            security_mode=hostapd_security.SecurityMode.WPA2,
-            password=self.password,
-        )
 
-        self.access_point.stop_all_aps()
-        setup_ap(
-            self.access_point,
-            "whirlwind",
-            hostapd_constants.AP_DEFAULT_WW_COMPATIBLE_CHANNEL,
-            self.ssid,
-            security=security,
-        )
+        if hasattr(self, "openwrt_ap"):
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        band=Band.BAND_2G,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=self.ssid,
+                                security=Security.WPA2,
+                                password=self.password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
+        elif hasattr(self, "access_point"):
+            security = hostapd_security.Security(
+                security_mode=hostapd_security.SecurityMode.WPA2,
+                password=self.password,
+            )
+            self.access_point.stop_all_aps()
+            setup_ap(
+                self.access_point,
+                "whirlwind",
+                hostapd_constants.AP_DEFAULT_WW_COMPATIBLE_CHANNEL,
+                self.ssid,
+                security=security,
+            )
 
         # Acquire control of policy layer
         max_attempts = 3
@@ -98,7 +131,8 @@ class StartStopClientConnectionsTest(
         await self.device.wlan_policy.remove_all_networks()
         await self.device.wlan_policy.wait_for_no_connections()
 
-        self.access_point.stop_all_aps()
+        if hasattr(self, "access_point"):
+            self.access_point.stop_all_aps()
         await super().teardown_class()
 
     async def test_stop_client_connections_update(self) -> None:
