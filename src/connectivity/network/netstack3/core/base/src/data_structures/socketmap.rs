@@ -413,8 +413,8 @@ impl<'d, T, const INLINE_SIZE: usize> IntoIterator for &'d DescendantCounts<T, I
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use alloc::vec::Vec;
-    use alloc::{format, vec};
 
     use assert_matches::assert_matches;
     use proptest::prop_assert_eq;

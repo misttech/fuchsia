@@ -433,7 +433,7 @@ _NORMAL_DEPENDENCIES = {
             "pretty": Label("//third_party/rust_crates/vendor/pretty-0.5.2:pretty"),
             "pretty_assertions": Label("//third_party/rust_crates/vendor/pretty_assertions-1.2.1:pretty_assertions"),
             "prettytable-rs": Label("//third_party/rust_crates/vendor/prettytable-rs-0.8.0:prettytable"),
-            "proptest": Label("//third_party/rust_crates/vendor/proptest-1.7.0:proptest"),
+            "proptest": Label("//third_party/rust_crates/vendor/proptest-1.11.0:proptest"),
             "prost": Label("//third_party/rust_crates/vendor/prost-0.11.0:prost"),
             "prost-build": Label("//third_party/rust_crates/vendor/prost-build-0.11.1:prost_build"),
             "prost-types": Label("//third_party/rust_crates/vendor/prost-types-0.11.1:prost_types"),

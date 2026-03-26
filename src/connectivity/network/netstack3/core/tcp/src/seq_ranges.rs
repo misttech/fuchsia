@@ -304,8 +304,8 @@ pub(crate) use range::SeqRange;
 mod test {
     use super::*;
 
+    use alloc::vec;
     use alloc::vec::Vec;
-    use alloc::{format, vec};
 
     use netstack3_base::{SackBlock, WindowSize};
     use proptest::strategy::{Just, Strategy};

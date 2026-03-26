@@ -804,8 +804,8 @@ pub(crate) mod testutil {
 
 #[cfg(test)]
 mod test {
+    use alloc::vec;
     use alloc::vec::Vec;
-    use alloc::{format, vec};
 
     use netstack3_base::FragmentedPayload;
     use proptest::strategy::{Just, Strategy};

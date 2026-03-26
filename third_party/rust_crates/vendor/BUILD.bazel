@@ -1861,14 +1861,14 @@ alias(
 )
 
 alias(
-    name = "proptest-1.7.0",
-    actual = "//third_party/rust_crates/vendor/proptest-1.7.0:proptest",
+    name = "proptest-1.11.0",
+    actual = "//third_party/rust_crates/vendor/proptest-1.11.0:proptest",
     tags = ["manual"],
 )
 
 alias(
     name = "proptest",
-    actual = "//third_party/rust_crates/vendor/proptest-1.7.0:proptest",
+    actual = "//third_party/rust_crates/vendor/proptest-1.11.0:proptest",
     tags = ["manual"],
 )
 

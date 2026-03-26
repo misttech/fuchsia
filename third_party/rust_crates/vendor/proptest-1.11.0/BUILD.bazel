@@ -8,7 +8,6 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
@@ -21,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "camino",
-    package_url = "https://github.com/camino-rs/camino",
-    package_version = "1.2.2",
+    package_name = "proptest",
+    package_url = "https://github.com/proptest-rs/proptest",
+    package_version = "1.11.0",
 )
 
 license(
@@ -36,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "camino",
+    name = "proptest",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -54,8 +53,14 @@ rust_library(
         ],
     ),
     crate_features = [
-        "proptest1",
-        "serde1",
+        "bit-set",
+        "default",
+        "fork",
+        "regex-syntax",
+        "rusty-fork",
+        "std",
+        "tempfile",
+        "timeout",
     ],
     crate_root = "src/lib.rs",
     edition = "2021",
@@ -64,7 +69,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=camino",
+        "crate-name=proptest",
         "manual",
         "noclippy",
         "norustfmt",
@@ -77,69 +82,18 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.2.2",
+    version = "1.11.0",
     deps = [
-        "//third_party/rust_crates/vendor/camino-1.2.2:build_script_build",
-        "//third_party/rust_crates/vendor/proptest-1.11.0:proptest",
-        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
+        "//third_party/rust_crates/vendor/bit-set-0.8.0:bit_set",
+        "//third_party/rust_crates/vendor/bit-vec-0.8.0:bit_vec",
+        "//third_party/rust_crates/vendor/bitflags-2.11.0:bitflags",
+        "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
+        "//third_party/rust_crates/vendor/rand-0.9.2:rand",
+        "//third_party/rust_crates/vendor/rand_chacha-0.9.0:rand_chacha",
+        "//third_party/rust_crates/vendor/rand_xorshift-0.4.0:rand_xorshift",
+        "//third_party/rust_crates/vendor/regex-syntax-0.8.10:regex_syntax",
+        "//third_party/rust_crates/vendor/rusty-fork-0.3.0:rusty_fork",
+        "//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile",
+        "//third_party/rust_crates/vendor/unarray-0.1.4:unarray",
     ],
-)
-
-cargo_build_script(
-    name = "_bs",
-    srcs = glob(
-        include = ["**/*.rs"],
-        allow_empty = False,
-    ),
-    compile_data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            "**/*.rs",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    crate_features = [
-        "proptest1",
-        "serde1",
-    ],
-    crate_name = "build_script_build",
-    crate_root = "build.rs",
-    data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    edition = "2021",
-    pkg_name = "camino",
-    rustc_flags = [
-        "--cap-lints=allow",
-    ],
-    tags = [
-        "cargo-bazel",
-        "crate-name=camino",
-        "manual",
-        "noclippy",
-        "norustfmt",
-    ],
-    version = "1.2.2",
-    visibility = ["//visibility:private"],
-)
-
-alias(
-    name = "build_script_build",
-    actual = ":_bs",
-    tags = ["manual"],
 )

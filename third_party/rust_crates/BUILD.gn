@@ -761,7 +761,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("proptest") {
-  public_deps = [ ":proptest-v1_7_0" ]
+  public_deps = [ ":proptest-v1_11_0" ]
 }
 
 group("proptest-derive") {
@@ -3704,7 +3704,7 @@ rustc_library("camino-v1_2_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":proptest-v1_7_0" ]
+  deps += [ ":proptest-v1_11_0" ]
   deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
@@ -13706,18 +13706,18 @@ rustc_macro("proc-macro-error-attr-v1_0_4") {
   applicable_licenses = [ ":proc-macro-error-attr-v1_0_4.license" ]
 }
 
-license("proptest-v1_7_0.license") {
+license("proptest-v1_11_0.license") {
   public_package_name = "proptest"
   license_files = [
-    "//third_party/rust_crates/vendor/proptest-1.7.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/proptest-1.7.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/proptest-1.11.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/proptest-1.11.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("proptest-v1_7_0") {
+rustc_library("proptest-v1_11_0") {
   crate_name = "proptest"
-  source_root = "//third_party/rust_crates/vendor/proptest-1.7.0/src/lib.rs"
-  output_name = "proptest-795f4d9b7b67f20c"
+  source_root = "//third_party/rust_crates/vendor/proptest-1.11.0/src/lib.rs"
+  output_name = "proptest-2500e6041601b69b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13727,7 +13727,6 @@ rustc_library("proptest-v1_7_0") {
   deps += [ ":bit-set-v0_8_0" ]
   deps += [ ":bit-vec-v0_8_0" ]
   deps += [ ":bitflags-v2_11_0" ]
-  deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":rand-v0_9_2" ]
   deps += [ ":rand_chacha-v0_9_0" ]
@@ -13741,12 +13740,11 @@ rustc_library("proptest-v1_7_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=795f4d9b7b67f20c",
-    "-Cextra-filename=-795f4d9b7b67f20c",
+    "-Cmetadata=2500e6041601b69b",
+    "-Cextra-filename=-2500e6041601b69b",
     "--cfg=feature=\"bit-set\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"fork\"",
-    "--cfg=feature=\"lazy_static\"",
     "--cfg=feature=\"regex-syntax\"",
     "--cfg=feature=\"rusty-fork\"",
     "--cfg=feature=\"std\"",
@@ -13756,7 +13754,7 @@ rustc_library("proptest-v1_7_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":proptest-v1_7_0.license" ]
+  applicable_licenses = [ ":proptest-v1_11_0.license" ]
 }
 
 license("proptest-derive-v0_4_0.license") {

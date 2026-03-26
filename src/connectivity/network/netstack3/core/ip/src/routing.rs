@@ -1468,8 +1468,6 @@ mod tests {
 
         proptest::proptest!(
             move |(shuffle in proptest::sample::subsequence(expected_table.clone(), len))| {
-                // the proptest macros want this.
-                use alloc::format;
                 let mut table = RoutingTable::<I, _>::default();
                 for entry in shuffle.iter() {
                     proptest::prop_assert_eq!(

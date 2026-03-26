@@ -359,8 +359,6 @@ mod testutils {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
-
     use proptest::arbitrary::any;
     use proptest::strategy::{Just, Strategy};
     use proptest::test_runner::Config;

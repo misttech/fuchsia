@@ -426,7 +426,6 @@ mod testutil {
 #[cfg(test)]
 mod test {
     use super::*;
-    use alloc::format;
 
     use packet::Serializer as _;
     use proptest::test_runner::Config;
