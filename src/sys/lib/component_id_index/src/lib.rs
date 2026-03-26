@@ -20,12 +20,14 @@ mod instance_id;
 
 pub use instance_id::{InstanceId, InstanceIdError};
 
-/// Component ID index entry, only used for persistence to JSON5 and FIDL..
+/// Component ID index entry
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct PersistedIndexEntry {
+pub struct IndexEntry {
     pub instance_id: InstanceId,
     pub moniker: Moniker,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub ignore_duplicate_id: bool,
 }
 
 /// Component ID index, only used for persistence to JSON5 and FIDL.
@@ -35,10 +37,10 @@ pub(crate) struct PersistedIndexEntry {
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct PersistedIndex {
-    instances: Vec<PersistedIndexEntry>,
+    instances: Vec<IndexEntry>,
 }
 
-/// An index that maps component monikers to instance IDs.
+/// A processed index of component instance IDs.
 ///
 /// Unlike [PersistedIndex], this type is validated to only contain unique instance IDs.
 #[cfg_attr(
@@ -46,13 +48,16 @@ pub(crate) struct PersistedIndex {
     derive(Deserialize, Serialize),
     serde(try_from = "PersistedIndex", into = "PersistedIndex")
 )]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Index {
-    /// Map of a moniker from the index to its instance ID.
-    moniker_to_instance_id: HashMap<Moniker, InstanceId>,
+    /// All of the entries in the index
+    instances: Vec<IndexEntry>,
 
-    /// All instance IDs, equivalent to the values of `moniker_to_instance_id`.
+    /// All instance IDs, derived from the contents of `instances`.
     instance_ids: HashSet<InstanceId>,
+
+    /// All monikers, derived from the contents of `instances`.
+    monikers: HashSet<Moniker>,
 }
 
 #[derive(Error, Clone, Debug)]
@@ -106,23 +111,22 @@ impl Index {
     }
 
     /// Insert an entry into the index.
-    pub fn insert(
-        &mut self,
-        moniker: Moniker,
-        instance_id: InstanceId,
-    ) -> Result<(), ValidationError> {
-        if !self.instance_ids.insert(instance_id.clone()) {
-            return Err(ValidationError::DuplicateId(instance_id));
+    pub fn insert(&mut self, entry: IndexEntry) -> Result<(), ValidationError> {
+        if !entry.ignore_duplicate_id {
+            if !self.instance_ids.insert(entry.instance_id.clone()) {
+                return Err(ValidationError::DuplicateId(entry.instance_id));
+            }
         }
-        if self.moniker_to_instance_id.insert(moniker.clone(), instance_id).is_some() {
-            return Err(ValidationError::DuplicateMoniker(moniker));
+        if !self.monikers.insert(entry.moniker.clone()) {
+            return Err(ValidationError::DuplicateMoniker(entry.moniker));
         }
+        self.instances.push(entry);
         Ok(())
     }
 
     /// Returns the instance ID for the moniker, if the index contains the moniker.
     pub fn id_for_moniker(&self, moniker: &Moniker) -> Option<&InstanceId> {
-        self.moniker_to_instance_id.get(&moniker)
+        self.instances.iter().find(|e| &e.moniker == moniker).map(|e| &e.instance_id)
     }
 
     /// Returns true if the index contains the instance ID.
@@ -130,14 +134,8 @@ impl Index {
         self.instance_ids.contains(id)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Moniker, &InstanceId)> {
-        self.moniker_to_instance_id.iter()
-    }
-}
-
-impl Default for Index {
-    fn default() -> Self {
-        Index { moniker_to_instance_id: HashMap::new(), instance_ids: HashSet::new() }
+    pub fn iter(&self) -> impl Iterator<Item = &IndexEntry> {
+        self.instances.iter()
     }
 }
 
@@ -147,21 +145,16 @@ impl TryFrom<PersistedIndex> for Index {
     fn try_from(value: PersistedIndex) -> Result<Self, Self::Error> {
         let mut index = Index::default();
         for entry in value.instances.into_iter() {
-            index.insert(entry.moniker, entry.instance_id)?;
+            index.insert(entry)?;
         }
         Ok(index)
     }
 }
 
 impl From<Index> for PersistedIndex {
-    fn from(value: Index) -> Self {
-        let mut instances = value
-            .moniker_to_instance_id
-            .into_iter()
-            .map(|(moniker, instance_id)| PersistedIndexEntry { instance_id, moniker })
-            .collect::<Vec<_>>();
-        instances.sort_by(|a, b| a.moniker.cmp(&b.moniker));
-        Self { instances }
+    fn from(mut value: Index) -> Self {
+        value.instances.sort_by(|a, b| a.moniker.cmp(&b.moniker));
+        Self { instances: value.instances }
     }
 }
 
@@ -197,35 +190,34 @@ impl MergeContext {
     // This method can be called multiple times to merge multiple indices.
     // The resulting index can be accessed with output().
     pub fn merge(&mut self, source_index_path: &Utf8Path, index: &Index) -> Result<(), MergeError> {
-        for (moniker, instance_id) in &index.moniker_to_instance_id {
-            self.output_index.insert(moniker.clone(), instance_id.clone()).map_err(
-                |err| match err {
-                    ValidationError::DuplicateMoniker(moniker) => {
-                        let previous_source_path =
-                            self.moniker_to_source_path.get(&moniker).cloned().unwrap_or_default();
-                        MergeError::DuplicateMoniker {
-                            moniker,
-                            source1: previous_source_path,
-                            source2: source_index_path.to_owned(),
-                        }
+        for instance in &index.instances {
+            self.output_index.insert(instance.clone()).map_err(|err| match err {
+                ValidationError::DuplicateMoniker(moniker) => {
+                    let previous_source_path =
+                        self.moniker_to_source_path.get(&moniker).cloned().unwrap_or_default();
+                    MergeError::DuplicateMoniker {
+                        moniker,
+                        source1: previous_source_path,
+                        source2: source_index_path.to_owned(),
                     }
-                    ValidationError::DuplicateId(instance_id) => {
-                        let previous_source_path = self
-                            .instance_id_to_source_path
-                            .get(&instance_id)
-                            .cloned()
-                            .unwrap_or_default();
-                        MergeError::DuplicateId {
-                            instance_id,
-                            source1: previous_source_path,
-                            source2: source_index_path.to_owned(),
-                        }
+                }
+                ValidationError::DuplicateId(instance_id) => {
+                    let previous_source_path = self
+                        .instance_id_to_source_path
+                        .get(&instance_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    MergeError::DuplicateId {
+                        instance_id,
+                        source1: previous_source_path,
+                        source2: source_index_path.to_owned(),
                     }
-                },
-            )?;
+                }
+            })?;
             self.instance_id_to_source_path
-                .insert(instance_id.clone(), source_index_path.to_owned());
-            self.moniker_to_source_path.insert(moniker.clone(), source_index_path.to_owned());
+                .insert(instance.instance_id.clone(), source_index_path.to_owned());
+            self.moniker_to_source_path
+                .insert(instance.moniker.clone(), source_index_path.to_owned());
         }
         Ok(())
     }
@@ -264,7 +256,7 @@ mod tests {
         let mut index = Index::default();
         let moniker = ["foo"].try_into().unwrap();
         let instance_id = InstanceId::new_random(&mut rand::rng());
-        index.insert(moniker, instance_id).unwrap();
+        index.insert(IndexEntry { moniker, instance_id, ignore_duplicate_id: false }).unwrap();
 
         ctx.merge(Utf8Path::new("/random/file/path"), &index)?;
         assert_eq!(ctx.output(), index.clone());
@@ -280,13 +272,17 @@ mod tests {
         let index1 = {
             let mut index = Index::default();
             let moniker = ["foo"].try_into().unwrap();
-            index.insert(moniker, id.clone()).unwrap();
+            index
+                .insert(IndexEntry { moniker, instance_id: id.clone(), ignore_duplicate_id: false })
+                .unwrap();
             index
         };
         let index2 = {
             let mut index = Index::default();
             let moniker = ["bar"].try_into().unwrap();
-            index.insert(moniker, id.clone()).unwrap();
+            index
+                .insert(IndexEntry { moniker, instance_id: id.clone(), ignore_duplicate_id: false })
+                .unwrap();
             index
         };
 
@@ -307,6 +303,34 @@ mod tests {
     }
 
     #[test]
+    fn merge_duplicate_id_with_ignore_flag() {
+        let source1 = Utf8Path::new("/a/b/c");
+        let source2 = Utf8Path::new("/d/e/f");
+
+        let id = InstanceId::new_random(&mut rand::rng());
+        let index1 = {
+            let mut index = Index::default();
+            let moniker = ["foo"].try_into().unwrap();
+            index
+                .insert(IndexEntry { moniker, instance_id: id.clone(), ignore_duplicate_id: false })
+                .unwrap();
+            index
+        };
+        let index2 = {
+            let mut index = Index::default();
+            let moniker = ["bar"].try_into().unwrap();
+            index
+                .insert(IndexEntry { moniker, instance_id: id.clone(), ignore_duplicate_id: true })
+                .unwrap();
+            index
+        };
+
+        let mut ctx = MergeContext::default();
+        ctx.merge(source1, &index1).expect("unexpected merge error");
+        ctx.merge(source2, &index2).expect("unexpected merge error");
+    }
+
+    #[test]
     fn merge_duplicate_moniker() -> Result<()> {
         let source1 = Utf8Path::new("/a/b/c");
         let source2 = Utf8Path::new("/d/e/f");
@@ -314,14 +338,26 @@ mod tests {
         let moniker: Moniker = ["foo"].try_into().unwrap();
         let index1 = {
             let mut index = Index::default();
-            let id = InstanceId::new_random(&mut rand::rng());
-            index.insert(moniker.clone(), id).unwrap();
+            let instance_id = InstanceId::new_random(&mut rand::rng());
+            index
+                .insert(IndexEntry {
+                    moniker: moniker.clone(),
+                    instance_id,
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
             index
         };
         let index2 = {
             let mut index = Index::default();
-            let id = InstanceId::new_random(&mut rand::rng());
-            index.insert(moniker.clone(), id).unwrap();
+            let instance_id = InstanceId::new_random(&mut rand::rng());
+            index
+                .insert(IndexEntry {
+                    moniker: moniker.clone(),
+                    instance_id,
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
             index
         };
 
@@ -381,20 +417,22 @@ mod tests {
         let expected_index = {
             let mut index = Index::default();
             index
-                .insert(
-                    "/a/b".parse::<Moniker>().unwrap(),
-                    "fb94044d62278b37c221c7fdeebdcf1304262f3e11416f68befa5ef88b7a2163"
+                .insert(IndexEntry {
+                    moniker: "/a/b".parse::<Moniker>().unwrap(),
+                    instance_id: "fb94044d62278b37c221c7fdeebdcf1304262f3e11416f68befa5ef88b7a2163"
                         .parse::<InstanceId>()
                         .unwrap(),
-                )
+                    ignore_duplicate_id: false,
+                })
                 .unwrap();
             index
-                .insert(
-                    "/c/d".parse::<Moniker>().unwrap(),
-                    "4f915af6c4b682867ab7ad2dc9cbca18342ddd9eec61724f19d231cf6d07f122"
+                .insert(IndexEntry {
+                    moniker: "/c/d".parse::<Moniker>().unwrap(),
+                    instance_id: "4f915af6c4b682867ab7ad2dc9cbca18342ddd9eec61724f19d231cf6d07f122"
                         .parse::<InstanceId>()
                         .unwrap(),
-                )
+                    ignore_duplicate_id: false,
+                })
                 .unwrap();
             index
         };
@@ -415,7 +453,9 @@ mod tests {
             for i in 0..5 {
                 let moniker: Moniker = [i.to_string().as_str()].try_into().unwrap();
                 let instance_id = InstanceId::new_random(&mut rand::rng());
-                index.insert(moniker, instance_id).unwrap();
+                index
+                    .insert(IndexEntry { moniker, instance_id, ignore_duplicate_id: false })
+                    .unwrap();
             }
             index
         };

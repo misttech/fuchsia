@@ -433,10 +433,11 @@ async fn use_restricted_storage_start_failure() {
     let index = {
         let mut index = component_id_index::Index::default();
         index
-            .insert(
-                Moniker::parse_str("/parent_consumer").unwrap(),
-                parent_consumer_instance_id.clone(),
-            )
+            .insert(component_id_index::IndexEntry {
+                moniker: Moniker::parse_str("/parent_consumer").unwrap(),
+                instance_id: parent_consumer_instance_id.clone(),
+                ignore_duplicate_id: false,
+            })
             .unwrap();
         index
     };
@@ -523,10 +524,11 @@ async fn open_storage_subdirectory() {
     let index = {
         let mut index = component_id_index::Index::default();
         index
-            .insert(
-                Moniker::parse_str("/child_consumer").unwrap(),
-                parent_consumer_instance_id.clone(),
-            )
+            .insert(component_id_index::IndexEntry {
+                moniker: Moniker::parse_str("/child_consumer").unwrap(),
+                instance_id: parent_consumer_instance_id.clone(),
+                ignore_duplicate_id: false,
+            })
             .unwrap();
         index
     };
@@ -838,7 +840,13 @@ async fn storage_persistence_instance_id_path() {
     let instance_id = InstanceId::new_random(&mut rand::rng());
     let index = {
         let mut index = component_id_index::Index::default();
-        index.insert(["b", "persistent_coll:c"].try_into().unwrap(), instance_id.clone()).unwrap();
+        index
+            .insert(component_id_index::IndexEntry {
+                moniker: ["b", "persistent_coll:c"].try_into().unwrap(),
+                instance_id: instance_id.clone(),
+                ignore_duplicate_id: false,
+            })
+            .unwrap();
         index
     };
     let component_id_index_path = make_index_file(index).unwrap();
@@ -1013,7 +1021,13 @@ async fn storage_persistence_inheritance() {
     let instance_id = InstanceId::new_random(&mut rand::rng());
     let index = {
         let mut index = component_id_index::Index::default();
-        index.insert(["b", "persistent_coll:c"].try_into().unwrap(), instance_id.clone()).unwrap();
+        index
+            .insert(component_id_index::IndexEntry {
+                moniker: ["b", "persistent_coll:c"].try_into().unwrap(),
+                instance_id: instance_id.clone(),
+                ignore_duplicate_id: false,
+            })
+            .unwrap();
         index
     };
     let component_id_index_path = make_index_file(index).unwrap();
@@ -1225,7 +1239,13 @@ async fn storage_persistence_disablement() {
     let instance_id = InstanceId::new_random(&mut rand::rng());
     let index = {
         let mut index = component_id_index::Index::default();
-        index.insert(["b", "persistent_coll:c"].try_into().unwrap(), instance_id.clone()).unwrap();
+        index
+            .insert(component_id_index::IndexEntry {
+                moniker: ["b", "persistent_coll:c"].try_into().unwrap(),
+                instance_id: instance_id.clone(),
+                ignore_duplicate_id: false,
+            })
+            .unwrap();
         index
     };
     let component_id_index_path = make_index_file(index).unwrap();

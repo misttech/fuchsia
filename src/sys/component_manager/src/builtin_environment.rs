@@ -74,21 +74,8 @@ use elf_runner::crash_info::CrashRecords;
 use elf_runner::process_launcher::ProcessLauncher;
 use elf_runner::vdso_vmo::{get_next_vdso_vmo, get_stable_vdso_vmo, get_vdso_vmo};
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream, ServerEnd};
-use fidl_fuchsia_boot as fboot;
-use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_internal::BuiltinBootResolver;
-use fidl_fuchsia_component_resolution as fresolution;
 use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
-use fidl_fuchsia_component_runtime as fruntime;
-use fidl_fuchsia_component_sandbox as fsandbox;
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_kernel as fkernel;
-use fidl_fuchsia_pkg as fpkg;
-use fidl_fuchsia_process as fprocess;
-use fidl_fuchsia_sys2 as fsys;
-use fidl_fuchsia_time as ftime;
-use fidl_fuchsia_update_verify as fupdate;
-use fuchsia_async as fasync;
 use fuchsia_component::server::*;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::stats::InspectorExt;
@@ -106,6 +93,14 @@ use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path;
 use zx::{self, Resource};
+use {
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
+    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_runtime as fruntime,
+    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
+    fidl_fuchsia_kernel as fkernel, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_process as fprocess,
+    fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime, fidl_fuchsia_update_verify as fupdate,
+    fuchsia_async as fasync,
+};
 
 #[cfg(feature = "tracing")]
 use {
@@ -1184,8 +1179,9 @@ impl BuiltinEnvironment {
         model.root().hooks.install(component_escrow_duration_status.hooks());
 
         let component_id_index_node = inspector.root().create_child("component_id_index");
-        for (moniker, instance_id) in model.component_id_index().iter() {
-            component_id_index_node.record_string(moniker.to_string(), instance_id.to_string());
+        for instance in model.component_id_index().iter() {
+            component_id_index_node
+                .record_string(instance.moniker.to_string(), instance.instance_id.to_string());
         }
         inspector.root().record(component_id_index_node);
 

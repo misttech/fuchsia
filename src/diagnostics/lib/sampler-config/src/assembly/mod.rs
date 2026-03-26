@@ -289,6 +289,7 @@ pub struct MergedSamplerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use component_id_index::IndexEntry;
     use moniker::Moniker;
     use selectors::FastError;
     use std::str::FromStr;
@@ -542,19 +543,21 @@ mod tests {
         let mut ids = component_id_index::Index::default();
         let foo_bar_moniker = Moniker::parse_str("foo/bar").unwrap();
         let qwer_asdf_moniker = Moniker::parse_str("qwer/asdf").unwrap();
-        ids.insert(
-            foo_bar_moniker,
-            "1234123412341234123412341234123412341234123412341234123412341234"
+        ids.insert(IndexEntry {
+            moniker: foo_bar_moniker,
+            instance_id: "1234123412341234123412341234123412341234123412341234123412341234"
                 .parse::<InstanceId>()
                 .unwrap(),
-        )
+            ignore_duplicate_id: false,
+        })
         .unwrap();
-        ids.insert(
-            qwer_asdf_moniker,
-            "1234abcd1234abcd123412341234123412341234123412341234123412341234"
+        ids.insert(IndexEntry {
+            moniker: qwer_asdf_moniker,
+            instance_id: "1234abcd1234abcd123412341234123412341234123412341234123412341234"
                 .parse::<InstanceId>()
                 .unwrap(),
-        )
+            ignore_duplicate_id: false,
+        })
         .unwrap();
         let mut components = ComponentIdInfoList(vec![
             ComponentIdInfo {

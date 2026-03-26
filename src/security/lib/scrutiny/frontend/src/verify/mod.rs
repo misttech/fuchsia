@@ -119,9 +119,6 @@ mod tests {
     use cm_types::Url;
     use component_id_index::InstanceId;
     use fidl::persist;
-    use fidl_fuchsia_component_decl as fdecl;
-    use fidl_fuchsia_component_internal as component_internal;
-    use fidl_fuchsia_io as fio;
     use maplit::hashset;
     use routing::component_instance::ComponentInstanceInterface;
     use scrutiny_collection::core::{
@@ -138,6 +135,10 @@ mod tests {
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use {
+        fidl_fuchsia_component_decl as fdecl,
+        fidl_fuchsia_component_internal as component_internal, fidl_fuchsia_io as fio,
+    };
 
     static CORE_DEP_STR: &str = "core_dep";
 
@@ -458,7 +459,13 @@ mod tests {
         let iid = "0".repeat(64).parse::<InstanceId>().unwrap();
         let component_id_index = {
             let mut index = component_id_index::Index::default();
-            index.insert(Moniker::parse_str("a/b/c").unwrap(), iid.clone()).unwrap();
+            index
+                .insert(component_id_index::IndexEntry {
+                    moniker: Moniker::parse_str("a/b/c").unwrap(),
+                    instance_id: iid.clone(),
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
             index
         };
         let model = single_v2_component_model(None, Some("/boot/index_path"), component_id_index)?;

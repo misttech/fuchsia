@@ -41,7 +41,7 @@ impl ComponentIdIndexBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use component_id_index::InstanceId;
+    use component_id_index::{IndexEntry, InstanceId};
     use moniker::Moniker;
     use pretty_assertions::assert_eq;
     use std::io::Write;
@@ -54,7 +54,7 @@ mod tests {
                 format!("00000000000000000000000000000000000000000000000000000000000000{:02x}", i)
                     .parse::<InstanceId>()
                     .unwrap();
-            index.insert(moniker, instance_id).unwrap();
+            index.insert(IndexEntry { moniker, instance_id, ignore_duplicate_id: false }).unwrap();
         }
         index
     }

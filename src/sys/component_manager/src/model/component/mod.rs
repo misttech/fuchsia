@@ -1822,7 +1822,13 @@ pub mod tests {
         let instance_id = InstanceId::new_random(&mut rand::rng());
         let index = {
             let mut index = component_id_index::Index::default();
-            index.insert(Moniker::root(), instance_id.clone()).unwrap();
+            index
+                .insert(component_id_index::IndexEntry {
+                    moniker: Moniker::root(),
+                    instance_id: instance_id.clone(),
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
             index
         };
         let component_id_index_path = make_index_file(index).unwrap();

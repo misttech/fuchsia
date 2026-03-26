@@ -656,7 +656,13 @@ mod tests {
         let iid = format!("1234{}", "5".repeat(60)).parse::<InstanceId>().unwrap();
         let index = {
             let mut index = component_id_index::Index::default();
-            index.insert(Moniker::parse_str("/").unwrap(), iid.clone()).unwrap();
+            index
+                .insert(component_id_index::IndexEntry {
+                    moniker: Moniker::parse_str("/").unwrap(),
+                    instance_id: iid.clone(),
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
             index
         };
         let index_file = make_index_file(index).unwrap();

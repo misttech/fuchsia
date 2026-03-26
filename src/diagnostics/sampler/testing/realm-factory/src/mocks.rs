@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use component_id_index::{Index, InstanceId};
+use component_id_index::{Index, IndexEntry, InstanceId};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{SinkExt, StreamExt, TryStreamExt};
@@ -21,11 +21,23 @@ pub(crate) fn fake_index() -> Index {
     let id: InstanceId =
         InstanceId::from_str("1111222233334444111111111111111111111111111111111111111111111111")
             .unwrap();
-    index.insert(Moniker::try_from("integer_42").unwrap(), id).unwrap();
+    index
+        .insert(IndexEntry {
+            moniker: Moniker::try_from("integer_42").unwrap(),
+            instance_id: id,
+            ignore_duplicate_id: false,
+        })
+        .unwrap();
     let id: InstanceId =
         InstanceId::from_str("2222222233334444111111111111111111111111111111111111111111112222")
             .unwrap();
-    index.insert(Moniker::try_from("not_listed_1").unwrap(), id).unwrap();
+    index
+        .insert(IndexEntry {
+            moniker: Moniker::try_from("not_listed_1").unwrap(),
+            instance_id: id,
+            ignore_duplicate_id: false,
+        })
+        .unwrap();
     index
 }
 

@@ -27,4 +27,8 @@ type InstanceIdEntry = table {
 
     /// The moniker identifying the component instance.
     3: moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
+
+    /// Do not generate an error if this entry has the same instance ID as
+    /// another.
+    4: ignore_duplicate_id bool;
 };

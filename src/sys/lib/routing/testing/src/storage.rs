@@ -4,7 +4,7 @@
 
 use crate::component_id_index::make_index_file;
 use crate::{
-    generate_storage_path, CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
+    CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder, generate_storage_path,
 };
 use cm_config::{CapabilityAllowlistKey, CapabilityAllowlistSource};
 use cm_rust::*;
@@ -61,11 +61,13 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .build(),
             ),
         ];
-        let namespace_capabilities = vec![CapabilityBuilder::directory()
-            .name("tmp")
-            .path("/tmp")
-            .rights(fio::RW_STAR_DIR)
-            .build()];
+        let namespace_capabilities = vec![
+            CapabilityBuilder::directory()
+                .name("tmp")
+                .path("/tmp")
+                .rights(fio::RW_STAR_DIR)
+                .build(),
+        ];
         let mut builder = T::new("a", components);
         builder.set_namespace_capabilities(namespace_capabilities);
         let model = builder.build().await;
@@ -1148,11 +1150,13 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
                     .build(),
             ),
         ];
-        let namespace_capabilities = vec![CapabilityBuilder::directory()
-            .name("tmp")
-            .path("/tmp")
-            .rights(fio::RW_STAR_DIR)
-            .build()];
+        let namespace_capabilities = vec![
+            CapabilityBuilder::directory()
+                .name("tmp")
+                .path("/tmp")
+                .rights(fio::RW_STAR_DIR)
+                .build(),
+        ];
         let mut builder = T::new("a", components);
         builder.set_namespace_capabilities(namespace_capabilities);
         builder.add_capability_policy(
@@ -1194,7 +1198,13 @@ impl<T: RoutingTestModelBuilder> CommonStorageTest<T> {
         let b_instance_id = InstanceId::new_random(&mut rand::rng());
         let component_id_index = {
             let mut index = component_id_index::Index::default();
-            index.insert(Moniker::parse_str("/b").unwrap(), b_instance_id.clone()).unwrap();
+            index
+                .insert(component_id_index::IndexEntry {
+                    moniker: Moniker::parse_str("/b").unwrap(),
+                    instance_id: b_instance_id.clone(),
+                    ignore_duplicate_id: false,
+                })
+                .unwrap();
             index
         };
         let component_id_index_path = make_index_file(component_id_index).unwrap();

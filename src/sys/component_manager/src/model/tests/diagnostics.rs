@@ -317,7 +317,13 @@ mod tests {
     async fn component_id_index_is_populated_with_assigned_ids() {
         let mut index = component_id_index::Index::default();
         let instance_id = InstanceId::new_random(&mut rand::rng());
-        index.insert(Moniker::parse_str("/a").unwrap(), instance_id.clone()).unwrap();
+        index
+            .insert(component_id_index::IndexEntry {
+                moniker: Moniker::parse_str("/a").unwrap(),
+                instance_id: instance_id.clone(),
+                ignore_duplicate_id: false,
+            })
+            .unwrap();
         let component_id_index_path = make_index_file(index).expect("make index file");
 
         let test = RoutingTestBuilder::new("a", vec![])

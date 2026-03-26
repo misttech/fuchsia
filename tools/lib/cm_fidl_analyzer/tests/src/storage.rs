@@ -7,7 +7,7 @@ mod tests {
     use cm_fidl_analyzer::route::TargetDecl;
     use cm_rust::{CapabilityDecl, CapabilityTypeName, OfferSource, StorageDirectorySource};
     use cm_rust_testing::*;
-    use component_id_index::InstanceId;
+    use component_id_index::{IndexEntry, InstanceId};
     use moniker::Moniker;
     use routing::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
     use routing::component_instance::ComponentInstanceInterface;
@@ -156,10 +156,11 @@ mod tests {
         let index = {
             let mut index = component_id_index::Index::default();
             index
-                .insert(
-                    Moniker::parse_str("parent_consumer").unwrap(),
-                    parent_consumer_instance_id.clone(),
-                )
+                .insert(component_id_index::IndexEntry {
+                    moniker: Moniker::parse_str("parent_consumer").unwrap(),
+                    instance_id: parent_consumer_instance_id.clone(),
+                    ignore_duplicate_id: false,
+                })
                 .unwrap();
             index
         };
@@ -283,10 +284,11 @@ mod tests {
         let index = {
             let mut index = component_id_index::Index::default();
             index
-                .insert(
-                    Moniker::parse_str("storage_provider").unwrap(),
-                    storage_provider_instance_id.clone(),
-                )
+                .insert(IndexEntry {
+                    moniker: Moniker::parse_str("storage_provider").unwrap(),
+                    instance_id: storage_provider_instance_id.clone(),
+                    ignore_duplicate_id: false,
+                })
                 .unwrap();
             index
         };
