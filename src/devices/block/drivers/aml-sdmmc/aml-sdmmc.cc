@@ -61,34 +61,6 @@ inline uint32_t AbsDifference(uint32_t a, uint32_t b) { return a > b ? a - b : b
 
 namespace aml_sdmmc {
 
-zx_status_t AmlSdmmc::AcquireInitLease(
-    const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client,
-    fidl::ClientEnd<fuchsia_power_broker::LeaseControl>& lease_control_client_end) {
-  if (lease_control_client_end.is_valid()) {
-    return ZX_ERR_ALREADY_BOUND;
-  }
-
-  const fuchsia_power_broker::PowerLevel power_level =
-      three_level_power_ ? AmlSdmmc::kPowerLevelBoot : AmlSdmmc::kPowerLevelOn;
-
-  const fidl::WireResult result = lessor_client->Lease(power_level);
-  if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Call to Lease failed: %s", result.status_string());
-    return result.status();
-  }
-  if (result->is_error()) {
-    FDF_LOGL(ERROR, logger(), "Lease returned error: %s",
-             fdf_power::LeaseErrorToString(result->error_value()));
-    return ZX_ERR_INTERNAL;
-  }
-  if (!result->value()->lease_control.is_valid()) {
-    FDF_LOGL(ERROR, logger(), "Lease returned invalid lease control client end.");
-    return ZX_ERR_BAD_STATE;
-  }
-  lease_control_client_end = std::move(result->value()->lease_control);
-  return ZX_OK;
-}
-
 zx::result<> AmlSdmmc::Start() {
   parent_.Bind(std::move(node()));
 
@@ -297,77 +269,18 @@ zx::result<> AmlSdmmc::InitResources(
     }
   }
 
+  // TODO(https://fxbug.dev/477354367) Remove once this bug is closed, there
+  // should not be any children asking us directly for tokens.
   {
-    auto result = ConfigurePowerManagement(pdev);
-
-    if (result.is_ok()) {
+    // Always use the power element token if we have it.
+    if (power_element_token().has_value()) {
+      hardware_power_assertive_token_ = std::move(power_element_token().value());
       FDF_LOGL(INFO, logger(), "Configured power management successfully.");
     } else if (config_.enable_suspend()) {
-      // Only log and return error on a failed power configuration if enable_suspend was true.
-      FDF_LOGL(ERROR, logger(), "Failed to configure power management: %s", result.status_string());
-      return result.take_error();
+      // If we don't have a valid token and suspend is enabled, this is an error.
+      FDF_LOGL(ERROR, logger(), "Failed to configure power management, power token unavailable.");
+      return zx::error(ZX_ERR_NOT_FOUND);
     }
-  }
-
-  return zx::success();
-}
-
-zx::result<> AmlSdmmc::ConfigurePowerManagement(fdf::PDev& pdev) {
-  // Retrieves our power configuration from data supplied by the board driver,
-  // registers the configuration with the power framework, and then returns the
-  // resources we need to manage the power elements.
-  fit::result<fdf_power::Error, std::vector<fdf_power::ElementDesc>> result =
-      pdev.GetAndApplyPowerConfiguration(*incoming());
-
-  if (result.is_error()) {
-    if (result.error_value() == fdf_power::Error::CONFIGURATION_UNAVAILABLE) {
-      // Some devices (eg. SDIO, SD) may not have a power configuration, so don't
-      // fail initialization.
-      FDF_LOGL(INFO, logger(), "No power config for this device.");
-      return zx::success();
-    }
-
-    FDF_LOGL(ERROR, logger(), "Failure creating power elements: %s",
-             fdf_power::ErrorToString(result.error_value()));
-    return fdf_power::ErrorToZxError(result.error_value());
-  }
-
-  if (result.value().empty()) {
-    FDF_LOGL(ERROR, logger(), "Device power config is available, but empty.");
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-
-  for (auto& config : result.value()) {
-    if (config.element_config.element.name == kHardwarePowerElementName) {
-      hardware_power_element_control_client_ =
-          fidl::WireSyncClient<fuchsia_power_broker::ElementControl>(
-              std::move(config.element_control_client.value()));
-      hardware_power_lessor_client_ = fidl::WireSyncClient<fuchsia_power_broker::Lessor>(
-          std::move(config.lessor_client.value()));
-      hardware_power_element_runner_server_binding_.emplace(
-          fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-          std::move(config.element_runner_server.value()), this, fidl::kIgnoreBindingClosure);
-      hardware_power_assertive_token_ = std::move(config.assertive_token);
-      if (config.element_config.element.levels.size() == 3) {
-        three_level_power_ = true;
-      }
-    } else {
-      FDF_LOGL(ERROR, logger(), "Unexpected power element: %s",
-               config.element_config.element.name.c_str());
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-  }
-
-  // Maintain a lease on the hardware power element until:
-  //   - power level goes to the maximum level if we support three power levels
-  //   - a child driver obtains a power dependency token to it via the
-  //     GetToken() call if we support two levels.
-  zx_status_t status =
-      AcquireInitLease(hardware_power_lessor_client_, hardware_power_lease_control_client_end_);
-  if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to acquire lease on hardware power: %s",
-             zx_status_get_string(status));
-    return zx::error(status);
   }
 
   return zx::success();
@@ -375,6 +288,7 @@ zx::result<> AmlSdmmc::ConfigurePowerManagement(fdf::PDev& pdev) {
 
 void AmlSdmmc::GetToken(GetTokenCompleter::Sync& completer) {
   if (!hardware_power_assertive_token_.is_valid()) {
+    FDF_LOGL(ERROR, logger(), "Token provided by driver framework is invalid");
     completer.Reply(fit::error(ZX_ERR_BAD_HANDLE));
     return;
   }
@@ -383,19 +297,13 @@ void AmlSdmmc::GetToken(GetTokenCompleter::Sync& completer) {
 
   // Drop the lease on the hardware power element, and allow the caller to declare a dependency on
   // it using the power dependency token returned in this call.
-  if (!three_level_power_ && hardware_power_lease_control_client_end_.is_valid()) {
-    hardware_power_lease_control_client_end_.channel().reset();
-  }
   completer.Reply(
       fit::success(fuchsia_hardware_power::PowerTokenProviderGetTokenResponse{std::move(dupe)}));
 }
 
-void AmlSdmmc::SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
-                        SetLevelCompleter::Sync& set_level_completer) {
-  const fuchsia_power_broker::PowerLevel required_level = request.level();
+zx_status_t AmlSdmmc::SetLevel(fuchsia_power_broker::PowerLevel required_level) {
   switch (required_level) {
-    case kPowerLevelOn:
-    case kPowerLevelBoot: {
+    case kPowerLevelOn: {
       const zx::time start = zx::clock::get_monotonic();
 
       // If tuning was delayed, will do it now.
@@ -407,22 +315,8 @@ void AmlSdmmc::SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& requ
         const zx::duration duration = zx::clock::get_monotonic() - start;
         FDF_LOGL(ERROR, logger(), "Failed to resume power after %ld us: %s", duration.to_usecs(),
                  zx_status_get_string(status));
-        set_level_completer.Close(ZX_ERR_INTERNAL);
-        return;
+        return ZX_ERR_INTERNAL;
       }
-
-      // Drop lease if we're transitioning to power level ON and we still
-      // have the lease we acquired during init. If we support three
-      // levels, we leased the element at the intermediate level, meaning
-      // if we're going to the highest level, something else is causing
-      // the rise and we no longer need our own lease.
-      if (three_level_power_ && required_level == kPowerLevelOn &&
-          hardware_power_lease_control_client_end_.is_valid()) {
-        hardware_power_lease_control_client_end_.reset();
-      }
-
-      // Communicate to Power Broker that the hardware power level has been raised.
-      set_level_completer.Reply();
 
       // Serve delayed requests that were received during power suspension, if any.
       if (delayed_requests_.size()) {
@@ -439,25 +333,16 @@ void AmlSdmmc::SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& requ
       zx_status_t status = SuspendPower();
       if (status != ZX_OK) {
         FDF_LOGL(ERROR, logger(), "Failed to suspend power: %s", zx_status_get_string(status));
-        set_level_completer.Close(ZX_ERR_INTERNAL);
-        return;
+        return ZX_ERR_INTERNAL;
       }
-      // Communicate to Power Broker that the hardware power level has been lowered.
-      set_level_completer.Reply();
       break;
     }
     default:
       FDF_LOGL(ERROR, logger(), "Unexpected power level for hardware power element: %u",
                required_level);
-      set_level_completer.Close(ZX_ERR_INVALID_ARGS);
-      return;
+      return ZX_ERR_INVALID_ARGS;
   }
-}
-
-void AmlSdmmc::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-    fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOGL(ERROR, logger(), "ElementRunner received unknown method %lu", metadata.method_ordinal);
+  return ZX_OK;
 }
 
 void AmlSdmmc::ServeDelayedRequests() {

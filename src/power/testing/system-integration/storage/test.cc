@@ -18,7 +18,7 @@ class PowerSystemIntegration : public system_integration_utils::TestLoopBase, pu
   void SetUp() override {
     Initialize();
     fence_ = PrepareDriver("mmc-ffe07000", "fuchsia-boot:///aml-sdmmc#meta/aml-sdmmc.cm",
-                           /*expect_new_koid=*/true);
+                           /*expect_new_koid=*/true, /*use_df_elements=*/true);
 
     // Helps logs settle a bit, not necessary.
     RunLoopWithTimeout(zx::msec(500));
@@ -62,8 +62,7 @@ TEST_F(PowerSystemIntegration, StorageSuspendResumeTest) {
                                                          "execution_state", "power_level"};
 
   const std::string pb_moniker = "power-broker";
-  const auto aml_sdmmc_element_id =
-      GetPowerElementId(test_reader, pb_moniker, "aml-sdmmc-hardware");
+  const auto aml_sdmmc_element_id = GetPowerElementId(test_reader, pb_moniker, "mmc-ffe07000");
   ASSERT_TRUE(aml_sdmmc_element_id.is_ok());
   const std::vector<std::string> aml_sdmmc_required_level = {
       "root",     "broker",

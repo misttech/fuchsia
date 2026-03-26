@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.component.sandbox/cpp/fidl.h>
 #include <fidl/fuchsia.diagnostics/cpp/fidl.h>
 #include <fidl/fuchsia.driver.development/cpp/fidl.h>
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/test.sagcontrol/cpp/fidl.h>
 #include <fidl/test.sagcontrol/cpp/natural_ostream.h>
 #include <fidl/test.suspendcontrol/cpp/fidl.h>
@@ -71,7 +72,7 @@ class TestLoopBase : public loop_fixture::RealLoop {
   // the target driver and children are restarted again and lose access to the test-specific
   // power protocols.
   zx::eventpair PrepareDriver(std::string_view node_filter, std::string_view driver_url_suffix,
-                              bool expect_new_koid);
+                              bool expect_new_koid, bool use_df_elements = false);
 
   // Create and export a component framework dictionary that contains connectors for the various
   // power framework protocols, that are connected to the test-specific SAG and power broker that
@@ -87,6 +88,7 @@ class TestLoopBase : public loop_fixture::RealLoop {
   fidl::ClientEnd<test_sagcontrol::State> sag_control_state_client_end_;
   fidl::ClientEnd<test_suspendcontrol::Device> suspend_device_client_end_;
   fidl::ClientEnd<fuchsia_driver_development::Manager> driver_manager_client_end_;
+  fidl::ClientEnd<fuchsia_power_system::CpuElementManager> cpu_element_manager_client_end_;
 
   async_patterns::DispatcherBound<Connector> sag_connector_{sandbox_connector_loop_.dispatcher()};
   async_patterns::DispatcherBound<Connector> broker_connector_{

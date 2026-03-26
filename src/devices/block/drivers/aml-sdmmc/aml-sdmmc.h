@@ -18,6 +18,7 @@
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
+#include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/stdcompat/span.h>
@@ -42,7 +43,7 @@ namespace aml_sdmmc {
 class AmlSdmmc : public fdf::DriverBase,
                  public fdf::WireServer<fuchsia_hardware_sdmmc::Sdmmc>,
                  public fidl::Server<fuchsia_hardware_power::PowerTokenProvider>,
-                 public fidl::Server<fuchsia_power_broker::ElementRunner> {
+                 public fdf_power::Suspendable<AmlSdmmc> {
  public:
   // Note: This name can't be changed without migrating users in other repos.
   static constexpr char kDriverName[] = "aml-sd-emmc";
@@ -50,15 +51,9 @@ class AmlSdmmc : public fdf::DriverBase,
   // Limit maximum number of descriptors to 512 for now
   static constexpr size_t kMaxDmaDescriptors = 512;
 
-  static constexpr char kHardwarePowerElementName[] = "aml-sdmmc-hardware";
-
   // Levels for hardware power element.
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOff = 0;
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
-  // Note that this power level actually represents a LOWER power
-  // state than kPowerLevelOn, based on the order the level is
-  // supplied when the element is created.
-  static constexpr fuchsia_power_broker::PowerLevel kPowerLevelBoot = 2;
 
   AmlSdmmc(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
@@ -123,6 +118,15 @@ class AmlSdmmc : public fdf::DriverBase,
 
   zx_status_t SuspendPower() __TA_REQUIRES(lock_);
   zx_status_t ResumePower() __TA_REQUIRES(lock_);
+  void Suspend(fdf_power::SuspendCompleter completer) override {
+    SetLevel(kPowerLevelOff);
+    completer();
+  }
+  void Resume(fdf_power::ResumeCompleter completer) override {
+    SetLevel(kPowerLevelOn);
+    completer();
+  }
+  bool SuspendEnabled() override { return has_power_args(); }
 
   // Visible for tests
   zx_status_t Init(const std::string& instance_identifier) __TA_EXCLUDES(lock_);
@@ -161,7 +165,6 @@ class AmlSdmmc : public fdf::DriverBase,
 
   fuchsia_hardware_sdmmc::wire::SdmmcHostInfo dev_info_;
   bool power_suspended_ __TA_GUARDED(lock_) = false;
-  bool three_level_power_ = false;
 
   // TODO(https://fxbug.dev/42084501): Remove redundant locking when Banjo is removed.
   std::mutex lock_ __TA_ACQUIRED_AFTER(tuning_lock_);
@@ -252,13 +255,6 @@ class AmlSdmmc : public fdf::DriverBase,
 
   zx::result<> InitResources(
       fidl::ClientEnd<fuchsia_hardware_platform_device::Device> pdev_client_end);
-  // TODO(b/309152899): Once fuchsia.power.SuspendEnabled config cap is available, have this method
-  // return failure if power management could not be configured. Use fuchsia.power.SuspendEnabled to
-  // ignore this failure when expected.
-  // Register power configs from the board driver with Power Broker, and begin the continuous
-  // power level adjustment of hardware. For boards/products that don't support the Power Framework,
-  // this method simply returns success.
-  zx::result<> ConfigurePowerManagement(fdf::PDev& pdev);
 
   void Serve(fdf::ServerEnd<fuchsia_hardware_sdmmc::Sdmmc> request);
 
@@ -304,23 +300,7 @@ class AmlSdmmc : public fdf::DriverBase,
   zx::result<std::array<uint32_t, kResponseCount>> WaitForInterrupt(
       const fuchsia_hardware_sdmmc::wire::SdmmcReq& req) __TA_REQUIRES(lock_);
 
-  // Acquires a lease on a power element via the supplied |lessor_client|, storing the resulting
-  // lease control client end in |lease_control_client_end|. That is unless
-  // |lease_control_client_end| is valid to begin with (i.e., a lease had already been acquired), in
-  // which case ZX_ERR_ALREADY_BOUND is returned instead.
-  // This should only be used during driver initialization until a higher level component can
-  // manage our power state
-  zx_status_t AcquireInitLease(
-      const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client,
-      fidl::ClientEnd<fuchsia_power_broker::LeaseControl>& lease_control_client_end);
-
-  // Implement fuchsia.power.broker.ElementRunner, allowing Power Broker
-  // to set this device's power level.
-  void SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
-                SetLevelCompleter::Sync& completer) override;
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override;
+  zx_status_t SetLevel(fuchsia_power_broker::PowerLevel required_level);
 
   // Serves requests that were delayed because they were received during suspended state.
   void ServeDelayedRequests() __TA_REQUIRES(tuning_lock_, lock_);
@@ -340,13 +320,7 @@ class AmlSdmmc : public fdf::DriverBase,
   std::vector<std::variant<SdmmcRequestInfo, SdmmcTaskInfo>> delayed_requests_;
   uint32_t clk_div_saved_ = 0;
 
-  fidl::WireSyncClient<fuchsia_power_broker::ElementControl> hardware_power_element_control_client_;
-  fidl::WireSyncClient<fuchsia_power_broker::Lessor> hardware_power_lessor_client_;
-  std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
-      hardware_power_element_runner_server_binding_;
   zx::event hardware_power_assertive_token_;
-
-  fidl::ClientEnd<fuchsia_power_broker::LeaseControl> hardware_power_lease_control_client_end_;
 
   bool shutdown_ __TA_GUARDED(lock_) = false;
   std::array<SdmmcVmoStore, fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId + 1> registered_vmos_

@@ -5,6 +5,7 @@
 #include "test_util.h"
 
 #include <fidl/fuchsia.hardware.power.suspend/cpp/fidl.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/test.suspendcontrol/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -54,6 +55,12 @@ void TestLoopBase::Initialize() {
     auto result = component::Connect<fuchsia_driver_development::Manager>();
     ASSERT_EQ(ZX_OK, result.status_value());
     driver_manager_client_end_ = std::move(result.value());
+  }
+
+  {
+    auto result = component::Connect<fuchsia_power_system::CpuElementManager>();
+    ASSERT_EQ(ZX_OK, result.status_value());
+    cpu_element_manager_client_end_ = std::move(result.value());
   }
 
   {
@@ -255,8 +262,8 @@ zx::result<std::string> TestLoopBase::GetPowerElementId(diagnostics::reader::Arc
 }
 
 zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
-                                          std::string_view driver_url_suffix,
-                                          bool expect_new_koid) {
+                                          std::string_view driver_url_suffix, bool expect_new_koid,
+                                          bool use_df_elements) {
   // Find the node running our target driver.
   std::cout << "Preparing driver '" << driver_url_suffix << "' for test..." << std::endl;
   std::optional<std::string> found = std::nullopt;
@@ -283,9 +290,40 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
   std::cout << "restarting driver with test dictionary..." << std::endl;
   // Setup the power dictionary and restart the node with this dictionary.
   auto dict_ref = CreateDictionaryForTest();
-  auto result =
-      fidl::Call(driver_manager_client_end_)->RestartWithDictionary({*found, std::move(dict_ref)});
-  EXPECT_EQ(true, result.is_ok());
+  zx::eventpair release_fence;
+  if (use_df_elements) {
+    // Retrieve the CPU token to override.
+    auto cpu_token_result = fidl::Call(cpu_element_manager_client_end_)->GetCpuDependencyToken();
+    EXPECT_TRUE(cpu_token_result.is_ok());
+    EXPECT_TRUE(cpu_token_result->assertive_dependency_token().has_value());
+
+    zx::event cpu_token_override;
+    if (zx_status_t status = cpu_token_result->assertive_dependency_token()->duplicate(
+            ZX_RIGHT_SAME_RIGHTS, &cpu_token_override);
+        status != ZX_OK) {
+      EXPECT_EQ(ZX_OK, status);
+      return {};
+    }
+
+    auto result = fidl::Call(driver_manager_client_end_)
+                      ->RestartWithDictionaryAndPowerDependencies(
+                          {*found, std::move(dict_ref), {}, std::move(cpu_token_override)});
+    EXPECT_EQ(true, result.is_ok());
+
+    if (result.is_error()) {
+      return {};
+    }
+    release_fence = std::move(result.value().release_fence());
+  } else {
+    auto result = fidl::Call(driver_manager_client_end_)
+                      ->RestartWithDictionary({*found, std::move(dict_ref)});
+    EXPECT_EQ(true, result.is_ok());
+
+    if (result.is_error()) {
+      return {};
+    }
+    release_fence = std::move(result.value().release_fence());
+  }
 
   if (!expect_new_koid) {
     // Let the restart make progress, otherwise our next loop could run early enough to see the old
@@ -320,7 +358,7 @@ zx::eventpair TestLoopBase::PrepareDriver(std::string_view node_filter,
 
   std::cout << "proceeding with test! " << std::endl;
   // Return the release_fence for the caller to hold on to.
-  return std::move(result.value().release_fence());
+  return release_fence;
 }
 
 fuchsia_component_sandbox::DictionaryRef TestLoopBase::CreateDictionaryForTest() {

@@ -166,6 +166,12 @@ class DriverBase {
   // section, this is not a suspend enabled platform, or the token was not provided by the driver
   // host.
   std::optional<fuchsia_power_broker::DependencyToken> power_element_token();
+
+  // Whether the power handles were provided in the start args. If the handles are absent it means
+  // either the driver's manifest did not request them or the driver did, but this is not a power-
+  // enabled product.
+  // TODO(https://fxbug.dev/495557052): Remove this API once this bug is closed.
+  bool has_power_args();
 #endif
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(26)

@@ -4,6 +4,7 @@
 
 #include "aml-sdmmc-with-banjo.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
@@ -198,37 +199,6 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
 
   void AddElement(fuchsia_power_broker::ElementSchema& req,
                   AddElementCompleter::Sync& completer) override {
-    // Get channels from request.
-    fidl::ServerEnd<fuchsia_power_broker::Lessor>& lessor_server_end = req.lessor_channel().value();
-
-    // Instantiate (fake) element control implementation.
-    ASSERT_TRUE(req.element_control().has_value());
-    auto element_control_impl = std::make_unique<FakeElementControl>();
-    fidl::ServerBindingRef<fuchsia_power_broker::ElementControl> element_control_binding =
-        fidl::BindServer<fuchsia_power_broker::ElementControl>(
-            fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(*req.element_control()),
-            std::move(element_control_impl));
-
-    // Instantiate (fake) lessor implementation.
-    auto lessor_impl = std::make_unique<FakeLessor>();
-    if (req.element_name() == AmlSdmmc::kHardwarePowerElementName) {
-      hardware_power_lessor_ = lessor_impl.get();
-    } else {
-      ZX_ASSERT_MSG(0, "Unexpected power element.");
-    }
-    fidl::ServerBindingRef<fuchsia_power_broker::Lessor> lessor_binding =
-        fidl::BindServer<fuchsia_power_broker::Lessor>(
-            fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(lessor_server_end),
-            std::move(lessor_impl),
-            [](FakeLessor* impl, fidl::UnbindInfo info,
-               fidl::ServerEnd<fuchsia_power_broker::Lessor> server_end) mutable {});
-
-    ASSERT_TRUE(req.element_runner().has_value());
-    hardware_power_element_runner_client_ = fidl::Client<fuchsia_power_broker::ElementRunner>(
-        std::move(req.element_runner().value()), fdf::Dispatcher::GetCurrent()->async_dispatcher());
-
-    servers_.emplace_back(std::move(element_control_binding), std::move(lessor_binding));
-
     completer.Reply(fit::success());
   }
 
@@ -239,8 +209,39 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_broker::Topology> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
+  void AddHardwarePowerElement(
+      fidl::ServerEnd<fuchsia_power_broker::ElementControl> element_control_server_end,
+      fidl::ClientEnd<fuchsia_power_broker::ElementRunner> element_runner_client_end,
+      fidl::ServerEnd<fuchsia_power_broker::Lessor> lessor_server_end) {
+    // Instantiate (fake) element control implementation.
+    auto element_control_impl = std::make_unique<FakeElementControl>();
+    hardware_power_element_control_ = element_control_impl.get();
+    fidl::ServerBindingRef<fuchsia_power_broker::ElementControl> element_control_binding =
+        fidl::BindServer<fuchsia_power_broker::ElementControl>(
+            fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+            std::move(element_control_server_end), std::move(element_control_impl),
+            [](FakeElementControl* impl, fidl::UnbindInfo info,
+               fidl::ServerEnd<fuchsia_power_broker::ElementControl> server_end) mutable {});
+
+    // Instantiate (fake) lessor implementation.
+    auto lessor_impl = std::make_unique<FakeLessor>();
+    hardware_power_lessor_ = lessor_impl.get();
+    fidl::ServerBindingRef<fuchsia_power_broker::Lessor> lessor_binding =
+        fidl::BindServer<fuchsia_power_broker::Lessor>(
+            fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(lessor_server_end),
+            std::move(lessor_impl),
+            [](FakeLessor* impl, fidl::UnbindInfo info,
+               fidl::ServerEnd<fuchsia_power_broker::Lessor> server_end) mutable {});
+
+    hardware_power_element_runner_client_ = fidl::Client<fuchsia_power_broker::ElementRunner>(
+        std::move(element_runner_client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+    servers_.emplace_back(std::move(element_control_binding), std::move(lessor_binding));
+  }
+
   FakeLessor* hardware_power_lessor_ = nullptr;
   fidl::Client<fuchsia_power_broker::ElementRunner> hardware_power_element_runner_client_;
+  FakeElementControl* hardware_power_element_control_ = nullptr;
 
  private:
   fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings_;
@@ -279,6 +280,34 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
 
     // Initialize driver test environment.
     fuchsia_driver_framework::DriverStartArgs start_args;
+    std::optional<fuchsia_driver_framework::PowerElementArgs> power_args;
+    if (supply_power_framework) {
+      auto [element_control_client, element_control_server] =
+          fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+      auto [element_runner_client, element_runner_server] =
+          fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+      auto [lessor_client, lessor_server] = fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
+      fuchsia_power_broker::DependencyToken element_token;
+      fuchsia_power_broker::DependencyToken element_token_copy;
+      EXPECT_OK(zx::event::create(0, &element_token));
+      EXPECT_OK(element_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &element_token_copy));
+
+      fuchsia_driver_framework::PowerElementArgs local_power_args;
+      local_power_args.control_client() = std::move(element_control_client);
+      local_power_args.runner_server() = std::move(element_runner_server);
+      local_power_args.lessor_client() = std::move(lessor_client);
+      local_power_args.token() = std::move(element_token_copy);
+
+      power_args = std::move(local_power_args);
+
+      incoming_.SyncCall(
+          [control_server = std::move(element_control_server),
+           runner_client = std::move(element_runner_client),
+           lessor_server = std::move(lessor_server)](IncomingNamespace* incoming) mutable {
+            incoming->power_broker.AddHardwarePowerElement(
+                std::move(control_server), std::move(runner_client), std::move(lessor_server));
+          });
+    }
     incoming_.SyncCall([&, bti = std::move(bti)](IncomingNamespace* incoming) mutable {
       auto start_args_result = incoming->node.CreateStartArgsAndServe();
       ASSERT_TRUE(start_args_result.is_ok());
@@ -298,9 +327,6 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
           .vmo = std::move(dup),
       };
       config.btis[0] = std::move(bti);
-      if (supply_power_framework) {
-        config.power_elements = GetAllPowerConfigs();
-      }
       incoming->pdev_server.SetConfig(std::move(config));
       ASSERT_OK(incoming->pdev_server.AddFidlMetadata(
           fuchsia_hardware_sdmmc::SdmmcMetadata::kSerializableName,
@@ -324,15 +350,13 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
         ASSERT_TRUE(result.is_ok());
       }
 
-      if (supply_power_framework) {
-        // Serve (fake) power_broker.
-        {
-          auto result = incoming->env.incoming_directory()
-                            .component()
-                            .AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
-                                incoming->power_broker.CreateHandler());
-          ASSERT_TRUE(result.is_ok());
-        }
+      // Serve (fake) power_broker.
+      {
+        auto result = incoming->env.incoming_directory()
+                          .component()
+                          .AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
+                              incoming->power_broker.CreateHandler());
+        ASSERT_TRUE(result.is_ok());
       }
     });
 
@@ -340,6 +364,10 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
       aml_sdmmc_config::Config fake_config;
       fake_config.enable_suspend() = supply_power_framework;
       start_args.config(fake_config.ToVmo());
+    }
+
+    if (supply_power_framework) {
+      start_args.power_element_args(std::move(power_args.value()));
     }
 
     // Start dut_.
@@ -438,35 +466,6 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
       paddrs.push_back(zx_system_get_page_size() * (i + 1) * 2);
     }
     ASSERT_OK(fake_bti::SetPaddrs(zx::unowned_bti(bti_), paddrs));
-  }
-
-  fuchsia_hardware_power::PowerElementConfiguration GetHardwarePowerConfig() {
-    auto transitions_from_off =
-        std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-            .target_level = AmlSdmmc::kPowerLevelOn,
-            .latency_us = 100,
-        }}};
-    auto transitions_from_on =
-        std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-            .target_level = AmlSdmmc::kPowerLevelOff,
-            .latency_us = 200,
-        }}};
-    fuchsia_hardware_power::PowerLevel off = {
-        {.level = AmlSdmmc::kPowerLevelOff, .name = "off", .transitions = transitions_from_off}};
-    fuchsia_hardware_power::PowerLevel on = {
-        {.level = AmlSdmmc::kPowerLevelOn, .name = "on", .transitions = transitions_from_on}};
-    fuchsia_hardware_power::PowerElement hardware_power = {{
-        .name = AmlSdmmc::kHardwarePowerElementName,
-        .levels = {{off, on}},
-    }};
-
-    fuchsia_hardware_power::PowerElementConfiguration hardware_power_config = {
-        {.element = hardware_power}};
-    return hardware_power_config;
-  }
-
-  std::vector<fuchsia_hardware_power::PowerElementConfiguration> GetAllPowerConfigs() {
-    return std::vector<fuchsia_hardware_power::PowerElementConfiguration>{GetHardwarePowerConfig()};
   }
 
   aml_sdmmc_desc_t* descriptors() const { return reinterpret_cast<aml_sdmmc_desc_t*>(descs_); }
@@ -2154,7 +2153,23 @@ TEST_F(AmlSdmmcWithBanjoTest, PowerSuspendResume) {
   auto clock = AmlSdmmcClock::Get().FromValue(0).WriteTo(&*mmio_);
 
   ASSERT_OK(dut_->Init(TestAmlSdmmcWithBanjo::kInstance));
-  // Initial power level is kPowerLevelOff.
+
+  // Set power level to kPowerLevelOn first to satisfy Suspendable's first_activation_occurred_.
+  incoming_.SyncCall([](IncomingNamespace* incoming) {
+    incoming->power_broker.hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOn)
+        .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+          EXPECT_TRUE(result.is_ok());
+        });
+  });
+  runtime_.PerformBlockingWork([&] {
+    bool clock_enabled;
+    do {
+      clock_enabled = incoming_.SyncCall(
+          [](IncomingNamespace* incoming) { return incoming->clock_server.enabled(); });
+    } while (!clock_enabled);
+  });
+
+  // Transition element to off to set up our initial state.
   incoming_.SyncCall([](IncomingNamespace* incoming) {
     incoming->power_broker.hardware_power_element_runner_client_->SetLevel(AmlSdmmc::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {

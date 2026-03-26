@@ -94,6 +94,8 @@ std::optional<fuchsia_power_broker::DependencyToken> DriverBase::power_element_t
 
   return fuchsia_power_broker::DependencyToken(std::move(copy));
 }
+
+bool DriverBase::has_power_args() { return start_args_.power_element_args().has_value(); }
 #endif
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(26)
