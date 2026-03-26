@@ -58,7 +58,7 @@ use {
     log::warn,
     maplit::btreemap,
     moniker::{ChildName, ExtendedMoniker, Moniker},
-    router_error::{DowncastErrorForTest, RouterError},
+    router_error::RouterError,
     routing::{RouteRequest, RouteSource, component_instance::ComponentInstanceInterface},
     routing_test_helpers::{
         RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
@@ -1552,15 +1552,14 @@ async fn use_runner_from_environment_not_found() {
         *err,
         RouterError::NotFound(err)
         if matches!(
-            err.downcast_for_test::<RoutingError>(),
-            RoutingError::UseFromEnvironmentNotFound {
+            err.as_any().downcast_ref::<RoutingError>(),
+            Some(RoutingError::UseFromEnvironmentNotFound {
                 moniker,
                 capability_type,
                 capability_name,
-            }
-            if moniker == &Moniker::try_from(["b"]).unwrap() &&
-                capability_type == &"runner" &&
-                capability_name == &"hobbit"
+            }) if moniker == &Moniker::try_from(["b"]).unwrap() &&
+                  capability_type == &"runner" &&
+                  capability_name == &"hobbit"
         )
     );
 }

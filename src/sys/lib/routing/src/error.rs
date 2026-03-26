@@ -8,12 +8,13 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use cm_rust::{CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, UseDeclCommon};
 use cm_types::{Availability, Name};
+use fidl_fuchsia_component as fcomponent;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
-use router_error::{DowncastErrorForTest, Explain, RouterError};
+use router_error::{Explain, RouterError};
 use std::sync::Arc;
 use thiserror::Error;
-use {fidl_fuchsia_component as fcomponent, zx_status as zx};
+use zx_status as zx;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -393,6 +394,9 @@ pub enum RoutingError {
     // We store the raw value of a zx::Status here because zx::Status does not implement Serialize
     #[error("error returned by a router implemented by component {moniker}")]
     RemoteRouterError { moniker: Moniker, error_code: i32 },
+
+    #[error("unexpected error received")]
+    UnexpectedError,
 }
 
 impl Explain for RoutingError {
@@ -454,7 +458,8 @@ impl Explain for RoutingError {
             RoutingError::SourceCapabilityIsVoid { .. } => zx::Status::NOT_FOUND,
             RoutingError::RouteUnexpectedDebug { .. }
             | RoutingError::RouteUnexpectedUnavailable { .. }
-            | RoutingError::MissingPorcelainType { .. } => zx::Status::INTERNAL,
+            | RoutingError::MissingPorcelainType { .. }
+            | RoutingError::UnexpectedError => zx::Status::INTERNAL,
             RoutingError::RemoteFIDLError { .. } => zx::Status::PEER_CLOSED,
             RoutingError::RemoteRouterError { error_code, .. } => zx::Status::from_raw(*error_code),
         }
@@ -523,7 +528,8 @@ impl From<RoutingError> for ExtendedMoniker {
             | RoutingError::OfferFromComponentManagerNotFound { .. }
             | RoutingError::RegisterFromComponentManagerNotFound { .. }
             | RoutingError::UseFromComponentManagerNotFound { .. }
-            | RoutingError::UseFromRootExposeNotFound { .. } => ExtendedMoniker::ComponentManager,
+            | RoutingError::UseFromRootExposeNotFound { .. }
+            | RoutingError::UnexpectedError => ExtendedMoniker::ComponentManager,
         }
     }
 }
@@ -534,13 +540,18 @@ impl From<RoutingError> for RouterError {
     }
 }
 
-impl From<RouterError> for RoutingError {
-    fn from(value: RouterError) -> Self {
+impl TryFrom<RouterError> for RoutingError {
+    type Error = RouterError;
+
+    fn try_from(value: RouterError) -> Result<Self, Self::Error> {
         match value {
             RouterError::NotFound(arc_dyn_explain) => {
-                arc_dyn_explain.downcast_for_test::<Self>().clone()
+                match arc_dyn_explain.as_any().downcast_ref::<Self>() {
+                    Some(routing_error) => Ok(routing_error.clone()),
+                    None => Err(RouterError::NotFound(arc_dyn_explain)),
+                }
             }
-            err => panic!("Cannot downcast {err} to RoutingError!"),
+            err => Err(err),
         }
     }
 }

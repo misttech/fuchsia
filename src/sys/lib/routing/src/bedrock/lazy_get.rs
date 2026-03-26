@@ -47,7 +47,9 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                     let res = if self.path.iter_segments().count() > 1 {
                         request_with_dictionary_replacement(request.as_ref())?
                     } else {
-                        request.as_ref().map(|r| r.try_clone()).transpose()?
+                        request.as_ref().map(|r| r.try_clone()).transpose().map_err(|e| {
+                            RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError)
+                        })?
                     };
                     Ok(res)
                 };

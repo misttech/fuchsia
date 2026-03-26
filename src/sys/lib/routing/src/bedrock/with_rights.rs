@@ -79,7 +79,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl_fuchsia_io as fio;
-    use router_error::{DowncastErrorForTest, RouterError};
+    use router_error::RouterError;
     use sandbox::{Data, Dict, WeakInstanceToken};
     use std::sync::Arc;
 
@@ -133,10 +133,10 @@ mod tests {
             error,
             RouterError::NotFound(err)
             if matches!(
-                err.downcast_for_test::<RoutingError>(),
-                RoutingError::RightsRoutingError(
+                err.as_any().downcast_ref::<RoutingError>(),
+                Some(RoutingError::RightsRoutingError(
                     crate::error::RightsRoutingError::Invalid { moniker: ExtendedMoniker::ComponentManager, requested, provided }
-                ) if *requested == <fio::Operations as Into<Rights>>::into(fio::RW_STAR_DIR) && *provided == <fio::Operations as Into<Rights>>::into(fio::R_STAR_DIR)
+                )) if *requested == <fio::Operations as Into<Rights>>::into(fio::RW_STAR_DIR) && *provided == <fio::Operations as Into<Rights>>::into(fio::R_STAR_DIR)
             )
         );
     }
@@ -159,10 +159,10 @@ mod tests {
             error,
             RouterError::NotFound(err)
             if matches!(
-                err.downcast_for_test::<RoutingError>(),
-                RoutingError::RightsRoutingError(
+                err.as_any().downcast_ref::<RoutingError>(),
+                Some(RoutingError::RightsRoutingError(
                     crate::error::RightsRoutingError::Invalid { moniker: ExtendedMoniker::ComponentManager, requested, provided }
-                ) if *requested == <fio::Operations as Into<Rights>>::into(fio::RW_STAR_DIR) && *provided == <fio::Operations as Into<Rights>>::into(fio::R_STAR_DIR)
+                )) if *requested == <fio::Operations as Into<Rights>>::into(fio::RW_STAR_DIR) && *provided == <fio::Operations as Into<Rights>>::into(fio::R_STAR_DIR)
             )
         );
     }

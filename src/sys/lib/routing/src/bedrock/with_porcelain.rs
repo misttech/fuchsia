@@ -11,6 +11,8 @@ use crate::walk_state::WalkStateUnit;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
 use cm_types::Availability;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use sandbox::{
@@ -19,7 +21,6 @@ use sandbox::{
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
-use {fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox};
 
 struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, const D: bool> {
     router: Router<T>,
@@ -446,7 +447,7 @@ mod tests {
     use cm_types::Url;
     use fuchsia_sync::Mutex;
     use moniker::Moniker;
-    use router_error::{DowncastErrorForTest, RouterError};
+    use router_error::RouterError;
     use sandbox::{Data, Dict};
     use std::sync::Arc;
 
@@ -601,11 +602,11 @@ mod tests {
             error,
             RouterError::NotFound(err)
             if matches!(
-                err.downcast_for_test::<RoutingError>(),
-                RoutingError::BedrockMissingCapabilityType {
+                err.as_any().downcast_ref::<RoutingError>(),
+                Some(RoutingError::BedrockMissingCapabilityType {
                     moniker,
                     type_name,
-                } if moniker == &Moniker::root().into() && type_name == "protocol"
+                }) if moniker == &Moniker::root().into() && type_name == "protocol"
             )
         );
         assert!(*reported.lock());
@@ -637,12 +638,12 @@ mod tests {
             error,
             RouterError::NotFound(err)
             if matches!(
-                err.downcast_for_test::<RoutingError>(),
-                RoutingError::BedrockWrongCapabilityType {
+                err.as_any().downcast_ref::<RoutingError>(),
+                Some(RoutingError::BedrockWrongCapabilityType {
                     moniker,
                     expected,
                     actual
-                } if moniker == &Moniker::root().into()
+                }) if moniker == &Moniker::root().into()
                     && expected == "protocol" && actual == "service"
             )
         );
@@ -675,12 +676,12 @@ mod tests {
             error,
             RouterError::NotFound(err)
             if matches!(
-                err.downcast_for_test::<RoutingError>(),
-                RoutingError::AvailabilityRoutingError(
+                err.as_any().downcast_ref::<RoutingError>(),
+                Some(RoutingError::AvailabilityRoutingError(
                         crate::error::AvailabilityRoutingError::TargetHasStrongerAvailability {
                         moniker
                     }
-                ) if moniker == &Moniker::root().into()
+                )) if moniker == &Moniker::root().into()
             )
         );
         assert!(*reported.lock());

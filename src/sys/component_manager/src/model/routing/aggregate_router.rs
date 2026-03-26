@@ -407,7 +407,11 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                 }
             }
         };
-        match router.route(None, true, self.component.clone().into()).await? {
+        match router
+            .route(None, true, self.component.clone().into())
+            .await
+            .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?
+        {
             RouterResponse::Debug(data) => Ok((
                 router,
                 data.try_into().expect("failed to convert capability source data to struct"),

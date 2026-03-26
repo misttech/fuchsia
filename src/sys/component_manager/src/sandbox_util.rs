@@ -16,6 +16,8 @@ use cm_types::RelativePath;
 use fidl::AsyncChannel;
 use fidl::endpoints::{ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::future::BoxFuture;
 use log::warn;
 use router_error::{Explain, RouterError};
@@ -28,7 +30,6 @@ use sandbox::{
 use std::fmt::Debug;
 use std::sync::Arc;
 use vfs::execution_scope::{ExecutionScope, WeakExecutionScope};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub fn take_handle_as_stream<P: ProtocolMarker>(channel: zx::Channel) -> P::RequestStream {
     let channel = AsyncChannel::from_channel(channel);
@@ -436,7 +437,6 @@ pub mod tests {
     use fuchsia_async::TestExecutor;
     use futures::FutureExt;
     use moniker::Moniker;
-    use router_error::DowncastErrorForTest;
     use routing::bedrock::request_metadata::Metadata;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
@@ -561,13 +561,14 @@ pub mod tests {
             )
             .await;
         assert_matches!(
-            cap,
-            Err(RouterError::NotFound(err))
-            if matches!(
-                err.downcast_for_test::<RoutingError>(),
-                RoutingError::SourceCapabilityIsVoid { .. }
-            )
-        );
+                cap,
+                Err(RouterError::NotFound(err))
+                if matches!(
+                    err.as_any()
+        .downcast_ref::<RoutingError>(),
+                    Some(&RoutingError::SourceCapabilityIsVoid { .. })
+                )
+            );
     }
 
     #[fuchsia::test]

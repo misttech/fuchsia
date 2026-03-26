@@ -8,6 +8,9 @@ use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
@@ -25,7 +28,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::WeakExecutionScope;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
-use {fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// These two constants are needed for computing how many strings we can fit into a FIDL message.
 /// There's unfortunately no better solution than doing the math ourselves.
@@ -1169,7 +1171,7 @@ mod tests {
             Err(e) => e,
         };
 
-        let routing_error = RoutingError::from(router_err);
+        let routing_error = RoutingError::try_from(router_err).unwrap();
 
         assert_eq!(routing_error, RoutingError::RemoteFIDLError { moniker: Moniker::root() });
 

@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::Moniker;
 use std::fmt::{self, Debug, Display};
 use std::sync::Arc;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_component_sandbox as fsandbox,
-    zx_status as zx,
-};
+use zx_status as zx;
 
 /// The error type returned by bedrock operations.
 #[derive(Debug, Error, Clone)]
@@ -117,28 +116,6 @@ impl Explain for RouterError {
             Self::NotSupported => zx::Status::NOT_SUPPORTED,
             Self::Internal => zx::Status::INTERNAL,
             Self::Unknown => zx::Status::INTERNAL,
-        }
-    }
-}
-
-/// To test the error case of e.g. a `Router` implementation, it will be helpful
-/// to cast the erased error back to an expected error type and match on it.
-///
-/// Do not use this in production as conditioning behavior on error cases is
-/// extremely fragile.
-pub trait DowncastErrorForTest {
-    /// For tests only. Downcast the erased error to `E` or panic if fails.
-    fn downcast_for_test<E: Explain>(&self) -> &E;
-}
-
-impl DowncastErrorForTest for dyn Explain {
-    fn downcast_for_test<E: Explain>(&self) -> &E {
-        match self.as_any().downcast_ref::<E>() {
-            Some(value) => value,
-            None => {
-                let expected = std::any::type_name::<E>();
-                panic!("Cannot downcast `{self:?}` to the {expected:?} error type!");
-            }
         }
     }
 }

@@ -778,7 +778,11 @@ where
     Router<T>: TryFrom<Capability>,
 {
     let request = Request { metadata };
-    let data = match router.route(Some(request), true, target.as_weak().into()).await? {
+    let data = match router
+        .route(Some(request), true, target.as_weak().into())
+        .await
+        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?
+    {
         RouterResponse::<T>::Debug(d) => d,
         d => panic!("Debug route did not return a debug response: {d:?}"),
     };

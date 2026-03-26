@@ -505,10 +505,15 @@ impl DictExt for Dict {
 pub(super) fn request_with_dictionary_replacement(
     request: Option<&Request>,
 ) -> Result<Option<Request>, RoutingError> {
-    Ok(request.as_ref().map(|r| r.try_clone()).transpose()?.map(|r| {
-        let _ = r.metadata.set_metadata(CapabilityTypeName::Dictionary);
-        r
-    }))
+    Ok(request
+        .as_ref()
+        .map(|r| r.try_clone())
+        .transpose()
+        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?
+        .map(|r| {
+            let _ = r.metadata.set_metadata(CapabilityTypeName::Dictionary);
+            r
+        }))
 }
 
 struct AdditiveDictionaryRouter {
