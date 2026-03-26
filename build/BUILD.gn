@@ -58,6 +58,8 @@ if (is_host) {
       "//sdk/fidl/fuchsia.buildinfo:verify_bazel2gn",
       "//sdk/fidl/fuchsia.fdomain:verify_bazel2gn",
       "//sdk/fidl/fuchsia.feedback:verify_bazel2gn",
+      "//sdk/fidl/fuchsia.hardware.audio:verify_bazel2gn",
+      "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:verify_bazel2gn",
       "//sdk/fidl/fuchsia.hardware.display.engine:verify_bazel2gn",
       "//sdk/fidl/fuchsia.hardware.display.types:verify_bazel2gn",
       "//sdk/fidl/fuchsia.hardware.nand:verify_bazel2gn",
