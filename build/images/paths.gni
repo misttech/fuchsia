@@ -36,11 +36,9 @@ labels = {
     recovery_images = recovery_label
     assembly_name = "bringup"
   } else {
-    _images_without_toolchain = "//build/images/fuchsia"
-    images = "${_images_without_toolchain}(${default_toolchain})"
+    images = "//build/images/fuchsia(${default_toolchain})"
     recovery_images = recovery_label
     assembly_name = "fuchsia"
-    netboot = "//build/images/fuchsia:netboot"
   }
 
   _qemu_deps = qemu_boot_shim.deps
@@ -48,9 +46,6 @@ labels = {
   qemu_kernel = _qemu_deps[0]
   main_pb = main_pb_label
 }
-
-supports_flashing_fxfs =
-    fxfs_blob && fxfs_partition != "" && !use_bringup_assembly
 
 # These are the common assembly-related files.
 files = {
@@ -71,77 +66,11 @@ files = {
     product_bundle_dir = _images_outdir + "/product_bundle"
   }
 
-  if (!use_bringup_assembly) {
-    if (fxfs_blob) {
-      fxfs = "${_assembly_outdir}/fxfs.blk"
-      if (supports_flashing_fxfs) {
-        fxfs_sparse = "${_assembly_outdir}/fxfs.sparse.blk"
-      }
-    } else {
-      fvm = "${_assembly_outdir}/fvm.blk"
-      fvm_sparse = "${_assembly_outdir}/fvm.sparse.blk"
-    }
-
-    if (supports_fastboot_fvm) {
-      fvm_fastboot = "${_assembly_outdir}/fvm.fastboot.blk"
-    }
-  }
-
   _image_suffix = "zbi"
   if (sign_zbi) {
     _image_suffix = "zbi.signed"
   }
 
-  # The zbi and vbmeta created by assembly
+  # The zbi created by assembly
   zbi = "${_assembly_outdir}/${labels.assembly_name}.${_image_suffix}"
-  vbmeta = "${_assembly_outdir}/${labels.assembly_name}.vbmeta"
-
-  if (use_bazel_images_only) {
-    # Final image and vbmeta are not copied to root in Bazel assembly.
-    final_zbi = zbi
-    final_vbmeta = vbmeta
-  } else {
-    # Final output image and vbmeta (the files at the above paths are copied here)
-    final_zbi = "${root_out_dir}/" + rebase_path(zbi, _assembly_outdir)
-    final_vbmeta = "${root_out_dir}/" + rebase_path(vbmeta, _assembly_outdir)
-  }
-
-  # Recovery output image and vbmeta
-  if (use_bazel_images_only) {
-    # GN and Bazel assembly should share the same recovery image config, so use
-    # GN's recovery_label to determine Bazel's recovery image name.
-    _recovery_name = get_label_info(recovery_label, "name")
-    _recovery_outdir = _images_outdir + "/system_r"
-    recovery_zbi = "${_recovery_outdir}/${_recovery_name}.${_image_suffix}"
-    recovery_vbmeta = "${_recovery_outdir}/${_recovery_name}.vbmeta"
-  } else {
-    if (recovery_is_zedboot) {
-      _recovery_outdir = get_label_info("//build/images/zedboot",
-                                        "target_out_dir") + "/zedboot"
-      recovery_zbi = "${_recovery_outdir}/zedboot.${_image_suffix}"
-      recovery_vbmeta = "${_recovery_outdir}/zedboot.vbmeta"
-    } else {
-      # The standard recovery image and vbmeta locations.
-      _recovery_outdir = root_out_dir
-      recovery_zbi = "${root_out_dir}/recovery.${_image_suffix}"
-      recovery_vbmeta = "${root_out_dir}/recovery.vbmeta"
-    }
-  }
-
-  if (use_bazel_images_only) {
-    # Final recovery image and vbmeta are not copied to root in Bazel assembly.
-    final_recovery_zbi = recovery_zbi
-    final_recovery_vbmeta = recovery_vbmeta
-  } else {
-    # Final recovery image and vbmeta (the files at the above paths are copied here).
-    final_recovery_zbi =
-        "${root_out_dir}/" + rebase_path(recovery_zbi, _recovery_outdir)
-    final_recovery_vbmeta =
-        "${root_out_dir}/" + rebase_path(recovery_vbmeta, _recovery_outdir)
-  }
-
-  installer_zbi = "${root_out_dir}/obj/build/images/recovery/recovery-installer/fuchsia.${_image_suffix}"
-  installer_vbmeta = "${root_out_dir}/obj/build/images/recovery/recovery-installer/fuchsia.vbmeta"
-
-  qemu_kernel = qemu_boot_shim.path
 }
