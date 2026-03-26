@@ -742,40 +742,28 @@ void Dwc3::ReleaseResources() {
 zx_status_t Dwc3::CheckHwVersion() {
   TRACE_DURATION("dwc3", "Dwc3::CheckHwVersion");
   auto* mmio = get_mmio();
-  const uint32_t core_id = GSNPSID::Get().ReadFrom(mmio).core_id();
+  auto gsnpsid = GSNPSID::Get().ReadFrom(mmio);
+
+  const uint16_t core_id = gsnpsid.core_id();
+
+  // Major and minor versioning is in nibble-packed binary-coded-decimal format with the revision
+  // encoded in hex (e.g. 0x330a decodes to 3.30a).
+  const uint8_t n1 = (gsnpsid.release_number() & 0xf000) >> 12;
+  const uint8_t n2 = (gsnpsid.release_number() & 0x0f00) >> 8;
+  const uint8_t n3 = (gsnpsid.release_number() & 0x00f0) >> 4;
+  const uint8_t n4 = (gsnpsid.release_number() & 0x000f) >> 0;
+
+  const uint8_t major = n1;
+  const uint8_t minor = n2 * 10 + n3;
+  const uint8_t rev = n4;
+
   if (core_id == 0x5533) {
+    fdf::info("Detected Synopsys DWC_usb3 core version {}.{:02d}{:x}", major, minor, rev);
     return ZX_OK;
   }
 
-  const uint32_t ip_version = USB31_VER_NUMBER::Get().ReadFrom(mmio).IPVERSION();
-
-  auto is_ascii_digit = [](char val) -> bool { return (val >= '0') && (val <= '9'); };
-  auto is_ascii_letter = [](char val) -> bool {
-    return ((val >= 'A') && (val <= 'Z')) || ((val >= 'a') && (val <= 'z'));
-  };
-
-  const char c1 = static_cast<char>((ip_version >> 24) & 0xFF);
-  const char c2 = static_cast<char>((ip_version >> 16) & 0xFF);
-  const char c3 = static_cast<char>((ip_version >> 8) & 0xFF);
-  const char c4 = static_cast<char>(ip_version & 0xFF);
-
-  // Format defined by section 1.3.44 of the DWC3 Programming Guide
-  if (!is_ascii_digit(c1) || !is_ascii_digit(c2) || !is_ascii_digit(c3) ||
-      (!is_ascii_letter(c4) && (c4 != '*'))) {
-    fdf::error("Unrecognized USB IP Version 0x{:08x}", ip_version);
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  const int major = c1 - '0';
-  const int minor = ((c2 - '0') * 10) + (c3 - '0');
-
-  if (major != 1 && major != 2) {
-    fdf::error("Unsupported USB IP Version {}.{:02}{:c}", major, minor, c4);
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  fdf::info("Detected DWC3 IP version {}.{:02}{:c}", major, minor, c4);
-  return ZX_OK;
+  fdf::error("Unsupported Synopsys core id 0x{:04x}", core_id);
+  return ZX_ERR_NOT_SUPPORTED;
 }
 
 zx_status_t Dwc3::ResetHw() {

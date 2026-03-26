@@ -223,19 +223,19 @@ class Config final {
 
 // Test is templated on a parameter which, if true, will have the harness start and stop the driver.
 // Otherwise, it is the individual test(s) responsibility to start and stop the driver.
-template <bool manage_lifetime>
-class TestFixture : public testing::Test {
+template <bool manage_lifetime, typename gtest_base = testing::Test>
+class TestFixture : public gtest_base {
  public:
   void SetUp() override {
     dut_.RunInEnvironmentTypeContext([&](Environment& env) {
       auto& hwparams3 = env.reg_region()[GHWPARAMS3::Get().addr()];
-      auto& ver_reg = env.reg_region()[USB31_VER_NUMBER::Get().addr()];
       auto& dctl_reg = env.reg_region()[DCTL::Get().addr()];
+      auto& gsnpsid_reg = env.reg_region()[GSNPSID::Get().addr()];
 
-      hwparams3.SetReadCallback([this]() -> uint64_t { return Read_GHWPARAMS3(); });
-      ver_reg.SetReadCallback([this]() -> uint64_t { return Read_USB31_VER_NUMBER(); });
-      dctl_reg.SetReadCallback([this]() -> uint64_t { return Read_DCTL(); });
-      dctl_reg.SetWriteCallback([this](uint64_t val) { return Write_DCTL(val); });
+      hwparams3.SetReadCallback([this]() -> uint32_t { return Read_GHWPARAMS3(); });
+      dctl_reg.SetReadCallback([this]() -> uint32_t { return Read_DCTL(); });
+      dctl_reg.SetWriteCallback([this](uint32_t val) { return Write_DCTL(val); });
+      gsnpsid_reg.SetReadCallback([this]() -> uint32_t { return Read_GSNPSID(); });
     });
 
     if (manage_lifetime) {
@@ -256,10 +256,8 @@ class TestFixture : public testing::Test {
     }
   }
 
-  void SetVerNumber(uint32_t ver_number) { ver_number_ = ver_number; }
-
  protected:
-  // Section 1.3.22 of the DWC3 Programmer's guide
+  // Section 1.2.22 of the DWC3 Programmer's guide
   //
   // DWC_USB31_CACHE_TOTAL_XFER_RESOURCES : 32
   // DWC_USB31_NUM_IN_EPS                 : 16
@@ -268,16 +266,13 @@ class TestFixture : public testing::Test {
   // DWC_USB31_HSPHY_DWIDTH               : 2
   // DWC_USB31_HSPHY_INTERFACE            : 1
   // DWC_USB31_SSPHY_INTERFACE            : 2
-  uint64_t Read_GHWPARAMS3() { return 0x10420086; }
+  uint32_t Read_GHWPARAMS3() { return 0x10420086; }
 
-  // Section 1.3.45 of the DWC3 Programmer's guide
-  uint64_t Read_USB31_VER_NUMBER() { return ver_number_; }
-
-  uint32_t ver_number_{0x31363061};  // 1.60a by default
+  uint32_t ver_number_{0x5533160a};  // 1.60a by default
 
   // Section 1.4.2 of the DWC3 Programmer's guide
-  uint64_t Read_DCTL() { return dctl_val_; }
-  void Write_DCTL(uint64_t val) {
+  uint32_t Read_DCTL() { return dctl_val_; }
+  void Write_DCTL(uint32_t val) {
     constexpr uint32_t kUnwriteableMask =
         (1 << 29) | (1 << 17) | (1 << 16) | (1 << 15) | (1 << 14) | (1 << 13) | (1 << 0);
     ZX_ASSERT(val <= std::numeric_limits<uint32_t>::max());
@@ -289,6 +284,12 @@ class TestFixture : public testing::Test {
       dctl_val_ = DCTL::Get().FromValue(dctl_val_).set_CSFTRST(0).reg_value();
     }
   }
+
+  // Section 1.2.9 of the DWC3 Programmer's guide
+  //
+  // core_id = 0x5533
+  // version = 1.60a
+  uint32_t Read_GSNPSID() { return ver_number_; }
 
   uint32_t dctl_val_ = DCTL::Get().FromValue(0).set_LPM_NYET_thres(0xF).reg_value();
   bool stuck_reset_test_{false};
@@ -356,22 +357,53 @@ TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
   // The dfv2 driver did not start, nothing to stop.
 }
 
-TEST_F(UnmanagedTestFixture, Dfv2HwVersion2) {
-  SetVerNumber(0x32303061);  // 2.00a
+typedef struct {
+  uint32_t version_register;
+  bool should_start;
+} Param;
+
+const auto kCases = testing::Values(
+    Param{0x00000000, false},
+    Param{0xffffffff, false},
+    Param{0x5500101a, false},
+    Param{0x5532101a, false},
+    Param{0x5533101a, true},
+    Param{0x5534101a, false});
+
+using Parameterized = TestFixture<false, testing::TestWithParam<Param>>;
+
+TEST_P(Parameterized, TestHwVersion) {
+  Param p{GetParam()};
+
+  ver_number_ = p.version_register;
+
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
     cfg.enable_suspend() = false;
     args.config(cfg.ToVmo());
   });
-  ASSERT_TRUE(start.is_ok());
 
-  dut_.RunInNodeContext(
-      [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
+  ASSERT_EQ(p.should_start, start.is_ok());
 
   dut_.runtime().RunUntilIdle();
   EXPECT_EQ(ZX_OK, WaitForPhy());
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  if (p.should_start) {
+    EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    HwVersioningTest,
+    Parameterized,
+    kCases,
+    [](const testing::TestParamInfo<Parameterized::ParamType>& info) {
+      std::stringstream test_name;
+
+      test_name << info.index << "_0x" << std::hex << info.param.version_register
+          << (info.param.should_start ? "_START_OK" : "_START_FAIL");
+
+      return test_name.str();
+    });
 
 }  // namespace dwc3
