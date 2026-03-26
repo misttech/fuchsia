@@ -82,6 +82,7 @@ rustc_library("selinux") {
     "//third_party/rust_crates:crossbeam-utils",
     "//third_party/rust_crates:hashbrown",
     "//third_party/rust_crates:itertools",
+    "//third_party/rust_crates:paste",
     "//third_party/rust_crates:rapidhash",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:strum",

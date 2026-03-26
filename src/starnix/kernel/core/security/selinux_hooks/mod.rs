@@ -319,12 +319,12 @@ fn todo_has_fs_node_permissions(
 fn file_class_from_file_mode(mode: FileMode) -> Result<FileClass, Errno> {
     let file_type = mode.bits() & starnix_uapi::S_IFMT;
     match file_type {
-        starnix_uapi::S_IFLNK => Ok(FileClass::Link),
-        starnix_uapi::S_IFREG => Ok(FileClass::File),
+        starnix_uapi::S_IFLNK => Ok(FileClass::LnkFile),
         starnix_uapi::S_IFDIR => Ok(FileClass::Dir),
-        starnix_uapi::S_IFCHR => Ok(FileClass::Character),
-        starnix_uapi::S_IFBLK => Ok(FileClass::Block),
-        starnix_uapi::S_IFIFO => Ok(FileClass::Fifo),
+        starnix_uapi::S_IFREG => Ok(FileClass::File),
+        starnix_uapi::S_IFCHR => Ok(FileClass::ChrFile),
+        starnix_uapi::S_IFBLK => Ok(FileClass::BlkFile),
+        starnix_uapi::S_IFIFO => Ok(FileClass::FifoFile),
         starnix_uapi::S_IFSOCK => Ok(FileClass::SockFile),
         0 => {
             track_stub!(TODO("https://fxbug.dev/378864191"), "File with zero IFMT?");

@@ -1090,7 +1090,7 @@ mod tests {
             .compute_new_fs_node_sid(
                 source_sid,
                 target_sid,
-                FileClass::Character.into(),
+                FileClass::ChrFile.into(),
                 SPECIAL_FILE_NAME.into(),
             )
             .expect("new sid computed");
@@ -1314,7 +1314,7 @@ mod tests {
         let result = permission_check.has_permission(
             sid,
             sid,
-            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
+            CommonFsNodePermission::GetAttr.for_class(FileClass::BlkFile),
         );
         assert_eq!(
             result,
@@ -1365,7 +1365,7 @@ mod tests {
         let result = permission_check.has_permission(
             sid,
             sid,
-            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
+            CommonFsNodePermission::GetAttr.for_class(FileClass::BlkFile),
         );
         assert_eq!(
             result,
@@ -1456,7 +1456,7 @@ mod tests {
         let result = permission_check.has_permission(
             permissive_sid,
             non_permissive_sid,
-            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
+            CommonFsNodePermission::GetAttr.for_class(FileClass::BlkFile),
         );
         assert_eq!(
             result,
@@ -1466,7 +1466,7 @@ mod tests {
         let result = permission_check.has_permission(
             non_permissive_sid,
             non_permissive_sid,
-            CommonFsNodePermission::GetAttr.for_class(FileClass::Block),
+            CommonFsNodePermission::GetAttr.for_class(FileClass::BlkFile),
         );
         assert_eq!(
             result,
@@ -1652,7 +1652,7 @@ mod tests {
         let result = permission_check.has_permission(
             other_sid,
             target_sid,
-            CommonFsNodePermission::Read.for_class(FileClass::Character),
+            CommonFsNodePermission::Read.for_class(FileClass::ChrFile),
         );
         assert_eq!(
             result,

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use strum::VariantArray as _;
+use paste::paste;
 use strum_macros::VariantArray;
 
 /// Declares an `enum` with a `name()` method that returns the name for the given variant.
@@ -45,18 +45,82 @@ macro_rules! subset_enum {
     }
 }
 
-named_enum! {
+macro_rules! declare_kernel_classes {
+    ($(#[$meta:meta])* {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        named_enum! {
+            #[derive(VariantArray)]
+            $(#[$meta])* KernelClass {
+                $($(#[$variant_meta])* $variant ($variant_name),)*
+            }
+        }
+
+        paste! {
+            $(#[$meta])*
+            pub enum KernelPermission {
+                $($(#[$variant_meta])* $variant([<$variant Permission>]),)*
+            }
+
+            $(impl From<[<$variant Permission>]> for KernelPermission {
+                fn from(v: [<$variant Permission>]) -> Self {
+                    Self::$variant(v)
+                }
+            }
+            )*
+
+            impl ClassPermission for KernelPermission {
+                fn class(&self) -> KernelClass {
+                    match self {
+                        $(KernelPermission::$variant(_) => KernelClass::$variant),*
+                    }
+                }
+                fn id(&self) -> u8 {
+                    match self {
+                        $(KernelPermission::$variant(v) => v.id()),*
+                    }
+                }
+            }
+
+            impl KernelPermission {
+                pub fn name(&self) -> &'static str {
+                    match self {
+                        $(KernelPermission::$variant(v) => v.name()),*
+                    }
+                }
+
+                pub fn all_variants() -> impl Iterator<Item = Self> {
+                    let iter = [].iter().map(Clone::clone);
+                    $(
+                        let iter = iter.chain([<$variant Permission>]::PERMISSIONS.iter().map(Clone::clone));
+                    )*
+                    iter
+                }
+            }
+
+            impl KernelClass {
+                pub const fn permissions(&self) -> &'static [KernelPermission] {
+                    match *self {
+                        $(KernelClass::$variant => [<$variant Permission>]::PERMISSIONS,)*
+                    }
+                }
+            }
+        }
+    }
+}
+
+declare_kernel_classes! {
     /// A well-known class in SELinux policy that has a particular meaning in policy enforcement
     /// hooks.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
-    KernelClass {
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+    {
         // keep-sorted start
         /// The SELinux "anon_inode" object class.
         AnonFsNode("anon_inode"),
         /// The SELinux "binder" object class.
         Binder("binder"),
         /// The SELinux "blk_file" object class.
-        Block("blk_file"),
+        BlkFile("blk_file"),
         /// The SELinux "bpf" object class.
         Bpf("bpf"),
         /// The SELinux "capability" object class.
@@ -64,13 +128,13 @@ named_enum! {
         /// The SELinux "capability2" object class.
         Capability2("capability2"),
         /// The SELinux "chr_file" object class.
-        Character("chr_file"),
+        ChrFile("chr_file"),
         /// The SELinux "dir" object class.
         Dir("dir"),
         /// The SELinux "fd" object class.
         Fd("fd"),
         /// The SELinux "fifo_file" object class.
-        Fifo("fifo_file"),
+        FifoFile("fifo_file"),
         /// The SELinux "file" object class.
         File("file"),
         /// The SELinux "filesystem" object class.
@@ -80,7 +144,7 @@ named_enum! {
         /// The SELinux "key_socket" object class.
         KeySocket("key_socket"),
         /// The SELinux "lnk_file" object class.
-        Link("lnk_file"),
+        LnkFile("lnk_file"),
         /// The SELinux "memfd_file" object class.
         MemFdFile("memfd_file"),
         /// The SELinux "netlink_audit_socket" object class.
@@ -167,7 +231,6 @@ impl From<FsNodeClass> for KernelClass {
         }
     }
 }
-
 pub trait ForClass<T> {
     /// Returns the `class`-affine `KernelPermission` value corresponding to this common permission.
     /// This is used to allow hooks to resolve e.g. common "sys_nice" permission access based on the
@@ -208,17 +271,17 @@ subset_enum! {
         /// The SELinux "anon_inode" object class.
         AnonFsNode,
         /// The SELinux "blk_file" object class.
-        Block,
+        BlkFile,
         /// The SELinux "chr_file" object class.
-        Character,
+        ChrFile,
         /// The SELinux "dir" object class.
         Dir,
         /// The SELinux "fifo_file" object class.
-        Fifo,
+        FifoFile,
         /// The SELinux "file" object class.
         File,
         /// The SELinux "lnk_file" object class.
-        Link,
+        LnkFile,
         /// The SELinux "memfd_file" object class.
         MemFdFile,
         /// The SELinux "sock_file" object class.
@@ -295,165 +358,6 @@ pub trait ClassPermission {
     fn id(&self) -> u8;
 }
 
-macro_rules! permission_enum {
-    ($(#[$meta:meta])* $name:ident {
-        $($(#[$variant_meta:meta])* $variant:ident($inner:ident)),*,
-    }) => {
-        $(#[$meta])*
-        pub enum $name {
-            $($(#[$variant_meta])* $variant($inner)),*
-        }
-
-        $(impl From<$inner> for $name {
-            fn from(v: $inner) -> Self {
-                Self::$variant(v)
-            }
-        })*
-
-        impl ClassPermission for $name {
-            fn class(&self) -> KernelClass {
-                match self {
-                    $($name::$variant(_) => KernelClass::$variant),*
-                }
-            }
-            fn id(&self) -> u8 {
-                match self {
-                    $($name::$variant(v) => v.id()),*
-                }
-            }
-        }
-
-        impl $name {
-            pub fn name(&self) -> &'static str {
-                match self {
-                    $($name::$variant(v) => v.name()),*
-                }
-            }
-
-            pub fn all_variants() -> impl Iterator<Item=Self> {
-                let iter = [].iter().map(Clone::clone);
-                $(let variant_iter = $inner::VARIANTS.iter().map(Clone::clone).map($name::from);
-                let iter = iter.chain(variant_iter);)*
-                iter
-            }
-        }
-    }
-}
-
-permission_enum! {
-    /// A well-known `(class, permission)` pair in SELinux policy that has a particular meaning in
-    /// policy enforcement hooks.
-    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    KernelPermission {
-        // keep-sorted start
-        /// Permissions for the well-known SELinux "anon_inode" file-like object class.
-        AnonFsNode(AnonFsNodePermission),
-        /// Permissions for the well-known SELinux "binder" file-like object class.
-        Binder(BinderPermission),
-        /// Permissions for the well-known SELinux "blk_file" file-like object class.
-        Block(BlockFilePermission),
-        /// Permissions for the well-known SELinux "bpf" file-like object class.
-        Bpf(BpfPermission),
-        /// Permissions for the well-known SELinux "capability" object class.
-        Capability(CapabilityPermission),
-        /// Permissions for the well-known SELinux "capability2" object class.
-        Capability2(Capability2Permission),
-        /// Permissions for the well-known SELinux "chr_file" file-like object class.
-        Character(CharacterFilePermission),
-        /// Permissions for the well-known SELinux "dir" file-like object class.
-        Dir(DirPermission),
-        /// Permissions for the well-known SELinux "fd" object class.
-        Fd(FdPermission),
-        /// Permissions for the well-known SELinux "fifo_file" file-like object class.
-        Fifo(FifoFilePermission),
-        /// Permissions for the well-known SELinux "file" object class.
-        File(FilePermission),
-        /// Permissions for the well-known SELinux "filesystem" object class.
-        FileSystem(FileSystemPermission),
-        /// "icmp_socket" class permissions, enabled by "extended_socket_class" policy capability.
-        IcmpSocket(IcmpSocketPermission),
-        /// Permissions for the well-known SELinux "packet_socket" object class.
-        KeySocket(KeySocketPermission),
-        /// Permissions for the well-known SELinux "lnk_file" file-like object class.
-        Link(LinkFilePermission),
-        /// Permissions for the well-known SELinux "memfd_file" file-like object class.
-        MemFdFile(MemFdFilePermission),
-        /// Permissions for the well-known SELinux "netlink_audit_socket" file-like object class.
-        NetlinkAuditSocket(NetlinkAuditSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_connector_socket" file-like object class.
-        NetlinkConnectorSocket(NetlinkConnectorSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_crypto_socket" file-like object class.
-        NetlinkCryptoSocket(NetlinkCryptoSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_dnrt_socket" file-like object class.
-        NetlinkDnrtSocket(NetlinkDnrtSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_fib_lookup_socket" file-like object class.
-        NetlinkFibLookupSocket(NetlinkFibLookupSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_firewall_socket" file-like object class.
-        NetlinkFirewallSocket(NetlinkFirewallSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_generic_socket" file-like object class.
-        NetlinkGenericSocket(NetlinkGenericSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_ip6fw_socket" file-like object class.
-        NetlinkIp6FwSocket(NetlinkIp6FwSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_iscsi_socket" file-like object class.
-        NetlinkIscsiSocket(NetlinkIscsiSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_kobject_uevent_socket" file-like object class.
-        NetlinkKobjectUeventSocket(NetlinkKobjectUeventSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_netfilter_socket" file-like object class.
-        NetlinkNetfilterSocket(NetlinkNetfilterSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_nflog_socket" file-like object class.
-        NetlinkNflogSocket(NetlinkNflogSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_rdma_socket" file-like object class.
-        NetlinkRdmaSocket(NetlinkRdmaSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_route_socket" file-like object class.
-        NetlinkRouteSocket(NetlinkRouteSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_scsitransport_socket" file-like object class.
-        NetlinkScsitransportSocket(NetlinkScsitransportSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_selinux_socket" file-like object class.
-        NetlinkSelinuxSocket(NetlinkSelinuxSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_socket" file-like object class.
-        NetlinkSocket(NetlinkSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_tcpdiag_socket" file-like object class.
-        NetlinkTcpDiagSocket(NetlinkTcpDiagSocketPermission),
-        /// Permissions for the well-known SELinux "netlink_xfrm_socket" file-like object class.
-        NetlinkXfrmSocket(NetlinkXfrmSocketPermission),
-        /// Permissions for the well-known SELinux "packet_socket" object class.
-        PacketSocket(PacketSocketPermission),
-        /// Permissions for the well-known SELinux "perf_event" object class.
-        PerfEvent(PerfEventPermission),
-        /// Permissions for the well-known SELinux "process" object class.
-        Process(ProcessPermission),
-        /// Permissions for the well-known SELinux "process2" object class.
-        Process2(Process2Permission),
-        /// Permissions for the well-known SELinux "qipcrtr_socket" object class.
-        QipcrtrSocket(QipcrtrSocketPermission),
-        /// Permissions for the well-known SELinux "rawip_socket" object class.
-        RawIpSocket(RawIpSocketPermission),
-        /// "sctp_socket" class permissions, enabled by "extended_socket_class" policy capability.
-        SctpSocket(SctpSocketPermission),
-        /// Permissions for access to parts of the "selinuxfs" used to administer and query SELinux.
-        Security(SecurityPermission),
-        /// Permissions for the well-known SELinux "sock_file" file-like object class.
-        SockFile(SockFilePermission),
-        /// Permissions for the well-known SELinux "socket" object class.
-        Socket(SocketPermission),
-        /// Permissions for the well-known SELinux "system" object class.
-        System(SystemPermission),
-        /// Permissions for the well-known SELinux "tcp_socket" object class.
-        TcpSocket(TcpSocketPermission),
-        /// Permissions for the well-known SELinux "tun_socket" object class.
-        TunSocket(TunSocketPermission),
-        /// Permissions for the well-known SELinux "udp_socket" object class.
-        UdpSocket(UdpSocketPermission),
-        /// Permissions for the well-known SELinux "unix_dgram_socket" object class.
-        UnixDgramSocket(UnixDgramSocketPermission),
-        /// Permissions for the well-known SELinux "unix_stream_socket" object class.
-        UnixStreamSocket(UnixStreamSocketPermission),
-        /// "vsock_socket" class permissions, enabled by "extended_socket_class" policy capability.
-        VsockSocket(VsockSocketPermission),
-        // keep-sorted end
-    }
-}
-
 impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
     fn for_class(&self, class: T) -> KernelPermission {
         assert_eq!(self.class(), class.into());
@@ -468,25 +372,41 @@ impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
 /// of that underlying permission type. This is used to represent e.g. SELinux "dir" class deriving
 /// a basic set of permissions from the common "file" symbol.
 macro_rules! class_permission_enum {
-    ($(#[$meta:meta])* $name:ident $(for $kernel_class:ident)? {
+    ($(#[$meta:meta])* $name:ident for $kernel_class:ident {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         named_enum! {
-            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, VariantArray)]
+            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
             #[repr(u8)]
             $(#[$meta])* $name {
                 $($(#[$variant_meta])* $variant ($variant_name),)*
             }
         }
 
-        $(impl ClassPermission for $name {
+
+        impl ClassPermission for $name {
             fn class(&self) -> KernelClass {
                 KernelClass::$kernel_class
             }
             fn id(&self) -> u8 {
                 *self as u8
             }
-        })?
+        }
+
+        impl $name {
+            pub const PERMISSIONS: &[KernelPermission] = &[$(KernelPermission::$kernel_class(Self::$variant)),*];
+        }
+    };
+    ($(#[$meta:meta])* $name:ident {
+        $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
+    }) => {
+        named_enum! {
+            #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+            #[repr(u8)]
+            $(#[$meta])* $name {
+                $($(#[$variant_meta])* $variant ($variant_name),)*
+            }
+        }
     }
 }
 
@@ -499,7 +419,7 @@ macro_rules! cap_class_permission_enum {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         class_permission_enum! {
-            $(#[$meta])* $ name $(for $kernel_class)? {
+            $(#[$meta])* $name $(for $kernel_class)? {
                 // keep-sorted start
 
                 AuditControl("audit_control"),
@@ -639,7 +559,7 @@ macro_rules! fs_node_class_permission_enum {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         class_permission_enum! {
-            $(#[$meta])* $ name $(for $kernel_class)? {
+            $(#[$meta])* $name $(for $kernel_class)? {
                 // keep-sorted start
                 /// Permission to append to a file or socket.
                 Append("append"),
@@ -716,7 +636,7 @@ macro_rules! socket_class_permission_enum {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         fs_node_class_permission_enum! {
-            $(#[$meta])* $ name $(for $kernel_class)? {
+            $(#[$meta])* $name $(for $kernel_class)? {
                 // keep-sorted start
                 /// Permission to accept a connection.
                 Accept("accept"),
@@ -1074,12 +994,12 @@ impl ForClass<FileClass> for CommonFilePermission {
     fn for_class(&self, class: FileClass) -> KernelPermission {
         match class {
             FileClass::AnonFsNode => AnonFsNodePermission::from(*self).into(),
-            FileClass::Block => BlockFilePermission::from(*self).into(),
-            FileClass::Character => CharacterFilePermission::from(*self).into(),
+            FileClass::BlkFile => BlkFilePermission::from(*self).into(),
+            FileClass::ChrFile => ChrFilePermission::from(*self).into(),
             FileClass::Dir => DirPermission::from(*self).into(),
-            FileClass::Fifo => FifoFilePermission::from(*self).into(),
+            FileClass::FifoFile => FifoFilePermission::from(*self).into(),
             FileClass::File => FilePermission::from(*self).into(),
-            FileClass::Link => LinkFilePermission::from(*self).into(),
+            FileClass::LnkFile => LnkFilePermission::from(*self).into(),
             FileClass::SockFile => SockFilePermission::from(*self).into(),
             FileClass::MemFdFile => MemFdFilePermission::from(*self).into(),
         }
@@ -1107,12 +1027,12 @@ class_permission_enum! {
 }
 
 file_class_permission_enum! {
-    BlockFilePermission for Block {
+    BlkFilePermission for BlkFile {
     }
 }
 
 file_class_permission_enum! {
-    CharacterFilePermission for Character {
+    ChrFilePermission for ChrFile {
     }
 }
 
@@ -1181,7 +1101,7 @@ class_permission_enum! {
 }
 
 file_class_permission_enum! {
-    FifoFilePermission for Fifo {
+    FifoFilePermission for FifoFile {
     }
 }
 
@@ -1215,7 +1135,7 @@ class_permission_enum! {
 }
 
 file_class_permission_enum! {
-    LinkFilePermission for Link {
+    LnkFilePermission for LnkFile {
     }
 }
 

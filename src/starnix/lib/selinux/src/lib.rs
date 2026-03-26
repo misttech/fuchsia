@@ -192,11 +192,9 @@ mod tests {
     fn object_class_permissions() {
         let test_class_id = ClassId::new(NonZeroU32::new(20).unwrap());
         assert_eq!(ObjectClass::ClassId(test_class_id), test_class_id.into());
-        for variant in ProcessPermission::VARIANTS {
+        for variant in ProcessPermission::PERMISSIONS {
             assert_eq!(KernelClass::Process, variant.class());
             assert_eq!("process", variant.class().name());
-            let permission = (*variant).into();
-            assert_eq!(KernelPermission::Process(*variant), permission);
             assert_eq!(ObjectClass::Kernel(KernelClass::Process), variant.class().into());
         }
     }

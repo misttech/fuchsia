@@ -333,7 +333,7 @@ impl PolicyIndex {
         node_path: NullessByteStr<'_>,
         class: Option<crate::KernelClass>,
     ) -> Option<SecurityContext> {
-        let node_path = if class == Some(crate::FileClass::Link.into())
+        let node_path = if class == Some(crate::FileClass::LnkFile.into())
             && !self.parsed_policy.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
         {
             // Symlinks receive the filesystem root label by default, rather than a label dependent on
