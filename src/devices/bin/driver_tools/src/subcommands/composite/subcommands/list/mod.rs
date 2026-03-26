@@ -19,7 +19,7 @@ use std::io::Write;
 enum CompositeState {
     Bound(String),
     Unbound,
-    Incomplete,
+    Incomplete(Option<String>),
 }
 
 impl CompositeState {
@@ -27,7 +27,7 @@ impl CompositeState {
         match self {
             CompositeState::Bound(_) => common::colorized("Bound", Colour::Green, with_style),
             CompositeState::Unbound => common::colorized("Unbound", Colour::Yellow, with_style),
-            CompositeState::Incomplete => {
+            CompositeState::Incomplete(_) => {
                 common::colorized("Incomplete", Colour::Fixed(208), with_style)
             } // Orange-ish
         }
@@ -37,7 +37,7 @@ impl CompositeState {
         match (self, filter) {
             (CompositeState::Bound(_), CompositeFilter::Bound) => true,
             (CompositeState::Unbound, CompositeFilter::Unbound) => true,
-            (CompositeState::Incomplete, CompositeFilter::Incomplete) => true,
+            (CompositeState::Incomplete(_), CompositeFilter::Incomplete) => true,
             _ => false,
         }
     }
@@ -91,7 +91,15 @@ pub async fn list(
         }
 
         let state = if is_incomplete {
-            CompositeState::Incomplete
+            let matched_driver_url = info.composite.as_ref().and_then(|c| {
+                let fdd::CompositeInfo::Composite(comp) = c;
+                comp.matched_driver
+                    .as_ref()
+                    .and_then(|m| m.composite_driver.as_ref())
+                    .and_then(|d| d.driver_info.as_ref())
+                    .and_then(|i| i.url.clone())
+            });
+            CompositeState::Incomplete(matched_driver_url)
         } else {
             if let Some(moniker) = &info.moniker {
                 if let Some(node) = moniker_to_node.get(moniker) {
@@ -128,6 +136,7 @@ pub async fn list(
 
         let driver = match &state {
             CompositeState::Bound(url) => url.clone(),
+            CompositeState::Incomplete(Some(url)) => url.clone(),
             _ => "None".to_string(),
         };
 
@@ -147,9 +156,10 @@ mod tests {
     use anyhow::Context;
     use argh::FromArgs;
     use flex_client::fidl::ServerEnd;
+    use flex_fuchsia_driver_framework as fdf;
+    use fuchsia_async as fasync;
     use futures::future::{Future, FutureExt};
     use futures::stream::StreamExt;
-    use {flex_fuchsia_driver_framework as fdf, fuchsia_async as fasync};
 
     async fn test_list_composite<F, Fut>(
         cmd: ListCompositeCommand,
@@ -298,6 +308,19 @@ mod tests {
                                     name: Some("incomplete_spec".to_string()),
                                     ..Default::default()
                                 }),
+                                matched_driver: Some(fdf::CompositeDriverMatch {
+                                    composite_driver: Some(fdf::CompositeDriverInfo {
+                                        driver_info: Some(fdf::DriverInfo {
+                                            url: Some(
+                                                "fuchsia-boot:///incomplete#meta/incomplete.cm"
+                                                    .to_string(),
+                                            ),
+                                            ..Default::default()
+                                        }),
+                                        ..Default::default()
+                                    }),
+                                    ..Default::default()
+                                }),
                                 ..Default::default()
                             })),
                             parent_monikers: Some(vec![None]),
@@ -318,5 +341,6 @@ mod tests {
 
         assert!(output.contains("Incomplete"));
         assert!(output.contains("incomplete_spec"));
+        assert!(output.contains("fuchsia-boot:///incomplete#meta/incomplete.cm"));
     }
 }

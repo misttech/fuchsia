@@ -11,6 +11,9 @@ use bind::compiler::symbol_table::get_deprecated_key_identifier;
 use bind::interpreter::common::{BytecodeIter, next_u8, next_u32};
 use bind::interpreter::decode_bind_rules::{DecodedCompositeBindRules, DecodedRules};
 use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, PropertyKey, match_bind};
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_framework as fdf;
 #[cfg(not(feature = "fdomain"))]
 use fuchsia_driver_dev as fdev;
 #[cfg(feature = "fdomain")]
@@ -18,7 +21,6 @@ use fuchsia_driver_dev_fdomain as fdev;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::io;
-use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 trait DiagnosableParent {
     fn to_properties(&self) -> DeviceProperties;
@@ -134,6 +136,16 @@ async fn diagnose_driver_and_node(
         return Err(anyhow!("Node not found: {}", node_moniker));
     }
     let node = &nodes[0];
+
+    if !is_node_unbound(node) {
+        if let Some(bound_url) = &node.bound_driver_url {
+            if bound_url == driver_url {
+                writeln!(writer, "  Node is already bound to this driver.")?;
+            } else {
+                writeln!(writer, "  Node is bound to a different driver: {}", bound_url)?;
+            }
+        }
+    }
 
     if let Some(bytecode) = &driver.bind_rules_bytecode {
         match DecodedRules::new(bytecode.clone())? {
@@ -394,13 +406,33 @@ async fn diagnose_driver(
 ) -> Result<()> {
     let driver_url = driver.url.as_deref().unwrap_or("unknown");
     writeln!(writer, "Diagnosing driver {}", driver_url)?;
+
+    let nodes = fdev::get_device_info(driver_dev_proxy, &[], false).await?;
+    let bound_nodes = nodes
+        .iter()
+        .filter_map(|n| {
+            if let Some(bound_url) = &n.bound_driver_url {
+                if bound_url == driver_url {
+                    return Some(n.moniker.as_deref().unwrap_or("unknown"));
+                }
+            }
+            None
+        })
+        .collect_vec();
+
+    if !bound_nodes.is_empty() {
+        writeln!(writer, "\nDriver {} is bound to the following nodes:", driver_url)?;
+        for node in bound_nodes {
+            writeln!(writer, "  {}", node)?;
+        }
+    }
+
     if let Some(bytecode) = &driver.bind_rules_bytecode {
         let rules = DecodedRules::new(bytecode.clone())?;
 
         match &rules {
             DecodedRules::Normal(r) => {
                 writeln!(writer, "\nFuzzy matching against all unbound nodes...")?;
-                let nodes = fdev::get_device_info(driver_dev_proxy, &[], false).await?;
                 let unbound_nodes = nodes.into_iter().filter(|n| is_node_unbound(n)).collect_vec();
                 for node in unbound_nodes {
                     let props = node_to_bind_properties(node.node_property_list.as_deref());
@@ -429,10 +461,42 @@ async fn diagnose_driver(
                 }
             }
             DecodedRules::Composite(r) => {
-                writeln!(writer, "\nFuzzy matching against all unmatched composite node specs...")?;
                 let specs = fdev::get_composite_node_specs(driver_dev_proxy, None).await?;
-                let unmatched_specs =
-                    specs.into_iter().filter(|s| s.matched_driver.is_none()).collect_vec();
+                let (matched_specs, unmatched_specs): (Vec<_>, Vec<_>) =
+                    specs.into_iter().partition(|s| {
+                        if let Some(matched) = &s.matched_driver {
+                            if let Some(composite_driver) = &matched.composite_driver {
+                                if let Some(info) = &composite_driver.driver_info {
+                                    if let Some(url) = &info.url {
+                                        return url == driver_url;
+                                    }
+                                }
+                            }
+                        }
+                        false
+                    });
+
+                if !matched_specs.is_empty() {
+                    writeln!(writer, "\nDriver is matched to the following composite node specs:")?;
+                    for spec_info in matched_specs {
+                        let spec_name = spec_info
+                            .spec
+                            .as_ref()
+                            .and_then(|s| s.name.as_deref())
+                            .unwrap_or("unknown");
+                        writeln!(
+                            writer,
+                            "  {}\n  (Run `ffx driver doctor --composite-node-spec {}` to diagnose parents)",
+                            spec_name, spec_name
+                        )?;
+                    }
+                }
+
+                writeln!(writer, "\nFuzzy matching against all unmatched composite node specs...")?;
+                let unmatched_specs = unmatched_specs
+                    .into_iter()
+                    .filter(|s| s.matched_driver.is_none())
+                    .collect_vec();
                 for spec_info in unmatched_specs {
                     if let Some(spec) = &spec_info.spec {
                         let mut potential_match = false;
@@ -636,6 +700,16 @@ fn is_spec_fuzzy_match2(rules: &[fdf::BindRule2], properties: &DeviceProperties)
     })
 }
 
+async fn get_moniker_from_path(path: &str, proxy: &fdd::ManagerProxy) -> Result<String> {
+    let nodes = fdev::get_device_info(proxy, &[path.to_string()], true).await.unwrap_or_default();
+    if let Some(node) = nodes.first() {
+        if let Some(moniker) = &node.moniker {
+            return Ok(moniker.clone());
+        }
+    }
+    Ok(path.to_string())
+}
+
 async fn diagnose_spec_info(
     spec_info: &fdf::CompositeInfo,
     driver_dev_proxy: &fdd::ManagerProxy,
@@ -696,6 +770,133 @@ async fn diagnose_spec_info(
             }
         }
     }
+
+    writeln!(writer, "\nFuzzy matching spec parents against all unbound nodes...")?;
+
+    // Query for existing composite nodes to get their bound parents
+    let mut parent_paths: Vec<Option<String>> = Vec::new();
+    let mut parent_monikers: Vec<Option<String>> = Vec::new();
+    if let Some(spec) = &spec_info.spec {
+        let (iterator, iterator_server) =
+            driver_dev_proxy.domain().create_proxy::<fdd::CompositeInfoIteratorMarker>();
+        if driver_dev_proxy.get_composite_info(iterator_server).is_ok() {
+            loop {
+                if let Ok(composite_list) = iterator.get_next().await {
+                    if composite_list.is_empty() {
+                        break;
+                    }
+                    for composite_node in composite_list {
+                        if let Some(fdd::CompositeInfo::Composite(node_info)) =
+                            composite_node.composite
+                        {
+                            if node_info.spec.and_then(|s| s.name) == spec.name {
+                                parent_paths =
+                                    composite_node.parent_topological_paths.unwrap_or_default();
+                                parent_monikers =
+                                    composite_node.parent_monikers.unwrap_or_default();
+                                break;
+                            }
+                        }
+                    }
+                    if !parent_paths.is_empty() || !parent_monikers.is_empty() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    let nodes = fdev::get_device_info(driver_dev_proxy, &[], false).await?;
+    let unbound_nodes = nodes.into_iter().filter(|n| is_node_unbound(n)).collect_vec();
+
+    let parent_names = spec_info.matched_driver.as_ref().and_then(|m| m.parent_names.as_ref());
+
+    if let Some(spec) = &spec_info.spec {
+        if let Some(parents) = &spec.parents {
+            for (i, parent) in parents.iter().enumerate() {
+                let name =
+                    parent_names.and_then(|n| n.get(i)).map(|s| s.as_str()).unwrap_or("unknown");
+                writeln!(writer, "  Parent {} ({}):", i, name)?;
+
+                let mut bound_node = None;
+                if let Some(Some(moniker)) = parent_monikers.get(i) {
+                    bound_node = Some(moniker.clone());
+                } else if let Some(Some(path)) = parent_paths.get(i) {
+                    bound_node = Some(
+                        get_moniker_from_path(path, driver_dev_proxy)
+                            .await
+                            .unwrap_or_else(|_| path.clone()),
+                    );
+                }
+
+                if let Some(bound_name) = bound_node {
+                    writeln!(writer, "    Already bound to node: {}", bound_name)?;
+                } else {
+                    let mut found_match = false;
+                    for node in &unbound_nodes {
+                        let properties =
+                            node_to_bind_properties(node.node_property_list.as_deref());
+                        if parent.is_fuzzy_match(&properties) {
+                            found_match = true;
+                            writeln!(
+                                writer,
+                                "    Potential match: node {}",
+                                node.moniker.as_deref().unwrap_or("unknown")
+                            )?;
+                            let diags = parent.evaluate_bind_rules(&properties);
+                            report_diagnostics(&diags, writer, 4)?;
+                        }
+                    }
+                    if !found_match {
+                        writeln!(writer, "    No unbound nodes matched this parent.")?;
+                    }
+                }
+            }
+        } else if let Some(parents2) = &spec.parents2 {
+            for (i, parent) in parents2.iter().enumerate() {
+                let name =
+                    parent_names.and_then(|n| n.get(i)).map(|s| s.as_str()).unwrap_or("unknown");
+                writeln!(writer, "  Parent {} ({}):", i, name)?;
+
+                let mut bound_node = None;
+                if let Some(Some(moniker)) = parent_monikers.get(i) {
+                    bound_node = Some(moniker.clone());
+                } else if let Some(Some(path)) = parent_paths.get(i) {
+                    bound_node = Some(
+                        get_moniker_from_path(path, driver_dev_proxy)
+                            .await
+                            .unwrap_or_else(|_| path.clone()),
+                    );
+                }
+
+                if let Some(bound_name) = bound_node {
+                    writeln!(writer, "    Already bound to node: {}", bound_name)?;
+                } else {
+                    let mut found_match = false;
+                    for node in &unbound_nodes {
+                        let properties =
+                            node_to_bind_properties(node.node_property_list.as_deref());
+                        if parent.is_fuzzy_match(&properties) {
+                            found_match = true;
+                            writeln!(
+                                writer,
+                                "    Potential match: node {}",
+                                node.moniker.as_deref().unwrap_or("unknown")
+                            )?;
+                            let diags = parent.evaluate_bind_rules(&properties);
+                            report_diagnostics(&diags, writer, 4)?;
+                        }
+                    }
+                    if !found_match {
+                        writeln!(writer, "    No unbound nodes matched this parent.")?;
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
