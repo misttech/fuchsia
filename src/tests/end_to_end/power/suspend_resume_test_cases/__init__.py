@@ -21,10 +21,12 @@ class SuspendResumeTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
 
     async def setup_test(
         self,
+        fuchsia_devices: list[AsyncFuchsiaDevice],
+        output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
-        await super().setup_test()
-        self.dut = self.mobly_test.fuchsia_devices[0]
-        self.output_file_path = self.mobly_test.output_file_path
+        await super().setup_test(fuchsia_devices, output_file_path)
+        self.dut = fuchsia_devices[0]
+        self.output_file_path = output_file_path
 
         self._boot_id_before = await self.dut.boot_id()
         _LOGGER.info(

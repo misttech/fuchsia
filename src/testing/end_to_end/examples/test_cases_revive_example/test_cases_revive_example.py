@@ -4,8 +4,11 @@
 """Example test demonstrating FuchsiaTestCases and TestCaseRevive."""
 
 import logging
+import pathlib
+from typing import Callable
 
 from fuchsia_base_test import fuchsia_base_test
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from mobly import test_runner
 from test_case_revive import test_case_revive
 
@@ -15,7 +18,11 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class MyTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Example test cases."""
 
-    def setup_test(self) -> None:
+    def setup_test(
+        self,
+        fuchsia_devices: list[FuchsiaDevice],
+        output_file_path: Callable[[str], pathlib.Path],
+    ) -> None:
         _LOGGER.info("MyTestCases.setup_test() called")
 
     def teardown_test(self) -> None:

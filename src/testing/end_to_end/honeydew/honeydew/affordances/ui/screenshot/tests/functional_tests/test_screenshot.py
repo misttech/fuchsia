@@ -5,11 +5,14 @@
 
 import logging
 import os
+import pathlib
 import time
+from typing import Callable
 
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
 
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.typing import custom_types
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,10 +26,16 @@ EXAMPLE_URL = (
 class ScreenshotTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test logic for Screenshot affordance."""
 
-    def setup_test(self) -> None:
-        super().setup_test()
-        self.dut = self.mobly_test.fuchsia_devices[0]
-        self.test_case_path = self.mobly_test.test_case_path
+    def setup_test(
+        self,
+        fuchsia_devices: list[FuchsiaDevice],
+        output_file_path: Callable[[str], pathlib.Path],
+    ) -> None:
+        super().setup_test(fuchsia_devices, output_file_path)
+        self.fuchsia_devices = fuchsia_devices
+        self.output_file_path = output_file_path
+        self.dut = self.fuchsia_devices[0]
+        self.test_case_path = str(self.output_file_path(""))
 
     def test_take_screenshot(self) -> None:
         # We launch the test app that draws something on the screen.

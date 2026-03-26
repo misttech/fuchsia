@@ -26,7 +26,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub,
     usb_power_hub_using_dmc,
 )
-from honeydew.fuchsia_device import async_fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
 from honeydew.typing import custom_types
 from mobly import signals, test_runner
 from mobly.records import TestResultRecord
@@ -102,16 +102,19 @@ class TracingOn(enum.StrEnum):
 class FuchsiaTestCases:
     """Base class for modular test cases."""
 
-    def __init__(self, mobly_test: "FuchsiaBaseTest"):
-        self.mobly_test = mobly_test
-
-    def setup_test(self) -> None:
+    def setup_test(
+        self,
+        fuchsia_devices: list[fuchsia_device.FuchsiaDevice],
+        output_file_path: Callable[[str], pathlib.Path],
+    ) -> None:
         """Called before each test case."""
 
     def teardown_test(self) -> None:
         """Called after each test case."""
 
-    def inject_test_cases(self) -> None:
+    def inject_test_cases(
+        self, mobly_test: "Union[FuchsiaBaseTest, AsyncFuchsiaBaseTest]"
+    ) -> None:
         for attr_name, method in inspect.getmembers(self, callable):
             if attr_name.startswith("test_"):
 
@@ -120,12 +123,21 @@ class FuchsiaTestCases:
                     *args: Any, method: Any = method, **kwargs: Any
                 ) -> None:
                     try:
-                        self.setup_test()
+                        fuchsia_devices = [
+                            device.as_sync()
+                            if hasattr(device, "as_sync")
+                            else device
+                            for device in mobly_test.fuchsia_devices
+                        ]
+                        self.setup_test(
+                            fuchsia_devices,
+                            mobly_test.output_file_path,
+                        )
                         method(*args, **kwargs)
                     finally:
                         self.teardown_test()
 
-                self.mobly_test.generate_tests(
+                mobly_test.generate_tests(
                     test_logic=wrapper,
                     name_func=lambda *a, name=attr_name: name,
                     arg_sets=[()],
@@ -139,19 +151,17 @@ class FuchsiaTestCases:
 class AsyncFuchsiaTestCases:
     """Base class for modular test cases."""
 
-    def __init__(
+    async def setup_test(  # type: ignore
         self,
-        mobly_test: "AsyncFuchsiaBaseTest",
+        fuchsia_devices: list[async_fuchsia_device.AsyncFuchsiaDevice],
+        output_file_path: Callable[[str], pathlib.Path],
     ):
-        self.mobly_test = mobly_test
-
-    async def setup_test(self):  # type: ignore
         """Called before each test case."""
 
     async def teardown_test(self):  # type: ignore
         """Called after each test case."""
 
-    def inject_test_cases(self) -> None:
+    def inject_test_cases(self, mobly_test: "AsyncFuchsiaBaseTest") -> None:
         for attr_name, method in inspect.getmembers(self, callable):
             if attr_name.startswith("test_"):
 
@@ -160,7 +170,10 @@ class AsyncFuchsiaTestCases:
                     *args: Any, method: Any = method, **kwargs: Any
                 ) -> None:
                     try:
-                        await self.setup_test()
+                        await self.setup_test(
+                            mobly_test.fuchsia_devices,
+                            mobly_test.output_file_path,
+                        )
 
                         if inspect.iscoroutinefunction(method):
                             await method(*args, **kwargs)
@@ -169,7 +182,7 @@ class AsyncFuchsiaTestCases:
                     finally:
                         await self.teardown_test()
 
-                self.mobly_test.generate_tests(
+                mobly_test.generate_tests(
                     test_logic=wrapper,
                     name_func=lambda *a, name=attr_name: name,
                     arg_sets=[()],
@@ -204,7 +217,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             return
 
         for tc in self.TEST_CASES:
-            tc(self).inject_test_cases()
+            tc().inject_test_cases(self)
 
     async def setup_class(self):  # type: ignore
         """setup_class is called once before running tests.

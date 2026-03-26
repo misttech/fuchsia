@@ -4,7 +4,8 @@
 """Mobly test for UserInput affordance."""
 
 import os
-from typing import Optional
+import pathlib
+from typing import Callable, Optional
 
 from fuchsia_base_test import fuchsia_base_test
 from mobly import asserts, test_runner
@@ -12,6 +13,7 @@ from mobly import asserts, test_runner
 from honeydew import errors
 from honeydew.affordances.ui.screenshot import types
 from honeydew.affordances.ui.user_input import types as ui_custom_types
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.utils import common
 
 INPUT_APP = (
@@ -23,16 +25,17 @@ INPUT_APP = (
 class UserInputTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test logic for UserInput affordance."""
 
-    def __init__(self, mobly_test: fuchsia_base_test.FuchsiaBaseTest):
-        super().__init__(mobly_test)
+    def setup_test(
+        self,
+        fuchsia_devices: list[FuchsiaDevice],
+        output_file_path: Callable[[str], pathlib.Path],
+    ) -> None:
+        super().setup_test(fuchsia_devices, output_file_path)
+        self.fuchsia_devices = fuchsia_devices
+        self.output_file_path = output_file_path
 
-        self.screenshot_attempt_count = 0
-
-    def setup_test(self) -> None:
-        super().setup_test()
-
-        self.dut = self.mobly_test.fuchsia_devices[0]
-        self.test_case_path = self.mobly_test.test_case_path
+        self.dut = self.fuchsia_devices[0]
+        self.test_case_path = str(self.output_file_path(""))
         self.screenshot_attempt_count = 0
 
     def _take_and_save_screenshot(
