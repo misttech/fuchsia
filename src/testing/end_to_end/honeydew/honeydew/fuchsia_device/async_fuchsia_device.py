@@ -235,6 +235,7 @@ class AsyncFuchsiaDevice(
         self._on_device_resume_fns: list[
             Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
         ] = []
+        self._pre_suspend_boot_id: str | None = None
 
         self._config: dict[str, Any] | None = config
         self._created_context = False
@@ -998,6 +999,7 @@ class AsyncFuchsiaDevice(
                 fn()
 
         _LOGGER.info("Disconnecting USB from %s...", self.device_name)
+        self._pre_suspend_boot_id = await self.boot_id()
 
         self.fuchsia_controller.before_usb_disconnect()
 
@@ -1023,6 +1025,12 @@ class AsyncFuchsiaDevice(
         await self.wait_for_online()
 
         self.fuchsia_controller.after_usb_reconnect()
+
+        post_resume_boot_id = await self.boot_id()
+        if self._pre_suspend_boot_id != post_resume_boot_id:
+            raise errors.FuchsiaDeviceError(
+                f"Unexpected reboot detected for {self.device_name}. Boot ID {self._pre_suspend_boot_id} != {post_resume_boot_id}"
+            )
 
         for fn in self._on_device_resume_fns:
             if inspect.iscoroutinefunction(fn):

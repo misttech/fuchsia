@@ -28,20 +28,6 @@ class SuspendResumeTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
         self.dut = fuchsia_devices[0]
         self.output_file_path = output_file_path
 
-        self._boot_id_before = await self.dut.boot_id()
-        _LOGGER.info(
-            f"Recorded boot ID at start of test: {self._boot_id_before}"
-        )
-
-    async def teardown_test(self) -> None:
-        boot_id = await self.dut.boot_id()
-        assert_equal(
-            boot_id,
-            self._boot_id_before,
-            f"Boot ID changed from {self._boot_id_before} to {boot_id}",
-        )
-        await super().teardown_test()
-
     async def test_suspend_resume(self) -> None:
         await power.async_suspend_resume(
             self.dut, Deadline.from_timeout(timedelta(minutes=1))
