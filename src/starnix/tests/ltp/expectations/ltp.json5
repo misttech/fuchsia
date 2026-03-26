@@ -199,7 +199,6 @@
 
                 // This test fails because we do not limit the amount of swap files according to the
                 // size mount flag.
-                "swapon03",
                 "sync01",
                 "time-schedule01",
 
@@ -243,6 +242,12 @@
 
                 // TODO(https://fxbug.dev/297431387): Require more io_uring feature
                 "cve-2020-29373",
+
+                // TODO(https://fxbug.dev/496317235): Upstream LTP roll, require investigation
+                "clone11",
+                "clone304",
+                "file_attr05",
+                "name_to_handle_at03",
             ],
         },
         {
@@ -315,6 +320,10 @@
 
                 // TODO(https://fxbug.dev/287114514)
                 "userfaultfd01",
+                "userfaultfd02",
+                "userfaultfd03",
+                "userfaultfd04",
+                "userfaultfd05",
 
                 // Flaking, see b/457451482.
                 "fork06",
@@ -356,6 +365,12 @@
                 "set_thread_area02",
                 "statmount09",
                 "unshare05",
+
+                // TODO(https://fxbug.dev/496317235): Temporarily skip since
+                // this fails with the currently rolled LTP and will pass with
+                // the next. We don't have a better way to indicate "pass or
+                // fail, but don't crash" in the expectation system.
+                "swapon03",
             ],
         },
     ],
