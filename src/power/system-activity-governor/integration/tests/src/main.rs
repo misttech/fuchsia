@@ -3587,7 +3587,7 @@ async fn test_activity_governor_captures_inspect_event_buffer_stats() -> Result<
         root: contains {
             booting: false,
             "suspend_events_stats": {
-                event_capacity: 8192u64,
+                event_capacity: 6144u64,
                 history_duration_seconds: AnyProperty,
                 at_capacity_history_duration_seconds: AnyProperty,
             },
