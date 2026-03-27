@@ -141,11 +141,7 @@ if (is_host) {
   }
 
   reports = []
-  foreach(api_level,
-          platform_version.frozen_api_levels + [
-                "NEXT",
-                "HEAD",
-              ]) {
+  foreach(api_level, platform_version.runtime_supported_api_levels) {
     label = "report_${api_level}"
     reports += [ ":${label}" ]
 
@@ -197,7 +193,9 @@ if (is_host) {
   }
 
   if (check_external_external_abi_compat) {
-    # Generate ABI report covering how each stable API level is compatible with each other.
+    # Generate ABI report covering how each stable (and soon to be stable)
+    # API level is compatible with each other.
+    api_levels = platform_version.frozen_api_levels + [ "NEXT" ]
     external_label = "report_external"
     reports += [ ":${external_label}" ]
     abi_compat(external_label) {
@@ -206,7 +204,7 @@ if (is_host) {
       report = "${root_build_dir}/compatibility-report-external.txt"
       level_irs = []
       deps = []
-      foreach(api_level, platform_version.frozen_api_levels + [ "NEXT" ]) {
+      foreach(api_level, api_levels) {
         level_irs += [ "${root_build_dir}/platform-ir-${api_level}.json" ]
         deps += [ "//tools/fidl/platform-ir:platform_ir_${api_level}(${default_toolchain})" ]
       }

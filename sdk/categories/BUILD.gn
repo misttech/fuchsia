@@ -90,15 +90,11 @@ if (is_host || is_fidl_toolchain) {
       }
     }
 
-    # FIDL libraries in an SDK category are compiled for each frozen API level,
-    # so those targets must be allowed too.
+    # The FIDL compatibility tests compile all FIDL libraries in an SDK category
+    # for each API level supported by the platform, so allow those targets too.
     import("//build/config/fuchsia/platform_version.gni")
     foreach(target, ffx_subtool_fidl_partner_unstable_allowlist) {
-      foreach(level,
-              platform_version.frozen_api_levels + [
-                    "NEXT",
-                    "HEAD",
-                  ]) {
+      foreach(level, platform_version.runtime_supported_api_levels) {
         visibility += [ "${target}_compile_${level}_fidlc" ]
       }
     }

@@ -492,23 +492,15 @@ template("fidl_library") {
   # LINT.ThenChange(//build/bazel/rules/fidl/fidl_ir.bzl:lint)
 
   # LINT.IfChange(compatibility_tests)
-  # Enforce compatibility checks for all FIDL libraries included in the IDK with
-  # platform `fuchsia`.
   if (requires_compatibility_tests) {
-    api_levels = platform_version.frozen_api_levels
-
-    api_levels += [
-      "NEXT",
-      "HEAD",
-    ]
-
     if (defined(invoker.goldens_dir)) {
       goldens_dir = invoker.goldens_dir
     } else {
       goldens_dir = "//sdk/history"
     }
 
-    foreach(level, api_levels) {
+    # Run compatibility tests for all API levels supported by the platform.
+    foreach(level, platform_version.runtime_supported_api_levels) {
       # Avoid clobbering files for different levels.
       level_gen_dir = "${target_gen_dir}/${level}"
 
