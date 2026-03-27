@@ -5,9 +5,12 @@
 use std::str::FromStr;
 use thiserror::Error;
 
+#[cfg(feature = "fdomain")]
+use component_debug_fdomain as component_debug;
 #[cfg(target_os = "fuchsia")]
 use diagnostics_reader as reader;
-use fidl_fuchsia_developer_remotecontrol::ConnectCapabilityError;
+
+use flex_fuchsia_developer_remotecontrol::ConnectCapabilityError;
 
 #[derive(Error, Debug)]
 pub enum Error {

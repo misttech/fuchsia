@@ -8,7 +8,7 @@ use crate::types::Error;
 use argh::{ArgsInfo, FromArgs};
 use diagnostics_data::{InspectData, InspectHandleName};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
-use fidl_fuchsia_diagnostics as fdiagnostics;
+use flex_fuchsia_diagnostics as fdiagnostics;
 use serde::ser::{Error as _, SerializeSeq};
 use serde::{Serialize, Serializer};
 use std::fmt;

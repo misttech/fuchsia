@@ -6,13 +6,27 @@ use crate::commands::types::DiagnosticsProvider;
 use crate::types::Error;
 use anyhow::anyhow;
 use cm_rust::{ExposeDeclCommon, ExposeSource, SourceName};
+
+#[cfg(not(feature = "fdomain"))]
+use component_debug;
+#[cfg(feature = "fdomain")]
+use component_debug_fdomain as component_debug;
+
 use component_debug::dirs::*;
 use component_debug::realm::*;
-use fidl::endpoints::DiscoverableProtocolMarker;
-use fidl_fuchsia_diagnostics::{All, ArchiveAccessorMarker, Selector, TreeNames};
+use flex_client::ProxyHasDomain;
+use flex_client::fidl::DiscoverableProtocolMarker;
+use flex_fuchsia_diagnostics::{All, ArchiveAccessorMarker, Selector, TreeNames};
+
+#[cfg(not(feature = "fdomain"))]
+use fuchsia_fs;
+#[cfg(feature = "fdomain")]
+use fuchsia_fs_fdomain as fuchsia_fs;
+
+use flex_fuchsia_io as fio;
+use flex_fuchsia_sys2 as fsys2;
 use fuchsia_fs::directory;
 use moniker::Moniker;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys2};
 
 const ACCESSORS_DICTIONARY: &str = "diagnostics-accessors";
 
@@ -43,11 +57,11 @@ async fn list_accessors(
         return None;
     };
 
-    let (dir_proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+    let (dir_proxy, server_end) = realm.domain().create_proxy::<fio::DirectoryMarker>();
     exposed_dir
         .open(
             ACCESSORS_DICTIONARY,
-            fio::PERM_READABLE,
+            fio::Flags::PROTOCOL_DIRECTORY,
             &Default::default(),
             server_end.into_channel(),
         )

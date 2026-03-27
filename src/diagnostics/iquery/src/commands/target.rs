@@ -8,8 +8,8 @@ use crate::types::Error;
 use diagnostics_data::{Data, Inspect};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fidl::endpoints::DiscoverableProtocolMarker;
-use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, ArchiveAccessorProxy, Selector};
-use fidl_fuchsia_sys2 as fsys2;
+use flex_fuchsia_diagnostics::{ArchiveAccessorMarker, ArchiveAccessorProxy, Selector};
+use flex_fuchsia_sys2 as fsys2;
 use moniker::Moniker;
 
 const ROOT_ARCHIVIST: &str = "bootstrap/archivist";

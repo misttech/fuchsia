@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#[cfg(feature = "fdomain")]
+use component_debug_fdomain as component_debug;
+
 use crate::commands::types::*;
 use crate::commands::utils;
 use crate::types::Error;
 use argh::{ArgsInfo, FromArgs};
 use component_debug::realm::Instance;
 use diagnostics_data::InspectData;
-use fidl_fuchsia_diagnostics::Selector;
-use fidl_fuchsia_sys2 as fsys;
+use flex_fuchsia_diagnostics::Selector;
+use flex_fuchsia_sys2 as fsys;
 use serde::{Serialize, Serializer};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;

@@ -4,8 +4,8 @@
 
 use crate::types::Error;
 use diagnostics_data::{Data, Inspect};
-use fidl_fuchsia_diagnostics::Selector;
-use fidl_fuchsia_sys2 as fsys2;
+use flex_fuchsia_diagnostics::Selector;
+use flex_fuchsia_sys2 as fsys2;
 use serde::Serialize;
 use std::fmt::Display;
 use std::future::Future;
