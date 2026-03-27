@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_vector_cache::{AccessVectorCache, CacheStats, Query};
+use crate::access_vector_cache::{
+    AccessVectorCache, CacheStats, KernelXpermsAccessDecision, Query,
+};
 use crate::exceptions_config::ExceptionsConfig;
 use crate::permission_check::PermissionCheck;
 use crate::policy::metadata::HandleUnknown;
 use crate::policy::parser::PolicyData;
-
 use crate::policy::{
     AccessDecision, AccessVector, AccessVectorComputer, ClassId, ClassPermissionId,
-    FsUseLabelAndType, FsUseType, Policy, SecurityContext, XpermsAccessDecision, XpermsKind,
-    parse_policy_by_value,
+    FsUseLabelAndType, FsUseType, KernelAccessDecision, Policy, SELINUX_AVD_FLAGS_PERMISSIVE,
+    SecurityContext, XpermsBitmap, XpermsKind, parse_policy_by_value,
 };
 use crate::sid_table::SidTable;
 use crate::sync::RwLock;
@@ -20,7 +21,6 @@ use crate::{
     FileSystemMountSids, FsNodeClass, InitialSid, KernelClass, KernelPermission, NullessByteStr,
     ObjectClass, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
 };
-
 use anyhow::Context as _;
 use std::collections::HashMap;
 use std::ops::DerefMut;
@@ -111,6 +111,35 @@ impl SecurityServerState {
 
     fn expect_active_policy_mut(&mut self) -> &mut ActivePolicy {
         self.active_policy.as_mut().expect("policy should be loaded")
+    }
+
+    fn compute_access_decision_raw(
+        &self,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        target_class: ObjectClass,
+    ) -> AccessDecision {
+        let Some(active_policy) = self.active_policy.as_ref() else {
+            // All permissions are allowed when no policy is loaded, regardless of enforcing state.
+            return AccessDecision::allow(AccessVector::ALL);
+        };
+
+        let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
+        let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
+
+        let mut decision = active_policy.parsed.compute_access_decision(
+            &source_context,
+            &target_context,
+            target_class,
+        );
+
+        decision.todo_bug = active_policy.exceptions.lookup(
+            source_context.type_(),
+            target_context.type_(),
+            target_class,
+        );
+
+        decision
     }
 }
 
@@ -493,28 +522,30 @@ impl SecurityServer {
     /// based on the specified source & target security SIDs.
     /// For file-like classes the `compute_new_fs_node_sid*()` APIs should be used instead.
     // TODO: Move this API to sit alongside the other `compute_*()` APIs.
-    pub fn compute_create_sid(
+    // TODO: https://fxbug.dev/335397745 - APIs should not mix SecurityId and (raw) ClassId.
+    pub fn compute_create_sid_raw(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: ClassId,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.backend.compute_create_sid(source_sid, target_sid, target_class)
+        self.backend.compute_create_sid_raw(source_sid, target_sid, target_class.into())
     }
 
     /// Returns the raw `AccessDecision` for a specified source, target and class.
-    pub fn compute_access_decision(
+    // TODO: APIs should not mix SecurityId and (raw) ClassId.
+    pub fn compute_access_decision_raw(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ClassId,
     ) -> AccessDecision {
-        self.backend.compute_access_decision(source_sid, target_sid, target_class.into())
+        self.backend.compute_access_decision_raw(source_sid, target_sid, target_class.into())
     }
 }
 
 impl SecurityServerBackend {
-    fn compute_create_sid(
+    fn compute_create_sid_raw(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -562,10 +593,8 @@ impl SecurityServerBackend {
         let context = if needs_recompute { compute_context(policy_state)? } else { context };
         policy_state.sid_table.security_context_to_sid(&context).map_err(anyhow::Error::from)
     }
-}
 
-impl Query for SecurityServerBackend {
-    fn compute_access_decision(
+    fn compute_access_decision_raw(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -573,37 +602,30 @@ impl Query for SecurityServerBackend {
     ) -> AccessDecision {
         let locked_state = self.state.read();
 
-        let active_policy = match &locked_state.active_policy {
-            Some(active_policy) => active_policy,
-            // All permissions are allowed when no policy is loaded, regardless of enforcing state.
-            None => return AccessDecision::allow(AccessVector::ALL),
-        };
+        locked_state.compute_access_decision_raw(source_sid, target_sid, target_class)
+    }
+}
 
-        let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
-        let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
-
-        let mut decision = active_policy.parsed.compute_access_decision(
-            &source_context,
-            &target_context,
-            target_class,
-        );
-
-        decision.todo_bug = active_policy.exceptions.lookup(
-            source_context.type_(),
-            target_context.type_(),
-            target_class,
-        );
-
-        decision
+impl Query for SecurityServerBackend {
+    fn compute_access_decision(
+        &self,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        target_class: KernelClass,
+    ) -> KernelAccessDecision {
+        let locked_state = self.state.read();
+        let decision =
+            locked_state.compute_access_decision_raw(source_sid, target_sid, target_class.into());
+        locked_state.access_decision_to_kernel_access_decision(target_class, decision)
     }
 
     fn compute_create_sid(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: KernelClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.compute_create_sid(source_sid, target_sid, target_class)
+        self.compute_create_sid_raw(source_sid, target_sid, target_class.into())
     }
 
     fn compute_new_fs_node_sid_with_name(
@@ -636,40 +658,87 @@ impl Query for SecurityServerBackend {
         xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        permission: KernelPermission,
         xperms_prefix: u8,
-    ) -> XpermsAccessDecision {
+    ) -> KernelXpermsAccessDecision {
         let locked_state = self.state.read();
 
         let active_policy = match &locked_state.active_policy {
             Some(active_policy) => active_policy,
             // All permissions are allowed when no policy is loaded, regardless of enforcing state.
-            None => return XpermsAccessDecision::ALLOW_ALL,
+            None => {
+                return KernelXpermsAccessDecision {
+                    allow: XpermsBitmap::ALL,
+                    audit: XpermsBitmap::NONE,
+                    permissive: false,
+                    has_todo: false,
+                };
+            }
         };
 
+        // Look up the decision for the base permission.
+        // TODO(b/493591579): avoid multiple lookups in the SID table
+        let base_decision_raw = locked_state.compute_access_decision_raw(
+            source_sid,
+            target_sid,
+            permission.class().into(),
+        );
+        let base_decision = locked_state
+            .access_decision_to_kernel_access_decision(permission.class(), base_decision_raw);
+        let permission_access_vector = permission.as_access_vector();
+        let base_permit =
+            base_decision.allow & permission_access_vector == permission_access_vector;
+        let base_audit = base_decision.audit & permission_access_vector == permission_access_vector;
+
+        // Look up the extended permission decision.
         let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
         let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
-
-        active_policy.parsed.compute_xperms_access_decision(
+        let xperms_decision = active_policy.parsed.compute_xperms_access_decision(
             xperms_kind,
             &source_context,
             &target_context,
-            target_class,
+            permission.class(),
             xperms_prefix,
-        )
+        );
+
+        // Combine the base and extended decisions.
+        let allow = if !base_permit { XpermsBitmap::NONE } else { xperms_decision.allow };
+        let audit = if base_audit {
+            XpermsBitmap::ALL
+        } else {
+            (xperms_decision.allow & xperms_decision.auditallow)
+                | (!xperms_decision.allow & xperms_decision.auditdeny)
+        };
+        let permissive = (base_decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE) != 0;
+        let has_todo = base_decision.todo_bug.is_some();
+        KernelXpermsAccessDecision { allow, audit, permissive, has_todo }
     }
 }
 
-impl AccessVectorComputer for SecurityServer {
-    fn kernel_permissions_to_access_vector<
-        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-    >(
+impl AccessVectorComputer for SecurityServerBackend {
+    fn access_decision_to_kernel_access_decision(
         &self,
-        permissions: &[P],
-    ) -> Option<AccessVector> {
-        match &self.backend.state.read().active_policy {
-            Some(policy) => policy.parsed.kernel_permissions_to_access_vector(permissions),
-            None => Some(AccessVector::NONE),
+        class: KernelClass,
+        av: AccessDecision,
+    ) -> KernelAccessDecision {
+        self.state.read().access_decision_to_kernel_access_decision(class, av)
+    }
+}
+
+impl AccessVectorComputer for SecurityServerState {
+    fn access_decision_to_kernel_access_decision(
+        &self,
+        class: KernelClass,
+        av: AccessDecision,
+    ) -> KernelAccessDecision {
+        match &self.active_policy {
+            Some(policy) => policy.parsed.access_decision_to_kernel_access_decision(class, av),
+            None => KernelAccessDecision {
+                allow: AccessVector::ALL,
+                audit: AccessVector::NONE,
+                flags: 0,
+                todo_bug: None,
+            },
         }
     }
 }

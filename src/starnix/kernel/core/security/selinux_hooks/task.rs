@@ -364,6 +364,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
     current_task: &CurrentTask,
     executable: &NamespaceNode,
 ) -> Result<ResolvedElfState, Errno> {
+    let permission_check = security_server.as_permission_check();
     let TaskAttrs { current_sid, exec_sid, .. } = *task_consistent_attrs(current_task);
 
     let executable_sid = fs_node_effective_sid_and_class(&executable.entry.node).sid;
@@ -372,13 +373,12 @@ pub(in crate::security) fn bprm_creds_for_exec(
         // Use the proc exec SID if set.
         exec_sid
     } else {
-        security_server
+        permission_check
             .compute_create_sid(current_sid, executable_sid, KernelClass::Process.into())
             .map_err(|_| errno!(EACCES))?
     };
 
     let audit_context = current_task.into();
-    let permission_check = security_server.as_permission_check();
     if current_sid == new_sid {
         // To `exec()` a binary in the caller's domain, the caller must be granted
         // "execute_no_trans" permission to the binary.

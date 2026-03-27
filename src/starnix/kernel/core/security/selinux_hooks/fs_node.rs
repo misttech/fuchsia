@@ -17,11 +17,11 @@ use crate::vfs::{
     DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
 };
 use fuchsia_rcu::RcuReadScope;
-use selinux::policy::{AccessVector, AccessVectorComputer, FsUseType};
+use selinux::policy::{AccessVector, FsUseType};
 use selinux::{
-    CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass, FileSystemLabel,
-    FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass, InitialSid, PolicyCap,
-    SecurityId, SecurityServer, SocketClass, TaskAttrs,
+    ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass,
+    FileSystemLabel, FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass,
+    InitialSid, PolicyCap, SecurityId, SecurityServer, SocketClass, TaskAttrs,
 };
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -993,15 +993,10 @@ pub(in crate::security) fn has_dontaudit_access(
 
     let FsNodeSidAndClass { sid, class } = fs_node_effective_sid_and_class(fs_node);
     let permission_check = security_server.as_permission_check();
-    if let Some(audit_access) = security_server.kernel_permissions_to_access_vector(&[
-        CommonFsNodePermission::AuditAccess.for_class(class),
-    ]) {
-        let current_sid = current_task_state(current_task).current_sid;
-        let decision = permission_check.compute_access_decision(current_sid, sid, class.into());
-        audit_access & decision.auditdeny == AccessVector::NONE
-    } else {
-        false
-    }
+    let access_vector = CommonFsNodePermission::AuditAccess.for_class(class).as_access_vector();
+    let current_sid = current_task_state(current_task).current_sid;
+    let decision = permission_check.compute_access_decision(current_sid, sid, class.into());
+    access_vector & decision.audit == AccessVector::NONE
 }
 
 /// Validates that the `current_task` has the permissions to access `fs_node`.

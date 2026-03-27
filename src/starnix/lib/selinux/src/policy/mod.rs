@@ -20,9 +20,7 @@ pub use index::FsUseLabelAndType;
 pub use parser::PolicyCursor;
 pub use security_context::{SecurityContext, SecurityContextError};
 
-use crate::{
-    ClassPermission, KernelClass, KernelPermission, NullessByteStr, ObjectClass, PolicyCap,
-};
+use crate::{ClassPermission, KernelClass, NullessByteStr, ObjectClass, PolicyCap};
 use index::PolicyIndex;
 use metadata::HandleUnknown;
 use parsed_policy::ParsedPolicy;
@@ -140,6 +138,12 @@ impl AccessVector {
     }
 }
 
+impl From<u32> for AccessVector {
+    fn from(x: u32) -> Self {
+        Self(x)
+    }
+}
+
 impl Debug for AccessVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "AccessVector({:0>8x})", self)
@@ -203,9 +207,17 @@ impl std::ops::Sub for AccessVector {
     }
 }
 
+impl std::ops::Not for AccessVector {
+    type Output = Self;
+
+    fn not(self) -> Self {
+        AccessVector(!self.0)
+    }
+}
+
 /// A kind of extended permission, corresponding to the base permission that should trigger a check
 /// of an extended permission.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum XpermsKind {
     Ioctl,
     Nlmsg,
@@ -499,26 +511,46 @@ impl Policy {
 }
 
 impl AccessVectorComputer for Policy {
-    fn kernel_permissions_to_access_vector<
-        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-    >(
+    fn access_decision_to_kernel_access_decision(
         &self,
-        permissions: &[P],
-    ) -> Option<AccessVector> {
-        let mut access_vector = AccessVector::NONE;
-        for permission in permissions {
+        class: KernelClass,
+        av: AccessDecision,
+    ) -> KernelAccessDecision {
+        let mut kernel_allow;
+        let mut kernel_audit;
+        // Set the default values of the bits as appropriate for the policy's handle_unknown value.
+        // Bits corresponding to policy-known permissions will be overwritten.
+        if self.0.parsed_policy().handle_unknown() == HandleUnknown::Allow {
+            // If we allow unknown permissions, a bit will be by default allowed and not audited.
+            kernel_allow = 0xffffffffu32;
+            kernel_audit = 0u32;
+        } else {
+            // Otherwise, a bit is by default audited and not allowed.
+            kernel_allow = 0u32;
+            kernel_audit = 0xffffffffu32;
+        }
+
+        let decision_allow = av.allow;
+        let decision_audit = (av.allow & av.auditallow) | (!av.allow & av.auditdeny);
+        for permission in class.permissions() {
             if let Some(permission_access_vector) =
                 self.0.kernel_permission_to_access_vector(permission.clone())
             {
-                access_vector |= permission_access_vector;
-            } else {
-                // Defer to the policy-defined handle-unknown behaviour.
-                if self.0.parsed_policy().handle_unknown() != HandleUnknown::Allow {
-                    return None;
-                }
+                // If the permission is known, set the corresponding bit according to
+                // `decision_allow` and `decision_audit`.
+                let bit = 1 << permission.id();
+                let allow = decision_allow & permission_access_vector == permission_access_vector;
+                let audit = decision_audit & permission_access_vector == permission_access_vector;
+                kernel_allow = (kernel_allow & !bit) | ((allow as u32) << permission.id());
+                kernel_audit = (kernel_audit & !bit) | ((audit as u32) << permission.id());
             }
         }
-        Some(access_vector)
+        KernelAccessDecision {
+            allow: AccessVector::from(kernel_allow),
+            audit: AccessVector::from(kernel_audit),
+            flags: av.flags,
+            todo_bug: av.todo_bug,
+        }
     }
 }
 
@@ -533,21 +565,28 @@ impl Unvalidated {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct KernelAccessDecision {
+    pub allow: AccessVector,
+    pub audit: AccessVector,
+    pub flags: u32,
+    pub todo_bug: Option<NonZeroU64>,
+}
+
 /// An owner of policy information that can translate [`crate::Permission`] values into
 /// [`AccessVector`] values that are consistent with the owned policy.
 pub trait AccessVectorComputer {
-    /// Returns an [`AccessVector`] containing the supplied kernel `permissions`.
+    /// Translates the given [`AccessDecision`] to a [`KernelAccessDecision`].
     ///
     /// The loaded policy's "handle unknown" configuration determines how `permissions`
     /// entries not explicitly defined by the policy are handled. Allow-unknown will
-    /// result in unknown `permissions` being ignored, while deny-unknown will cause
-    /// `None` to be returned if one or more `permissions` are unknown.
-    fn kernel_permissions_to_access_vector<
-        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-    >(
+    /// result in unknown `permissions` being allowed, while they are denied (and audited)
+    /// if the policy uses deny-unknown.
+    fn access_decision_to_kernel_access_decision(
         &self,
-        permissions: &[P],
-    ) -> Option<AccessVector>;
+        class: KernelClass,
+        av: AccessDecision,
+    ) -> KernelAccessDecision;
 }
 
 /// A data structure that can be parsed as a part of a binary policy.
@@ -821,11 +860,7 @@ pub(super) use array_type_validate_deref_none_data_vec;
 
 #[cfg(test)]
 pub(super) mod testing {
-    use super::AccessVector;
     use super::error::{ParseError, ValidateError};
-
-    pub const ACCESS_VECTOR_0001: AccessVector = AccessVector(0b0001u32);
-    pub const ACCESS_VECTOR_0010: AccessVector = AccessVector(0b0010u32);
 
     /// Downcasts an [`anyhow::Error`] to a [`ParseError`] for structured error comparison in tests.
     pub(super) fn as_parse_error(error: anyhow::Error) -> ParseError {

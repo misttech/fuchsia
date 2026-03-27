@@ -461,7 +461,7 @@ impl SeLinuxApiOps for CreateApi {
 
         let result = self
             .security_server
-            .compute_create_sid(scontext, tcontext, tclass.into())
+            .compute_create_sid_raw(scontext, tcontext, tclass)
             .map_err(|_| errno!(EINVAL))?;
         self.result.set(result).map_err(|_| errno!(EINVAL))?;
 
@@ -750,7 +750,8 @@ impl SeLinuxApiOps for AccessApi {
         // This API does not appear to treat trailing arguments as invalid.
 
         // Perform the access decision calculation.
-        let mut decision = self.security_server.compute_access_decision(scontext, tcontext, tclass);
+        let mut decision =
+            self.security_server.compute_access_decision_raw(scontext, tcontext, tclass);
 
         // `compute_access_decision()` returns an `AccessDecision` with results calculated for all
         // permissions defined by policy, so by default the "access" API reports all permissions as

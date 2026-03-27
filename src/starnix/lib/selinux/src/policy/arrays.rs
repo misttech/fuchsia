@@ -446,6 +446,33 @@ impl XpermsBitmap {
     }
 }
 
+impl std::ops::BitAnd for XpermsBitmap {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self {
+        let mut result = self;
+        (0..Self::BITMAP_BLOCKS).for_each(|i| result.0[i] &= rhs.0[i]);
+        result
+    }
+}
+
+impl std::ops::BitOr for XpermsBitmap {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self {
+        let mut result = self;
+        (0..Self::BITMAP_BLOCKS).for_each(|i| result.0[i] |= rhs.0[i]);
+        result
+    }
+}
+
+impl std::ops::Not for XpermsBitmap {
+    type Output = Self;
+    fn not(self) -> Self {
+        let mut result = self;
+        (0..Self::BITMAP_BLOCKS).for_each(|i| result.0[i] = !result.0[i]);
+        result
+    }
+}
+
 impl std::ops::BitOrAssign<&Self> for XpermsBitmap {
     fn bitor_assign(&mut self, rhs: &Self) {
         (0..Self::BITMAP_BLOCKS).for_each(|i| self.0[i] |= rhs.0[i])

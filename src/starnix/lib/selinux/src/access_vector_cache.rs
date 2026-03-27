@@ -3,12 +3,26 @@
 // found in the LICENSE file.
 
 use crate::access_cache::AccessCache;
-use crate::policy::{AccessDecision, XpermsAccessDecision, XpermsKind};
+use crate::kernel_permissions::KernelPermission;
+use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
 use crate::security_server::SecurityServerBackend;
-use crate::{FsNodeClass, NullessByteStr, ObjectClass, SecurityId};
+use crate::{FsNodeClass, KernelClass, NullessByteStr, SecurityId};
 use std::sync::Arc;
 
 pub use crate::access_cache::CacheStats;
+
+/// An xperm access decision as seen from the kernel.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct KernelXpermsAccessDecision {
+    /// The set of xperms that are allowed.
+    pub allow: XpermsBitmap,
+    /// The set of xperms that should be audited (as allowed or denials depending on `allow`)
+    pub audit: XpermsBitmap,
+    /// Whether the domain is permissive.
+    pub permissive: bool,
+    /// Whether the entry has an associated todo.
+    pub has_todo: bool,
+}
 
 /// Interface used internally by the `SecurityServer` implementation to implement policy queries
 /// such as looking up the set of permissions to grant, or the Security Context to apply to new
@@ -23,8 +37,8 @@ pub(super) trait Query {
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision;
+        target_class: KernelClass,
+    ) -> KernelAccessDecision;
 
     /// Returns the security identifier (SID) with which to label a new object of `object_class`.
     /// The label is calculated based on the creating `source_sid` and the `target_sid` of the
@@ -36,7 +50,7 @@ pub(super) trait Query {
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: KernelClass,
     ) -> Result<SecurityId, anyhow::Error>;
 
     /// Returns the security identifier (SID) with which to label a new `fs_node_class` instance of
@@ -59,16 +73,16 @@ pub(super) trait Query {
         xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        permission: KernelPermission,
         xperms_prefix: u8,
-    ) -> XpermsAccessDecision;
+    ) -> KernelXpermsAccessDecision;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct AccessQueryArgs {
     source_sid: SecurityId,
     target_sid: SecurityId,
-    target_class: ObjectClass,
+    target_class: KernelClass,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -76,15 +90,15 @@ struct XpermsAccessQueryArgs {
     xperms_kind: XpermsKind,
     source_sid: SecurityId,
     target_sid: SecurityId,
-    target_class: ObjectClass,
+    permission: KernelPermission,
     xperms_prefix: u8,
 }
 
 /// Thread-hostile associative cache with capacity defined at construction and FIFO eviction.
 pub(super) struct FifoQueryCache {
-    access_cache: AccessCache<AccessQueryArgs, AccessDecision>,
+    access_cache: AccessCache<AccessQueryArgs, KernelAccessDecision>,
     sid_cache: AccessCache<AccessQueryArgs, SecurityId>,
-    xperms_access_cache: AccessCache<XpermsAccessQueryArgs, XpermsAccessDecision>,
+    xperms_access_cache: AccessCache<XpermsAccessQueryArgs, KernelXpermsAccessDecision>,
 }
 
 impl FifoQueryCache {
@@ -117,13 +131,13 @@ impl FifoQueryCache {
         &stats + &self.xperms_access_cache.cache_stats()
     }
 
-    pub fn compute_access_decision(
+    pub fn compute_kernel_access_decision(
         &self,
         delegate: &impl Query,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
+        target_class: KernelClass,
+    ) -> KernelAccessDecision {
         let query_args =
             AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
         self.access_cache.get_or_insert(query_args, || {
@@ -136,7 +150,7 @@ impl FifoQueryCache {
         delegate: &impl Query,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: KernelClass,
     ) -> Result<SecurityId, anyhow::Error> {
         let query_args =
             AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
@@ -161,20 +175,20 @@ impl FifoQueryCache {
         )
     }
 
-    pub fn compute_xperms_access_decision(
+    pub fn compute_kernel_xperms_access_decision(
         &self,
         delegate: &impl Query,
         xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        permission: KernelPermission,
         xperms_prefix: u8,
-    ) -> XpermsAccessDecision {
+    ) -> KernelXpermsAccessDecision {
         let query_args = XpermsAccessQueryArgs {
-            xperms_kind: xperms_kind.clone(),
+            xperms_kind,
             source_sid,
             target_sid,
-            target_class: target_class.clone(),
+            permission,
             xperms_prefix,
         };
         self.xperms_access_cache.get_or_insert(query_args, || {
@@ -182,7 +196,7 @@ impl FifoQueryCache {
                 xperms_kind,
                 source_sid,
                 target_sid,
-                target_class,
+                permission,
                 xperms_prefix,
             )
         })
@@ -237,9 +251,9 @@ impl Query for AccessVectorCache {
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
-        self.cache.compute_access_decision(
+        target_class: KernelClass,
+    ) -> KernelAccessDecision {
+        self.cache.compute_kernel_access_decision(
             self.backend.as_ref(),
             source_sid,
             target_sid,
@@ -251,7 +265,7 @@ impl Query for AccessVectorCache {
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        target_class: KernelClass,
     ) -> Result<SecurityId, anyhow::Error> {
         self.cache.compute_create_sid(self.backend.as_ref(), source_sid, target_sid, target_class)
     }
@@ -277,15 +291,15 @@ impl Query for AccessVectorCache {
         xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
+        permission: KernelPermission,
         xperms_prefix: u8,
-    ) -> XpermsAccessDecision {
-        self.cache.compute_xperms_access_decision(
+    ) -> KernelXpermsAccessDecision {
+        self.cache.compute_kernel_xperms_access_decision(
             self.backend.as_ref(),
             xperms_kind,
             source_sid,
             target_sid,
-            target_class,
+            permission,
             xperms_prefix,
         )
     }
@@ -322,8 +336,8 @@ mod testing {
 mod tests {
     use super::testing::*;
     use super::*;
-    use crate::KernelClass;
     use crate::policy::{AccessVector, XpermsBitmap};
+    use crate::{KernelClass, ProcessPermission};
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -344,17 +358,22 @@ mod tests {
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> AccessDecision {
+            _target_class: KernelClass,
+        ) -> KernelAccessDecision {
             self.query_count.fetch_add(1, Ordering::Relaxed);
-            AccessDecision::allow(AccessVector::ALL)
+            KernelAccessDecision {
+                allow: AccessVector::ALL,
+                audit: AccessVector::NONE,
+                flags: 0,
+                todo_bug: None,
+            }
         }
 
         fn compute_create_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _target_class: KernelClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!()
         }
@@ -374,11 +393,16 @@ mod tests {
             _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _target_class: KernelPermission,
             _xperms_prefix: u8,
-        ) -> XpermsAccessDecision {
+        ) -> KernelXpermsAccessDecision {
             self.query_count.fetch_add(1, Ordering::Relaxed);
-            XpermsAccessDecision::ALLOW_ALL
+            KernelXpermsAccessDecision {
+                allow: XpermsBitmap::ALL,
+                audit: XpermsBitmap::NONE,
+                permissive: false,
+                has_todo: false,
+            }
         }
     }
 
@@ -389,22 +413,22 @@ mod tests {
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             AccessVector::ALL,
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into()
+                KernelClass::Process
             )
             .allow
         );
         assert_eq!(1, delegate.query_count());
         assert_eq!(
             AccessVector::ALL,
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into()
+                KernelClass::Process
             )
             .allow
         );
@@ -423,11 +447,11 @@ mod tests {
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             AccessVector::ALL,
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into()
+                KernelClass::Process
             )
             .allow
         );
@@ -444,11 +468,11 @@ mod tests {
         let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 sid,
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                KernelClass::Process,
             );
         }
         assert_eq!(true, avc.access_cache_is_full());
@@ -457,11 +481,11 @@ mod tests {
         assert_eq!(false, avc.access_cache_is_full());
 
         for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 A_TEST_SID.clone(),
                 sid,
-                KernelClass::Process.into(),
+                KernelClass::Process,
             );
         }
         assert_eq!(true, avc.access_cache_is_full());
@@ -476,32 +500,32 @@ mod tests {
         let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
-        avc.compute_access_decision(
+        avc.compute_kernel_access_decision(
             &delegate,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            KernelClass::Process,
         );
         assert!(!avc.access_cache_is_full());
 
         // Fill the cache with new queries, which should evict the test query.
         for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 sid,
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                KernelClass::Process,
             );
         }
         assert!(avc.access_cache_is_full());
 
         // Making the test query should result in another miss.
         let delegate_query_count = delegate.query_count();
-        avc.compute_access_decision(
+        avc.compute_kernel_access_decision(
             &delegate,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            KernelClass::Process,
         );
         assert_eq!(delegate_query_count + 1, delegate.query_count());
 
@@ -510,27 +534,27 @@ mod tests {
         // Each test query will hit, and the interleaved queries will miss, with the final of the
         // interleaved queries evicting the test query.
         for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                KernelClass::Process,
             );
-            avc.compute_access_decision(
+            avc.compute_kernel_access_decision(
                 &delegate,
                 sid,
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                KernelClass::Process,
             );
         }
 
         // The test query should now miss.
         let delegate_query_count = delegate.query_count();
-        avc.compute_access_decision(
+        avc.compute_kernel_access_decision(
             &delegate,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            KernelClass::Process,
         );
         assert_eq!(delegate_query_count + 1, delegate.query_count());
     }
@@ -542,12 +566,12 @@ mod tests {
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             XpermsBitmap::ALL,
-            avc.compute_xperms_access_decision(
+            avc.compute_kernel_xperms_access_decision(
                 &delegate,
                 XpermsKind::Ioctl,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                ProcessPermission::Fork.into(),
                 0x0,
             )
             .allow
@@ -556,12 +580,12 @@ mod tests {
         // The second request for the same key is a cache hit.
         assert_eq!(
             XpermsBitmap::ALL,
-            avc.compute_xperms_access_decision(
+            avc.compute_kernel_xperms_access_decision(
                 &delegate,
                 XpermsKind::Ioctl,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                ProcessPermission::Fork.into(),
                 0x0
             )
             .allow
@@ -575,12 +599,12 @@ mod tests {
         let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
-        avc.compute_xperms_access_decision(
+        avc.compute_kernel_xperms_access_decision(
             &delegate,
             XpermsKind::Ioctl,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            ProcessPermission::Fork.into(),
             0x0,
         );
 
@@ -589,12 +613,12 @@ mod tests {
             .try_into()
             .expect("assumed that test xperms cache capacity was < 255")
         {
-            avc.compute_xperms_access_decision(
+            avc.compute_kernel_xperms_access_decision(
                 &delegate,
                 XpermsKind::Ioctl,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                ProcessPermission::Fork.into(),
                 ioctl_prefix,
             );
         }
@@ -605,12 +629,12 @@ mod tests {
         let delegate_query_count = delegate.query_count();
 
         // Making the original test query again should result in another miss.
-        avc.compute_xperms_access_decision(
+        avc.compute_kernel_xperms_access_decision(
             &delegate,
             XpermsKind::Ioctl,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            ProcessPermission::Fork.into(),
             0x0,
         );
         assert_eq!(delegate_query_count + 1, delegate.query_count());
@@ -623,12 +647,12 @@ mod tests {
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             XpermsBitmap::ALL,
-            avc.compute_xperms_access_decision(
+            avc.compute_kernel_xperms_access_decision(
                 &delegate,
                 XpermsKind::Nlmsg,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                ProcessPermission::Fork.into(),
                 0x0,
             )
             .allow
@@ -637,12 +661,12 @@ mod tests {
         // The second request for the same key is a cache hit.
         assert_eq!(
             XpermsBitmap::ALL,
-            avc.compute_xperms_access_decision(
+            avc.compute_kernel_xperms_access_decision(
                 &delegate,
                 XpermsKind::Nlmsg,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                ProcessPermission::Fork.into(),
                 0x0
             )
             .allow
@@ -656,12 +680,12 @@ mod tests {
         let avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
-        avc.compute_xperms_access_decision(
+        avc.compute_kernel_xperms_access_decision(
             &delegate,
             XpermsKind::Nlmsg,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            ProcessPermission::Fork.into(),
             0x0,
         );
 
@@ -670,12 +694,12 @@ mod tests {
             .try_into()
             .expect("assumed that test xperms cache capacity was < 255")
         {
-            avc.compute_xperms_access_decision(
+            avc.compute_kernel_xperms_access_decision(
                 &delegate,
                 XpermsKind::Nlmsg,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
-                KernelClass::Process.into(),
+                ProcessPermission::Fork.into(),
                 nlmsg_prefix,
             );
         }
@@ -685,13 +709,12 @@ mod tests {
         assert!(avc.xperms_access_cache_is_full());
         let delegate_query_count = delegate.query_count();
 
-        // Making the original test query again should result in another miss.
-        avc.compute_xperms_access_decision(
+        avc.compute_kernel_xperms_access_decision(
             &delegate,
             XpermsKind::Nlmsg,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            ProcessPermission::Fork.into(),
             0x0,
         );
         assert_eq!(delegate_query_count + 1, delegate.query_count());
@@ -702,25 +725,24 @@ mod tests {
         let delegate = TestDelegate::default();
         let avc = FifoQueryCache::new(TEST_CAPACITY);
 
-        // Query for an `ioctl` extended permission.
-        avc.compute_xperms_access_decision(
+        avc.compute_kernel_xperms_access_decision(
             &delegate,
             XpermsKind::Ioctl,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            ProcessPermission::Fork.into(),
             0x0,
         );
         assert_eq!(avc.cache_stats().allocs, 1);
 
         // Query for an `nlmsg` extended permission for the same source, target, class,
         // and prefix. This should cause a new allocation.
-        avc.compute_xperms_access_decision(
+        avc.compute_kernel_xperms_access_decision(
             &delegate,
             XpermsKind::Nlmsg,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
-            KernelClass::Process.into(),
+            ProcessPermission::Fork.into(),
             0x0,
         );
         assert_eq!(avc.cache_stats().allocs, 2);

@@ -119,7 +119,7 @@ impl PolicyIndex {
 
     /// Returns the policy entry for a class identified either by its well-known kernel object class
     /// enum value, or its policy-defined Id.
-    pub fn class(&self, object_class: crate::ObjectClass) -> Option<Class> {
+    pub(super) fn class(&self, object_class: crate::ObjectClass) -> Option<Class> {
         match object_class {
             crate::ObjectClass::Kernel(kernel_class) => {
                 let &class_id = self.classes.get(&kernel_class)?;

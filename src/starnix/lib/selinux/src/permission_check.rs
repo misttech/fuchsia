@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 
 use crate::access_vector_cache::{AccessVectorCache, Query};
-use crate::policy::{
-    AccessDecision, AccessVector, AccessVectorComputer, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsKind,
-};
+use crate::policy::{AccessVector, KernelAccessDecision, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsKind};
 use crate::security_server::SecurityServer;
 use crate::{
-    ClassPermission, FsNodeClass, KernelPermission, NullessByteStr, ObjectClass, SecurityId,
+    ClassPermission, FsNodeClass, KernelClass, KernelPermission, NullessByteStr, SecurityId,
 };
 
 use std::num::NonZeroU64;
@@ -69,10 +67,9 @@ impl<'a> PermissionCheck<'a> {
         has_permission(
             self.security_server.is_enforcing(),
             self.access_vector_cache,
-            self.security_server,
             source_sid,
             target_sid,
-            permission,
+            permission.into(),
         )
     }
 
@@ -102,11 +99,10 @@ impl<'a> PermissionCheck<'a> {
         has_extended_permission(
             self.security_server.is_enforcing(),
             self.access_vector_cache,
-            self.security_server,
             xperms_kind,
             source_sid,
             target_sid,
-            permission,
+            permission.into(),
             xperm,
         )
     }
@@ -142,44 +138,44 @@ impl<'a> PermissionCheck<'a> {
         self.access_vector_cache.compute_create_sid(source_sid, target_sid, fs_node_class.into())
     }
 
+    /// Returns the SID with which to label a new `target_class` instance created by `subject_sid`, with `target_sid`
+    /// as its parent, taking into account role & type transition rules.
+    pub fn compute_create_sid(
+        &self,
+        source_sid: SecurityId,
+        target_sid: SecurityId,
+        target_class: KernelClass,
+    ) -> Result<SecurityId, anyhow::Error> {
+        self.access_vector_cache.compute_create_sid(source_sid, target_sid, target_class)
+    }
+
     /// Returns the raw `AccessDecision` for a specified source, target and class.
     pub fn compute_access_decision(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
+        target_class: KernelClass,
+    ) -> KernelAccessDecision {
         self.access_vector_cache.compute_access_decision(source_sid, target_sid, target_class)
     }
 }
 
-/// Internal implementation of the `has_permission()` API, in terms of the `Query` and `AccessVectorComputer` traits.
-fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+/// Internal implementation of the `has_permission()` API, in terms of the `Query` trait.
+fn has_permission(
     is_enforcing: bool,
     query: &impl Query,
-    access_vector_computer: &impl AccessVectorComputer,
     source_sid: SecurityId,
     target_sid: SecurityId,
-    permission: P,
+    permission: KernelPermission,
 ) -> PermissionCheckResult {
     let target_class = permission.class();
+    let permission_access_vector = permission.as_access_vector();
 
     let decision = query.compute_access_decision(source_sid, target_sid, target_class.into());
     let permissive = decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0;
-
-    let mut result = if let Some(permission_access_vector) =
-        access_vector_computer.kernel_permissions_to_access_vector(&[permission])
-    {
-        let granted = permission_access_vector & decision.allow == permission_access_vector;
-        let audit = if granted {
-            permission_access_vector & decision.auditallow != AccessVector::NONE
-        } else {
-            permission_access_vector & decision.auditdeny != AccessVector::NONE
-        };
-        PermissionCheckResult { granted, audit, permissive, todo_bug: None }
-    } else {
-        PermissionCheckResult { granted: false, audit: true, permissive, todo_bug: None }
-    };
+    let granted = permission_access_vector & decision.allow == permission_access_vector;
+    let audit = permission_access_vector & decision.audit != AccessVector::NONE;
+    let mut result = PermissionCheckResult { granted, audit, permissive, todo_bug: None };
 
     if !result.granted {
         if !is_enforcing {
@@ -187,7 +183,7 @@ fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>
             result.permissive = true;
         } else if decision.todo_bug.is_some() {
             // If the access decision includes a `todo_bug` then permit the access and return the
-            // bug Id to the caller, for audit logging.
+            // bug id to the caller, for audit logging.
             //
             // This is checked before the "permissive" settings because exceptions work-around
             // issues in our implementation, or policy builds, so permissive treatment can lead
@@ -200,58 +196,39 @@ fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>
     result
 }
 
-/// Internal implementation of the `has_extended_permission()` API, in terms of the `Query` and
-/// `AccessVectorComputer` traits.
-fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+/// Internal implementation of the `has_extended_permission()` API, in terms of the `Query` trait.
+fn has_extended_permission(
     is_enforcing: bool,
     query: &impl Query,
-    access_vector_computer: &impl AccessVectorComputer,
     xperms_kind: XpermsKind,
     source_sid: SecurityId,
     target_sid: SecurityId,
-    permission: P,
+    permission: KernelPermission,
     xperm: u16,
 ) -> PermissionCheckResult {
-    let target_class = ObjectClass::from(permission.class());
-
-    let permission_decision = query.compute_access_decision(source_sid, target_sid, target_class);
-    let permissive = permission_decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0;
-
     let [xperms_postfix, xperms_prefix] = xperm.to_le_bytes();
     let xperms_decision = query.compute_xperms_access_decision(
         xperms_kind,
         source_sid,
         target_sid,
-        target_class,
+        permission,
         xperms_prefix,
     );
 
-    let mut result = if let Some(permission_access_vector) =
-        access_vector_computer.kernel_permissions_to_access_vector(&[permission])
-    {
-        let granted = (permission_access_vector & permission_decision.allow
-            == permission_access_vector)
-            && xperms_decision.allow.contains(xperms_postfix);
-        let audit = if granted {
-            (permission_access_vector & permission_decision.auditallow == permission_access_vector)
-                && xperms_decision.auditallow.contains(xperms_postfix)
-        } else {
-            (permission_access_vector & permission_decision.auditdeny == permission_access_vector)
-                && xperms_decision.auditdeny.contains(xperms_postfix)
-        };
-        PermissionCheckResult { granted, audit, permissive, todo_bug: None }
-    } else {
-        PermissionCheckResult { granted: false, audit: true, permissive, todo_bug: None }
-    };
+    let granted = xperms_decision.allow.contains(xperms_postfix);
+    let audit = xperms_decision.audit.contains(xperms_postfix);
+    let permissive = xperms_decision.permissive;
+    let mut result = PermissionCheckResult { granted, audit, permissive, todo_bug: None };
 
     if !result.granted {
         if !is_enforcing {
             result.permissive = true;
-        } else if permission_decision.todo_bug.is_some() {
-            // Currently we can make an exception for the base permission but not for specific
-            // extended permissions.
-            result.granted = true;
-            result.todo_bug = permission_decision.todo_bug;
+        } else if xperms_decision.has_todo {
+            // A todo_bug applies to this entry. Look up the base decision for details.
+            // This will re-compute the base decision if it is not cached.
+            let base_decision =
+                query.compute_access_decision(source_sid, target_sid, permission.class());
+            result.todo_bug = base_decision.todo_bug;
         }
     }
 
@@ -261,11 +238,11 @@ fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone +
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::testing::{ACCESS_VECTOR_0001, ACCESS_VECTOR_0010};
-    use crate::policy::{AccessDecision, AccessVector, XpermsAccessDecision};
-    use crate::{
-        CommonFsNodePermission, FileClass, FilePermission, ForClass, ObjectClass, ProcessPermission,
+    use crate::access_vector_cache::KernelXpermsAccessDecision;
+    use crate::policy::{
+        AccessDecision, AccessVector, AccessVectorComputer, KernelAccessDecision, XpermsBitmap,
     };
+    use crate::{CommonFsNodePermission, FileClass, ForClass, KernelClass, ProcessPermission};
 
     use std::num::NonZeroU32;
     use std::sync::LazyLock;
@@ -280,30 +257,17 @@ mod tests {
         SecurityId(NonZeroU32::new(NEXT_ID.fetch_add(1, Ordering::AcqRel)).unwrap())
     }
 
-    fn access_vector_from_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
-        permission: P,
-    ) -> AccessVector {
-        match permission.into() {
-            // Process class permissions
-            KernelPermission::Process(ProcessPermission::Fork) => ACCESS_VECTOR_0001,
-            KernelPermission::Process(ProcessPermission::Transition) => ACCESS_VECTOR_0010,
-            // File class permissions
-            KernelPermission::File(FilePermission::Ioctl) => ACCESS_VECTOR_0001,
-            _ => AccessVector::NONE,
+    // Assume permissions are mapped one to one.
+    fn access_decision_to_kernel_access_decision(
+        _class: KernelClass,
+        decision: AccessDecision,
+    ) -> KernelAccessDecision {
+        KernelAccessDecision {
+            allow: decision.allow,
+            audit: (decision.allow & decision.auditallow) | (!decision.allow & decision.auditdeny),
+            todo_bug: decision.todo_bug,
+            flags: decision.flags,
         }
-    }
-
-    fn access_vector_from_permissions<
-        'a,
-        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-    >(
-        permissions: &[P],
-    ) -> AccessVector {
-        let mut access_vector = AccessVector::NONE;
-        for permission in permissions {
-            access_vector |= access_vector_from_permission(permission.clone());
-        }
-        access_vector
     }
 
     #[derive(Default)]
@@ -314,16 +278,21 @@ mod tests {
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> AccessDecision {
-            AccessDecision::allow(AccessVector::NONE)
+            _target_class: KernelClass,
+        ) -> KernelAccessDecision {
+            KernelAccessDecision {
+                allow: AccessVector::NONE,
+                audit: AccessVector::ALL,
+                flags: 0,
+                todo_bug: None,
+            }
         }
 
         fn compute_create_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _target_class: KernelClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!();
         }
@@ -343,21 +312,25 @@ mod tests {
             _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _permission: KernelPermission,
             _xperms_prefix: u8,
-        ) -> XpermsAccessDecision {
-            XpermsAccessDecision::DENY_ALL
+        ) -> KernelXpermsAccessDecision {
+            KernelXpermsAccessDecision {
+                allow: XpermsBitmap::NONE,
+                audit: XpermsBitmap::ALL,
+                permissive: false,
+                has_todo: false,
+            }
         }
     }
 
     impl AccessVectorComputer for DenyAllPermissions {
-        fn kernel_permissions_to_access_vector<
-            P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-        >(
+        fn access_decision_to_kernel_access_decision(
             &self,
-            permissions: &[P],
-        ) -> Option<AccessVector> {
-            Some(access_vector_from_permissions(permissions))
+            class: KernelClass,
+            av: AccessDecision,
+        ) -> KernelAccessDecision {
+            access_decision_to_kernel_access_decision(class, av)
         }
     }
 
@@ -370,16 +343,21 @@ mod tests {
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> AccessDecision {
-            AccessDecision::allow(AccessVector::ALL)
+            _target_class: KernelClass,
+        ) -> KernelAccessDecision {
+            KernelAccessDecision {
+                allow: AccessVector::ALL,
+                audit: AccessVector::NONE,
+                flags: 0,
+                todo_bug: None,
+            }
         }
 
         fn compute_create_sid(
             &self,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _target_class: KernelClass,
         ) -> Result<SecurityId, anyhow::Error> {
             unreachable!();
         }
@@ -399,133 +377,25 @@ mod tests {
             _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
-            _target_class: ObjectClass,
+            _permission: KernelPermission,
             _xperms_prefix: u8,
-        ) -> XpermsAccessDecision {
-            XpermsAccessDecision::ALLOW_ALL
+        ) -> KernelXpermsAccessDecision {
+            KernelXpermsAccessDecision {
+                allow: XpermsBitmap::ALL,
+                audit: XpermsBitmap::NONE,
+                permissive: false,
+                has_todo: false,
+            }
         }
     }
 
     impl AccessVectorComputer for AllowAllPermissions {
-        fn kernel_permissions_to_access_vector<
-            P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-        >(
+        fn access_decision_to_kernel_access_decision(
             &self,
-            permissions: &[P],
-        ) -> Option<AccessVector> {
-            Some(access_vector_from_permissions(permissions))
-        }
-    }
-
-    /// A [`Query`] that denies all [`AccessVectors`] and allows all extended permissions.
-    #[derive(Default)]
-    struct DenyPermissionsAllowXperms;
-
-    impl Query for DenyPermissionsAllowXperms {
-        fn compute_access_decision(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> AccessDecision {
-            AccessDecision::allow(AccessVector::NONE)
-        }
-
-        fn compute_create_sid(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> Result<SecurityId, anyhow::Error> {
-            unreachable!();
-        }
-
-        fn compute_new_fs_node_sid_with_name(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _fs_node_class: FsNodeClass,
-            _fs_node_name: NullessByteStr<'_>,
-        ) -> Option<SecurityId> {
-            unreachable!();
-        }
-
-        fn compute_xperms_access_decision(
-            &self,
-            _xperms_kind: XpermsKind,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-            _xperms_prefix: u8,
-        ) -> XpermsAccessDecision {
-            XpermsAccessDecision::ALLOW_ALL
-        }
-    }
-
-    impl AccessVectorComputer for DenyPermissionsAllowXperms {
-        fn kernel_permissions_to_access_vector<
-            P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-        >(
-            &self,
-            permissions: &[P],
-        ) -> Option<AccessVector> {
-            Some(access_vector_from_permissions(permissions))
-        }
-    }
-
-    /// A [`Query`] that allows all [`AccessVectors`] and denies all extended permissions.
-    #[derive(Default)]
-    struct AllowPermissionsDenyXperms;
-
-    impl Query for AllowPermissionsDenyXperms {
-        fn compute_access_decision(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> AccessDecision {
-            AccessDecision::allow(AccessVector::ALL)
-        }
-
-        fn compute_create_sid(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> Result<SecurityId, anyhow::Error> {
-            unreachable!();
-        }
-
-        fn compute_new_fs_node_sid_with_name(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _fs_node_class: FsNodeClass,
-            _fs_node_name: NullessByteStr<'_>,
-        ) -> Option<SecurityId> {
-            unreachable!();
-        }
-
-        fn compute_xperms_access_decision(
-            &self,
-            _xperms_kind: XpermsKind,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-            _xperms_prefix: u8,
-        ) -> XpermsAccessDecision {
-            XpermsAccessDecision::DENY_ALL
-        }
-    }
-
-    impl AccessVectorComputer for AllowPermissionsDenyXperms {
-        fn kernel_permissions_to_access_vector<
-            P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-        >(
-            &self,
-            permissions: &[P],
-        ) -> Option<AccessVector> {
-            Some(access_vector_from_permissions(permissions))
+            class: KernelClass,
+            av: AccessDecision,
+        ) -> KernelAccessDecision {
+            access_decision_to_kernel_access_decision(class, av)
         }
     }
 
@@ -537,15 +407,14 @@ mod tests {
         // Use permissions that are mapped to access vector bits in
         // `access_vector_from_permission`.
         let permissions = [ProcessPermission::Fork, ProcessPermission::Transition];
-        for permission in &permissions {
+        for permission in permissions {
             // DenyAllPermissions denies.
             let result = has_permission(
                 /*is_enforcing=*/ true,
                 &deny_all,
-                &deny_all,
                 *A_TEST_SID,
                 *A_TEST_SID,
-                permission.clone(),
+                permission.into(),
             );
             assert_eq!(
                 result,
@@ -562,10 +431,9 @@ mod tests {
             let result = has_permission(
                 /*is_enforcing=*/ true,
                 &allow_all,
-                &allow_all,
                 *A_TEST_SID,
                 *A_TEST_SID,
-                permission.clone(),
+                permission.into(),
             );
             assert_eq!(
                 result,
@@ -584,19 +452,16 @@ mod tests {
     fn has_ioctl_permission_enforcing() {
         let deny_all = DenyAllPermissions::default();
         let allow_all = AllowAllPermissions::default();
-        let deny_perms_allow_xperms = DenyPermissionsAllowXperms::default();
-        let allow_perms_deny_xperms = AllowPermissionsDenyXperms::default();
         let permission = CommonFsNodePermission::Ioctl.for_class(FileClass::File);
 
         // DenyAllPermissions denies.
         let result = has_extended_permission(
             /*is_enforcing=*/ true,
             &deny_all,
-            &deny_all,
             XpermsKind::Ioctl,
             *A_TEST_SID,
             *A_TEST_SID,
-            permission.clone(),
+            permission.into(),
             0xabcd,
         );
         assert_eq!(
@@ -614,11 +479,10 @@ mod tests {
         let result = has_extended_permission(
             /*is_enforcing=*/ true,
             &allow_all,
-            &allow_all,
             XpermsKind::Ioctl,
             *A_TEST_SID,
             *A_TEST_SID,
-            permission.clone(),
+            permission.into(),
             0xabcd,
         );
         assert_eq!(
@@ -631,50 +495,6 @@ mod tests {
             }
         );
         assert!(result.permit());
-
-        // DenyPermissionsAllowXperms denies.
-        let result = has_extended_permission(
-            /*is_enforcing=*/ true,
-            &deny_perms_allow_xperms,
-            &deny_perms_allow_xperms,
-            XpermsKind::Ioctl,
-            *A_TEST_SID,
-            *A_TEST_SID,
-            permission.clone(),
-            0xabcd,
-        );
-        assert_eq!(
-            result,
-            PermissionCheckResult {
-                granted: false,
-                audit: true,
-                permissive: false,
-                todo_bug: None
-            }
-        );
-        assert!(!result.permit());
-
-        // AllowPermissionsDenyXperms denies.
-        let result = has_extended_permission(
-            /*is_enforcing=*/ true,
-            &allow_perms_deny_xperms,
-            &allow_perms_deny_xperms,
-            XpermsKind::Ioctl,
-            *A_TEST_SID,
-            *A_TEST_SID,
-            permission,
-            0xabcd,
-        );
-        assert_eq!(
-            result,
-            PermissionCheckResult {
-                granted: false,
-                audit: true,
-                permissive: false,
-                todo_bug: None
-            }
-        );
-        assert!(!result.permit());
     }
 
     #[test]
@@ -686,7 +506,6 @@ mod tests {
         // is not in enforcing mode. The decision should still be audited.
         let result = has_extended_permission(
             /*is_enforcing=*/ false,
-            &deny_all,
             &deny_all,
             XpermsKind::Ioctl,
             *A_TEST_SID,

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::policy::AccessVector;
 use paste::paste;
 use strum_macros::VariantArray;
 
@@ -356,6 +357,9 @@ impl From<SocketClass> for FsNodeClass {
 pub trait ClassPermission {
     fn class(&self) -> KernelClass;
     fn id(&self) -> u8;
+    fn as_access_vector(&self) -> AccessVector {
+        AccessVector::from(1u32 << self.id())
+    }
 }
 
 impl<T: Into<KernelClass>> ForClass<T> for KernelPermission {
