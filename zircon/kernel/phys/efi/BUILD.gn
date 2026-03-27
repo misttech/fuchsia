@@ -17,7 +17,13 @@ if (current_toolchain == default_toolchain) {
   foreach(cpu, standard_fuchsia_cpus) {
     zircon_toolchain_suite("kernel.efi_$cpu") {
       cpu = cpu
-      os = "win"
+
+      # TODO(https://fxbug.dev/460196031): Remove this x64 check when aarch64-uefi triple is supported.
+      if (cpu == "x64") {
+        os = "uefi"
+      } else {
+        os = "win"
+      }
       environment = "kernel.efi"
       with_shared = false
 

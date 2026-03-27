@@ -210,7 +210,7 @@ config("thinlto-clang") {
 
   # These switches have the same meaning but different spellings for
   # lld-link vs ld.lld.
-  if (current_os == "win") {
+  if (is_pecoff) {
     _jobs = "/opt:lldltojobs="
     _cache_dir = "/lldltocache:"
   } else {
@@ -241,7 +241,7 @@ config("thinlto-rust") {
 
   # These switches have the same meaning but different spellings for
   # lld-link vs ld.lld.
-  if (current_os == "win") {
+  if (is_pecoff) {
     _cache_dir = "/lldltocache:"
   } else {
     _cache_dir = "--thinlto-cache-dir="

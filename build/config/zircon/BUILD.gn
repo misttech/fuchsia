@@ -156,6 +156,11 @@ config("compiler") {
     # The driver passes the corresponding option on to the linker as well,
     # where it enables build ID-like PDB UUIDs without timestamp.
     compiler_flags += [ "-mno-incremental-linker-compatible" ]
+
+    # TODO(https://fxbug.dev/496585236): Remove when Clang's UEFI target
+    # translates the -mno-incremental-linker-compatible switch to /Brepro
+    # for the underlying linker.
+    ldflags += [ "-Wl,/Brepro" ]
   }
 
   lib_dirs = zircon_toolchain.lib_dirs

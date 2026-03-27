@@ -354,6 +354,26 @@ class CxxActionTests(unittest.TestCase):
         self.assertEqual(c.linker_inputs, [source])
         self.assertEqual(c.clang_linker_executable, "lld-link")
 
+    def test_fuse_ld_uefi(self) -> None:
+        source = Path("hello.o")
+        output = Path("hello")
+        linker = "lld"
+        c = cxx.CxxAction(
+            _strs(
+                [
+                    "clang++",
+                    "--target=x64_64-unknown-uefi",
+                    f"-fuse-ld={linker}",
+                    source,
+                    "-o",
+                    output,
+                ]
+            )
+        )
+        self.assertEqual(c.use_ld, linker)
+        self.assertEqual(c.linker_inputs, [source])
+        self.assertEqual(c.clang_linker_executable, "lld-link")
+
     def test_asan(self) -> None:
         source = Path("hello.o")
         output = Path("hello")
@@ -549,6 +569,25 @@ class CxxActionTests(unittest.TestCase):
                 [
                     "clang++",
                     "--target=x86_x64-windows-msvc",
+                    f"-Wl,/debug:full",
+                    source,
+                    "-o",
+                    output,
+                ]
+            )
+        )
+        self.assertEqual(c.pdb, pdb)
+        self.assertEqual(list(c.linker_output_files()), [output, pdb])
+
+    def test_linker_pdb_output_uefi(self) -> None:
+        source = Path("hello.o")
+        output = Path("hello.efi")
+        pdb = Path("hello.pdb")
+        c = cxx.CxxAction(
+            _strs(
+                [
+                    "clang++",
+                    "--target=x86_x64-unknown-uefi",
                     f"-Wl,/debug:full",
                     source,
                     "-o",

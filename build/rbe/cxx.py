@@ -668,8 +668,8 @@ class CxxAction(object):
     @property
     def clang_linker_executable(self) -> str:  # basename only
         use_ld = self.use_ld or "lld"
-        if "windows" in self.target:
-            # Targeting Windows uses lld-link.
+        if "windows" in self.target or "uefi" in self.target:
+            # Targeting Windows/UEFI uses lld-link.
             if use_ld != "lld":
                 raise ValueError(
                     f"Unexpected linker selected for Windows.  Expected: lld, but got: {use_ld}"
@@ -872,7 +872,7 @@ class CxxAction(object):
 
     @property
     def pdb(self) -> Optional[Path]:
-        if "windows" in self.target:
+        if "windows" in self.target or "uefi" in self.target:
             if any("/debug" in f for f in self.linker_driver_flags):
                 if self.output_file:
                     return self.output_file.with_suffix(".pdb")

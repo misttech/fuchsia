@@ -27,7 +27,8 @@ if (current_os == target_os && target_sysroot != "") {
   # and cannot be simplified as a single sysroot directory. Leave
   # it empty.
   sysroot = ""
-} else if (current_cpu == "wasm32") {
+} else if (is_uefi || current_cpu == "wasm32") {
+  # There's no libc provided for these yet.
   sysroot = ""
 } else {
   # For other platforms that are not currently supported, do not define `sysroot`.

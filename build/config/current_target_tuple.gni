@@ -18,6 +18,8 @@ if (is_fuchsia) {
       "MacOS is not supported by the Fuchsia build, see https://fxbug.dev/408241554")
 } else if (current_os == "win") {
   current_target_tuple = "${clang_cpu}-pc-windows-msvc"
+} else if (current_os == "uefi") {
+  current_target_tuple = "${clang_cpu}-uefi"
 } else {
   assert(false,
          "OS not supported current_os=${current_os} current_cpu=${current_cpu}")

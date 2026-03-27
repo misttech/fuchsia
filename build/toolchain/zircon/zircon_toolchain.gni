@@ -146,13 +146,17 @@ template("zircon_toolchain") {
     tc_cpu = invoker.cpu
   }
   tc_target = "${tc_cpu}-"
-  if (invoker.os == "win") {
+  if (invoker.os == "uefi") {
+    tc_target += "uefi"
+  } else if (invoker.os == "win") {
     tc_target += "windows-msvc"
   } else if (invoker.os == "linux") {
     tc_target += "linux-gnu"
   } else {
     tc_target += invoker.os
   }
+
+  is_pecoff = invoker.os == "win" || invoker.os == "uefi"
 
   assert(defined(invoker.environment), "'environment' argument is required!")
 
@@ -427,7 +431,7 @@ template("zircon_toolchain") {
 
       # TODO(https://fxbug.dev/42101845): The MSVC target in the clang driver never uses the
       # -stdlib=libc++ switch or the toolchain's own libc++ include path.
-      if (invoker.os == "win") {
+      if (is_pecoff) {
         include_dirs_cc = rebase_path(
                 [
                   exec_script(
@@ -467,11 +471,11 @@ template("zircon_toolchain") {
   ar = "$dir_prefix${tc.tool_prefix}ar"
 
   # All other OS possibilities are ELF and so might have ELF build IDs.
-  is_elf = invoker.os != "win"
+  is_elf = !is_pecoff
 
   # buildidtool supports ELF build IDs and PE-COFF PDB GUIDs.
   # TODO(mcgrathr): broken for aarch64 PE-COFF
-  use_buildidtool = is_elf || (invoker.os == "win" && invoker.cpu != "arm64")
+  use_buildidtool = is_elf || (is_pecoff && invoker.cpu != "arm64")
 
   # The prebuilt dump_syms tool is the one that only supports ELF.
   # Breakpad has dump_syms tools for Mach-O (macOS) and PE-COFF
@@ -567,7 +571,7 @@ template("zircon_toolchain") {
 
     rspfile_content = "{{inputs}}"
     link_inputs = "'@$rspfile'"
-    if (invoker.os == "win") {
+    if (is_pecoff) {
       link_inputs += " {{libs}} {{solibs}}"
     } else {
       link_inputs = "-Wl,--start-group " + link_inputs +
@@ -626,7 +630,7 @@ template("zircon_toolchain") {
     }
     forward_variables_from(_link_concurrent_jobs, "*")
 
-    if (invoker.os == "win") {
+    if (is_pecoff) {
       # This assumes "-Wl,/debug" or suchlike is in ldflags.  If it's not
       # but nothing depends on the .pdb file, then it should be OK that
       # Ninja thinks it's an additional output but it doesn't get created.
@@ -795,7 +799,7 @@ template("zircon_toolchain") {
     tool("link") {
       forward_variables_from(_link_common, "*")
       description = "LINK $outfile"
-      if (invoker.os == "win") {
+      if (is_pecoff) {
         default_output_extension = ".exe"
       }
       command = "$linker_prefix $ld $switches $link_inputs$strip_command"
