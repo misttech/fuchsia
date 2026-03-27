@@ -4131,9 +4131,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_common"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c49ed1b87c4417475a10d9010f4e4e0fe89b2671073be18368796c681353404f"
+checksum = "dc35239580d427f5447568f553a294f6f0c8fdd67146e1130067e5b484540f39"
 dependencies = [
  "anyhow",
  "rust_icu_sys",
@@ -4142,18 +4142,18 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_release"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4b355a543d6576097bb84c49acbec9e50e0b3937a84f046f3b1a3b800ac693b"
+checksum = "98af0ceffe04981029314055da9b2a00c68d037117742698a20ec50a46558038"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "rust_icu_sys"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf44532aef52540cc4a9942a4b0564c16f70da10a99e3c693b9e24c8a9bcfa79"
+checksum = "ea315f466b24d9a13c8fac9ee01f44a42518c2adeda3527d6d7e2ee8a1db9179"
 dependencies = [
  "anyhow",
  "lazy_static",
@@ -4164,9 +4164,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_ucal"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92828d232edec965dcfdceae2c2cc8c66801a7276bb3ceb2caf4704f3ecd6ce1"
+checksum = "f8e95636ab8d4a3f737b08e34282eb3d67a4fa97e5cc58daadf8b1b886975c22"
 dependencies = [
  "log",
  "paste",
@@ -4178,9 +4178,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_uchar"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf0e49b845a8002fc73a86b99e87825cbcd2bb4e4289c84a0764dcac2eec71f4"
+checksum = "8a36703897f62500d9bcec9741c7f46cf1ba104481dd7bf909ac2d99a7a3c5b0"
 dependencies = [
  "log",
  "paste",
@@ -4190,9 +4190,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_udat"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08dcf613c206ace80da5d0f69f9e15224f1b7a9a60cde2091d40e816720acb5c"
+checksum = "5982948c8b9e6dae149360ba6bb4d8a1aab7f8bfbffba7a553d32de5e25bc2cb"
 dependencies = [
  "anyhow",
  "log",
@@ -4208,9 +4208,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_udata"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fe0913fbc8ee88e27f1a0b3bec121570efb0f663c4b6f4f7e335209a4c05695"
+checksum = "1f39e46049d908d6e11d6aec0537f4f14f036925dd052615dfd5803b9850ab66"
 dependencies = [
  "log",
  "paste",
@@ -4220,9 +4220,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_uenum"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cd6e6303a093de43b678780c4584b672be5a985904da30ff911ba14e49b05c"
+checksum = "a66ff6af667bbd503f1bcc6cec34a1dabaddd051e1666af2ae0737e9a7e66e25"
 dependencies = [
  "paste",
  "rust_icu_common",
@@ -4231,9 +4231,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_uloc"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d28f1f79292aad3a7bbcad5bd05e485b4d055f7c8459c8983d4edf5c3e9d171c"
+checksum = "392a6b23924682129ad232bcb42bc37741a2d405338d280e8bdf8c90571a9f85"
 dependencies = [
  "anyhow",
  "log",
@@ -4247,9 +4247,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_unorm2"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4210e794f3decfdd8ff52bcc1eecf0844b6e71be623a4d43d7aafd19d3adc0f"
+checksum = "250dab893da851c2a3986de82ab6ea656449c9d8849e0ff36477ce0668f1b14e"
 dependencies = [
  "anyhow",
  "log",
@@ -4264,9 +4264,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_ustring"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88153f15bc77f19a673cd82daa7dfacf5f4029e3bcb022e28c1c6bf24f9a1249"
+checksum = "4cf42586d82f0e05e7a772e82aa549294c1ed4d85ceb0a896e7f86725c820a4c"
 dependencies = [
  "log",
  "paste",

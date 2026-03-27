@@ -25,8 +25,8 @@ icu_rustc_library("settings_intl") {
 
   icu_deps = [
     "//src/lib/icu_data/rust/icu_data",
-    "//third_party/rust_crates:rust_icu_uenum-v5_4_0",
-    "//third_party/rust_crates:rust_icu_uloc-v5_4_0",
+    "//third_party/rust_crates:rust_icu_uenum-v5_6_0",
+    "//third_party/rust_crates:rust_icu_uloc-v5_6_0",
   ]
 
   deps = [

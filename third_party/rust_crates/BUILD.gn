@@ -850,61 +850,61 @@ import("//build/icu/icu_rustc_library.gni")
 
 if (current_os == "fuchsia") {
   group("rust_icu_common") {
-    public_deps = [ ":rust_icu_common-v5_4_0" ]
+    public_deps = [ ":rust_icu_common-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_sys") {
-    public_deps = [ ":rust_icu_sys-v5_4_0" ]
+    public_deps = [ ":rust_icu_sys-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_ucal") {
-    public_deps = [ ":rust_icu_ucal-v5_4_0" ]
+    public_deps = [ ":rust_icu_ucal-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_uchar") {
-    public_deps = [ ":rust_icu_uchar-v5_4_0" ]
+    public_deps = [ ":rust_icu_uchar-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_udat") {
-    public_deps = [ ":rust_icu_udat-v5_4_0" ]
+    public_deps = [ ":rust_icu_udat-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_udata") {
-    public_deps = [ ":rust_icu_udata-v5_4_0" ]
+    public_deps = [ ":rust_icu_udata-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_uenum") {
-    public_deps = [ ":rust_icu_uenum-v5_4_0" ]
+    public_deps = [ ":rust_icu_uenum-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_uloc") {
-    public_deps = [ ":rust_icu_uloc-v5_4_0" ]
+    public_deps = [ ":rust_icu_uloc-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_unorm2") {
-    public_deps = [ ":rust_icu_unorm2-v5_4_0" ]
+    public_deps = [ ":rust_icu_unorm2-v5_6_0" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("rust_icu_ustring") {
-    public_deps = [ ":rust_icu_ustring-v5_4_0" ]
+    public_deps = [ ":rust_icu_ustring-v5_6_0" ]
   }
 }
 
@@ -15572,17 +15572,17 @@ rustc_library("rsa-v0_9_8") {
   applicable_licenses = [ ":rsa-v0_9_8.license" ]
 }
 
-license("rust_icu_common-v5_4_0.license") {
+license("rust_icu_common-v5_6_0.license") {
   public_package_name = "rust_icu_common"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_common-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_common-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_common-v5_4_0") {
+icu_rustc_library("rust_icu_common-v5_6_0") {
   crate_name = "rust_icu_common"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_common-5.4.0/src/lib.rs"
-  output_name = "rust_icu_common-2f5e9ede1ac209"
+      "//third_party/rust_crates/vendor/rust_icu_common-5.6.0/src/lib.rs"
+  output_name = "rust_icu_common-203363928e1a5807"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15591,15 +15591,15 @@ icu_rustc_library("rust_icu_common-v5_4_0") {
 
   deps = []
   deps += [ ":anyhow-v1_0_102" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
   deps += [ ":thiserror-v1_0_69" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2f5e9ede1ac209",
-    "-Cextra-filename=-2f5e9ede1ac209",
+    "-Cmetadata=203363928e1a5807",
+    "-Cextra-filename=-203363928e1a5807",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15610,19 +15610,19 @@ icu_rustc_library("rust_icu_common-v5_4_0") {
   visibility += [ "//src/lib/icu_data/rust/icu_data:*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
 
-  applicable_licenses = [ ":rust_icu_common-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_common-v5_6_0.license" ]
 }
 
-license("rust_icu_sys-v5_4_0.license") {
+license("rust_icu_sys-v5_6_0.license") {
   public_package_name = "rust_icu_sys"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_sys-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_sys-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_sys-v5_4_0") {
+icu_rustc_library("rust_icu_sys-v5_6_0") {
   crate_name = "rust_icu_sys"
-  source_root = "//third_party/rust_crates/vendor/rust_icu_sys-5.4.0/src/lib.rs"
-  output_name = "rust_icu_sys-72f2caf99c883f94"
+  source_root = "//third_party/rust_crates/vendor/rust_icu_sys-5.6.0/src/lib.rs"
+  output_name = "rust_icu_sys-cb78234c67780c69"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15637,8 +15637,8 @@ icu_rustc_library("rust_icu_sys-v5_4_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=72f2caf99c883f94",
-    "-Cextra-filename=-72f2caf99c883f94",
+    "-Cmetadata=cb78234c67780c69",
+    "-Cextra-filename=-cb78234c67780c69",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15649,20 +15649,20 @@ icu_rustc_library("rust_icu_sys-v5_4_0") {
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
   visibility += [ "//src/ui/lib/input_pipeline:*" ]
 
-  applicable_licenses = [ ":rust_icu_sys-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_sys-v5_6_0.license" ]
 }
 
-license("rust_icu_ucal-v5_4_0.license") {
+license("rust_icu_ucal-v5_6_0.license") {
   public_package_name = "rust_icu_ucal"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_ucal-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_ucal-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_ucal-v5_4_0") {
+icu_rustc_library("rust_icu_ucal-v5_6_0") {
   crate_name = "rust_icu_ucal"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_ucal-5.4.0/src/lib.rs"
-  output_name = "rust_icu_ucal-b56abebf6d3552c9"
+      "//third_party/rust_crates/vendor/rust_icu_ucal-5.6.0/src/lib.rs"
+  output_name = "rust_icu_ucal-9f3a7fd6816f33b3"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15672,17 +15672,17 @@ icu_rustc_library("rust_icu_ucal-v5_4_0") {
   deps = []
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
-  deps += [ ":rust_icu_uenum-v5_4_0" ]
-  deps += [ ":rust_icu_ustring-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
+  deps += [ ":rust_icu_uenum-v5_6_0" ]
+  deps += [ ":rust_icu_ustring-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b56abebf6d3552c9",
-    "-Cextra-filename=-b56abebf6d3552c9",
+    "-Cmetadata=9f3a7fd6816f33b3",
+    "-Cextra-filename=-9f3a7fd6816f33b3",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15693,20 +15693,20 @@ icu_rustc_library("rust_icu_ucal-v5_4_0") {
   visibility += [ "//src/lib/icu_data/rust/icu_data:*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
 
-  applicable_licenses = [ ":rust_icu_ucal-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_ucal-v5_6_0.license" ]
 }
 
-license("rust_icu_uchar-v5_4_0.license") {
+license("rust_icu_uchar-v5_6_0.license") {
   public_package_name = "rust_icu_uchar"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_uchar-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_uchar-v5_4_0") {
+icu_rustc_library("rust_icu_uchar-v5_6_0") {
   crate_name = "rust_icu_uchar"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_uchar-5.4.0/src/lib.rs"
-  output_name = "rust_icu_uchar-12b57e70eb368a5c"
+      "//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0/src/lib.rs"
+  output_name = "rust_icu_uchar-467c14c6433c3884"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15716,15 +15716,15 @@ icu_rustc_library("rust_icu_uchar-v5_4_0") {
   deps = []
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=12b57e70eb368a5c",
-    "-Cextra-filename=-12b57e70eb368a5c",
+    "-Cmetadata=467c14c6433c3884",
+    "-Cextra-filename=-467c14c6433c3884",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15732,20 +15732,20 @@ icu_rustc_library("rust_icu_uchar-v5_4_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rust_icu_uchar-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_uchar-v5_6_0.license" ]
 }
 
-license("rust_icu_udat-v5_4_0.license") {
+license("rust_icu_udat-v5_6_0.license") {
   public_package_name = "rust_icu_udat"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_udat-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_udat-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_udat-v5_4_0") {
+icu_rustc_library("rust_icu_udat-v5_6_0") {
   crate_name = "rust_icu_udat"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_udat-5.4.0/src/lib.rs"
-  output_name = "rust_icu_udat-836ea9ff689cd1af"
+      "//third_party/rust_crates/vendor/rust_icu_udat-5.6.0/src/lib.rs"
+  output_name = "rust_icu_udat-b1ff82aefe32e246"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15755,39 +15755,39 @@ icu_rustc_library("rust_icu_udat-v5_4_0") {
   deps = []
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
-  deps += [ ":rust_icu_ucal-v5_4_0" ]
-  deps += [ ":rust_icu_uenum-v5_4_0" ]
-  deps += [ ":rust_icu_uloc-v5_4_0" ]
-  deps += [ ":rust_icu_ustring-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
+  deps += [ ":rust_icu_ucal-v5_6_0" ]
+  deps += [ ":rust_icu_uenum-v5_6_0" ]
+  deps += [ ":rust_icu_uloc-v5_6_0" ]
+  deps += [ ":rust_icu_ustring-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=836ea9ff689cd1af",
-    "-Cextra-filename=-836ea9ff689cd1af",
+    "-Cmetadata=b1ff82aefe32e246",
+    "-Cextra-filename=-b1ff82aefe32e246",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rust_icu_udat-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_udat-v5_6_0.license" ]
 }
 
-license("rust_icu_udata-v5_4_0.license") {
+license("rust_icu_udata-v5_6_0.license") {
   public_package_name = "rust_icu_udata"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_udata-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_udata-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_udata-v5_4_0") {
+icu_rustc_library("rust_icu_udata-v5_6_0") {
   crate_name = "rust_icu_udata"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_udata-5.4.0/src/lib.rs"
-  output_name = "rust_icu_udata-35e9bf5d64c19251"
+      "//third_party/rust_crates/vendor/rust_icu_udata-5.6.0/src/lib.rs"
+  output_name = "rust_icu_udata-c44e44f113982a23"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15797,15 +15797,15 @@ icu_rustc_library("rust_icu_udata-v5_4_0") {
   deps = []
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=35e9bf5d64c19251",
-    "-Cextra-filename=-35e9bf5d64c19251",
+    "-Cmetadata=c44e44f113982a23",
+    "-Cextra-filename=-c44e44f113982a23",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
   ]
@@ -15815,20 +15815,20 @@ icu_rustc_library("rust_icu_udata-v5_4_0") {
   visibility += [ "//src/lib/icu_data/rust/icu_data:*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
 
-  applicable_licenses = [ ":rust_icu_udata-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_udata-v5_6_0.license" ]
 }
 
-license("rust_icu_uenum-v5_4_0.license") {
+license("rust_icu_uenum-v5_6_0.license") {
   public_package_name = "rust_icu_uenum"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_uenum-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_uenum-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_uenum-v5_4_0") {
+icu_rustc_library("rust_icu_uenum-v5_6_0") {
   crate_name = "rust_icu_uenum"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_uenum-5.4.0/src/lib.rs"
-  output_name = "rust_icu_uenum-cbb159195faf13ad"
+      "//third_party/rust_crates/vendor/rust_icu_uenum-5.6.0/src/lib.rs"
+  output_name = "rust_icu_uenum-338358029507d74d"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15837,15 +15837,15 @@ icu_rustc_library("rust_icu_uenum-v5_4_0") {
 
   deps = []
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=cbb159195faf13ad",
-    "-Cextra-filename=-cbb159195faf13ad",
+    "-Cmetadata=338358029507d74d",
+    "-Cextra-filename=-338358029507d74d",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15855,20 +15855,20 @@ icu_rustc_library("rust_icu_uenum-v5_4_0") {
   visibility += [ ":*" ]
   visibility += [ "//src/settings/intl:*" ]
 
-  applicable_licenses = [ ":rust_icu_uenum-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_uenum-v5_6_0.license" ]
 }
 
-license("rust_icu_uloc-v5_4_0.license") {
+license("rust_icu_uloc-v5_6_0.license") {
   public_package_name = "rust_icu_uloc"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_uloc-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_uloc-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_uloc-v5_4_0") {
+icu_rustc_library("rust_icu_uloc-v5_6_0") {
   crate_name = "rust_icu_uloc"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_uloc-5.4.0/src/lib.rs"
-  output_name = "rust_icu_uloc-a0c6fa890d2c9ed"
+      "//third_party/rust_crates/vendor/rust_icu_uloc-5.6.0/src/lib.rs"
+  output_name = "rust_icu_uloc-8eb073f169c50e1f"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15879,17 +15879,17 @@ icu_rustc_library("rust_icu_uloc-v5_4_0") {
   deps += [ ":anyhow-v1_0_102" ]
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
-  deps += [ ":rust_icu_uenum-v5_4_0" ]
-  deps += [ ":rust_icu_ustring-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
+  deps += [ ":rust_icu_uenum-v5_6_0" ]
+  deps += [ ":rust_icu_ustring-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a0c6fa890d2c9ed",
-    "-Cextra-filename=-a0c6fa890d2c9ed",
+    "-Cmetadata=8eb073f169c50e1f",
+    "-Cextra-filename=-8eb073f169c50e1f",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15900,20 +15900,20 @@ icu_rustc_library("rust_icu_uloc-v5_4_0") {
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
   visibility += [ "//src/settings/intl:*" ]
 
-  applicable_licenses = [ ":rust_icu_uloc-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_uloc-v5_6_0.license" ]
 }
 
-license("rust_icu_unorm2-v5_4_0.license") {
+license("rust_icu_unorm2-v5_6_0.license") {
   public_package_name = "rust_icu_unorm2"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_unorm2-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_unorm2-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_unorm2-v5_4_0") {
+icu_rustc_library("rust_icu_unorm2-v5_6_0") {
   crate_name = "rust_icu_unorm2"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_unorm2-5.4.0/src/lib.rs"
-  output_name = "rust_icu_unorm2-fc4b1e526290604e"
+      "//third_party/rust_crates/vendor/rust_icu_unorm2-5.6.0/src/lib.rs"
+  output_name = "rust_icu_unorm2-722ef8129fee58ba"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15923,19 +15923,19 @@ icu_rustc_library("rust_icu_unorm2-v5_4_0") {
   deps = []
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
-  deps += [ ":rust_icu_ucal-v5_4_0" ]
-  deps += [ ":rust_icu_uenum-v5_4_0" ]
-  deps += [ ":rust_icu_uloc-v5_4_0" ]
-  deps += [ ":rust_icu_ustring-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
+  deps += [ ":rust_icu_ucal-v5_6_0" ]
+  deps += [ ":rust_icu_uenum-v5_6_0" ]
+  deps += [ ":rust_icu_uloc-v5_6_0" ]
+  deps += [ ":rust_icu_ustring-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fc4b1e526290604e",
-    "-Cextra-filename=-fc4b1e526290604e",
+    "-Cmetadata=722ef8129fee58ba",
+    "-Cextra-filename=-722ef8129fee58ba",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15945,20 +15945,20 @@ icu_rustc_library("rust_icu_unorm2-v5_4_0") {
   visibility += [ ":*" ]
   visibility += [ "//src/ui/lib/input_pipeline:*" ]
 
-  applicable_licenses = [ ":rust_icu_unorm2-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_unorm2-v5_6_0.license" ]
 }
 
-license("rust_icu_ustring-v5_4_0.license") {
+license("rust_icu_ustring-v5_6_0.license") {
   public_package_name = "rust_icu_ustring"
   license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_ustring-5.4.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/rust_icu_ustring-5.6.0/LICENSE" ]
 }
 
-icu_rustc_library("rust_icu_ustring-v5_4_0") {
+icu_rustc_library("rust_icu_ustring-v5_6_0") {
   crate_name = "rust_icu_ustring"
   source_root =
-      "//third_party/rust_crates/vendor/rust_icu_ustring-5.4.0/src/lib.rs"
-  output_name = "rust_icu_ustring-2eada8d1e55d6585"
+      "//third_party/rust_crates/vendor/rust_icu_ustring-5.6.0/src/lib.rs"
+  output_name = "rust_icu_ustring-399dd814b512b7d4"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -15968,15 +15968,15 @@ icu_rustc_library("rust_icu_ustring-v5_4_0") {
   deps = []
   deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_4_0" ]
-  deps += [ ":rust_icu_sys-v5_4_0" ]
+  deps += [ ":rust_icu_common-v5_6_0" ]
+  deps += [ ":rust_icu_sys-v5_6_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2eada8d1e55d6585",
-    "-Cextra-filename=-2eada8d1e55d6585",
+    "-Cmetadata=399dd814b512b7d4",
+    "-Cextra-filename=-399dd814b512b7d4",
     "--cfg=feature=\"icu_version_67_plus\"",
     "--cfg=feature=\"icu_version_in_env\"",
     "--cfg=feature=\"renaming\"",
@@ -15984,7 +15984,7 @@ icu_rustc_library("rust_icu_ustring-v5_4_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rust_icu_ustring-v5_4_0.license" ]
+  applicable_licenses = [ ":rust_icu_ustring-v5_6_0.license" ]
 }
 
 license("rustc-hash-v1_0_1.license") {
