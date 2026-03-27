@@ -4,9 +4,10 @@
 
 use crate::util::digest_path;
 use crate::writer::{OutputSink, Writer};
-use anyhow::{bail, Context as _, Result};
-use fidl_fuchsia_fuzzer::Input as FidlInput;
-use futures::{AsyncReadExt, AsyncWriteExt};
+use anyhow::{Context as _, Result, bail};
+use flex_fuchsia_fuzzer::Input as FidlInput;
+use futures::AsyncReadExt;
+use futures::io::AsyncWriteExt as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,7 +37,11 @@ impl InputPair {
     ///
     /// Returns an error if the `input` string is neither valid hex nor a valid path to a file.
     ///
-    pub fn try_from_str<S, O>(input: S, writer: &Writer<O>) -> Result<Self>
+    pub fn try_from_str<S, O>(
+        client: &flex_client::ClientArg,
+        input: S,
+        writer: &Writer<O>,
+    ) -> Result<Self>
     where
         S: AsRef<str>,
         O: OutputSink,
@@ -59,25 +64,25 @@ impl InputPair {
             }
             (Err(_), Err(e)) => bail!("failed to read fuzzer input: {}", e),
         };
-        InputPair::try_from_data(input_data)
+        InputPair::try_from_data(client, input_data)
     }
 
     /// Generates an input pair from a filesystem path.
     ///
     /// Returns an error if the `path` is invalid.
     ///
-    pub fn try_from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn try_from_path<P: AsRef<Path>>(client: &flex_client::ClientArg, path: P) -> Result<Self> {
         let path = path.as_ref();
         let input_data = fs::read(path)
             .with_context(|| format!("failed to read '{}'", path.to_string_lossy()))?;
-        InputPair::try_from_data(input_data)
+        InputPair::try_from_data(client, input_data)
     }
 
     /// Creates an input pair from a sequence of bytes.
-    pub fn try_from_data(input_data: Vec<u8>) -> Result<Self> {
-        let (reader, writer) = fidl::Socket::create_stream();
+    pub fn try_from_data(client: &flex_client::ClientArg, input_data: Vec<u8>) -> Result<Self> {
+        let (reader, writer) = client.create_stream_socket();
         let fidl_input = FidlInput { socket: reader, size: input_data.len() as u64 };
-        let input = Input { socket: Some(writer), data: input_data };
+        let input = Input { socket: Some(flex_client::socket_to_async(writer)), data: input_data };
         Ok(InputPair::from((fidl_input, input)))
     }
 
@@ -101,7 +106,7 @@ impl InputPair {
 /// device.
 #[derive(Debug)]
 pub struct Input {
-    socket: Option<fidl::Socket>,
+    socket: Option<flex_client::AsyncSocket>,
 
     /// The received data
     pub data: Vec<u8>,
@@ -112,8 +117,7 @@ impl Input {
     ///
     /// This will deliver the data to the `fuchsia.fuzzer.Input` created with this object.
     pub async fn send(mut self) -> Result<()> {
-        let socket = self.socket.take().context("input already sent")?;
-        let mut writer = fidl::AsyncSocket::from_socket(socket);
+        let mut writer = self.socket.take().context("input already sent")?;
         writer.write_all(&self.data).await.context("failed to write fuzz input")?;
         Ok(())
     }
@@ -123,7 +127,7 @@ impl Input {
     /// Returns an error if unable to read from the underlying socket.
     pub async fn try_receive(fidl_input: FidlInput) -> Result<Self> {
         let mut data = Vec::new();
-        let reader = fidl::AsyncSocket::from_socket(fidl_input.socket);
+        let reader = flex_client::socket_to_async(fidl_input.socket);
         reader
             .take(fidl_input.size)
             .read_to_end(&mut data)
@@ -151,43 +155,46 @@ pub async fn save_input<P: AsRef<Path>>(fidl_input: FidlInput, out_dir: P) -> Re
 
 #[cfg(test)]
 mod tests {
-    use super::{save_input, Input};
+    use super::{Input, save_input};
     use crate::util::digest_path;
     use anyhow::Result;
-    use fidl_fuchsia_fuzzer::Input as FidlInput;
+    use flex_fuchsia_fuzzer::Input as FidlInput;
     use fuchsia_fuzzctl::InputPair;
-    use fuchsia_fuzzctl_test::{verify_saved, Test};
-    use futures::{join, AsyncReadExt};
+    use fuchsia_fuzzctl_test::{Test, verify_saved};
+    use futures::{AsyncReadExt, join};
     use std::fs::File;
     use std::io::Write;
 
     #[fuchsia::test]
-    fn test_from_str() -> Result<()> {
+    async fn test_from_str() -> Result<()> {
         let test = Test::try_new()?;
         let writer = test.writer();
         let input_dir = test.create_dir("inputs")?;
 
         // Missing file.
         let input1 = input_dir.join("input1");
-        let actual = format!("{:?}", InputPair::try_from_str(input1.to_string_lossy(), writer));
+        let actual = format!(
+            "{:?}",
+            InputPair::try_from_str(&test.domain(), input1.to_string_lossy(), writer)
+        );
         assert!(actual.contains("failed to read fuzzer input"));
 
         // Empty file.
         let mut file = File::create(&input1)?;
-        let input_pair = InputPair::try_from_str(input1.to_string_lossy(), writer)?;
+        let input_pair = InputPair::try_from_str(&test.domain(), input1.to_string_lossy(), writer)?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert_eq!(fidl_input.size, 0);
         assert!(input.data.is_empty());
 
         // File with data.
         file.write_all(b"data")?;
-        let input_pair = InputPair::try_from_str(input1.to_string_lossy(), writer)?;
+        let input_pair = InputPair::try_from_str(&test.domain(), input1.to_string_lossy(), writer)?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert_eq!(fidl_input.size, 4);
         assert_eq!(input.data, b"data");
 
         // Hex value.
-        let input_pair = InputPair::try_from_str("64617461", writer)?;
+        let input_pair = InputPair::try_from_str(&test.domain(), "64617461", writer)?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert_eq!(fidl_input.size, 4);
         assert_eq!(input.data, b"data");
@@ -195,20 +202,20 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_from_path() -> Result<()> {
+    async fn test_from_path() -> Result<()> {
         let test = Test::try_new()?;
         let mut path = test.create_dir("inputs")?;
         path.push("input");
-        assert!(InputPair::try_from_path(&path).is_err());
+        assert!(InputPair::try_from_path(&test.domain(), &path).is_err());
 
         let mut file = File::create(&path)?;
-        let input_pair = InputPair::try_from_path(&path)?;
+        let input_pair = InputPair::try_from_path(&test.domain(), &path)?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert_eq!(fidl_input.size, 0);
         assert!(input.data.is_empty());
 
         file.write_all(b"data")?;
-        let input_pair = InputPair::try_from_path(&path)?;
+        let input_pair = InputPair::try_from_path(&test.domain(), &path)?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert_eq!(fidl_input.size, 4);
         assert_eq!(input.data, b"data");
@@ -218,16 +225,17 @@ mod tests {
     #[fuchsia::test]
     async fn test_send() -> Result<()> {
         async fn recv(fidl_input: FidlInput, expected: &[u8]) {
-            let mut reader = fidl::AsyncSocket::from_socket(fidl_input.socket);
+            let mut reader = flex_client::socket_to_async(fidl_input.socket);
             let mut buf = Vec::new();
             let num_read = reader.read_to_end(&mut buf).await.expect("read_to_end failed");
             assert_eq!(num_read as u64, fidl_input.size);
             assert_eq!(buf, expected);
         }
-        let input_pair = InputPair::try_from_data(b"".to_vec())?;
+        let test = Test::try_new()?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"".to_vec())?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert!(join!(input.send(), recv(fidl_input, b"")).0.is_ok());
-        let input_pair = InputPair::try_from_data(b"data".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"data".to_vec())?;
         let (fidl_input, input) = input_pair.as_tuple();
         assert!(join!(input.send(), recv(fidl_input, b"data")).0.is_ok());
         Ok(())
@@ -238,7 +246,8 @@ mod tests {
         let test = Test::try_new()?;
         let saved_dir = test.create_dir("saved")?;
 
-        let (reader, writer) = fidl::Socket::create_stream();
+        let (reader, writer) = test.domain().create_stream_socket();
+        let writer = flex_client::socket_to_async(writer);
         let fidl_input = FidlInput { socket: reader, size: 0 };
         let input = Input { socket: Some(writer), data: Vec::new() };
         let send_fut = input.send();

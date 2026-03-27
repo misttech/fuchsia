@@ -5,15 +5,15 @@
 use crate::diagnostics::send_log_entry;
 use crate::options::add_defaults;
 use crate::test::Test;
-use anyhow::{anyhow, Context as _, Result};
-use fidl_fuchsia_fuzzer::{
+use anyhow::{Context as _, Result, anyhow};
+use flex_fuchsia_fuzzer::{
     self as fuzz, Artifact as FidlArtifact, Input as FidlInput, Result_ as FuzzResult,
 };
 use fuchsia_fuzzctl::InputPair;
-use futures::{join, AsyncReadExt, AsyncWriteExt, StreamExt};
+use futures::{AsyncReadExt, AsyncWriteExt, StreamExt, join};
 use std::cell::RefCell;
 use std::rc::Rc;
-use {fuchsia_async as fasync, zx_status as zx};
+use zx_status as zx;
 
 /// Test fake that allows configuring how to respond to `fuchsia.fuzzer.Controller` methods.
 ///
@@ -28,9 +28,9 @@ pub struct FakeController {
     received_input: Rc<RefCell<Vec<u8>>>,
     result: Rc<RefCell<Result<FuzzResult, zx::Status>>>,
     status: Rc<RefCell<fuzz::Status>>,
-    stdout: Rc<RefCell<Option<fasync::Socket>>>,
-    stderr: Rc<RefCell<Option<fasync::Socket>>>,
-    syslog: Rc<RefCell<Option<fasync::Socket>>>,
+    stdout: Rc<RefCell<Option<flex_client::AsyncSocket>>>,
+    stderr: Rc<RefCell<Option<flex_client::AsyncSocket>>>,
+    syslog: Rc<RefCell<Option<flex_client::AsyncSocket>>>,
     canceled: Rc<RefCell<bool>>,
 }
 
@@ -55,8 +55,8 @@ impl FakeController {
     }
 
     /// Simulates a call to `fuchsia.fuzzer.Manager/GetOutput` without a `fuzz-manager`.
-    pub fn set_output(&self, output: fuzz::TestOutput, socket: fidl::Socket) -> zx::Status {
-        let socket = fasync::Socket::from_socket(socket);
+    pub fn set_output(&self, output: fuzz::TestOutput, socket: flex_client::Socket) -> zx::Status {
+        let socket = flex_client::socket_to_async(socket);
         match output {
             fuzz::TestOutput::Stdout => {
                 let mut stdout_mut = self.stdout.borrow_mut();
@@ -117,7 +117,7 @@ impl FakeController {
     /// Reads test input data from a `fuchsia.fuzzer.Input` from a FIDL request.
     async fn receive_input(&self, input: FidlInput) -> Result<()> {
         let mut received_input = Vec::new();
-        let mut reader = fidl::AsyncSocket::from_socket(input.socket);
+        let mut reader = flex_client::socket_to_async(input.socket);
         reader.read_to_end(&mut received_input).await?;
         let mut received_input_mut = self.received_input.borrow_mut();
         *received_input_mut = received_input;
@@ -244,7 +244,7 @@ pub async fn serve_controller(
                 fake.set_corpus_type(corpus);
                 let corpus_reader = corpus_reader.into_proxy();
                 if let Some(input_to_send) = fake.take_input_to_send() {
-                    let input_pair = InputPair::try_from_data(input_to_send)?;
+                    let input_pair = InputPair::try_from_data(&test.domain(), input_to_send)?;
                     let (fidl_input, input) = input_pair.as_tuple();
                     let corpus_fut = corpus_reader.next(fidl_input);
                     let input_fut = input.send();
@@ -277,7 +277,7 @@ pub async fn serve_controller(
                     }
                     (_, _, Ok(fuzz_result)) => {
                         let input_to_send = fake.take_input_to_send().unwrap_or(Vec::new());
-                        let input_pair = InputPair::try_from_data(input_to_send)?;
+                        let input_pair = InputPair::try_from_data(&test.domain(), input_to_send)?;
                         let (fidl_input, input) = input_pair.as_tuple();
                         artifact = Some(FidlArtifact {
                             result: Some(fuzz_result),
@@ -317,7 +317,7 @@ pub async fn serve_controller(
                 reset_artifact(watcher.take())?;
                 fake.receive_input(test_input).await?;
                 let input_to_send = fake.take_input_to_send().context("input_to_send unset")?;
-                let input_pair = InputPair::try_from_data(input_to_send)?;
+                let input_pair = InputPair::try_from_data(&test.domain(), input_to_send)?;
                 let (fidl_input, input) = input_pair.as_tuple();
                 artifact = Some(FidlArtifact {
                     result: Some(FuzzResult::Minimized),
@@ -333,7 +333,7 @@ pub async fn serve_controller(
                 reset_artifact(watcher.take())?;
                 fake.receive_input(test_input).await?;
                 let input_to_send = fake.take_input_to_send().context("input_to_send unset")?;
-                let input_pair = InputPair::try_from_data(input_to_send)?;
+                let input_pair = InputPair::try_from_data(&test.domain(), input_to_send)?;
                 let (fidl_input, input) = input_pair.as_tuple();
                 artifact = Some(FidlArtifact {
                     result: Some(FuzzResult::Cleansed),

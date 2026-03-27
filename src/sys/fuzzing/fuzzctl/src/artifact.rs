@@ -4,8 +4,8 @@
 
 use crate::input::Input;
 use crate::util::digest_path;
-use anyhow::{bail, Context as _, Result};
-use fidl_fuchsia_fuzzer::{Artifact as FidlArtifact, Result_ as FuzzResult};
+use anyhow::{Context as _, Result, bail};
+use flex_fuchsia_fuzzer::{Artifact as FidlArtifact, Result_ as FuzzResult};
 use std::fs;
 use std::path::{Path, PathBuf};
 use zx_status as zx;
@@ -76,8 +76,8 @@ mod tests {
     use crate::input::InputPair;
     use crate::util::digest_path;
     use anyhow::Result;
-    use fidl_fuchsia_fuzzer::{Artifact as FidlArtifact, Result_ as FuzzResult};
-    use fuchsia_fuzzctl_test::{verify_saved, Test};
+    use flex_fuchsia_fuzzer::{Artifact as FidlArtifact, Result_ as FuzzResult};
+    use fuchsia_fuzzctl_test::{Test, verify_saved};
     use futures::join;
 
     #[fuchsia::test]
@@ -85,7 +85,7 @@ mod tests {
         let test = Test::try_new()?;
         let saved_dir = test.create_dir("saved")?;
 
-        let input_pair = InputPair::try_from_data(b"data".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"data".to_vec())?;
         let (fidl_input, input) = input_pair.as_tuple();
         let send_fut = input.send();
         let fidl_artifact = FidlArtifact {

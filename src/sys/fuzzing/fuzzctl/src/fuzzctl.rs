@@ -366,9 +366,10 @@ impl<O: OutputSink> LibFuzzerWorkflow<O> {
                     continue;
                 }
                 let file = entry.path();
-                let input_pair = InputPair::try_from_path(file).with_context(|| {
-                    format!("failed to input from '{}'", file.to_string_lossy())
-                })?;
+                let input_pair = InputPair::try_from_path(&self.controller.domain(), file)
+                    .with_context(|| {
+                        format!("failed to input from '{}'", file.to_string_lossy())
+                    })?;
                 input_pairs.push(input_pair);
             }
         }
@@ -386,7 +387,10 @@ impl<O: OutputSink> LibFuzzerWorkflow<O> {
     fn take_test_input(&mut self) -> Result<InputPair> {
         let relpath = self.files.next().context("no remaining test input files")?;
         self.writer.println(format!("Using '{}' as the test input.", relpath.to_string_lossy()));
-        InputPair::try_from_path(self.fuzzer_dir.abspath(relpath).unwrap())
+        InputPair::try_from_path(
+            &self.controller.domain(),
+            self.fuzzer_dir.abspath(relpath).unwrap(),
+        )
     }
 
     // Waits for the controller to produce an fuzzing artifact, and reports where data associated

@@ -138,14 +138,20 @@ impl<O: OutputSink> Fuzzer<O> {
                 for dir_entry in
                     WalkDir::new(path).follow_links(true).into_iter().filter_map(|e| e.ok())
                 {
-                    if let Ok(input_pair) = InputPair::try_from_path(dir_entry.path()) {
+                    if let Ok(input_pair) =
+                        InputPair::try_from_path(&self.controller.domain(), dir_entry.path())
+                    {
                         input_pairs.push(input_pair);
                     }
                 }
             }
             false => {
-                let input_pair = InputPair::try_from_str(test_input.as_ref(), &self.writer)
-                    .context("failed to get input to add")?;
+                let input_pair = InputPair::try_from_str(
+                    &self.controller.domain(),
+                    test_input.as_ref(),
+                    &self.writer,
+                )
+                .context("failed to get input to add")?;
                 input_pairs.push(input_pair);
             }
         }
@@ -196,8 +202,9 @@ impl<O: OutputSink> Fuzzer<O> {
     ///   * The fuzzer returns an error, e.g. it is already performing another workflow.
     ///
     pub async fn try_one<S: AsRef<str>>(&self, test_input: S) -> Result<()> {
-        let input_pair = InputPair::try_from_str(test_input, &self.writer)
-            .context("failed to get input to try")?;
+        let input_pair =
+            InputPair::try_from_str(&self.controller.domain(), test_input, &self.writer)
+                .context("failed to get input to try")?;
         self.writer.println(format!("Trying an input of {} bytes...", input_pair.len()));
         self.controller.try_one(input_pair).await
     }
@@ -215,8 +222,9 @@ impl<O: OutputSink> Fuzzer<O> {
     ///   * The fuzzer returns an error, e.g. it is already performing another workflow.
     ///
     pub async fn cleanse<S: AsRef<str>>(&self, test_input: S) -> Result<()> {
-        let input_pair = InputPair::try_from_str(test_input, &self.writer)
-            .context("failed to get input to cleanse")?;
+        let input_pair =
+            InputPair::try_from_str(&self.controller.domain(), test_input, &self.writer)
+                .context("failed to get input to cleanse")?;
         self.writer
             .println(format!("Attempting to cleanse an input of {} bytes...", input_pair.len()));
         self.controller.cleanse(input_pair).await
@@ -242,8 +250,9 @@ impl<O: OutputSink> Fuzzer<O> {
         time: Option<S>,
     ) -> Result<()> {
         self.set_bounds(runs, time).await.context("failed to bound input minimization")?;
-        let input_pair = InputPair::try_from_str(test_input, &self.writer)
-            .context("failed to get input to minimize")?;
+        let input_pair =
+            InputPair::try_from_str(&self.controller.domain(), test_input, &self.writer)
+                .context("failed to get input to minimize")?;
         self.writer
             .println(format!("Attempting to minimize an input of {} bytes...", input_pair.len()));
         self.controller.minimize(input_pair).await
@@ -392,13 +401,14 @@ mod tests {
     use anyhow::Result;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+    use fuchsia_async as fasync;
     use fuchsia_fuzzctl::digest_path;
     use fuchsia_fuzzctl_test::{
         BufferSink, FakeController, TEST_URL, Test, add_defaults, create_task, serve_controller,
         verify_saved,
     };
     use url::Url;
-    use {fuchsia_async as fasync, zx_status as zx};
+    use zx_status as zx;
 
     // Creates a test setup suitable for unit testing `Fuzzer`.
     fn perform_test_setup(

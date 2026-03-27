@@ -5,31 +5,53 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-rustc_library("testing") {
+template("fuchsia_fuzzctl_test_template") {
+  rustc_library(target_name) {
+    forward_variables_from(invoker, "*", [ "deps" ])
+    edition = "2024"
+    testonly = true
+    sources = [
+      "src/controller.rs",
+      "src/diagnostics.rs",
+      "src/input.rs",
+      "src/lib.rs",
+      "src/manager.rs",
+      "src/options.rs",
+      "src/test.rs",
+      "src/util.rs",
+      "src/writer.rs",
+    ]
+    deps = [
+      "//sdk/rust/zx-status",
+      "//src/lib/diagnostics/data",
+      "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:tempfile",
+    ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+  }
+}
+
+fuchsia_fuzzctl_test_template("testing") {
   name = "fuchsia_fuzzctl_test"
-  edition = "2024"
-  testonly = true
-  sources = [
-    "src/controller.rs",
-    "src/diagnostics.rs",
-    "src/input.rs",
-    "src/lib.rs",
-    "src/manager.rs",
-    "src/options.rs",
-    "src/test.rs",
-    "src/util.rs",
-    "src/writer.rs",
-  ]
   deps = [
     "..:lib",
-    "//sdk/rust/zx-status",
-    "//src/lib/diagnostics/data",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//src/sys/fuzzing/fidl:fuchsia.fuzzer_rust",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:tempfile",
+    "//src/lib/fdomain/client:flex_fidl",
+    "//src/sys/fuzzing/fidl:fuchsia.fuzzer_rust_flex",
   ]
+}
+
+fuchsia_fuzzctl_test_template("testing_fdomain") {
+  name = "fuchsia_fuzzctl_test_fdomain"
+  deps = [
+    "..:lib_fdomain",
+    "//src/lib/fdomain/client:flex_fdomain",
+    "//src/lib/fdomain/local",
+    "//src/sys/fuzzing/fidl:fuchsia.fuzzer_rust_fdomain_flex",
+  ]
+  features = [ "fdomain" ]
 }

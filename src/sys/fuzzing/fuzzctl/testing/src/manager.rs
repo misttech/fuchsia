@@ -6,13 +6,13 @@ use crate::controller::serve_controller;
 use crate::test::Test;
 use crate::util::create_task;
 use anyhow::{Context as _, Result};
-use fidl::endpoints::ServerEnd;
+use flex_fuchsia_fuzzer as fuzz;
 use futures::StreamExt;
-use {fidl_fuchsia_fuzzer as fuzz, zx_status as zx};
+use zx_status as zx;
 
 /// Serves `fuchsia.fuzzer.Manager` on the given `server_end` of a FIDL channel.
 pub async fn serve_manager(
-    server_end: ServerEnd<fuzz::ManagerMarker>,
+    server_end: flex_client::fidl::ServerEnd<fuzz::ManagerMarker>,
     mut test: Test,
 ) -> Result<()> {
     let mut stream = server_end.into_stream();
@@ -68,7 +68,7 @@ pub async fn serve_manager(
                     responder.send(Err(zx::Status::NOT_FOUND.into_raw()))?;
                 }
             }
-        };
+        }
     }
     if let Some(task) = task.take() {
         task.await;

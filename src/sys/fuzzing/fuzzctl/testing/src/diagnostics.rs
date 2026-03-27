@@ -16,7 +16,10 @@ use futures::AsyncWriteExt;
 ///   * The log message.
 ///
 /// See also `writer::Writer::log` which formats these entries for display.
-pub async fn send_log_entry<S: AsRef<str>>(socket: &mut fidl::AsyncSocket, msg: S) -> Result<()> {
+pub async fn send_log_entry<S: AsRef<str>>(
+    socket: &mut flex_client::AsyncSocket,
+    msg: S,
+) -> Result<()> {
     let builder_args = BuilderArgs {
         timestamp: Timestamp::from_nanos(0),
         component_url: Some("".into()),

@@ -4,20 +4,17 @@
 
 use crate::input::save_input;
 use anyhow::{Context as _, Error, Result};
+use flex_fuchsia_fuzzer as fuzz;
 use futures::TryStreamExt;
 use std::cell::RefCell;
 use std::path::Path;
-use {fidl_fuchsia_fuzzer as fuzz, zx_status as zx};
+use zx_status as zx;
 
 /// Returns which type of corpus is represented by the `fuchsia.fuzzer.Corpus` enum.
 ///
 /// A seed corpus is immutable. A fuzzer can add or modify inputs in its live corpus.
 pub fn get_type(seed: bool) -> fuzz::Corpus {
-    if seed {
-        fuzz::Corpus::Seed
-    } else {
-        fuzz::Corpus::Live
-    }
+    if seed { fuzz::Corpus::Seed } else { fuzz::Corpus::Live }
 }
 
 /// Get the corresponding name for a `fuchsia.fuzzer.Corpus` enum.
@@ -78,17 +75,22 @@ pub async fn read<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use super::{get_name, get_type, read, Stats};
+    use super::{Stats, get_name, get_type, read};
     use crate::input::InputPair;
     use crate::util::digest_path;
     use anyhow::{Error, Result};
-    use fuchsia_fuzzctl_test::{verify_saved, Test};
+    use flex_fuchsia_fuzzer as fuzz;
+    use fuchsia_fuzzctl_test::{Test, verify_saved};
     use futures::join;
-    use {fidl_fuchsia_fuzzer as fuzz, zx_status as zx};
+    use zx_status as zx;
 
     // Writes a test input using the given `corpus_reader`.
-    async fn send_one_input(corpus_reader: &fuzz::CorpusReaderProxy, data: Vec<u8>) -> Result<()> {
-        let input_pair = InputPair::try_from_data(data)?;
+    async fn send_one_input(
+        corpus_reader: &fuzz::CorpusReaderProxy,
+        data: Vec<u8>,
+        client: &flex_client::ClientArg,
+    ) -> Result<()> {
+        let input_pair = InputPair::try_from_data(client, data)?;
         let (fidl_input, input) = input_pair.as_tuple();
         let (response, _) = futures::try_join!(
             async move { corpus_reader.next(fidl_input).await.map_err(Error::msg) },
@@ -118,18 +120,18 @@ mod tests {
         let corpus = vec![b"hello".to_vec(), b"world".to_vec(), b"".to_vec()];
         let cloned = corpus.clone();
 
-        let (proxy, stream) =
-            fidl::endpoints::create_proxy_and_stream::<fuzz::CorpusReaderMarker>();
+        let (proxy, stream) = test.domain().create_proxy_and_stream::<fuzz::CorpusReaderMarker>();
         let read_fut = read(stream, &corpus_dir);
+        let test_ref = &test;
         let send_fut = || async move {
             for input in corpus.iter() {
-                send_one_input(&proxy, input.to_vec()).await?;
+                send_one_input(&proxy, input.to_vec(), &test_ref.domain()).await?;
             }
             Ok::<(), Error>(())
         };
         let send_fut = send_fut();
         let results = join!(read_fut, send_fut);
-        assert_eq!(results.0.ok(), Some(Stats { num_inputs: 3, total_size: 10 }));
+        assert_eq!(results.0.unwrap(), Stats { num_inputs: 3, total_size: 10 });
         assert!(results.1.is_ok());
         for input in cloned.iter() {
             let saved = digest_path(&corpus_dir, None, input);

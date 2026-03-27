@@ -5,7 +5,7 @@
 use crate::controller::FakeController;
 use crate::writer::BufferSink;
 use anyhow::{Context as _, Result, anyhow, bail};
-use fidl_fuchsia_fuzzer as fuzz;
+use flex_fuchsia_fuzzer as fuzz;
 use fuchsia_fuzzctl::{Writer, create_artifact_dir, create_corpus_dir};
 use serde_json::json;
 use std::cell::RefCell;
@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{env, fs};
 use tempfile::{TempDir, tempdir};
+
+#[cfg(feature = "fdomain")]
+use std::sync::Arc;
 
 pub const TEST_URL: &str = "fuchsia-pkg://fuchsia.com/fake#meta/foo-fuzzer.cm";
 
@@ -41,6 +44,8 @@ pub struct Test {
     expected: Vec<Expectation>,
     actual: Rc<RefCell<Vec<u8>>>,
     writer: Writer<BufferSink>,
+    #[cfg(feature = "fdomain")]
+    client: Arc<flex_client::Client>,
 }
 
 // Output can be tested for exact matches or substring matches.
@@ -68,6 +73,10 @@ impl Test {
         let actual = Rc::new(RefCell::new(Vec::new()));
         let mut writer = Writer::new(BufferSink::new(Rc::clone(&actual)));
         writer.use_colors(false);
+
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+
         Ok(Self {
             _tmp_dir: Rc::new(tmp_dir),
             root_dir,
@@ -77,7 +86,30 @@ impl Test {
             expected: Vec::new(),
             actual,
             writer,
+            #[cfg(feature = "fdomain")]
+            client,
         })
+    }
+
+    /// Returns a "domain" provider for this test.
+    ///
+    /// This returns an object that can be used to create sockets, channels, etc. that are
+    /// compatible with the transport being tested.
+    pub fn domain(&self) -> flex_client::ClientArg {
+        #[cfg(feature = "fdomain")]
+        return Arc::clone(&self.client);
+        #[cfg(not(feature = "fdomain"))]
+        return flex_client::fidl::ZirconClient;
+    }
+
+    /// Creates a proxy and server end for a protocol.
+    pub fn create_proxy<P: flex_client::fidl::ProtocolMarker>(
+        &self,
+    ) -> (P::Proxy, flex_client::fidl::ServerEnd<P>) {
+        #[cfg(feature = "fdomain")]
+        return self.client.create_proxy::<P>();
+        #[cfg(not(feature = "fdomain"))]
+        return flex_client::fidl::create_proxy::<P>();
     }
 
     /// Returns the writable temporary directory for this test.

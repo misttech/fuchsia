@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_fuzzer as fuzz;
-use fuchsia_fuzzctl::constants::*;
+use crate::fuchsia_fuzzctl::constants::*;
+use flex_fuchsia_fuzzer as fuzz;
 
 /// Add defaults values to an `Options` struct.
 pub fn add_defaults(options: &mut fuzz::Options) {

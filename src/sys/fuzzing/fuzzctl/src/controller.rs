@@ -8,13 +8,12 @@ use crate::diagnostics::Forwarder;
 use crate::duration::deadline_after;
 use crate::input::{Input, InputPair};
 use crate::writer::{OutputSink, Writer};
-use anyhow::{anyhow, bail, Context as _, Error, Result};
-use fidl::endpoints::create_request_stream;
-use fidl::Error::ClientChannelClosed;
-use fidl_fuchsia_fuzzer::{self as fuzz, Artifact as FidlArtifact};
+use anyhow::{Context as _, Error, Result, anyhow, bail};
+use flex_client::{self, ProxyHasDomain};
+use flex_fuchsia_fuzzer::{self as fuzz, Artifact as FidlArtifact};
 use fuchsia_async::Timer;
-use futures::future::{pending, Either};
-use futures::{pin_mut, select, try_join, Future, FutureExt};
+use futures::future::{Either, pending};
+use futures::{Future, FutureExt, pin_mut, select, try_join};
 use std::cell::RefCell;
 use std::cmp::max;
 use std::path::Path;
@@ -40,10 +39,14 @@ impl<O: OutputSink> Controller<O> {
         }
     }
 
+    pub fn domain(&self) -> flex_client::ClientArg {
+        self.proxy.domain()
+    }
+
     /// Registers the provided output socket with the forwarder.
     pub fn set_output<P: AsRef<Path>>(
         &mut self,
-        socket: fidl::Socket,
+        socket: flex_client::Socket,
         output: fuzz::TestOutput,
         logs_dir: &Option<P>,
     ) -> Result<()> {
@@ -131,7 +134,9 @@ impl<O: OutputSink> Controller<O> {
         corpus_type: fuzz::Corpus,
         corpus_dir: P,
     ) -> Result<corpus::Stats> {
-        let (client_end, stream) = create_request_stream::<fuzz::CorpusReaderMarker>();
+        let (client_end, server_end) =
+            self.proxy.domain().create_endpoints::<fuzz::CorpusReaderMarker>();
+        let stream = server_end.into_stream();
         let (_, corpus_stats) = try_join!(
             async { self.proxy.read_corpus(corpus_type, client_end).await.map_err(Error::msg) },
             async { corpus::read(stream, corpus_dir).await },
@@ -198,7 +203,7 @@ impl<O: OutputSink> Controller<O> {
             Err(fidl::Error::ClientChannelClosed { status, .. })
                 if status == zx::Status::PEER_CLOSED =>
             {
-                return Ok(fuzz::Status::default())
+                return Ok(fuzz::Status::default());
             }
             Err(e) => bail!("`fuchsia.fuzzer.Controller/GetStatus` failed: {:?}", e),
             Ok(fuzz_status) => Ok(fuzz_status),
@@ -372,7 +377,7 @@ impl<O: OutputSink> Controller<O> {
                             }
                             fidl_artifact
                         }
-                        Err(ClientChannelClosed { status, .. }) if status == zx::Status::PEER_CLOSED => FidlArtifact { error: Some(zx::Status::CANCELED.into_raw()), ..Default::default() },
+                        Err(fidl::Error::ClientChannelClosed { status, .. }) if status == zx::Status::PEER_CLOSED => FidlArtifact { error: Some(zx::Status::CANCELED.into_raw()), ..Default::default() },
                         Err(e) => bail!("fuchsia.fuzzer/Controller.WatchArtifact: {:?}", e),
                     };
                     remaining -= 1;
@@ -420,18 +425,18 @@ fn check_status(name: &str, status: zx::Status) -> Result<()> {
 mod tests {
     use crate::util::digest_path;
     use anyhow::{Context as _, Result};
-    use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+    use flex_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+    use fuchsia_async as fasync;
     use fuchsia_fuzzctl::{Controller, Input, InputPair};
-    use fuchsia_fuzzctl_test::{create_task, serve_controller, verify_saved, FakeController, Test};
-    use {fuchsia_async as fasync, zx_status as zx};
+    use fuchsia_fuzzctl_test::{FakeController, Test, create_task, serve_controller, verify_saved};
+    use zx_status as zx;
 
     // Creates a test setup suitable for unit testing `Controller`.
     fn perform_test_setup(
         test: &Test,
     ) -> Result<(FakeController, fuzz::ControllerProxy, fasync::Task<()>)> {
         let fake = test.controller();
-        let (proxy, stream) = create_proxy_and_stream::<fuzz::ControllerMarker>();
+        let (proxy, stream) = test.domain().create_proxy_and_stream::<fuzz::ControllerMarker>();
         let task = create_task(serve_controller(stream, test.clone()), test.writer());
         Ok((fake, proxy, task))
     }
@@ -523,7 +528,7 @@ mod tests {
 
         let input_pairs: Vec<InputPair> = vec![b"foo".to_vec(), b"bar".to_vec(), b"baz".to_vec()]
             .into_iter()
-            .map(|data| InputPair::try_from_data(data).unwrap())
+            .map(|data| InputPair::try_from_data(&test.domain(), data).unwrap())
             .collect();
         let stats = controller.add_to_corpus(input_pairs, fuzz::Corpus::Seed).await?;
         assert_eq!(fake.get_corpus_type(), fuzz::Corpus::Seed);
@@ -533,7 +538,7 @@ mod tests {
         let input_pairs: Vec<InputPair> =
             vec![b"qux".to_vec(), b"quux".to_vec(), b"corge".to_vec()]
                 .into_iter()
-                .map(|data| InputPair::try_from_data(data).unwrap())
+                .map(|data| InputPair::try_from_data(&test.domain(), data).unwrap())
                 .collect();
         let stats = controller.add_to_corpus(input_pairs, fuzz::Corpus::Live).await?;
         assert_eq!(fake.get_corpus_type(), fuzz::Corpus::Live);
@@ -573,21 +578,21 @@ mod tests {
         let (fake, proxy, _task) = perform_test_setup(&test)?;
         let controller = Controller::new(proxy, test.writer());
 
-        let input_pair = InputPair::try_from_data(b"foo".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"foo".to_vec())?;
         controller.try_one(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, None);
         assert_eq!(artifact.result, Some(FuzzResult::NoErrors));
 
         fake.set_result(Ok(FuzzResult::Crash));
-        let input_pair = InputPair::try_from_data(b"bar".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"bar".to_vec())?;
         controller.try_one(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, None);
         assert_eq!(artifact.result, Some(FuzzResult::Crash));
 
         fake.cancel();
-        let input_pair = InputPair::try_from_data(b"baz".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"baz".to_vec())?;
         controller.try_one(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, Some(zx::Status::CANCELED.into_raw()));
@@ -634,7 +639,7 @@ mod tests {
         let controller = Controller::new(proxy, test.writer());
 
         fake.set_input_to_send(b"foo");
-        let input_pair = InputPair::try_from_data(b"foofoofoo".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"foofoofoo".to_vec())?;
         controller.minimize(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, None);
@@ -645,7 +650,7 @@ mod tests {
         assert_eq!(input.data, b"foo");
 
         fake.cancel();
-        let input_pair = InputPair::try_from_data(b"bar".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"bar".to_vec())?;
         controller.minimize(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, Some(zx::Status::CANCELED.into_raw()));
@@ -660,7 +665,7 @@ mod tests {
         let controller = Controller::new(proxy, test.writer());
 
         fake.set_input_to_send(b"   bar   ");
-        let input_pair = InputPair::try_from_data(b"foobarbaz".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"foobarbaz".to_vec())?;
         controller.cleanse(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, None);
@@ -671,7 +676,7 @@ mod tests {
         assert_eq!(input.data, b"   bar   ");
 
         fake.cancel();
-        let input_pair = InputPair::try_from_data(b"foobarbaz".to_vec())?;
+        let input_pair = InputPair::try_from_data(&test.domain(), b"foobarbaz".to_vec())?;
         controller.cleanse(input_pair).await?;
         let artifact = controller.watch_artifact().await?;
         assert_eq!(artifact.error, Some(zx::Status::CANCELED.into_raw()));

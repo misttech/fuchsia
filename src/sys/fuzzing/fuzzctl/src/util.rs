@@ -4,8 +4,8 @@
 
 // This file contains a few helper routines that don't fit nicely anywhere else.
 
-use anyhow::{bail, Context as _, Result};
-use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+use anyhow::{Context as _, Result, bail};
+use flex_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};

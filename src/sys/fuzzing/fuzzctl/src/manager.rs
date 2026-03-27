@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context as _, Result};
-use fidl::endpoints::{create_proxy, ProtocolMarker};
+use anyhow::{Context as _, Result, anyhow, bail};
+use flex_client::fidl::ProtocolMarker;
+use flex_client::{self, ProxyHasDomain};
+use flex_fuchsia_fuzzer::{self as fuzz};
 use url::Url;
-use {fidl_fuchsia_fuzzer as fuzz, zx_status as zx};
+use zx_status as zx;
 
 /// Represents the FIDL connection from the `ffx fuzz` plugin to the `fuzz-manager` component on a
 /// target device.
@@ -30,21 +32,31 @@ impl Manager {
     ///
     /// Returns an object representing the connected fuzzer, or an error.
     pub async fn connect(&self, url: &Url) -> Result<fuzz::ControllerProxy> {
-        let (proxy, server_end) = create_proxy::<fuzz::ControllerMarker>();
+        let dc = self.proxy.domain();
+        let (proxy, server_end) = dc.create_proxy::<fuzz::ControllerMarker>();
         let result = self
             .proxy
             .connect(url.as_str(), server_end)
             .await
-            .context("fuchsia.fuzzer/Manager.Connect")?;
+            .map_err(|e| anyhow!("{}/Connect: {}", fuzz::ManagerMarker::DEBUG_NAME, e))?;
         if let Err(e) = result {
-            bail!("fuchsia.fuzzer/Manager.Connect returned ZX_ERR_{}", zx::Status::from_raw(e));
+            return Err(anyhow!(
+                "{}/Connect returned ZX_ERR_{}",
+                fuzz::ManagerMarker::DEBUG_NAME,
+                zx::Status::from_raw(e)
+            ));
         }
         Ok(proxy)
     }
 
     /// Returns a socket that provides the given type of fuzzer output.
-    pub async fn get_output(&self, url: &Url, output: fuzz::TestOutput) -> Result<fidl::Socket> {
-        let (rx, tx) = fidl::Socket::create_stream();
+    pub async fn get_output(
+        &self,
+        url: &Url,
+        output: fuzz::TestOutput,
+    ) -> Result<flex_client::Socket> {
+        let dc = self.proxy.domain();
+        let (rx, tx) = dc.create_stream_socket();
         let result = self
             .proxy
             .get_output(url.as_str(), output, tx)
@@ -81,15 +93,14 @@ fn fidl_name(method: &str) -> String {
 mod tests {
     use super::Manager;
     use anyhow::Result;
-    use fidl::endpoints::create_proxy;
-    use fidl_fuchsia_fuzzer as fuzz;
-    use fuchsia_fuzzctl_test::{create_task, serve_manager, Test, TEST_URL};
+    use flex_fuchsia_fuzzer as fuzz;
+    use fuchsia_fuzzctl_test::{TEST_URL, Test, create_task, serve_manager};
     use url::Url;
 
     #[fuchsia::test]
     async fn test_connect() -> Result<()> {
         let test = Test::try_new()?;
-        let (proxy, server_end) = create_proxy::<fuzz::ManagerMarker>();
+        let (proxy, server_end) = test.create_proxy::<fuzz::ManagerMarker>();
         let _task = create_task(serve_manager(server_end, test.clone()), test.writer());
         let manager = Manager::new(proxy);
 
@@ -105,7 +116,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_stop() -> Result<()> {
         let test = Test::try_new()?;
-        let (proxy, server_end) = create_proxy::<fuzz::ManagerMarker>();
+        let (proxy, server_end) = test.create_proxy::<fuzz::ManagerMarker>();
         let _task = create_task(serve_manager(server_end, test.clone()), test.writer());
         let manager = Manager::new(proxy);
 

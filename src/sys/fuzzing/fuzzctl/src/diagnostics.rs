@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use crate::writer::{OutputSink, Writer};
-use anyhow::{anyhow, bail, Context as _, Error, Result};
+use anyhow::{Context as _, Error, Result, anyhow, bail};
 use diagnostics_data::LogsData;
-use fidl_fuchsia_fuzzer as fuzz;
+use flex_client::{self};
+use flex_fuchsia_fuzzer as fuzz;
 use futures::io::ReadHalf;
-use futures::{try_join, AsyncReadExt};
+use futures::{AsyncReadExt, try_join};
 use serde_json::Deserializer;
 use std::cell::RefCell;
 use std::path::Path;
@@ -38,7 +39,7 @@ impl<O: OutputSink> Forwarder<O> {
     /// Registers the provided output socket.
     pub fn set_output<P: AsRef<Path>>(
         &mut self,
-        socket: fidl::Socket,
+        socket: flex_client::Socket,
         output: fuzz::TestOutput,
         logs_dir: &Option<P>,
     ) -> Result<()> {
@@ -65,7 +66,7 @@ impl<O: OutputSink> Forwarder<O> {
         logs_dir: &Option<P>,
         name: &str,
         extension: &str,
-        socket: fidl::Socket,
+        socket: flex_client::Socket,
     ) -> Result<SocketForwarder<O>> {
         let writer = match logs_dir {
             Some(logs_dir) => self
@@ -113,7 +114,7 @@ impl<O: OutputSink> Forwarder<O> {
 /// Forwarder for a single output stream.
 #[derive(Debug)]
 pub struct SocketForwarder<O: OutputSink> {
-    reader: Rc<RefCell<ReadHalf<fidl::AsyncSocket>>>,
+    reader: Rc<RefCell<ReadHalf<flex_client::AsyncSocket>>>,
     writer: Writer<O>,
 }
 
@@ -127,8 +128,8 @@ impl<O: OutputSink> SocketForwarder<O> {
     /// Converts a a socket into a SocketForwarder.
     ///
     /// Returns an error if conversion to an async socket fails.
-    pub fn try_new(socket: fidl::Socket, writer: &Writer<O>) -> Result<Self> {
-        let socket = fidl::AsyncSocket::from_socket(socket);
+    pub fn try_new(socket: flex_client::Socket, writer: &Writer<O>) -> Result<Self> {
+        let socket = flex_client::socket_to_async(socket);
         let (reader, _) = socket.split();
         Ok(Self { reader: Rc::new(RefCell::new(reader)), writer: writer.clone() })
     }
@@ -212,20 +213,19 @@ impl<O: OutputSink> SocketForwarder<O> {
 mod tests {
     use anyhow::{Error, Result};
     use diagnostics_data::LogsData;
-    use fidl::Socket;
-    use fidl_fuchsia_fuzzer as fuzz;
+    use flex_fuchsia_fuzzer as fuzz;
     use fuchsia_fuzzctl::{Forwarder, SocketForwarder};
-    use fuchsia_fuzzctl_test::{send_log_entry, Test};
-    use futures::{try_join, AsyncWriteExt};
+    use fuchsia_fuzzctl_test::{Test, send_log_entry};
+    use futures::{AsyncWriteExt, try_join};
     use std::fs;
 
     #[fuchsia::test]
     async fn test_forward_text() -> Result<()> {
         let mut test = Test::try_new()?;
-        let (tx, rx) = Socket::create_stream();
+        let (tx, rx) = test.domain().create_stream_socket();
         let forwarder = SocketForwarder::try_new(rx, test.writer())?;
         let socket_fut = || async move {
-            let mut tx = fidl::AsyncSocket::from_socket(tx);
+            let mut tx = flex_client::socket_to_async(tx);
             tx.write_all(b"hello\nworld!\n").await?;
             let done_marker = format!("{}\n", fuzz::DONE_MARKER);
             tx.write_all(done_marker.as_bytes()).await?;
@@ -240,10 +240,10 @@ mod tests {
     #[fuchsia::test]
     async fn test_forward_json() -> Result<()> {
         let mut test = Test::try_new()?;
-        let (tx, rx) = Socket::create_stream();
+        let (tx, rx) = test.domain().create_stream_socket();
         let forwarder = SocketForwarder::try_new(rx, test.writer())?;
         let socket_fut = || async move {
-            let mut tx = fidl::AsyncSocket::from_socket(tx);
+            let mut tx = flex_client::socket_to_async(tx);
             send_log_entry(&mut tx, "hello world").await?;
             send_log_entry(&mut tx, fuzz::DONE_MARKER).await?;
             Ok::<(), Error>(())
@@ -260,13 +260,13 @@ mod tests {
         let logs_dir = Some(logs_dir);
         let mut forwarder = Forwarder::new(test.writer());
 
-        let (stdout_tx, stdout_rx) = Socket::create_stream();
+        let (stdout_tx, stdout_rx) = test.domain().create_stream_socket();
         forwarder.set_output(stdout_rx, fuzz::TestOutput::Stdout, &logs_dir)?;
 
-        let (stderr_tx, stderr_rx) = Socket::create_stream();
+        let (stderr_tx, stderr_rx) = test.domain().create_stream_socket();
         forwarder.set_output(stderr_rx, fuzz::TestOutput::Stderr, &logs_dir)?;
 
-        let (syslog_tx, syslog_rx) = Socket::create_stream();
+        let (syslog_tx, syslog_rx) = test.domain().create_stream_socket();
         forwarder.set_output(syslog_rx, fuzz::TestOutput::Syslog, &logs_dir)?;
 
         let done_marker = format!("{}\n", fuzz::DONE_MARKER);
@@ -279,9 +279,9 @@ mod tests {
         test.output_matches(done_marker_a.clone());
 
         let socket_fut = || async move {
-            let mut stdout_tx = fidl::AsyncSocket::from_socket(stdout_tx);
-            let mut stderr_tx = fidl::AsyncSocket::from_socket(stderr_tx);
-            let mut syslog_tx = fidl::AsyncSocket::from_socket(syslog_tx);
+            let mut stdout_tx = flex_client::socket_to_async(stdout_tx);
+            let mut stderr_tx = flex_client::socket_to_async(stderr_tx);
+            let mut syslog_tx = flex_client::socket_to_async(syslog_tx);
 
             // Streams can be sent in any order
             send_log_entry(&mut syslog_tx, fuzz::DONE_MARKER).await?;
@@ -312,13 +312,13 @@ mod tests {
         let logs_dir = Some(logs_dir);
         let mut forwarder = Forwarder::new(test.writer());
 
-        let (stdout_tx, stdout_rx) = Socket::create_stream();
+        let (stdout_tx, stdout_rx) = test.domain().create_stream_socket();
         forwarder.set_output(stdout_rx, fuzz::TestOutput::Stdout, &logs_dir)?;
 
-        let (stderr_tx, stderr_rx) = Socket::create_stream();
+        let (stderr_tx, stderr_rx) = test.domain().create_stream_socket();
         forwarder.set_output(stderr_rx, fuzz::TestOutput::Stderr, &logs_dir)?;
 
-        let (syslog_tx, syslog_rx) = Socket::create_stream();
+        let (syslog_tx, syslog_rx) = test.domain().create_stream_socket();
         forwarder.set_output(syslog_rx, fuzz::TestOutput::Syslog, &logs_dir)?;
 
         let sockets_fut = || async move {
@@ -326,12 +326,12 @@ mod tests {
             let done_marker_bytes = done_marker.as_bytes();
 
             // Write all in one shot.
-            let mut stdout_tx = fidl::AsyncSocket::from_socket(stdout_tx);
+            let mut stdout_tx = flex_client::socket_to_async(stdout_tx);
             stdout_tx.write_all(b"hello world!\n").await?;
             stdout_tx.write_all(done_marker_bytes).await?;
 
             // Write all in pieces.
-            let mut stderr_tx = fidl::AsyncSocket::from_socket(stderr_tx);
+            let mut stderr_tx = flex_client::socket_to_async(stderr_tx);
             stderr_tx.write_all(b"hel").await?;
             stderr_tx.write_all(b"lo ").await?;
             stderr_tx.write_all(b"wor").await?;
@@ -339,7 +339,7 @@ mod tests {
             stderr_tx.write_all(done_marker_bytes).await?;
 
             // Write JSON. This should be made prettier when copying, e.g. newlines, spaces, etc.
-            let mut syslog_tx = fidl::AsyncSocket::from_socket(syslog_tx);
+            let mut syslog_tx = flex_client::socket_to_async(syslog_tx);
             send_log_entry(&mut syslog_tx, "hello world!").await?;
             send_log_entry(&mut syslog_tx, fuzz::DONE_MARKER).await?;
             Ok::<(), Error>(())
