@@ -4,9 +4,10 @@
 
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
 use futures::TryStreamExt;
 use std::sync::Arc;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution};
 
 use crate::ComponentSet;
 use crate::component::ElfComponentInfo;
@@ -31,10 +32,10 @@ impl MemoryReporter {
         let new_component_publisher = server.new_publisher();
         let deleted_component_publisher = server.new_publisher();
         components.set_callbacks(
-            Some(Box::new(move |info| {
+            Some(Arc::new(move |info| {
                 new_component_publisher.on_update(Self::build_new_attribution(info));
             })),
-            Some(Box::new(move |token| {
+            Some(Arc::new(move |token| {
                 deleted_component_publisher.on_update(vec![
                     fattribution::AttributionUpdate::Remove(token.koid().unwrap().raw_koid()),
                 ]);
@@ -118,19 +119,16 @@ mod tests {
     use super::*;
     use crate::tests::{lifecycle_startinfo, new_elf_runner_for_test};
     use cm_config::SecurityPolicy;
+    use fidl_fuchsia_component_runner as fcrunner;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use futures::FutureExt;
     use moniker::Moniker;
     use routing::policy::ScopedPolicyChecker;
-    use {
-        fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    };
 
     /// Test that the ELF runner can tell us about the resources used by the component it runs.
     #[test]
     fn test_attribute_memory() {
-        // TODO(https://fxbug.dev/463680736) remove once deadlocks addressed
-        fuchsia_sync::suppress_lock_cycle_panics();
-
         let mut exec = fasync::TestExecutor::new();
         let (_runtime_dir, runtime_dir_server) =
             fidl::endpoints::create_proxy::<fio::DirectoryMarker>();

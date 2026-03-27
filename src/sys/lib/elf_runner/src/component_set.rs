@@ -28,8 +28,8 @@ pub struct ComponentSet {
 
 #[derive(Default)]
 struct ComponentSetCallbacks {
-    on_new_component: Option<Box<dyn Fn(&ElfComponentInfo) -> () + Send>>,
-    on_removed_component: Option<Box<dyn Fn(zx::Event) -> () + Send>>,
+    on_new_component: Option<Arc<dyn Fn(&ElfComponentInfo) -> () + Sync + Send>>,
+    on_removed_component: Option<Arc<dyn Fn(zx::Event) -> () + Sync + Send>>,
 }
 
 impl ComponentSet {
@@ -43,8 +43,8 @@ impl ComponentSet {
 
     pub fn set_callbacks(
         &self,
-        on_new_component: Option<Box<dyn Fn(&ElfComponentInfo) -> () + Send>>,
-        on_removed_component: Option<Box<dyn Fn(zx::Event) -> () + Send>>,
+        on_new_component: Option<Arc<dyn Fn(&ElfComponentInfo) -> () + Sync + Send>>,
+        on_removed_component: Option<Arc<dyn Fn(zx::Event) -> () + Sync + Send>>,
     ) {
         let mut locked_callbacks = self.callbacks.lock();
         locked_callbacks.on_new_component = on_new_component;
@@ -55,12 +55,18 @@ impl ComponentSet {
     ///
     /// The component will remove itself from the set when it is dropped.
     pub fn add(self: Arc<Self>, component: &mut ElfComponent) {
-        let mut inner = self.inner.lock();
         let id = Id::new(component.info().get_moniker().clone());
         let id_clone = id.clone();
         component.set_on_drop(self.on_component_drop(id_clone));
-        inner.insert(id, Arc::downgrade(component.info()));
-        if let Some(cb) = self.callbacks.lock().on_new_component.as_ref() {
+
+        {
+            let mut inner = self.inner.lock();
+            inner.insert(id, Arc::downgrade(component.info()));
+        }
+
+        let on_new = self.callbacks.lock().on_new_component.clone();
+
+        if let Some(cb) = on_new {
             cb(component.info().as_ref());
         }
     }
@@ -94,9 +100,12 @@ impl ComponentSet {
                     let mut locked_inner = component_set.inner.lock();
                     locked_inner.remove(&id_clone);
                 }
-                if let Some(cb) = component_set.callbacks.lock().on_removed_component.as_ref() {
+
+                let removed_cb = component_set.callbacks.lock().on_removed_component.clone();
+
+                if let Some(cb) = removed_cb {
                     cb(token);
-                };
+                }
             });
         }
     }
