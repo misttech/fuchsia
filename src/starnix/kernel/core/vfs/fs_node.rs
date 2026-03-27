@@ -22,6 +22,7 @@ use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::{XATTR_SECURITY_PREFIX, XATTR_SYSTEM_PREFIX, XATTR_TRUSTED_PREFIX};
 use once_cell::race::OnceBool;
+use smallvec::SmallVec;
 use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, track_stub};
@@ -593,6 +594,8 @@ pub enum CheckAccessReason {
     InternalPermissionChecks,
 }
 
+pub type LookupVec<T> = SmallVec<[T; 8]>;
+
 pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     /// Delegate the access check to the node.
     fn check_access(
@@ -640,6 +643,29 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         // The default implementation here is suitable for filesystems that have permanent entries;
         // entries that already exist will get found in the cache and shouldn't get this far.
         error!(ENOENT, format!("looking for {name}"))
+    }
+
+    /// Find multiple children nodes in sequence.
+    ///
+    /// This can be used to pipeline lookups in filesystems that support it.
+    fn lookup_pipelined(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        node: &FsNode,
+        current_task: &CurrentTask,
+        names: &[&FsStr],
+    ) -> LookupVec<Result<FsNodeHandle, Errno>> {
+        let mut names = names.into_iter();
+        std::iter::successors(
+            names.next().map(|name| self.lookup(locked, node, current_task, name)),
+            |prev| match prev {
+                Err(_) => None,
+                Ok(node) => {
+                    names.next().map(|name| node.ops().lookup(locked, node, current_task, name))
+                }
+            },
+        )
+        .collect()
     }
 
     /// Create and return the given child node.

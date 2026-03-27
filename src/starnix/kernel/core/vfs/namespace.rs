@@ -13,9 +13,9 @@ use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
     CheckAccessReason, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
     FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle, FsNodeOps, FsStr,
-    FsString, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
-    fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
-    fs_node_impl_not_dir,
+    FsString, LookupVec, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind,
+    fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fuchsia_rcu::RcuReadScope;
 use macro_rules_attribute::apply;
@@ -1294,95 +1294,151 @@ impl NamespaceNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        if !self.entry.node.is_dir() {
-            return error!(ENOTDIR);
-        }
+        self.lookup_children(locked, current_task, context, &[basename])
+    }
 
-        if basename.len() > NAME_MAX as usize {
-            return error!(ENAMETOOLONG);
-        }
-
-        let child = if basename.is_empty() || basename == "." {
-            self.clone()
-        } else if basename == ".." {
-            let root = match &context.resolve_base {
-                ResolveBase::None => current_task.fs().root(),
-                ResolveBase::Beneath(node) => {
-                    // Do not allow traversal out of the 'node'.
-                    if *self == *node {
-                        return error!(EXDEV);
-                    }
-                    current_task.fs().root()
+    /// Traverse down a parent-to-child link in the namespace.
+    pub fn lookup_children<L>(
+        &self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        context: &mut LookupContext,
+        basenames: &[&FsStr],
+    ) -> Result<NamespaceNode, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        fn resolve_symlink<L>(
+            locked: &mut Locked<L>,
+            current_task: &CurrentTask,
+            context: &mut LookupContext,
+            mut node: NamespaceNode,
+        ) -> Result<NamespaceNode, Errno>
+        where
+            L: LockEqualOrBefore<FileOpsCore>,
+        {
+            if context.symlink_mode == SymlinkMode::NoFollow {
+                return Ok(node);
+            }
+            while node.entry.node.is_lnk() {
+                if context.remaining_follows == 0
+                    || context.resolve_flags.contains(ResolveFlags::NO_SYMLINKS)
+                {
+                    return error!(ELOOP);
                 }
-                ResolveBase::InRoot(root) => root.clone(),
-            };
-
-            // Make sure this can't escape a chroot.
-            if *self == root { root } else { self.parent().unwrap_or_else(|| self.clone()) }
-        } else {
-            let mut child = self.with_new_entry(self.entry.component_lookup(
-                locked,
-                current_task,
-                &self.mount,
-                basename,
-            )?);
-            while child.entry.node.is_lnk() {
-                match context.symlink_mode {
-                    SymlinkMode::NoFollow => {
-                        break;
+                context.remaining_follows -= 1;
+                node = match node.readlink(locked, current_task)? {
+                    SymlinkTarget::Path(link_target) => {
+                        let link_directory = if link_target[0] == b'/' {
+                            // If the path is absolute, we'll resolve the root directory.
+                            match &context.resolve_base {
+                                ResolveBase::None => current_task.fs().root(),
+                                ResolveBase::Beneath(_) => return error!(EXDEV),
+                                ResolveBase::InRoot(root) => root.clone(),
+                            }
+                        } else {
+                            // If the path is not absolute, it's a relative directory.
+                            // Let's try to get the parent of the current node, or in the case that
+                            // the node is the root we can just use that directly.
+                            node.parent().unwrap_or(node)
+                        };
+                        current_task.lookup_path(
+                            locked,
+                            context,
+                            link_directory,
+                            link_target.as_ref(),
+                        )?
                     }
-                    SymlinkMode::Follow => {
-                        if context.remaining_follows == 0
-                            || context.resolve_flags.contains(ResolveFlags::NO_SYMLINKS)
-                        {
+                    SymlinkTarget::Node(node) => {
+                        if context.resolve_flags.contains(ResolveFlags::NO_MAGICLINKS) {
                             return error!(ELOOP);
                         }
-                        context.remaining_follows -= 1;
-                        child = match child.readlink(locked, current_task)? {
-                            SymlinkTarget::Path(link_target) => {
-                                let link_directory = if link_target[0] == b'/' {
-                                    // If the path is absolute, we'll resolve the root directory.
-                                    match &context.resolve_base {
-                                        ResolveBase::None => current_task.fs().root(),
-                                        ResolveBase::Beneath(_) => return error!(EXDEV),
-                                        ResolveBase::InRoot(root) => root.clone(),
-                                    }
-                                } else {
-                                    // If the path is not absolute, it's a relative directory. Let's
-                                    // try to get the parent of the current child, or in the case
-                                    // that the child is the root we can just use that directly.
-                                    child.parent().unwrap_or(child)
-                                };
-                                current_task.lookup_path(
-                                    locked,
-                                    context,
-                                    link_directory,
-                                    link_target.as_ref(),
-                                )?
-                            }
-                            SymlinkTarget::Node(node) => {
-                                if context.resolve_flags.contains(ResolveFlags::NO_MAGICLINKS) {
-                                    return error!(ELOOP);
-                                }
-                                node
-                            }
-                        }
+                        node
                     }
                 };
             }
-
-            child.enter_mount()
-        };
-
-        if context.resolve_flags.contains(ResolveFlags::NO_XDEV) && child.mount != self.mount {
-            return error!(EXDEV);
+            Ok(node)
         }
 
-        if context.must_be_directory && !child.entry.node.is_dir() {
-            return error!(ENOTDIR);
+        for name in basenames {
+            if name.len() > NAME_MAX as usize {
+                return error!(ENAMETOOLONG);
+            }
         }
 
-        Ok(child)
+        let mut current_namespace_node = self.clone();
+        let mut precomputed_entries = LookupVec::new();
+
+        for index in 0..basenames.len() {
+            let basename = basenames[index];
+            if !current_namespace_node.entry.node.is_dir() {
+                return error!(ENOTDIR);
+            }
+
+            current_namespace_node = if basename.is_empty() || basename == "." {
+                current_namespace_node
+            } else if basename == ".." {
+                let root = match &context.resolve_base {
+                    ResolveBase::None => current_task.fs().root(),
+                    ResolveBase::Beneath(node) => {
+                        // Do not allow traversal out of the 'node'.
+                        if current_namespace_node == *node {
+                            return error!(EXDEV);
+                        }
+                        current_task.fs().root()
+                    }
+                    ResolveBase::InRoot(root) => root.clone(),
+                };
+
+                // Make sure this can't escape a chroot.
+                if current_namespace_node == root {
+                    root
+                } else {
+                    current_namespace_node.parent().unwrap_or(current_namespace_node)
+                }
+            } else {
+                if precomputed_entries.is_empty() {
+                    let basenames = basenames[index..]
+                        .iter()
+                        .position(|&name| name.is_empty() || name == "." || name == "..")
+                        .map(|pos| &basenames[index..index + pos])
+                        .unwrap_or_else(|| &basenames[index..]);
+
+                    precomputed_entries = current_namespace_node.entry.get_children_pipelined(
+                        locked,
+                        current_task,
+                        &current_namespace_node.mount,
+                        basenames,
+                    );
+                    precomputed_entries.reverse();
+                    debug_assert!(!precomputed_entries.is_empty());
+                }
+                let mut child =
+                    current_namespace_node.with_new_entry(precomputed_entries.pop().unwrap()?);
+
+                if child.entry.node.is_lnk() {
+                    child = resolve_symlink(locked, current_task, context, child)?;
+                    precomputed_entries.clear();
+                }
+                let next_child = child.enter_mount();
+                if next_child != child {
+                    precomputed_entries.clear();
+                }
+                next_child
+            };
+
+            if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
+                && current_namespace_node.mount != self.mount
+            {
+                return error!(EXDEV);
+            }
+
+            if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                return error!(ENOTDIR);
+            }
+        }
+
+        Ok(current_namespace_node)
     }
 
     /// Traverse up a child-to-parent link in the namespace.

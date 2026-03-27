@@ -9,6 +9,7 @@
 use fidl::endpoints::SynchronousProxy;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
+use smallvec::SmallVec;
 use std::ops::{ControlFlow, Range};
 use syncio::{AllocateMode, zxio_fsverity_descriptor_t, zxio_node_attributes_t};
 use zerocopy::FromBytes;
@@ -234,51 +235,41 @@ impl RemoteIo {
     /// always stop with the first error appending an `Err(status)` into the results.
     ///
     /// NOTE: To prevent opening and writing through non-directory nodes, this function adds
-    /// `fio::Flags::PROTOCOL_DIRECTORY` to intermediate components.
+    /// `fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::PROTOCOL_SYMLINK` to intermediate components.
     pub fn open_pipelined<F: Factory>(
         &self,
         paths: &[&str],
         flags: fio::Flags,
         query: fio::NodeAttributesQuery,
         mut factory_fn: impl FnMut() -> F,
-    ) -> Vec<Result<F::Result, zx::Status>> {
-        let mut proxy_to_result =
-            |proxies: Vec<fio::NodeSynchronousProxy>| -> Vec<Result<F::Result, zx::Status>> {
-                let mut results = Vec::new();
-                for proxy in proxies {
-                    let result = create_with_on_representation(proxy, factory_fn());
-                    let is_err = result.is_err();
-                    results.push(result);
-                    // If the latest result is an error, return early.
-                    if is_err {
-                        break;
-                    }
-                }
-                results
+    ) -> impl Iterator<Item = Result<F::Result, zx::Status>> {
+        let mut proxy_to_result = move |proxy: fio::NodeSynchronousProxy| {
+            create_with_on_representation(proxy, factory_fn())
+        };
+
+        let mut proxies = SmallVec::<[fio::NodeSynchronousProxy; 8]>::new();
+        let (client_end, server_end) = zx::Channel::create();
+        proxies.push(fio::NodeSynchronousProxy::new(client_end));
+        let mut next_server_end = Some(server_end);
+
+        for (i, path) in paths.iter().enumerate().rev() {
+            let server_end = next_server_end.take().unwrap();
+            let channel = if i == 0 {
+                self.proxy.as_channel()
+            } else {
+                let (client_end, server_end) = zx::Channel::create();
+                next_server_end = Some(server_end);
+                proxies.push(fio::NodeSynchronousProxy::new(client_end));
+                proxies.last().unwrap().as_channel()
             };
-
-        let mut proxies: Vec<fio::NodeSynchronousProxy> = Vec::with_capacity(paths.len());
-
-        for (i, path) in paths.iter().enumerate() {
-            let (client_end, server_end) = zx::Channel::create();
-            let channel = proxies.last().unwrap_or(&self.proxy).as_channel();
             let dir_proxy = zx::Unowned::<fio::DirectorySynchronousProxy>::new(channel);
 
             let mut open_flags = flags | fio::Flags::FLAG_SEND_REPRESENTATION;
             if i < paths.len() - 1 {
-                open_flags |= fio::Flags::PROTOCOL_DIRECTORY;
+                open_flags |= fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::PROTOCOL_SYMLINK;
             }
 
-            #[cfg(test)]
-            {
-                TEST_HOOK.with(|hook| {
-                    if let Some(hook) = hook.borrow_mut().as_mut() {
-                        hook();
-                    }
-                });
-            }
-
-            if let Err(err) = dir_proxy.open(
+            if let Err(_) = dir_proxy.open(
                 path,
                 open_flags,
                 &fio::Options {
@@ -287,23 +278,19 @@ impl RemoteIo {
                 },
                 server_end,
             ) {
-                // The open call failed: return the result up to this point.
-                let mut results = proxy_to_result(proxies);
-                // If no error happened before this open call, add the error.
-                if results.last().is_none_or(|r| r.is_ok()) {
-                    let status = match err {
-                        fidl::Error::ClientChannelClosed { status, .. } => status,
-                        fidl::Error::ClientWrite(fidl::TransportError::Status(status)) => status,
-                        _ => zx::Status::IO,
-                    };
-                    results.push(Err(status));
-                }
-                return results;
+                // This should only be possible for the call from self. Other channels cannot be
+                // closed as they have not been sent yet.
+                debug_assert!(i == 0);
+                // Nothing to do. The first proxy just got disconnected. `proxy_to_result` will
+                // return an error.
             }
-            proxies.push(fio::NodeSynchronousProxy::new(client_end));
         }
 
-        return proxy_to_result(proxies);
+        let mut proxies = proxies.into_iter().rev();
+        std::iter::successors(proxies.next().map(&mut proxy_to_result), move |prev| match prev {
+            Err(_) => None,
+            Ok(_) => proxies.next().map(&mut proxy_to_result),
+        })
     }
 
     /// Returns `(data, eof)`, where `eof` is true if we encountered the end of the file.  If `eof`
@@ -855,33 +842,14 @@ impl RemoteDirectory {
     }
 }
 
-// Hook for test.
-#[cfg(test)]
-thread_local! {
-    pub static TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnMut()>>> =
-        std::cell::RefCell::new(None);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use fidl::endpoints::{ControlHandle, RequestStream};
     use fuchsia_async as fasync;
-    use fuchsia_sync::{Condvar, Mutex};
     use futures::StreamExt;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
-
-    fn hook(f: Box<dyn FnMut()>) -> impl Drop {
-        TEST_HOOK.with(|hook| {
-            *hook.borrow_mut() = Some(f);
-        });
-        return scopeguard::guard((), |_| {
-            TEST_HOOK.with(|hook| {
-                *hook.borrow_mut() = None;
-            });
-        });
-    }
 
     #[fuchsia::test]
     async fn test_read_chunking() {
@@ -1239,12 +1207,14 @@ mod tests {
 
         let io = RemoteIo::new(client.into_channel().into());
         fasync::unblock(move || {
-            let results = io.open_pipelined(
-                &["path1", "path2"],
-                fio::Flags::empty(),
-                fio::NodeAttributesQuery::empty(),
-                || DummyFactory,
-            );
+            let results = io
+                .open_pipelined(
+                    &["path1", "path2"],
+                    fio::Flags::empty(),
+                    fio::NodeAttributesQuery::empty(),
+                    || DummyFactory,
+                )
+                .collect::<Vec<_>>();
             assert_eq!(results.len(), 2);
             assert!(results.iter().all(|r| r.is_ok()));
         })
@@ -1287,12 +1257,14 @@ mod tests {
 
         let io = RemoteIo::new(client.into_channel().into());
         fasync::unblock(move || {
-            let results = io.open_pipelined(
-                &["path1", "not_found", "path3"],
-                fio::Flags::empty(),
-                fio::NodeAttributesQuery::empty(),
-                || DummyFactory,
-            );
+            let results = io
+                .open_pipelined(
+                    &["path1", "not_found", "path3"],
+                    fio::Flags::empty(),
+                    fio::NodeAttributesQuery::empty(),
+                    || DummyFactory,
+                )
+                .collect::<Vec<_>>();
             assert_eq!(results.len(), 2);
             assert!(results[0].is_ok());
             assert_eq!(results[1].as_ref().err(), Some(&zx::Status::NOT_FOUND));
@@ -1303,22 +1275,14 @@ mod tests {
     #[fuchsia::test]
     async fn test_open_pipelined_peer_closed() {
         let (client, stream) = fidl::endpoints::create_request_stream::<fio::DirectoryMarker>();
-        let pair = Arc::new((Mutex::new(false), Condvar::new()));
 
-        fn serve_mock_directory_close_early(
-            mut stream: fio::DirectoryRequestStream,
-            pair: Arc<(Mutex<bool>, Condvar)>,
-        ) {
+        fn serve_mock_directory_close_early(mut stream: fio::DirectoryRequestStream) {
             fasync::Task::spawn(async move {
                 if let Some(Ok(request)) = stream.next().await {
                     match request {
                         fio::DirectoryRequest::Open { object, .. } => {
                             // We just drop the object (the server_end of the channel), closing it.
                             drop(object);
-                            let (lock, cvar) = &*pair;
-                            let mut closed = lock.lock();
-                            *closed = true;
-                            cvar.notify_one();
                         }
                         _ => {}
                     }
@@ -1327,26 +1291,18 @@ mod tests {
             .detach();
         }
 
-        serve_mock_directory_close_early(stream, pair.clone());
+        serve_mock_directory_close_early(stream);
 
         let io = RemoteIo::new(client.into_channel().into());
         fasync::unblock(move || {
-            // Give the server time to drop the channel before the second open
-            let mut count = 0;
-            let _guard = hook(Box::new(move || {
-                if count > 0 {
-                    let (lock, cvar) = &*pair;
-                    let mut closed = lock.lock();
-                    cvar.wait_while(&mut closed, |closed| !*closed);
-                }
-                count += 1;
-            }));
-            let results = io.open_pipelined(
-                &["path1", "path2"],
-                fio::Flags::empty(),
-                fio::NodeAttributesQuery::empty(),
-                || DummyFactory,
-            );
+            let results = io
+                .open_pipelined(
+                    &["path1", "path2"],
+                    fio::Flags::empty(),
+                    fio::NodeAttributesQuery::empty(),
+                    || DummyFactory,
+                )
+                .collect::<Vec<_>>();
             assert_eq!(results.len(), 1);
             assert_eq!(results[0].as_ref().err(), Some(&zx::Status::PEER_CLOSED));
         })

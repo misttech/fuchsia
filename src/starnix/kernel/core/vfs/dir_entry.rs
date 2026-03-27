@@ -6,7 +6,7 @@ use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{
     CheckAccessReason, FileHandle, FileObject, FsNodeHandle, FsNodeLinkBehavior, FsStr, FsString,
-    MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
+    LookupVec, MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
 };
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
@@ -327,6 +327,55 @@ impl DirEntry {
             |locked, d, mount, name| d.lookup(locked, current_task, mount, name),
         )?;
         Ok(node)
+    }
+
+    pub fn get_children_pipelined<L>(
+        self: &DirEntryHandle,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        mount: &MountInfo,
+        names: &[&FsStr],
+    ) -> LookupVec<Result<DirEntryHandle, Errno>>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let locked = locked.cast_locked::<FileOpsCore>();
+
+        let mut nodes = LookupVec::new(); // : Option<LookupVec<Result<FsNodeHandle, Errno>>> = None;
+        let mut results = LookupVec::new();
+        let mut current_parent = self.clone();
+        for i in 0..names.len() {
+            let next_node = nodes.pop();
+            match current_parent.get_or_create_child(
+                locked,
+                current_task,
+                mount,
+                names[i],
+                |locked, parent_node, _mount, _name| {
+                    if let Some(node) = next_node {
+                        return node;
+                    }
+                    nodes = parent_node.ops().lookup_pipelined(
+                        locked,
+                        parent_node,
+                        current_task,
+                        &names[i..],
+                    );
+                    nodes.reverse();
+                    nodes.pop().unwrap()
+                },
+            ) {
+                Ok((entry, _)) => {
+                    results.push(Ok(entry.clone()));
+                    current_parent = entry;
+                }
+                Err(e) => {
+                    results.push(Err(e));
+                    break;
+                }
+            }
+        }
+        results
     }
 
     /// Creates a new DirEntry

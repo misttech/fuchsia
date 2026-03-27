@@ -15,7 +15,7 @@ use crate::task::{
     SeccompState, SeccompStateValue, Task, TaskFlags, TaskLiveState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext,
+    CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,
     MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use futures::FutureExt;
@@ -944,15 +944,13 @@ impl CurrentTask {
     {
         context.update_for_path(path);
 
-        let mut current_node = dir.clone();
-        let mut it = path.split(|c| *c == b'/').filter(|p| !p.is_empty()).map(<&FsStr>::from);
-        let mut current_path_component = it.next().unwrap_or_default();
-        for next_path_component in it {
-            current_node =
-                current_node.lookup_child(locked, self, context, current_path_component)?;
-            current_path_component = next_path_component;
+        let components = split_path(path);
+        if components.is_empty() {
+            return Ok((dir.clone(), Default::default()));
         }
-        Ok((current_node, current_path_component))
+        let result =
+            dir.lookup_children(locked, self, context, &components[0..components.len() - 1])?;
+        Ok((result, components.last().unwrap()))
     }
 
     /// Lookup a namespace node.
@@ -971,8 +969,8 @@ impl CurrentTask {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let (parent, basename) = self.lookup_parent(locked, context, &dir, path)?;
-        parent.lookup_child(locked, self, context, basename)
+        let components = split_path(path);
+        dir.lookup_children(locked, self, context, &components)
     }
 
     /// Lookup a namespace node starting at the root directory.
@@ -2147,6 +2145,10 @@ pub enum ExceptionResult {
 
     // The exception generated a signal that should be delivered.
     Signal(SignalInfo),
+}
+
+fn split_path(path: &FsStr) -> LookupVec<&FsStr> {
+    path.split(|c| *c == b'/').filter(|p| !p.is_empty()).map(<&FsStr>::from).collect()
 }
 
 #[cfg(test)]
