@@ -30,8 +30,6 @@ _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_SSH_ADDRESS": [
         "target",
         "list",
-        "--format",
-        "addresses",
         "--no-usb",  # do not do USB discovery
         "--no-probe",  # do not connect to targets
     ],

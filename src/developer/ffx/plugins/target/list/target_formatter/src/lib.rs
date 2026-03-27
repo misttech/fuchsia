@@ -7,6 +7,7 @@ use anyhow::{Error, Result, bail};
 use ffx_list_args::{AddressTypes, Format};
 use ffx_target::TargetInfo;
 use ffx_target::info::{RemoteControlState, TargetState};
+use netext::ScopedSocketAddr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::max;
@@ -37,6 +38,21 @@ pub fn port_str(ta: TargetAddr) -> String {
             addr.to_string()
         }
         TargetAddr::VSockCtx(_) | TargetAddr::UsbCtx(_) => format!("{ta}"),
+    }
+}
+
+pub fn port_str_scoped(ta: TargetAddr) -> Result<String> {
+    match ta {
+        TargetAddr::Net(mut addr) => {
+            let mut port = addr.port();
+            if port == 0 {
+                port = DEFAULT_SSH_PORT;
+            }
+            addr.set_port(port);
+            let ssaddr = ScopedSocketAddr::from_socket_addr(addr)?;
+            Ok(ssaddr.to_string())
+        }
+        TargetAddr::VSockCtx(_) | TargetAddr::UsbCtx(_) => Ok(ta.to_string()),
     }
 }
 
@@ -97,7 +113,7 @@ pub fn filter_targets_by_address_types(
 
 /// Simple trait for a target formatter.
 pub trait TargetFormatter {
-    fn lines(&self) -> Vec<String>;
+    fn lines(&self) -> Result<Vec<String>>;
 }
 
 impl TryFrom<(Format, AddressTypes, Vec<TargetInfo>)> for Box<dyn TargetFormatter> {
@@ -110,6 +126,9 @@ impl TryFrom<(Format, AddressTypes, Vec<TargetInfo>)> for Box<dyn TargetFormatte
             Format::Tabular => Box::new(TabularTargetFormatter::try_from(targets)?),
             Format::Simple => Box::new(SimpleTargetFormatter::try_from(targets)?),
             Format::Addresses => Box::new(AddressesTargetFormatter::try_from(targets)?),
+            Format::AddressesWithLexicalScope => {
+                Box::new(AddressesWithLexicalScopeTargetFormatter::try_from(targets)?)
+            }
             Format::Serials => Box::new(SerialsTargetFormatter::try_from(targets)?),
             Format::NameOnly => Box::new(NameOnlyTargetFormatter::try_from(targets)?),
             Format::Json => Box::new(JsonTargetFormatter::try_from(targets)?),
@@ -146,14 +165,35 @@ impl TryFrom<Vec<TargetInfo>> for AddressesTargetFormatter {
     type Error = Error;
 
     fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
+        // TODO(b/496914261): Re evaluate silently swallowing errors
         let targets = targets.into_iter().flat_map(AddressesTarget::try_from).collect::<Vec<_>>();
         Ok(Self { targets })
     }
 }
 
 impl TargetFormatter for AddressesTargetFormatter {
-    fn lines(&self) -> Vec<String> {
-        self.targets.iter().map(|t| port_str(t.0)).collect()
+    fn lines(&self) -> Result<Vec<String>> {
+        Ok(self.targets.iter().map(|t| port_str(t.0)).collect())
+    }
+}
+
+pub struct AddressesWithLexicalScopeTargetFormatter {
+    targets: Vec<AddressesTarget>,
+}
+
+impl TryFrom<Vec<TargetInfo>> for AddressesWithLexicalScopeTargetFormatter {
+    type Error = Error;
+
+    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
+        // TODO(b/496914261): Re evaluate silently swallowing errors
+        let targets = targets.into_iter().flat_map(AddressesTarget::try_from).collect::<Vec<_>>();
+        Ok(Self { targets })
+    }
+}
+
+impl TargetFormatter for AddressesWithLexicalScopeTargetFormatter {
+    fn lines(&self) -> Result<Vec<String>> {
+        self.targets.iter().map(|t| port_str_scoped(t.0)).collect()
     }
 }
 
@@ -184,8 +224,8 @@ impl TryFrom<Vec<TargetInfo>> for SerialsTargetFormatter {
 }
 
 impl TargetFormatter for SerialsTargetFormatter {
-    fn lines(&self) -> Vec<String> {
-        self.targets.iter().map(|t| t.0.clone()).collect()
+    fn lines(&self) -> Result<Vec<String>> {
+        Ok(self.targets.iter().map(|t| t.0.clone()).collect())
     }
 }
 
@@ -218,8 +258,8 @@ impl TryFrom<Vec<TargetInfo>> for NameOnlyTargetFormatter {
 }
 
 impl TargetFormatter for NameOnlyTargetFormatter {
-    fn lines(&self) -> Vec<String> {
-        self.targets.iter().map(|t| t.0.clone()).collect()
+    fn lines(&self) -> Result<Vec<String>> {
+        Ok(self.targets.iter().map(|t| t.0.clone()).collect())
     }
 }
 
@@ -239,8 +279,8 @@ impl TryFrom<Vec<TargetInfo>> for SimpleTargetFormatter {
 }
 
 impl TargetFormatter for SimpleTargetFormatter {
-    fn lines(&self) -> Vec<String> {
-        self.targets.iter().map(|t| format!("{} {}", t.1, t.0)).collect()
+    fn lines(&self) -> Result<Vec<String>> {
+        Ok(self.targets.iter().map(|t| format!("{} {}", t.1, t.0)).collect())
     }
 }
 
@@ -273,9 +313,9 @@ impl From<Vec<TargetInfo>> for JsonTargetFormatter {
 }
 
 impl TargetFormatter for JsonTargetFormatter {
-    fn lines(&self) -> Vec<String> {
+    fn lines(&self) -> Result<Vec<String>> {
         let t = self.targets.clone();
-        vec![serde_json::to_string(&t).expect("should serialize")]
+        Ok(vec![serde_json::to_string(&t)?])
     }
 }
 
@@ -409,7 +449,7 @@ impl From<TargetAddr> for JsonTargetAddress {
     fn from(addr: TargetAddr) -> Self {
         match &addr {
             TargetAddr::Net(sock_addr) => JsonTargetAddress::Ip {
-                ip: addr::TargetIpAddr::from(*sock_addr).resolved_str(),
+                ip: ScopedSocketAddr::from_socket_addr(*sock_addr).unwrap().ip_string(),
                 ssh_port: addr.port().unwrap(),
             },
             TargetAddr::VSockCtx(cid) => JsonTargetAddress::VSock { cid: *cid },
@@ -547,8 +587,8 @@ pub struct TabularTargetFormatter {
 }
 
 impl TargetFormatter for TabularTargetFormatter {
-    fn lines(&self) -> Vec<String> {
-        self.targets.iter().map(|t| format_fields(t, &self.limits)).collect()
+    fn lines(&self) -> Result<Vec<String>> {
+        Ok(self.targets.iter().map(|t| format_fields(t, &self.limits)).collect())
     }
 }
 
@@ -743,7 +783,7 @@ mod test {
     #[test]
     fn test_empty_formatter() {
         let formatter = TabularTargetFormatter::try_from(Vec::<TargetInfo>::new()).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 60); // Just some manual math.
         assert_eq!(lines.join("\n"), EMPTY_FORMATTER_GOLDEN.to_string());
@@ -762,7 +802,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines.join("\n"), ONE_TARGET_WITH_DEFAULT_GOLDEN.to_string());
 
@@ -777,7 +817,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines.join("\n"), ONE_TARGET_NO_DEFAULT_GOLDEN.to_string());
     }
@@ -796,7 +836,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines.join("\n"), EMPTY_NODENAME_WITH_DEFAULT_GOLDEN.to_string());
 
@@ -812,7 +852,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines.join("\n"), EMPTY_NODENAME_NO_DEFAULT_GOLDEN.to_string());
     }
@@ -838,7 +878,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 4);
         assert_eq!(
             lines.join("\n"),
@@ -859,7 +899,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines.join("\n").trim(), SIMPLE_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
 
@@ -874,7 +914,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines.join("\n").trim(), SIMPLE_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
     }
@@ -912,7 +952,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines.join("\n"), NAME_ONLY_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
 
@@ -927,7 +967,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines.join("\n"), NAME_ONLY_FORMATTER_WITH_DEFAULT_GOLDEN.to_string());
     }
@@ -952,7 +992,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         assert_eq!(
             lines.join("\n"),
@@ -977,7 +1017,7 @@ mod test {
             },
         ])
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         assert_eq!(
             lines.join("\n"),
@@ -1021,7 +1061,7 @@ mod test {
             vec![make_valid_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), DEVICE_FINDER_FORMAT_GOLDEN.to_string());
     }
 
@@ -1033,7 +1073,7 @@ mod test {
             vec![make_valid_ipv4_only_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), DEVICE_FINDER_FORMAT_IPV4_ONLY_GOLDEN.to_string());
     }
 
@@ -1045,7 +1085,7 @@ mod test {
             vec![make_valid_ipv4_only_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), DEVICE_FINDER_FORMAT_IPV6_ONLY_GOLDEN.to_string());
     }
 
@@ -1057,7 +1097,7 @@ mod test {
             vec![make_valid_target(), make_valid_target()],
         ))
         .unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), ADDRESSES_FORMAT_GOLDEN.to_string());
     }
 
@@ -1069,7 +1109,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = Some(p);
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_FULL_GOLDEN.to_string());
     }
 
@@ -1080,7 +1120,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = None;
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_PRODUCT_MISSING_GOLDEN.to_string());
     }
 
@@ -1091,7 +1131,7 @@ mod test {
         t.board_config = None;
         t.product_config = Some(p);
         let formatter = TabularTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n").trim(), BUILD_CONFIG_BOARD_MISSING_GOLDEN.to_string());
     }
 
@@ -1099,19 +1139,12 @@ mod test {
     fn test_json_target_address_from_ipv6_scope() {
         // Using index 1, which typically maps to a symbolic name like "lo" or "eth0" on the host.
         let addr = TargetAddr::new(std_ip!("fe80::1"), 1, 8080);
-        let formatted_str = format!("{}", addr);
         let json_addr = JsonTargetAddress::from(addr);
 
-        // JsonTargetAddress should strictly use the numeric scope ID.
         assert_eq!(
             json_addr,
-            JsonTargetAddress::Ip { ip: "fe80::1%1".to_string(), ssh_port: 8080 }
+            JsonTargetAddress::Ip { ip: "fe80::1%lo".to_string(), ssh_port: 8080 }
         );
-
-        // If the host system resolved the name (e.g. to `fe80::1%lo`), verify the JSON representation explicitly avoids it.
-        if formatted_str.contains('%') && !formatted_str.contains("%1") {
-            assert_ne!(json_addr, JsonTargetAddress::Ip { ip: formatted_str, ssh_port: 8080 });
-        }
     }
 
     #[test]
@@ -1180,7 +1213,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = Some(p);
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_FULL_GOLDEN.to_string());
     }
 
@@ -1192,7 +1225,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = Some(p);
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_FULL_DEFAULT_TARGET_GOLDEN.to_string());
     }
 
@@ -1203,7 +1236,7 @@ mod test {
         t.board_config = Some(b);
         t.product_config = None;
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_PRODUCT_MISSING_GOLDEN.to_string());
     }
 
@@ -1214,7 +1247,7 @@ mod test {
         t.board_config = None;
         t.product_config = Some(p);
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_BOARD_MISSING_GOLDEN.to_string());
     }
 
@@ -1224,7 +1257,7 @@ mod test {
         t.board_config = None;
         t.product_config = None;
         let formatter = JsonTargetFormatter::try_from(vec![t]).unwrap();
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.join("\n"), JSON_BUILD_CONFIG_BOTH_MISSING_GOLDEN.to_string());
     }
 
@@ -1244,37 +1277,37 @@ mod test {
     async fn test_nonstandard_port_ipv4() {
         let target = make_target(make_ip_v4_addr(1234));
         let formatter = JsonTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let json = formatter.lines()[0].clone();
+        let json = formatter.lines().unwrap()[0].clone();
         let (first_ip, first_port) = get_first_address(&json);
         assert_eq!(first_ip, "127.0.0.1".to_string());
         assert_eq!(first_port, 1234);
 
         let formatter = TabularTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines()[1].clone();
+        let out = formatter.lines().unwrap()[1].clone();
         assert!(out.contains("127.0.0.1:1234"));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines()[0].clone();
+        let out = formatter.lines().unwrap()[0].clone();
         assert_eq!(out, "127.0.0.1:1234".to_string());
     }
 
     #[fuchsia::test]
     async fn test_nonstandard_port_ipv6() {
-        let addr = make_ip_v6_port_info(42, 1234);
+        let addr = make_ip_v6_port_info(1, 1234);
         let target = make_target(addr);
         let formatter = JsonTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let json = formatter.lines()[0].clone();
+        let json = formatter.lines().unwrap()[0].clone();
         let (first_ip, first_port) = get_first_address(&json);
-        assert_eq!(first_ip, "fe80::1:101:101:101%42".to_string());
+        assert_eq!(first_ip, "fe80::1:101:101:101%lo".to_string());
         assert_eq!(first_port, 1234);
 
         let formatter = TabularTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines()[1].clone();
-        assert!(out.contains("[fe80::1:101:101:101%42]:1234"));
+        let out = formatter.lines().unwrap()[1].clone();
+        assert!(out.contains("[fe80::1:101:101:101%lo]:1234"));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines()[0].clone();
-        assert_eq!(out, "[fe80::1:101:101:101%42]:1234".to_string());
+        let out = formatter.lines().unwrap()[0].clone();
+        assert_eq!(out, "[fe80::1:101:101:101%1]:1234".to_string());
     }
 
     #[fuchsia::test]
@@ -1282,12 +1315,12 @@ mod test {
         let target = make_target(make_ip_v4_addr(0));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines()[0].clone();
+        let out = formatter.lines().unwrap()[0].clone();
         assert_eq!(out, "127.0.0.1:22".to_string());
 
         let target = make_target(make_ip_v6_port_info(0, 22));
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
-        let out = formatter.lines()[0].clone();
+        let out = formatter.lines().unwrap()[0].clone();
         assert_eq!(out, "[fe80::1:101:101:101]:22".to_string());
     }
 
@@ -1313,7 +1346,7 @@ mod test {
             ..Default::default()
         };
         let formatter = TabularTargetFormatter::from(vec![target1, target2]);
-        let lines = formatter.lines();
+        let lines = formatter.lines().unwrap();
         assert_eq!(lines.len(), 3);
         let default_target_line = &lines[1];
         assert!(default_target_line.contains("default-target*"));

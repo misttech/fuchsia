@@ -135,7 +135,7 @@ async fn show_targets(
             } else {
                 let formatter =
                     Box::<dyn TargetFormatter>::try_from((cmd.format, address_types, infos))?;
-                writer.line(formatter.lines().join("\n"))?;
+                writer.line(formatter.lines()?.join("\n"))?;
             }
         }
     }

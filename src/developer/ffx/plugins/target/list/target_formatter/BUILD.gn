@@ -12,6 +12,7 @@ rustc_library("target_formatter") {
   with_unit_tests = true
   deps = [
     "//src/developer/ffx/lib/addr:lib",
+    "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target_errors:lib",
     "//src/developer/ffx/plugins/target/list:ffx_list_args",

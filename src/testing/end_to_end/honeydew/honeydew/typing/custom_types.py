@@ -197,11 +197,11 @@ class IpPort(TargetAddr):
             try:
                 ip_port = cls.create_using_ip_and_port(query)
                 if ip_port.port is not None:
-                    return cls._validate_ipv6_scope(ip_port)
+                    return ip_port
             except ValueError:
                 pass
             try:
-                return cls._validate_ipv6_scope(cls.create_using_ip(query))
+                return cls.create_using_ip(query)
             except ValueError:
                 pass
         else:
@@ -212,27 +212,15 @@ class IpPort(TargetAddr):
             # valid IPv6 addresses that contain colons. Users can use
             # brackets for IPv6 (e.g. "[::1]:8022") to force port parsing.
             try:
-                return cls._validate_ipv6_scope(cls.create_using_ip(query))
+                return cls.create_using_ip(query)
             except ValueError:
                 pass
             try:
-                return cls._validate_ipv6_scope(
-                    cls.create_using_ip_and_port(query)
-                )
+                return cls.create_using_ip_and_port(query)
             except ValueError:
                 pass
 
         raise ValueError(f"Could not parse '{query}' as IpPort")
-
-    @classmethod
-    def _validate_ipv6_scope(cls, ip_port: IpPort) -> "IpPort":
-        if isinstance(ip_port.ip, ipaddress.IPv6Address):
-            scope_id = getattr(ip_port.ip, "scope_id", None)
-            if scope_id is not None and not scope_id.isdigit():
-                raise ValueError(
-                    f"Symbolic scope {scope_id} not supported. Addresses must be resolved"
-                )
-        return ip_port
 
     @staticmethod
     def create_using_ip_and_port(ip_port: str) -> IpPort:
@@ -331,12 +319,7 @@ class IpPort(TargetAddr):
             ssh_port = None
 
         ip_obj = ipaddress.ip_address(ssh_ip)
-        return cls._validate_ipv6_scope(
-            IpPort(
-                ip=ip_obj,
-                port=ssh_port,
-            )
-        )
+        return IpPort(ip=ip_obj, port=ssh_port)
 
     @property
     def ip_str(self) -> str:

@@ -205,7 +205,6 @@ class CustomTypesTests(unittest.TestCase):
             ("invalid_usb_format", "usb123"),
             ("negative_usb", "usb:-1"),
             ("invalid_ip", "256.256.256.256"),
-            ("invalid_symbolic_scope", "fe80::1%eth0"),
             ("random_string", "my-fuchsia-device"),
         ]
     )
@@ -242,6 +241,11 @@ class CustomTypesTests(unittest.TestCase):
                 custom_types.IpPort(ipaddress.ip_address("fe80::1%1"), None),
             ),
             (
+                "ipv6_with_lexical_scope",
+                {"type": "Ip", "ip": "fe80::1%lo"},
+                custom_types.IpPort(ipaddress.ip_address("fe80::1%lo"), None),
+            ),
+            (
                 "usb_valid",
                 {"type": "Usb", "cid": 12345},
                 custom_types.TargetUsb(12345),
@@ -259,7 +263,6 @@ class CustomTypesTests(unittest.TestCase):
         [
             ("invalid_ip", {"type": "Ip", "ip": "256.256.256.256"}),
             ("missing_ip", {"type": "Ip"}),
-            ("invalid_symbolic_scope", {"type": "Ip", "ip": "fe80::1%eth0"}),
             ("usb_missing_cid", {"type": "Usb"}),
             ("usb_negative_cid", {"type": "Usb", "cid": -1}),
             ("usb_bool_cid", {"type": "Usb", "cid": True}),
