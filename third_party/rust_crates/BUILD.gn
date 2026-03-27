@@ -822,6 +822,8 @@ group("ref-cast") {
 
 group("regex") {
   public_deps = [ ":regex-v1_7_3" ]
+
+  visibility = regex_visibility
 }
 
 group("regex-lite") {
