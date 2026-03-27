@@ -10,6 +10,19 @@ import re
 import sys
 
 
+def get_rust_package_paths(fuchsia_dir: pathlib.Path) -> dict[str, str]:
+    sys.path += [str(fuchsia_dir / "third_party/pytoml")]
+    import pytoml as toml
+
+    cargo_toml = toml.parser.load(
+        open(fuchsia_dir / "third_party/rust_crates/Cargo.toml")
+    )
+    return {
+        k: f'third_party/rust_crates/{v["path"]}'
+        for k, v in cargo_toml["patch"]["crates-io"].items()
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Fix Bazel aliases in crates_vendor generated BUILD.bazel files."
@@ -27,6 +40,8 @@ def main() -> int:
         help="Path to the Fuchsia directory",
     )
     args = parser.parse_args()
+
+    path_overrides = get_rust_package_paths(args.fuchsia_dir)
 
     with open(args.build_file, "r") as f:
         content = f.read()
@@ -52,11 +67,24 @@ def main() -> int:
         if actual_target.startswith("//"):
             parts = actual_target[2:].split(":")
             if len(parts) == 2:
-                pkg_path = parts[0]
+                pkg_path, pkg_name = parts
                 full_pkg_path = args.fuchsia_dir / pkg_path
-                # If the package path does not exist, remove the block.
-                if not full_pkg_path.is_dir():
-                    return ""
+                # If the path exists, keep things as they are.
+                if full_pkg_path.is_dir():
+                    return full_block
+
+                # Look to see if we can fix up the path based on overrides in Cargo.toml
+                fixed_path = path_overrides.get(pkg_name) or path_overrides.get(
+                    pkg_name.replace("_", "-")
+                )
+                if (
+                    fixed_path is not None
+                    and (args.fuchsia_dir / fixed_path).is_dir
+                ):
+                    return full_block.replace(pkg_path, fixed_path)
+
+                # Nothing found. Remove the block.
+                return ""
 
         return full_block
 
