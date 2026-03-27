@@ -87,18 +87,11 @@ impl BytesFileOps for PowerStateFile {
         if !supported_states.contains(&state) {
             return error!(EINVAL);
         }
-        let should_log = power_manager.check_and_update_suspend_log_time();
-        if should_log {
-            log_info!(state:?; "Received write to power state file.");
-        }
+        log_info!(state:?; "Received write to power state file.");
         // LINT.IfChange
         fuchsia_trace::duration!("power", "starnix-sysfs:suspend");
         // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
-
-        let debounce_ms = current_task.kernel().features.suspend_debounce_duration_ms;
-        power_manager
-            .suspend(locked, state, zx::BootDuration::from_millis(debounce_ms as i64), should_log)
-            .inspect_err(|e| log_warn!("Suspend failed: {e}"))?;
+        power_manager.suspend(locked, state).inspect_err(|e| log_warn!("Suspend failed: {e}"))?;
 
         Ok(())
     }
