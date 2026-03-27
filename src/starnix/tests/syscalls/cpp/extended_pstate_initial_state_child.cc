@@ -118,8 +118,8 @@ extern "C" void _start() {
     }
   }
 #elif defined(__arm__)
-  constexpr size_t kQRegisterWidth = 64;
-  std::byte d_register_buffer[16 * kQRegisterWidth];
+  constexpr size_t kDRegisterWidth = 8;
+  std::byte d_register_buffer[32 * kDRegisterWidth];
   uint32_t fpscr = 0;
   __asm__ volatile(
       "vstr       d0, [%1, #(0 * 8)]\n"
@@ -138,13 +138,29 @@ extern "C" void _start() {
       "vstr      d13, [%1, #(13 * 8)]\n"
       "vstr      d14, [%1, #(14 * 8)]\n"
       "vstr      d15, [%1, #(15 * 8)]\n"
+      "vstr      d16, [%1, #(16 * 8)]\n"
+      "vstr      d17, [%1, #(17 * 8)]\n"
+      "vstr      d18, [%1, #(18 * 8)]\n"
+      "vstr      d19, [%1, #(19 * 8)]\n"
+      "vstr      d20, [%1, #(20 * 8)]\n"
+      "vstr      d21, [%1, #(21 * 8)]\n"
+      "vstr      d22, [%1, #(22 * 8)]\n"
+      "vstr      d23, [%1, #(23 * 8)]\n"
+      "vstr      d24, [%1, #(24 * 8)]\n"
+      "vstr      d25, [%1, #(25 * 8)]\n"
+      "vstr      d26, [%1, #(26 * 8)]\n"
+      "vstr      d27, [%1, #(27 * 8)]\n"
+      "vstr      d28, [%1, #(28 * 8)]\n"
+      "vstr      d29, [%1, #(29 * 8)]\n"
+      "vstr      d30, [%1, #(30 * 8)]\n"
+      "vstr      d31, [%1, #(31 * 8)]\n"
       "vmrs      %0, fpscr\n"
       : "=r"(fpscr)
       : "r"(d_register_buffer)
       : "memory");
-  for (size_t i = 0; i < 16 * kQRegisterWidth; ++i) {
+  for (size_t i = 0; i < 32 * kDRegisterWidth; ++i) {
     if (d_register_buffer[i] != std::byte{0}) {
-      int register_number = static_cast<int>(i / kQRegisterWidth);
+      int register_number = static_cast<int>(i / kDRegisterWidth);
       char message[] = "D00\n";
       message[2] = '0' + register_number % 10;
       message[1] = '0' + (register_number / 10) % 10;
@@ -199,6 +215,7 @@ extern "C" void _start() {
 #elif defined(__riscv)
   uint64_t fp_registers[32];
   uint32_t fcsr;
+  std::byte v_registers[32 * 16];  // Assuming VLEN=128
 
   __asm__ volatile(
       "fld  f0,  0 * 8(%[regs])\n"
@@ -223,6 +240,7 @@ extern "C" void _start() {
       "fld f19, 19 * 8(%[regs])\n"
       "fld f20, 20 * 8(%[regs])\n"
       "fld f21, 21 * 8(%[regs])\n"
+      "fld f22, 22 * 8(%[regs])\n"
       "fld f23, 23 * 8(%[regs])\n"
       "fld f24, 24 * 8(%[regs])\n"
       "fld f25, 25 * 8(%[regs])\n"
@@ -233,9 +251,21 @@ extern "C" void _start() {
       "fld f30, 30 * 8(%[regs])\n"
       "fld f31, 31 * 8(%[regs])\n"
       "frcsr %[fcsr]\n"
+      // Save 32 vector registers. Since we can only save 8 registers at a time with `vs8r.v`,
+      // we do it in 4 chunks of 8, incrementing the pointer by the size of 8 vector registers
+      // (`vlenb * 8` bytes) each time.
+      "csrr t0, vlenb\n"
+      "slli t0, t0, 3\n"
+      "vs8r.v v0, (%[vregs])\n"
+      "add %[vregs], %[vregs], t0\n"
+      "vs8r.v v8, (%[vregs])\n"
+      "add %[vregs], %[vregs], t0\n"
+      "vs8r.v v16, (%[vregs])\n"
+      "add %[vregs], %[vregs], t0\n"
+      "vs8r.v v24, (%[vregs])\n"
       : [fcsr] "=r"(fcsr)
-      : [regs] "r"(fp_registers)
-      : "memory");
+      : [regs] "r"(fp_registers), [vregs] "r"(v_registers)
+      : "t0", "memory");
   for (size_t i = 0; i < 32; ++i) {
     if (fp_registers[i] != 0) {
       char message[] = "F00\n";
@@ -247,6 +277,16 @@ extern "C" void _start() {
   }
   if (fcsr != 0) {
     fail("fcsr\n", 33);
+  }
+  // Verify that all bytes of the 32 vector registers are 0.
+  for (size_t i = 0; i < 32 * 16; ++i) {
+    if (v_registers[i] != std::byte{0}) {
+      int register_number = static_cast<int>(i / 16);
+      char message[] = "V00\n";
+      message[2] = '0' + register_number % 10;
+      message[1] = '0' + (register_number / 10) % 10;
+      fail(message, register_number + 35);
+    }
   }
 #else
 #error "unimplemented"

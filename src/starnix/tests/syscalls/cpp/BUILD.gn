@@ -483,6 +483,10 @@ if (is_linux) {
       "//build/config/linux:default-pie",
       "//build/config/linux:implicit-host-libs",
     ]
+
+    # This config is also applied by the syscall_test() template and is necessary for vector
+    # instructions to compile on riscv64.
+    configs += [ ":march" ]
   }
 
   executable("procfs_test_exec_child") {
