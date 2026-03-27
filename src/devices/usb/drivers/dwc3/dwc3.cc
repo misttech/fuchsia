@@ -746,22 +746,33 @@ zx_status_t Dwc3::CheckHwVersion() {
 
   const uint16_t core_id = gsnpsid.core_id();
 
-  // Major and minor versioning is in nibble-packed binary-coded-decimal format with the revision
-  // encoded in hex (e.g. 0x330a decodes to 3.30a).
-  const uint8_t n1 = (gsnpsid.release_number() & 0xf000) >> 12;
-  const uint8_t n2 = (gsnpsid.release_number() & 0x0f00) >> 8;
-  const uint8_t n3 = (gsnpsid.release_number() & 0x00f0) >> 4;
-  const uint8_t n4 = (gsnpsid.release_number() & 0x000f) >> 0;
-
-  const uint8_t major = n1;
-  const uint8_t minor = n2 * 10 + n3;
-  const uint8_t rev = n4;
-
   if (core_id == 0x5533) {
+    // Major and minor versioning is in nibble-packed binary-coded-decimal format with the revision
+    // encoded in hex (e.g. 0x330a decodes to 3.30a).
+    const uint8_t n1 = (gsnpsid.release_number() & 0xf000) >> 12;
+    const uint8_t n2 = (gsnpsid.release_number() & 0x0f00) >> 8;
+    const uint8_t n3 = (gsnpsid.release_number() & 0x00f0) >> 4;
+    const uint8_t n4 = (gsnpsid.release_number() & 0x000f) >> 0;
+
+    const uint8_t major = n1;
+    const uint8_t minor = n2 * 10 + n3;
+    const uint8_t rev = n4;
+
     // Only valid on core versions 3.10a+
     poll_end_xfer_ = major >= 3 && minor >= 10 && rev >= 0xa;
 
     fdf::info("Detected Synopsys DWC_usb3 core version {}.{:02d}{:x}", major, minor, rev);
+    return ZX_OK;
+  }
+
+  if (core_id == 0x3331) {
+    auto ver_num = USB31_VER_NUMBER::Get().ReadFrom(mmio);
+    auto ver_type = USB31_VER_TYPE::Get().ReadFrom(mmio);
+
+    poll_end_xfer_ = false;  // Unsupported.
+
+    fdf::info("Detected Synopsys DWC_usb31 core version number 0x{:08x} type 0x{:08x}",
+              ver_num.reg_value(), ver_type.reg_value());
     return ZX_OK;
   }
 

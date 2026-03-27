@@ -427,4 +427,16 @@ class GSNPSID : public hwreg::RegisterBase<GSNPSID, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<GSNPSID>(0xc120); }
 };
 
+class USB31_VER_NUMBER : public hwreg::RegisterBase<USB31_VER_NUMBER, uint32_t> {
+ public:
+  DEF_FIELD(31, 0, VERSION_NUM);
+  static auto Get() { return hwreg::RegisterAddr<USB31_VER_NUMBER>(0xc1a0); }
+};
+
+class USB31_VER_TYPE : public hwreg::RegisterBase<USB31_VER_TYPE, uint32_t> {
+ public:
+  DEF_FIELD(31, 0, VERSION_TYPE);
+  static auto Get() { return hwreg::RegisterAddr<USB31_VER_TYPE>(0xc1a4); }
+};
+
 #endif  // SRC_DEVICES_USB_DRIVERS_DWC3_DWC3_REGS_H_
