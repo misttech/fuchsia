@@ -18,8 +18,8 @@ _input_pipeline = {
 
   icu_deps = [
     "//src/lib/icu_data/rust/icu_data",
-    "//third_party/rust_crates:rust_icu_sys-v5_6_0",
-    "//third_party/rust_crates:rust_icu_unorm2-v5_6_0",
+    "//third_party/rust_crates/compat/icu:sys",
+    "//third_party/rust_crates/compat/icu:unorm2",
   ]
   deps = [
     ":input_pipeline_includes",

@@ -9216,6 +9216,7 @@ rustc_library("generator-v0_8_7") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":loom-v0_7_2.actual" ]
   visibility += [ ":loom-v0_7_2.rustdoc" ]
   visibility += [ ":loom-v0_7_2.aux.deps.deps" ]
@@ -9754,6 +9755,7 @@ rustc_library("heck-v0_3_1") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ "//src/sys/test_runners/starnix:*" ]
   visibility += [ "//third_party/rust_crates:*" ]
 
@@ -12210,6 +12212,7 @@ rustc_library("nix-v0_29_0") {
   }
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
 
   applicable_licenses = [ ":nix-v0_29_0.license" ]
@@ -12750,6 +12753,7 @@ rustc_library("num_cpus-v1_16_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
 
   applicable_licenses = [ ":num_cpus-v1_16_0.license" ]
@@ -13492,6 +13496,7 @@ rustc_library("parking_lot-v0_12_5") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ "//src/lib/fuchsia-sync" ]
   visibility += [ "//third_party/rust_crates:*" ]
 
@@ -16715,6 +16720,7 @@ rustc_library("ring-v0_17_8") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":ring" ]
   visibility += [ ":ring-0.17.8" ]
   visibility += [ ":rustls-v0_21_12.actual" ]
@@ -16899,6 +16905,7 @@ icu_rustc_library("rust_icu_common-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/lib/icu_data/rust/icu_data:*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
@@ -16938,6 +16945,7 @@ icu_rustc_library("rust_icu_sys-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
   visibility += [ "//src/ui/lib/input_pipeline:*" ]
@@ -16982,6 +16990,7 @@ icu_rustc_library("rust_icu_ucal-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/lib/icu_data/rust/icu_data:*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
@@ -17104,6 +17113,7 @@ icu_rustc_library("rust_icu_udata-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/lib/icu_data/rust/icu_data:*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
@@ -17145,6 +17155,7 @@ icu_rustc_library("rust_icu_uenum-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/settings/intl:*" ]
 
@@ -17189,6 +17200,7 @@ icu_rustc_library("rust_icu_uloc-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
   visibility += [ "//src/settings/intl:*" ]
@@ -17235,6 +17247,7 @@ icu_rustc_library("rust_icu_unorm2-v5_6_0") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/ui/lib/input_pipeline:*" ]
 
@@ -17887,6 +17900,7 @@ rustc_library("scoped-tls-v1_0_1") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":loom-v0_7_2.actual" ]
   visibility += [ ":loom-v0_7_2.rustdoc" ]
   visibility += [ ":loom-v0_7_2.aux.deps.deps" ]
@@ -19535,6 +19549,7 @@ rustc_library("syn-v1_0_109") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//src/connectivity/bluetooth/testing/test-harness-macro:*" ]
   visibility += [ "//src/connectivity/lib/ip-test-macro:*" ]
@@ -22134,6 +22149,7 @@ rustc_library("url-v1_7_2") {
   ]
 
   visibility = []
+  visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
   visibility += [ "//build/sdk/meta:*" ]
 

@@ -12,9 +12,9 @@ icu_rustc_library("icu_data") {
   with_unit_tests = true
 
   icu_deps = [
-    "//third_party/rust_crates:rust_icu_common-v5_6_0",
-    "//third_party/rust_crates:rust_icu_ucal-v5_6_0",
-    "//third_party/rust_crates:rust_icu_udata-v5_6_0",
+    "//third_party/rust_crates/compat/icu:common",
+    "//third_party/rust_crates/compat/icu:ucal",
+    "//third_party/rust_crates/compat/icu:udata",
   ]
 
   deps = [
@@ -24,7 +24,7 @@ icu_rustc_library("icu_data") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  icu_test_deps = [ "//third_party/rust_crates:rust_icu_uenum" ]
+  icu_test_deps = [ "//third_party/rust_crates/compat/icu:uenum" ]
   test_deps = [ "//third_party/rust_crates:assert_matches" ]
 
   sources = [ "src/lib.rs" ]

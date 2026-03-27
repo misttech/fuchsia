@@ -620,6 +620,7 @@ rustflags = [ "--cfg=fn_like_proc_macro" ]
 # re-reviewed before it can be used outside of tests.
 [gn.package.generator."0.8.7"]
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":loom-v0_7_2.actual",
   ":loom-v0_7_2.rustdoc",
   ":loom-v0_7_2.aux.deps.deps",
@@ -652,7 +653,8 @@ env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendo
 [gn.package.heck."0.3.1"]
 group_name = "heck-0_3"
 # TODO(https://fxbug.dev/402302539) starnix tests rely on the older semantics of to_camel_case()
-visibility = [ "//src/sys/test_runners/starnix:*", "//third_party/rust_crates:*" ]
+visibility = [
+  "//third_party/rust_crates/compat/icu:*", "//src/sys/test_runners/starnix:*", "//third_party/rust_crates:*" ]
 
 [gn.package.httparse."1.9.4"]
 rustflags = [
@@ -724,7 +726,8 @@ deps = ["//build/validate:non_production_tag"]
 
 [gn.package.nix."0.29.0"]
 group_visibility = { import = "//src/lib/fuchsia_nix/nix_visibility.gni", variable = "nix_visibility" }
-visibility = [":*"]
+visibility = [
+  "//third_party/rust_crates/compat/icu:*",":*"]
 
 [gn.package.nix."0.29.0".platform."cfg(target_os = \"linux\")"]
 rustflags = [
@@ -765,7 +768,8 @@ rustflags = ["--cfg=has_i128", "--cfg=has_const_fn"]
 [gn.package.num_cpus."1.16.0"]
 # We need to explicitly depend on num_cpus for tokio, but we're not exposing it
 # to first party code.
-visibility = [ ":*" ]
+visibility = [
+  "//third_party/rust_crates/compat/icu:*", ":*" ]
 
 [gn.package.num-integer."0.1.46"]
 rustflags = ["--cfg=has_i128"]
@@ -802,7 +806,8 @@ configs = ["//third_party/boringssl/rust:osslconf"]
 
 [gn.package.parking_lot."0.12.5"]
 # Funnel usage of parking_lot through fuchsia_sync.
-visibility = ["//src/lib/fuchsia-sync", "//third_party/rust_crates:*"]
+visibility = [
+  "//third_party/rust_crates/compat/icu:*","//src/lib/fuchsia-sync", "//third_party/rust_crates:*"]
 
 [gn.package.parking_lot_core."0.9.12"]
 rustflags = []
@@ -898,6 +903,7 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 # See https://fxbug.dev/104855 if you want to change this: Please talk to Security team.
 # Thank you!
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":ring",
   ":ring-0.17.8",
   ":rustls-v0_21_12.actual",
@@ -936,6 +942,7 @@ configs = [
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
@@ -944,6 +951,7 @@ visibility = [
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/lib/intl/lookup/rust:*",
   "//src/ui/lib/input_pipeline:*",
@@ -952,6 +960,7 @@ visibility = [
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
@@ -966,6 +975,7 @@ target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "i
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
@@ -974,6 +984,7 @@ visibility = [
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/settings/intl:*",
 ]
@@ -981,6 +992,7 @@ visibility = [
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/lib/intl/lookup/rust:*",
   "//src/settings/intl:*",
@@ -989,6 +1001,7 @@ visibility = [
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/ui/lib/input_pipeline:*",
 ]
@@ -1010,6 +1023,7 @@ rustflags = ["--cfg=std_atomic64", "--cfg=std_atomic"]
 [gn.package.scoped-tls."1.0.1"]
 deps = [ "//build/validate:non_production_tag" ]
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":loom-v0_7_2.actual",
   ":loom-v0_7_2.rustdoc",
   ":loom-v0_7_2.aux.deps.deps",
@@ -1068,6 +1082,7 @@ rustflags = []
 # depend on 1.0.109 to enable a soft migration. New projects should be using syn
 # 2.x.
 visibility = [
+  "//third_party/rust_crates/compat/icu:*",
   ":*",
   "//src/connectivity/bluetooth/testing/test-harness-macro:*",
   "//src/connectivity/lib/ip-test-macro:*",
@@ -1213,7 +1228,8 @@ license_files = ["LICENSE-APACHE"]
 
 [gn.package.url."1.7.2"]
 # FIXME(91750): Blocked on updating valico to 3.x.
-visibility = [":*", "//build/sdk/meta:*"]
+visibility = [
+  "//third_party/rust_crates/compat/icu:*",":*", "//build/sdk/meta:*"]
 
 [gn.package.uuid."0.7.2"]
 license_files = ["LICENSE-APACHE"]
