@@ -48,21 +48,26 @@ where
 }
 
 #[derive(Debug)]
+pub(crate) struct TaskStats {
+    pub(crate) has_parent_task: bool,
+    pub(crate) measurements: MeasurementsQueue,
+    pub(crate) exited_cpu: Option<Measurement>,
+    previous_cpu: zx::MonotonicDuration,
+    previous_histogram_timestamp: i64,
+}
+
+#[derive(Debug)]
 pub struct TaskInfo<T: RuntimeStatsSource + Debug> {
     koid: zx_sys::zx_koid_t,
     pub(crate) task: Arc<Mutex<TaskState<T>>>,
     pub(crate) time_source: Arc<dyn TimeSource + Sync + Send>,
-    pub(crate) has_parent_task: bool,
-    pub(crate) measurements: MeasurementsQueue,
-    exited_cpu: Option<Measurement>,
     histogram: Option<UintLinearHistogramProperty>,
-    previous_cpu: zx::MonotonicDuration,
-    previous_histogram_timestamp: i64,
     cpu_cores: i64,
     sample_period: std::time::Duration,
-    children: Vec<Weak<Mutex<TaskInfo<T>>>>,
     _terminated_task: fasync::Task<()>,
     pub(crate) most_recent_measurement_nanos: Arc<Mutex<Option<i64>>>,
+    children: Mutex<Vec<Weak<TaskInfo<T>>>>,
+    pub(crate) stats: Mutex<TaskStats>,
 }
 
 impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
@@ -118,31 +123,36 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
                 };
             }
         });
+
+        let task_stats = TaskStats {
+            has_parent_task: false,
+            measurements: MeasurementsQueue::new(COMPONENT_CPU_MAX_SAMPLES, time_source.clone()),
+            exited_cpu: None,
+            previous_cpu: zx::MonotonicDuration::from_nanos(0),
+            previous_histogram_timestamp: time_source.now(),
+        };
+
         Ok(Self {
             koid,
             task: task_state,
-            has_parent_task: false,
-            measurements: MeasurementsQueue::new(COMPONENT_CPU_MAX_SAMPLES, time_source.clone()),
-            children: vec![],
             cpu_cores,
             sample_period,
             histogram,
-            previous_cpu: zx::MonotonicDuration::from_nanos(0),
-            previous_histogram_timestamp: time_source.now(),
             time_source,
             _terminated_task,
             most_recent_measurement_nanos,
-            exited_cpu: None,
+            children: Mutex::new(vec![]),
+            stats: Mutex::new(task_stats),
         })
     }
 
     /// Take a new measurement. If the handle of this task is invalid, then it keeps track of how
     /// many measurements would have been done. When the maximum amount allowed is hit, then it
     /// drops the oldest measurement.
-    pub fn measure_if_no_parent(&mut self) -> Option<&Measurement> {
+    pub fn measure_if_no_parent(&self) -> Option<Measurement> {
         // Tasks with a parent are measured by the parent as done right below in the internal
         // `measure_subtree`.
-        if self.has_parent_task {
+        if self.stats.lock().has_parent_task {
             return None;
         }
 
@@ -150,8 +160,8 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
     }
 
     /// Adds a weak pointer to a task for which this task is the parent.
-    pub fn add_child(&mut self, task: Weak<Mutex<TaskInfo<T>>>) {
-        self.children.push(task);
+    pub fn add_child(&self, task: Weak<TaskInfo<T>>) {
+        self.children.lock().push(task);
     }
 
     pub fn most_recent_measurement(&self) -> Option<zx::BootInstant> {
@@ -161,99 +171,114 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
     /// Takes the MeasurementsQueue from this task, replacing it with an empty one.
     /// This function is only valid when `self.task == TaskState::Terminated*`.
     /// The task will be considered stale after this function runs.
-    pub fn take_measurements_queue(&mut self) -> Result<MeasurementsQueue, ()> {
-        match &*self.task.lock() {
-            TaskState::TerminatedAndMeasured | TaskState::Terminated(_) => Ok(std::mem::replace(
-                &mut self.measurements,
+    pub fn take_measurements_queue(&self) -> Result<MeasurementsQueue, ()> {
+        let is_terminated = match &*self.task.lock() {
+            TaskState::TerminatedAndMeasured | TaskState::Terminated(_) => true,
+            _ => false,
+        };
+
+        if is_terminated {
+            Ok(std::mem::replace(
+                &mut self.stats.lock().measurements,
                 MeasurementsQueue::new(COMPONENT_CPU_MAX_SAMPLES, self.time_source.clone()),
-            )),
-            _ => Err(()),
+            ))
+        } else {
+            Err(())
         }
     }
 
     /// Take a zero-valued measurement at timestamp `t`.
     ///
     /// Specifically meant for the very first measurement taken.
-    pub fn record_measurement_with_start_time(&mut self, t: zx::BootInstant) {
-        self.record_measurement(Measurement::empty(t));
+    pub fn record_measurement_with_start_time(&self, t: zx::BootInstant) {
+        let mut stats = self.stats.lock();
+        self.record_measurement_internal(&mut stats, Measurement::empty(t));
     }
 
-    fn record_measurement(&mut self, m: Measurement) {
+    fn record_measurement_internal(&self, stats: &mut TaskStats, m: Measurement) {
         let current_cpu = *m.cpu_time();
-        self.add_to_histogram(current_cpu - self.previous_cpu, *m.timestamp());
-        self.previous_cpu = current_cpu;
-        self.measurements.insert(m);
+
+        if let Some(histogram) = &self.histogram {
+            let time_value: i64 = m.timestamp().into_nanos();
+            let elapsed_time = time_value - stats.previous_histogram_timestamp;
+            stats.previous_histogram_timestamp = time_value;
+
+            if elapsed_time >= ((self.sample_period.as_nanos() as i64) * 9 / 10) {
+                let available_core_time = elapsed_time * self.cpu_cores;
+                if available_core_time != 0 {
+                    let cpu_time_delta = current_cpu - stats.previous_cpu;
+                    let cpu_numerator =
+                        (cpu_time_delta.into_nanos() as i64) * 100 + available_core_time - 1;
+                    histogram.insert((cpu_numerator / available_core_time) as u64);
+                }
+            }
+        }
+
+        stats.previous_cpu = current_cpu;
+        stats.measurements.insert(m);
     }
 
-    fn measure_subtree<'a>(&'a mut self) -> Option<&'a Measurement> {
+    fn measure_subtree<'a>(&'a self) -> Option<Measurement> {
         let (task_terminated_can_measure, runtime_info_res) = {
             let mut guard = self.task.lock();
             match &*guard {
                 TaskState::TerminatedAndMeasured => {
-                    self.measurements.insert_post_invalidation();
+                    // Use try_lock for stats to prevent blocking during measurement.
+                    if let Some(mut stats_guard) = self.stats.try_lock() {
+                        stats_guard.measurements.insert_post_invalidation();
+                    }
                     return None;
                 }
                 TaskState::Terminated(task) => {
                     let result = task.get_runtime_info();
                     *guard = TaskState::TerminatedAndMeasured;
-                    let mut terminated_at_nanos_guard = self.most_recent_measurement_nanos.lock();
-                    *terminated_at_nanos_guard = Some(self.time_source.now());
+
+                    if let Some(mut term_guard) = self.most_recent_measurement_nanos.try_lock() {
+                        *term_guard = Some(self.time_source.now());
+                    }
                     (true, result)
                 }
                 TaskState::Alive(task) => (false, task.get_runtime_info()),
             }
         };
+
         if let Ok(runtime_info) = runtime_info_res {
             let mut measurement = Measurement::from_runtime_info(
                 runtime_info,
                 zx::BootInstant::from_nanos(self.time_source.now()),
             );
-            // Subtract all child measurements.
+
+            let children_to_measure = {
+                let mut children_guard = self.children.lock();
+                std::mem::take(&mut *children_guard)
+            };
+
             let mut alive_children = vec![];
-            while let Some(weak_child) = self.children.pop() {
+            for weak_child in children_to_measure {
                 if let Some(child) = weak_child.upgrade() {
-                    let mut child_guard = child.lock();
-                    if let Some(child_measurement) = child_guard.measure_subtree() {
-                        measurement -= child_measurement;
+                    if let Some(child_measurement) = child.measure_subtree() {
+                        measurement -= &child_measurement;
                     }
-                    if child_guard.is_alive() {
+                    if child.is_alive() {
                         alive_children.push(weak_child);
                     }
                 }
             }
-            self.children = alive_children;
-            self.record_measurement(measurement);
 
-            if task_terminated_can_measure {
-                self.exited_cpu = self.measurements.most_recent_measurement().cloned();
-                return None;
+            self.children.lock().extend(alive_children);
+
+            if let Some(mut stats_guard) = self.stats.try_lock() {
+                self.record_measurement_internal(&mut stats_guard, measurement);
+
+                if task_terminated_can_measure {
+                    stats_guard.exited_cpu =
+                        stats_guard.measurements.most_recent_measurement().cloned();
+                    return None;
+                }
+                return stats_guard.measurements.most_recent_measurement().cloned();
             }
-            return self.measurements.most_recent_measurement();
         }
         None
-    }
-
-    // Add a measurement to this task's histogram.
-    fn add_to_histogram(
-        &mut self,
-        cpu_time_delta: zx::MonotonicDuration,
-        timestamp: zx::BootInstant,
-    ) {
-        if let Some(histogram) = &self.histogram {
-            let time_value: i64 = timestamp.into_nanos();
-            let elapsed_time = time_value - self.previous_histogram_timestamp;
-            self.previous_histogram_timestamp = time_value;
-            if elapsed_time < ((self.sample_period.as_nanos() as i64) * 9 / 10) {
-                return;
-            }
-            let available_core_time = elapsed_time * self.cpu_cores;
-            if available_core_time != 0 {
-                // Multiply by 100 to get percent. Add available_core_time-1 to compute ceil().
-                let cpu_numerator =
-                    (cpu_time_delta.into_nanos() as i64) * 100 + available_core_time - 1;
-                histogram.insert((cpu_numerator / available_core_time) as u64);
-            }
-        }
     }
 
     /// A task is alive when:
@@ -262,19 +287,19 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
     pub fn is_alive(&self) -> bool {
         let task_state_terminated_and_measured =
             matches!(*self.task.lock(), TaskState::TerminatedAndMeasured);
-        let task_has_real_measurements = !self.measurements.no_true_measurements();
+        let task_has_real_measurements = !self.stats.lock().measurements.no_true_measurements();
 
         !task_state_terminated_and_measured || task_has_real_measurements
     }
 
-    pub fn exited_cpu(&self) -> Option<&Measurement> {
-        self.exited_cpu.as_ref()
+    pub fn exited_cpu(&self) -> Option<Measurement> {
+        self.stats.lock().exited_cpu.clone()
     }
 
     /// Writes the task measurements under the given inspect node `parent`.
     pub fn record_to_node(&self, parent: &inspect::Node) {
         let node = parent.create_child(self.koid.to_string());
-        self.measurements.record_to_node(&node);
+        self.stats.lock().measurements.record_to_node(&node);
         parent.record(node);
     }
 
@@ -284,7 +309,7 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
 
     #[cfg(test)]
     pub fn total_measurements(&self) -> usize {
-        self.measurements.true_measurement_count()
+        self.stats.lock().measurements.true_measurement_count()
     }
 }
 
@@ -303,7 +328,7 @@ mod tests {
     >(
         ti: &'a mut TaskInfo<T>,
         clock: &Arc<FakeTime>,
-    ) -> Option<&'a Measurement> {
+    ) -> Option<Measurement> {
         let m = ti.measure_if_no_parent();
         clock.add_ticks(CPU_SAMPLE_PERIOD.as_nanos() as i64);
         m
@@ -311,9 +336,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn rotates_measurements_per_task() {
-        // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
-        fuchsia_sync::suppress_lock_cycle_panics();
-
         // Set up test
         let clock = Arc::new(FakeTime::new());
         let mut task: TaskInfo<FakeTask> =
@@ -322,12 +344,12 @@ mod tests {
 
         // Take three measurements.
         take_measurement_then_tick_clock(&mut task, &clock);
-        assert_eq!(task.measurements.true_measurement_count(), 1);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 1);
         take_measurement_then_tick_clock(&mut task, &clock);
-        assert_eq!(task.measurements.true_measurement_count(), 2);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 2);
         take_measurement_then_tick_clock(&mut task, &clock);
         assert!(task.is_alive());
-        assert_eq!(task.measurements.true_measurement_count(), 3);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 3);
 
         // Terminate the task
         task.force_terminate().await;
@@ -335,34 +357,34 @@ mod tests {
         // This will perform the post-termination measurement and bring the state to terminated and
         // measured.
         take_measurement_then_tick_clock(&mut task, &clock);
-        assert_eq!(task.measurements.true_measurement_count(), 4);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 4);
         assert_matches!(*task.task.lock(), TaskState::TerminatedAndMeasured);
 
         for _ in 4..COMPONENT_CPU_MAX_SAMPLES {
             take_measurement_then_tick_clock(&mut task, &clock);
-            assert_eq!(task.measurements.true_measurement_count(), 4);
+            assert_eq!(task.stats.lock().measurements.true_measurement_count(), 4);
         }
 
         take_measurement_then_tick_clock(&mut task, &clock); // 1 dropped, 3 left
         assert!(task.is_alive());
-        assert_eq!(task.measurements.true_measurement_count(), 3);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 3);
         take_measurement_then_tick_clock(&mut task, &clock); // 2 dropped, 2 left
         assert!(task.is_alive());
-        assert_eq!(task.measurements.true_measurement_count(), 2);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 2);
         take_measurement_then_tick_clock(&mut task, &clock); // 3 dropped, 1 left
         assert!(task.is_alive());
-        assert_eq!(task.measurements.true_measurement_count(), 1);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 1);
 
         // Take one last measure.
         take_measurement_then_tick_clock(&mut task, &clock); // 4 dropped, 0 left
         assert!(!task.is_alive());
-        assert_eq!(task.measurements.true_measurement_count(), 0);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 0);
     }
 
     #[fuchsia::test]
     async fn write_inspect() {
         let time = Arc::new(FakeTime::new());
-        let mut task = TaskInfo::try_from(
+        let task = TaskInfo::try_from(
             FakeTask::new(
                 1,
                 vec![
@@ -428,10 +450,13 @@ mod tests {
             assert!(take_measurement_then_tick_clock(&mut task, &clock).is_some());
         }
 
-        assert_eq!(task.measurements.true_measurement_count(), COMPONENT_CPU_MAX_SAMPLES);
+        assert_eq!(
+            task.stats.lock().measurements.true_measurement_count(),
+            COMPONENT_CPU_MAX_SAMPLES
+        );
         task.record_to_node(inspector.root());
         assert_eq!(60, COMPONENT_CPU_MAX_SAMPLES);
-        assert_eq!(task.measurements.true_measurement_count(), 60);
+        assert_eq!(task.stats.lock().measurements.true_measurement_count(), 60);
 
         let hierarchy = inspector.get_diagnostics_hierarchy().await;
         for top_level in &hierarchy.children {
@@ -481,7 +506,10 @@ mod tests {
         clock.add_ticks((CPU_SAMPLE_PERIOD - std::time::Duration::from_secs(1)).as_nanos() as i64);
         task.measure_if_no_parent();
 
-        assert_eq!(task.measurements.true_measurement_count(), COMPONENT_CPU_MAX_SAMPLES);
+        assert_eq!(
+            task.stats.lock().measurements.true_measurement_count(),
+            COMPONENT_CPU_MAX_SAMPLES
+        );
         task.record_to_node(inspector.root());
     }
 
@@ -509,7 +537,7 @@ mod tests {
         )
         .unwrap();
 
-        let child_1 = Arc::new(Mutex::new(
+        let child_1 = Arc::new(
             TaskInfo::try_from(
                 FakeTask::new(
                     2,
@@ -530,9 +558,9 @@ mod tests {
                 clock.clone(),
             )
             .unwrap(),
-        ));
+        );
 
-        let child_2 = Arc::new(Mutex::new(
+        let child_2 = Arc::new(
             TaskInfo::try_from(
                 FakeTask::new(
                     3,
@@ -553,7 +581,7 @@ mod tests {
                 clock.clone(),
             )
             .unwrap(),
-        ));
+        );
 
         task.add_child(Arc::downgrade(&child_1));
         task.add_child(Arc::downgrade(&child_2));
@@ -563,26 +591,25 @@ mod tests {
             assert_eq!(measurement.cpu_time().into_nanos(), 100 - 10 - 5);
             assert_eq!(measurement.queue_time().into_nanos(), 200 - 20 - 2);
         }
-        assert_eq!(child_1.lock().total_measurements(), 1);
-        assert_eq!(child_2.lock().total_measurements(), 1);
+        assert_eq!(child_1.total_measurements(), 1);
+        assert_eq!(child_2.total_measurements(), 1);
 
         // Fake child 2 not being alive anymore. It should be removed.
         {
-            let mut child_2_guard = child_2.lock();
-            child_2_guard.task = Arc::new(Mutex::new(TaskState::TerminatedAndMeasured));
-            child_2_guard.measurements =
+            *child_2.task.lock() = TaskState::TerminatedAndMeasured;
+            child_2.stats.lock().measurements =
                 MeasurementsQueue::new(COMPONENT_CPU_MAX_SAMPLES, clock.clone());
         }
 
-        assert_eq!(task.children.len(), 2);
+        assert_eq!(task.children.lock().len(), 2);
         {
             let measurement = take_measurement_then_tick_clock(&mut task, &clock).unwrap();
             assert_eq!(measurement.cpu_time().into_nanos(), 300 - 30);
             assert_eq!(measurement.queue_time().into_nanos(), 400 - 40);
         }
 
-        assert_eq!(task.children.len(), 1); // after measuring dead children are cleaned.
-        assert_eq!(child_1.lock().total_measurements(), 2);
+        assert_eq!(task.children.lock().len(), 1); // after measuring dead children are cleaned.
+        assert_eq!(child_1.total_measurements(), 2);
     }
 
     type BucketPairs = Vec<(i64, i64)>;
@@ -639,7 +666,7 @@ mod tests {
         let histogram =
             create_cpu_histogram(&inspector.root(), &ExtendedMoniker::parse_str("foo").unwrap());
         //assert_data_tree!(            inspector,            root: {});
-        let mut task = TaskInfo::try_from_internal(
+        let task = TaskInfo::try_from_internal(
             readings,
             Some(histogram),
             Arc::new(clock.clone()),
@@ -699,7 +726,7 @@ mod tests {
         let clock = FakeTime::new();
         let histogram =
             create_cpu_histogram(&inspector.root(), &ExtendedMoniker::parse_str("foo").unwrap());
-        let mut task = TaskInfo::try_from_internal(
+        let task = TaskInfo::try_from_internal(
             readings,
             Some(histogram),
             Arc::new(clock.clone()),
@@ -739,7 +766,7 @@ mod tests {
         let clock = FakeTime::new();
         let histogram =
             create_cpu_histogram(&inspector.root(), &ExtendedMoniker::parse_str("foo").unwrap());
-        let mut task = TaskInfo::try_from_internal(
+        let task = TaskInfo::try_from_internal(
             readings,
             Some(histogram),
             Arc::new(clock.clone()),

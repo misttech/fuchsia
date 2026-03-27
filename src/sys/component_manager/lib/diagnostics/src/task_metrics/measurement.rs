@@ -7,7 +7,7 @@ use core::cmp::Reverse;
 use fuchsia_inspect::{self as inspect, ArrayProperty};
 
 use injectable_time::TimeSource;
-use std::cmp::{max, Eq, Ord, PartialEq, PartialOrd};
+use std::cmp::{Eq, Ord, PartialEq, PartialOrd, max};
 use std::collections::BinaryHeap;
 use std::ops::{AddAssign, SubAssign};
 use std::sync::Arc;
@@ -104,11 +104,12 @@ impl MostRecentMeasurement {
     fn combine(&mut self, incoming: Self) {
         let this = std::mem::replace(self, Self::Init);
         *self = match (this, incoming) {
-            (Self::Init, other)
-            | (Self::PostInvalidationMeasurement, other)
-            | (other, Self::PostInvalidationMeasurement)
-            | (other, Self::Init) => other,
             (Self::Measurement(m1), Self::Measurement(m2)) => Self::Measurement(max(m1, m2)),
+            (Self::Measurement(m), _) | (_, Self::Measurement(m)) => Self::Measurement(m),
+            (Self::PostInvalidationMeasurement, _) | (_, Self::PostInvalidationMeasurement) => {
+                Self::PostInvalidationMeasurement
+            }
+            _ => Self::Init,
         }
     }
 }
@@ -145,17 +146,14 @@ impl AddAssign<Self> for MeasurementsQueue {
         let mut new_heap = BinaryHeap::new();
 
         while let Some(Reverse(mut lhs)) = self.values.pop() {
-            rhs_values = rhs_values
-                .into_iter()
-                .filter_map(|Reverse(rhs)| {
-                    if lhs.can_merge(&rhs) {
-                        lhs += &rhs;
-                        None
-                    } else {
-                        Some(Reverse(rhs))
-                    }
-                })
-                .collect();
+            rhs_values.retain(|Reverse(rhs)| {
+                if lhs.can_merge(rhs) {
+                    lhs += rhs;
+                    false
+                } else {
+                    true
+                }
+            });
 
             new_heap.push(Reverse(lhs));
         }

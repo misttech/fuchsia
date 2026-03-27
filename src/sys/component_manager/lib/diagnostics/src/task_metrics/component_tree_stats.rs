@@ -46,7 +46,7 @@ pub struct ComponentTreeStats<T: RuntimeStatsSource + Debug> {
 
     /// Stores all the tasks we know about. This provides direct access for updating a task's
     /// children.
-    tasks: Mutex<BTreeMap<zx_sys::zx_koid_t, Weak<Mutex<TaskInfo<T>>>>>,
+    tasks: Mutex<BTreeMap<zx_sys::zx_koid_t, Weak<TaskInfo<T>>>>,
 
     /// The root of the tree stats.
     node: inspect::Node,
@@ -186,7 +186,7 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
         let histogram = create_cpu_histogram(&self.histograms_node, &moniker);
         if let Ok(task_info) = TaskInfo::try_from(task, Some(histogram), self.time_source.clone()) {
             let koid = task_info.koid();
-            let arc_task_info = Arc::new(Mutex::new(task_info));
+            let arc_task_info = Arc::new(task_info);
             let mut stats = ComponentStats::new();
             stats.add_task(arc_task_info.clone());
             let stats = Arc::new(Mutex::new(stats));
@@ -269,10 +269,11 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
             .iter()
             .map(|(k, v)| (k.clone(), Arc::downgrade(&v)))
             .collect::<Vec<_>>();
-        let mut locked_exited_measurements = self.exited_measurements.lock();
-        let mut aggregated = Measurement::clone_with_time(&*locked_exited_measurements, start);
+
+        let mut aggregated = Measurement::clone_with_time(&*self.exited_measurements.lock(), start);
         let mut stats_to_remove = vec![];
         let mut koids_to_remove = vec![];
+
         for (moniker, weak_stats) in stats.into_iter() {
             if let Some(stats) = weak_stats.upgrade() {
                 let mut stat_guard = stats.lock();
@@ -281,7 +282,9 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
                 aggregated += &stat_guard.measure_tracked_dead_tasks();
                 let (mut stale_koids, exited_cpu_of_deleted) = stat_guard.clean_stale();
                 aggregated += &exited_cpu_of_deleted;
-                *locked_exited_measurements += &exited_cpu_of_deleted;
+
+                *self.exited_measurements.lock() += &exited_cpu_of_deleted;
+
                 koids_to_remove.append(&mut stale_koids);
                 if !stat_guard.is_alive() {
                     stats_to_remove.push(moniker);
@@ -327,12 +330,10 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
         let to_remove = all_dead_tasks.iter().take(total - (max_dead_tasks / 2));
 
         let mut koids_to_remove = vec![];
-        let mut aggregate_data = self.aggregated_dead_task_data.lock();
-        for (_, (unlocked_task, _)) in to_remove {
-            let mut task = unlocked_task.lock();
+        for (_, (task, _)) in to_remove {
             if let Ok(measurements) = task.take_measurements_queue() {
                 koids_to_remove.push(task.koid());
-                *aggregate_data += measurements;
+                *self.aggregated_dead_task_data.lock() += measurements;
             }
         }
 
@@ -388,12 +389,17 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
     {
         let mut source = maybe_return!(receiver.await.ok());
         let this = maybe_return!(weak_self.upgrade());
-        let mut tree_lock = this.tree.lock();
-        let stats = tree_lock
-            .entry(moniker.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(ComponentStats::new())));
+
+        let stats = {
+            let mut tree_lock = this.tree.lock();
+            tree_lock
+                .entry(moniker.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(ComponentStats::new())))
+                .clone()
+        };
+
         let histogram = create_cpu_histogram(&this.histograms_node, &moniker);
-        let mut task_info = maybe_return!(source.take_component_task().and_then(|task| {
+        let task_info = maybe_return!(source.take_component_task().and_then(|task| {
             TaskInfo::try_from(task, Some(histogram), this.time_source.clone()).ok()
         }));
 
@@ -411,28 +417,29 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
         task_info.record_measurement_with_start_time(start_time);
         task_info.measure_if_no_parent();
 
-        let mut task_guard = this.tasks.lock();
-
-        let task_info = match parent_koid {
-            None => {
-                // If there's no parent task measure this task directly, otherwise
-                // we'll measure on the parent.
-                Arc::new(Mutex::new(task_info))
-            }
-            Some(parent_koid) => {
-                task_info.has_parent_task = true;
-                let task_info = Arc::new(Mutex::new(task_info));
-                if let Some(parent) = task_guard.get(&parent_koid).and_then(|p| p.upgrade()) {
-                    let mut parent_guard = parent.lock();
-                    parent_guard.add_child(Arc::downgrade(&task_info));
+        let task_info = {
+            let mut task_guard = this.tasks.lock();
+            let task_info = match parent_koid {
+                None => {
+                    // If there's no parent task measure this task directly, otherwise
+                    // we'll measure on the parent.
+                    Arc::new(task_info)
                 }
-                task_info
-            }
+                Some(parent_koid) => {
+                    task_info.stats.lock().has_parent_task = true;
+                    let task_info = Arc::new(task_info);
+                    if let Some(parent) = task_guard.get(&parent_koid).and_then(|p| p.upgrade()) {
+                        parent.add_child(Arc::downgrade(&task_info));
+                    }
+                    task_info
+                }
+            };
+            task_guard.insert(koid, Arc::downgrade(&task_info));
+            task_info
         };
-        task_guard.insert(koid, Arc::downgrade(&task_info));
+
         stats.lock().add_task(task_info);
-        drop(task_guard);
-        drop(tree_lock);
+
         this.prune_dead_tasks(MAX_DEAD_TASKS);
     }
 }
@@ -608,7 +615,7 @@ mod tests {
             for task in
                 stats.tree.lock().get(&moniker.into()).unwrap().lock().tasks_mut().iter_mut()
             {
-                task.lock().force_terminate().await;
+                task.force_terminate().await;
                 // the timestamp for termination is used as a key when pruning,
                 // so all of the tasks cannot be removed at exactly the same time
                 clock.add_ticks(1);
@@ -730,7 +737,7 @@ mod tests {
 
         // Invalidate the handle, to simulate that the component stopped.
         for task in stats.tree.lock().get(&moniker).unwrap().lock().tasks_mut().iter_mut() {
-            task.lock().force_terminate().await;
+            task.force_terminate().await;
             clock.add_ticks(1);
         }
 
@@ -802,7 +809,7 @@ mod tests {
             for task in
                 stats.tree.lock().get(&moniker.into()).unwrap().lock().tasks_mut().iter_mut()
             {
-                task.lock().force_terminate().await;
+                task.force_terminate().await;
                 clock.add_ticks(1);
             }
         }
@@ -867,7 +874,7 @@ mod tests {
                 .tasks_mut()
                 .iter_mut()
             {
-                task.lock().force_terminate().await;
+                task.force_terminate().await;
                 // the timestamp for termination is used as a key when pruning,
                 // so all of the tasks cannot be removed at exactly the same time
                 clock.add_ticks(1);
@@ -1267,7 +1274,7 @@ mod tests {
         let extended_moniker = child_moniker.into();
         // Mark as terminated, to simulate that the component completely stopped.
         for task in stats.tree.lock().get(&extended_moniker).unwrap().lock().tasks_mut() {
-            task.lock().force_terminate().await;
+            task.force_terminate().await;
             clock.add_ticks(1);
         }
 
