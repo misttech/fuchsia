@@ -33,6 +33,17 @@ func indent(lines []string, level int) []string {
 	return indented
 }
 
+// unwrapParenExpr removes any surrounding parentheses from an expression.
+func unwrapParenExpr(expr syntax.Expr) syntax.Expr {
+	for {
+		paren, ok := expr.(*syntax.ParenExpr)
+		if !ok {
+			return expr
+		}
+		expr = paren.X
+	}
+}
+
 // StmtToGN converts a Bazel statement [0] to GN.
 //
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#statements
@@ -81,6 +92,8 @@ func exprToGN(expr syntax.Expr, transformers []transformer) ([]string, error) {
 		return listExprToGN(v, transformers)
 	case *syntax.DictExpr:
 		return dictExprToGN(v, transformers)
+	case *syntax.ParenExpr:
+		return exprToGN(v.X, transformers)
 	default:
 		return nil, fmt.Errorf("expression of type %T is not supported when converting to GN, node details: %#v", expr, expr)
 	}
@@ -374,18 +387,24 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		transformers = append(transformers, bazelFilePathsToGN)
 	}
 
+	rhsY := unwrapParenExpr(expr.Y)
+
 	// This is a simple `attr = select(...)`, convert in-place.
-	if isSelectCall(expr.Y) {
-		return selectToGN(attrName, op, expr.Y.(*syntax.CallExpr), transformers)
+	if isSelectCall(rhsY) {
+		return selectToGN(attrName, op, rhsY.(*syntax.CallExpr), transformers)
+	}
+
+	if condExpr, ok := rhsY.(*syntax.CondExpr); ok {
+		return condExprToGN(attrName, op, condExpr, transformers)
 	}
 
 	// It is not a simple `select` call on the RHS, and `select`s are found in
 	// subtree, so assume this is list concatenation with `select`s in them.
 	//
-	// NOTE: Currently `select`s are only supported in list concatenation when
+	// NOTE: Currently `select`s and `if`s are only supported in list concatenation when
 	// they are used in binary expressions. Other usages will fail this call.
-	if hasSelectCall(expr.Y) {
-		lc, err := listConcatWithSelectToGN(attrName, expr.Y, transformers)
+	if hasBranching(rhsY) {
+		lc, err := listConcatWithSelectToGN(attrName, rhsY, transformers)
 		if err != nil {
 			return nil, err
 		}

@@ -45,6 +45,165 @@ rust_library(
 }`,
 		},
 		{
+			name: "simple cond expr",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "simple_cond",
+	srcs = [ "fuchsia.rs" ] if is_fuchsia else [ "default.rs" ],
+)`,
+			wantGN: `rustc_library("simple_cond") {
+	if (is_fuchsia) {
+		sources = [
+			"fuchsia.rs",
+		]
+	} else {
+		sources = [
+			"default.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "cond expr with empty else",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "empty_else_cond",
+	srcs = [ "foo.rs" ] + ([ "fuchsia.rs" ] if is_fuchsia else []),
+)`,
+			wantGN: `rustc_library("empty_else_cond") {
+	sources = []
+	sources += [
+		"foo.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+			"fuchsia.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "cond expr mixed with select in list concatenation",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "mixed_cond_select",
+	srcs = [
+		"foo.rs",
+	] + select({
+		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
+		"//conditions:default": [ "linux.rs" ],
+	}) + [
+		"bar.rs",
+	] if some_condition else [ "baz.rs" ],
+)`,
+			wantGN: `rustc_library("mixed_cond_select") {
+	if (some_condition) {
+		sources = []
+		sources += [
+			"foo.rs",
+		]
+		if (is_fuchsia) {
+			sources += [
+				"fuchsia.rs",
+			]
+		} else {
+			sources += [
+				"linux.rs",
+			]
+		}
+		sources += [
+			"bar.rs",
+		]
+	} else {
+		sources = [
+			"baz.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "cond expr surrounded by parens",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "cond_with_parens",
+	srcs = [
+		"foo.rs",
+	] + select({
+		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
+		"//conditions:default": [ "linux.rs" ],
+	}) + ([
+		"bar.rs",
+	] if some_condition else [ "baz.rs" ]),
+)`,
+			wantGN: `rustc_library("cond_with_parens") {
+	sources = []
+	sources += [
+		"foo.rs",
+	]
+	if (is_fuchsia) {
+		sources += [
+			"fuchsia.rs",
+		]
+	} else {
+		sources += [
+			"linux.rs",
+		]
+	}
+	if (some_condition) {
+		sources += [
+			"bar.rs",
+		]
+	} else {
+		sources += [
+			"baz.rs",
+		]
+	}
+}`,
+		},
+		{
+			name: "two selects one condition",
+			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+	name = "two_selects_one_condition",
+	srcs = select({
+		"@platforms//os:fuchsia": [ "fuchsia.rs" ],
+		"//conditions:default": [ "linux.rs" ],
+	}) if some_condition else select({
+		"@platforms//os:fuchsia": [ "other_fuchsia.rs" ],
+		"//conditions:default": [ "other_linux.rs" ],
+	}),
+)`,
+			wantGN: `rustc_library("two_selects_one_condition") {
+	if (some_condition) {
+		sources = []
+		if (is_fuchsia) {
+			sources += [
+				"fuchsia.rs",
+			]
+		} else {
+			sources += [
+				"linux.rs",
+			]
+		}
+	} else {
+		sources = []
+		if (is_fuchsia) {
+			sources += [
+				"other_fuchsia.rs",
+			]
+		} else {
+			sources += [
+				"other_linux.rs",
+			]
+		}
+	}
+}`},
+		{
 			name: "list concatenation",
 			bazel: `load("@rules_rust//rust:defs.bzl", "rust_library")
 

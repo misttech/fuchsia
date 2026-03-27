@@ -21,20 +21,25 @@ var bazelSelectConditionToGN = map[string]string{
 	"@platforms//os:linux":   "is_linux",
 }
 
-// Returns true iff select call is found in the subtree of `expr`.
-func hasSelectCall(expr syntax.Expr) bool {
+// Returns true iff select call or conditional expression are found in the subtree of `expr`.
+func hasBranching(expr syntax.Expr) bool {
+	expr = unwrapParenExpr(expr)
 	if isSelectCall(expr) {
+		return true
+	}
+	if _, ok := expr.(*syntax.CondExpr); ok {
 		return true
 	}
 	binaryExpr, ok := expr.(*syntax.BinaryExpr)
 	if ok {
-		return hasSelectCall(binaryExpr.X) || hasSelectCall(binaryExpr.Y)
+		return hasBranching(binaryExpr.X) || hasBranching(binaryExpr.Y)
 	}
 	return false
 }
 
 // Returns true iff the input expression is a select call.
 func isSelectCall(expr syntax.Expr) bool {
+	expr = unwrapParenExpr(expr)
 	fn, ok := expr.(*syntax.CallExpr)
 	if !ok {
 		return false
@@ -64,9 +69,13 @@ func listConcatWithSelectToGN(attrName string, expr syntax.Expr, transformers []
 		}
 	}
 
+	expr = unwrapParenExpr(expr)
+
 	switch v := expr.(type) {
 	case *syntax.CallExpr:
 		return selectToGN(attrName, "+=", v, transformers)
+	case *syntax.CondExpr:
+		return condExprToGN(attrName, "+=", v, transformers)
 	case *syntax.ListExpr:
 		l, err := listExprToGN(v, transformers)
 		if err != nil {
@@ -195,5 +204,79 @@ func selectToGN(attrName string, op string, expr *syntax.CallExpr, transformers 
 		)
 		ret = append(ret, "}")
 	}
+	return ret, nil
+}
+
+// condExprToGN converts conditional expressions (syntax.CondExpr) to GN fragments.
+func condExprToGN(attrName string, op string, expr *syntax.CondExpr, transformers []transformer) ([]string, error) {
+	gnConditionLines, err := exprToGN(expr.Cond, nil)
+	if err != nil {
+		return nil, fmt.Errorf("converting condition in cond expr to GN: %v", err)
+	}
+	if len(gnConditionLines) != 1 {
+		return nil, fmt.Errorf("expected single line for condition, got %d lines", len(gnConditionLines))
+	}
+	gnCondition := gnConditionLines[0]
+
+	var trueInGN []string
+	if hasBranching(expr.True) {
+		lines, err := listConcatWithSelectToGN(attrName, expr.True, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting true branch in conditional to GN: %v", err)
+		}
+		if op == "=" {
+			trueInGN = append([]string{fmt.Sprintf("%s = []", attrName)}, lines...)
+		} else {
+			trueInGN = lines
+		}
+	} else {
+		lines, err := exprToGN(expr.True, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting true branch in conditional to GN: %v", err)
+		}
+		trueInGN = append([]string{fmt.Sprintf("%s %s %s", attrName, op, lines[0])}, lines[1:]...)
+		if attrName == "sdk_headers_for_internal_use" {
+			trueInGN = handle_sdk_headers_for_internal_use(trueInGN, lines, 0)
+		}
+	}
+
+	var falseInGN []string
+	if hasBranching(expr.False) {
+		lines, err := listConcatWithSelectToGN(attrName, expr.False, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting false branch in conditional to GN: %v", err)
+		}
+		if op == "=" {
+			falseInGN = append([]string{fmt.Sprintf("%s = []", attrName)}, lines...)
+		} else {
+			falseInGN = lines
+		}
+	} else {
+		lines, err := exprToGN(expr.False, transformers)
+		if err != nil {
+			return nil, fmt.Errorf("converting false branch in conditional to GN: %v", err)
+		}
+		if op == "+=" && len(lines) == 2 && lines[0] == "[" && lines[1] == "]" {
+			falseInGN = nil
+		} else {
+			falseInGN = append([]string{fmt.Sprintf("%s %s %s", attrName, op, lines[0])}, lines[1:]...)
+			if attrName == "sdk_headers_for_internal_use" {
+				falseInGN = handle_sdk_headers_for_internal_use(falseInGN, lines, 0)
+			}
+		}
+	}
+
+	var ret []string
+	ret = append(ret, fmt.Sprintf("if (%s) {", gnCondition))
+	ret = append(ret, indent(trueInGN, 1)...)
+
+	if falseInGN == nil {
+		ret = append(ret, "}")
+	} else {
+		ret = append(ret, "} else {")
+		ret = append(ret, indent(falseInGN, 1)...)
+		ret = append(ret, "}")
+	}
+
 	return ret, nil
 }
