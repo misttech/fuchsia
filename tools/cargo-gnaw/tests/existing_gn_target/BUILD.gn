@@ -15,6 +15,10 @@ group("example_lib") {
   public_deps = [ ":example_lib-v1_0_0" ]
 }
 
+group("example_lib-1.0.0") {
+  public_deps = [ ":example_lib-v1_0_0" ]
+}
+
 group("example_lib-v1_0_0") {
   public_deps = [ "//some/path/to/an/existing/target" ]
 }

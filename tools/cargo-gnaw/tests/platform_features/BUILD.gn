@@ -15,8 +15,18 @@ group("a") {
   public_deps = [ ":a-v1_0_0" ]
 }
 
+group("a-1.0.0") {
+  public_deps = [ ":a-v1_0_0" ]
+}
+
 if (!(current_os == "fuchsia")) {
   group("b") {
+    public_deps = [ ":b-v1_0_0" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("b-1.0.0") {
     public_deps = [ ":b-v1_0_0" ]
   }
 }

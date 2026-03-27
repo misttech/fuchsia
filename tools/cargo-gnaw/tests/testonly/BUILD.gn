@@ -16,6 +16,11 @@ group("example_lib") {
   testonly = true
 }
 
+group("example_lib-1.0.0") {
+  public_deps = [ ":example_lib-v1_0_0" ]
+  testonly = true
+}
+
 rustc_library("example_lib-v1_0_0") {
   crate_name = "example_lib"
   source_root = "//testonly/example_lib/src/lib.rs"

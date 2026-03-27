@@ -19,6 +19,12 @@ group("example_lib") {
   visibility = example_visibility_var
 }
 
+group("example_lib-1.0.0") {
+  public_deps = [ ":example_lib-v1_0_0" ]
+
+  visibility = example_visibility_var
+}
+
 rustc_library("example_lib-v1_0_0") {
   crate_name = "example_lib"
   source_root = "//visibility/example_lib/src/lib.rs"

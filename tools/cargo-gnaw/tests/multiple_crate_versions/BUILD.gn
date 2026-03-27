@@ -15,7 +15,15 @@ group("sub-crate-0_1") {
   public_deps = [ ":sub-crate-v0_1_0" ]
 }
 
+group("sub-crate-0.1.0") {
+  public_deps = [ ":sub-crate-v0_1_0" ]
+}
+
 group("sub-crate-0_2") {
+  public_deps = [ ":sub-crate-v0_2_0" ]
+}
+
+group("sub-crate-0.2.0") {
   public_deps = [ ":sub-crate-v0_2_0" ]
 }
 

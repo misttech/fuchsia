@@ -15,7 +15,15 @@ group("aes") {
   public_deps = [ ":aes-v0_8_4" ]
 }
 
+group("aes-0.8.4") {
+  public_deps = [ ":aes-v0_8_4" ]
+}
+
 group("aes-gcm") {
+  public_deps = [ ":aes-gcm-v0_10_2" ]
+}
+
+group("aes-gcm-0.10.2") {
   public_deps = [ ":aes-gcm-v0_10_2" ]
 }
 
@@ -23,7 +31,15 @@ group("aes-gcm-siv") {
   public_deps = [ ":aes-gcm-siv-v0_11_1" ]
 }
 
+group("aes-gcm-siv-0.11.1") {
+  public_deps = [ ":aes-gcm-siv-v0_11_1" ]
+}
+
 group("ahash") {
+  public_deps = [ ":ahash-v0_8_12" ]
+}
+
+group("ahash-0.8.12") {
   public_deps = [ ":ahash-v0_8_12" ]
 }
 
@@ -31,7 +47,15 @@ group("ansi_term") {
   public_deps = [ ":ansi_term-v0_12_1" ]
 }
 
+group("ansi_term-0.12.1") {
+  public_deps = [ ":ansi_term-v0_12_1" ]
+}
+
 group("anyhow") {
+  public_deps = [ ":anyhow-v1_0_102" ]
+}
+
+group("anyhow-1.0.102") {
   public_deps = [ ":anyhow-v1_0_102" ]
 }
 
@@ -39,7 +63,15 @@ group("arbitrary") {
   public_deps = [ ":arbitrary-v1_4_2" ]
 }
 
+group("arbitrary-1.4.2") {
+  public_deps = [ ":arbitrary-v1_4_2" ]
+}
+
 group("arc-swap") {
+  public_deps = [ ":arc-swap-v1_7_1" ]
+}
+
+group("arc-swap-1.7.1") {
   public_deps = [ ":arc-swap-v1_7_1" ]
 }
 
@@ -47,7 +79,15 @@ group("argh") {
   public_deps = [ ":argh-v0_1_19" ]
 }
 
+group("argh-0.1.19") {
+  public_deps = [ ":argh-v0_1_19" ]
+}
+
 group("argh_complete") {
+  public_deps = [ ":argh_complete-v0_1_19" ]
+}
+
+group("argh_complete-0.1.19") {
   public_deps = [ ":argh_complete-v0_1_19" ]
 }
 
@@ -55,11 +95,23 @@ group("arrayref") {
   public_deps = [ ":arrayref-v0_3_9" ]
 }
 
+group("arrayref-0.3.9") {
+  public_deps = [ ":arrayref-v0_3_9" ]
+}
+
 group("arrayvec") {
   public_deps = [ ":arrayvec-v0_7_6" ]
 }
 
+group("arrayvec-0.7.6") {
+  public_deps = [ ":arrayvec-v0_7_6" ]
+}
+
 group("ash") {
+  public_deps = [ ":ash-v0_37_0+1_3_209" ]
+}
+
+group("ash-0.37.0+1.3.209") {
   public_deps = [ ":ash-v0_37_0+1_3_209" ]
 }
 
@@ -69,11 +121,25 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("askama-0.15.5") {
+    public_deps = [ ":askama-v0_15_5" ]
+  }
+}
+
 group("assert_matches") {
   public_deps = [ ":assert_matches-v1_5_0" ]
 }
 
+group("assert_matches-1.5.0") {
+  public_deps = [ ":assert_matches-v1_5_0" ]
+}
+
 group("async-channel") {
+  public_deps = [ ":async-channel-v1_8_0" ]
+}
+
+group("async-channel-1.8.0") {
   public_deps = [ ":async-channel-v1_8_0" ]
 }
 
@@ -83,7 +149,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("async-fs-2.2.0") {
+    public_deps = [ ":async-fs-v2_2_0" ]
+  }
+}
+
 group("async-lock") {
+  public_deps = [ ":async-lock-v3_4_2" ]
+}
+
+group("async-lock-3.4.2") {
   public_deps = [ ":async-lock-v3_4_2" ]
 }
 
@@ -91,7 +167,15 @@ group("async-ringbuf") {
   public_deps = [ ":async-ringbuf-v0_3_4" ]
 }
 
+group("async-ringbuf-0.3.4") {
+  public_deps = [ ":async-ringbuf-v0_3_4" ]
+}
+
 group("async-stream") {
+  public_deps = [ ":async-stream-v0_3_6" ]
+}
+
+group("async-stream-0.3.6") {
   public_deps = [ ":async-stream-v0_3_6" ]
 }
 
@@ -99,7 +183,15 @@ group("async-trait") {
   public_deps = [ ":async-trait-v0_1_88($host_toolchain)" ]
 }
 
+group("async-trait-0.1.88") {
+  public_deps = [ ":async-trait-v0_1_88" ]
+}
+
 group("base64") {
+  public_deps = [ ":base64-v0_22_1" ]
+}
+
+group("base64-0.22.1") {
   public_deps = [ ":base64-v0_22_1" ]
 }
 
@@ -111,15 +203,33 @@ group("bincode") {
   visibility = bincode_visibility
 }
 
+group("bincode-1.3.3") {
+  public_deps = [ ":bincode-v1_3_3" ]
+
+  visibility = bincode_visibility
+}
+
 group("bit-set") {
   public_deps = [ ":bit-set-v0_9_1" ]
+}
+
+group("bit-set-0.8.0") {
+  public_deps = [ ":bit-set-v0_8_0" ]
 }
 
 group("bit-vec") {
   public_deps = [ ":bit-vec-v0_9_1" ]
 }
 
+group("bit-vec-0.8.0") {
+  public_deps = [ ":bit-vec-v0_8_0" ]
+}
+
 group("bitfield") {
+  public_deps = [ ":bitfield-v0_14_0" ]
+}
+
+group("bitfield-0.14.0") {
   public_deps = [ ":bitfield-v0_14_0" ]
 }
 
@@ -127,7 +237,15 @@ group("bitflags") {
   public_deps = [ ":bitflags-v2_11_0" ]
 }
 
+group("bitflags-2.9.1") {
+  public_deps = [ ":bitflags-v2_9_1" ]
+}
+
 group("blocking") {
+  public_deps = [ ":blocking-v1_3_0" ]
+}
+
+group("blocking-1.3.0") {
   public_deps = [ ":blocking-v1_3_0" ]
 }
 
@@ -135,7 +253,15 @@ group("bstr") {
   public_deps = [ ":bstr-v1_12_1" ]
 }
 
+group("bstr-1.12.1") {
+  public_deps = [ ":bstr-v1_12_1" ]
+}
+
 group("bt-bap") {
+  public_deps = [ ":bt-bap-v0_0_1" ]
+}
+
+group("bt-bap-0.0.1") {
   public_deps = [ ":bt-bap-v0_0_1" ]
 }
 
@@ -143,7 +269,15 @@ group("bt-bass") {
   public_deps = [ ":bt-bass-v0_0_1" ]
 }
 
+group("bt-bass-0.0.1") {
+  public_deps = [ ":bt-bass-v0_0_1" ]
+}
+
 group("bt-broadcast-assistant") {
+  public_deps = [ ":bt-broadcast-assistant-v0_0_1" ]
+}
+
+group("bt-broadcast-assistant-0.0.1") {
   public_deps = [ ":bt-broadcast-assistant-v0_0_1" ]
 }
 
@@ -151,7 +285,15 @@ group("bt-common") {
   public_deps = [ ":bt-common-v0_0_1" ]
 }
 
+group("bt-common-0.0.1") {
+  public_deps = [ ":bt-common-v0_0_1" ]
+}
+
 group("bt-gatt") {
+  public_deps = [ ":bt-gatt-v0_0_1" ]
+}
+
+group("bt-gatt-0.0.1") {
   public_deps = [ ":bt-gatt-v0_0_1" ]
 }
 
@@ -159,7 +301,15 @@ group("bt-pacs") {
   public_deps = [ ":bt-pacs-v0_0_1" ]
 }
 
+group("bt-pacs-0.0.1") {
+  public_deps = [ ":bt-pacs-v0_0_1" ]
+}
+
 group("bt-vcs") {
+  public_deps = [ ":bt-vcs-v0_0_1" ]
+}
+
+group("bt-vcs-0.0.1") {
   public_deps = [ ":bt-vcs-v0_0_1" ]
 }
 
@@ -167,7 +317,15 @@ group("bumpalo") {
   public_deps = [ ":bumpalo-v3_19_1" ]
 }
 
+group("bumpalo-3.19.1") {
+  public_deps = [ ":bumpalo-v3_19_1" ]
+}
+
 group("byteorder") {
+  public_deps = [ ":byteorder-v1_5_0" ]
+}
+
+group("byteorder-1.5.0") {
   public_deps = [ ":byteorder-v1_5_0" ]
 }
 
@@ -175,7 +333,15 @@ group("bytes") {
   public_deps = [ ":bytes-v1_11_1" ]
 }
 
+group("bytes-1.11.1") {
+  public_deps = [ ":bytes-v1_11_1" ]
+}
+
 group("camino") {
+  public_deps = [ ":camino-v1_2_2" ]
+}
+
+group("camino-1.2.2") {
   public_deps = [ ":camino-v1_2_2" ]
 }
 
@@ -185,7 +351,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("cargo_metadata-0.23.1") {
+    public_deps = [ ":cargo_metadata-v0_23_1" ]
+  }
+}
+
 group("cbc") {
+  public_deps = [ ":cbc-v0_1_2" ]
+}
+
+group("cbc-0.1.2") {
   public_deps = [ ":cbc-v0_1_2" ]
 }
 
@@ -193,7 +369,15 @@ group("cfg-if") {
   public_deps = [ ":cfg-if-v1_0_4" ]
 }
 
+group("cfg-if-1.0.4") {
+  public_deps = [ ":cfg-if-v1_0_4" ]
+}
+
 group("chacha20") {
+  public_deps = [ ":chacha20-v0_9_1" ]
+}
+
+group("chacha20-0.9.1") {
   public_deps = [ ":chacha20-v0_9_1" ]
 }
 
@@ -201,7 +385,15 @@ group("chrono") {
   public_deps = [ ":chrono-v0_4_44" ]
 }
 
+group("chrono-0.4.44") {
+  public_deps = [ ":chrono-v0_4_44" ]
+}
+
 group("chrono-english") {
+  public_deps = [ ":chrono-english-v0_1_8" ]
+}
+
+group("chrono-english-0.1.8") {
   public_deps = [ ":chrono-english-v0_1_8" ]
 }
 
@@ -209,7 +401,15 @@ group("ciborium") {
   public_deps = [ ":ciborium-v0_2_2" ]
 }
 
+group("ciborium-0.2.2") {
+  public_deps = [ ":ciborium-v0_2_2" ]
+}
+
 group("cipher") {
+  public_deps = [ ":cipher-v0_4_4" ]
+}
+
+group("cipher-0.4.4") {
   public_deps = [ ":cipher-v0_4_4" ]
 }
 
@@ -217,7 +417,15 @@ group("clap") {
   public_deps = [ ":clap-v4_6_0" ]
 }
 
+group("clap-4.6.0") {
+  public_deps = [ ":clap-v4_6_0" ]
+}
+
 group("cmac") {
+  public_deps = [ ":cmac-v0_7_2" ]
+}
+
+group("cmac-0.7.2") {
   public_deps = [ ":cmac-v0_7_2" ]
 }
 
@@ -227,7 +435,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("coset-0.3.8") {
+    public_deps = [ ":coset-v0_3_8" ]
+  }
+}
+
 group("cpio") {
+  public_deps = [ ":cpio-v0_4_1" ]
+}
+
+group("cpio-0.4.1") {
   public_deps = [ ":cpio-v0_4_1" ]
 }
 
@@ -235,7 +453,15 @@ group("crc") {
   public_deps = [ ":crc-v3_4_0" ]
 }
 
+group("crc-3.4.0") {
+  public_deps = [ ":crc-v3_4_0" ]
+}
+
 group("criterion") {
+  public_deps = [ ":criterion-v0_2_11" ]
+}
+
+group("criterion-0.2.11") {
   public_deps = [ ":criterion-v0_2_11" ]
 }
 
@@ -243,11 +469,23 @@ group("crossbeam") {
   public_deps = [ ":crossbeam-v0_8_4" ]
 }
 
+group("crossbeam-0.8.4") {
+  public_deps = [ ":crossbeam-v0_8_4" ]
+}
+
 group("crossbeam-channel") {
   public_deps = [ ":crossbeam-channel-v0_5_15" ]
 }
 
+group("crossbeam-channel-0.5.15") {
+  public_deps = [ ":crossbeam-channel-v0_5_15" ]
+}
+
 group("crossbeam-utils") {
+  public_deps = [ ":crossbeam-utils-v0_8_21" ]
+}
+
+group("crossbeam-utils-0.8.21") {
   public_deps = [ ":crossbeam-utils-v0_8_21" ]
 }
 
@@ -257,7 +495,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("crossterm-0.19.0") {
+    public_deps = [ ":crossterm-v0_19_0" ]
+  }
+}
+
 group("crypto-common") {
+  public_deps = [ ":crypto-common-v0_1_6" ]
+}
+
+group("crypto-common-0.1.6") {
   public_deps = [ ":crypto-common-v0_1_6" ]
 }
 
@@ -265,11 +513,23 @@ group("csv") {
   public_deps = [ ":csv-v1_4_0" ]
 }
 
+group("csv-1.4.0") {
+  public_deps = [ ":csv-v1_4_0" ]
+}
+
 group("darling") {
   public_deps = [ ":darling-v0_23_0" ]
 }
 
+group("darling-0.23.0") {
+  public_deps = [ ":darling-v0_23_0" ]
+}
+
 group("data-encoding") {
+  public_deps = [ ":data-encoding-v2_10_0" ]
+}
+
+group("data-encoding-2.10.0") {
   public_deps = [ ":data-encoding-v2_10_0" ]
 }
 
@@ -279,11 +539,25 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("der-0.7.10") {
+    public_deps = [ ":der-v0_7_10" ]
+  }
+}
+
 group("derivative") {
   public_deps = [ ":derivative-v2_2_0($host_toolchain)" ]
 }
 
+group("derivative-2.2.0") {
+  public_deps = [ ":derivative-v2_2_0" ]
+}
+
 group("derive_builder") {
+  public_deps = [ ":derive_builder-v0_20_2" ]
+}
+
+group("derive_builder-0.20.2") {
   public_deps = [ ":derive_builder-v0_20_2" ]
 }
 
@@ -291,7 +565,15 @@ group("difference") {
   public_deps = [ ":difference-v2_0_0" ]
 }
 
+group("difference-2.0.0") {
+  public_deps = [ ":difference-v2_0_0" ]
+}
+
 group("digest") {
+  public_deps = [ ":digest-v0_10_7" ]
+}
+
+group("digest-0.10.7") {
   public_deps = [ ":digest-v0_10_7" ]
 }
 
@@ -299,7 +581,15 @@ group("downcast-rs") {
   public_deps = [ ":downcast-rs-v2_0_2" ]
 }
 
+group("downcast-rs-2.0.2") {
+  public_deps = [ ":downcast-rs-v2_0_2" ]
+}
+
 group("dyn-clone") {
+  public_deps = [ ":dyn-clone-v1_0_20" ]
+}
+
+group("dyn-clone-1.0.20") {
   public_deps = [ ":dyn-clone-v1_0_20" ]
 }
 
@@ -307,7 +597,15 @@ group("ecb") {
   public_deps = [ ":ecb-v0_1_2" ]
 }
 
+group("ecb-0.1.2") {
+  public_deps = [ ":ecb-v0_1_2" ]
+}
+
 group("ecdsa") {
+  public_deps = [ ":ecdsa-v0_14_8" ]
+}
+
+group("ecdsa-0.14.8") {
   public_deps = [ ":ecdsa-v0_14_8" ]
 }
 
@@ -315,12 +613,24 @@ group("either") {
   public_deps = [ ":either-v1_15_0" ]
 }
 
+group("either-1.15.0") {
+  public_deps = [ ":either-v1_15_0" ]
+}
+
 group("elliptic-curve") {
+  public_deps = [ ":elliptic-curve-v0_12_3" ]
+}
+
+group("elliptic-curve-0.12.3") {
   public_deps = [ ":elliptic-curve-v0_12_3" ]
 }
 
 group("enumn") {
   public_deps = [ ":enumn-v0_1_14($host_toolchain)" ]
+}
+
+group("enumn-0.1.14") {
+  public_deps = [ ":enumn-v0_1_14" ]
 }
 
 if (current_os == "fuchsia") {
@@ -329,7 +639,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("euclid-0.22.14") {
+    public_deps = [ ":euclid-v0_22_14" ]
+  }
+}
+
 group("eui48") {
+  public_deps = [ ":eui48-v1_1_0" ]
+}
+
+group("eui48-1.1.0") {
   public_deps = [ ":eui48-v1_1_0" ]
 }
 
@@ -337,7 +657,15 @@ group("event-listener") {
   public_deps = [ ":event-listener-v5_4_1" ]
 }
 
+group("event-listener-5.4.1") {
+  public_deps = [ ":event-listener-v5_4_1" ]
+}
+
 group("fatfs") {
+  public_deps = [ ":fatfs-v0_3_6" ]
+}
+
+group("fatfs-0.3.6") {
   public_deps = [ ":fatfs-v0_3_6" ]
 }
 
@@ -347,7 +675,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("flagset-0.4.7") {
+    public_deps = [ ":flagset-v0_4_7" ]
+  }
+}
+
 group("flate2") {
+  public_deps = [ ":flate2-v1_1_9" ]
+}
+
+group("flate2-1.1.9") {
   public_deps = [ ":flate2-v1_1_9" ]
 }
 
@@ -355,7 +693,15 @@ group("flyweights") {
   public_deps = [ ":flyweights-v0_1_5" ]
 }
 
+group("flyweights-0.1.5") {
+  public_deps = [ ":flyweights-v0_1_5" ]
+}
+
 group("foreign-types") {
+  public_deps = [ ":foreign-types-v0_3_2" ]
+}
+
+group("foreign-types-0.3.2") {
   public_deps = [ ":foreign-types-v0_3_2" ]
 }
 
@@ -363,7 +709,15 @@ group("foreign-types-shared") {
   public_deps = [ ":foreign-types-shared-v0_1_1" ]
 }
 
+group("foreign-types-shared-0.1.1") {
+  public_deps = [ ":foreign-types-shared-v0_1_1" ]
+}
+
 group("fragile") {
+  public_deps = [ ":fragile-v2_0_1" ]
+}
+
+group("fragile-2.0.1") {
   public_deps = [ ":fragile-v2_0_1" ]
 }
 
@@ -373,7 +727,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("fuse3-0.6.1") {
+    public_deps = [ ":fuse3-v0_6_1" ]
+  }
+}
+
 group("futures") {
+  public_deps = [ ":futures-v0_3_31" ]
+}
+
+group("futures-0.3.31") {
   public_deps = [ ":futures-v0_3_31" ]
 }
 
@@ -381,7 +745,15 @@ group("futures-executor") {
   public_deps = [ ":futures-executor-v0_3_31" ]
 }
 
+group("futures-executor-0.3.31") {
+  public_deps = [ ":futures-executor-v0_3_31" ]
+}
+
 group("futures-io") {
+  public_deps = [ ":futures-io-v0_3_31" ]
+}
+
+group("futures-io-0.3.31") {
   public_deps = [ ":futures-io-v0_3_31" ]
 }
 
@@ -389,11 +761,23 @@ group("futures-lite") {
   public_deps = [ ":futures-lite-v2_6_1" ]
 }
 
+group("futures-lite-2.6.1") {
+  public_deps = [ ":futures-lite-v2_6_1" ]
+}
+
 group("futures-test") {
   public_deps = [ ":futures-test-v0_3_31" ]
 }
 
+group("futures-test-0.3.31") {
+  public_deps = [ ":futures-test-v0_3_31" ]
+}
+
 group("futures-util") {
+  public_deps = [ ":futures-util-v0_3_31" ]
+}
+
+group("futures-util-0.3.31") {
   public_deps = [ ":futures-util-v0_3_31" ]
 }
 
@@ -403,7 +787,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("getopts-0.2.24") {
+    public_deps = [ ":getopts-v0_2_24" ]
+  }
+}
+
 group("getrandom") {
+  public_deps = [ ":getrandom-v0_3_3" ]
+}
+
+group("getrandom-0.3.3") {
   public_deps = [ ":getrandom-v0_3_3" ]
 }
 
@@ -411,7 +805,15 @@ group("glob") {
   public_deps = [ ":glob-v0_3_3" ]
 }
 
+group("glob-0.3.3") {
+  public_deps = [ ":glob-v0_3_3" ]
+}
+
 group("gpt") {
+  public_deps = [ ":gpt-v3_0_0" ]
+}
+
+group("gpt-3.0.0") {
   public_deps = [ ":gpt-v3_0_0" ]
 }
 
@@ -419,7 +821,15 @@ group("half") {
   public_deps = [ ":half-v2_7_1" ]
 }
 
+group("half-2.7.1") {
+  public_deps = [ ":half-v2_7_1" ]
+}
+
 group("handlebars") {
+  public_deps = [ ":handlebars-v4_3_5" ]
+}
+
+group("handlebars-4.3.5") {
   public_deps = [ ":handlebars-v4_3_5" ]
 }
 
@@ -427,7 +837,15 @@ group("hashbrown") {
   public_deps = [ ":hashbrown-v0_16_1" ]
 }
 
+group("hashbrown-0.16.1") {
+  public_deps = [ ":hashbrown-v0_16_1" ]
+}
+
 group("hashlink") {
+  public_deps = [ ":hashlink-v0_11_0" ]
+}
+
+group("hashlink-0.11.0") {
   public_deps = [ ":hashlink-v0_11_0" ]
 }
 
@@ -435,7 +853,15 @@ group("heck-0_3") {
   public_deps = [ ":heck-v0_3_1" ]
 }
 
+group("heck-0.3.1") {
+  public_deps = [ ":heck-v0_3_1" ]
+}
+
 group("heck") {
+  public_deps = [ ":heck-v0_5_0" ]
+}
+
+group("heck-0.5.0") {
   public_deps = [ ":heck-v0_5_0" ]
 }
 
@@ -443,11 +869,23 @@ group("hex") {
   public_deps = [ ":hex-v0_4_3" ]
 }
 
+group("hex-0.4.3") {
+  public_deps = [ ":hex-v0_4_3" ]
+}
+
 group("hkdf") {
   public_deps = [ ":hkdf-v0_12_4" ]
 }
 
+group("hkdf-0.12.4") {
+  public_deps = [ ":hkdf-v0_12_4" ]
+}
+
 group("hmac") {
+  public_deps = [ ":hmac-v0_12_1" ]
+}
+
+group("hmac-0.12.1") {
   public_deps = [ ":hmac-v0_12_1" ]
 }
 
@@ -457,7 +895,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("home-0.5.12") {
+    public_deps = [ ":home-v0_5_12" ]
+  }
+}
+
 group("hound") {
+  public_deps = [ ":hound-v3_5_1" ]
+}
+
+group("hound-3.5.1") {
   public_deps = [ ":hound-v3_5_1" ]
 }
 
@@ -465,7 +913,15 @@ group("http") {
   public_deps = [ ":http-v0_2_4" ]
 }
 
+group("http-0.2.4") {
+  public_deps = [ ":http-v0_2_4" ]
+}
+
 group("humansize") {
+  public_deps = [ ":humansize-v2_1_3" ]
+}
+
+group("humansize-2.1.3") {
   public_deps = [ ":humansize-v2_1_3" ]
 }
 
@@ -473,8 +929,18 @@ group("hyper") {
   public_deps = [ ":hyper-v0_14_19" ]
 }
 
+group("hyper-0.14.19") {
+  public_deps = [ ":hyper-v0_14_19" ]
+}
+
 if (!(current_os == "fuchsia")) {
   group("hyper-rustls") {
+    public_deps = [ ":hyper-rustls-v0_24_2" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("hyper-rustls-0.24.2") {
     public_deps = [ ":hyper-rustls-v0_24_2" ]
   }
 }
@@ -485,7 +951,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("hyper-rustls-0.24.2") {
+    public_deps = [ ":hyper-rustls-v0_24_2" ]
+  }
+}
+
 group("indexmap") {
+  public_deps = [ ":indexmap-v2_13_0" ]
+}
+
+group("indexmap-2.13.0") {
   public_deps = [ ":indexmap-v2_13_0" ]
 }
 
@@ -495,7 +971,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("indoc-2.0.7") {
+    public_deps = [ ":indoc-v2_0_7" ]
+  }
+}
+
 group("iota") {
+  public_deps = [ ":iota-v0_2_3" ]
+}
+
+group("iota-0.2.3") {
   public_deps = [ ":iota-v0_2_3" ]
 }
 
@@ -503,7 +989,15 @@ group("itertools") {
   public_deps = [ ":itertools-v0_14_0" ]
 }
 
+group("itertools-0.14.0") {
+  public_deps = [ ":itertools-v0_14_0" ]
+}
+
 group("itoa") {
+  public_deps = [ ":itoa-v1_0_17" ]
+}
+
+group("itoa-1.0.17") {
   public_deps = [ ":itoa-v1_0_17" ]
 }
 
@@ -511,7 +1005,15 @@ group("json-spanned-value") {
   public_deps = [ ":json-spanned-value-v0_2_2" ]
 }
 
+group("json-spanned-value-0.2.2") {
+  public_deps = [ ":json-spanned-value-v0_2_2" ]
+}
+
 group("json5format") {
+  public_deps = [ ":json5format-v0_2_6" ]
+}
+
+group("json5format-0.2.6") {
   public_deps = [ ":json5format-v0_2_6" ]
 }
 
@@ -519,7 +1021,15 @@ group("libc") {
   public_deps = [ ":libc-v0_2_183" ]
 }
 
+group("libc-0.2.183") {
+  public_deps = [ ":libc-v0_2_183" ]
+}
+
 group("libm") {
+  public_deps = [ ":libm-v0_2_15" ]
+}
+
+group("libm-0.2.15") {
   public_deps = [ ":libm-v0_2_15" ]
 }
 
@@ -527,11 +1037,23 @@ group("linked-hash-map") {
   public_deps = [ ":linked-hash-map-v0_5_6" ]
 }
 
+group("linked-hash-map-0.5.6") {
+  public_deps = [ ":linked-hash-map-v0_5_6" ]
+}
+
 group("lock_api") {
   public_deps = [ ":lock_api-v0_4_14" ]
 }
 
+group("lock_api-0.4.14") {
+  public_deps = [ ":lock_api-v0_4_14" ]
+}
+
 group("log") {
+  public_deps = [ ":log-v0_4_27" ]
+}
+
+group("log-0.4.27") {
   public_deps = [ ":log-v0_4_27" ]
 }
 
@@ -542,7 +1064,18 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("loom-0.7.2") {
+    public_deps = [ ":loom-v0_7_2" ]
+    testonly = true
+  }
+}
+
 group("lru-cache") {
+  public_deps = [ ":lru-cache-v0_1_2" ]
+}
+
+group("lru-cache-0.1.2") {
   public_deps = [ ":lru-cache-v0_1_2" ]
 }
 
@@ -550,11 +1083,23 @@ group("macro_rules_attribute") {
   public_deps = [ ":macro_rules_attribute-v0_2_2" ]
 }
 
+group("macro_rules_attribute-0.2.2") {
+  public_deps = [ ":macro_rules_attribute-v0_2_2" ]
+}
+
 group("maplit") {
   public_deps = [ ":maplit-v1_0_2" ]
 }
 
+group("maplit-1.0.2") {
+  public_deps = [ ":maplit-v1_0_2" ]
+}
+
 group("maybe-owned") {
+  public_deps = [ ":maybe-owned-v0_3_4" ]
+}
+
+group("maybe-owned-0.3.4") {
   public_deps = [ ":maybe-owned-v0_3_4" ]
 }
 
@@ -564,11 +1109,25 @@ group("md-5") {
   visibility = md5_visibility
 }
 
+group("md-5-0.10.6") {
+  public_deps = [ ":md-5-v0_10_6" ]
+
+  visibility = md5_visibility
+}
+
 group("memchr") {
   public_deps = [ ":memchr-v2_8_0" ]
 }
 
+group("memchr-2.8.0") {
+  public_deps = [ ":memchr-v2_8_0" ]
+}
+
 group("memoffset") {
+  public_deps = [ ":memoffset-v0_9_1" ]
+}
+
+group("memoffset-0.9.1") {
   public_deps = [ ":memoffset-v0_9_1" ]
 }
 
@@ -578,7 +1137,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("mio-0.8.11") {
+    public_deps = [ ":mio-v0_8_11" ]
+  }
+}
+
 group("mock-omaha-server") {
+  public_deps = [ ":mock-omaha-server-v0_3_8" ]
+}
+
+group("mock-omaha-server-0.3.8") {
   public_deps = [ ":mock-omaha-server-v0_3_8" ]
 }
 
@@ -586,7 +1155,15 @@ group("mockall") {
   public_deps = [ ":mockall-v0_14_0" ]
 }
 
+group("mockall-0.14.0") {
+  public_deps = [ ":mockall-v0_14_0" ]
+}
+
 group("munge") {
+  public_deps = [ ":munge-v0_4_4" ]
+}
+
+group("munge-0.4.4") {
   public_deps = [ ":munge-v0_4_4" ]
 }
 
@@ -598,7 +1175,17 @@ group("nix") {
   visibility = nix_visibility
 }
 
+group("nix-0.29.0") {
+  public_deps = [ ":nix-v0_29_0" ]
+
+  visibility = nix_visibility
+}
+
 group("nom") {
+  public_deps = [ ":nom-v8_0_0" ]
+}
+
+group("nom-8.0.0") {
   public_deps = [ ":nom-v8_0_0" ]
 }
 
@@ -606,7 +1193,15 @@ group("nom-language") {
   public_deps = [ ":nom-language-v0_1_0" ]
 }
 
+group("nom-language-0.1.0") {
+  public_deps = [ ":nom-language-v0_1_0" ]
+}
+
 group("nom_locate") {
+  public_deps = [ ":nom_locate-v5_0_0" ]
+}
+
+group("nom_locate-5.0.0") {
   public_deps = [ ":nom_locate-v5_0_0" ]
 }
 
@@ -616,7 +1211,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("notify-5.2.0") {
+    public_deps = [ ":notify-v5_2_0" ]
+  }
+}
+
 group("nu-ansi-term") {
+  public_deps = [ ":nu-ansi-term-v0_46_0" ]
+}
+
+group("nu-ansi-term-0.46.0") {
   public_deps = [ ":nu-ansi-term-v0_46_0" ]
 }
 
@@ -624,11 +1229,23 @@ group("num") {
   public_deps = [ ":num-v0_4_3" ]
 }
 
+group("num-0.4.3") {
+  public_deps = [ ":num-v0_4_3" ]
+}
+
 group("num-derive") {
   public_deps = [ ":num-derive-v0_4_2($host_toolchain)" ]
 }
 
+group("num-derive-0.4.2") {
+  public_deps = [ ":num-derive-v0_4_2" ]
+}
+
 group("num-traits") {
+  public_deps = [ ":num-traits-v0_2_19" ]
+}
+
+group("num-traits-0.2.19") {
   public_deps = [ ":num-traits-v0_2_19" ]
 }
 
@@ -638,11 +1255,27 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("num_cpus-1.16.0") {
+    public_deps = [ ":num_cpus-v1_16_0" ]
+  }
+}
+
 group("omaha_client") {
   public_deps = [ ":omaha_client-v0_3_8" ]
 }
 
+group("omaha_client-0.3.8") {
+  public_deps = [ ":omaha_client-v0_3_8" ]
+}
+
 group("once_cell") {
+  public_deps = [ ":once_cell-v1_21_3" ]
+
+  visibility = once_cell_visibility
+}
+
+group("once_cell-1.21.3") {
   public_deps = [ ":once_cell-v1_21_3" ]
 
   visibility = once_cell_visibility
@@ -655,7 +1288,21 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("openat-0.1.21") {
+    public_deps = [ ":openat-v0_1_21" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("openssl") {
+    public_deps = [ ":openssl-v0_10_71" ]
+
+    visibility = openssl_visibility
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("openssl-0.10.71") {
     public_deps = [ ":openssl-v0_10_71" ]
 
     visibility = openssl_visibility
@@ -666,7 +1313,15 @@ group("overload") {
   public_deps = [ ":overload-v0_1_1" ]
 }
 
+group("overload-0.1.1") {
+  public_deps = [ ":overload-v0_1_1" ]
+}
+
 group("p256") {
+  public_deps = [ ":p256-v0_11_1" ]
+}
+
+group("p256-0.11.1") {
   public_deps = [ ":p256-v0_11_1" ]
 }
 
@@ -677,7 +1332,19 @@ if (!(current_os == "fuchsia")) {
 }
 
 if (!(current_os == "fuchsia")) {
+  group("parking_lot-0.12.5") {
+    public_deps = [ ":parking_lot-v0_12_5" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
   group("parking_lot_core") {
+    public_deps = [ ":parking_lot_core-v0_9_12" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("parking_lot_core-0.9.12") {
     public_deps = [ ":parking_lot_core-v0_9_12" ]
   }
 }
@@ -686,7 +1353,15 @@ group("paste") {
   public_deps = [ ":paste-v1_0_15($host_toolchain)" ]
 }
 
+group("paste-1.0.15") {
+  public_deps = [ ":paste-v1_0_15" ]
+}
+
 group("pathdiff") {
+  public_deps = [ ":pathdiff-v0_2_3" ]
+}
+
+group("pathdiff-0.2.3") {
   public_deps = [ ":pathdiff-v0_2_3" ]
 }
 
@@ -694,7 +1369,15 @@ group("pem") {
   public_deps = [ ":pem-v0_8_3" ]
 }
 
+group("pem-0.8.3") {
+  public_deps = [ ":pem-v0_8_3" ]
+}
+
 group("percent-encoding") {
+  public_deps = [ ":percent-encoding-v2_3_1" ]
+}
+
+group("percent-encoding-2.3.1") {
   public_deps = [ ":percent-encoding-v2_3_1" ]
 }
 
@@ -702,8 +1385,16 @@ group("pest") {
   public_deps = [ ":pest-v2_8_6" ]
 }
 
+group("pest-2.8.6") {
+  public_deps = [ ":pest-v2_8_6" ]
+}
+
 group("pest_derive") {
   public_deps = [ ":pest_derive-v2_8_6($host_toolchain)" ]
+}
+
+group("pest_derive-2.8.6") {
+  public_deps = [ ":pest_derive-v2_8_6" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -712,7 +1403,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("petgraph-0.6.2") {
+    public_deps = [ ":petgraph-v0_6_2" ]
+  }
+}
+
 group("phf") {
+  public_deps = [ ":phf-v0_13_1" ]
+}
+
+group("phf-0.13.1") {
   public_deps = [ ":phf-v0_13_1" ]
 }
 
@@ -720,11 +1421,23 @@ group("pin-project") {
   public_deps = [ ":pin-project-v1_1_10" ]
 }
 
+group("pin-project-1.1.10") {
+  public_deps = [ ":pin-project-v1_1_10" ]
+}
+
 group("pin-project-lite") {
   public_deps = [ ":pin-project-lite-v0_2_16" ]
 }
 
+group("pin-project-lite-0.2.16") {
+  public_deps = [ ":pin-project-lite-v0_2_16" ]
+}
+
 group("pin-weak") {
+  public_deps = [ ":pin-weak-v1_1_0" ]
+}
+
+group("pin-weak-1.1.0") {
   public_deps = [ ":pin-weak-v1_1_0" ]
 }
 
@@ -734,7 +1447,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("pkcs1-0.7.5") {
+    public_deps = [ ":pkcs1-v0_7_5" ]
+  }
+}
+
 group("pkcs8") {
+  public_deps = [ ":pkcs8-v0_10_2" ]
+}
+
+group("pkcs8-0.10.2") {
   public_deps = [ ":pkcs8-v0_10_2" ]
 }
 
@@ -742,7 +1465,15 @@ group("png") {
   public_deps = [ ":png-v0_17_16" ]
 }
 
+group("png-0.17.16") {
+  public_deps = [ ":png-v0_17_16" ]
+}
+
 group("pretty") {
+  public_deps = [ ":pretty-v0_5_2" ]
+}
+
+group("pretty-0.5.2") {
   public_deps = [ ":pretty-v0_5_2" ]
 }
 
@@ -750,7 +1481,15 @@ group("pretty_assertions") {
   public_deps = [ ":pretty_assertions-v1_2_1" ]
 }
 
+group("pretty_assertions-1.2.1") {
+  public_deps = [ ":pretty_assertions-v1_2_1" ]
+}
+
 group("prettytable-rs") {
+  public_deps = [ ":prettytable-rs-v0_8_0" ]
+}
+
+group("prettytable-rs-0.8.0") {
   public_deps = [ ":prettytable-rs-v0_8_0" ]
 }
 
@@ -760,15 +1499,33 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("proc-macro2-1.0.106") {
+    public_deps = [ ":proc-macro2-v1_0_106" ]
+  }
+}
+
 group("proptest") {
   public_deps = [ ":proptest-v1_11_0" ]
+}
+
+group("proptest-1.7.0") {
+  public_deps = [ ":proptest-v1_7_0" ]
 }
 
 group("proptest-derive") {
   public_deps = [ ":proptest-derive-v0_4_0($host_toolchain)" ]
 }
 
+group("proptest-derive-0.4.0") {
+  public_deps = [ ":proptest-derive-v0_4_0" ]
+}
+
 group("prost") {
+  public_deps = [ ":prost-v0_11_0" ]
+}
+
+group("prost-0.11.0") {
   public_deps = [ ":prost-v0_11_0" ]
 }
 
@@ -776,7 +1533,15 @@ group("prost-build") {
   public_deps = [ ":prost-build-v0_11_1" ]
 }
 
+group("prost-build-0.11.1") {
+  public_deps = [ ":prost-build-v0_11_1" ]
+}
+
 group("prost-types") {
+  public_deps = [ ":prost-types-v0_11_1" ]
+}
+
+group("prost-types-0.11.1") {
   public_deps = [ ":prost-types-v0_11_1" ]
 }
 
@@ -787,7 +1552,19 @@ if (!(current_os == "fuchsia")) {
 }
 
 if (!(current_os == "fuchsia")) {
+  group("pulldown-cmark-0.9.3") {
+    public_deps = [ ":pulldown-cmark-v0_9_3" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
   group("quote") {
+    public_deps = [ ":quote-v1_0_45" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("quote-1.0.45") {
     public_deps = [ ":quote-v1_0_45" ]
   }
 }
@@ -796,7 +1573,15 @@ group("rand") {
   public_deps = [ ":rand-v0_9_2" ]
 }
 
+group("rand-0.9.2") {
+  public_deps = [ ":rand-v0_9_2" ]
+}
+
 group("rand_core") {
+  public_deps = [ ":rand_core-v0_9_3" ]
+}
+
+group("rand_core-0.9.3") {
   public_deps = [ ":rand_core-v0_9_3" ]
 }
 
@@ -804,7 +1589,15 @@ group("rand_xorshift") {
   public_deps = [ ":rand_xorshift-v0_4_0" ]
 }
 
+group("rand_xorshift-0.4.0") {
+  public_deps = [ ":rand_xorshift-v0_4_0" ]
+}
+
 group("range-alloc") {
+  public_deps = [ ":range-alloc-v0_1_4" ]
+}
+
+group("range-alloc-0.1.4") {
   public_deps = [ ":range-alloc-v0_1_4" ]
 }
 
@@ -812,11 +1605,23 @@ group("rapidhash") {
   public_deps = [ ":rapidhash-v1_4_0" ]
 }
 
+group("rapidhash-1.4.0") {
+  public_deps = [ ":rapidhash-v1_4_0" ]
+}
+
 group("rayon") {
   public_deps = [ ":rayon-v1_10_0" ]
 }
 
+group("rayon-1.10.0") {
+  public_deps = [ ":rayon-v1_10_0" ]
+}
+
 group("ref-cast") {
+  public_deps = [ ":ref-cast-v1_0_25" ]
+}
+
+group("ref-cast-1.0.25") {
   public_deps = [ ":ref-cast-v1_0_25" ]
 }
 
@@ -826,7 +1631,15 @@ group("regex") {
   visibility = regex_visibility
 }
 
+group("regex-1.7.3") {
+  public_deps = [ ":regex-v1_7_3" ]
+}
+
 group("regex-lite") {
+  public_deps = [ ":regex-lite-v0_1_9" ]
+}
+
+group("regex-lite-0.1.9") {
   public_deps = [ ":regex-lite-v0_1_9" ]
 }
 
@@ -834,7 +1647,15 @@ group("regex-syntax") {
   public_deps = [ ":regex-syntax-v0_8_10" ]
 }
 
+group("regex-syntax-0.8.9") {
+  public_deps = [ ":regex-syntax-v0_8_9" ]
+}
+
 group("ring") {
+  public_deps = [ ":ring-v0_17_8" ]
+}
+
+group("ring-0.17.8") {
   public_deps = [ ":ring-v0_17_8" ]
 }
 
@@ -842,7 +1663,15 @@ group("roaring") {
   public_deps = [ ":roaring-v0_11_3" ]
 }
 
+group("roaring-0.11.3") {
+  public_deps = [ ":roaring-v0_11_3" ]
+}
+
 group("rsa") {
+  public_deps = [ ":rsa-v0_9_8" ]
+}
+
+group("rsa-0.9.8") {
   public_deps = [ ":rsa-v0_9_8" ]
 }
 
@@ -855,8 +1684,20 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("rust_icu_common-5.4.0") {
+    public_deps = [ ":rust_icu_common-v5_4_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("rust_icu_sys") {
     public_deps = [ ":rust_icu_sys-v5_6_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("rust_icu_sys-5.4.0") {
+    public_deps = [ ":rust_icu_sys-v5_4_0" ]
   }
 }
 
@@ -867,8 +1708,20 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("rust_icu_ucal-5.4.0") {
+    public_deps = [ ":rust_icu_ucal-v5_4_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("rust_icu_uchar") {
     public_deps = [ ":rust_icu_uchar-v5_6_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("rust_icu_uchar-5.4.0") {
+    public_deps = [ ":rust_icu_uchar-v5_4_0" ]
   }
 }
 
@@ -879,8 +1732,20 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("rust_icu_udat-5.4.0") {
+    public_deps = [ ":rust_icu_udat-v5_4_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("rust_icu_udata") {
     public_deps = [ ":rust_icu_udata-v5_6_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("rust_icu_udata-5.4.0") {
+    public_deps = [ ":rust_icu_udata-v5_4_0" ]
   }
 }
 
@@ -891,8 +1756,20 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("rust_icu_uenum-5.4.0") {
+    public_deps = [ ":rust_icu_uenum-v5_4_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("rust_icu_uloc") {
     public_deps = [ ":rust_icu_uloc-v5_6_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("rust_icu_uloc-5.4.0") {
+    public_deps = [ ":rust_icu_uloc-v5_4_0" ]
   }
 }
 
@@ -903,12 +1780,28 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("rust_icu_unorm2-5.4.0") {
+    public_deps = [ ":rust_icu_unorm2-v5_4_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("rust_icu_ustring") {
     public_deps = [ ":rust_icu_ustring-v5_6_0" ]
   }
 }
 
+if (current_os == "fuchsia") {
+  group("rust_icu_ustring-5.4.0") {
+    public_deps = [ ":rust_icu_ustring-v5_4_0" ]
+  }
+}
+
 group("rustc-hash") {
+  public_deps = [ ":rustc-hash-v1_0_1" ]
+}
+
+group("rustc-hash-1.0.1") {
   public_deps = [ ":rustc-hash-v1_0_1" ]
 }
 
@@ -918,7 +1811,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("rustfix-0.9.3") {
+    public_deps = [ ":rustfix-v0_9_3" ]
+  }
+}
+
 group("rustls") {
+  public_deps = [ ":rustls-v0_21_12" ]
+}
+
+group("rustls-0.21.12") {
   public_deps = [ ":rustls-v0_21_12" ]
 }
 
@@ -928,7 +1831,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("rustls-native-certs-0.6.3") {
+    public_deps = [ ":rustls-native-certs-v0_6_3" ]
+  }
+}
+
 group("rustls-pemfile") {
+  public_deps = [ ":rustls-pemfile-v1_0_4" ]
+}
+
+group("rustls-pemfile-1.0.4") {
   public_deps = [ ":rustls-pemfile-v1_0_4" ]
 }
 
@@ -936,7 +1849,15 @@ group("rustls-webpki") {
   public_deps = [ ":rustls-webpki-v0_101_7" ]
 }
 
+group("rustls-webpki-0.101.7") {
+  public_deps = [ ":rustls-webpki-v0_101_7" ]
+}
+
 group("rustyline") {
+  public_deps = [ ":rustyline-v2_1_0" ]
+}
+
+group("rustyline-2.1.0") {
   public_deps = [ ":rustyline-v2_1_0" ]
 }
 
@@ -944,7 +1865,15 @@ group("rutabaga_gfx") {
   public_deps = [ ":rutabaga_gfx-v0_1_3" ]
 }
 
+group("rutabaga_gfx-0.1.3") {
+  public_deps = [ ":rutabaga_gfx-v0_1_3" ]
+}
+
 group("schemars") {
+  public_deps = [ ":schemars-v0_8_22" ]
+}
+
+group("schemars-0.8.22") {
   public_deps = [ ":schemars-v0_8_22" ]
 }
 
@@ -952,8 +1881,18 @@ group("scopeguard") {
   public_deps = [ ":scopeguard-v1_2_0" ]
 }
 
+group("scopeguard-1.2.0") {
+  public_deps = [ ":scopeguard-v1_2_0" ]
+}
+
 if (current_os == "fuchsia") {
   group("sec1") {
+    public_deps = [ ":sec1-v0_7_3" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("sec1-0.7.3") {
     public_deps = [ ":sec1-v0_7_3" ]
   }
 }
@@ -964,7 +1903,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("semver-1.0.26") {
+    public_deps = [ ":semver-v1_0_26" ]
+  }
+}
+
 group("serde") {
+  public_deps = [ ":serde-v1_0_228" ]
+}
+
+group("serde-1.0.228") {
   public_deps = [ ":serde-v1_0_228" ]
 }
 
@@ -972,7 +1921,15 @@ group("serde_derive") {
   public_deps = [ ":serde_derive-v1_0_228($host_toolchain)" ]
 }
 
+group("serde_derive-1.0.228") {
+  public_deps = [ ":serde_derive-v1_0_228" ]
+}
+
 group("serde_json") {
+  public_deps = [ ":serde_json-v1_0_145" ]
+}
+
+group("serde_json-1.0.145") {
   public_deps = [ ":serde_json-v1_0_145" ]
 }
 
@@ -980,12 +1937,26 @@ group("serde_json5") {
   public_deps = [ ":serde_json5-v0_2_1" ]
 }
 
+group("serde_json5-0.2.1") {
+  public_deps = [ ":serde_json5-v0_2_1" ]
+}
+
 group("serde_repr") {
   public_deps = [ ":serde_repr-v0_1_7($host_toolchain)" ]
 }
 
+group("serde_repr-0.1.7") {
+  public_deps = [ ":serde_repr-v0_1_7" ]
+}
+
 if (!(current_os == "fuchsia")) {
   group("serde_yaml") {
+    public_deps = [ ":serde_yaml-v0_9_14" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("serde_yaml-0.9.14") {
     public_deps = [ ":serde_yaml-v0_9_14" ]
   }
 }
@@ -997,13 +1968,30 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("serial_test-0.8.0") {
+    public_deps = [ ":serial_test-v0_8_0" ]
+    testonly = true
+  }
+}
+
 group("sha1") {
   public_deps = [ ":sha1-v0_10_6" ]
 
   visibility = sha1_visibility
 }
 
+group("sha1-0.10.6") {
+  public_deps = [ ":sha1-v0_10_6" ]
+
+  visibility = sha1_visibility
+}
+
 group("sha2") {
+  public_deps = [ ":sha2-v0_10_9" ]
+}
+
+group("sha2-0.10.9") {
   public_deps = [ ":sha2-v0_10_9" ]
 }
 
@@ -1014,7 +2002,19 @@ if (!(current_os == "fuchsia")) {
 }
 
 if (!(current_os == "fuchsia")) {
+  group("shared_child-1.1.1") {
+    public_deps = [ ":shared_child-v1_1_1" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
   group("signal-hook") {
+    public_deps = [ ":signal-hook-v0_4_3" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("signal-hook-0.4.3") {
     public_deps = [ ":signal-hook-v0_4_3" ]
   }
 }
@@ -1023,7 +2023,15 @@ group("simplelog") {
   public_deps = [ ":simplelog-v0_10_2" ]
 }
 
+group("simplelog-0.10.2") {
+  public_deps = [ ":simplelog-v0_10_2" ]
+}
+
 group("siphasher") {
+  public_deps = [ ":siphasher-v1_0_1" ]
+}
+
+group("siphasher-1.0.1") {
   public_deps = [ ":siphasher-v1_0_1" ]
 }
 
@@ -1031,11 +2039,23 @@ group("slab") {
   public_deps = [ ":slab-v0_4_11" ]
 }
 
+group("slab-0.4.11") {
+  public_deps = [ ":slab-v0_4_11" ]
+}
+
 group("smallvec") {
   public_deps = [ ":smallvec-v1_15_1" ]
 }
 
+group("smallvec-1.15.1") {
+  public_deps = [ ":smallvec-v1_15_1" ]
+}
+
 group("socket2") {
+  public_deps = [ ":socket2-v0_5_9" ]
+}
+
+group("socket2-0.5.9") {
   public_deps = [ ":socket2-v0_5_9" ]
 }
 
@@ -1045,7 +2065,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("spki-0.7.3") {
+    public_deps = [ ":spki-v0_7_3" ]
+  }
+}
+
 group("splines") {
+  public_deps = [ ":splines-v5_0_0" ]
+}
+
+group("splines-5.0.0") {
   public_deps = [ ":splines-v5_0_0" ]
 }
 
@@ -1053,7 +2083,15 @@ group("static_assertions") {
   public_deps = [ ":static_assertions-v1_1_0" ]
 }
 
+group("static_assertions-1.1.0") {
+  public_deps = [ ":static_assertions-v1_1_0" ]
+}
+
 group("strsim") {
+  public_deps = [ ":strsim-v0_11_1" ]
+}
+
+group("strsim-0.11.1") {
   public_deps = [ ":strsim-v0_11_1" ]
 }
 
@@ -1061,12 +2099,26 @@ group("strum") {
   public_deps = [ ":strum-v0_28_0" ]
 }
 
+group("strum-0.27.2") {
+  public_deps = [ ":strum-v0_27_2" ]
+}
+
 group("strum_macros") {
   public_deps = [ ":strum_macros-v0_28_0($host_toolchain)" ]
 }
 
+group("strum_macros-0.27.2") {
+  public_deps = [ ":strum_macros-v0_27_2" ]
+}
+
 if (!(current_os == "fuchsia")) {
   group("syn") {
+    public_deps = [ ":syn-v2_0_117" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("syn-2.0.117") {
     public_deps = [ ":syn-v2_0_117" ]
   }
 }
@@ -1078,12 +2130,28 @@ if (!(current_os == "fuchsia")) {
 }
 
 if (!(current_os == "fuchsia")) {
+  group("synstructure-0.13.2") {
+    public_deps = [ ":synstructure-v0_13_2" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
   group("tar") {
     public_deps = [ ":tar-v0_4_25" ]
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("tar-0.4.25") {
+    public_deps = [ ":tar-v0_4_25" ]
+  }
+}
+
 group("tempfile") {
+  public_deps = [ ":tempfile-v3_2_0" ]
+}
+
+group("tempfile-3.2.0") {
   public_deps = [ ":tempfile-v3_2_0" ]
 }
 
@@ -1093,7 +2161,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("term_grid-0.2.0") {
+    public_deps = [ ":term_grid-v0_2_0" ]
+  }
+}
+
 group("termion") {
+  public_deps = [ ":termion-v1_5_3" ]
+}
+
+group("termion-1.5.3") {
   public_deps = [ ":termion-v1_5_3" ]
 }
 
@@ -1103,7 +2181,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("termios-0.3.3") {
+    public_deps = [ ":termios-v0_3_3" ]
+  }
+}
+
 group("termtree") {
+  public_deps = [ ":termtree-v0_5_1" ]
+}
+
+group("termtree-0.5.1") {
   public_deps = [ ":termtree-v0_5_1" ]
 }
 
@@ -1111,11 +2199,23 @@ group("test-case") {
   public_deps = [ ":test-case-v3_3_1" ]
 }
 
+group("test-case-3.3.1") {
+  public_deps = [ ":test-case-v3_3_1" ]
+}
+
 group("textwrap") {
   public_deps = [ ":textwrap-v0_16_2" ]
 }
 
+group("textwrap-0.16.2") {
+  public_deps = [ ":textwrap-v0_16_2" ]
+}
+
 group("thiserror") {
+  public_deps = [ ":thiserror-v2_0_12" ]
+}
+
+group("thiserror-2.0.12") {
   public_deps = [ ":thiserror-v2_0_12" ]
 }
 
@@ -1130,7 +2230,21 @@ if (!(current_os == "fuchsia")) {
 }
 
 if (!(current_os == "fuchsia")) {
+  group("tinyjson-2.5.1") {
+    public_deps = [ ":tinyjson-v2_5_1" ]
+
+    visibility = private_visibility
+  }
+}
+
+if (!(current_os == "fuchsia")) {
   group("tokio") {
+    public_deps = [ ":tokio-v1_38_1" ]
+  }
+}
+
+if (!(current_os == "fuchsia")) {
+  group("tokio-1.38.1") {
     public_deps = [ ":tokio-v1_38_1" ]
   }
 }
@@ -1141,7 +2255,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("tokio-1.38.1") {
+    public_deps = [ ":tokio-v1_38_1" ]
+  }
+}
+
 group("tokio-rustls") {
+  public_deps = [ ":tokio-rustls-v0_24_1" ]
+}
+
+group("tokio-rustls-0.24.1") {
   public_deps = [ ":tokio-rustls-v0_24_1" ]
 }
 
@@ -1151,7 +2275,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("tokio-stream-0.1.18") {
+    public_deps = [ ":tokio-stream-v0_1_18" ]
+  }
+}
+
 group("toml") {
+  public_deps = [ ":toml-v0_9_11+spec-1_1_0" ]
+}
+
+group("toml-0.9.11+spec-1.1.0") {
   public_deps = [ ":toml-v0_9_11+spec-1_1_0" ]
 }
 
@@ -1159,7 +2293,15 @@ group("toml_edit") {
   public_deps = [ ":toml_edit-v0_24_0+spec-1_1_0" ]
 }
 
+group("toml_edit-0.24.0+spec-1.1.0") {
+  public_deps = [ ":toml_edit-v0_24_0+spec-1_1_0" ]
+}
+
 group("tracing") {
+  public_deps = [ ":tracing-v0_1_41" ]
+}
+
+group("tracing-0.1.41") {
   public_deps = [ ":tracing-v0_1_41" ]
 }
 
@@ -1167,8 +2309,18 @@ group("tracing-mutex") {
   public_deps = [ ":tracing-mutex-v0_3_2" ]
 }
 
+group("tracing-mutex-0.3.2") {
+  public_deps = [ ":tracing-mutex-v0_3_2" ]
+}
+
 if (current_os == "fuchsia") {
   group("trust-dns-proto") {
+    public_deps = [ ":trust-dns-proto-v0_22_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("trust-dns-proto-0.22.0") {
     public_deps = [ ":trust-dns-proto-v0_22_0" ]
   }
 }
@@ -1180,7 +2332,19 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
+  group("trust-dns-resolver-0.22.0") {
+    public_deps = [ ":trust-dns-resolver-v0_22_0" ]
+  }
+}
+
+if (current_os == "fuchsia") {
   group("ttf-parser") {
+    public_deps = [ ":ttf-parser-v0_10_1" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("ttf-parser-0.10.1") {
     public_deps = [ ":ttf-parser-v0_10_1" ]
   }
 }
@@ -1189,7 +2353,15 @@ group("tuf") {
   public_deps = [ ":tuf-v0_3_0-beta14" ]
 }
 
+group("tuf-0.3.0-beta14") {
+  public_deps = [ ":tuf-v0_3_0-beta14" ]
+}
+
 group("typed-builder") {
+  public_deps = [ ":typed-builder-v0_23_2" ]
+}
+
+group("typed-builder-0.23.2") {
   public_deps = [ ":typed-builder-v0_23_2" ]
 }
 
@@ -1197,11 +2369,23 @@ group("unic-char-range") {
   public_deps = [ ":unic-char-range-v0_9_0" ]
 }
 
+group("unic-char-range-0.9.0") {
+  public_deps = [ ":unic-char-range-v0_9_0" ]
+}
+
 group("unic-ucd-block") {
   public_deps = [ ":unic-ucd-block-v0_9_0" ]
 }
 
+group("unic-ucd-block-0.9.0") {
+  public_deps = [ ":unic-ucd-block-v0_9_0" ]
+}
+
 group("unicase") {
+  public_deps = [ ":unicase-v2_9_0" ]
+}
+
+group("unicase-2.9.0") {
   public_deps = [ ":unicase-v2_9_0" ]
 }
 
@@ -1211,7 +2395,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("unicode-normalization-0.1.24") {
+    public_deps = [ ":unicode-normalization-v0_1_24" ]
+  }
+}
+
 group("unicode-segmentation") {
+  public_deps = [ ":unicode-segmentation-v1_12_0" ]
+}
+
+group("unicode-segmentation-1.12.0") {
   public_deps = [ ":unicode-segmentation-v1_12_0" ]
 }
 
@@ -1219,7 +2413,15 @@ group("unicode-width") {
   public_deps = [ ":unicode-width-v0_2_2" ]
 }
 
+group("unicode-width-0.2.2") {
+  public_deps = [ ":unicode-width-v0_2_2" ]
+}
+
 group("unicode-xid") {
+  public_deps = [ ":unicode-xid-v0_2_6" ]
+}
+
+group("unicode-xid-0.2.6") {
   public_deps = [ ":unicode-xid-v0_2_6" ]
 }
 
@@ -1227,7 +2429,15 @@ group("untrusted") {
   public_deps = [ ":untrusted-v0_9_0" ]
 }
 
+group("untrusted-0.9.0") {
+  public_deps = [ ":untrusted-v0_9_0" ]
+}
+
 group("url") {
+  public_deps = [ ":url-v2_3_1" ]
+}
+
+group("url-2.3.1") {
   public_deps = [ ":url-v2_3_1" ]
 }
 
@@ -1235,11 +2445,23 @@ group("utf8parse") {
   public_deps = [ ":utf8parse-v0_2_2" ]
 }
 
+group("utf8parse-0.2.2") {
+  public_deps = [ ":utf8parse-v0_2_2" ]
+}
+
 group("uuid") {
   public_deps = [ ":uuid-v1_1_2" ]
 }
 
+group("uuid-1.1.2") {
+  public_deps = [ ":uuid-v1_1_2" ]
+}
+
 group("valico") {
+  public_deps = [ ":valico-v2_4_2" ]
+}
+
+group("valico-2.4.2") {
   public_deps = [ ":valico-v2_4_2" ]
 }
 
@@ -1249,7 +2471,17 @@ if (current_os == "fuchsia") {
   }
 }
 
+if (current_os == "fuchsia") {
+  group("vk-sys-0.7.0") {
+    public_deps = [ ":vk-sys-v0_7_0" ]
+  }
+}
+
 group("vm-device") {
+  public_deps = [ ":vm-device-v0_1_0" ]
+}
+
+group("vm-device-0.1.0") {
   public_deps = [ ":vm-device-v0_1_0" ]
 }
 
@@ -1257,7 +2489,15 @@ group("vt100") {
   public_deps = [ ":vt100-v0_16_2" ]
 }
 
+group("vt100-0.16.2") {
+  public_deps = [ ":vt100-v0_16_2" ]
+}
+
 group("vte") {
+  public_deps = [ ":vte-v0_15_0" ]
+}
+
+group("vte-0.15.0") {
   public_deps = [ ":vte-v0_15_0" ]
 }
 
@@ -1267,7 +2507,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("wait-timeout-0.2.1") {
+    public_deps = [ ":wait-timeout-v0_2_1" ]
+  }
+}
+
 group("walkdir") {
+  public_deps = [ ":walkdir-v2_5_0" ]
+}
+
+group("walkdir-2.5.0") {
   public_deps = [ ":walkdir-v2_5_0" ]
 }
 
@@ -1275,8 +2525,18 @@ group("which") {
   public_deps = [ ":which-v4_0_2" ]
 }
 
+group("which-4.0.2") {
+  public_deps = [ ":which-v4_0_2" ]
+}
+
 if (current_os == "fuchsia") {
   group("x509-cert") {
+    public_deps = [ ":x509-cert-v0_2_5" ]
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("x509-cert-0.2.5") {
     public_deps = [ ":x509-cert-v0_2_5" ]
   }
 }
@@ -1287,7 +2547,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("xattr-0.2.3") {
+    public_deps = [ ":xattr-v0_2_3" ]
+  }
+}
+
 group("xml-rs") {
+  public_deps = [ ":xml-rs-v0_8_26" ]
+}
+
+group("xml-rs-0.8.26") {
   public_deps = [ ":xml-rs-v0_8_26" ]
 }
 
@@ -1295,8 +2565,20 @@ group("zerocopy") {
   public_deps = [ ":zerocopy-v0_8_42" ]
 }
 
+group("zerocopy-0.8.42") {
+  public_deps = [ ":zerocopy-v0_8_42" ]
+}
+
 if (current_os == "fuchsia") {
   group("zeroize") {
+    public_deps = [ ":zeroize-v1_8_1" ]
+
+    visibility = zeroize_visibility
+  }
+}
+
+if (current_os == "fuchsia") {
+  group("zeroize-1.8.1") {
     public_deps = [ ":zeroize-v1_8_1" ]
 
     visibility = zeroize_visibility
@@ -1309,7 +2591,17 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("zip-0.5.5") {
+    public_deps = [ ":zip-v0_5_5" ]
+  }
+}
+
 group("zstd") {
+  public_deps = [ ":zstd-v0_11_2+zstd_1_5_2" ]
+}
+
+group("zstd-0.11.2+zstd.1.5.2") {
   public_deps = [ ":zstd-v0_11_2+zstd_1_5_2" ]
 }
 
@@ -15424,6 +16716,7 @@ rustc_library("ring-v0_17_8") {
 
   visibility = []
   visibility += [ ":ring" ]
+  visibility += [ ":ring-0.17.8" ]
   visibility += [ ":rustls-v0_21_12.actual" ]
   visibility += [ ":rustls-v0_21_12.rustdoc" ]
   visibility += [ ":rustls-v0_21_12.aux.deps.deps" ]

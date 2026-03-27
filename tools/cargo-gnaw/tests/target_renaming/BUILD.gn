@@ -17,6 +17,10 @@ renamed_group("example_lib") {
   public_deps = [ ":example_lib-v1_0_0" ]
 }
 
+group("example_lib-1.0.0") {
+  public_deps = [ ":example_lib-v1_0_0" ]
+}
+
 renamed_rule("example_lib-v1_0_0") {
   crate_name = "example_lib"
   source_root = "//target_renaming/example_lib/src/lib.rs"

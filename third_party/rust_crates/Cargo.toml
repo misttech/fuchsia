@@ -899,6 +899,7 @@ group_visibility = { import = "//third_party/rust_crates/visibility.gni", variab
 # Thank you!
 visibility = [
   ":ring",
+  ":ring-0.17.8",
   ":rustls-v0_21_12.actual",
   ":rustls-v0_21_12.rustdoc",
   ":rustls-v0_21_12.aux.deps.deps",

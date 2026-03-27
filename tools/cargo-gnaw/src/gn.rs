@@ -109,6 +109,43 @@ pub fn write_top_level_rule<W: io::Write>(
     Ok(())
 }
 
+/// Writes rules with the version appended, but without the additional "v", so that we have a target
+/// name that's more similar to what Bazel will use.
+pub fn write_alias_rule<W: io::Write>(
+    output: &mut W,
+    platform: Option<&str>,
+    pkg: &Package,
+    group_visibility: Option<&GroupVisibility>,
+    testonly: bool,
+) -> Result<()> {
+    if let Some(ref platform) = platform {
+        writeln!(
+            output,
+            "if ({conditional}) {{\n",
+            conditional = target_to_gn_conditional(platform)?
+        )?;
+    }
+
+    let optional_visibility =
+        group_visibility.map(|v| format!("visibility = {}", v.variable)).unwrap_or_default();
+
+    writeln!(
+        output,
+        include_str!("../templates/top_level_gn_rule.template"),
+        group_name = format!("{}-{}", pkg.name, pkg.version),
+        dep_name = pkg.gn_name(),
+        group_rule_name = "group",
+        optional_visibility = optional_visibility,
+        optional_testonly = if testonly { "testonly = true" } else { "" },
+    )?;
+
+    if platform.is_some() {
+        writeln!(output, "}}\n")?;
+    }
+
+    Ok(())
+}
+
 /// Writes Fuchsia SDK metadata for a top-level rule.
 pub fn write_fuchsia_sdk_metadata<W: io::Write>(
     output: &mut W,

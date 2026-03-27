@@ -417,6 +417,19 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                             })
                             .context("writing top level rule")?;
 
+                            // Write an alias for easier compatibility with Bazel naming.
+                            gn::write_alias_rule(
+                                &mut output,
+                                platform.as_deref(),
+                                package,
+                                visibility,
+                                cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
+                            )
+                            .with_context(|| {
+                                format!("while writing alias rule for package: {}", &dep.pkg)
+                            })
+                            .context("writing alias rule")?;
+
                             if opt.output_fuchsia_sdk_metadata {
                                 gn::write_fuchsia_sdk_metadata(
                                     &mut output,

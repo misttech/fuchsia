@@ -15,6 +15,10 @@ group("anyhow") {
   public_deps = [ ":anyhow-v1_0_27" ]
 }
 
+group("anyhow-1.0.27") {
+  public_deps = [ ":anyhow-v1_0_27" ]
+}
+
 license("anyhow-v1_0_27.license") {
   public_package_name = "anyhow"
   license_files = [
