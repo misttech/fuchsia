@@ -332,9 +332,13 @@ var bazelConstraintListVarsToGNConditions = map[string]string{
 	"HOST_CONSTRAINTS": "is_host",
 }
 
-// thirdPartyRustCrateRE matches Bazel third-party Rust crate dependency prefixes. It is used to
-// extract the crate name from the dependency path.
-var thirdPartyRustCrateRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates\/.+[:\/]`)
+// thirdPartyRustCrateVendoredRE matches Bazel third-party Rust crate dependency prefixes for purely
+// vendored crates. It is used to extract the crate name from the dependency path.
+var thirdPartyRustCrateVendoredRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates\/vendor:`)
+
+// thirdPartyRustCrateModifiedRE matches Bazel third-party Rust crate dependency prefixes for
+// modified crates. It is used to extract the directory name from the dependency path.
+var thirdPartyRustCrateModifiedRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates\/.+\/([a-zA-Z0-9_\.-]+):?[^"]*`)
 
 // thirdPartyBazelRepos maps from Bazel third-party repository names to their GN equivalent
 // dependency paths. The key is the Bazel repository name, and the value is the GN dependency

@@ -98,20 +98,20 @@ func TestDepsConversion(t *testing.T) {
 	}{
 		{
 			name: "rust third-party",
-			bazel: `go_library(
+			bazel: `rustc_library(
 	name = "test",
 	deps = [
 		"//third_party/rust_crates/vendor:foo",
-		"//third_party/rust_crates/ask2patch:bar",
-		"//third_party/rust_crates/forks/baz-v0.4.2:baz",
+		"//third_party/rust_crates/ask2patch/bar",
+		"//third_party/rust_crates/forks/baz-quux-0.4.2:baz_quux",
 		"//path/to/dep",
 	],
 )`,
-			wantGN: `go_library("test") {
+			wantGN: `rustc_library("test") {
 	deps = [
 		"//third_party/rust_crates:foo",
 		"//third_party/rust_crates:bar",
-		"//third_party/rust_crates:baz",
+		"//third_party/rust_crates:baz-quux-0.4.2",
 		"//path/to/dep",
 	]
 }`,

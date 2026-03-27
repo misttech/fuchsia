@@ -82,9 +82,14 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 		}
 	}
 
-	lit.Raw = thirdPartyRustCrateRE.ReplaceAllString(
+	lit.Raw = thirdPartyRustCrateVendoredRE.ReplaceAllString(
 		lit.Raw,
 		`"//third_party/rust_crates:`,
+	)
+
+	lit.Raw = thirdPartyRustCrateModifiedRE.ReplaceAllString(
+		lit.Raw,
+		`"//third_party/rust_crates:$1`,
 	)
 
 	// Replace matching Go third-party dependencies with aggregate dependencies.
