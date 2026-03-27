@@ -849,8 +849,10 @@ void UsbPeripheral::ClearFunctions() {
     fdf::info("Failed to stop controller: {}", zx_status_get_string(status));
     // Continue despite failure.
   }
-  for (size_t i = 0; i < 256; i++) {
-    UsbDciCancelAll(static_cast<uint8_t>(i));
+  // USB endpoints reside at addresses 0x00-0x0F (OUT) and 0x80-0x8F (IN).
+  for (uint8_t i = 0; i < 16; i++) {
+    UsbDciCancelAll(i);
+    UsbDciCancelAll(static_cast<uint8_t>(i | 0x80));
   }
   {
     fbl::AutoLock lock(&lock_);
