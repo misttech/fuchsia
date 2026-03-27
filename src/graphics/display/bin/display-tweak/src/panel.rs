@@ -110,7 +110,7 @@ impl DisplayProviderClient {
             coordinator: Some(coordinator_server),
             coordinator_listener: Some(listener_client),
             priority: Some(display::ClientPriority {
-                value: display::PRIMARY_CLIENT_PRIORITY_VALUE,
+                value: display::TEST_UTILITY_CLIENT_PRIORITY_VALUE,
             }),
             __source_breaking: fidl::marker::SourceBreaking,
         };
