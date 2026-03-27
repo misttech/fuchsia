@@ -398,7 +398,7 @@ impl Mount {
         assert!(new_root.is_descendant_of(&self.root));
         // According to mount(2) on bind mounts, all flags other than MS_REC are ignored when doing
         // a bind mount.
-        let clone = Self::new_with_root(Arc::clone(new_root), self.mount_flags());
+        let clone = Self::new_with_root(Arc::clone(new_root), self.flags());
 
         if flags.contains(MountFlags::REC) {
             // This is two steps because the alternative (locking clone.state while iterating over
@@ -453,7 +453,7 @@ impl Mount {
     /// Returns the effective flags for the `Mount`, calculated as the union of the mount flags
     /// associated with the `FileSystem`, and with the `Mount` itself.
     fn flags(&self) -> MountFlags {
-        // TODO: https://fxbug.dev/322875215 - All `FileSystem` flags should be included here, once
+        // TODO: https://fxbug.dev/322875215 - `FileSystem` flags should be included here, once
         // updating superblock mount flags via `MS_REMOUNT` is implemented.
         self.mount_flags()
     }
@@ -772,9 +772,7 @@ impl DynamicFileSource for ProcMountsFileSource {
                 mount.fs.name(),
                 // Report the union of the FileSystem and Mount flags, as well as any FileSystem-
                 // or LSM-specific options.
-                // TODO: https://fxbug.dev/322875215 - Remove the explicit fs_flags() & RDONLY
-                // inclusion once Mount::flags() is fixed to include the filesystem flags.
-                mount.flags() | (mount.fs_flags() & MountFlags::RDONLY),
+                mount.flags(),
                 security::sb_show_options(&task.kernel(), &mount.fs)?,
             )?;
             writeln!(sink, " 0 0")?;

@@ -145,14 +145,6 @@ impl FileSystem {
         let mount_options = security::sb_eat_lsm_opts(&kernel, &mut options.params)?;
         let security_state = security::file_system_init_security(&mount_options, &ops)?;
 
-        // TODO: https://fxbug.dev/322875215 - Remove this workaround once non-bind MS_REMOUNT is
-        // implemented.
-        if !ops.is_readonly() {
-            // Preserve the old behaviour, that only the per-mount MS_RDONLY flag took effect, by
-            // removing it from the `MountFlags` stored with the `FileSystem`.
-            options.flags &= !MountFlags::RDONLY;
-        }
-
         let file_system = Arc::new(FileSystem {
             kernel: kernel.weak_self.clone(),
             root: OnceLock::new(),
@@ -570,14 +562,6 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
         _current_task: &CurrentTask,
     ) -> Result<(), Errno> {
         Ok(())
-    }
-
-    /// Returns true if the `FileSystemOps` is intrinsically read-only, as is the case for
-    /// "remote_bundle", or the "remotefs" mounts to read-only directories.
-    // TODO: https://fxbug.dev/322875215 - Remove this workaround once non-bind MS_REMOUNT is
-    // implemented.
-    fn is_readonly(&self) -> bool {
-        false
     }
 }
 
