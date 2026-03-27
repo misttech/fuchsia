@@ -19,7 +19,6 @@ class FfxTest(ffxtestcase.FfxTestCase):
 
     async def setup_class(self) -> None:
         await super().setup_class()
-        self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
 
     def test_component_list(self) -> None:
         """Test `ffx component list` output returns as expected."""
@@ -209,12 +208,15 @@ class FfxTest(ffxtestcase.FfxTestCase):
 
     def test_daemon_start_background_works_with_autostart_false(self) -> None:
         """Test that `ffx daemon start --background` works even if daemon.autostart=false"""
-        self.run_ffx(["--isolate-dir", self.isolate_dir, "daemon", "stop"])
+        self.run_ffx(
+            [
+                "daemon",
+                "stop",
+            ]
+        )
         # We're validating that this command doesn't throw an exception
         self.run_ffx(
             [
-                "--isolate-dir",
-                self.isolate_dir,
                 "--machine",
                 "raw",
                 "-c",
