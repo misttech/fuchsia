@@ -24,6 +24,7 @@ from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
 from honeydew.typing import custom_types
+from honeydew.utils import decorators
 
 _FC_PROXIES: dict[str, custom_types.FidlEndpoint] = {
     "TraceProvisioner": custom_types.FidlEndpoint(
@@ -256,6 +257,7 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
         self._tracing_active = True
         self._ensure_drain_task()
 
+    @decorators.async_liveness_check
     async def stop(self) -> None:
         """Stops the current trace.
 
