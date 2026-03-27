@@ -10,7 +10,7 @@ from unittest import mock
 import fidl_fuchsia_media_sessions2 as media_session
 import fuchsia_controller_py as fc
 
-from honeydew import affordances_capable, errors
+from honeydew import errors
 from honeydew.affordances.media import media, media_using_fc
 from honeydew.affordances.media.errors import MediaError
 from honeydew.transports.ffx import ffx
@@ -24,9 +24,6 @@ class MediaFcTests(unittest.TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
-        )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
@@ -40,7 +37,6 @@ class MediaFcTests(unittest.TestCase):
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,
-            reboot_affordance=self.reboot_affordance_obj,
         )
 
     def test_verify_supported_success(self) -> None:

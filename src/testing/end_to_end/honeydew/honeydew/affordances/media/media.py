@@ -6,8 +6,6 @@
 import abc
 import enum
 
-from fuchsia_controller_py.wrappers import asyncmethod
-
 from honeydew.affordances import affordance
 
 
@@ -21,13 +19,27 @@ class PlayerState(enum.StrEnum):
     ERROR = "Error"
 
 
+class AsyncMedia(affordance.Affordance):
+    """Abstract base class for Media affordance."""
+
+    @abc.abstractmethod
+    async def get_active_session_status(self) -> PlayerState | None:
+        """Returns the status of the active media session.
+
+        Returns:
+            The player state of the active media session if one exists,
+            None otherwise.
+
+        Raises:
+            MediaError: On FIDL communication failure.
+        """
+
+
 class Media(affordance.Affordance):
     """Abstract base class for Media affordance."""
 
     @abc.abstractmethod
-    @asyncmethod
-    # pylint: disable-next=invalid-overridden-method
-    async def get_active_session_status(self) -> PlayerState | None:
+    def get_active_session_status(self) -> PlayerState | None:
         """Returns the status of the active media session.
 
         Returns:

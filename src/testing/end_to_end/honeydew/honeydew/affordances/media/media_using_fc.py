@@ -7,10 +7,10 @@ import json
 import logging
 
 import fidl_fuchsia_media_sessions2 as media_session
+import fuchsia_async_extension
 import fuchsia_controller_py as fc
-from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
-from honeydew import affordances_capable, errors
+from honeydew import errors
 from honeydew.affordances.media import media
 from honeydew.affordances.media.errors import MediaError
 from honeydew.transports.ffx import ffx
@@ -28,22 +28,25 @@ _MEDIA_SESSION_COMPONENT: str = "core/mediasession"
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class MediaUsingFc(AsyncAdapter, media.Media):
+class AsyncMediaUsingFc(media.AsyncMedia):
     """Media affordance implementation using FuchsiaController."""
 
     def __init__(
         self,
+        _outer: "MediaUsingFc",
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
         ffx_transport: ffx.FFX,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
     ) -> None:
-        AsyncAdapter.__init__(self)
+        self._outer = _outer
         self._name: str = device_name
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
         self._ffx_transport: ffx.FFX = ffx_transport
 
         self.verify_supported()
+
+    def as_sync(self) -> "MediaUsingFc":
+        return self._outer
 
     def verify_supported(self) -> None:
         """Verifies that affordance implementation is supported by the Fuchsia device.
@@ -73,7 +76,6 @@ class MediaUsingFc(AsyncAdapter, media.Media):
             self._fc_transport.connect_device_proxy(_ACTIVE_SESSION_ENDPOINT)
         )
 
-    @asyncmethod
     async def get_active_session_status(self) -> media.PlayerState | None:
         """Returns the status of the active media session.
 
@@ -125,3 +127,43 @@ class MediaUsingFc(AsyncAdapter, media.Media):
             raise MediaError(
                 f"Unexpected error while watching active session status: {e}"
             ) from e
+
+
+class MediaUsingFc(media.Media):
+    def __init__(
+        self,
+        device_name: str,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        ffx_transport: ffx.FFX,
+    ) -> None:
+        self._inner = AsyncMediaUsingFc(
+            self,
+            device_name,
+            fuchsia_controller,
+            ffx_transport,
+        )
+
+    def verify_supported(self) -> None:
+        """Verifies that affordance implementation is supported by the Fuchsia device.
+
+        Raises:
+            NotSupportedError: If affordance is not supported.
+        """
+        self._inner.verify_supported()
+
+    def get_active_session_status(self) -> media.PlayerState | None:
+        """Returns the status of the active media session.
+
+        Returns:
+            The player state of the active media session if one exists,
+            None otherwise.
+
+        Raises:
+            MediaError: On FIDL communication failure.
+        """
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.get_active_session_status()
+        )
+
+    def as_async(self) -> AsyncMediaUsingFc:
+        return self._inner

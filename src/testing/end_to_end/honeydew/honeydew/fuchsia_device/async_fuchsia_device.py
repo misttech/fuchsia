@@ -704,7 +704,7 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def media(self) -> media.Media:
+    def media(self) -> media.AsyncMedia:
         """Returns a media affordance object.
 
         Returns:
@@ -714,8 +714,7 @@ class AsyncFuchsiaDevice(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             ffx_transport=self.ffx,
-            reboot_affordance=self,
-        )
+        ).as_async()
 
     @properties.Affordance
     def hello_world(self) -> hello_world.HelloWorld:

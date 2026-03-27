@@ -420,7 +420,7 @@ class FuchsiaDevice(
         Returns:
             media.Media object
         """
-        return self._inner.media
+        return self._inner.media.as_sync()
 
     @properties.Affordance
     def hello_world(self) -> hello_world.HelloWorld:
