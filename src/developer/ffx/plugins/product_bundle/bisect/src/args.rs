@@ -60,9 +60,8 @@ impl FromArgValue for Strategy {
 
   The script must exit with one of the following codes:
     0          : Pass (The bug is NOT present in this version)
-    1-124      : Fail (The bug IS present in this version)
-    125        : Skip (The PB was untestable, e.g. failed to flash)
-    128+       : Abort (A critical infrastructure failure occurred)
+    1-127      : Fail (The bug IS present in this version)
+    128+       : Infrastructure failure (A critical infrastructure failure occurred)
     ",
     example = "\
     // 1. Bisect the core.vim3 product bundle between two provided versions.
@@ -89,7 +88,7 @@ done
 ffx target flash \"$PB_PATH\"
 if [ $? -ne 0 ]; then
     echo \"Failed to flash, skipping...\"
-    exit 125 # Skip
+    exit 128 # Infrastructure failure
 fi
 
 # <this is where the test code goes>

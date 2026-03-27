@@ -27,6 +27,7 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "src/v2/mos.rs",
     "src/v2/search_space.rs",
     "src/v2/strategy.rs",
+    "src/v2/testing.rs",
     "src/versioned_artifact_set.rs",
   ]
 
@@ -64,9 +65,20 @@ ffx_plugin("ffx_product_bundle_bisect") {
   ]
 
   test_deps = [
+    ":test_data",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:futures-lite",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",
   ]
+}
+
+if (is_host) {
+  host_test_data("test_data") {
+    sources = [
+      "test_data/test_fail.sh",
+      "test_data/test_infra.sh",
+      "test_data/test_pass.sh",
+    ]
+  }
 }
