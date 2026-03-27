@@ -14,8 +14,6 @@ use fdomain_fuchsia_device::ControllerMarker;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::ExecutableKind;
 use ffx_target::connection::Connection;
-use fuchsia_async::Task;
-use futures::stream::TryStreamExt;
 use rcs_fdomain as rcs;
 use std::future::Future;
 use std::path::PathBuf;
@@ -56,28 +54,6 @@ async fn new_device_connection(
     // to pass an address directly if they don't want to wait for discovery.
     let resolution = ffx_target::resolve_target_address(target_spec, false, ctx).await?;
     resolution.get_connection(ctx).await
-}
-
-fn fdomain_local_client() -> Arc<fdomain_client::Client> {
-    fdomain_local::local_client(move || {
-        let (client, server) =
-            fidl::endpoints::create_endpoints::<fidl_fuchsia_io::DirectoryMarker>();
-        Task::spawn(async move {
-            let mut stream = server.into_stream();
-            // This is here to provide the bare minimum handling for host-side FDomain. If we are
-            // using this function then there is only going to be host-side-to-host-side handle
-            // communication going on, so most facilities can be ignored.
-            while let Ok(Some(req)) = stream.try_next().await {
-                if let fidl_fuchsia_io::DirectoryRequest::Open { path: _, object: _, .. } = req {
-                    // Ignoring directory open request
-                } else {
-                    panic!("Unexpected request: {req:?}");
-                }
-            }
-        })
-        .detach();
-        Ok(client)
-    })
 }
 
 impl EnvContext {
@@ -135,7 +111,9 @@ impl EnvContext {
         let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context)?.into();
         let device_connection = if matches!(target_spec, TargetInfoQuery::First) {
             log::info!("No target specified. Creating local/testing FDomain.");
-            Mutex::new(Some(Arc::new(Connection::from_fdomain_client(fdomain_local_client()))))
+            Mutex::new(Some(Arc::new(Connection::from_fdomain_client(
+                fdomain_local::local_client_empty(),
+            ))))
         } else {
             Mutex::new(None)
         };
