@@ -22,6 +22,7 @@ from antlion.test_utils.wifi import base_test
 from antlion.utils import PingResult, rand_ascii_str
 from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,
     BssSettings,
@@ -129,7 +130,7 @@ class PingTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=band,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=self.ssid,

@@ -13,8 +13,9 @@ from mobly import asserts, signals, test_runner
 from mobly_controller import openwrt_access_point
 from mobly_controller.openwrt_access_point import OpenWrtAP
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
     BssSettings,
     RadioConfig,
     Security,
@@ -65,7 +66,9 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
 
         self.openwrt_ap.configure_wifi(wifi_config)
         asserts.assert_true(
-            self.openwrt_ap.verify_wifi_status(band=wifi_config.radios[0].band),
+            self.openwrt_ap.verify_wifi_status(
+                band=wifi_config.radios[0].channel.band
+            ),
             "WiFi failed to start.",
         )
 
@@ -142,7 +145,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
@@ -160,7 +163,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_5G,
+                        channel=DEFAULT_5G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
@@ -178,7 +181,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
@@ -197,7 +200,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),

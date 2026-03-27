@@ -20,6 +20,7 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
     Band,
     BssSettings,
@@ -79,7 +80,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_5G,
+                        channel=DEFAULT_5G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,

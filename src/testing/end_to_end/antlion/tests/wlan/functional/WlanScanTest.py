@@ -29,8 +29,11 @@ from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
     Band,
+    BssChannel,
     BssSettings,
     RadioConfig,
     Security,
@@ -42,7 +45,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import
 
 @dataclass
 class TestParams:
-    band: Band
+    channel: BssChannel
     security: Security
 
 
@@ -62,7 +65,7 @@ class WlanScanTest(base_test.WifiBaseTest):
     def pre_run(self) -> None:
         test_params: list[tuple[TestParams]] = []
         for (
-            band,
+            channel,
             security,
         ) in itertools.product(
             # BandType,
@@ -70,13 +73,13 @@ class WlanScanTest(base_test.WifiBaseTest):
             #
             # TODO(https://github.com/python/mypy/issues/14688): Replace the code below
             # with the commented code above once the bug affecting StrEnum resolves.
-            [e for e in Band],
+            [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL],
             [Security.NONE, Security.WPA2],
         ):
             test_params.append(
                 (
                     TestParams(
-                        band,
+                        channel,
                         security,
                     ),
                 )
@@ -86,7 +89,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             return (
                 "test_scan_while_connected"
                 f"_{t.security}_open_network"
-                f"_{t.band}"
+                f"_{t.channel.band}"
             )
 
         self.generate_tests(
@@ -139,7 +142,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=t.band,
+                        channel=t.channel,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
@@ -151,14 +154,13 @@ class WlanScanTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=t.band)
+            self.openwrt_ap.verify_wifi_status(band=t.channel.band)
         elif hasattr(self, "access_point"):
-            band = ConfigMapper.to_hostapd_band(t.band)
             security = ConfigMapper.to_hostapd_security(t.security)
             setup_ap(
                 access_point=self.access_point,
                 profile_name="whirlwind",
-                channel=band.default_channel(),
+                channel=t.channel.number,
                 ssid=ssid,
                 security=DeprecatedSecurity(
                     security_mode=security,
@@ -237,7 +239,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,

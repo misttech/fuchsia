@@ -20,6 +20,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
     Band,
     BssSettings,
@@ -69,7 +71,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=self.open_network_2g["SSID"],
@@ -83,7 +85,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
                         ],
                     ),
                     RadioConfig.generate(
-                        band=Band.BAND_5G,
+                        channel=DEFAULT_5G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=self.open_network_5g["SSID"],

@@ -7,6 +7,7 @@ import enum
 import random
 import re
 import string
+from typing import Literal
 
 
 class Band(enum.StrEnum):
@@ -28,6 +29,17 @@ class Security(enum.StrEnum):
     WPA_WPA2 = "psk-mixed"
     WPA2_WPA3 = "sae-mixed"
     WEP = "wep"
+
+
+@dataclasses.dataclass(frozen=True)
+class BssChannel:
+    band: Band
+    number: int
+    bandwidth: Literal[20, 40, 80, 160, 320]
+
+
+DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, 20)
+DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, 40)
 
 
 @dataclasses.dataclass
@@ -53,7 +65,6 @@ class BssSettings:
         """
         # 1. Convert to lowercase
         normalized = self.ssid.lower()
-
         # 2. Replace non-alphanumeric characters with underscores
         normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
 
@@ -71,40 +82,32 @@ class RadioConfig:
     """Configuration required to set up a specific radio on an Access Point.
 
     Attributes:
-        band: The Wi-Fi frequency band
         channel: The specific channel within the band
         bss_settings: The settings for all additional bss
     """
 
-    band: Band
-    channel: int
+    channel: BssChannel
     bss_settings: list[BssSettings] | None = None
 
     @classmethod
     def generate(
         cls,
-        band: Band,
+        channel: BssChannel,
         bss_settings: list[BssSettings] | None = None,
     ) -> "RadioConfig":
-        """Creates a RadioConfig, optionally randomizing the SSID and password.
+        """Creates a RadioConfig object with the specified channel and BSS settings.
 
         Args:
-            band: The Wi-Fi frequency band.
+            channel: The Wi-Fi channel configuration.
             bss_settings: Optional list of additional BSS settings.
 
         Returns:
             A RadioConfig object.
         """
-        if band == Band.BAND_2G:
-            channel = 1
-        elif band == Band.BAND_5G:
-            channel = 36
-
         if bss_settings is None:
             bss_settings = []
 
         return cls(
-            band=band,
             channel=channel,
             bss_settings=bss_settings,
         )

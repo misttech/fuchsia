@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from enum import StrEnum
-from typing import Any, Dict, Final, List, Literal
+from typing import Dict, List
 
 from antlion import utils
 from libs.ssh import connection, settings
@@ -20,7 +20,6 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssSettings,
-    RadioConfig,
     Security,
 )
 
@@ -127,14 +126,14 @@ class OpenWrtAP:
         """
         self._clear_all_bss()
         for radio_config in config.radios:
-            match radio_config.band:
+            match radio_config.channel.band:
                 case Band.BAND_2G:
                     radio = Radio.RADIO_2G
                 case Band.BAND_5G:
                     radio = Radio.RADIO_5G
             self.ssh.run(f"uci set wireless.{radio}.disabled='0'")
             self.ssh.run(
-                f"uci set wireless.{radio}.channel='{radio_config.channel}'"
+                f"uci set wireless.{radio}.channel='{radio_config.channel.number}'"
             )
             if radio_config.bss_settings:
                 for bss in radio_config.bss_settings:

@@ -23,6 +23,7 @@ from mobly import asserts, signals, test_runner
 from mobly_controller import openwrt_access_point
 from mobly_controller.openwrt_access_point import OpenWrtAP
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,
     BssSettings,
@@ -76,7 +77,7 @@ class StartStopClientConnectionsTest(
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=self.ssid,

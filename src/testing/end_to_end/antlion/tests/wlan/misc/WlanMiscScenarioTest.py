@@ -19,8 +19,9 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
+    BssChannel,
     BssSettings,
     RadioConfig,
     Security,
@@ -57,7 +58,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
 
     def setup_ap(
         self,
-        band: Band,
+        channel: BssChannel,
         ssid: str,
         security: Security,
         password: str | None = None,
@@ -66,7 +67,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=band,
+                        channel=channel,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
@@ -78,9 +79,9 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
                 ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=band)
+            self.openwrt_ap.verify_wifi_status(band=channel.band)
         elif hasattr(self, "access_point"):
-            hostapd_band = ConfigMapper.to_hostapd_band(band)
+            hostapd_band = ConfigMapper.to_hostapd_band(channel.band)
             hostapd_security = ConfigMapper.to_hostapd_security(security)
             setup_ap(
                 access_point=self.access_point,
@@ -103,7 +104,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         wpa3_ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_5G)
         wpa3_password = AccessPointConfig.random_string()
         self.setup_ap(
-            band=Band.BAND_5G,
+            channel=DEFAULT_5G_CHANNEL,
             ssid=wpa3_ssid,
             security=Security.WPA3,
             password=wpa3_password,
@@ -125,7 +126,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         wpa2_ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_5G)
         wpa2_password = AccessPointConfig.random_string()
         self.setup_ap(
-            band=Band.BAND_5G,
+            channel=DEFAULT_5G_CHANNEL,
             ssid=wpa2_ssid,
             security=Security.WPA2,
             password=wpa2_password,

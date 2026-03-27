@@ -27,6 +27,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 from mobly import signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,
     BssSettings,
@@ -64,7 +65,7 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        band=Band.BAND_2G,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=self.hidden_ssid,

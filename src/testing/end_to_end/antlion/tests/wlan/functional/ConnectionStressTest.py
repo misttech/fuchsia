@@ -22,8 +22,12 @@ from antlion.utils import rand_ascii_str
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
     AccessPointConfig,
-    Band,
+    BssChannel,
+    BssSettings,
+    RadioConfig,
     Security,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -34,7 +38,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import
 @dataclass
 class TestParams:
     profile: str
-    band: Band
+    channel: BssChannel
     security: Security
     ap_ssid: str
     ap_password: str | None
@@ -58,12 +62,12 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             "whirlwind_11ab_legacy",
             "whirlwind_11ag_legacy",
         ]:
-            for band in [Band.BAND_2G, Band.BAND_5G]:
+            for channel in [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL]:
                 ssid = rand_ascii_str(10)
                 tests.append(
                     TestParams(
                         profile=profile,
-                        band=band,
+                        channel=channel,
                         security=Security.NONE,
                         ap_ssid=ssid,
                         ap_password=None,
@@ -74,12 +78,12 @@ class ConnectionStressTest(base_test.WifiBaseTest):
                 )
 
         # Wrong SSID
-        for band in [Band.BAND_2G, Band.BAND_5G]:
+        for channel in [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL]:
             ssid = rand_ascii_str(10)
             tests.append(
                 TestParams(
                     profile="whirlwind",
-                    band=band,
+                    channel=channel,
                     security=Security.NONE,
                     ap_ssid=ssid,
                     ap_password=None,
@@ -90,13 +94,13 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             )
 
         # Wrong password
-        for band in [Band.BAND_2G, Band.BAND_5G]:
+        for channel in [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL]:
             ssid = rand_ascii_str(10)
             password = rand_ascii_str(20)
             tests.append(
                 TestParams(
                     profile="whirlwind",
-                    band=band,
+                    channel=channel,
                     security=Security.WPA2,
                     ap_ssid=ssid,
                     ap_password=password,
@@ -107,13 +111,13 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             )
 
         def test_name(test: TestParams) -> str:
-            channel = "2g" if test.band == Band.BAND_2G else "5g"
+            band = test.channel.band.lower()
             if test.expect_associated:
-                return f"test_{test.profile}_{channel}"
+                return f"test_{test.profile}_{band}"
             if test.ap_ssid != test.dut_ssid:
-                return f"test_{test.profile}_{channel}_wrong_ssid"
+                return f"test_{test.profile}_{band}_wrong_ssid"
             if test.ap_password != test.dut_password:
-                return f"test_{test.profile}_{channel}_wrong_password"
+                return f"test_{test.profile}_{band}_wrong_password"
             raise TypeError(f"Unknown name for {test}")
 
         self.generate_tests(
@@ -164,21 +168,28 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             test: TestParams containing configuration
         """
         if hasattr(self, "openwrt_ap"):
-            config = AccessPointConfig.generate(
-                band=test.band,
-                ssid=test.ap_ssid,
-                password=test.ap_password,
-                security=test.security,
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=test.channel,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=test.ap_ssid,
+                                security=test.security,
+                                password=test.ap_password,
+                            ),
+                        ],
+                    )
+                ]
             )
             self.openwrt_ap.configure_wifi(config)
-            self.openwrt_ap.verify_wifi_status(band=test.band)
+            self.openwrt_ap.verify_wifi_status(band=test.channel.band)
         elif hasattr(self, "access_point"):
-            band = ConfigMapper.to_hostapd_band(test.band)
             security = ConfigMapper.to_hostapd_security(test.security)
             setup_ap(
                 access_point=self.access_point,
                 profile_name=test.profile,
-                channel=band.default_channel(),
+                channel=test.channel.number,
                 ssid=test.ap_ssid,
                 security=DeprecatedSecurity(
                     security_mode=security, password=test.ap_password
