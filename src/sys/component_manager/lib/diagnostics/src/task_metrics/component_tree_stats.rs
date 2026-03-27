@@ -546,9 +546,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn total_tracks_cpu_after_termination() {
-        // TODO(https://fxbug.dev462815022) remove once deadlocks addressed
-        fuchsia_sync::suppress_lock_cycle_panics();
-
         let inspector = inspect::Inspector::default();
         let clock = Arc::new(FakeTime::new());
         let stats = ComponentTreeStats::new_with_timesource(
@@ -612,9 +609,15 @@ mod tests {
         // Terminate all tasks
         for i in 0..10 {
             let moniker = Moniker::try_from([format!("moniker-{}", i).as_ref()]).unwrap();
-            for task in
-                stats.tree.lock().get(&moniker.into()).unwrap().lock().tasks_mut().iter_mut()
-            {
+
+            let tasks_to_terminate: Vec<_> = {
+                let tree_guard = stats.tree.lock();
+                let mut node_guard = tree_guard.get(&moniker.into()).unwrap().lock();
+
+                node_guard.tasks_mut().iter().map(|t| t.clone()).collect()
+            };
+
+            for task in tasks_to_terminate {
                 task.force_terminate().await;
                 // the timestamp for termination is used as a key when pruning,
                 // so all of the tasks cannot be removed at exactly the same time
@@ -712,9 +715,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn components_are_deleted_when_all_tasks_are_gone() {
-        // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
-        fuchsia_sync::suppress_lock_cycle_panics();
-
         let inspector = inspect::Inspector::default();
         let clock = Arc::new(FakeTime::new());
         let stats = ComponentTreeStats::new_with_timesource(
@@ -736,7 +736,13 @@ mod tests {
         );
 
         // Invalidate the handle, to simulate that the component stopped.
-        for task in stats.tree.lock().get(&moniker).unwrap().lock().tasks_mut().iter_mut() {
+        let tasks_to_terminate: Vec<_> = {
+            let tree_guard = stats.tree.lock();
+            let mut node_guard = tree_guard.get(&moniker).unwrap().lock();
+            node_guard.tasks_mut().iter().cloned().collect()
+        };
+
+        for task in tasks_to_terminate {
             task.force_terminate().await;
             clock.add_ticks(1);
         }
@@ -1215,9 +1221,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn child_tasks_garbage_collection() {
-        // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
-        fuchsia_sync::suppress_lock_cycle_panics();
-
         let inspector = inspect::Inspector::default();
         let clock = Arc::new(FakeTime::new());
         let stats = Arc::new(ComponentTreeStats::new_with_timesource(
@@ -1273,7 +1276,13 @@ mod tests {
 
         let extended_moniker = child_moniker.into();
         // Mark as terminated, to simulate that the component completely stopped.
-        for task in stats.tree.lock().get(&extended_moniker).unwrap().lock().tasks_mut() {
+        let tasks_to_terminate: Vec<_> = {
+            let tree_guard = stats.tree.lock();
+            let mut node_guard = tree_guard.get(&extended_moniker).unwrap().lock();
+            node_guard.tasks_mut().iter().cloned().collect()
+        };
+
+        for task in tasks_to_terminate {
             task.force_terminate().await;
             clock.add_ticks(1);
         }
