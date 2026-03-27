@@ -19,7 +19,7 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_security_keymint as fkeymint;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_partitions as fpartitions;
-use fuchsia_async as fasync;
+use fuchsia_async::{self as fasync, TimeoutExt as _};
 use fuchsia_component::client::{
     connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_root,
 };
@@ -43,6 +43,14 @@ pub const VFS_TYPE_MEMFS: u32 = 0x3e694d21;
 pub const VFS_TYPE_FXFS: u32 = 0x73667866;
 pub const VFS_TYPE_F2FS: u32 = 0xfe694d21;
 pub const STARNIX_VOLUME_NAME: &str = "starnix_volume";
+
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+
+async fn with_timeout<F: std::future::Future>(fut: F, name: impl Into<String>) -> F::Output {
+    let name = name.into();
+    fut.on_timeout(DEFAULT_TIMEOUT, move || panic!("{name} timed out after {DEFAULT_TIMEOUT:?}"))
+        .await
+}
 
 /// fshost will expose an alias of its fuchsia.hardware.block.volume.Service directory at this path.
 /// This allows tests to disambiguate service instances from the driver test realm, which are
@@ -393,8 +401,12 @@ impl TestFixture {
     }
 
     pub async fn check_fs_type(&self, dir: &str, fs_type: u32) {
-        let (status, info) =
-            self.dir(dir, fio::Flags::empty()).query_filesystem().await.expect("query failed");
+        let (status, info) = with_timeout(
+            self.dir(dir, fio::Flags::empty()).query_filesystem(),
+            format!("check_fs_type({dir})"),
+        )
+        .await
+        .expect("query failed");
         assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
         assert!(info.is_some());
         let info_type = info.unwrap().fs_type;
@@ -402,58 +414,88 @@ impl TestFixture {
     }
 
     pub async fn check_test_blob(&self) {
-        let expected_blob_hash = disk_builder::test_blob_hash();
-        let reader =
-            connect_to_protocol_at_dir_root::<BlobReaderMarker>(self.realm.root.get_exposed_dir())
+        with_timeout(
+            async {
+                let expected_blob_hash = disk_builder::test_blob_hash();
+                let reader = connect_to_protocol_at_dir_root::<BlobReaderMarker>(
+                    self.realm.root.get_exposed_dir(),
+                )
                 .expect("failed to connect to the BlobReader");
-        let _vmo = reader
-            .get_vmo(&expected_blob_hash.into())
-            .await
-            .expect("blob get_vmo fidl error")
-            .unwrap_or_else(|e| match zx::Status::from_raw(e) {
-                zx::Status::NOT_FOUND => panic!("Test blob not found - blobfs lost data!"),
-                s => panic!("Error while opening test blob vmo: {s}"),
-            });
+                let _vmo = reader
+                    .get_vmo(&expected_blob_hash.into())
+                    .await
+                    .expect("blob get_vmo fidl error")
+                    .unwrap_or_else(|e| match zx::Status::from_raw(e) {
+                        zx::Status::NOT_FOUND => panic!("Test blob not found - blobfs lost data!"),
+                        s => panic!("Error while opening test blob vmo: {s}"),
+                    });
+            },
+            "check_test_blob",
+        )
+        .await
     }
 
     /// Check for the existence of a well-known set of test files in the data volume. These files
     /// are placed by the disk builder if it formats the filesystem beforehand.
     pub async fn check_test_data_file(&self) {
-        let (file, server) = create_proxy::<fio::NodeMarker>();
-        self.dir("data", fio::PERM_READABLE)
-            .open(".testdata", fio::PERM_READABLE, &fio::Options::default(), server.into_channel())
-            .expect("open failed");
-        file.get_attributes(fio::NodeAttributesQuery::empty())
-            .await
-            .expect("Fidl transport error on get_attributes()")
-            .expect("get_attr failed - data was probably deleted!");
+        with_timeout(
+            async {
+                let (file, server) = create_proxy::<fio::NodeMarker>();
+                self.dir("data", fio::PERM_READABLE)
+                    .open(
+                        ".testdata",
+                        fio::PERM_READABLE,
+                        &fio::Options::default(),
+                        server.into_channel(),
+                    )
+                    .expect("open failed");
+                file.get_attributes(fio::NodeAttributesQuery::empty())
+                    .await
+                    .expect("Fidl transport error on get_attributes()")
+                    .expect("get_attr failed - data was probably deleted!");
 
-        let data = self.dir("data", fio::PERM_READABLE);
-        fuchsia_fs::directory::open_file(&data, ".testdata", fio::PERM_READABLE).await.unwrap();
+                let data = self.dir("data", fio::PERM_READABLE);
+                fuchsia_fs::directory::open_file(&data, ".testdata", fio::PERM_READABLE)
+                    .await
+                    .unwrap();
 
-        fuchsia_fs::directory::open_directory(&data, "ssh", fio::PERM_READABLE).await.unwrap();
-        fuchsia_fs::directory::open_directory(&data, "ssh/config", fio::PERM_READABLE)
-            .await
-            .unwrap();
-        fuchsia_fs::directory::open_directory(&data, "problems", fio::PERM_READABLE).await.unwrap();
+                fuchsia_fs::directory::open_directory(&data, "ssh", fio::PERM_READABLE)
+                    .await
+                    .unwrap();
+                fuchsia_fs::directory::open_directory(&data, "ssh/config", fio::PERM_READABLE)
+                    .await
+                    .unwrap();
+                fuchsia_fs::directory::open_directory(&data, "problems", fio::PERM_READABLE)
+                    .await
+                    .unwrap();
 
-        let authorized_keys =
-            fuchsia_fs::directory::open_file(&data, "ssh/authorized_keys", fio::PERM_READABLE)
+                let authorized_keys = fuchsia_fs::directory::open_file(
+                    &data,
+                    "ssh/authorized_keys",
+                    fio::PERM_READABLE,
+                )
                 .await
                 .unwrap();
-        assert_eq!(
-            &fuchsia_fs::file::read_to_string(&authorized_keys).await.unwrap(),
-            "public key!"
-        );
+                assert_eq!(
+                    &fuchsia_fs::file::read_to_string(&authorized_keys).await.unwrap(),
+                    "public key!"
+                );
+            },
+            "check_test_data_file",
+        )
+        .await
     }
 
     /// Checks for the absence of the .testdata marker file, indicating the data filesystem was
     /// reformatted.
     pub async fn check_test_data_file_absent(&self) {
-        let err = fuchsia_fs::directory::open_file(
-            &self.dir("data", fio::PERM_READABLE),
-            ".testdata",
-            fio::PERM_READABLE,
+        let err = with_timeout(
+            fuchsia_fs::directory::open_file(
+                &self.dir("data", fio::PERM_READABLE),
+                ".testdata",
+                fio::PERM_READABLE,
+            ),
+            "check_test_data_file_absent",
         )
         .await
         .expect_err("open_file failed");
@@ -579,27 +621,36 @@ impl TestFixture {
 
     // Check that the system partition table contains partitions with labels found in `expected`.
     pub async fn check_system_partitions(&self, mut expected: Vec<&str>) {
-        let partitions =
-            self.dir(fpartitions::PartitionServiceMarker::SERVICE_NAME, fio::PERM_READABLE);
-        let entries =
-            fuchsia_fs::directory::readdir(&partitions).await.expect("Failed to read partitions");
+        with_timeout(
+            async {
+                let partitions =
+                    self.dir(fpartitions::PartitionServiceMarker::SERVICE_NAME, fio::PERM_READABLE);
+                let entries = fuchsia_fs::directory::readdir(&partitions)
+                    .await
+                    .expect("Failed to read partitions");
 
-        assert_eq!(entries.len(), expected.len());
+                assert_eq!(entries.len(), expected.len());
 
-        let mut found_partition_labels = Vec::new();
-        for entry in entries {
-            let endpoint_name = format!("{}/volume", entry.name);
-            let volume = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(
-                &partitions,
-                &endpoint_name,
-            )
-            .expect("failed to connect to named protocol at dir root");
-            let (raw_status, label) = volume.get_name().await.expect("failed to call get_name");
-            zx::Status::ok(raw_status).expect("get_name status failed");
-            found_partition_labels.push(label.expect("partition label expected to be some value"));
-        }
-        found_partition_labels.sort();
-        expected.sort();
-        assert_eq!(found_partition_labels, expected);
+                let mut found_partition_labels = Vec::new();
+                for entry in entries {
+                    let endpoint_name = format!("{}/volume", entry.name);
+                    let volume = connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(
+                        &partitions,
+                        &endpoint_name,
+                    )
+                    .expect("failed to connect to named protocol at dir root");
+                    let (raw_status, label) =
+                        volume.get_name().await.expect("failed to call get_name");
+                    zx::Status::ok(raw_status).expect("get_name status failed");
+                    found_partition_labels
+                        .push(label.expect("partition label expected to be some value"));
+                }
+                found_partition_labels.sort();
+                expected.sort();
+                assert_eq!(found_partition_labels, expected);
+            },
+            "check_system_partitions",
+        )
+        .await
     }
 }
