@@ -1366,6 +1366,24 @@ where
                 ..Default::default()
             })
             .collect::<Vec<_>>();
+        let services = ot
+            .iter_services()
+            .take(32) // Limit the number of routers to 32 per the FIDL definition.
+            .map(|service| fidl_fuchsia_lowpan_experimental::ServiceConfig {
+                service_id: Some(service.service_id()),
+                enterprise_number: Some(service.enterprise_number()),
+                service_data_length: Some(service.service_data_len()),
+                service_data: Some(service.service_data().to_vec()),
+                server_config: Some(fidl_fuchsia_lowpan_experimental::ServerConfig {
+                    stable: Some(service.server_config().is_stable()),
+                    server_data_length: Some(service.server_config().server_data_len()),
+                    server_data: Some(service.server_config().server_data().to_vec()),
+                    rloc16: Some(service.server_config().rloc16()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1430,6 +1448,7 @@ where
             network_data: Some(fidl_fuchsia_lowpan_experimental::NetworkData {
                 on_mesh_prefixes: Some(on_mesh_prefixes),
                 external_routes: Some(external_routes),
+                services: Some(services),
                 ..Default::default()
             }),
             ..Default::default()

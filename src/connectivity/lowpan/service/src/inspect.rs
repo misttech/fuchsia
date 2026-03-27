@@ -1915,6 +1915,75 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.services {
+                                        net_data_child.record_child(
+                                            "services",
+                                            |services_child| {
+                                                for (index, config) in y.iter().enumerate() {
+                                                    services_child.record_child(
+                                                        format!("service_{}", index),
+                                                        |service_node| {
+                                                            if let Some(z) = config.service_id {
+                                                                service_node.record_uint(
+                                                                    "service_id",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.enterprise_number {
+                                                                service_node.record_uint(
+                                                                    "enterprise_number",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = config.service_data_length {
+                                                                service_node.record_uint(
+                                                                    "service_data_length",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &config.service_data {
+                                                                service_node.record_bytes(
+                                                                    "service_data",
+                                                                    z,
+                                                                );
+                                                            }
+                                                            if let Some(z) = &config.server_config {
+                                                                service_node.record_child(
+                                                                    "server_config",
+                                                                    |server_config_child| {
+                                                                        if let Some(w) = z.stable {
+                                                                            server_config_child.record_bool(
+                                                                                "stable",
+                                                                                w.into(),
+                                                                            );
+                                                                        }
+                                                                        if let Some(w) = z.server_data_length {
+                                                                            server_config_child.record_uint(
+                                                                                "server_data_length",
+                                                                                w.into(),
+                                                                            );
+                                                                        }
+                                                                        if let Some(w) = &z.server_data {
+                                                                            server_config_child.record_bytes(
+                                                                                "server_data",
+                                                                                w,
+                                                                            );
+                                                                        }
+                                                                        if let Some(w) = z.rloc16 {
+                                                                            server_config_child.record_string(
+                                                                                "rloc16",
+                                                                                format!("{:04x}", w),
+                                                                            );
+                                                                        }
+                                                                    },
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }
