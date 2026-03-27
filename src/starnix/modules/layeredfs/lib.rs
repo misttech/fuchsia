@@ -13,6 +13,7 @@ use starnix_core::vfs::{
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, ino_t, off_t, statfs};
 use std::collections::BTreeMap;
@@ -71,6 +72,9 @@ impl FileSystemOps for LayeredFileSystemOps {
     }
     fn name(&self) -> &'static FsStr {
         self.fs.base_fs.name()
+    }
+    fn is_readonly(&self) -> bool {
+        self.fs.base_fs.options.flags & MountFlags::RDONLY == MountFlags::RDONLY
     }
 }
 

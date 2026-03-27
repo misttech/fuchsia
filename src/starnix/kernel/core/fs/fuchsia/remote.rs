@@ -274,6 +274,10 @@ impl FileSystemOps for RemoteFs {
     fn manages_timestamps(&self) -> bool {
         true
     }
+
+    fn is_readonly(&self) -> bool {
+        !self.root_rights.contains(fio::PERM_WRITABLE)
+    }
 }
 
 /// Factory is a helper that creates the appropriate node type when creating a node.  See
