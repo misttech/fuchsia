@@ -34,9 +34,7 @@ use net_types::ScopeableAddress as _;
 use num_derive::FromPrimitive;
 use std::collections::hash_map::{Entry, HashMap};
 
-use crate::inspect::PerIfaceIdentifierInspectInfo;
 use std::net::IpAddr;
-use telemetry::processors::InterfaceIdentifier;
 
 pub use neighbor_cache::{InterfaceNeighborCache, NeighborCache};
 
@@ -722,10 +720,6 @@ impl NetworkCheckContext {
                 }
             });
     }
-
-    fn preferred_interface_identifier(&self) -> Option<InterfaceIdentifier> {
-        self.persistent_context.telemetry.interface_identifiers.first().cloned()
-    }
 }
 
 impl Default for NetworkCheckContext {
@@ -869,7 +863,6 @@ pub struct Monitor<Time = MonotonicInstant> {
     inspector: Option<&'static Inspector>,
     system_node: Option<InspectInfo>,
     nodes: HashMap<Id, InspectInfo>,
-    per_iface_identifier_nodes: HashMap<InterfaceIdentifier, PerIfaceIdentifierInspectInfo>,
     telemetry_sender: Option<TelemetrySender>,
     /// In `Monitor`'s implementation of NetworkChecker, the sender is used to dispatch network
     /// checks to the eventloop to be run concurrently. The network check then will be resumed with
@@ -890,7 +883,6 @@ impl<Time: TimeProvider + Default> Monitor<Time> {
             inspector: None,
             system_node: None,
             nodes: HashMap::new(),
-            per_iface_identifier_nodes: HashMap::new(),
             telemetry_sender: None,
             network_check_sender,
             interface_context: HashMap::new(),
@@ -911,7 +903,6 @@ impl<Time> Monitor<Time> {
             inspector: None,
             system_node: None,
             nodes: HashMap::new(),
-            per_iface_identifier_nodes: HashMap::new(),
             telemetry_sender: None,
             network_check_sender,
             interface_context: HashMap::new(),
@@ -950,24 +941,6 @@ impl<Time: TimeProvider> Monitor<Time> {
             self.nodes.entry(id).or_insert_with_key(|id| {
                 InspectInfo::new(inspector.root(), &format!("{:?}", id), name)
             })
-        })
-    }
-
-    fn per_iface_identifier_node<'a>(
-        ctx: &NetworkCheckContext,
-        inspector: Option<&'a Inspector>,
-        per_iface_identifier_nodes: &'a mut HashMap<
-            InterfaceIdentifier,
-            PerIfaceIdentifierInspectInfo,
-        >,
-    ) -> Option<&'a mut PerIfaceIdentifierInspectInfo> {
-        let interface_identifier = ctx.preferred_interface_identifier()?;
-        inspector.map(move |inspector| {
-            per_iface_identifier_nodes.entry(interface_identifier).or_insert_with_key(
-                |interface_identifier| {
-                    PerIfaceIdentifierInspectInfo::new(inspector.root(), interface_identifier)
-                },
-            )
         })
     }
 
@@ -1381,18 +1354,6 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 })?;
                 ctx.pings_completed = ctx.pings_completed + 1;
 
-                if let Some(node) = Self::per_iface_identifier_node(
-                    ctx,
-                    self.inspector,
-                    &mut self.per_iface_identifier_nodes,
-                ) {
-                    if let NetworkCheckState::PingInternet = ctx.checker_state {
-                        node.log_internet_ping_result(&parameters, &result);
-                    } else {
-                        node.log_gateway_ping_result(&parameters, &result);
-                    }
-                }
-
                 // Grab `ping_is_ok` before `result` is moved into `telemetry_sender.send`.
                 let ping_is_ok = result.is_ok();
 
@@ -1537,14 +1498,6 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                     anyhow!("resume: mismatched state and result {interface_name} ({})", cookie.id)
                 })?;
                 ctx.fetches_completed += 1;
-
-                if let Some(node) = Self::per_iface_identifier_node(
-                    ctx,
-                    self.inspector,
-                    &mut self.per_iface_identifier_nodes,
-                ) {
-                    node.log_fetch_result(&parameters, &result);
-                }
 
                 // Grab `fetch_ok_status` before `result` is moved into `telemetry_sender.send`.
                 let fetch_ok_status = result.as_ref().copied().ok();

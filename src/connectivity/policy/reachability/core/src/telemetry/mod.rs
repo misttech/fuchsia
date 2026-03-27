@@ -194,6 +194,9 @@ pub fn serve_telemetry(
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     inspect_node: InspectNode,
 ) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
+    // Inspect nodes to hold Inspect events
+    let inspect_events_node = inspect_node.create_child("events");
+
     // Inspect nodes to hold time series and metadata for other nodes.
     let inspect_time_series_node = inspect_node.create_child("time_series");
     let link_properties_state_time_series_node =
@@ -210,15 +213,18 @@ pub fn serve_telemetry(
         &time_matrix_client,
     );
 
-    let interface_aware_logger_node = inspect_time_series_node.create_child("interfaces");
+    let interface_aware_events_node = inspect_events_node.create_child("interfaces");
+    let interface_aware_time_series_node = inspect_time_series_node.create_child("interfaces");
     let interface_aware_logger = InterfaceAwareLogger::new(
         &inspect_metadata_node,
         &format!("root/telemetry/{METADATA_NODE_NAME}"),
         InterfaceTimeSeriesGrouping::Type(vec![InterfaceType::Ethernet, InterfaceType::WlanClient]),
-        interface_aware_logger_node,
+        interface_aware_events_node,
+        interface_aware_time_series_node,
     );
 
     // Record the time series and metadata nodes so they do not get dropped.
+    inspect_node.record(inspect_events_node);
     inspect_node.record(inspect_time_series_node);
     inspect_node.record(inspect_metadata_node);
 
@@ -1369,7 +1375,8 @@ mod tests {
         );
 
         let interface_aware_logger_node = inspect_node.create_child("interfaces");
-        inspect_node.record(interface_aware_logger_node.clone_weak());
+        let events_node = interface_aware_logger_node.create_child("events");
+        let time_series_node = interface_aware_logger_node.create_child("time_series");
         let interface_aware_logger = InterfaceAwareLogger::new(
             &inspect_metadata_node,
             &format!("root/telemetrytest/{METADATA_NODE_NAME}"),
@@ -1377,8 +1384,11 @@ mod tests {
                 InterfaceType::Ethernet,
                 InterfaceType::WlanClient,
             ]),
-            interface_aware_logger_node,
+            events_node,
+            time_series_node,
         );
+
+        inspect_node.record(interface_aware_logger_node);
 
         let (telemetry_sender, test_fut) = serve_telemetry_inner(
             cobalt_proxy,
