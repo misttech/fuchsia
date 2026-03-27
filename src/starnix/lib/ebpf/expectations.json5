@@ -6,5 +6,13 @@
                 "*",
             ],
         },
+        {
+            type: "expect_failure",
+            matchers: [
+                //TODO (https://g-issues.fuchsia.dev/issues/494018486): Verifier doesn't
+                // track ranges correctly on conditional jumps
+                "conformance::test::test_ebpf_conformance::local_test_data_range_narrowing_with_conditional_jump_data_expects",
+            ],
+        },
     ],
 }

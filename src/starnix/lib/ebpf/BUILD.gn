@@ -71,6 +71,7 @@ rustc_library("ebpf") {
     "src/tests/null_checks_multiple.data",
     "src/tests/null_checks_propagated.data",
     "src/tests/packet_access.data",
+    "src/tests/range_narrowing_with_conditional_jump.data",
     "src/tests/read_only_helper.data",
     "src/tests/repro_bpf_mod_mismatch.data",
     "src/tests/shifts.data",

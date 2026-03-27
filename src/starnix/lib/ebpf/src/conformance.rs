@@ -1021,6 +1021,7 @@ pub mod test {
     #[test_case(local_test_data!("null_checks_multiple.data"))]
     #[test_case(local_test_data!("null_checks_propagated.data"))]
     #[test_case(local_test_data!("packet_access.data"))]
+    #[test_case(local_test_data!("range_narrowing_with_conditional_jump.data"))]
     #[test_case(local_test_data!("read_only_helper.data"))]
     #[test_case(local_test_data!("repro_bpf_mod_mismatch.data"))]
     #[test_case(local_test_data!("shifts.data"))]
