@@ -12,10 +12,18 @@
 namespace ktl {
 
 using std::apply;
+using std::forward_as_tuple;
+using std::get;
 using std::ignore;
+using std::make_from_tuple;
 using std::make_tuple;
 using std::tie;
 using std::tuple;
+using std::tuple_cat;
+using std::tuple_element;
+using std::tuple_element_t;
+using std::tuple_size;
+using std::tuple_size_v;
 
 }  // namespace ktl
 
