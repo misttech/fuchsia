@@ -61,6 +61,17 @@ TEST(ProfileConfig, Parse) {
   }
 
   {
+    const auto iter = result->thread.find(*Role::Create("test.core.critical"));
+    ASSERT_TRUE(iter != result->thread.end());
+    EXPECT_EQ(iter->second.scope, ProfileScope::Core);
+    EXPECT_EQ(iter->second.info.flags,
+              ZX_PROFILE_INFO_FLAG_DEADLINE | ZX_PROFILE_INFO_FLAG_CRITICAL);
+    EXPECT_EQ(iter->second.info.deadline_params.capacity, 5'000'000);
+    EXPECT_EQ(iter->second.info.deadline_params.relative_deadline, 10'000'000);
+    EXPECT_EQ(iter->second.info.deadline_params.period, 10'000'000);
+  }
+
+  {
     const auto iter = result->thread.find(*Role::Create("test.bringup.a"));
     ASSERT_TRUE(iter != result->thread.end());
     EXPECT_EQ(iter->second.scope, ProfileScope::Core);
@@ -264,6 +275,7 @@ TEST(ProfileConfig, Parse) {
       "test.bringup.b",
       "test.bringup.b:affinity",
       "test.core.a",
+      "test.core.critical",
       "test.core.parameterized.role:input=foo",
       "test.core.parameterized.role:input=bar",
       "test.core.parameterized.role:param1=foo,param2=bar",

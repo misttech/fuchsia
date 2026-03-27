@@ -71,7 +71,11 @@ std::string ToString(const zx_profile_info_t& info) {
   if (info.flags & ZX_PROFILE_INFO_FLAG_DEADLINE) {
     stream << "\"capacity\": " << info.deadline_params.capacity
            << ", \"deadline\": " << info.deadline_params.relative_deadline
-           << ", \"period\": " << info.deadline_params.period << ", ";
+           << ", \"period\": " << info.deadline_params.period;
+    if (info.flags & ZX_PROFILE_INFO_FLAG_CRITICAL) {
+      stream << ", \"critical\": true";
+    }
+    stream << ", ";
   }
   if (info.flags & ZX_PROFILE_INFO_FLAG_CPU_MASK) {
     stream << "\"affinity\": " << info.cpu_affinity_mask.mask[0] << " (0x" << std::hex
@@ -302,9 +306,10 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
   const bool has_deadline = profile.value.HasMember("deadline");
   const bool has_period = profile.value.HasMember("period");
   const bool has_affinity = profile.value.HasMember("affinity");
+  const bool has_critical = profile.value.HasMember("critical");
 
   const bool has_complete_deadline = has_capacity && has_deadline && has_period;
-  const bool has_some_deadline = has_capacity || has_deadline || has_period;
+  const bool has_some_deadline = has_capacity || has_deadline || has_period || has_critical;
 
   zx_profile_info_t info{};
   if (has_priority && !has_some_deadline) {
@@ -337,6 +342,18 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
       return std::nullopt;
     }
     info.flags = ZX_PROFILE_INFO_FLAG_DEADLINE;
+    if (has_critical) {
+      const auto& critical_member = profile.value["critical"];
+      if (!critical_member.IsBool()) {
+        FX_LOG_KV(WARNING, "Profile member \"critical\" must be a boolean!",
+                  FX_KV("filename", filename), FX_KV("profile_name", profile_name),
+                  FX_KV("tag", "RoleManager"));
+        return std::nullopt;
+      }
+      if (critical_member.GetBool()) {
+        info.flags |= ZX_PROFILE_INFO_FLAG_CRITICAL;
+      }
+    }
     info.deadline_params = zx_sched_deadline_params_t{.capacity = capacity_result->get(),
                                                       .relative_deadline = deadline_result->get(),
                                                       .period = period_result->get()};
@@ -817,6 +834,10 @@ void Profile::PopulateInspect(inspect::Node& node) const {
     node.RecordInt("capacity", info.deadline_params.capacity);
     node.RecordInt("deadline", info.deadline_params.relative_deadline);
     node.RecordInt("period", info.deadline_params.period);
+  }
+
+  if (info.flags & ZX_PROFILE_INFO_FLAG_CRITICAL) {
+    node.RecordBool("critical", true);
   }
 
   if (info.flags & ZX_PROFILE_INFO_FLAG_CPU_MASK) {
