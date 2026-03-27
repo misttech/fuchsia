@@ -81,6 +81,19 @@ class DeadlineTest(unittest.TestCase):
         sub = d.subdeadline_with_timeout(timedelta(seconds=-10))
         self.assertTrue(sub.is_due())
 
+        # Infinite deadline (should create finite subdeadline)
+        d_inf = Deadline.infinite()
+        sub_inf = d_inf.subdeadline_with_timeout(timedelta(seconds=50))
+        self.assertEqual(sub_inf.remaining_duration(), timedelta(seconds=50))
+
+        # Infinite-past deadline (should remain infinite-past)
+        d_inf_past = Deadline.infinite_past()
+        sub_inf_past = d_inf_past.subdeadline_with_timeout(
+            timedelta(seconds=50)
+        )
+        self.assertTrue(sub_inf_past.is_due())
+        self.assertEqual(str(sub_inf_past), "Deadline(infinite_past)")
+
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_subdeadline_with_grace_period(
         self, mock_datetime: mock.Mock
@@ -96,6 +109,19 @@ class DeadlineTest(unittest.TestCase):
         # Negative grace period (should be ignored)
         sub = d.subdeadline_with_grace_period(timedelta(seconds=-10))
         self.assertEqual(sub.remaining_duration(), timedelta(seconds=100))
+
+        # Infinite deadline (should remain infinite)
+        d_inf = Deadline.infinite()
+        sub_inf = d_inf.subdeadline_with_grace_period(timedelta(seconds=10))
+        self.assertIsNone(sub_inf.remaining_duration())
+
+        # Infinite-past deadline (should remain infinite-past)
+        d_inf_past = Deadline.infinite_past()
+        sub_inf_past = d_inf_past.subdeadline_with_grace_period(
+            timedelta(seconds=10)
+        )
+        self.assertTrue(sub_inf_past.is_due())
+        self.assertEqual(str(sub_inf_past), "Deadline(infinite_past)")
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     def test_check(self, mock_datetime: mock.Mock) -> None:

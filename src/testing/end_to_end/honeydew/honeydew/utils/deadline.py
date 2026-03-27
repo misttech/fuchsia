@@ -64,6 +64,12 @@ class Deadline:
         if duration < timedelta(seconds=0):
             _LOGGER.warning("Timeout duration is negative, using 0")
             return Deadline(datetime.now(timezone.utc))
+
+        if self._deadline == datetime.min.replace(tzinfo=timezone.utc):
+            return self
+        if self._deadline == datetime.max.replace(tzinfo=timezone.utc):
+            return Deadline.from_timeout(duration)
+
         return Deadline(
             min(self._deadline, datetime.now(timezone.utc) + duration)
         )
@@ -73,6 +79,12 @@ class Deadline:
         if duration < timedelta(seconds=0):
             _LOGGER.warning("Grace period is negative, using 0")
             return self
+
+        if self._deadline == datetime.max.replace(tzinfo=timezone.utc):
+            return self
+        if self._deadline == datetime.min.replace(tzinfo=timezone.utc):
+            return self
+
         return Deadline(self._deadline - duration)
 
     def check(self) -> None:
