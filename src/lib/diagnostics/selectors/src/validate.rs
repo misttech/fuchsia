@@ -4,7 +4,7 @@
 
 use crate::error::{StringPatternError, ValidationError};
 use crate::ir;
-use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_diagnostics__common as fdiagnostics;
 
 // NOTE: if we could use the negative_impls unstable feature, we could have a single ValidateExt
 // trait instead of one for each type of selector we need.

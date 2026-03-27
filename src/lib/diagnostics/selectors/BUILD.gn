@@ -11,8 +11,8 @@ rustc_library("selectors") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
-    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust_common",
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitflags",

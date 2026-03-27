@@ -8,7 +8,7 @@
 //! as well as utilities for reading from it, serializing and deserializing it and testing it.
 
 use base64::display::Base64Display;
-use fidl_fuchsia_diagnostics::{
+use fidl_fuchsia_diagnostics__common::{
     PropertySelector, Selector, StringSelector, StringSelectorUnknown, SubtreeSelector,
     TreeSelector,
 };
