@@ -38,6 +38,7 @@ group("tests") {
     "radar:tests",
     "ram:tests",
     "registers:tests",
+    "reset:tests",
     "rtc:tests",
     "securemem:tests",
     "serial:tests",
