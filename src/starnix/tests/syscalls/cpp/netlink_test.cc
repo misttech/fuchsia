@@ -329,8 +329,14 @@ class RouteNetlinkSocketTestWithInterface : public NetlinkRouteTest {
     auto result = ioctl(tun_.get(), TUNSETIFF, &ifr);
     ASSERT_EQ(result, 0) << strerror(errno);
     auto s = fbl::unique_fd(socket(AF_INET, SOCK_DGRAM, 0));
+    // Wait for the tun device to show up.
     ifr.ifr_flags = 0;
-    ASSERT_EQ(ioctl(s.get(), SIOCGIFFLAGS, &ifr), 0) << strerror(errno);
+    int remaining_retries = 10;
+    while (ioctl(s.get(), SIOCGIFFLAGS, &ifr) == -1) {
+      ASSERT_EQ(errno, ENODEV);
+      ASSERT_GT(remaining_retries--, 0);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     ifr.ifr_flags |= IFF_UP;
     ASSERT_EQ(ioctl(s.get(), SIOCSIFFLAGS, &ifr), 0) << strerror(errno);
   }
@@ -362,6 +368,11 @@ class RouteNetlinkSocketNewAddr
 TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
   const auto [family, addr, prefix, expect_subnet_route] = GetParam();
 
+  int group = family == AF_INET ? RTNLGRP_IPV4_ROUTE : RTNLGRP_IPV6_ROUTE;
+  ASSERT_EQ(setsockopt(nl_sock_.get(), SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, &group, sizeof(group)),
+            0)
+      << strerror(errno);
+
   {
     test_helper::NetlinkEncoder encoder(RTM_NEWADDR, NLM_F_REQUEST | NLM_F_ACK);
     struct ifaddrmsg ifa = {
@@ -383,29 +394,21 @@ TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
     encoder.EndNla();
     ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
   }
-  char buf[4096] = {};
-  ssize_t len = recv(nl_sock_.get(), buf, sizeof(buf), 0);
-  ASSERT_GT(len, 0) << strerror(errno);
 
-  nlmsghdr* nlmsg = reinterpret_cast<nlmsghdr*>(buf);
-
-  ASSERT_TRUE(MY_NLMSG_OK(nlmsg, len));
-  ASSERT_EQ(nlmsg->nlmsg_type, NLMSG_ERROR);
-  auto* errmsg = reinterpret_cast<nlmsgerr*>(NLMSG_DATA(nlmsg));
-  ASSERT_EQ(errmsg->error, 0);
-
-  {
-    test_helper::NetlinkEncoder encoder(RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP);
-    rtmsg rtm = {
-        .rtm_family = family,
-    };
-    encoder.Write(rtm);
-    ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
-  }
   // Use a timeout instead of MSG_DONTWAIT to avoid timing issues with delays.
   struct timeval timeout = {.tv_sec = 0, .tv_usec = 100'000};
   ASSERT_EQ(setsockopt(nl_sock_.get(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)), 0);
+
+  bool ack_seen = false;
+  bool target_route_seen = false;
+  char buf[4096] = {};
+
   while (true) {
+    // If we don't expect a route, we'll continue waiting for EAGAIN to prove
+    // it doesn't arrive. Otherwise, short circuit the loop.
+    if (ack_seen && target_route_seen) {
+      break;
+    }
     ssize_t len = recv(nl_sock_.get(), buf, sizeof(buf), 0);
     if (len == 0) {
       break;
@@ -418,9 +421,13 @@ TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
     for (nlmsghdr* nlh = reinterpret_cast<nlmsghdr*>(buf); MY_NLMSG_OK(nlh, len);
          nlh = NLMSG_NEXT(nlh, len)) {
       switch (nlh->nlmsg_type) {
-        case NLMSG_DONE:
+        case NLMSG_ERROR: {
+          auto* errmsg = reinterpret_cast<nlmsgerr*>(NLMSG_DATA(nlh));
+          ASSERT_EQ(errmsg->error, 0);
+          ack_seen = true;
           break;
-        case RTM_NEWROUTE:
+        }
+        case RTM_NEWROUTE: {
           rtm = reinterpret_cast<rtmsg*>(NLMSG_DATA(nlh));
           // Linux and Fuchsia does local delivery differently, we ignore those by
           // filtering out routes that are not in the main table.
@@ -428,16 +435,17 @@ TEST_P(RouteNetlinkSocketNewAddr, AddSubnetRoute) {
             continue;
           }
           if (rtm->rtm_dst_len == prefix) {
-            ASSERT_TRUE(expect_subnet_route);
-            return;
+            target_route_seen = true;
           }
           break;
+        }
         default:
           FAIL() << "unknown message type: " << nlh->nlmsg_type;
       }
     }
   }
-  ASSERT_FALSE(expect_subnet_route);
+
+  ASSERT_EQ(expect_subnet_route, target_route_seen);
 }
 
 INSTANTIATE_TEST_SUITE_P(
