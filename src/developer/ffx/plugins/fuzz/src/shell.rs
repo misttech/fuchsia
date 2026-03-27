@@ -6,10 +6,13 @@ use crate::fuzzer::Fuzzer;
 use crate::reader::{ParsedCommand, Reader};
 use anyhow::{Context as _, Error, Result, anyhow, bail};
 use errors::ffx_bail;
+use fdomain_client::fidl::{DiscoverableProtocolMarker as _, Proxy as _};
+use fdomain_fuchsia_developer_remotecontrol as rcs;
+use fdomain_fuchsia_fuzzer as fuzz;
 use ffx_config::EnvironmentContext;
 use ffx_fuzz_args::*;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fuchsia_fuzzctl::{
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_fuzzctl_fdomain::{
     Manager, MonotonicDuration, OutputSink, Writer, get_corpus_type, get_fuzzer_urls,
 };
 use futures::{FutureExt, pin_mut, select};
@@ -19,10 +22,6 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 use termion::{clear, cursor};
 use url::Url;
-use {
-    fidl_fuchsia_developer_remotecontrol as rcs, fidl_fuchsia_fuzzer as fuzz,
-    fidl_fuchsia_sys2 as fsys,
-};
 
 /// The default output directory variable used by `Shell::attach`.
 pub const DEFAULT_FUZZING_OUTPUT_VARIABLE: &str = "fuzzer.output";
@@ -626,7 +625,7 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
 
     async fn connect_to_manager(&self) -> Result<Manager> {
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-        let (proxy, server) = fidl::endpoints::create_proxy::<fuzz::ManagerMarker>();
+        let (proxy, server) = self.remote_control.domain().create_proxy::<fuzz::ManagerMarker>();
         self.remote_control
             .connect_capability(
                 "/core/fuzz-manager",
@@ -667,27 +666,28 @@ mod test_fixtures {
     use super::Shell;
     use crate::reader::test_fixtures::ScriptReader;
     use anyhow::{Context as _, Result, anyhow};
+    use fdomain_client::fidl::{DiscoverableProtocolMarker as _, ServerEnd};
+    use fdomain_fuchsia_developer_remotecontrol as rcs;
+    use fdomain_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
     use ffx_config::EnvironmentContext;
     use ffx_fuzz_args::FuzzerState;
-    use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd, create_proxy};
-    use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
-    use fuchsia_fuzzctl::MonotonicDuration;
-    use fuchsia_fuzzctl_test::{
+    use fidl_fuchsia_sys2 as fsys;
+    use fuchsia_async as fasync;
+    use fuchsia_fuzzctl_fdomain::MonotonicDuration;
+    use fuchsia_fuzzctl_test_fdomain::{
         BufferSink, FakeController, TEST_URL, Test, create_task, serve_manager,
     };
     use futures::StreamExt;
     use std::fmt::Display;
     use std::path::PathBuf;
+    use std::sync::Arc;
     use url::Url;
-    use {
-        fidl_fuchsia_developer_remotecontrol as rcs, fidl_fuchsia_sys2 as fsys,
-        fuchsia_async as fasync,
-    };
 
     /// Represents a set of test fakes used to test `Shell`.
     pub struct ShellScript {
         shell: Shell<ScriptReader, BufferSink>,
         _rcs_task: fasync::Task<()>,
+        _client: Arc<fdomain_client::Client>,
         state: FuzzerState,
         output_dir: PathBuf,
         runs_indefinitely: bool,
@@ -702,13 +702,15 @@ mod test_fixtures {
                 .create_tests_json(urls.iter())
                 .context("failed to write URLs for shell script")?;
             let tests_json = Some(tests_json.to_string_lossy().to_string());
-            let (proxy, server_end) = create_proxy::<rcs::RemoteControlMarker>();
+            let client = test.domain();
+            let (proxy, server_end) = client.create_proxy::<rcs::RemoteControlMarker>();
             let rcs_task = create_task(serve_rcs(server_end, test.clone()), test.writer());
             let reader = ScriptReader::new();
             let shell = Shell::new(tests_json, proxy, reader, test.writer());
             Ok(Self {
                 shell,
                 _rcs_task: rcs_task,
+                _client: client,
                 state: FuzzerState::Detached,
                 output_dir: test.root_dir().to_path_buf(),
                 runs_indefinitely: false,
@@ -851,9 +853,9 @@ mod tests {
     use super::DEFAULT_FUZZING_OUTPUT_VARIABLE;
     use super::test_fixtures::ShellScript;
     use anyhow::Result;
-    use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
-    use fuchsia_fuzzctl::{MonotonicDuration, digest_path};
-    use fuchsia_fuzzctl_test::{TEST_URL, Test, verify_saved};
+    use fdomain_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+    use fuchsia_fuzzctl_fdomain::{MonotonicDuration, digest_path};
+    use fuchsia_fuzzctl_test_fdomain::{TEST_URL, Test, verify_saved};
     use std::path::PathBuf;
     use zx_status as zx;
 

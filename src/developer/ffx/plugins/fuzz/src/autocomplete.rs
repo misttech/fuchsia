@@ -5,7 +5,7 @@
 use crate::options;
 use anyhow::Result;
 use ffx_fuzz_args::*;
-use fuchsia_fuzzctl::get_fuzzer_urls;
+use fuchsia_fuzzctl_fdomain::get_fuzzer_urls;
 use rustyline::Helper;
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
@@ -258,7 +258,7 @@ mod test_fixtures {
     use super::FuzzHelper;
     use anyhow::{Context as _, Result};
     use ffx_fuzz_args::FuzzerState;
-    use fuchsia_fuzzctl_test::Test;
+    use fuchsia_fuzzctl_test_fdomain::Test;
     use rustyline::completion::{Completer, Pair};
     use std::sync::{Arc, Mutex};
 
@@ -336,7 +336,7 @@ mod tests {
     use super::test_fixtures::{Replacements, set_state, verify_files, verify_pairs};
     use anyhow::Result;
     use ffx_fuzz_args::FuzzerState;
-    use fuchsia_fuzzctl_test::Test;
+    use fuchsia_fuzzctl_test_fdomain::Test;
     use rustyline::completion::Completer;
     use std::sync::{Arc, Mutex};
 

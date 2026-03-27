@@ -9,8 +9,8 @@ use ffx_config::EnvironmentContext;
 use ffx_fuzz_args::{FuzzCommand, Session};
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
-use fuchsia_fuzzctl::{StdioSink, Writer};
-use target_holders::RemoteControlProxyHolder;
+use fuchsia_fuzzctl_fdomain::{StdioSink, Writer};
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 mod autocomplete;
 mod fuzzer;

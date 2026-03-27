@@ -4,8 +4,8 @@
 
 use crate::options;
 use anyhow::{Context as _, Result};
-use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
-use fuchsia_fuzzctl::{
+use fdomain_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+use fuchsia_fuzzctl_fdomain::{
     Controller, InputPair, OutputSink, Writer, create_artifact_dir, create_corpus_dir,
     create_dir_at, get_corpus_name, save_artifact,
 };
@@ -60,7 +60,11 @@ impl<O: OutputSink> Fuzzer<O> {
     }
 
     /// Registers the provided standard output socket with the forwarder.
-    pub fn set_output(&mut self, socket: fidl::Socket, output: fuzz::TestOutput) -> Result<()> {
+    pub fn set_output(
+        &mut self,
+        socket: fdomain_client::Socket,
+        output: fuzz::TestOutput,
+    ) -> Result<()> {
         let logs_dir =
             create_dir_at(&self.output_dir, "logs").context("failed to create 'logs' directory")?;
         self.controller.set_output(socket, output, &Some(logs_dir))
@@ -399,11 +403,10 @@ mod tests {
     use super::{Fuzzer, get_result};
     use crate::options;
     use anyhow::Result;
-    use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
+    use fdomain_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
     use fuchsia_async as fasync;
-    use fuchsia_fuzzctl::digest_path;
-    use fuchsia_fuzzctl_test::{
+    use fuchsia_fuzzctl_fdomain::digest_path;
+    use fuchsia_fuzzctl_test_fdomain::{
         BufferSink, FakeController, TEST_URL, Test, add_defaults, create_task, serve_controller,
         verify_saved,
     };
@@ -415,7 +418,8 @@ mod tests {
         test: &Test,
     ) -> Result<(FakeController, Fuzzer<BufferSink>, fasync::Task<()>)> {
         let url = Url::parse(TEST_URL)?;
-        let (proxy, stream) = create_proxy_and_stream::<fuzz::ControllerMarker>();
+        let client = test.domain();
+        let (proxy, stream) = client.create_proxy_and_stream::<fuzz::ControllerMarker>();
         let fake = test.controller();
         let writer = test.writer();
         let fuzzer = Fuzzer::new(&url, proxy, test.root_dir(), &writer);

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result, anyhow, bail};
-use fidl_fuchsia_fuzzer as fuzz;
-use fuchsia_fuzzctl::constants::*;
+use fdomain_fuchsia_fuzzer as fuzz;
+use fuchsia_fuzzctl_fdomain::constants::*;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -300,7 +300,7 @@ fn parse_size(value: &str) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_fuzzctl_test::add_defaults;
+    use fuchsia_fuzzctl_test_fdomain::add_defaults;
 
     #[test]
     fn test_format_duration() -> Result<()> {

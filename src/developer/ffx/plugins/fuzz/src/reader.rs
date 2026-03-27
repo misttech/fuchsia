@@ -214,7 +214,7 @@ pub mod test_fixtures {
     use anyhow::{Result, bail};
     use async_trait::async_trait;
     use fuchsia_async as fasync;
-    use fuchsia_fuzzctl::{MonotonicDuration, deadline_after};
+    use fuchsia_fuzzctl_fdomain::{MonotonicDuration, deadline_after};
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
     use std::collections::LinkedList;
