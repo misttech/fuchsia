@@ -38,6 +38,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown",
     "//sdk/fidl/fuchsia.url:fuchsia.url",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211",
     "//zircon/vdso/zx:zx",
     # keep-sorted: end
 ]
@@ -113,6 +114,7 @@ filegroup(
         "//sdk/fidl/fuchsia.sysmem2:__pkg__",
         "//sdk/fidl/fuchsia.unknown:__pkg__",
         "//sdk/fidl/fuchsia.url:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:__pkg__",
         "//zircon/vdso/zx:__pkg__",
     ],
 )
