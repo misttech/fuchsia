@@ -192,8 +192,7 @@ pub fn sys_getrandom(
     // Copy random bytes in up-to-page-size chunks, stopping either when all the user-requested
     // space has been written to or when we fault.
     let mut bytes_written = 0;
-    let mut bounce_buffer = Vec::with_capacity(std::cmp::min(*PAGE_SIZE as usize, size));
-    let bounce_buffer = bounce_buffer.spare_capacity_mut();
+    let mut bounce_buffer = vec![0u8; std::cmp::min(*PAGE_SIZE as usize, size)];
 
     let bytes_to_write = std::cmp::min(size, *MAX_RW_COUNT);
 
@@ -201,8 +200,8 @@ pub fn sys_getrandom(
         let chunk_start = start_addr.saturating_add(bytes_written);
         let chunk_len = std::cmp::min(*PAGE_SIZE as usize, size - bytes_written);
 
-        // Fine to index, chunk_len can't be greater than bounce_buffer.len();
-        let chunk = zx::cprng_draw_uninit(&mut bounce_buffer[..chunk_len]);
+        let chunk = &mut bounce_buffer[..chunk_len];
+        starnix_crypto::cprng_draw(chunk);
         match current_task.write_memory_partial(chunk_start, chunk) {
             Ok(n) => {
                 bytes_written += n;

@@ -55,7 +55,7 @@ impl DevKind {
 
 fn random_mac() -> fnet::MacAddress {
     let mut octets = [0u8; 6];
-    zx::cprng_draw(&mut octets[..]);
+    starnix_crypto::cprng_draw(&mut octets[..]);
     // Ensure the least-significant-bit of the first byte of the address is 0,
     // indicating that it is a unicast address.
     // https://en.wikipedia.org/wiki/MAC_address#Unicast_vs._multicast

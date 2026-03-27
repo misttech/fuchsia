@@ -29,9 +29,6 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
 use std::mem::MaybeUninit;
-use zx::{
-    cprng_draw_uninit, {self as zx},
-};
 
 #[derive(Default)]
 pub struct DevNull;
@@ -226,10 +223,9 @@ impl FileOps for DevRandom {
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        data.write_each(&mut |bytes| {
-            let read_bytes = cprng_draw_uninit(bytes);
-            Ok(read_bytes.len())
-        })
+        let mut rdm = vec![0u8; data.available()];
+        starnix_crypto::cprng_draw(&mut rdm);
+        data.write(&rdm)
     }
 
     fn ioctl(

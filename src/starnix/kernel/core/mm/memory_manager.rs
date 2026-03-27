@@ -4446,7 +4446,7 @@ fn generate_random_offset_for_aslr(arch_width: ArchWidth) -> usize {
             if arch_width.is_arch32() { ASLR_32_RANDOM_BITS } else { ASLR_RANDOM_BITS };
         let mask = (1 << random_bits) - 1;
         let mut bytes = [0; std::mem::size_of::<usize>()];
-        zx::cprng_draw(&mut bytes);
+        starnix_crypto::cprng_draw(&mut bytes);
         usize::from_le_bytes(bytes) & mask
     };
 
@@ -4772,7 +4772,7 @@ mod tests {
             assert_eq!(map_memory(locked, &current_task, addr, max_size as u64), addr);
 
             let mut random_data = vec![0; max_size];
-            zx::cprng_draw(&mut random_data);
+            starnix_crypto::cprng_draw(&mut random_data);
             // Remove all NUL bytes.
             for i in 0..random_data.len() {
                 if random_data[i] == 0 {

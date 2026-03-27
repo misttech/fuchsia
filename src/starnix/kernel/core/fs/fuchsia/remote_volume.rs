@@ -199,7 +199,7 @@ impl VolumeKeys {
     fn create(data: &fio::DirectorySynchronousProxy, key_path: &str) -> Result<Self, Errno> {
         let mut bytes = [0; Self::FILE_SIZE];
         bytes[..2].copy_from_slice(&Self::LATEST_VERSION.to_le_bytes());
-        zx::cprng_draw(&mut bytes[2..]);
+        starnix_crypto::cprng_draw(&mut bytes[2..]);
         let tmp_file = syncio::directory_create_tmp_file(
             data,
             fio::PERM_READABLE,

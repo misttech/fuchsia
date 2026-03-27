@@ -103,7 +103,7 @@ fn populate_initial_stack(
     write_stack(path.to_bytes_with_nul(), execfn_addr)?;
 
     let mut random_seed = [0; RANDOM_SEED_BYTES];
-    zx::cprng_draw(&mut random_seed);
+    starnix_crypto::cprng_draw(&mut random_seed);
     stack_pointer = (stack_pointer - random_seed.len())?;
     let random_seed_addr = stack_pointer;
     write_stack(&random_seed, random_seed_addr)?;

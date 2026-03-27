@@ -1892,7 +1892,7 @@ struct KcmpParams {
 
 static KCMP_PARAMS: LazyLock<KcmpParams> = LazyLock::new(|| {
     let mut params = KcmpParams::default();
-    zx::cprng_draw(params.as_mut_bytes());
+    starnix_crypto::cprng_draw(params.as_mut_bytes());
     // Ensure the shuffle is odd so that multiplying a usize by this value is a permutation.
     params.shuffle |= 1;
     params

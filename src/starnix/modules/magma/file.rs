@@ -500,7 +500,7 @@ impl FileOps for MagmaFile {
                     let mut device_map = self.devices.lock();
 
                     while device_id == 0 || device_map.contains_key(&device_id) {
-                        zx::cprng_draw(device_id.as_mut_bytes());
+                        starnix_crypto::cprng_draw(device_id.as_mut_bytes());
                         retry_count += 1;
                         if retry_count % 10 == 0 {
                             log_warn!("Too many retries generating device id: {}", retry_count);
@@ -529,7 +529,7 @@ impl FileOps for MagmaFile {
                     let mut connection_map = self.connections.lock();
 
                     while connection_id == 0 || connection_map.contains_key(&connection_id) {
-                        zx::cprng_draw(connection_id.as_mut_bytes());
+                        starnix_crypto::cprng_draw(connection_id.as_mut_bytes());
                         retry_count += 1;
                         if retry_count % 10 == 0 {
                             log_warn!("Too many retries generating connection id: {}", retry_count);

@@ -217,7 +217,7 @@ fn maybe_parse_socket_address(
 // See "Autobind feature" section of https://man7.org/linux/man-pages/man7/unix.7.html
 fn generate_autobind_address() -> FsString {
     let mut bytes = [0u8; 4];
-    zx::cprng_draw(&mut bytes);
+    starnix_crypto::cprng_draw(&mut bytes);
     let value = u32::from_ne_bytes(bytes) & 0xFFFFF;
     format!("\0{value:05x}").into()
 }
