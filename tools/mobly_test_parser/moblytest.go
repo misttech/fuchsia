@@ -113,7 +113,15 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 		case "FAIL":
 			status = runtests.TestFailure
 		case "SKIP":
-			status = runtests.TestSkipped
+			// If an earlier test fails and prevents later tests from running, Mobly
+			// returns SKIP, but sets TerminationSignal. The ResultDB status_v2 for
+			// this case is EXECUTION_ERRORED, but we don't currently support that.
+			// Use TestFailure instead.
+			if len(tc.TerminationSignal) != 0 {
+				status = runtests.TestFailure
+			} else {
+				status = runtests.TestSkipped
+			}
 		case "ERROR":
 			status = runtests.TestFailure
 		}

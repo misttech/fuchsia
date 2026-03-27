@@ -171,6 +171,68 @@ Type: Summary
 	testCaseCmp(t, stdout, want)
 }
 
+func TestParseMoblyTestSkipWithTerminationSignal(t *testing.T) {
+	stdout := `
+Running [InfraDriver]
+======== Mobly config content ========
+MoblyParams:
+  LogPath: /tmp
+TestBeds:
+- Controllers:
+    FuchsiaDevice:
+    - name: fuchsia-emulator
+      transport: fuchsia-controller
+  Name: InfraTestbed
+  TestParams: {}
+
+======================================
+
+[=====MOBLY RESULTS=====]
+---
+Requested Tests:
+- test_skip_with_sig
+Type: TestNameList
+---
+Begin Time: 1668122321142
+Details: Earlier test failed
+End Time: 1668122321143
+Extra Errors: {}
+Extras: null
+Result: SKIP
+Retry Parent: null
+Signature: test_skip_with_sig-1668122321142
+Stacktrace: null
+Termination Signal Type: TestAbortAll
+Test Class: GreetingsTest
+Test Name: test_skip_with_sig
+Type: Record
+UID: null
+---
+Error: 0
+Executed: 1
+Failed: 0
+Passed: 0
+Requested: 1
+Skipped: 1
+Type: Summary
+
+`
+
+	want := []runtests.TestCaseResult{
+		{
+			DisplayName: "GreetingsTest.test_skip_with_sig",
+			FailReason:  "[TestAbortAll] Earlier test failed",
+			SuiteName:   "GreetingsTest",
+			CaseName:    "test_skip_with_sig",
+			Status:      runtests.TestFailure,
+			Duration:    1 * time.Millisecond,
+			Format:      "Mobly",
+		},
+	}
+
+	testCaseCmp(t, stdout, want)
+}
+
 func TestParseMoblyTestErrorNoSummary(t *testing.T) {
 	stdout := `
 Running [InfraDriver]
