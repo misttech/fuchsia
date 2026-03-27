@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 use anyhow::{Context, Result};
 use assembled_system::AssembledSystem;
 use assembly_artifact_cache::{ArtifactCache, ArtifactType, MOSIdentifier, Slot};

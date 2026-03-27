@@ -98,6 +98,14 @@
       "hidden": false
     },
     {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--v2",
+      "short": null,
+      "description": "opt-in flag to use the experimental v2 bisection engine.",
+      "hidden": false
+    },
+    {
       "kind": {
         "Option": {
           "arg_name": "auth"

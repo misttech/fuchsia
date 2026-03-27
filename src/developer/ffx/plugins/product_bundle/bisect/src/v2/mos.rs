@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 use crate::v2::dimension::Dimension;
 use crate::v2::search_space::SearchSpace;
 use anyhow::{Context, Result, ensure};
-use assembly_artifact_cache::{MOSClient, MOSIdentifier};
+use assembly_artifact_cache::{MOSClient, MOSIdentifier, Slot};
 use async_trait::async_trait;
 use camino::Utf8Path;
 use serde::Deserialize;
@@ -59,6 +56,7 @@ pub async fn get_search_space<T: MOSClientTrait, PrintFn>(
     from_success: &str,
     to_failure: &str,
     fuchsia_dir: &Utf8Path,
+    slot: Slot,
     mut print_fn: PrintFn,
 ) -> Result<SearchSpace>
 where
@@ -66,9 +64,13 @@ where
 {
     print_fn("Preparing bisection plan...");
 
-    let starting_artifacts =
+    let mut starting_artifacts =
         get_pb_release_info(client, pb_name, from_success, &mut print_fn).await?;
-    let ending_artifacts = get_pb_release_info(client, pb_name, to_failure, &mut print_fn).await?;
+    starting_artifacts.retain(|a| a.slot == slot);
+
+    let mut ending_artifacts =
+        get_pb_release_info(client, pb_name, to_failure, &mut print_fn).await?;
+    ending_artifacts.retain(|a| a.slot == slot);
 
     match interpolate(client, &starting_artifacts, &ending_artifacts, &mut print_fn).await {
         Ok(space) => Ok(space),

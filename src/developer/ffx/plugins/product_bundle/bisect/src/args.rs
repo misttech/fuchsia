@@ -138,6 +138,10 @@ pub struct BisectCommand {
     #[argh(option)]
     pub script: Option<Utf8PathBuf>,
 
+    /// opt-in flag to use the experimental v2 bisection engine.
+    #[argh(switch)]
+    pub v2: bool,
+
     /// authentication method to use.
     #[argh(option, default = "AuthFlowChoice::Default")]
     pub auth: AuthFlowChoice,

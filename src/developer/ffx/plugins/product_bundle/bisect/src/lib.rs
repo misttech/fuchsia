@@ -28,8 +28,7 @@ mod bisection_controller;
 mod bisection_plan;
 mod search_space;
 mod strategies;
-/// The v2 bisection logic state machine.
-pub mod v2;
+mod v2;
 mod versioned_artifact_set;
 
 /// The ffx tool for bisecting product bundles.
@@ -56,8 +55,9 @@ impl FfxMain for ProductBisectTool {
         writer.line("")?;
         let cmd = sanitize_cmd(self.cmd);
 
-        let mut controller = match setup(cmd, &mut writer, &self.env_context).await {
-            Ok(controller) => controller,
+        let setup_result = setup_core(&cmd, &self.env_context).await;
+        let (plan_home, client, cache) = match setup_result {
+            Ok(result) => result,
             Err(e) => {
                 if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
                     writer.line("Authentication expired. Please run `ffx auth login`.")?;
@@ -65,12 +65,38 @@ impl FfxMain for ProductBisectTool {
                 return Err(e.into());
             }
         };
-        if let Err(e) = controller.run().await {
-            if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
-                writer.line("Authentication expired. Please run `ffx auth login`.")?;
+
+        if cmd.v2 {
+            if let Err(e) =
+                run_v2_bisection(cmd, &mut writer, &self.env_context, cache, client, plan_home)
+                    .await
+            {
+                if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
+                    writer.line("Authentication expired. Please run `ffx auth login`.")?;
+                }
+                return Err(e.into());
             }
-            return Err(e.into());
+        } else {
+            let mut controller = BisectionController::new(
+                cmd,
+                plan_home,
+                client,
+                cache,
+                &mut writer,
+                &self.env_context,
+            )
+            .await?;
+            controller
+                .save()
+                .map_err(|e| fho::Error::User(anyhow::anyhow!("Failed to save: {}", e)))?;
+            if let Err(e) = controller.run().await {
+                if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
+                    writer.line("Authentication expired. Please run `ffx auth login`.")?;
+                }
+                return Err(e.into());
+            }
         }
+
         Ok(())
     }
 }
@@ -84,11 +110,12 @@ fn sanitize_cmd(mut cmd: BisectCommand) -> BisectCommand {
     cmd
 }
 
-async fn setup<'a>(
-    cmd: BisectCommand,
-    writer: &'a mut SimpleWriter,
-    env_context: &'a EnvironmentContext,
-) -> Result<BisectionController<'a>> {
+/// Setup the environment for bisection, returning the plan home path,
+/// MOS client, and artifact cache.
+async fn setup_core(
+    cmd: &BisectCommand,
+    env_context: &EnvironmentContext,
+) -> Result<(Utf8PathBuf, MOSClient, ArtifactCache)> {
     // Create a directory for storing plan status and search results.
     let home = std::env::home_dir().context("Could not find home directory")?;
     let fuchsia_home = Utf8PathBuf::from_path_buf(home.join(".fuchsia"))
@@ -120,10 +147,169 @@ async fn setup<'a>(
     let cache = ArtifactCache::new(build_dir, gcs_client.clone())
         .context("Failed to create artifact cache")?;
 
-    // Create the bisection controller.
-    let mut controller =
-        BisectionController::new(cmd, plan_home, client, cache, writer, env_context).await?;
-    controller.save()?;
+    Ok((plan_home, client, cache))
+}
 
-    Ok(controller)
+async fn run_v2_bisection<'a>(
+    cmd: BisectCommand,
+    writer: &'a mut SimpleWriter,
+    env_context: &'a EnvironmentContext,
+    cache: ArtifactCache,
+    mut client: MOSClient,
+    plan_home: Utf8PathBuf,
+) -> Result<()> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    // We wrap the writer in an `Rc<RefCell<...>>` to provide interior
+    // mutability. The `Controller` orchestrates the bisection loop,
+    // but it also accepts a `test_fn` callback (a future-returning closure)
+    // that performs the assembly and testing of each bisection step.
+    //
+    // Both the `Controller` and the `test_fn` need to print to the console
+    // simultaneously to provide the user with ongoing status updates.
+    // The `Rc<RefCell>` allows us to safely clone references to the writer
+    // so both components can emit output.
+    let shared_writer = Rc::new(RefCell::new(writer));
+
+    let plan_file = plan_home.join("plan.json");
+    let mut fetch_from_mos = true;
+    let mut space = v2::SearchSpace::new(vec![]);
+
+    if plan_file.is_file() {
+        let writer_clone = shared_writer.clone();
+        let print = move |msg: &str| {
+            let _ = writer_clone.borrow_mut().line(msg);
+        };
+        print(&format!("Found previous bisection at {}", shorten_path(&plan_file)));
+        if confirm_action(&mut *shared_writer.borrow_mut())
+            .context("Failed to get user confirmation")?
+        {
+            print("Resuming existing plan...\n");
+            fetch_from_mos = false;
+        } else {
+            print("Deleting previous plan...\n");
+            fs::remove_file(&plan_file).context("Failed to delete existing plan")?;
+        }
+    }
+
+    if fetch_from_mos {
+        let fuchsia_dir = env_context
+            .build_dir()
+            .and_then(|p| Utf8PathBuf::from_path_buf(p.to_path_buf()).ok())
+            .and_then(|p| p.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| Utf8PathBuf::from("."));
+
+        let writer_clone = shared_writer.clone();
+        let mut print_mos = move |msg: &str| {
+            let _ = writer_clone.borrow_mut().line(msg);
+        };
+
+        space = v2::get_search_space(
+            &mut client,
+            &cmd.name,
+            &cmd.from_success,
+            &cmd.to_failure,
+            &fuchsia_dir,
+            cmd.slot,
+            &mut print_mos,
+        )
+        .await?;
+    }
+
+    let out_dir = cmd.out_dir.clone().unwrap_or_else(|| plan_home.join("out"));
+    let gen_dir = cmd.gen_dir.clone().unwrap_or_else(|| plan_home.join("gen"));
+    let script = cmd.script.clone();
+    let slot = cmd.slot;
+    let pb_name = cmd.name.clone();
+
+    let cache_ref = &cache;
+
+    // Define the callback function that the Controller will invoke
+    // for each step in the search space.
+    //
+    // It is responsible for assembling the specific combination of artifacts
+    // and validating the result.
+    let test_fn = |combination: std::vec::Vec<assembly_artifact_cache::MOSIdentifier>| {
+        let writer_clone1 = shared_writer.clone();
+        let mut print1 = move |msg: &str| {
+            let _ = writer_clone1.borrow_mut().line(msg);
+        };
+        let writer_clone2 = shared_writer.clone();
+        let mut print2 = move |msg: &str| {
+            let _ = writer_clone2.borrow_mut().line(msg);
+        };
+        let out_dir_clone = out_dir.clone();
+        let gen_dir_clone = gen_dir.clone();
+        let script_clone = script.clone();
+        let pb_name_clone = pb_name.clone();
+
+        async move {
+            let pb_path = v2::assemble(
+                &combination,
+                cache_ref,
+                env_context,
+                &pb_name_clone,
+                &out_dir_clone,
+                gen_dir_clone,
+                slot,
+                &mut print1,
+            )
+            .await?;
+
+            if let Some(script_path) = &script_clone {
+                v2::run_automated_test(script_path, &pb_path, &mut print2).await
+            } else {
+                v2::prompt_for_manual_test(&pb_path, &mut print2)
+            }
+        }
+    };
+
+    let writer_clone_ctrl = shared_writer.clone();
+    let mut print_fn = move |msg: &str| {
+        let _ = writer_clone_ctrl.borrow_mut().line(msg);
+    };
+
+    let mut controller = v2::Controller::new(space, plan_file, slot, test_fn, &mut print_fn)?;
+
+    let final_state = controller.run().await?;
+
+    // If the bisection successfully identified the bad artifact, print its details.
+    if let v2::StrategyState::Resolved { dim_idx, high_idx, .. } = final_state {
+        let bad_artifact = controller.space.dimensions[dim_idx].get_mos_identifier(high_idx, slot);
+        let writer_clone_res = shared_writer.clone();
+        let print = move |msg: &str| {
+            let _ = writer_clone_res.borrow_mut().line(msg);
+        };
+
+        let client = assembly_artifact_cache::mos::MOSClient::new(cache.gcs_client().clone());
+        if let Ok(info) = client.get_artifact_release_info(&bad_artifact).await {
+            if let Some(cipd) = info.cipd {
+                print(&format!(
+                    "  CIPD URL: https://chrome-infra-packages.appspot.com/p/{}/+/{}",
+                    cipd.path, cipd.tag
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn confirm_action(writer: &mut SimpleWriter) -> anyhow::Result<bool> {
+    use std::io::{self, Write};
+    loop {
+        writer.write_all(b"Continue? (y/n) ")?;
+        writer.flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        match input.to_lowercase().trim() {
+            "yes" | "y" => return Ok(true),
+            "no" | "n" => return Ok(false),
+            _ => {
+                writer.line("Invalid input. Please enter 'y', 'yes', 'n', or 'no'.")?;
+            }
+        }
+    }
 }
