@@ -199,7 +199,7 @@
   "include/zircon/syscalls/pci.h": "499fd335372c6d103779f18dfb35d971",
   "include/zircon/syscalls/policy.h": "002bd325b1b62356dc220c0f9719c4ab",
   "include/zircon/syscalls/port.h": "676fe0b9cc5422b9a96f2e378042fe5f",
-  "include/zircon/syscalls/profile.h": "ca29bace6786c600bde83eeeb898d010",
+  "include/zircon/syscalls/profile.h": "1515190986640816e91b5f11dc6ac01f",
   "include/zircon/syscalls/resource.h": "e6e1af082e7b7e5ca4b7db5ad4d78b0b",
   "include/zircon/syscalls/rseq.h": "1b25c8f2492c618b5c04cc45e15cc8cf",
   "include/zircon/syscalls/scheduler.h": "bd858bf04ead5099ea79c11245f8414a",

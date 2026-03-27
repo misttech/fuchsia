@@ -21,6 +21,7 @@ __BEGIN_CDECLS
 #define ZX_PROFILE_INFO_FLAG_DEADLINE (1 << 2)
 #define ZX_PROFILE_INFO_FLAG_NO_INHERIT (1 << 3)
 #define ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY (1 << 4)
+#define ZX_PROFILE_INFO_FLAG_CRITICAL (1 << 5)
 
 typedef struct zx_profile_info {
   // A bitmask of ZX_PROFILE_INFO_FLAG_* values. Controls overall profile
