@@ -18,6 +18,7 @@ mod aarch64;
 pub mod riscv64;
 
 #[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct ExtendedPstateState {
     #[cfg(target_arch = "x86_64")]
     state: x86_64::State,
@@ -33,6 +34,7 @@ pub struct ExtendedPstateState {
 /// A version of [`ExtendedPstateState`] that only stores the processor state
 /// accessible from AArch32 (e.g., registers Q0-Q15).
 #[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct ExtendedAarch32PstateState {
     state: aarch64::Aarch32State,
 }

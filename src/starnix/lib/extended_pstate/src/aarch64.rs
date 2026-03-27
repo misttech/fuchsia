@@ -5,6 +5,7 @@
 use static_assertions::const_assert_eq;
 
 #[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct State {
     // [arm/v8]: A1.3.1 Execution state
     // 32 registers, 128 bits each
@@ -17,6 +18,7 @@ pub struct State {
 const_assert_eq!(std::mem::size_of::<State>(), 512 + 16);
 
 #[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct Aarch32State {
     // [arm/v8]: E1.3.1 The SIMD and floating-point register file
     // 16 registers, 128 bits each

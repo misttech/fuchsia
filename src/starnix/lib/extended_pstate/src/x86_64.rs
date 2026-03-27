@@ -6,6 +6,7 @@ use static_assertions::const_assert_eq;
 use std::sync::LazyLock;
 
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub(crate) struct State {
     pub(crate) buffer: XSaveArea,
     strategy: Strategy,
