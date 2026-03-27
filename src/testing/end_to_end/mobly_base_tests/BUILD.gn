@@ -5,30 +5,6 @@
 import("//build/python/python_library.gni")
 
 if (is_host) {
-  # NOTE: fuchsia_power_base_test requires associated on device packages to be available. Since python
-  # libraries are only built on the host, if you depend on `fuchsia_power_base_test` then you must
-  # also include a package_deps for the packages:
-  #
-  #```
-  #  package_deps = [ "//src/tests/end_to_end/power/load_generator" ]
-  #```
-  python_library("fuchsia_power_base_test") {
-    testonly = true
-
-    # Add "_lib" suffix to avoid import collision in the PYZ file when
-    # `fuchsia_power_base_test` is used as the source in both Python lib and test
-    library_name = "fuchsia_power_base_test_lib"
-    source_root = "fuchsia_power_base_test"
-    sources = [
-      "__init__.py",
-      "fuchsia_power_base_test.py",
-    ]
-    library_deps = [
-      ":fuchsia_base_test",
-      "//src/performance/lib/perf_publish",
-    ]
-  }
-
   python_library("test_case_revive") {
     # TODO(b/366268742): Enable MyPy type checking
     enable_mypy = false
