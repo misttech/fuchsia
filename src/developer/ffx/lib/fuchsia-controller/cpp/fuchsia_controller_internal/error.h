@@ -8,7 +8,13 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <string>
+
 namespace error {
+
+// TODO(https://fxbug.dev/42077810): This has been copied from zircon code, as vdso doesn't build
+// this for host.
+extern std::string zx_status_get_string(zx_status_t status);
 
 // The (singleton) type of the ZxStatus error type. Must be initialized using ZxStatusType_Create().
 extern PyTypeObject* ZxStatusType;

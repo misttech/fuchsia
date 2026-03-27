@@ -17,10 +17,6 @@ namespace error {
 
 namespace fc = fuchsia_controller;
 
-namespace {
-
-// TODO(https://fxbug.dev/42077810): This has been copied from zircon code, as vdso doesn't build
-// this for host.
 std::string zx_status_get_string(zx_status_t status) {
   switch (status) {
     case ZX_OK:
@@ -123,6 +119,8 @@ std::string zx_status_get_string(zx_status_t status) {
       return ss.str();
   }
 }
+
+namespace {
 
 std::string fc_status_get_string(fc_status_t status) {
   switch (status) {
@@ -243,7 +241,7 @@ PyObject *FcTransportStatus_repr(PyObject *self, PyTypeObject *defining_class,
 
 PyObject *FcTransportStatus_str(PyObject *self) {
   std::stringstream ss;
-  ss << "FC status: " << FcTransportStatus_reprstr_helper(self);
+  ss << FcTransportStatus_reprstr_helper(self);
   return PyUnicode_FromString(ss.str().c_str());
 }
 

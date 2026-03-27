@@ -16,6 +16,104 @@
 extern struct PyModuleDef fuchsia_controller_internal;
 
 namespace {
+
+// The purpose of this wrapper type is to allow for more descriptive error messages for zx_status_t
+// types. Currently the formatter cannot differentiate between this type and a regular integer, so
+// things like ZX_ERR_PEER_CLOSED would print as "-24" without this wrapper. So far the surface area
+// that needs to be handled is relatively small. Only the `TargetError` variant of
+// `fuchsia.fdomain.Error` needs to be handled, but in order to ensure all formatting works
+// correctly, we also need to wrap other types in this formatter, deconstruct them, and wrap their
+// inner errors when encountered.
+//
+// It does have a decent amount of boilerplate, but that's the price we're currently paying to have
+// more clarity around error messages.
+template <typename T>
+struct DescriptiveFormatter {
+  const T &error;
+  explicit DescriptiveFormatter(const T &err) : error(err) {}
+};
+}  // namespace
+
+namespace fidl::ostream {
+template <>
+struct Formatter<DescriptiveFormatter<fuchsia_fdomain::Error>> {
+  static std::ostream &Format(std::ostream &os,
+                              const DescriptiveFormatter<fuchsia_fdomain::Error> &f) {
+    auto err = f.error;
+    switch (err.Which()) {
+      case fuchsia_fdomain::Error::Tag::kTargetError:
+        os << "fuchsia_fdomain::Error::target_error("
+           << error::zx_status_get_string(err.target_error().value()) << ")";
+        break;
+      case fuchsia_fdomain::Error::Tag::kBadHandleId:
+      case fuchsia_fdomain::Error::Tag::kNewHandleIdOutOfRange:
+      case fuchsia_fdomain::Error::Tag::kNewHandleIdReused:
+      case fuchsia_fdomain::Error::Tag::kWrongHandleType:
+      case fuchsia_fdomain::Error::Tag::kStreamingReadInProgress:
+      case fuchsia_fdomain::Error::Tag::kNoReadInProgress:
+      case fuchsia_fdomain::Error::Tag::kWroteToSelf:
+      case fuchsia_fdomain::Error::Tag::kClosedDuringRead:
+      case fuchsia_fdomain::Error::Tag::kSignalsUnknown:
+      case fuchsia_fdomain::Error::Tag::kRightsUnknown:
+      case fuchsia_fdomain::Error::Tag::kSocketDispositionUnknown:
+      case fuchsia_fdomain::Error::Tag::kSocketTypeUnknown:
+        os << fidl::ostream::Formatted(err);
+        break;
+      default:
+        os << "unhandled variant. This is a bug: " << fidl::ostream::Formatted(err);
+        break;
+    }
+    return os;
+  }
+};
+
+template <>
+struct Formatter<DescriptiveFormatter<fuchsia_fdomain::WriteChannelError>> {
+  static std::ostream &Format(std::ostream &os,
+                              const DescriptiveFormatter<fuchsia_fdomain::WriteChannelError> &f) {
+    auto err = f.error;
+    os << "fuchsia_fdomain::WriteChannelError::";
+    switch (err.Which()) {
+      case fuchsia_fdomain::WriteChannelError::Tag::kError:
+        os << "error(" << fidl::ostream::Formatted(DescriptiveFormatter(err.error().value()))
+           << ")";
+        break;
+      case fuchsia_fdomain::WriteChannelError::Tag::kOpErrors:
+        os << "op_errors([";
+        if (err.op_errors().has_value()) {
+          const auto &errors = err.op_errors().value();
+          for (auto iter = errors.cbegin(); iter != errors.cend(); iter++) {
+            if (iter->has_value()) {
+              os << fidl::ostream::Formatted(DescriptiveFormatter(iter->value()));
+            } else {
+              os << "null";
+            }
+            if (iter != errors.cend()) {
+              os << ", ";
+            }
+          }
+        }
+        os << "])";
+        break;
+    }
+    return os;
+  }
+};
+
+template <>
+struct Formatter<DescriptiveFormatter<fuchsia_fdomain::WriteSocketError>> {
+  static std::ostream &Format(std::ostream &os,
+                              const DescriptiveFormatter<fuchsia_fdomain::WriteSocketError> &f) {
+    auto err = f.error;
+    os << "fuchsia_fdomain::WriteSocketError { error: "
+       << fidl::ostream::Formatted(DescriptiveFormatter(err.error()))
+       << ", wrote: " << fidl::ostream::Formatted(err.wrote()) << " }";
+    return os;
+  }
+};
+}  // namespace fidl::ostream
+
+namespace {
 // Takes a PyTuple and sets the decode error (if we encountered one).
 template <typename T, typename V>
 PyObject *get_decode_error(const fit::result<T, V> &decode_res) {
@@ -44,18 +142,15 @@ PyObject *decode_wire_error_type(mod::FuchsiaControllerState *state) {
   if (decode_res.is_error()) {
     return get_decode_error(decode_res);
   }
-  std::ostringstream ss;
   // For the time being there's not any existing code that handles the various
   // kinds of errors that this could turn into. We're going to turn it into a
   // somewhat readable string, and depending on use-cases we can add
   // easier-to-debug information later. Ideally in the future we can leverage
   // Python bindings and simply use some kind of `unpersist` function for that
   // instead.
-  //
-  // There is a bit of a small drop in readability for integer-based errors.
-  // For example, PEER_CLOSED, which is still possible in target errors, would
-  // be rendered as -24
-  auto fostream = fidl::ostream::Formatted(decode_res.value());
+  DescriptiveFormatter descriptive_formatter(decode_res.value());
+  auto fostream = fidl::ostream::Formatted(descriptive_formatter);
+  std::ostringstream ss;
   ss << fostream;
   auto output = ss.str();
   return PyUnicode_FromStringAndSize(output.data(), static_cast<Py_ssize_t>(output.size()));
@@ -86,9 +181,9 @@ void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err) 
     }
     default:
       std::ostringstream ss;
-      // It's a little awkward, but in the event that the caller just sent something wrong we should
-      // let the user know they've run into a bug. This would only happen if "set_python_exception"
-      // was written incorrectly.
+      // It's a little awkward, but in the event that the caller just sent something wrong we
+      // should let the user know they've run into a bug. This would only happen if
+      // "set_python_exception" was written incorrectly.
       ss << "Received unrecognized fc_status_t error (" << err << ") in " << __func__
          << ". This is a bug";
       auto out = ss.str();
@@ -105,7 +200,6 @@ void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err) 
 }  // namespace
 
 namespace mod {
-
 FuchsiaControllerState *get_module_state() {
   auto mod = PyState_FindModule(&fuchsia_controller_internal);
   if (mod == nullptr) {
