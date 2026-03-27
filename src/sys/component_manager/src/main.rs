@@ -17,12 +17,13 @@ use crate::builtin_environment::{BuiltinEnvironment, BuiltinEnvironmentBuilder};
 use ::cm_logger::klog;
 use anyhow::Error;
 use cm_config::RuntimeConfig;
+use fidl_fuchsia_component_internal as finternal;
+use fuchsia_async as fasync;
 use fuchsia_runtime::{job_default, process_self};
 use log::{error, info};
 use std::path::PathBuf;
 use std::{panic, process};
 use zx::JobCriticalOptions;
-use {fidl_fuchsia_component_internal as finternal, fuchsia_async as fasync};
 
 #[cfg(feature = "heapdump")]
 use ::routing::component_instance::ComponentInstanceInterface;
@@ -65,9 +66,6 @@ fn main() {
     let ldsvc =
         unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(zx::sys::ZX_HANDLE_INVALID)) };
     drop(ldsvc);
-
-    // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
-    fuchsia_sync::suppress_lock_cycle_panics();
 
     let args = startup::Arguments::from_args()
         .unwrap_or_else(|err| panic!("{}\n{}", err, startup::Arguments::usage()));
