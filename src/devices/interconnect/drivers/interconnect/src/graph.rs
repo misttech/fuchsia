@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_next_fuchsia_hardware_interconnect as icc;
 use fuchsia_inspect::ArrayProperty;
+use fuchsia_trace as ftrace;
 use log::error;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use zx::Status;
-use {fidl_fuchsia_hardware_interconnect as icc, fuchsia_trace as ftrace};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId(pub u32);

@@ -10,4 +10,5 @@ fidl("fuchsia.hardware.interconnect") {
   sources = [ "interconnect.fidl" ]
   sdk_area = "Drivers"
   public_deps = [ "//zircon/vdso/zx" ]
+  enable_rust_next = true
 }

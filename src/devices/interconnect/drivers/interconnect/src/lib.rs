@@ -5,16 +5,20 @@
 use crate::graph::{NodeGraph, NodeId, Path, PathId};
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
+use fidl_next::{FlexibleResult, FrameworkError};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, Property, UintProperty};
-use futures::{StreamExt, TryStreamExt};
-use log::{debug, error, info, warn};
+use futures::channel::mpsc;
+use futures::{SinkExt, StreamExt};
+use log::{debug, error, info};
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use zx::Status;
 
-use {fidl_fuchsia_hardware_interconnect as icc, fuchsia_async as fasync, fuchsia_trace as ftrace};
+use fidl_next_fuchsia_hardware_interconnect as icc;
+use fuchsia_async as fasync;
+use fuchsia_trace as ftrace;
 
 mod graph;
 
@@ -29,7 +33,7 @@ struct Child {
     graph: Rc<RefCell<NodeGraph>>,
     #[allow(unused)]
     controller: NodeControllerProxy,
-    device: icc::DeviceProxy,
+    device: fidl_next::Client<icc::Device>,
     #[allow(unused)]
     inspect: fuchsia_inspect::Node,
     average_bandwidth_bps: UintProperty,
@@ -38,7 +42,7 @@ struct Child {
 }
 
 impl Child {
-    async fn set_bandwidth(
+    async fn set_bandwidth_impl(
         &self,
         average_bandwidth_bps: Option<u64>,
         peak_bandwidth_bps: Option<u64>,
@@ -69,44 +73,64 @@ impl Child {
             graph.make_bandwidth_requests(&self.path)
         };
 
-        let result = self
-            .device
-            .set_nodes_bandwidth(&requests)
-            .await
-            .map_err(|err| {
-                error!("Failed to set bandwidth with {err}");
-                Status::INTERNAL
-            })?
-            .map_err(Status::from_raw)?;
+        let result = self.device.set_nodes_bandwidth(&requests).await.map_err(|err| {
+            error!("Failed to set bandwidth with {err}");
+            Status::INTERNAL
+        })?;
 
-        self.graph.borrow_mut().update_stats(result);
+        let response = match result {
+            FlexibleResult::Ok(response) => Ok(response),
+            FlexibleResult::Err(err) => {
+                let err = Status::from_raw(err);
+                error!("Failed to set bandwidth with {err}");
+                Err(err)
+            }
+            FlexibleResult::FrameworkErr(err) => {
+                panic!("Device does not implement `set_nodes_bandwidth`: {err:?}")
+            }
+        }?;
+
+        self.graph.borrow_mut().update_stats(response.aggregated_bandwidth);
 
         // TODO(b/405206028): On failure, try to set old values?
 
         Ok(())
     }
-
-    async fn run_path_server(&self, mut service: icc::PathRequestStream) {
-        use icc::PathRequest::*;
-        while let Some(req) = service.try_next().await.unwrap() {
-            match req {
-                SetBandwidth { payload, responder, .. } => responder.send(
-                    self.set_bandwidth(
-                        payload.average_bandwidth_bps,
-                        payload.peak_bandwidth_bps,
-                        payload.tag,
-                    )
-                    .await
-                    .map_err(Status::into_raw),
-                ),
-                // Ignore unknown requests.
-                _ => {
-                    warn!("Received unknown path request");
-                    Ok(())
-                }
-            }
-            .unwrap();
+}
+impl icc::PathLocalServerHandler for &Child {
+    async fn set_bandwidth(
+        &mut self,
+        request: fidl_next::Request<icc::path::SetBandwidth>,
+        responder: fidl_next::Responder<icc::path::SetBandwidth>,
+    ) {
+        let payload = request.payload();
+        let res = self
+            .set_bandwidth_impl(
+                payload.average_bandwidth_bps,
+                payload.peak_bandwidth_bps,
+                payload.tag,
+            )
+            .await;
+        match res {
+            Ok(()) => responder.respond(()).await.unwrap(),
+            Err(err) => responder.respond_err(err.into_raw()).await.unwrap(),
         }
+    }
+}
+
+struct PathService {
+    scope: fasync::ScopeHandle,
+    name: String,
+    sender: mpsc::Sender<(fidl_next::ServerEnd<icc::Path>, String)>,
+}
+
+impl icc::PathServiceHandler for PathService {
+    fn path(&self, server_end: fidl_next::ServerEnd<icc::Path>) {
+        let name = self.name.clone();
+        let mut sender = self.sender.clone();
+        self.scope.spawn_local(async move {
+            sender.send((server_end, name)).await.ok();
+        });
     }
 }
 
@@ -124,27 +148,34 @@ impl InterconnectDriver {
         let inspector = Inspector::default();
         context.publish_inspect(&inspector, fasync::Scope::current())?;
 
-        let device = context
-            .incoming
-            .service_marker(icc::ServiceMarker)
-            .connect()?
-            .connect_to_device()
+        let device_service: fdf_component::ServiceInstance<icc::Service> =
+            context.incoming.service().connect_next()?;
+        let (device_client, device_server) = fidl_next::fuchsia::create_channel();
+        device_service.device(device_server).map_err(|err| {
+            error!("Error connecting to interconnect device at driver startup: {err}");
+            Status::INTERNAL
+        })?;
+        let device = device_client.spawn();
+
+        let node_graph = device
+            .get_node_graph()
+            .await
             .map_err(|err| {
-                error!("Error connecting to interconnect device at driver startup: {err}");
+                error!("Failed to get node graph with {err}");
                 Status::INTERNAL
-            })?;
+            })?
+            .unwrap(); // Flexible::FrameworkErr means the method is not implemented
+        let mut graph = NodeGraph::new(node_graph.nodes, node_graph.edges)?;
 
-        let (nodes, edges) = device.get_node_graph().await.map_err(|err| {
-            error!("Failed to get node graph with {err}");
-            Status::INTERNAL
-        })?;
-        let mut graph = NodeGraph::new(nodes, edges)?;
-
-        let path_endpoints = device.get_path_endpoints().await.map_err(|err| {
-            error!("Failed to get path endpoints with {err}");
-            Status::INTERNAL
-        })?;
-        let paths: Vec<_> = Result::from_iter(path_endpoints.into_iter().map(|path| {
+        let path_endpoints = device
+            .get_path_endpoints()
+            .await
+            .map_err(|err| {
+                error!("Failed to get path endpoints with {err}");
+                Status::INTERNAL
+            })?
+            .unwrap(); // Flexible::FrameworkErr means the method is not implemented
+        let paths: Vec<_> = Result::from_iter(path_endpoints.paths.into_iter().map(|path| {
             let path_id = PathId(path.id.ok_or(Status::INVALID_ARGS)?);
             let path_name = path.name.ok_or(Status::INVALID_ARGS)?;
             let src_node_id = NodeId(path.src_node_id.ok_or(Status::INVALID_ARGS)?);
@@ -172,18 +203,24 @@ impl InterconnectDriver {
             })
         });
 
+        let (conn_tx, conn_rx) = mpsc::channel(1);
+        let scope = fasync::Scope::new_with_name("driver");
         let mut children = BTreeMap::new();
         let mut sync_state_completers = Vec::new();
         let sync_state = Rc::new(Cell::new(false));
         for (path, tag) in paths {
             let name = format!("{}-{}", path.name(), path.id());
-            let name_clone = name.clone();
-            let offer = ServiceOffer::new()
-                .add_default_named(&mut outgoing, &name, move |req| {
-                    let icc::PathServiceRequest::Path(service) = req;
-                    (service, name_clone.clone())
-                })
-                .build_zircon_offer();
+            let offer = ServiceOffer::new_marker_next(icc::PathService)
+                .add_default_named_next(
+                    &mut outgoing,
+                    &name,
+                    PathService {
+                        scope: scope.clone(),
+                        name: name.clone(),
+                        sender: conn_tx.clone(),
+                    },
+                )
+                .build_zircon_offer_next();
 
             let node_args = NodeBuilder::new(&name)
                 .add_property(bind_fuchsia::BIND_INTERCONNECT_PATH_ID, path.id().0)
@@ -241,8 +278,6 @@ impl InterconnectDriver {
             })
         });
 
-        let scope = fasync::Scope::new_with_name("driver");
-
         // Once we all child devices spawned have had drivers bind and run their start routines, we
         // can assume they have also cast their initial votes and inform our parent to act upon
         // these votes.
@@ -259,11 +294,14 @@ impl InterconnectDriver {
                 Err(err) => {
                     error!("Failed to set bandwidth with {err}");
                 }
-                Ok(Err(err)) => {
-                    error!("Failed to set bandwidth with {err:?}");
+                Ok(FlexibleResult::Ok(result)) => {
+                    graph.borrow_mut().update_stats(result.aggregated_bandwidth);
                 }
-                Ok(Ok(result)) => {
-                    graph.borrow_mut().update_stats(result);
+                Ok(FlexibleResult::Err(err)) => {
+                    error!("Failed to set bandwidth with {}", Status::from_raw(err));
+                }
+                Ok(FlexibleResult::FrameworkErr(FrameworkError::UnknownMethod)) => {
+                    panic!("Device does not implement set_nodes_bandwidth");
                 }
             };
         });
@@ -271,13 +309,21 @@ impl InterconnectDriver {
         context.serve_outgoing(&mut outgoing)?;
 
         let children = Rc::new(children);
+        scope.spawn_local(outgoing.collect());
         scope.spawn_local(async move {
-            outgoing
+            conn_rx
                 .for_each_concurrent(None, move |(request, child_name)| {
                     let children = children.clone();
                     async move {
                         if let Some(node) = children.get(&child_name) {
-                            node.run_path_server(request).await;
+                            let dispatcher = fidl_next::ServerDispatcher::new(request);
+                            dispatcher
+                                .run_local(node)
+                                .await
+                                .inspect_err(|err| {
+                                    error!("Error in child dispatch loop for {child_name}: {err}");
+                                })
+                                .ok();
                         } else {
                             error!("Failed to find child {child_name}");
                         }

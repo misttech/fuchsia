@@ -27,6 +27,7 @@ rustc_library("fidl_next") {
     "//sdk/fidl/*",
     "//sdk/lib/driver/*",
     "//src/devices/block/drivers/cqhci/*",
+    "//src/devices/interconnect/drivers/*",
     "//src/lib/fdomain/*",
     "//src/lib/fidl/rust_next/*",
     "//src/lib/fuchsia-component/*",
