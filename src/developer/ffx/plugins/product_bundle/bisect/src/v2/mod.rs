@@ -4,6 +4,7 @@
 
 mod controller;
 mod dimension;
+mod mos;
 mod search_space;
 mod strategy;
 

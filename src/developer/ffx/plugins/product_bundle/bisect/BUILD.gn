@@ -23,6 +23,7 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "src/v2/controller.rs",
     "src/v2/dimension.rs",
     "src/v2/mod.rs",
+    "src/v2/mos.rs",
     "src/v2/search_space.rs",
     "src/v2/strategy.rs",
     "src/versioned_artifact_set.rs",
