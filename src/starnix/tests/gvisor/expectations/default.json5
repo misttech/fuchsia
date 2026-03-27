@@ -910,6 +910,10 @@
                 "PtyTest.PacketModeWriteReplicaToMaster",
                 "PtyTest.PacketModeFailsOnReplica",
 
+                // TODO(https://fxbug.dev/495998421): Implement termios2 ioctls.
+                "PtyTest.Termios2",
+                "PtyTest.TermiosFault",
+
                 // fuse_test
                 "FuseTest.CloneDevice",
                 "FuseTest.CloneToConnectedDeviceFails",
@@ -1124,6 +1128,9 @@
 
                 // TODO(https://fxbug.dev/42079297): Investigate failure on arm.
                 "SigstopTest.RestartSyscall",
+
+                // TODO(https://fxbug.dev/495996345): Implement SIGCONT that aborts an ongoing stop.
+                "SigstopTest.SIGCONTAbortsSIGSTOP",
 
                 // exec_binary_test
                 // Passes on x86 and fails on arm.
