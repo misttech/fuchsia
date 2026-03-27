@@ -25,12 +25,15 @@ class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
 
     async def setup_class(self) -> None:
         await super().setup_class()
+        self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
 
     async def teardown_class(self) -> None:
         # These tests will leave a daemon turned on, but that might effect other
         # tests that expect the daemon to be off.
         self.run_ffx(
             [
+                "--isolate-dir",
+                self.isolate_dir,
                 "daemon",
                 "stop",
             ]
@@ -40,6 +43,8 @@ class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
     def _run_ffx_direct_isolated(self, cmd: list[str]) -> None:
         self.run_ffx(
             [
+                "--isolate-dir",
+                self.isolate_dir,
                 "--direct",
                 *cmd,
             ],

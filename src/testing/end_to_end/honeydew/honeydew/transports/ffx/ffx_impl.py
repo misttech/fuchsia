@@ -699,6 +699,8 @@ class FfxImpl(ffx_interface.FFX):
                 target = self.get_target_address()
                 ffx_args.extend(["-t", f"{target}"])
 
+        # To run FFX in isolation mode
+        ffx_args.extend(["--isolate-dir", self.config.isolate_dir.directory()])
         # Don't add "--machine" if the machine type is already specified
         if "--machine" not in cmd:
             ffx_args.extend(["--machine", str(machine)])
