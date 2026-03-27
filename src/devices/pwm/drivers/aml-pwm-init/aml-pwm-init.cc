@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <unistd.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -27,20 +28,20 @@ zx::result<> PwmInitDriver::Start() {
   zx::result init_result = compat_server_.Initialize(incoming(), outgoing(), node_name(),
                                                      kDeviceName, compat::ForwardMetadata::All());
   if (init_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize compat server, st = %s", init_result.status_string());
+    fdf::error("Failed to initialize compat server, st = {}", init_result);
     return init_result.take_error();
   }
 
   zx::result clock_result =
       incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(kWifiClkFragName);
   if (clock_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize Clock Client, st = %s", clock_result.status_string());
+    fdf::error("Failed to initialize Clock Client, st = {}", clock_result);
     return clock_result.take_error();
   }
 
   zx::result client_end = incoming()->Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm");
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize PWM Client, st = %s", client_end.status_string());
+    fdf::error("Failed to initialize PWM Client, st = {}", client_end);
     return client_end.take_error();
   }
   fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm> pwm(std::move(client_end.value()));
@@ -49,8 +50,8 @@ zx::result<> PwmInitDriver::Start() {
   zx::result bt_gpio =
       incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(kBtGpioFragmentName);
   if (bt_gpio.is_error()) {
-    FDF_LOG(ERROR, "Failed to get gpio FIDL protocol from fragment %s: %s", kBtGpioFragmentName,
-            bt_gpio.status_string());
+    fdf::error("Failed to get gpio FIDL protocol from fragment {}: {}", kBtGpioFragmentName,
+               bt_gpio);
     return bt_gpio.take_error();
   }
 
@@ -58,8 +59,8 @@ zx::result<> PwmInitDriver::Start() {
                                             std::move(bt_gpio.value()));
 
   if ((status = initer_->Init()) != ZX_OK) {
-    FDF_LOG(ERROR, "could not initialize PWM for bluetooth and SDIO. st = %s",
-            zx_status_get_string(status));
+    fdf::error("could not initialize PWM for bluetooth and SDIO. st = {}",
+               zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -73,8 +74,7 @@ zx::result<> PwmInitDriver::Start() {
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (!controller_endpoints.is_ok()) {
-    FDF_LOG(ERROR, "Failed to create controller endpoints: %s",
-            controller_endpoints.status_string());
+    fdf::error("Failed to create controller endpoints: {}", controller_endpoints);
     return controller_endpoints.take_error();
   }
 
@@ -88,7 +88,7 @@ zx::result<> PwmInitDriver::Start() {
   fidl::WireResult result =
       node_client_->AddChild(args, std::move(controller_endpoints->server), {});
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send request to add child: %s", result.status_string());
+    fdf::error("Failed to send request to add child: {}", result.status_string());
     return zx::error(result.status());
   }
   return zx::ok();
@@ -102,12 +102,11 @@ zx_status_t PwmInitDevice::Init() {
   {
     fidl::WireResult result = wifi_32k768_clk_->Enable();
     if (!result.ok()) {
-      FDF_LOG(WARNING, "Failed to send Enable request to clock for wifi_32k768: %s",
-              result.status_string());
+      fdf::warn("Failed to send Enable request to clock for wifi_32k768: {}", result.status_string());
     } else {  // only check the returned result if we actually got a valid response.
       if (result->is_error()) {
-        FDF_LOG(WARNING, "Failed to enable clock for wifi_32k768: %s",
-                zx_status_get_string(result->error_value()));
+        fdf::warn("Failed to enable clock for wifi_32k768: {}",
+                  zx_status_get_string(result->error_value()));
         return result->error_value();
       }
     }
@@ -115,11 +114,11 @@ zx_status_t PwmInitDevice::Init() {
 
   auto result = pwm_->Enable();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Could not enable PWM: %s", result.status_string());
+    fdf::error("Could not enable PWM: {}", result.status_string());
     return result.status();
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Could not enable PWM: %s", zx_status_get_string(result->error_value()));
+    fdf::error("Could not enable PWM: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
   aml_pwm::mode_config two_timer = {
@@ -141,12 +140,12 @@ zx_status_t PwmInitDevice::Init() {
   };
   auto set_config_result = pwm_->SetConfig(init_cfg);
   if (!set_config_result.ok()) {
-    FDF_LOG(ERROR, "Could not initialize PWM: %s", set_config_result.status_string());
+    fdf::error("Could not initialize PWM: {}", set_config_result.status_string());
     return set_config_result.status();
   }
   if (set_config_result->is_error()) {
-    FDF_LOG(ERROR, "Could not initialize PWM: %s",
-            zx_status_get_string(set_config_result->error_value()));
+    fdf::error("Could not initialize PWM: {}",
+               zx_status_get_string(set_config_result->error_value()));
     return set_config_result->error_value();
   }
 
@@ -154,26 +153,23 @@ zx_status_t PwmInitDevice::Init() {
   fidl::WireResult config_result =
       bt_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputLow);
   if (!config_result.ok()) {
-    FDF_LOG(ERROR, "Failed to send SetBufferMode request to bt gpio: %s",
-            config_result.status_string());
+    fdf::error("Failed to send SetBufferMode request to bt gpio: {}", config_result.status_string());
     return config_result.status();
   }
   if (config_result->is_error()) {
-    FDF_LOG(ERROR, "Failed to configure bt gpio to output: %s",
-            zx_status_get_string(config_result->error_value()));
+    fdf::error("Failed to configure bt gpio to output: {}",
+               zx_status_get_string(config_result->error_value()));
     return config_result->error_value();
   }
   usleep(10 * 1000);
   fidl::WireResult write_result =
       bt_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputHigh);
   if (!write_result.ok()) {
-    FDF_LOG(ERROR, "Failed to send SetBufferMode request to bt gpio: %s",
-            write_result.status_string());
+    fdf::error("Failed to send SetBufferMode request to bt gpio: {}", write_result.status_string());
     return write_result.status();
   }
   if (write_result->is_error()) {
-    FDF_LOG(ERROR, "Failed to write to bt gpio: %s",
-            zx_status_get_string(write_result->error_value()));
+    fdf::error("Failed to write to bt gpio: {}", zx_status_get_string(write_result->error_value()));
     return write_result->error_value();
   }
   usleep(100 * 1000);
