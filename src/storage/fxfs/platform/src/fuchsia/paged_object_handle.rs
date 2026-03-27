@@ -1411,7 +1411,7 @@ mod tests {
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_file_checked,
     };
-    use crate::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig};
+    use crate::fuchsia::volume::{FxVolumeAndRoot, MemoryPressureConfig, READ_AHEAD_SIZE};
     use anyhow::bail;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
@@ -2529,8 +2529,7 @@ mod tests {
             }
 
             fn page_in(self: Arc<Self>, range: PageInRange<Self>) {
-                let read_ahead_size = self.handle.owner().read_ahead_size();
-                default_page_in(self, range, read_ahead_size);
+                default_page_in(self, range, READ_AHEAD_SIZE);
             }
 
             fn mark_dirty(self: Arc<Self>, range: MarkDirtyRange<Self>) {

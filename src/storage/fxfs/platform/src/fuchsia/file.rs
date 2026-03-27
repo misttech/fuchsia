@@ -9,7 +9,7 @@ use crate::fuchsia::paged_object_handle::PagedObjectHandle;
 use crate::fuchsia::pager::{
     MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
-use crate::fuchsia::volume::FxVolume;
+use crate::fuchsia::volume::{FxVolume, READ_AHEAD_SIZE};
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
 use fxfs::filesystem::{MAX_FILE_SIZE, SyncOptions};
@@ -751,8 +751,7 @@ impl PagerBacked for FxFile {
     }
 
     fn page_in(self: Arc<Self>, range: PageInRange<Self>) {
-        let read_ahead_size = self.handle.owner().read_ahead_size();
-        default_page_in(self, range, read_ahead_size);
+        default_page_in(self, range, READ_AHEAD_SIZE);
     }
 
     #[trace]
@@ -806,7 +805,9 @@ mod tests {
         open_file_checked,
     };
     use anyhow::format_err;
+    use fidl_fuchsia_io as fio;
     use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
+    use fuchsia_async as fasync;
     use fuchsia_fs::file;
     use futures::join;
     use fxfs::fsck::fsck;
@@ -819,7 +820,6 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::Status;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
 

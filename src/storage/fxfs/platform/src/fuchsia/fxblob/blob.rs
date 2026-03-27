@@ -12,7 +12,7 @@ use crate::fuchsia::node::{FxNode, OpenedNode};
 use crate::fuchsia::pager::{
     MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
-use crate::fuchsia::volume::{BASE_READ_AHEAD_SIZE, FxVolume};
+use crate::fuchsia::volume::{FxVolume, READ_AHEAD_SIZE};
 use crate::fxblob::atomic_vec::AtomicBitVec;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use delivery_blob::compression::{CompressionAlgorithm, ThreadLocalDecompressor};
@@ -256,11 +256,10 @@ impl PagerBacked for FxBlob {
     }
 
     fn page_in(self: Arc<Self>, range: PageInRange<Self>) {
-        let read_ahead_size = self.handle.owner().read_ahead_size();
         let read_ahead_size = if let Some(compression_info) = &self.compression_info {
-            read_ahead_size_for_chunk_size(compression_info.chunk_size, read_ahead_size)
+            read_ahead_size_for_chunk_size(compression_info.chunk_size, READ_AHEAD_SIZE)
         } else {
-            read_ahead_size
+            READ_AHEAD_SIZE
         };
         // Delegate to the generic page handling code.
         default_page_in(self, range, read_ahead_size)
@@ -534,9 +533,9 @@ fn set_vmo_name(vmo: &zx::Vmo, merkle_root: &Hash) {
 
 fn min_chunk_size(compression_info: &Option<CompressionInfo>) -> u64 {
     if let Some(compression_info) = compression_info {
-        read_ahead_size_for_chunk_size(compression_info.chunk_size, BASE_READ_AHEAD_SIZE)
+        read_ahead_size_for_chunk_size(compression_info.chunk_size, READ_AHEAD_SIZE)
     } else {
-        BASE_READ_AHEAD_SIZE
+        READ_AHEAD_SIZE
     }
 }
 
@@ -601,9 +600,7 @@ async fn record_decompression_error_crash_report(
 mod tests {
     use super::*;
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
-    use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PageInRange;
-    use crate::fuchsia::volume::{MAX_READ_AHEAD_SIZE, MemoryPressureConfig};
     use crate::fxblob::testing::open_blob_fixture;
     use assert_matches::assert_matches;
     use delivery_blob::CompressionMode;
@@ -611,7 +608,6 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_async::epoch::Epoch;
     use fxfs_make_blob_image::FxBlobBuilder;
-    use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -677,7 +673,7 @@ mod tests {
     async fn test_blob_invalid_contents() {
         let fixture = new_blob_fixture().await;
 
-        let data = vec![0xffu8; (MAX_READ_AHEAD_SIZE + BLOCK_SIZE) as usize];
+        let data = vec![0xffu8; (READ_AHEAD_SIZE + BLOCK_SIZE) as usize];
         let hash = fixture.write_blob(&data, CompressionMode::Never).await;
         let name = format!("{}", hash);
 
@@ -689,7 +685,7 @@ mod tests {
             let mut buf = handle.allocate_buffer(BLOCK_SIZE as usize).await;
             buf.as_mut_slice().fill(0);
             handle
-                .txn_write(&mut transaction, MAX_READ_AHEAD_SIZE, buf.as_ref())
+                .txn_write(&mut transaction, READ_AHEAD_SIZE, buf.as_ref())
                 .await
                 .expect("txn_write failed");
             transaction.commit().await.expect("failed to commit transaction");
@@ -700,7 +696,7 @@ mod tests {
             let mut buf = vec![0; BLOCK_SIZE as usize];
             assert_matches!(blob_vmo.read(&mut buf[..], 0), Ok(_));
             assert_matches!(
-                blob_vmo.read(&mut buf[..], MAX_READ_AHEAD_SIZE),
+                blob_vmo.read(&mut buf[..], READ_AHEAD_SIZE),
                 Err(zx::Status::IO_DATA_INTEGRITY)
             );
         }
@@ -1131,76 +1127,38 @@ mod tests {
 
     #[fasync::run(10, test)]
     async fn test_refault_metric() {
-        async fn wait(condition: impl Fn() -> bool) -> bool {
-            let mut wait_count = 0;
-            while !condition() {
-                fasync::Timer::new(Duration::from_millis(20)).await;
-                wait_count += 1;
-                if wait_count > 100 {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         let fixture = new_blob_fixture().await;
-
         {
             let volume = fixture.volume().volume().clone();
-            volume.start_background_task(
-                MemoryPressureConfig::default(),
-                fixture.volumes_directory().memory_pressure_monitor(),
-            );
-
-            let data = vec![0xffu8; 252 * 1024];
+            const FILE_SIZE: u64 = READ_AHEAD_SIZE * 4 - 4096;
+            let data = vec![0xffu8; FILE_SIZE as usize];
             let hash = fixture.write_blob(&data, CompressionMode::Never).await;
 
             let blob = fixture.get_blob(hash).await.unwrap();
-            assert_eq!(blob.chunks_supplied.len(), 8);
+            assert_eq!(blob.chunks_supplied.len(), 4);
             // Nothing has been read yet.
-            assert_eq!(
-                &blob.chunks_supplied.get(),
-                &[false, false, false, false, false, false, false, false]
-            );
+            assert_eq!(&blob.chunks_supplied.get(), &[false, false, false, false]);
 
-            blob.vmo.read_to_vec::<u8>(32 * 1024, 4096).unwrap();
+            blob.vmo.read_to_vec::<u8>(4096, 4096).unwrap();
 
-            assert_eq!(
-                &blob.chunks_supplied.get(),
-                &[true, true, true, true, false, false, false, false]
-            );
+            assert_eq!(&blob.chunks_supplied.get(), &[true, false, false, false]);
 
-            fixture
-                .memory_pressure_proxy()
-                .on_level_changed(MemoryPressureLevel::Critical)
-                .await
-                .expect("Failed to send memory pressure level change");
-
-            assert!(
-                wait(|| volume.read_ahead_size() == BASE_READ_AHEAD_SIZE).await,
-                "read-ahead size didn't change with memory pressure change"
-            );
-
-            blob.vmo.read_to_vec::<u8>(164 * 1024, 4096).unwrap();
-            assert_eq!(
-                &blob.chunks_supplied.get(),
-                &[true, true, true, true, false, true, false, false]
-            );
+            blob.vmo.read_to_vec::<u8>(READ_AHEAD_SIZE * 2 + 4096, READ_AHEAD_SIZE).unwrap();
+            assert_eq!(&blob.chunks_supplied.get(), &[true, false, true, true]);
 
             // We have loaded pages, but only once each.
             assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 0);
 
             // Re-read some pages.
 
-            // We can't evict pages from the VMO so get the kernel to resupply them but we can call
+            // We can't evict pages from the VMO to get the kernel to resupply them but we can call
             // page_in directly and wait for the counters to change.
             blob.clone().page_in(PageInRange::new(
-                32 * 1024..68 * 1024,
+                FILE_SIZE - READ_AHEAD_SIZE..FILE_SIZE,
                 blob.clone(),
                 Epoch::global().guard(),
             ));
-
-            assert!(wait(|| volume.blob_resupplied_count().read(Ordering::SeqCst) == 2,).await);
+            Epoch::global().barrier().await;
 
             assert_eq!(volume.blob_resupplied_count().read(Ordering::SeqCst), 2);
         }
