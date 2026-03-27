@@ -1,368 +1,70 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::versioned_artifact_set::VersionedArtifactSet;
-use anyhow::Result;
-use assembly_artifact_cache::{ArtifactType, MOSIdentifier};
+use crate::dimension::Dimension;
 use serde::{Deserialize, Serialize};
-use std::ops::Range;
 
-/// A series of versions for a single artifact.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ArtifactVersionSeries {
-    /// The name of the artifact.
-    pub name: String,
-    /// The type of the artifact.
-    pub artifact_type: ArtifactType,
-    /// The repository the artifact is stored in.
-    pub repository: String,
-    /// The available versions of the artifact.
-    pub versions: Vec<MOSIdentifier>,
-    /// An index pointing to the currently selected version of the artifact.
-    pub current_artifact: usize,
-    /// A range representing the remaining versions to be tested for the artifact.
-    pub remaining_artifacts: Range<usize>,
-}
-
-impl ArtifactVersionSeries {
-    /// Create a new ArtifactVersionSeries from a vector of MOS identifiers.
-    pub(crate) fn from_versions(versions: Vec<MOSIdentifier>) -> Self {
-        let first = versions
-            .first()
-            .expect("Artifact series should not be empty, check the data source.")
-            .clone();
-        let len = versions.len();
-        Self {
-            name: first.name,
-            artifact_type: first.artifact_type,
-            repository: first.repository,
-            versions,
-            current_artifact: (len.saturating_sub(1)) / 2,
-            remaining_artifacts: 0..len,
-        }
-    }
-
-    /// Returns the artifact at the given index.
-    pub fn get_artifact_at_index(&self, index: usize) -> &MOSIdentifier {
-        &self.versions[index]
-    }
-}
-
-/// Manages the search space for the bisection.
-#[derive(Serialize, Deserialize, Debug)]
+/// Represents the multidimensional search space for bisection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchSpace {
-    /// The platform artifact series.
-    pub platform: ArtifactVersionSeries,
-    /// The product artifact series.
-    pub product: ArtifactVersionSeries,
-    /// The board artifact series.
-    pub board: ArtifactVersionSeries,
-    /// Product input bundles artifact series.
-    pub product_input_bundles: Vec<ArtifactVersionSeries>,
-    /// Board input bundles artifact series.
-    pub board_input_bundle_sets: Vec<ArtifactVersionSeries>,
-}
-
-/// Represents the status of the bisection process.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum BisectionStatus {
-    /// The bisection is ongoing.
-    Continue,
-    /// A culprit has been found. The two identifiers are the last known-good and first known-bad versions.
-    CulpritFound(Box<MOSIdentifier>, Box<MOSIdentifier>),
-    /// The search space has been exhausted without finding a culprit.
-    Exhausted,
+    /// The dimensions comprising the search space.
+    pub dimensions: Vec<Dimension>,
 }
 
 impl SearchSpace {
-    /// Creates and initializes a new search space.
-    pub fn new(
-        platform_versions: Vec<MOSIdentifier>,
-        product_versions: Vec<MOSIdentifier>,
-        board_versions: Vec<MOSIdentifier>,
-        product_input_bundles_versions: Vec<Vec<MOSIdentifier>>,
-        board_input_bundle_sets_versions: Vec<Vec<MOSIdentifier>>,
-    ) -> Self {
-        Self {
-            platform: ArtifactVersionSeries::from_versions(platform_versions),
-            product: ArtifactVersionSeries::from_versions(product_versions),
-            board: ArtifactVersionSeries::from_versions(board_versions),
-            product_input_bundles: product_input_bundles_versions
-                .into_iter()
-                .map(ArtifactVersionSeries::from_versions)
-                .collect(),
-            board_input_bundle_sets: board_input_bundle_sets_versions
-                .into_iter()
-                .map(ArtifactVersionSeries::from_versions)
-                .collect(),
-        }
+    /// Create a new SearchSpace from a set of dimensions.
+    pub fn new(dimensions: Vec<Dimension>) -> Self {
+        Self { dimensions }
     }
 
-    /// Returns an iterator over all artifact series in the search space.
-    pub fn iter_all_artifacts(&self) -> impl Iterator<Item = &ArtifactVersionSeries> {
-        std::iter::once(&self.platform)
-            .chain(std::iter::once(&self.product))
-            .chain(std::iter::once(&self.board))
-            .chain(self.product_input_bundles.iter())
-            .chain(self.board_input_bundle_sets.iter())
-    }
-
-    /// Returns a mutable iterator over all artifact series in the search space.
-    pub fn iter_all_artifacts_mut(&mut self) -> impl Iterator<Item = &mut ArtifactVersionSeries> {
-        std::iter::once(&mut self.platform)
-            .chain(std::iter::once(&mut self.product))
-            .chain(std::iter::once(&mut self.board))
-            .chain(self.product_input_bundles.iter_mut())
-            .chain(self.board_input_bundle_sets.iter_mut())
-    }
-
-    /// Returns the number of dimensions in the search space.
-    pub fn num_dimensions(&self) -> usize {
-        3 + self.product_input_bundles.len() + self.board_input_bundle_sets.len()
-    }
-
-    /// Get the set of artifacts at the current indices.
-    pub fn get_current_versioned_artifact_set(&self) -> Result<VersionedArtifactSet> {
-        let product_input_bundles = self
-            .product_input_bundles
-            .iter()
-            .map(|series| series.get_artifact_at_index(series.current_artifact).clone())
-            .collect();
-        let board_input_bundle_sets = self
-            .board_input_bundle_sets
-            .iter()
-            .map(|series| series.get_artifact_at_index(series.current_artifact).clone())
-            .collect();
-
-        Ok(VersionedArtifactSet {
-            platform: self.platform.get_artifact_at_index(self.platform.current_artifact).clone(),
-            product: self.product.get_artifact_at_index(self.product.current_artifact).clone(),
-            board: self.board.get_artifact_at_index(self.board.current_artifact).clone(),
-            product_input_bundles,
-            board_input_bundle_sets,
-        })
-    }
-
-    /// Generates a formatted string representation of the search space for display.
-    pub fn to_string_representation(&self, culprit: Option<&MOSIdentifier>) -> String {
-        let mut output = String::new();
-        output.push_str("Bisection Search Space:\n");
-
-        let names: Vec<String> =
-            self.iter_all_artifacts().map(|a| format!("{}/{}", a.artifact_type, a.name)).collect();
-        let max_name_len = names.iter().map(|n| n.len()).max().unwrap_or(0);
-        let max_artifacts_len =
-            self.iter_all_artifacts().map(|v| v.versions.len()).max().unwrap_or(0);
-
-        for artifacts in self.iter_all_artifacts() {
-            if artifacts.versions.is_empty() {
-                continue;
-            }
-            let name = format!("{}/{}", artifacts.artifact_type, artifacts.name);
-            let padded_name = format!("{:<width$}", name, width = max_name_len);
-            let range = &artifacts.remaining_artifacts;
-            let current = artifacts.current_artifact;
-
-            let mut visual = String::from("[");
-            for j in 0..artifacts.versions.len() {
-                let is_culprit = culprit.map_or(false, |c| c == &artifacts.versions[j]);
-                if is_culprit {
-                    visual.push_str("*");
-                } else if j == current && culprit.is_none() {
-                    visual.push_str("\x1b[32mO\x1b[0m"); // Green
-                } else if range.contains(&j) {
-                    visual.push_str("o");
-                } else {
-                    visual.push_str("x");
-                }
-            }
-            visual.push(']');
-
-            let padding_len = max_artifacts_len.saturating_sub(artifacts.versions.len());
-            visual.push_str(&" ".repeat(padding_len));
-
-            output.push_str(&format!(
-                "  {}: {} ({} remaining)\n",
-                padded_name,
-                visual,
-                range.len()
-            ));
-        }
-        output
+    /// Phase 1 is complete when all dimensions have been narrowed down to 1 or 2 entries.
+    pub fn is_phase1_complete(&self) -> bool {
+        self.dimensions.iter().all(|d| !d.is_active())
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assembly_artifact_cache::ArtifactType;
 
-    // Helper function to create mock MOSIdentifiers
-    fn mock_mos_identifier(
-        name: &str,
-        artifact_type: ArtifactType,
-        version: &str,
-    ) -> MOSIdentifier {
-        MOSIdentifier {
-            name: name.to_string(),
-            version: version.to_string(),
-            repository: "mock-repo".to_string(),
-            artifact_type,
-            cipd: None,
-            slot: assembly_artifact_cache::Slot::A,
-        }
-    }
-
-    fn mock_series(
-        name: &str,
-        artifact_type: ArtifactType,
-        versions: Vec<&str>,
-    ) -> Vec<MOSIdentifier> {
-        versions.into_iter().map(|v| mock_mos_identifier(name, artifact_type.clone(), v)).collect()
+    #[test]
+    fn test_new_search_space() {
+        let dimensions = vec![
+            Dimension::new("Platform", ArtifactType::Platform, "fuchsia", vec!["1".into()]),
+            Dimension::new("Product", ArtifactType::Product, "fuchsia", vec!["A".into()]),
+        ];
+        let space = SearchSpace::new(dimensions);
+        assert_eq!(space.dimensions.len(), 2);
     }
 
     #[test]
-    fn test_artifact_version_series_from_versions_odd() {
-        let versions =
-            mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3", "4", "5"]);
-        let series = ArtifactVersionSeries::from_versions(versions);
-        assert_eq!(series.versions.len(), 5);
-        assert_eq!(series.current_artifact, 2);
-        assert_eq!(series.remaining_artifacts, 0..5);
-        assert_eq!(series.name, "platform");
-        assert_eq!(series.artifact_type, ArtifactType::Platform);
-        assert_eq!(series.repository, "mock-repo");
-    }
-
-    #[test]
-    fn test_artifact_version_series_from_versions_even() {
-        let versions = mock_series("product", ArtifactType::Product, vec!["1", "2", "3", "4"]);
-        let series = ArtifactVersionSeries::from_versions(versions);
-        assert_eq!(series.versions.len(), 4);
-        assert_eq!(series.current_artifact, 1);
-        assert_eq!(series.remaining_artifacts, 0..4);
-    }
-
-    #[test]
-    #[should_panic(expected = "Artifact series should not be empty, check the data source.")]
-    fn test_artifact_version_series_from_versions_empty() {
-        let versions: Vec<MOSIdentifier> = vec![];
-        ArtifactVersionSeries::from_versions(versions);
-    }
-
-    #[test]
-    fn test_get_artifact_at_index_valid() {
-        let versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
-        let series = ArtifactVersionSeries::from_versions(versions);
-        let artifact = series.get_artifact_at_index(1);
-        assert_eq!(artifact.version, "2");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_get_artifact_at_index_invalid() {
-        let versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
-        let series = ArtifactVersionSeries::from_versions(versions);
-        series.get_artifact_at_index(5);
-    }
-
-    #[test]
-    fn test_search_space_new() {
-        let platform_versions = mock_series("platform", ArtifactType::Platform, vec!["1", "2"]);
-        let product_versions = mock_series("product", ArtifactType::Product, vec!["a", "b", "c"]);
-        let board_versions = mock_series("board", ArtifactType::Board, vec!["x"]);
-        let additional_versions =
-            vec![mock_series("pib", ArtifactType::ProductInputBundle, vec!["i", "j"])];
-
-        let search_space = SearchSpace::new(
-            platform_versions.clone(),
-            product_versions.clone(),
-            board_versions.clone(),
-            additional_versions.clone(),
-            vec![],
+    fn test_is_phase1_complete() {
+        let d1 = Dimension::new(
+            "Platform",
+            ArtifactType::Platform,
+            "fuchsia",
+            vec!["1".into(), "2".into(), "3".into()],
+        );
+        let d2 = Dimension::new(
+            "Product",
+            ArtifactType::Product,
+            "fuchsia",
+            vec!["A".into(), "B".into(), "C".into()],
         );
 
-        assert_eq!(search_space.platform.versions.len(), 2);
-        assert_eq!(search_space.product.versions.len(), 3);
-        assert_eq!(search_space.board.versions.len(), 1);
-        assert_eq!(search_space.product_input_bundles.len(), 1);
-        assert_eq!(search_space.product_input_bundles[0].versions.len(), 2);
+        let mut space = SearchSpace::new(vec![d1.clone(), d2.clone()]);
 
-        assert_eq!(search_space.platform.current_artifact, 0);
-        assert_eq!(search_space.product.current_artifact, 1);
-        assert_eq!(search_space.board.current_artifact, 0);
-        assert_eq!(search_space.product_input_bundles[0].current_artifact, 0);
-    }
+        // Initial state: both have length 3 (high=2, low=0), so gap > 1 => active
+        assert!(!space.is_phase1_complete());
 
-    #[test]
-    fn test_search_space_get_current_versioned_artifact_set() {
-        let platform_versions =
-            mock_series("platform", ArtifactType::Platform, vec!["1", "2", "3"]);
-        let product_versions = mock_series("product", ArtifactType::Product, vec!["a", "b"]);
-        let board_versions = mock_series("board", ArtifactType::Board, vec!["x", "y", "z"]);
-        let additional_versions =
-            vec![mock_series("pib", ArtifactType::ProductInputBundle, vec!["i", "j", "k"])];
+        // Shrink one dimension to inactive
+        space.dimensions[0].high = 1;
+        assert!(!space.is_phase1_complete()); // d2 is still active
 
-        let mut search_space = SearchSpace::new(
-            platform_versions.clone(),
-            product_versions.clone(),
-            board_versions.clone(),
-            additional_versions.clone(),
-            vec![],
-        );
-
-        // Check initial state
-        let initial_set = search_space.get_current_versioned_artifact_set().unwrap();
-        assert_eq!(initial_set.platform.version, "2");
-        assert_eq!(initial_set.product.version, "a");
-        assert_eq!(initial_set.board.version, "y");
-        assert_eq!(initial_set.product_input_bundles[0].version, "j");
-
-        // Modify and check again
-        search_space.platform.current_artifact = 0;
-        search_space.product.current_artifact = 0;
-        search_space.board.current_artifact = 2;
-        search_space.product_input_bundles[0].current_artifact = 0;
-
-        let modified_set = search_space.get_current_versioned_artifact_set().unwrap();
-        assert_eq!(modified_set.platform.version, "1");
-        assert_eq!(modified_set.product.version, "a");
-        assert_eq!(modified_set.board.version, "z");
-        assert_eq!(modified_set.product_input_bundles[0].version, "i");
-    }
-
-    #[test]
-    fn test_search_space_iter_all_artifacts() {
-        let platform_versions = mock_series("platform", ArtifactType::Platform, vec!["1"]);
-        let product_versions = mock_series("product", ArtifactType::Product, vec!["a"]);
-        let board_versions = mock_series("board", ArtifactType::Board, vec!["x"]);
-        let additional_versions =
-            vec![mock_series("pib", ArtifactType::ProductInputBundle, vec!["i"])];
-
-        let search_space = SearchSpace::new(
-            platform_versions,
-            product_versions,
-            board_versions,
-            additional_versions,
-            vec![],
-        );
-
-        let mut iter = search_space.iter_all_artifacts();
-        let platform_series = iter.next().unwrap();
-        assert_eq!(platform_series.name, "platform");
-        assert_eq!(platform_series.artifact_type, ArtifactType::Platform);
-
-        let product_series = iter.next().unwrap();
-        assert_eq!(product_series.name, "product");
-        assert_eq!(product_series.artifact_type, ArtifactType::Product);
-
-        let board_series = iter.next().unwrap();
-        assert_eq!(board_series.name, "board");
-        assert_eq!(board_series.artifact_type, ArtifactType::Board);
-
-        let additional_series = iter.next().unwrap();
-        assert_eq!(additional_series.name, "pib");
-        assert_eq!(additional_series.artifact_type, ArtifactType::ProductInputBundle);
-
-        assert!(iter.next().is_none());
+        // Shrink the other dimension to inactive
+        space.dimensions[1].high = 1;
+        assert!(space.is_phase1_complete()); // Both are inactive
     }
 }

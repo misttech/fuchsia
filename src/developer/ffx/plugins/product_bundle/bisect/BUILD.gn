@@ -12,23 +12,14 @@ ffx_plugin("ffx_product_bundle_bisect") {
 
   args_sources = [ "src/args.rs" ]
   sources = [
-    "src/bisection_controller.rs",
-    "src/bisection_plan.rs",
+    "src/assembly.rs",
+    "src/controller.rs",
+    "src/dimension.rs",
     "src/lib.rs",
+    "src/mos.rs",
     "src/search_space.rs",
-    "src/strategies/all_dimensions.rs",
-    "src/strategies/longest_dimension.rs",
-    "src/strategies/mod.rs",
-    "src/strategies/util.rs",
-    "src/v2/assembly.rs",
-    "src/v2/controller.rs",
-    "src/v2/dimension.rs",
-    "src/v2/mod.rs",
-    "src/v2/mos.rs",
-    "src/v2/search_space.rs",
-    "src/v2/strategy.rs",
-    "src/v2/testing.rs",
-    "src/versioned_artifact_set.rs",
+    "src/strategy.rs",
+    "src/testing.rs",
   ]
 
   args_deps = [

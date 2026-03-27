@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::v2::search_space::SearchSpace;
-use crate::v2::strategy::{SearchStrategy, StrategyState};
+use crate::search_space::SearchSpace;
+use crate::strategy::{SearchStrategy, StrategyState};
 use anyhow::{Context, Result};
 use assembly_artifact_cache::{MOSIdentifier, Slot};
 use camino::Utf8PathBuf;
@@ -216,7 +216,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v2::dimension::Dimension;
+    use crate::dimension::Dimension;
     use assembly_artifact_cache::ArtifactType;
     use tempfile::tempdir;
 

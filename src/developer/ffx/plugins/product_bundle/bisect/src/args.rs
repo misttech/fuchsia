@@ -2,32 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use argh::{ArgsInfo, FromArgValue, FromArgs};
+use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
 use ffx_core::ffx_command;
 use pbms::AuthFlowChoice;
-
-/// The search strategy to use for bisection.
-#[derive(Debug, PartialEq, Clone, Copy, Default)]
-pub enum Strategy {
-    /// Bisect the longest dimension in the search space.
-    LongestDimension,
-    /// Bisect all dimensions in the search space simultaneously.
-    #[default]
-    AllDimensions,
-}
-
-impl FromArgValue for Strategy {
-    fn from_arg_value(value: &str) -> Result<Self, String> {
-        match value {
-            "longest-dimension" => Ok(Strategy::LongestDimension),
-            "all-dimensions" => Ok(Strategy::AllDimensions),
-            _ => Err(format!(
-                "invalid strategy: {value}. Expected 'longest-dimension' or 'all-dimensions'"
-            )),
-        }
-    }
-}
 
 /// Generate a list of released versions between [--from-success] and [--to-failure] for every
 /// artifact contained within the given product bundle (e.g. platform, product, board).
@@ -121,11 +99,6 @@ pub struct BisectCommand {
     #[argh(option, default = "Default::default()")]
     pub slot: assembly_artifact_cache::Slot,
 
-    /// search strategy to use. Defaults to "AllDimensions", which bisects across all pb artifact
-    /// types (platform, product, board...) simultaneously.
-    #[argh(option, default = "Strategy::default()")]
-    pub strategy: Strategy,
-
     /// directory to write assembled images and other artifacts. Defaults to ~/<plan_directory>/out
     #[argh(option)]
     pub out_dir: Option<Utf8PathBuf>,
@@ -137,10 +110,6 @@ pub struct BisectCommand {
     /// script to run for automated bisection.
     #[argh(option)]
     pub script: Option<Utf8PathBuf>,
-
-    /// opt-in flag to use the experimental v2 bisection engine.
-    #[argh(switch)]
-    pub v2: bool,
 
     /// authentication method to use.
     #[argh(option, default = "AuthFlowChoice::Default")]

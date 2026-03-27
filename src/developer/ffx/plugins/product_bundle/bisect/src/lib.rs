@@ -6,7 +6,6 @@
 
 #![deny(missing_docs)]
 
-use crate::bisection_controller::BisectionController;
 use anyhow::{Context, Result};
 use assembly_artifact_cache::{ArtifactCache, MOSClient};
 use assembly_config_schema as _;
@@ -24,12 +23,20 @@ use pbms::handle_new_access_token;
 use std::fs;
 use structured_ui;
 
-mod bisection_controller;
-mod bisection_plan;
+mod assembly;
+mod controller;
+mod dimension;
+mod mos;
 mod search_space;
-mod strategies;
-mod v2;
-mod versioned_artifact_set;
+mod strategy;
+mod testing;
+
+use assembly::assemble;
+use controller::Controller;
+use mos::get_search_space;
+use search_space::SearchSpace;
+use strategy::StrategyState;
+use testing::{prompt_for_manual_test, run_automated_test};
 
 /// The ffx tool for bisecting product bundles.
 #[derive(FfxTool)]
@@ -66,35 +73,13 @@ impl FfxMain for ProductBisectTool {
             }
         };
 
-        if cmd.v2 {
-            if let Err(e) =
-                run_v2_bisection(cmd, &mut writer, &self.env_context, cache, client, plan_home)
-                    .await
-            {
-                if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
-                    writer.line("Authentication expired. Please run `ffx auth login`.")?;
-                }
-                return Err(e.into());
+        if let Err(e) =
+            run_bisection(cmd, &mut writer, &self.env_context, cache, client, plan_home).await
+        {
+            if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
+                writer.line("Authentication expired. Please run `ffx auth login`.")?;
             }
-        } else {
-            let mut controller = BisectionController::new(
-                cmd,
-                plan_home,
-                client,
-                cache,
-                &mut writer,
-                &self.env_context,
-            )
-            .await?;
-            controller
-                .save()
-                .map_err(|e| fho::Error::User(anyhow::anyhow!("Failed to save: {}", e)))?;
-            if let Err(e) = controller.run().await {
-                if let Some(GcsError::NeedNewRefreshToken) = e.downcast_ref::<GcsError>() {
-                    writer.line("Authentication expired. Please run `ffx auth login`.")?;
-                }
-                return Err(e.into());
-            }
+            return Err(e.into());
         }
 
         Ok(())
@@ -150,7 +135,7 @@ async fn setup_core(
     Ok((plan_home, client, cache))
 }
 
-async fn run_v2_bisection<'a>(
+async fn run_bisection<'a>(
     cmd: BisectCommand,
     writer: &'a mut SimpleWriter,
     env_context: &'a EnvironmentContext,
@@ -174,7 +159,7 @@ async fn run_v2_bisection<'a>(
 
     let plan_file = plan_home.join("plan.json");
     let mut fetch_from_mos = true;
-    let mut space = v2::SearchSpace::new(vec![]);
+    let mut space = SearchSpace::new(vec![]);
 
     if plan_file.is_file() {
         let writer_clone = shared_writer.clone();
@@ -205,7 +190,7 @@ async fn run_v2_bisection<'a>(
             let _ = writer_clone.borrow_mut().line(msg);
         };
 
-        space = v2::get_search_space(
+        space = get_search_space(
             &mut client,
             &cmd.name,
             &cmd.from_success,
@@ -245,7 +230,7 @@ async fn run_v2_bisection<'a>(
         let pb_name_clone = pb_name.clone();
 
         async move {
-            let pb_path = v2::assemble(
+            let pb_path = assemble(
                 &combination,
                 cache_ref,
                 env_context,
@@ -258,9 +243,9 @@ async fn run_v2_bisection<'a>(
             .await?;
 
             if let Some(script_path) = &script_clone {
-                v2::run_automated_test(script_path, &pb_path, &mut print2).await
+                run_automated_test(script_path, &pb_path, &mut print2).await
             } else {
-                v2::prompt_for_manual_test(&pb_path, &mut print2)
+                prompt_for_manual_test(&pb_path, &mut print2)
             }
         }
     };
@@ -270,12 +255,12 @@ async fn run_v2_bisection<'a>(
         let _ = writer_clone_ctrl.borrow_mut().line(msg);
     };
 
-    let mut controller = v2::Controller::new(space, plan_file, slot, test_fn, &mut print_fn)?;
+    let mut controller = Controller::new(space, plan_file, slot, test_fn, &mut print_fn)?;
 
     let final_state = controller.run().await?;
 
     // If the bisection successfully identified the bad artifact, print its details.
-    if let v2::StrategyState::Resolved { dim_idx, high_idx, .. } = final_state {
+    if let StrategyState::Resolved { dim_idx, high_idx, .. } = final_state {
         let bad_artifact = controller.space.dimensions[dim_idx].get_mos_identifier(high_idx, slot);
         let writer_clone_res = shared_writer.clone();
         let print = move |msg: &str| {

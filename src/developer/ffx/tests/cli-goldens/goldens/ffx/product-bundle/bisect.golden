@@ -52,18 +52,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "strategy"
-        }
-      },
-      "optionality": "optional",
-      "long": "--strategy",
-      "short": null,
-      "description": "search strategy to use. Defaults to \"AllDimensions\", which bisects across all pb artifact types (platform, product, board...) simultaneously.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "out-dir"
         }
       },
@@ -95,14 +83,6 @@
       "long": "--script",
       "short": null,
       "description": "script to run for automated bisection.",
-      "hidden": false
-    },
-    {
-      "kind": "Switch",
-      "optionality": "optional",
-      "long": "--v2",
-      "short": null,
-      "description": "opt-in flag to use the experimental v2 bisection engine.",
       "hidden": false
     },
     {

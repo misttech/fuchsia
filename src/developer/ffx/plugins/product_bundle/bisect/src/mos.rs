@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::v2::dimension::Dimension;
-use crate::v2::search_space::SearchSpace;
+use crate::dimension::Dimension;
+use crate::search_space::SearchSpace;
 use anyhow::{Context, Result, ensure};
 use assembly_artifact_cache::{MOSClient, MOSIdentifier, Slot};
 use async_trait::async_trait;

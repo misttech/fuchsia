@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::v2::search_space::SearchSpace;
+use crate::search_space::SearchSpace;
 use serde::{Deserialize, Serialize};
 
 /// The current state of the bisection search strategy.
@@ -150,7 +150,7 @@ impl SearchStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::v2::dimension::Dimension;
+    use crate::dimension::Dimension;
     use assembly_artifact_cache::{ArtifactType, MOSIdentifier, Slot};
 
     // A mock Controller to run tests synchronously.
