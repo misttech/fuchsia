@@ -656,10 +656,10 @@ void TraceSession::OnV2ProviderTerminated(ProviderConnection* connection) {
       // If the last Stop request saved the results, don't save them again.
       // But don't write results if the tracee was never started.
       if (tracee->was_started() && !tracee->results_written()) {
-        if (!WriteV2ProviderData(tracee.get())) {
-          Abort();
-          return;
-        }
+        // Since the provider is terminated, ignore any error writing
+        // provider data. This is most likely caused by the socket
+        // being closed. WriteProviderData will log the details.
+        WriteV2ProviderData(tracee.get());
       }
     }
     tracees_.erase(it);
