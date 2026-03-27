@@ -24,12 +24,5 @@
                 "FuseTest.ReadWriteUnMountedDevFuse",
             ],
         },
-        {
-            type: "expect_failure",
-            matchers: [
-                // TODO(https://fxbug.dev/491848090): fix register clobbering
-                "ExtendedPstate.*",
-            ],
-        },
     ],
 }

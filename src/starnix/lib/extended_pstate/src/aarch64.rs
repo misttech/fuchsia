@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::arch::asm;
 use static_assertions::const_assert_eq;
 
 #[derive(Clone, Copy, Default)]
@@ -38,175 +37,12 @@ const_assert_eq!(std::mem::size_of::<Aarch32State>(), 256 + 16);
 const_assert_eq!(std::mem::align_of::<u128>(), 16);
 
 impl Aarch32State {
-    #[inline(always)]
-    pub(crate) fn save(&mut self) {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            asm!(
-              "stp  q0,  q1, [{q}, #( 0 * 32)]",
-              "stp  q2,  q3, [{q}, #( 1 * 32)]",
-              "stp  q4,  q5, [{q}, #( 2 * 32)]",
-              "stp  q6,  q7, [{q}, #( 3 * 32)]",
-              "stp  q8,  q9, [{q}, #( 4 * 32)]",
-              "stp q10, q11, [{q}, #( 5 * 32)]",
-              "stp q12, q13, [{q}, #( 6 * 32)]",
-              "stp q14, q15, [{q}, #( 7 * 32)]",
-              q = in(reg) &self.q,
-            );
-            asm!(
-              "mrs {fpcr:x}, fpcr",
-              "mrs {fpsr:x}, fpsr",
-              fpcr = out(reg) self.fpcr,
-              fpsr = out(reg) self.fpsr,
-            );
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) unsafe fn restore(&self) {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            asm!(
-                "ldp  q0,  q1, [{q}, #( 0 * 32)]",
-                "ldp  q2,  q3, [{q}, #( 1 * 32)]",
-                "ldp  q4,  q5, [{q}, #( 2 * 32)]",
-                "ldp  q6,  q7, [{q}, #( 3 * 32)]",
-                "ldp  q8,  q9, [{q}, #( 4 * 32)]",
-                "ldp q10, q11, [{q}, #( 5 * 32)]",
-                "ldp q12, q13, [{q}, #( 6 * 32)]",
-                "ldp q14, q15, [{q}, #( 7 * 32)]",
-                "msr fpcr, {fpcr:x}",
-                "msr fpsr, {fpsr:x}",
-                q = in(reg) &self.q,
-                fpcr = in(reg) self.fpcr,
-                fpsr = in(reg) self.fpsr,
-                out( "q0") _,
-                out( "q1") _,
-                out( "q2") _,
-                out( "q3") _,
-                out( "q4") _,
-                out( "q5") _,
-                out( "q6") _,
-                out( "q7") _,
-                out( "q8") _,
-                out( "q9") _,
-                out("q10") _,
-                out("q11") _,
-                out("q12") _,
-                out("q13") _,
-                out("q14") _,
-                out("q15") _,
-            );
-        }
-    }
-
     pub fn reset(&mut self) {
         *self = Default::default();
     }
 }
 
 impl State {
-    #[inline(always)]
-    pub(crate) fn save(&mut self) {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            asm!(
-              "stp  q0,  q1, [{q}, #( 0 * 32)]",
-              "stp  q2,  q3, [{q}, #( 1 * 32)]",
-              "stp  q4,  q5, [{q}, #( 2 * 32)]",
-              "stp  q6,  q7, [{q}, #( 3 * 32)]",
-              "stp  q8,  q9, [{q}, #( 4 * 32)]",
-              "stp q10, q11, [{q}, #( 5 * 32)]",
-              "stp q12, q13, [{q}, #( 6 * 32)]",
-              "stp q14, q15, [{q}, #( 7 * 32)]",
-              "stp q16, q17, [{q}, #( 8 * 32)]",
-              "stp q18, q19, [{q}, #( 9 * 32)]",
-              "stp q20, q21, [{q}, #(10 * 32)]",
-              "stp q22, q23, [{q}, #(11 * 32)]",
-              "stp q24, q25, [{q}, #(12 * 32)]",
-              "stp q26, q27, [{q}, #(13 * 32)]",
-              "stp q28, q29, [{q}, #(14 * 32)]",
-              "stp q30, q31, [{q}, #(15 * 32)]",
-              q = in(reg) &self.q,
-            );
-            asm!(
-              "mrs {fpcr:x}, fpcr",
-              "mrs {fpsr:x}, fpsr",
-              fpcr = out(reg) self.fpcr,
-              fpsr = out(reg) self.fpsr,
-            );
-        }
-    }
-
-    #[inline(always)]
-    // Safety: See comment in lib.rs.
-    pub(crate) unsafe fn restore(&self) {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            asm!(
-                "ldp  q0,  q1, [{q}, #( 0 * 32)]",
-                "ldp  q2,  q3, [{q}, #( 1 * 32)]",
-                "ldp  q4,  q5, [{q}, #( 2 * 32)]",
-                "ldp  q6,  q7, [{q}, #( 3 * 32)]",
-                "ldp  q8,  q9, [{q}, #( 4 * 32)]",
-                "ldp q10, q11, [{q}, #( 5 * 32)]",
-                "ldp q12, q13, [{q}, #( 6 * 32)]",
-                "ldp q14, q15, [{q}, #( 7 * 32)]",
-                "ldp q16, q17, [{q}, #( 8 * 32)]",
-                "ldp q18, q19, [{q}, #( 9 * 32)]",
-                "ldp q20, q21, [{q}, #(10 * 32)]",
-                "ldp q22, q23, [{q}, #(11 * 32)]",
-                "ldp q24, q25, [{q}, #(12 * 32)]",
-                "ldp q26, q27, [{q}, #(13 * 32)]",
-                "ldp q28, q29, [{q}, #(14 * 32)]",
-                "ldp q30, q31, [{q}, #(15 * 32)]",
-                "msr fpcr, {fpcr:x}",
-                "msr fpsr, {fpsr:x}",
-                q = in(reg) &self.q,
-                fpcr = in(reg) self.fpcr,
-                fpsr = in(reg) self.fpsr,
-                out( "q0") _,
-                out( "q1") _,
-                out( "q2") _,
-                out( "q3") _,
-                out( "q4") _,
-                out( "q5") _,
-                out( "q6") _,
-                out( "q7") _,
-                out( "q8") _,
-                out( "q9") _,
-                out("q10") _,
-                out("q11") _,
-                out("q12") _,
-                out("q13") _,
-                out("q14") _,
-                out("q15") _,
-                out("q16") _,
-                out("q17") _,
-                out("q18") _,
-                out("q19") _,
-                out("q20") _,
-                out("q21") _,
-                out("q22") _,
-                out("q23") _,
-                out("q24") _,
-                out("q25") _,
-                out("q26") _,
-                out("q27") _,
-                out("q28") _,
-                out("q29") _,
-                out("q30") _,
-                out("q31") _,
-            );
-        }
-    }
-
     pub fn reset(&mut self) {
         *self = Default::default();
     }
@@ -215,598 +51,265 @@ impl State {
 #[cfg(test)]
 mod test {
     use super::*;
+    use core::arch::asm;
 
-    #[::fuchsia::test]
-    fn save_restore_registers() {
-        use core::arch::asm;
-
-        let mut state = State::default();
-
-        // Declare and initialize the locals the tests below will use above as
-        // the initialization for some of these uses vector registers that we
-        // are manipulating as part of the tests.
-        let mut custom_fpcr: u64;
-        let dest = [0u8; 16];
-        // v0-v7 (aka q0-q7) are used for parameter values and return values in the aarch64 calling convention.
-        let q0 = [0x42u8; 16];
-        let q1 = [0x43u8; 16];
-        let q2 = [0x44u8; 16];
-        // The bottom 64 bits of v8-v15 (aka q8-v15) are callee-preserved in the aarch64 calling convention.
-        let q8 = [0x45u8; 16];
-        // v16-v31 do not need to be preserved.
-        let q20 = [0x46u8; 16];
-
-        // Set custom state by hand
-        {
-            // [arm/v8]: C5.2.8 FPSR, Floating-point Status Register
-            // Divide by zero to raise DZC (bit 1) in FPSR
-            let one = 1.0;
-            let zero = 0.0;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "fdiv {dest:d}, {one:d}, {zero:d}",
-                    one = in(vreg) one,
-                    zero = in(vreg) zero,
-                    dest = out(vreg) _
-                );
-            }
-            let mut fpsr: u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "mrs {fpsr}, fpsr",
-                    fpsr = out(reg) fpsr,
-                );
-            }
-            assert_eq!(fpsr, 1 << 1);
-
-            // [arm/v8]: C5.2.7 FPCR, Floating-point Control Register
-            // Control bits:
-            //   AHP 26
-            //   DN 25
-            //   FZ 24
-            //   RMode 23:22
-            //   Stride 21:20
-            //   FZ16 19
-            //   Len 18:16 - no meaning in aarch64, used for context save/restore in aarch32 mode
-            const FPCR_CONTROL_BITS: u64 = 0xff << 19;
-
-            // Interrupt enable bits:
-            //   IDE 15
-            //   IXE 12
-            //   UFE 11
-            //   OFE 10
-            //   DZE 9
-            //   IOE 8
-            const FPCR_INTERRUPT_ENABLE_BITS: u64 = 1 << 15 | 0x1f << 8;
-            custom_fpcr = FPCR_CONTROL_BITS | FPCR_INTERRUPT_ENABLE_BITS;
-
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("msr fpcr, {fpcr}", fpcr = in(reg) custom_fpcr);
-            }
-            // The implementation may not support setting some of these bits. Read back fpcr to see
-            // what the hardware actually allows so we can verify that it was restored later on.
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "mrs {fpcr}, fpcr",
-                    fpcr = out(reg) custom_fpcr,
-                );
-            }
-
-            // Load in known values to the first 3 vector registers, first callee preserved register, and non preserved register.
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("
-                    ldr  q0,  [{q0}]
-                    ldr  q1,  [{q1}]
-                    ldr  q2,  [{q2}]
-                    ldr  q8,  [{q8}]
-                    ldr q20, [{q20}]
-                    ",
-                 q0 = in(reg) &q0,
-                 q1 = in(reg) &q1,
-                 q2 = in(reg) &q2,
-                 q8 = in(reg) &q8,
-                 q20 = in(reg) &q20,
-                );
-            }
-        }
-
-        state.save();
-
-        // Clear state manually
-        {
-            let fpcr = 0u64;
-            let fpsr = 0u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("
-                    msr fpcr, {fpcr}
-                    msr fpsr, {fpsr}
-                    ",
-                    fpcr = in(reg) fpcr,
-                    fpsr = in(reg) fpsr,
-                );
-                asm!(
-                    "
-                    eor  v0.16b,  v0.16b,  v0.16b
-                    eor  v1.16b,  v1.16b,  v1.16b
-                    eor  v2.16b,  v2.16b,  v2.16b
-                    eor  v8.16b,  v8.16b,  v8.16b
-                    eor v20.16b, v20.16b, v20.16b
-                    "
-                );
-            }
-        };
-
-        // Verify that the state is cleared
-        {
-            let mut fpcr: u64;
-            let mut fpsr: u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "
-                    mrs {fpcr}, fpcr
-                    mrs {fpsr}, fpsr
-                    ",
-                    fpcr = out(reg) fpcr,
-                    fpsr = out(reg) fpsr,
-                );
-            }
-            assert_eq!(fpcr, 0);
-            assert_eq!(fpsr, 0);
-
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q0, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q1, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q2, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q8, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q20, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-        }
-
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            state.restore();
-        }
-        // Verify that the state restored to what we expect
-        {
-            let mut fpcr: u64;
-            let mut fpsr: u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("
-                    mrs {fpcr}, fpcr
-                    mrs {fpsr}, fpsr
-                    ",
-                    fpcr = out(reg) fpcr,
-                    fpsr = out(reg) fpsr,
-                );
-            }
-            assert_eq!(fpcr, custom_fpcr);
-            assert_eq!(fpsr, 1 << 1);
-
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q0, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x42);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q1, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x43);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q2, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x44);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q8, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x45);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q20, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x46);
-            }
-        }
+    unsafe extern "C" {
+        fn save_extended_pstate(state_addr: usize);
+        fn restore_extended_pstate(state_addr: usize);
+        fn save_extended_aarch32_pstate(state_addr: usize);
+        fn restore_extended_aarch32_pstate(state_addr: usize);
     }
 
-    #[::fuchsia::test]
-    fn save_restore_aarch32_registers() {
-        use core::arch::asm;
+    #[fuchsia::test]
+    fn test_save_restore_64() {
+        let mut state = crate::ExtendedPstateState::default();
+        let mut pstate_ptr_struct = crate::ExtendedPstatePointer { extended_pstate: &mut state };
+        let pstate_ptr = &mut pstate_ptr_struct as *mut crate::ExtendedPstatePointer;
 
-        let mut state = Aarch32State::default();
+        let mut restored_state = State::default();
+        let buffer_ptr = &mut restored_state as *mut State as *mut u8;
 
-        // Declare and initialize the locals the tests below will use above as
-        // the initialization for some of these uses vector registers that we
-        // are manipulating as part of the tests.
-        let mut custom_fpcr: u64;
-        let dest = [0u8; 16];
-        // v0-v7 (aka q0-q7) are used for parameter values and return values in the aarch64 calling convention.
-        let q0 = [0x42u8; 16];
-        let q1 = [0x43u8; 16];
-        let q2 = [0x44u8; 16];
-        // The bottom 64 bits of v8-v15 (aka q8-v15) are callee-preserved in the aarch64 calling convention.
-        let q8 = [0x45u8; 16];
+        let sentinel_q: u128 = 0xDEADBEEF_DEADBEEF_DEADBEEF_DEADBEEF_u128;
+        let sentinel_fpcr: u64 = 0x01000000; // FZ bit
+        let sentinel_fpsr: u64 = 0;
 
-        // Set custom state by hand
-        {
-            // [arm/v8]: C5.2.8 FPSR, Floating-point Status Register
-            // Divide by zero to raise DZC (bit 1) in FPSR
-            let one = 1.0;
-            let zero = 0.0;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "fdiv {dest:d}, {one:d}, {zero:d}",
-                    one = in(vreg) one,
-                    zero = in(vreg) zero,
-                    dest = out(vreg) _
-                );
-            }
-            let mut fpsr: u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "mrs {fpsr}, fpsr",
-                    fpsr = out(reg) fpsr,
-                );
-            }
-            assert_eq!(fpsr, 1 << 1);
+        let sentinels_q = [sentinel_q; 32];
 
-            // [arm/v8]: C5.2.7 FPCR, Floating-point Control Register
-            // Control bits:
-            //   AHP 26
-            //   DN 25
-            //   FZ 24
-            //   RMode 23:22
-            //   Stride 21:20
-            //   FZ16 19
-            //   Len 18:16 - no meaning in aarch64, used for context save/restore in aarch32 mode
-            const FPCR_CONTROL_BITS: u64 = 0xff << 19;
-
-            // Interrupt enable bits:
-            //   IDE 15
-            //   IXE 12
-            //   UFE 11
-            //   OFE 10
-            //   DZE 9
-            //   IOE 8
-            const FPCR_INTERRUPT_ENABLE_BITS: u64 = 1 << 15 | 0x1f << 8;
-            custom_fpcr = FPCR_CONTROL_BITS | FPCR_INTERRUPT_ENABLE_BITS;
-
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("msr fpcr, {fpcr}", fpcr = in(reg) custom_fpcr);
-            }
-            // The implementation may not support setting some of these bits. Read back fpcr to see
-            // what the hardware actually allows so we can verify that it was restored later on.
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "mrs {fpcr}, fpcr",
-                    fpcr = out(reg) custom_fpcr,
-                );
-            }
-
-            // Load in known values to the first 3 vector registers and first callee preserved register.
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("
-                    ldr  q0,  [{q0}]
-                    ldr  q1,  [{q1}]
-                    ldr  q2,  [{q2}]
-                    ldr  q8,  [{q8}]
-                    ",
-                 q0 = in(reg) &q0,
-                 q1 = in(reg) &q1,
-                 q2 = in(reg) &q2,
-                 q8 = in(reg) &q8,
-                );
-            }
-        }
-
-        state.save();
-
-        // Clear state manually
-        {
-            let fpcr = 0u64;
-            let fpsr = 0u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("
-                    msr fpcr, {fpcr}
-                    msr fpsr, {fpsr}
-                    ",
-                    fpcr = in(reg) fpcr,
-                    fpsr = in(reg) fpsr,
-                );
-                asm!(
-                    "
-                    eor  v0.16b,  v0.16b,  v0.16b
-                    eor  v1.16b,  v1.16b,  v1.16b
-                    eor  v2.16b,  v2.16b,  v2.16b
-                    eor  v8.16b,  v8.16b,  v8.16b
-                    "
-                );
-            }
-        };
-
-        // Verify that the state is cleared
-        {
-            let mut fpcr: u64;
-            let mut fpsr: u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!(
-                    "
-                    mrs {fpcr}, fpcr
-                    mrs {fpsr}, fpsr
-                    ",
-                    fpcr = out(reg) fpcr,
-                    fpsr = out(reg) fpsr,
-                );
-            }
-            assert_eq!(fpcr, 0);
-            assert_eq!(fpsr, 0);
-
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q0, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q1, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q2, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q8, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-        }
-
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
+        // SAFETY: all memory accesses are to mutable variables on the stack and all clobbers are
+        // specified.
         unsafe {
-            state.restore();
-        }
-        // Verify that the state restored to what we expect
-        {
-            let mut fpcr: u64;
-            let mut fpsr: u64;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("
-                    mrs {fpcr}, fpcr
-                    mrs {fpsr}, fpsr
-                    ",
-                    fpcr = out(reg) fpcr,
-                    fpsr = out(reg) fpsr,
-                );
-            }
-            assert_eq!(fpcr, custom_fpcr);
-            assert_eq!(fpsr, 1 << 1);
+            asm!(
+                // 1. Load sentinels into registers
+                "ldp q0, q1, [{sentinels_q}]",
+                "ldp q2, q3, [{sentinels_q}, #32]",
+                "ldp q4, q5, [{sentinels_q}, #64]",
+                "ldp q6, q7, [{sentinels_q}, #96]",
+                "ldp q8, q9, [{sentinels_q}, #128]",
+                "ldp q10, q11, [{sentinels_q}, #160]",
+                "ldp q12, q13, [{sentinels_q}, #192]",
+                "ldp q14, q15, [{sentinels_q}, #224]",
+                "ldp q16, q17, [{sentinels_q}, #256]",
+                "ldp q18, q19, [{sentinels_q}, #288]",
+                "ldp q20, q21, [{sentinels_q}, #320]",
+                "ldp q22, q23, [{sentinels_q}, #352]",
+                "ldp q24, q25, [{sentinels_q}, #384]",
+                "ldp q26, q27, [{sentinels_q}, #416]",
+                "ldp q28, q29, [{sentinels_q}, #448]",
+                "ldp q30, q31, [{sentinels_q}, #480]",
+                "msr fpcr, {sentinel_fpcr_reg}",
+                "msr fpsr, {sentinel_fpsr_reg}",
 
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q0, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x42);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q1, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x43);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q2, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x44);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("str q8, [{dest}]",
-                     dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x45);
-            }
+                // 2. Call save routine
+                "mov x0, {pstate_ptr}",
+                "bl {save_fn}",
+
+                // 3. Zero registers
+                "eor v0.16b, v0.16b, v0.16b",
+                "eor v1.16b, v1.16b, v1.16b",
+                "eor v2.16b, v2.16b, v2.16b",
+                "eor v3.16b, v3.16b, v3.16b",
+                "eor v4.16b, v4.16b, v4.16b",
+                "eor v5.16b, v5.16b, v5.16b",
+                "eor v6.16b, v6.16b, v6.16b",
+                "eor v7.16b, v7.16b, v7.16b",
+                "eor v8.16b, v8.16b, v8.16b",
+                "eor v9.16b, v9.16b, v9.16b",
+                "eor v10.16b, v10.16b, v10.16b",
+                "eor v11.16b, v11.16b, v11.16b",
+                "eor v12.16b, v12.16b, v12.16b",
+                "eor v13.16b, v13.16b, v13.16b",
+                "eor v14.16b, v14.16b, v14.16b",
+                "eor v15.16b, v15.16b, v15.16b",
+                "eor v16.16b, v16.16b, v16.16b",
+                "eor v17.16b, v17.16b, v17.16b",
+                "eor v18.16b, v18.16b, v18.16b",
+                "eor v19.16b, v19.16b, v19.16b",
+                "eor v20.16b, v20.16b, v20.16b",
+                "eor v21.16b, v21.16b, v21.16b",
+                "eor v22.16b, v22.16b, v22.16b",
+                "eor v23.16b, v23.16b, v23.16b",
+                "eor v24.16b, v24.16b, v24.16b",
+                "eor v25.16b, v25.16b, v25.16b",
+                "eor v26.16b, v26.16b, v26.16b",
+                "eor v27.16b, v27.16b, v27.16b",
+                "eor v28.16b, v28.16b, v28.16b",
+                "eor v29.16b, v29.16b, v29.16b",
+                "eor v30.16b, v30.16b, v30.16b",
+                "eor v31.16b, v31.16b, v31.16b",
+                "msr fpcr, xzr",
+                "msr fpsr, xzr",
+
+                // 4. Call restore routine
+                "mov x0, {pstate_ptr}",
+                "bl {restore_fn}",
+
+                // 5. Save registers to buffer
+                "stp q0, q1, [{buffer_ptr_out}]",
+                "stp q2, q3, [{buffer_ptr_out}, #32]",
+                "stp q4, q5, [{buffer_ptr_out}, #64]",
+                "stp q6, q7, [{buffer_ptr_out}, #96]",
+                "stp q8, q9, [{buffer_ptr_out}, #128]",
+                "stp q10, q11, [{buffer_ptr_out}, #160]",
+                "stp q12, q13, [{buffer_ptr_out}, #192]",
+                "stp q14, q15, [{buffer_ptr_out}, #224]",
+                "stp q16, q17, [{buffer_ptr_out}, #256]",
+                "stp q18, q19, [{buffer_ptr_out}, #288]",
+                "stp q20, q21, [{buffer_ptr_out}, #320]",
+                "stp q22, q23, [{buffer_ptr_out}, #352]",
+                "stp q24, q25, [{buffer_ptr_out}, #384]",
+                "stp q26, q27, [{buffer_ptr_out}, #416]",
+                "stp q28, q29, [{buffer_ptr_out}, #448]",
+                "stp q30, q31, [{buffer_ptr_out}, #480]",
+                "mrs x2, fpcr",
+                "str w2, [{buffer_ptr_out}, #512]",
+                "mrs x3, fpsr",
+                "str w3, [{buffer_ptr_out}, #516]",
+
+                sentinels_q = in(reg) &sentinels_q,
+                sentinel_fpcr_reg = in(reg) sentinel_fpcr,
+                sentinel_fpsr_reg = in(reg) sentinel_fpsr,
+                pstate_ptr = in(reg) pstate_ptr,
+                buffer_ptr_out = in(reg) buffer_ptr,
+                save_fn = sym save_extended_pstate,
+                restore_fn = sym restore_extended_pstate,
+                clobber_abi("C"),
+                out("x0") _,
+                out("x1") _,
+                out("x2") _,
+                out("x3") _,
+                out("v0") _, out("v1") _, out("v2") _, out("v3") _,
+                out("v4") _, out("v5") _, out("v6") _, out("v7") _,
+                out("v8") _, out("v9") _, out("v10") _, out("v11") _,
+                out("v12") _, out("v13") _, out("v14") _, out("v15") _,
+                out("v16") _, out("v17") _, out("v18") _, out("v19") _,
+                out("v20") _, out("v21") _, out("v22") _, out("v23") _,
+                out("v24") _, out("v25") _, out("v26") _, out("v27") _,
+                out("v28") _, out("v29") _, out("v30") _, out("v31") _,
+                out("x30") _,
+            );
         }
 
-        state.reset();
-        assert_eq!(state.fpcr, 0);
-        assert_eq!(state.fpsr, 0);
+        // Assertions
+        let state_val = state.get_arm64_qregs();
+        for i in 0..32 {
+            assert_eq!(state_val[i], sentinel_q, "state.q[{}] mismatch", i);
+        }
+        assert_eq!(state.get_arm64_fpcr(), sentinel_fpcr as u32, "state.fpcr mismatch");
+        assert_eq!(state.get_arm64_fpsr(), sentinel_fpsr as u32, "state.fpsr mismatch");
+
+        for i in 0..32 {
+            assert_eq!(restored_state.q[i], sentinel_q, "restored_state.q[{}] mismatch", i);
+        }
+        assert_eq!(restored_state.fpcr, sentinel_fpcr as u32, "restored_state.fpcr mismatch");
+        assert_eq!(restored_state.fpsr, sentinel_fpsr as u32, "restored_state.fpsr mismatch");
+    }
+
+    #[fuchsia::test]
+    fn test_save_restore_32() {
+        let mut state = crate::ExtendedAarch32PstateState::default();
+        let mut pstate_ptr_struct =
+            crate::ExtendedPstatePointer { extended_aarch32_pstate: &mut state };
+        let pstate_ptr = &mut pstate_ptr_struct as *mut crate::ExtendedPstatePointer;
+
+        let mut restored_state = Aarch32State::default();
+        let buffer_ptr = &mut restored_state as *mut Aarch32State as *mut u8;
+
+        let sentinel_q: u128 = 0xDEADBEEF_DEADBEEF_DEADBEEF_DEADBEEF_u128;
+        let sentinel_fpcr: u64 = 0x01000000;
+        let sentinel_fpsr: u64 = 0;
+
+        let sentinels_q = [sentinel_q; 16];
+
+        // SAFETY: all memory accesses are to mutable variables on the stack and all clobbers are
+        // specified.
+        unsafe {
+            asm!(
+                // 1. Load sentinels into registers
+                "ldp q0, q1, [{sentinels_q}]",
+                "ldp q2, q3, [{sentinels_q}, #32]",
+                "ldp q4, q5, [{sentinels_q}, #64]",
+                "ldp q6, q7, [{sentinels_q}, #96]",
+                "ldp q8, q9, [{sentinels_q}, #128]",
+                "ldp q10, q11, [{sentinels_q}, #160]",
+                "ldp q12, q13, [{sentinels_q}, #192]",
+                "ldp q14, q15, [{sentinels_q}, #224]",
+                "msr fpcr, {sentinel_fpcr_reg}",
+                "msr fpsr, {sentinel_fpsr_reg}",
+
+                // 2. Call save routine
+                "mov x0, {pstate_ptr}",
+                "bl {save_fn}",
+
+                // 3. Zero registers
+                "eor v0.16b, v0.16b, v0.16b",
+                "eor v1.16b, v1.16b, v1.16b",
+                "eor v2.16b, v2.16b, v2.16b",
+                "eor v3.16b, v3.16b, v3.16b",
+                "eor v4.16b, v4.16b, v4.16b",
+                "eor v5.16b, v5.16b, v5.16b",
+                "eor v6.16b, v6.16b, v6.16b",
+                "eor v7.16b, v7.16b, v7.16b",
+                "eor v8.16b, v8.16b, v8.16b",
+                "eor v9.16b, v9.16b, v9.16b",
+                "eor v10.16b, v10.16b, v10.16b",
+                "eor v11.16b, v11.16b, v11.16b",
+                "eor v12.16b, v12.16b, v12.16b",
+                "eor v13.16b, v13.16b, v13.16b",
+                "eor v14.16b, v14.16b, v14.16b",
+                "eor v15.16b, v15.16b, v15.16b",
+                "msr fpcr, xzr",
+                "msr fpsr, xzr",
+
+                // 4. Call restore routine
+                "mov x0, {pstate_ptr}",
+                "bl {restore_fn}",
+
+                // 5. Save registers to buffer
+                "stp q0, q1, [{buffer_ptr_out}]",
+                "stp q2, q3, [{buffer_ptr_out}, #32]",
+                "stp q4, q5, [{buffer_ptr_out}, #64]",
+                "stp q6, q7, [{buffer_ptr_out}, #96]",
+                "stp q8, q9, [{buffer_ptr_out}, #128]",
+                "stp q10, q11, [{buffer_ptr_out}, #160]",
+                "stp q12, q13, [{buffer_ptr_out}, #192]",
+                "stp q14, q15, [{buffer_ptr_out}, #224]",
+                "mrs x2, fpcr",
+                "str w2, [{buffer_ptr_out}, #256]",
+                "mrs x3, fpsr",
+                "str w3, [{buffer_ptr_out}, #260]",
+
+                sentinels_q = in(reg) &sentinels_q,
+                sentinel_fpcr_reg = in(reg) sentinel_fpcr,
+                sentinel_fpsr_reg = in(reg) sentinel_fpsr,
+                pstate_ptr = in(reg) pstate_ptr,
+                buffer_ptr_out = in(reg) buffer_ptr,
+                save_fn = sym save_extended_aarch32_pstate,
+                restore_fn = sym restore_extended_aarch32_pstate,
+                clobber_abi("C"),
+                out("x0") _,
+                out("x1") _,
+                out("x2") _,
+                out("x3") _,
+                out("v0") _, out("v1") _, out("v2") _, out("v3") _,
+                out("v4") _, out("v5") _, out("v6") _, out("v7") _,
+                out("v8") _, out("v9") _, out("v10") _, out("v11") _,
+                out("v12") _, out("v13") _, out("v14") _, out("v15") _,
+                out("x30") _,
+            );
+        }
+
+        // Assertions
+        let state_val = state.get_arm32_qregs();
         for i in 0..16 {
-            assert_eq!(state.q[i], 0);
+            assert_eq!(state_val[i], sentinel_q, "state.q[{}] mismatch", i);
         }
+        assert_eq!(state.get_arm32_fpcr(), sentinel_fpcr as u32, "state.fpcr mismatch");
+        assert_eq!(state.get_arm32_fpsr(), sentinel_fpsr as u32, "state.fpsr mismatch");
+
+        for i in 0..16 {
+            assert_eq!(restored_state.q[i], sentinel_q, "restored_state.q[{}] mismatch", i);
+        }
+        assert_eq!(restored_state.fpcr, sentinel_fpcr as u32, "restored_state.fpcr mismatch");
+        assert_eq!(restored_state.fpsr, sentinel_fpsr as u32, "restored_state.fpsr mismatch");
     }
 }

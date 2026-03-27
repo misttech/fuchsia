@@ -39,29 +39,20 @@ pub struct ExtendedAarch32PstateState {
 
 #[cfg(target_arch = "aarch64")]
 impl ExtendedAarch32PstateState {
-    #[inline(always)]
-    pub fn save(&mut self) {
-        self.state.save()
-    }
-
-    /// This restores the extended processor state saved in this object into the processor's state
-    /// registers.
-    ///
-    /// # Safety
-    ///
-    /// This clobbers the current vector register, floating point register, and floating
-    /// point status and control register state including callee-saved registers. This should be
-    /// used in conjunction with save() to switch to an alternate extended processor state.
-    #[inline(always)]
-    pub unsafe fn restore(&self) {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            self.state.restore()
-        }
-    }
-
     pub fn reset(&mut self) {
         self.state.reset()
+    }
+
+    pub fn get_arm32_qregs(&self) -> &[u128; 16] {
+        &self.state.q
+    }
+
+    pub fn get_arm32_fpsr(&self) -> u32 {
+        self.state.fpsr
+    }
+
+    pub fn get_arm32_fpcr(&self) -> u32 {
+        self.state.fpcr
     }
 }
 
@@ -71,17 +62,17 @@ impl ExtendedPstateState {
         Self { state: x86_64::State::with_strategy(strategy) }
     }
 
-    /// This saves the current extended processor state to this state object.
+    #[cfg(not(target_arch = "aarch64"))]
     #[inline(always)]
     fn save(&mut self) {
         self.state.save()
     }
 
+    #[cfg(not(target_arch = "aarch64"))]
     #[inline(always)]
-    /// This restores the extended processor state saved in this object into the processor's state
-    /// registers.
+    /// # Safety
     ///
-    /// Safety: This clobbers the current vector register, floating point register, and floating
+    /// This clobbers the current vector register, floating point register, and floating
     /// point status and control register state including callee-saved registers. This should be
     /// used in conjunction with save() to switch to an alternate extended processor state.
     unsafe fn restore(&self) {
@@ -154,6 +145,8 @@ pub union ExtendedPstatePointer {
     pub extended_aarch32_pstate: *mut ExtendedAarch32PstateState,
 }
 
+// TODO(https://fxbug.dev/491848090) move other ISAs to use pure asm save/restore
+#[cfg(not(target_arch = "aarch64"))]
 #[unsafe(no_mangle)]
 /// Restores the current extended architectural process state.
 ///
@@ -169,6 +162,8 @@ pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
     }
 }
 
+// TODO(https://fxbug.dev/491848090) move other ISAs to use pure asm save/restore
+#[cfg(not(target_arch = "aarch64"))]
 #[unsafe(no_mangle)]
 /// Save the current extended architectural process state.
 ///
@@ -184,39 +179,7 @@ pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
     }
 }
 
-#[cfg(target_arch = "aarch64")]
-#[unsafe(no_mangle)]
-/// Restores the current extended AArch32-visible architectural process state.
-///
-/// # Safety
-///    - state_addr must point to pointer to an instance of ExtendedAarch32PstateState.
-///    - The active member of the ExtendedPstatePointer union must be extended_aarch32_pstate.
-pub unsafe extern "C" fn restore_extended_aarch32_pstate(state_addr: usize) {
-    let pointer = state_addr as *const ExtendedPstatePointer;
-    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-    unsafe {
-        let state = (*pointer).extended_aarch32_pstate;
-        (*state).restore()
-    }
-}
-
-#[cfg(target_arch = "aarch64")]
-#[unsafe(no_mangle)]
-/// Saves the current extended AArch32-visible architectural process state.
-///
-/// # Safety
-///    - state_addr must point to a pointer to an exclusively owned instance of ExtendedAarch32PstateState.
-///    - The active member of the ExtendedPstatePointer union must be extended_aarch32_pstate.
-pub unsafe extern "C" fn save_extended_aarch32_pstate(state_addr: usize) {
-    let pointer = state_addr as *const ExtendedPstatePointer;
-    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-    unsafe {
-        let state = (*pointer).extended_aarch32_pstate;
-        (*state).save()
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "aarch64")))]
 mod test {
     use super::*;
 

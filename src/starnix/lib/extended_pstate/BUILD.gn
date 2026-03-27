@@ -16,6 +16,10 @@ group("benchmarks") {
   deps = [ ":extended_pstate_bench" ]
 }
 
+static_library("aarch64_assembly") {
+  sources = [ "src/aarch64_asm.S" ]
+}
+
 static_library("riscv64_vector") {
   sources = [ "src/riscv64_vector.S" ]
 }
@@ -35,6 +39,7 @@ rustc_library("lib") {
     sources += [ "src/x86_64.rs" ]
   } else if (target_cpu == "arm64") {
     sources += [ "src/aarch64.rs" ]
+    deps += [ ":aarch64_assembly" ]
   } else if (target_cpu == "riscv64") {
     sources += [ "src/riscv64.rs" ]
     deps += [ ":riscv64_vector" ]
