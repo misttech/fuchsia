@@ -124,6 +124,12 @@ func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
 	// file-level variables for visibility.
 	var transformers = []transformer{bazelVisibilityToGN}
 
+	statement_transformers, err := transformersFromComments(stmt.Comments())
+	if err != nil {
+		return nil, err
+	}
+	transformers = append(transformers, statement_transformers...)
+
 	rhs, err := exprToGN(stmt.RHS, transformers)
 	if err != nil {
 		return nil, fmt.Errorf("converting rhs of assignment statement: %v", err)
@@ -375,7 +381,11 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		op = "="
 	}
 
-	var transformers []transformer
+	transformers, err := transformersFromComments(expr.Comments())
+	if err != nil {
+		return nil, err
+	}
+
 	switch attrName {
 	case "visibility":
 		transformers = append(transformers, bazelVisibilityToGN)
@@ -595,4 +605,36 @@ func hasAnnotation(comments []syntax.Comment, annotation string) bool {
 		}
 	}
 	return false
+}
+
+// transformersFromAnnotations returns the list of transformers to apply to a
+// target definition based on the annotations found in the comments.
+func transformersFromAnnotations(comments []syntax.Comment) ([]transformer, error) {
+	transformers := []transformer{}
+	for _, comment := range comments {
+		if strings.HasPrefix(comment.Text, transformerAnnotationPrefix) {
+			n := strings.TrimPrefix(comment.Text, transformerAnnotationPrefix)
+			transformer, ok := transformerAnnotationNames[n]
+			if !ok {
+				return nil, fmt.Errorf("unknown transformer: %s", n)
+			}
+			transformers = append(transformers, transformer)
+		}
+	}
+	return transformers, nil
+}
+
+func transformersFromComments(comments *syntax.Comments) ([]transformer, error) {
+	if comments == nil {
+		return nil, nil
+	}
+	before, err := transformersFromAnnotations(comments.Before)
+	if err != nil {
+		return nil, err
+	}
+	suffix, err := transformersFromAnnotations(comments.Suffix)
+	if err != nil {
+		return nil, err
+	}
+	return append(before, suffix...), nil
 }

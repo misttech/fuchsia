@@ -424,6 +424,49 @@ if (is_host) {
 not_needed([ "_foo_visibility" ])
 `,
 		},
+		{
+			name: "top-level deps assignment rust crate rewriting",
+			bazel: `
+# @bazel2gn:transformer=deps
+FOO_DEPS = [
+	"//third_party/rust_crates/vendor:lock_api",
+]`,
+			wantGN: `FOO_DEPS = [
+	"//third_party/rust_crates:lock_api",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "FOO_DEPS" ])
+`,
+		}, {
+			name: "target transformer annotation rust crate rewriting",
+			bazel: `
+rustc_library(
+	name="herp",
+	# @bazel2gn:transformer=deps
+	derps = [
+		"//third_party/rust_crates/vendor:lock_api",
+	],
+)`,
+			wantGN: `rustc_library("herp") {
+	derps = [
+		"//third_party/rust_crates:lock_api",
+	]
+}`,
+		}, {
+			name: "target transformer annotation suffix rust crate rewriting",
+			bazel: `
+rustc_library(
+	name="herp",
+	derps = ["//third_party/rust_crates/vendor:lock_api"], # @bazel2gn:transformer=deps
+)`,
+			wantGN: `rustc_library("herp") {
+	derps = [
+		"//third_party/rust_crates:lock_api",
+	]
+}`,
+		},
 	} {
 		f := toSyntaxFile(t, tc.bazel)
 		gotGN, err := bazelToGN(f)

@@ -216,6 +216,30 @@ source_set("foo") {
 }
 ```
 
+#### `@bazel2gn:transformer=<transformer>`
+
+This annotation tells `bazel2gn` to apply a transformer to the annotated
+statement. It is useful for controlling the conversion process.
+
+**Example:**
+
+```bzl
+COMMON_DEPS = ["//third_party/rust_crates/vendor:lock_api"]
+```
+
+**Converted GN:**
+
+```gn
+COMMON_DEPS = [ "//third_party/rust_crates:lock_api" ]
+```
+
+The currently supported transformers are:
+
+* `visibility`: converts Bazel visibility to GN visibility.
+* `deps`: converts Bazel dependencies to GN dependencies.
+* `configs`: converts Bazel copt to GN configs.
+* `file_paths`: converts Bazel file paths to GN file paths.
+
 [embedsrcs]: https://github.com/bazel-contrib/rules_go/blob/master/docs/go/core/rules.md#go_library-embedsrcs
 [goembed]: https://pkg.go.dev/embed
 [starlark]: https://bazel.build/rules/language

@@ -29,6 +29,18 @@ const skipAnnotation = "# @bazel2gn:skip"
 // and use the value specified in the annotation in the BUILD.gn file instead.
 const pathOverwriteAnnotationPrefix = "# @bazel2gn:path_overwrite:"
 
+// transformerAnnotationPrefix is a comment annotation prefix that indicates a transformer
+// should be applied to the next statement.
+const transformerAnnotationPrefix = "# @bazel2gn:transformer="
+
+// transformerAnnotationNames maps from transformer annotation names to the transformer functions.
+var transformerAnnotationNames = map[string]transformer{
+	"visibility": bazelVisibilityToGN,
+	"deps":       bazelDepToGN,
+	"configs":    bazelCOptToGNConfig,
+	"file_paths": bazelFilePathsToGN,
+}
+
 // bazelRuleToGNTemplate maps from Bazel rule names to GN template names. They can
 // be the same if Bazel and GN shared the same template name.
 //
