@@ -86,8 +86,8 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
             power_metrics_recorder: power_metrics_recorder_config.as_ref().map(|f| f.into()),
             system_power_mode: system_power_mode_config.as_ref().map(|f| f.into()),
             thermal: thermal_config.as_ref().map(|f| f.into()),
-            thread_roles: thread_roles.into_iter().map(|f| f.into()).collect(),
-            sysmem_format_costs: sysmem_format_costs_config.into_iter().map(|f| f.into()).collect(),
+            thread_roles: thread_roles.iter().map(|f| f.into()).collect(),
+            sysmem_format_costs: sysmem_format_costs_config.iter().map(|f| f.into()).collect(),
         })
     } else {
         None
