@@ -1976,7 +1976,13 @@ fn do_mount_remount(
     let mount_options =
         security::sb_eat_lsm_opts(current_task.kernel(), &mut MountParams::parse(data.as_ref())?)?;
     security::sb_remount(current_task, &mount, mount_options)?;
-    let updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
+    let mut updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
+
+    // TODO: https://fxbug.dev/322875215 - Support non-bind remount and remove this.
+    if target.entry.node.fs().options.flags.contains(MountFlags::RDONLY) {
+        updated_flags |= MountFlags::RDONLY;
+    }
+
     mount.update_flags(updated_flags);
     if !flags.contains(MountFlags::BIND) {
         // From <https://man7.org/linux/man-pages/man2/mount.2.html>

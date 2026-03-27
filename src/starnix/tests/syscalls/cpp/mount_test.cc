@@ -652,7 +652,7 @@ TEST_F(ProcMountsTest, Basic) {
     GTEST_SKIP() << "ProcMountsTest::Basic can not be run on Linux, skipping.";
   }
   EXPECT_THAT(read_mounts(), IsSupersetOf({
-                                 "data/system / remote_bundle rw,nosuid,nodev 0 0",
+                                 "data/system / remote_bundle ro,nosuid,nodev 0 0",
                                  "none /dev devtmpfs rw,nosuid 0 0",
                                  ". /tmp tmpfs rw 0 0",
                              }));
@@ -712,6 +712,73 @@ TEST_F(ProcMountsTest, RemountBindReadonlyFlagInheritance) {
   ASSERT_THAT(mount(nullptr, base.path().c_str(), nullptr, MS_REMOUNT, nullptr), SyscallSucceeds());
   EXPECT_TRUE(cpp23::contains(MountOptionsFor(base.path()), "rw"));
   EXPECT_TRUE(cpp23::contains(MountOptionsFor(bind.path()), "rw"));
+}
+
+// Validates that remote_bundle instances cannot be re-mounted read/write.
+TEST_F(ProcMountsTest, RemoteBundleRemountReadOnlyToReadWrite) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "RemoteBundle only exists on Starnix, skipping.";
+  }
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  // Identify a remote_bundle mount. In the Starnix test environment, "/" is typically a
+  // remote_bundle mount.
+  std::string remote_bundle_path;
+  {
+    auto mounts = test_helper::ReadMountInfo();
+    ASSERT_TRUE(mounts.is_ok());
+    for (const auto &info : mounts.value()) {
+      remote_bundle_path = info.mount_point;
+      break;
+    }
+  }
+
+  if (remote_bundle_path.empty()) {
+    GTEST_SKIP() << "No remote_bundle mount found, skipping.";
+  }
+
+  // Verify that the remote_bundle mount has the readonly flag set.
+  ASSERT_TRUE(cpp23::contains(MountOptionsFor(remote_bundle_path), "ro"));
+
+  // Create a bind mount of the remote bundle on a temporary directory, to avoid side-effects of
+  // the root filesystem being overlaid with a LayeredFS during tests.
+  test_helper::ScopedTempDir bind_dir;
+  ASSERT_THAT(mount(remote_bundle_path.c_str(), bind_dir.path().c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+
+  // Attempt to remount as read-write (per-mount flag). This will succeed.
+  ASSERT_THAT(mount(nullptr, bind_dir.path().c_str(), nullptr, MS_BIND | MS_REMOUNT, nullptr),
+              SyscallSucceeds());
+
+  // Because the superblock is read-only, the bind mount will remain reported readonly.
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor(bind_dir.path()), "ro"));
+}
+
+// Validates that a remote_bundle mount at the root of the container is read-only even when
+// container features using `LayeredFS` are enabled, which is always the case in userspace tests.
+TEST_F(ProcMountsTest, RemoteBundleAtRootIsReadOnly) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "RemoteBundle only exists on Starnix, skipping.";
+  }
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  auto mount_info = test_helper::ReadMountInfoLine("/");
+  if (mount_info->fs_type != "remote_bundle") {
+    GTEST_SKIP() << "Not running with remote_bundle mounted at /, skipping.";
+  }
+
+  // Verify that the root (remote_bundle) filesystem is reported as readonly.
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor("/"), "ro"));
+
+  // Attempt to remount as read-write (per-mount flag). This will succeed.
+  ASSERT_THAT(mount(nullptr, "/", nullptr, MS_BIND | MS_REMOUNT, nullptr), SyscallSucceeds());
+
+  // Because the superblock is read-only, the bind mount will remain reported readonly.
+  EXPECT_TRUE(cpp23::contains(MountOptionsFor("/"), "ro"));
 }
 
 }  // namespace
