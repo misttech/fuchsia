@@ -4,6 +4,8 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
+import(
+    "//src/lib/testing/expectation/fuchsia_test_component_with_expectations.gni")
 
 group("tests") {
   testonly = true
@@ -209,7 +211,12 @@ rustc_library("ebpf") {
   ]
 }
 
-fuchsia_unittest_package("starnix-ebpf-tests") {
+fuchsia_test_component_with_expectations("starnix-ebpf-tests-component") {
   manifest = "meta/ebpf_tests.cml"
   deps = [ ":ebpf_test" ]
+  expectations = "expectations.json5"
+}
+
+fuchsia_test_package("starnix-ebpf-tests") {
+  test_components = [ ":starnix-ebpf-tests-component" ]
 }
