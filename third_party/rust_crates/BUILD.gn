@@ -1056,11 +1056,11 @@ group("strsim") {
 }
 
 group("strum") {
-  public_deps = [ ":strum-v0_27_2" ]
+  public_deps = [ ":strum-v0_28_0" ]
 }
 
 group("strum_macros") {
-  public_deps = [ ":strum_macros-v0_27_2($host_toolchain)" ]
+  public_deps = [ ":strum_macros-v0_28_0($host_toolchain)" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -18103,15 +18103,15 @@ rustc_library("strsim-v0_11_1") {
   applicable_licenses = [ ":strsim-v0_11_1.license" ]
 }
 
-license("strum-v0_27_2.license") {
+license("strum-v0_28_0.license") {
   public_package_name = "strum"
-  license_files = [ "//third_party/rust_crates/vendor/strum-0.27.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/strum-0.28.0/LICENSE" ]
 }
 
-rustc_library("strum-v0_27_2") {
+rustc_library("strum-v0_28_0") {
   crate_name = "strum"
-  source_root = "//third_party/rust_crates/vendor/strum-0.27.2/src/lib.rs"
-  output_name = "strum-b454bc68c65c55e9"
+  source_root = "//third_party/rust_crates/vendor/strum-0.28.0/src/lib.rs"
+  output_name = "strum-14c27d3ae52a54b3"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18123,28 +18123,28 @@ rustc_library("strum-v0_27_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b454bc68c65c55e9",
-    "-Cextra-filename=-b454bc68c65c55e9",
+    "-Cmetadata=14c27d3ae52a54b3",
+    "-Cextra-filename=-14c27d3ae52a54b3",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":strum-v0_27_2.license" ]
+  applicable_licenses = [ ":strum-v0_28_0.license" ]
 }
 
-license("strum_macros-v0_27_2.license") {
+license("strum_macros-v0_28_0.license") {
   public_package_name = "strum_macros"
   license_files =
-      [ "//third_party/rust_crates/vendor/strum_macros-0.27.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/strum_macros-0.28.0/LICENSE" ]
 }
 
-rustc_macro("strum_macros-v0_27_2") {
+rustc_macro("strum_macros-v0_28_0") {
   crate_name = "strum_macros"
   source_root =
-      "//third_party/rust_crates/vendor/strum_macros-0.27.2/src/lib.rs"
-  output_name = "strum_macros-23391655e6a59360"
+      "//third_party/rust_crates/vendor/strum_macros-0.28.0/src/lib.rs"
+  output_name = "strum_macros-2acaf8823e967abc"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18160,13 +18160,13 @@ rustc_macro("strum_macros-v0_27_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=23391655e6a59360",
-    "-Cextra-filename=-23391655e6a59360",
+    "-Cmetadata=2acaf8823e967abc",
+    "-Cextra-filename=-2acaf8823e967abc",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":strum_macros-v0_27_2.license" ]
+  applicable_licenses = [ ":strum_macros-v0_28_0.license" ]
 }
 
 license("subtle-v2_6_1.license") {
