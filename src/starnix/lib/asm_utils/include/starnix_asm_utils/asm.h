@@ -1,9 +1,9 @@
-// Copyright 2025 The Fuchsia Authors
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STARNIX_KERNEL_SYSCALL_LOOP_SRC_ASM_H_
-#define SRC_STARNIX_KERNEL_SYSCALL_LOOP_SRC_ASM_H_
+#ifndef SRC_STARNIX_LIB_ASM_UTILS_INCLUDE_STARNIX_ASM_UTILS_ASM_H_
+#define SRC_STARNIX_LIB_ASM_UTILS_INCLUDE_STARNIX_ASM_UTILS_ASM_H_
 
 // Macros cribbed from //zircon/kernel/include/asm.h for use in trampolines.
 
@@ -19,5 +19,4 @@
 
 #define END_FUNCTION(x) .cfi_endproc; .size x, . - x
 
-
-#endif  // SRC_STARNIX_KERNEL_SYSCALL_LOOP_SRC_ASM_H_
+#endif  // SRC_STARNIX_LIB_ASM_UTILS_INCLUDE_STARNIX_ASM_UTILS_ASM_H_

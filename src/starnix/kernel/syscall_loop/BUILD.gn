@@ -34,10 +34,8 @@ rustc_library("starnix_syscall_loop") {
 }
 
 static_library("restricted_trampoline") {
-  sources = [
-    "src/asm.h",
-    "src/trampoline_${current_cpu}.S",
-  ]
+  sources = [ "src/trampoline_${current_cpu}.S" ]
+  deps = [ "//src/starnix/lib/asm_utils" ]
 }
 
 fuchsia_unittest_package("starnix_syscall_loop_tests") {

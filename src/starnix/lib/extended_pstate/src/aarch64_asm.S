@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/starnix/kernel/syscall_loop/src/asm.h"
+#include <starnix_asm_utils/asm.h>
 
 #define FPCR_OFFSET 512
 #define FPSR_OFFSET 516

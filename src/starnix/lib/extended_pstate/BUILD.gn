@@ -18,6 +18,7 @@ group("benchmarks") {
 
 static_library("aarch64_assembly") {
   sources = [ "src/aarch64_asm.S" ]
+  deps = [ "//src/starnix/lib/asm_utils" ]
 }
 
 static_library("riscv64_vector") {
