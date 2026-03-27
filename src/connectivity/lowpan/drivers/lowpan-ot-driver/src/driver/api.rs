@@ -1384,6 +1384,17 @@ where
                 ..Default::default()
             })
             .collect::<Vec<_>>();
+        let lowpan_contexts_info = ot
+            .iter_lowpan_contexts_info()
+            .take(32) // Limit the number of routers to 32 per the FIDL definition.
+            .map(|info| fidl_fuchsia_lowpan_experimental::LowpanContextInfo {
+                context_id: Some(info.context_id()),
+                compress_flag: Some(info.compress_flag()),
+                stable: Some(info.is_stable()),
+                prefix: Some(info.prefix().to_string()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1449,6 +1460,7 @@ where
                 on_mesh_prefixes: Some(on_mesh_prefixes),
                 external_routes: Some(external_routes),
                 services: Some(services),
+                contexts: Some(lowpan_contexts_info),
                 ..Default::default()
             }),
             ..Default::default()

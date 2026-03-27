@@ -49,6 +49,20 @@ impl<T: ?Sized + NetData> Iterator for ServiceIterator<'_, T> {
     }
 }
 
+/// Iterator type for lowpan context info in network data.
+#[allow(missing_debug_implementations)]
+pub struct LowpanContextInfoIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otNetworkDataIterator,
+}
+
+impl<T: ?Sized + NetData> Iterator for LowpanContextInfoIterator<'_, T> {
+    type Item = LowpanContextInfo;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.ot_instance.iter_next_lowpan_context_info(&mut self.ot_iter)
+    }
+}
+
 /// Methods from the [OpenThread "NetData" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-thread-general
@@ -89,6 +103,12 @@ pub trait NetData {
     /// Functional equivalent of [`otsys::otNetDataGetNextService`](crate::otsys::otNetDataGetNextService).
     fn iter_next_service(&self, ot_iter: &mut otNetworkDataIterator) -> Option<ServiceConfig>;
 
+    /// Functional equivalent of [`otsys::otNetDataGetNextLowpanContextInfo`](crate::otsys::otNetDataGetNextLowpanContextInfo).
+    fn iter_next_lowpan_context_info(
+        &self,
+        ot_iter: &mut otNetworkDataIterator,
+    ) -> Option<LowpanContextInfo>;
+
     /// Returns an iterator for iterating over on-mesh prefixes.
     fn iter_on_mesh_prefixes(&self) -> OnMeshPrefixIterator<'_, Self> {
         OnMeshPrefixIterator { ot_instance: self, ot_iter: OT_NETWORK_DATA_ITERATOR_INIT }
@@ -102,6 +122,11 @@ pub trait NetData {
     /// Returns an iterator for iterating over services.
     fn iter_services(&self) -> ServiceIterator<'_, Self> {
         ServiceIterator { ot_instance: self, ot_iter: OT_NETWORK_DATA_ITERATOR_INIT }
+    }
+
+    /// Returns an iterator for iterating over lowpan context info.
+    fn iter_lowpan_contexts_info(&self) -> LowpanContextInfoIterator<'_, Self> {
+        LowpanContextInfoIterator { ot_instance: self, ot_iter: OT_NETWORK_DATA_ITERATOR_INIT }
     }
 }
 
@@ -134,6 +159,13 @@ impl<T: NetData + Boxable> NetData for ot::Box<T> {
 
     fn iter_next_service(&self, ot_iter: &mut otNetworkDataIterator) -> Option<ServiceConfig> {
         self.as_ref().iter_next_service(ot_iter)
+    }
+
+    fn iter_next_lowpan_context_info(
+        &self,
+        ot_iter: &mut otNetworkDataIterator,
+    ) -> Option<LowpanContextInfo> {
+        self.as_ref().iter_next_lowpan_context_info(ot_iter)
     }
 }
 
@@ -204,6 +236,24 @@ impl NetData for Instance {
                 Error::NotFound => None,
                 Error::None => Some(ret),
                 err => panic!("Unexpected error from otNetDataGetNextService: {err:?}"),
+            }
+        }
+    }
+
+    fn iter_next_lowpan_context_info(
+        &self,
+        ot_iter: &mut otNetworkDataIterator,
+    ) -> Option<LowpanContextInfo> {
+        unsafe {
+            let mut ret = LowpanContextInfo::default();
+            match Error::from(otNetDataGetNextLowpanContextInfo(
+                self.as_ot_ptr(),
+                ot_iter as *mut otNetworkDataIterator,
+                ret.as_ot_mut_ptr(),
+            )) {
+                Error::NotFound => None,
+                Error::None => Some(ret),
+                err => panic!("Unexpected error from otNetDataGetNextLowpanContextInfo: {err:?}"),
             }
         }
     }

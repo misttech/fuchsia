@@ -1984,6 +1984,44 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.contexts {
+                                        net_data_child.record_child(
+                                            "contexts",
+                                            |contexts_child| {
+                                                for (index, info) in y.iter().enumerate() {
+                                                    contexts_child.record_child(
+                                                        format!("context_{}", index),
+                                                        |context_node| {
+                                                            if let Some(z) = info.context_id {
+                                                                context_node.record_uint(
+                                                                    "context_id",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.compress_flag {
+                                                                context_node.record_bool(
+                                                                    "compress_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.stable {
+                                                                context_node.record_bool(
+                                                                    "stable",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.prefix {
+                                                                context_node.record_string(
+                                                                    "prefix",
+                                                                    z,
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }
