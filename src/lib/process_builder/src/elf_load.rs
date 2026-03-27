@@ -475,7 +475,7 @@ mod tests {
         // Construct the expected memory, which is ASCII "FUCHSIA!" followed by 0s for the rest of
         // the page.
         let expected = ELF_DATA
-            .into_iter()
+            .iter()
             .cloned()
             .chain(std::iter::repeat(0).take(*PAGE_SIZE - ELF_DATA.len()))
             .collect::<Vec<u8>>();
