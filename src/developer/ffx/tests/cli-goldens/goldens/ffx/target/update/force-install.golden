@@ -44,6 +44,26 @@
       "short": null,
       "description": "port to start the OTA repo server on when using --product_bundle. This is configured by `repository.ota_port` and defaults to 0, which indicates a random unassigned port.",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "product-bundle-path"
+        }
+      },
+      "optionality": "optional",
+      "long": "--product-bundle-path",
+      "short": null,
+      "description": "optionally specify the product bundle to use as the source of the update, implies `--product-bundle`. The default is to use the product bundle configured with `product.path`.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--packageless",
+      "short": null,
+      "description": "use a default packageless update url if no update_url is provided",
+      "hidden": false
     }
   ],
   "notes": [
@@ -52,14 +72,8 @@
   "commands": [],
   "positionals": [
     {
-      "name": "update_pkg_url",
-      "description": "the url of the update package describing the update to install",
-      "optionality": "required",
-      "hidden": false
-    },
-    {
-      "name": "product_bundle_path",
-      "description": "optionally specify the product bundle to use as the source of the update when `--product-bundle` is set. The default is to use the product bundle configured with `product.path`.",
+      "name": "update_url",
+      "description": "the url of the update to install, can be a fuchsia-pkg update package url or a http(s) manifest url",
       "optionality": "optional",
       "hidden": false
     }

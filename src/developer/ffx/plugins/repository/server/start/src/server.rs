@@ -11,7 +11,7 @@ use ffx_repository_server_start_args::StartCommand;
 use ffx_writer::ToolIO;
 use fho::{Deferred, FfxMain};
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
-use futures::StreamExt;
+use futures::StreamExt as _;
 use pkg::{PkgServerInstanceInfo, PkgServerInstances, ServerMode};
 use std::io::Write;
 use std::net::SocketAddr;
@@ -71,6 +71,11 @@ pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
     argv
 }
 
+/// Runs the repository server in the foreground.
+///
+/// # Arguments
+/// * `repo_host_tx` - Channel on which the server will send the repo host when the server starts
+///   and any time it changes.
 pub async fn run_foreground_server(
     start_cmd: StartCommand,
     context: EnvironmentContext,
@@ -79,6 +84,7 @@ pub async fn run_foreground_server(
     host_addr: Deferred<HostAddrHolder>,
     mut w: <ServerStartTool as FfxMain>::Writer,
     mode: ServerMode,
+    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<()> {
     let (mut tx, mut rx) = futures::channel::mpsc::unbounded();
     let drain_task = async {
@@ -89,8 +95,17 @@ pub async fn run_foreground_server(
     // The "async move" moves tx into the main_task future, which causes it to drop on completion,
     // allowing the drain_task to complete. Otherwise, the join on both futures would hang.
     let main_task = async move {
-        serve_impl(target_spec, rcs_proxy_connector, host_addr, start_cmd, context, mode, &mut tx)
-            .await
+        serve_impl(
+            target_spec,
+            rcs_proxy_connector,
+            host_addr,
+            start_cmd,
+            context,
+            mode,
+            &mut tx,
+            repo_host_tx,
+        )
+        .await
     };
     let (_, res) = futures::join!(drain_task, main_task);
     let res = res?;
