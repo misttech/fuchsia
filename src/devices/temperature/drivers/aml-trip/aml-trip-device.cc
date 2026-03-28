@@ -37,7 +37,7 @@ void AmlTripDevice::QueueTripResult(TemperatureCelsius measured, uint32_t index)
   ZX_ASSERT_MSG(index < kNumTripPoints, "QueueTripResult index out of range, index = %u", index);
 
   if (!configured_trip_points_[index]) {
-    FDF_LOG(WARNING, "Trip point cleared before IRQ delivered. index = %u", index);
+    fdf::warn("Trip point cleared before IRQ delivered. index = {}", index);
     return;
   }
 
@@ -128,23 +128,22 @@ void AmlTripDevice::SetTripPoints(SetTripPointsRequestView request,
 
   for (const auto& desc : request->descriptors) {
     if (desc.index >= kNumTripPoints) {
-      FDF_LOG(ERROR, "Trip Point index out of bounds, (max = %u, requested = %u)", kNumTripPoints,
-              desc.index);
+      fdf::error("Trip Point index out of bounds, (max = {}, requested = {})", kNumTripPoints,
+                 desc.index);
       completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
       return;
     }
 
     if (desc.type != GetTripPointType(desc.index)) {
-      FDF_LOG(ERROR, "The provided index does not match the trip point type. index = %u",
-              desc.index);
+      fdf::error("The provided index does not match the trip point type. index = {}", desc.index);
       completer.ReplyError(ZX_ERR_INVALID_ARGS);
       return;
     }
 
     if (desc.configuration.is_oneshot_temp_below_trip_point()) {
       if (desc.type != fuchsia_hardware_trippoint::TripPointType::kOneshotTempBelow) {
-        FDF_LOG(ERROR, "The provided configuration does not match the trip point type. index = %u",
-                desc.index);
+        fdf::error("The provided configuration does not match the trip point type. index = {}",
+                   desc.index);
         completer.ReplyError(ZX_ERR_INVALID_ARGS);
         return;
       }
@@ -155,8 +154,8 @@ void AmlTripDevice::SetTripPoints(SetTripPointsRequestView request,
       }
     } else if (desc.configuration.is_oneshot_temp_above_trip_point()) {
       if (desc.type != fuchsia_hardware_trippoint::TripPointType::kOneshotTempAbove) {
-        FDF_LOG(ERROR, "The provided configuration does not match the trip point type. index = %u",
-                desc.index);
+        fdf::error("The provided configuration does not match the trip point type. index = {}",
+                   desc.index);
         completer.ReplyError(ZX_ERR_INVALID_ARGS);
         return;
       }
@@ -168,8 +167,7 @@ void AmlTripDevice::SetTripPoints(SetTripPointsRequestView request,
     } else if (desc.configuration.is_cleared_trip_point()) {
       // Any trip point is allowed to be cleard so we deliberately skip this.
     } else {
-      FDF_LOG(ERROR, "The provided configuration is unknown by this hardware. index = %u",
-              desc.index);
+      fdf::error("The provided configuration is unknown by this hardware. index = {}", desc.index);
       completer.ReplyError(ZX_ERR_INVALID_ARGS);
       return;
     }
@@ -293,7 +291,7 @@ void AmlTripDevice::SetRebootTemperatureCelsius(TemperatureCelsius critical_temp
 void AmlTripDevice::WaitForAnyTripPoint(WaitForAnyTripPointCompleter::Sync& completer) {
   // Somebody else is already waiting on a trip point.
   if (pending_read_) {
-    FDF_LOG(ERROR, "WaitForTripPoint is already bound");
+    fdf::error("WaitForTripPoint is already bound");
     completer.ReplyError(ZX_ERR_ALREADY_BOUND);
     return;
   }
@@ -336,8 +334,8 @@ void AmlTripDevice::CompletePendingRead() {
     pending_read_->ReplyError(ZX_ERR_BAD_STATE);
     fidl::Status st = pending_read_->result_of_reply();
     if (!st.ok()) {
-      FDF_LOG(ERROR, "Failed to complete a pending WaitForTripPoint: %s",
-              st.FormatDescription().c_str());
+      fdf::error("Failed to complete a pending WaitForTripPoint: {}",
+                 st.FormatDescription().c_str());
     }
     pending_read_.reset();
     return;
@@ -358,8 +356,7 @@ void AmlTripDevice::CompletePendingRead() {
 
   fidl::Status st = pending_read_->result_of_reply();
   if (!st.ok()) {
-    FDF_LOG(ERROR, "Failed to complete a pending WaitForTripPoint: %s",
-            st.FormatDescription().c_str());
+    fdf::error("Failed to complete a pending WaitForTripPoint: {}", st.FormatDescription().c_str());
   }
 
   pending_read_.reset();
@@ -425,7 +422,7 @@ void AmlTripDevice::InitSensor() {
 void AmlTripDevice::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq,
                               zx_status_t status, const zx_packet_interrupt_t* interrupt) {
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "IRQ wait returned: %s", zx_status_get_string(status));
+    fdf::error("IRQ wait returned: {}", zx_status_get_string(status));
     return;
   }
 

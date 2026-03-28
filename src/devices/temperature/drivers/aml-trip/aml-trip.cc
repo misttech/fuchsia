@@ -40,7 +40,7 @@ zx::result<> AmlTrip::Start() {
 
   zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client.is_error() || !pdev_client->is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client.value())};
@@ -48,7 +48,7 @@ zx::result<> AmlTrip::Start() {
   zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_trippoint::TripDeviceMetadata>();
   if (metadata.is_error()) {
     if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
-      FDF_LOG(ERROR, "Failed to get trip sensor metadata: %s", metadata.status_string());
+      fdf::error("Failed to get trip sensor metadata: {}", metadata);
       return zx::error(metadata.status_value());
     }
   } else {
@@ -58,7 +58,7 @@ zx::result<> AmlTrip::Start() {
   // Stash a name for this device to be returned by `GetSensorName`
   zx::result device_info_result = pdev.GetDeviceInfo();
   if (device_info_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get device info: %s", device_info_result.status_string());
+    fdf::error("Failed to get device info: {}", device_info_result);
     return device_info_result.take_error();
   }
   fdf::PDev::DeviceInfo device_info = std::move(device_info_result.value());
@@ -67,13 +67,13 @@ zx::result<> AmlTrip::Start() {
 
   zx::result sensor_mmio = pdev.MapMmio(kSensorMmioIndex);
   if (sensor_mmio.is_error()) {
-    FDF_LOG(ERROR, "Failed to map sensor mmio: %s", sensor_mmio.status_string());
+    fdf::error("Failed to map sensor mmio: {}", sensor_mmio);
     return sensor_mmio.take_error();
   }
 
   zx::result trim_mmio = pdev.MapMmio(kTrimMmioIndex);
   if (trim_mmio.is_error()) {
-    FDF_LOG(ERROR, "Failed to map trim mmio: %s", trim_mmio.status_string());
+    fdf::error("Failed to map trim mmio: {}", trim_mmio);
     return trim_mmio.take_error();
   }
 
@@ -81,7 +81,7 @@ zx::result<> AmlTrip::Start() {
 
   zx::result irq = pdev.GetInterrupt(0);
   if (irq.is_error()) {
-    FDF_LOG(ERROR, "Failed to get sensor interrupt: %s", irq.status_string());
+    fdf::error("Failed to get sensor interrupt: {}", irq);
     return irq.take_error();
   }
 
@@ -90,8 +90,8 @@ zx::result<> AmlTrip::Start() {
   device_->Init();
 
   if (critical_temperature) {
-    FDF_LOG(INFO, "Configuring critical temperature for '%s' at %0.2fC", name.c_str(),
-            *critical_temperature);
+    fdf::info("Configuring critical temperature for '{}' at {:.2f}C", name.c_str(),
+              *critical_temperature);
     device_->SetRebootTemperatureCelsius(*critical_temperature);
   }
 
@@ -106,18 +106,18 @@ zx::result<> AmlTrip::Start() {
       }),
       kChildNodeName);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service %s", result.status_string());
+    fdf::error("Failed to add service {}", result);
     return result.take_error();
   }
 
   zx::result child = AddOwnedChild(kChildNodeName);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add owned child: %s", child.status_string());
+    fdf::error("Failed to add owned child: {}", child);
     return child.take_error();
   }
   child_ = std::move(child.value());
 
-  FDF_LOG(INFO, "Started Amlogic Trip Point Driver");
+  fdf::info("Started Amlogic Trip Point Driver");
 
   return zx::ok();
 }
