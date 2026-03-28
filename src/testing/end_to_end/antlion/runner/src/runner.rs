@@ -37,8 +37,35 @@ pub(crate) struct ProcessRunner {
 
 // TODO(http://b/401318909): Remove this once Fuchsia Controller no longer panics during teardown.
 fn test_affected_by_b_401318909(test_name: String) -> bool {
-    let test_substrings_affected_by_b_401318909 =
-        ["channel_switch_test", "deprecated_configuration_test"];
+    let test_substrings_affected_by_b_401318909 = [
+        "beacon_loss_test",
+        "channel_sweep_test",
+        "channel_switch_test",
+        "connection_stress_test",
+        "deprecated_configuration_test",
+        "dhcpv4_duplicate_address_test",
+        "dhcpv4_interop_basic_test",
+        "dhcpv4_interop_combinatorial_options_test",
+        "dhcpv4_interop_fixture_test",
+        "hidden_networks_test",
+        "ping_test",
+        "policy_scan_test",
+        "regulatory_compliance_test",
+        "saved_networks_test",
+        "soft_ap_test",
+        "vape_interop_test",
+        "wlan_driver_restart_test",
+        "wlan_misc_scenario",
+        "wlan_phy_compliance_",
+        "wlan_policy_initiated_roam_test",
+        "wlan_reboot_",
+        "wlan_rvr_test_",
+        "wlan_scan_test",
+        "wlan_security_compliance_",
+        "wlan_target_security_test",
+        "wlan_wireless_network_management_test",
+        "wlan_wmm_test",
+    ];
 
     for test in test_substrings_affected_by_b_401318909 {
         if test_name.contains(test) {
@@ -94,8 +121,8 @@ impl Runner for ProcessRunner {
                         return Ok(ExitStatus::Ok);
                     } else {
                         bail!(
-                            "Expected core dump after running test, but didn't receive one. \
-                            Perhaps http://b/401318909 has been resolved? If so, remove this failure."
+                            "Got core dump after running test, but this test isn't in core-dump \
+                            exception list. Core dump bug: http://b/401318909."
                         );
                     }
                 }
