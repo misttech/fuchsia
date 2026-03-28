@@ -541,6 +541,8 @@ if (is_kernel) {
       ":zircon-main",
       "phys:physboot.kernel",
     ]
+
+    validations = [ ":validate-kernel-symbols" ]
   }
 
   # See kernel.ld where KERNEL_GOT_TOLERANCE is used.
@@ -607,7 +609,7 @@ if (is_kernel) {
   vmzircon_rspfile = "$target_gen_dir/vmzircon.rsp"
   link_output_rspfile("vmzircon.rsp") {
     visibility = [ ":*" ]
-    deps = [ ":vmzircon" ]
+    deps = [ ":vmzircon.binary" ]
     outputs = [ vmzircon_rspfile ]
   }
 
@@ -626,7 +628,7 @@ if (is_kernel) {
     script = "//zircon/kernel/scripts/validate-kernel-symbols.py"
     utils = [ "nm" ]
     deps = [
-      ":vmzircon",
+      ":vmzircon.binary",
       ":vmzircon.rsp",
     ]
     sources = [ vmzircon_rspfile ]

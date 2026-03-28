@@ -17,6 +17,11 @@ import("kernel_elf_image.gni")
 # target is then usually embedded in a kernel_package() that itself might be
 # instantiated in the kernel or kernel.phys environment.
 #
+# Subtargets
+#
+#   * ${target_name}.binary
+#     The underlying binary target, as determined by `target_type`.
+#
 # Parameters
 #
 #   * target_type

@@ -61,7 +61,7 @@ template("kernel_elf_image") {
   main_target = target_name
   rspfile_target = "_kernel_elf_image.rspfile.$target_name"
   image_file = "$target_out_dir/$image_name.bin"
-  rspfile = "$target_gen_dir/$image_name.rsp"
+  rspfile = "$target_gen_dir/$image_name.kernel_elf_image.rsp"
 
   has_patches = !defined(invoker.has_patches) || invoker.has_patches
   if (has_patches) {
