@@ -23,7 +23,7 @@ zx_status_t PciBus::RegWrite(size_t offset, uint32_t val) {
 
 zx_status_t PciBus::Configure() {
   if (!pci_.is_valid()) {
-    FDF_LOG(ERROR, "Invalid client to PCI device service.");
+    fdf::error("Invalid client to PCI device service.");
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -31,23 +31,23 @@ zx_status_t PciBus::Configure() {
   {
     const auto result = pci_->GetBar(5);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetBar failed: %s", result.status_string());
+      fdf::error("Call to GetBar failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "GetBar failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("GetBar failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
 
     if (!result->value()->result.result.is_vmo()) {
-      FDF_LOG(ERROR, "PCI BAR is not an MMIO BAR.");
+      fdf::error("PCI BAR is not an MMIO BAR.");
       return ZX_ERR_WRONG_TYPE;
     }
     auto mmio = fdf::MmioBuffer::Create(0, result->value()->result.size,
                                         std::move(result->value()->result.result.vmo()),
                                         ZX_CACHE_POLICY_UNCACHED_DEVICE);
     if (mmio.is_error()) {
-      FDF_LOG(ERROR, "Failed to map PCI register window: %s", mmio.status_string());
+      fdf::error("Failed to map PCI register window: {}", mmio);
       return mmio.status_value();
     }
     mmio_ = *std::move(mmio);
@@ -57,7 +57,7 @@ zx_status_t PciBus::Configure() {
   {
     const auto result = pci_->GetDeviceInfo();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetDeviceInfo failed: %s", result.status_string());
+      fdf::error("Call to GetDeviceInfo failed: {}", result.status_string());
       return result.status();
     }
     config = result->info;
@@ -65,7 +65,7 @@ zx_status_t PciBus::Configure() {
 
   // TODO: move this to SATA.
   if (config.sub_class != 0x06 && config.base_class == 0x01) {  // SATA
-    FDF_LOG(ERROR, "Device class 0x%x unsupported", config.sub_class);
+    fdf::error("Device class 0x{:x} unsupported", config.sub_class);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -74,11 +74,11 @@ zx_status_t PciBus::Configure() {
   {
     const auto result = pci_->SetBusMastering(true);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to SetBusMastering failed: %s", result.status_string());
+      fdf::error("Call to SetBusMastering failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "SetBusMastering failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("SetBusMastering failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -87,7 +87,7 @@ zx_status_t PciBus::Configure() {
   {
     const auto result = pci_->GetInterruptModes();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetInterruptModes failed: %s", result.status_string());
+      fdf::error("Call to GetInterruptModes failed: {}", result.status_string());
       return result.status();
     }
     if (result->modes.msix_count > 0) {
@@ -97,18 +97,18 @@ zx_status_t PciBus::Configure() {
     } else if (result->modes.has_legacy) {
       irq_mode_ = fuchsia_hardware_pci::InterruptMode::kLegacy;
     } else {
-      FDF_LOG(ERROR, "No interrupt modes are supported.");
+      fdf::error("No interrupt modes are supported.");
       return ZX_ERR_NOT_SUPPORTED;
     }
   }
   {
     const auto result = pci_->SetInterruptMode(irq_mode_, 1);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to SetInterruptMode failed: %s", result.status_string());
+      fdf::error("Call to SetInterruptMode failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "SetInterruptMode failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("SetInterruptMode failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -117,11 +117,11 @@ zx_status_t PciBus::Configure() {
   {
     const auto result = pci_->GetBti(0);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetBti failed: %s", result.status_string());
+      fdf::error("Call to GetBti failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "GetBti failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("GetBti failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
     bti_ = std::move(result->value()->bti);
@@ -131,11 +131,11 @@ zx_status_t PciBus::Configure() {
   {
     const auto result = pci_->MapInterrupt(0);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to MapInterrupt failed: %s", result.status_string());
+      fdf::error("Call to MapInterrupt failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "MapInterrupt failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("MapInterrupt failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
     irq_ = std::move(result->value()->interrupt);
@@ -172,11 +172,11 @@ zx_status_t PciBus::InterruptWait() {
   if (irq_mode_ == fuchsia_hardware_pci::InterruptMode::kLegacy) {
     const auto result = pci_->AckInterrupt();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to AckInterrupt failed: %s", result.status_string());
+      fdf::error("Call to AckInterrupt failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "AckInterrupt failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("AckInterrupt failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }

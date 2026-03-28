@@ -41,6 +41,7 @@ source_set("aml-sdmmc-driver-source") {
     "aml-sdmmc.h",
   ]
   deps = [
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/power/cpp",
     "//src/devices/block/lib/sdmmc",
     "//src/lib/ddk:ddk_metadata",
@@ -58,6 +59,7 @@ source_set("aml-sdmmc-driver-source") {
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",

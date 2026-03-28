@@ -63,7 +63,7 @@ zx_status_t Controller::HbaReset() {
   // reset should complete within 1 second
   zx_status_t status = bus_->WaitForClear(kHbaGlobalHostControl, AHCI_GHC_HR, zx::sec(1));
   if (status) {
-    FDF_LOG(ERROR, "HBA reset timed out");
+    fdf::error("HBA reset timed out");
   }
   return status;
 }
@@ -81,13 +81,13 @@ void Controller::Queue(uint32_t portnr, SataTransaction* txn) {
   Port* port = &ports_[portnr];
   zx_status_t status = port->Queue(txn);
   if (status == ZX_OK) {
-    FDF_LOG(TRACE, "ahci.%u: Queue txn %p offset_dev 0x%" PRIx64 " length 0x%x", port->num(), txn,
-            txn->bop.rw.offset_dev, txn->bop.rw.length);
+    fdf::trace("ahci.{}: Queue txn {} offset_dev 0x{:x} length 0x{:x}", port->num(),
+               static_cast<const void*>(txn), txn->bop.rw.offset_dev, txn->bop.rw.length);
     // hit the worker loop
     worker_event_completion_.Signal();
   } else {
-    FDF_LOG(INFO, "ahci.%u: Failed to queue txn %p: %s", port->num(), txn,
-            zx_status_get_string(status));
+    fdf::info("ahci.{}: Failed to queue txn {}: {}", port->num(), static_cast<const void*>(txn),
+              zx_status_get_string(status));
     // TODO: close transaction.
   }
 }
@@ -133,7 +133,7 @@ void Controller::IrqLoop() {
     zx_status_t status = bus_->InterruptWait();
     if (status != ZX_OK) {
       if (!ShouldExit()) {
-        FDF_LOG(ERROR, "Error waiting for interrupt: %s", zx_status_get_string(status));
+        fdf::error("Error waiting for interrupt: {}", zx_status_get_string(status));
       }
       return;
     }
@@ -166,8 +166,8 @@ void Controller::IrqLoop() {
 zx_status_t Controller::Init() {
   zx_status_t status;
   if ((status = LaunchIrqAndWorkerDispatchers()) != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to start controller irq and worker threads: %s",
-            zx_status_get_string(status));
+    fdf::error("Failed to start controller irq and worker threads: {}",
+               zx_status_get_string(status));
     return status;
   }
 
@@ -193,7 +193,7 @@ zx_status_t Controller::Init() {
       continue;  // port not implemented
     status = ports_[i].Configure(i, bus_.get(), kHbaPorts, max_command_tag);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to configure port %u: %s", i, zx_status_get_string(status));
+      fdf::error("Failed to configure port {}: {}", i, zx_status_get_string(status));
       return status;
     }
   }
@@ -228,8 +228,8 @@ zx_status_t Controller::Init() {
         zx::result<std::unique_ptr<SataDevice>> device =
             SataDevice::Bind(this, port->num(), use_command_queue);
         if (device.is_error()) {
-          FDF_LOG(ERROR, "Failed to add SATA device at port %u: %s", port->num(),
-                  device.status_string());
+          fdf::error("Failed to add SATA device at port {}: {}", port->num(),
+                     device.status_string());
           return device.status_value();
         }
         sata_devices_.push_back(*std::move(device));
@@ -245,15 +245,15 @@ zx_status_t Controller::LaunchIrqAndWorkerDispatchers() {
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ahci-irq",
       [&](fdf_dispatcher_t*) { irq_shutdown_completion_.Signal(); });
   if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create irq dispatcher: %s",
-            zx_status_get_string(dispatcher.status_value()));
+    fdf::error("Failed to create irq dispatcher: {}",
+               zx_status_get_string(dispatcher.status_value()));
     return dispatcher.status_value();
   }
   irq_dispatcher_ = *std::move(dispatcher);
 
   zx_status_t status = async::PostTask(irq_dispatcher_.async_dispatcher(), [this] { IrqLoop(); });
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Error creating irq loop: %s", zx_status_get_string(status));
+    fdf::error("Error creating irq loop: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -262,15 +262,14 @@ zx_status_t Controller::LaunchIrqAndWorkerDispatchers() {
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ahci-worker",
       [&](fdf_dispatcher_t*) { worker_shutdown_.store(true); });
   if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create dispatcher: %s",
-            zx_status_get_string(dispatcher.status_value()));
+    fdf::error("Failed to create dispatcher: {}", zx_status_get_string(dispatcher.status_value()));
     return dispatcher.status_value();
   }
   worker_dispatcher_ = *std::move(dispatcher);
 
   status = async::PostTask(worker_dispatcher_.async_dispatcher(), [this] { WorkerLoop(); });
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Error creating worker loop: %s", zx_status_get_string(status));
+    fdf::error("Error creating worker loop: {}", zx_status_get_string(status));
     return status;
   }
   return ZX_OK;
@@ -304,7 +303,7 @@ void Controller::Shutdown() {
 zx::result<std::unique_ptr<Bus>> Controller::CreateBus() {
   auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (!pci_client_end.is_ok()) {
-    FDF_LOG(ERROR, "Failed to connect to PCI device service: %s", pci_client_end.status_string());
+    fdf::error("Failed to connect to PCI device service: {}", pci_client_end);
     return pci_client_end.take_error();
   }
   auto pci = fidl::WireSyncClient(*std::move(pci_client_end));
@@ -312,7 +311,7 @@ zx::result<std::unique_ptr<Bus>> Controller::CreateBus() {
   fbl::AllocChecker ac;
   auto bus = fbl::make_unique_checked<PciBus>(&ac, std::move(pci));
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for bus.");
+    fdf::error("Failed to allocate memory for bus.");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
   return zx::ok(std::move(bus));
@@ -322,8 +321,8 @@ zx::result<> Controller::Start() {
   parent_node_.Bind(std::move(node()));
 
   if (AHCI_PAGE_SIZE != zx_system_get_page_size()) {
-    FDF_LOG(ERROR, "System page size of %u does not match expected page size of %u\n",
-            zx_system_get_page_size(), AHCI_PAGE_SIZE);
+    fdf::error("System page size of {} does not match expected page size of {}\n",
+               zx_system_get_page_size(), AHCI_PAGE_SIZE);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -335,7 +334,7 @@ zx::result<> Controller::Start() {
 
   zx_status_t status = bus_->Configure();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to configure host bus");
+    fdf::error("Failed to configure host bus");
     return zx::error(status);
   }
 
@@ -355,13 +354,13 @@ zx::result<> Controller::Start() {
   auto result =
       parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
   status = Init();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Driver initialization failed: %s", zx_status_get_string(status));
+    fdf::error("Driver initialization failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();

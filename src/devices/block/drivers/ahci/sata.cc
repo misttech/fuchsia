@@ -48,7 +48,7 @@ zx_status_t SataDevice::Init() {
   zx::vmo vmo;
   zx_status_t status = zx::vmo::create(512, 0, &vmo);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to allocate vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to allocate vmo: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -69,8 +69,8 @@ zx_status_t SataDevice::Init() {
 
   status = txn.bop.command.flags;
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: Failed IDENTIFY_DEVICE: %s", DriverName().c_str(),
-            zx_status_get_string(status));
+    fdf::error("{}: Failed IDENTIFY_DEVICE: {}", DriverName().c_str(),
+               zx_status_get_string(status));
     return status;
   }
 
@@ -78,7 +78,7 @@ zx_status_t SataDevice::Init() {
   SataIdentifyDeviceResponse devinfo;
   status = vmo.read(&devinfo, 0, sizeof(devinfo));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed vmo_read: %s", zx_status_get_string(status));
+    fdf::error("Failed vmo_read: {}", zx_status_get_string(status));
     return ZX_ERR_INTERNAL;
   }
   vmo.reset();
@@ -97,9 +97,9 @@ zx_status_t SataDevice::Init() {
   model_number = std::string(model_number.c_str());
   serial_number = std::string(serial_number.c_str());
   firmware_rev = std::string(firmware_rev.c_str());
-  FDF_LOG(INFO, "Model number:  '%s'", model_number.c_str());
-  FDF_LOG(INFO, "Serial number: '%s'", serial_number.c_str());
-  FDF_LOG(INFO, "Firmware rev.: '%s'", firmware_rev.c_str());
+  fdf::info("Model number:  '{}'", model_number.c_str());
+  fdf::info("Serial number: '{}'", serial_number.c_str());
+  fdf::info("Firmware rev.: '{}'", firmware_rev.c_str());
 
   auto inspect_device = controller_->inspect_node().CreateChild(DriverName());
   inspect_device.RecordString("model_number", model_number);
@@ -226,13 +226,13 @@ void SataDevice::BlockImplQueue(block_op_t* bop, block_impl_queue_callback compl
         txn->cmd = is_read ? SATA_CMD_READ_DMA_EXT : SATA_CMD_WRITE_DMA_EXT;
       }
 
-      FDF_LOG(DEBUG, "Queue op 0x%x txn %p", bop->command.opcode, txn);
+      fdf::debug("Queue op 0x{:x} txn {}", bop->command.opcode, static_cast<const void*>(txn));
       break;
     }
     case BLOCK_OPCODE_FLUSH:
       txn->cmd = SATA_CMD_FLUSH_EXT;
       txn->device = 0x00;
-      FDF_LOG(DEBUG, "Queue FLUSH txn %p", txn);
+      fdf::debug("Queue FLUSH txn {}", static_cast<const void*>(txn));
       break;
     default:
       txn->Complete(ZX_ERR_NOT_SUPPORTED);
@@ -248,7 +248,7 @@ zx::result<std::unique_ptr<SataDevice>> SataDevice::Bind(Controller* controller,
   fbl::AllocChecker ac;
   auto device = fbl::make_unique_checked<SataDevice>(&ac, controller, port, use_command_queue);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for SATA device at port %u.", port);
+    fdf::error("Failed to allocate memory for SATA device at port {}.", port);
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -300,7 +300,7 @@ zx_status_t SataDevice::AddDevice() {
 
   auto result = controller_->root_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child SATA device: %s", result.status_string());
+    fdf::error("Failed to add child SATA device: {}", result.status_string());
     return result.status();
   }
   return ZX_OK;
