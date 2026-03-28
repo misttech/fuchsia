@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 #include "src/devices/hrtimer/drivers/aml-hrtimer/aml-hrtimer-server.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/fit/defer.h>
 
@@ -111,23 +112,22 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
     if (irq.is_valid()) {
       zx_status_t status = irq.ack();
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "IRQ timer id: %zu IRQ error: %s", properties.id,
-                zx_status_get_string(status));
+        fdf::error("IRQ timer id: {} IRQ error: {}", properties.id, zx_status_get_string(status));
       }
     } else {
-      FDF_LOG(ERROR, "IRQ timer id: %zu invalid IRQ", properties.id);
+      fdf::error("IRQ timer id: {} invalid IRQ", properties.id);
     }
     parent.IrqExits().Add(1);
   });
 
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "IRQ timer id: %zu triggered with error: %s", properties.id,
-            zx_status_get_string(status));
+    fdf::error("IRQ timer id: {} triggered with error: {}", properties.id,
+               zx_status_get_string(status));
     return;
   }
 
   if (!parent.IsTimerStarted(properties.id)) {
-    FDF_LOG(INFO, "IRQ timer id: %zu IRQ with stopped timer", properties.id);
+    fdf::info("IRQ timer id: {} IRQ with stopped timer", properties.id);
     return;
   }
 
@@ -135,25 +135,24 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
   if (properties.extend_max_ticks && start_ticks_left > std::numeric_limits<uint16_t>::max()) {
     // Log re-triggering since it may wakeup the system.
     start_ticks_left -= std::numeric_limits<uint16_t>::max();
-    FDF_LOG(DEBUG, "Timer id: %zu IRQ re-trigger, new start ticks left: %lu", properties.id,
-            start_ticks_left);
+    fdf::debug("Timer id: {} IRQ re-trigger, new start ticks left: {}", properties.id,
+               start_ticks_left);
     parent.RecordEvent(zx::clock::get_monotonic().get(), properties.id, EventType::RetriggerIrq,
                        start_ticks_left);
     size_t timer_index = TimerIndexFromId(properties.id);
     auto start_result = parent.StartHardware(timer_index);
     if (start_result.is_error()) {
-      FDF_LOG(ERROR, "Could not restart the hardware for timer id: %zu", properties.id);
+      fdf::error("Could not restart the hardware for timer id: {}", properties.id);
       std::visit(
-          overloaded{
-              [&](StartAndWaitCompleter::Async& completer) {
-                FDF_LOG(ERROR, "Could not restart the hardware for timer id: %zu", properties.id);
-                completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
-              },
-              [&](StartAndWait2Completer::Async& completer) {
-                FDF_LOG(ERROR, "Could not restart the hardware for timer id: %zu", properties.id);
-                completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
-              },
-              [](std::monostate& empty) {}},
+          overloaded{[&](StartAndWaitCompleter::Async& completer) {
+                       fdf::error("Could not restart the hardware for timer id: {}", properties.id);
+                       completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
+                     },
+                     [&](StartAndWait2Completer::Async& completer) {
+                       fdf::error("Could not restart the hardware for timer id: {}", properties.id);
+                       completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
+                     },
+                     [](std::monostate& empty) {}},
           power_enabled_wait_completer);
       power_enabled_wait_completer = std::monostate{};
     }
@@ -167,8 +166,8 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
   // event and ack the IRQ regardless.
   std::visit(
       overloaded{[&](StartAndWaitCompleter::Async& completer) {
-                   FDF_LOG(DEBUG, "Timer id: %zu IRQ w/wait triggered, last ticks: %lu",
-                           properties.id, last_ticks);
+                   fdf::debug("Timer id: {} IRQ w/wait triggered, last ticks: {}", properties.id,
+                              last_ticks);
                    parent.RecordEvent(zx::clock::get_monotonic().get(), properties.id,
                                       EventType::TriggerIrqWait, last_ticks);
                    parent.lease_requests_.Add(1);
@@ -182,8 +181,8 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
                    }
                  },
                  [&](StartAndWait2Completer::Async& completer) {
-                   FDF_LOG(DEBUG, "Timer id: %zu IRQ w/wait2 triggered, last ticks: %lu",
-                           properties.id, last_ticks);
+                   fdf::debug("Timer id: {} IRQ w/wait2 triggered, last ticks: {}", properties.id,
+                              last_ticks);
                    parent.RecordEvent(zx::clock::get_monotonic().get(), properties.id,
                                       EventType::TriggerIrqWait2, last_ticks);
                    parent.lease_requests_.Add(1);
@@ -197,8 +196,8 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
                    }
                  },
                  [&](std::monostate& empty) {
-                   FDF_LOG(DEBUG, "Timer id: %zu IRQ triggered, last ticks: %lu", properties.id,
-                           last_ticks);
+                   fdf::debug("Timer id: {} IRQ triggered, last ticks: {}", properties.id,
+                              last_ticks);
                    parent.RecordEvent(zx::clock::get_monotonic().get(), properties.id,
                                       EventType::TriggerIrq, last_ticks);
                  }},
@@ -220,8 +219,7 @@ void AmlHrtimerServer::ShutDown() {
       // TODO(https://fxbug.dev/374733154): Make sure no unacked IRQs remain.
       zx_status_t status = timers_[timer_index].irq_handler.Cancel();
       if (status != ZX_OK) {
-        FDF_LOG(WARNING, "Canceling IRQ for timer id: %lu failed: %s", i.id,
-                zx_status_get_string(status));
+        fdf::warn("Canceling IRQ for timer id: {} failed: {}", i.id, zx_status_get_string(status));
       }
     }
     std::visit(
@@ -241,7 +239,7 @@ void AmlHrtimerServer::GetTicksLeft(GetTicksLeftRequest& request,
                                     GetTicksLeftCompleter::Sync& completer) {
   size_t timer_index = TimerIndexFromId(request.id());
   if (timer_index >= kNumberOfTimers) {
-    FDF_LOG(ERROR, "Invalid timer id: %lu", request.id());
+    fdf::error("Invalid timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
@@ -319,7 +317,7 @@ bool AmlHrtimerServer::IsTimerStarted(size_t id) {
     case 8:
       return IsaTimerMux1::Get().ReadFrom(&*mmio_).TIMERI_EN();
     default:
-      FDF_LOG(ERROR, "Invalid timer id: %lu", id);
+      fdf::error("Invalid timer id: {}", id);
       return false;
   }
 }
@@ -335,7 +333,7 @@ void AmlHrtimerServer::ReadClock(ReadClockRequest& request, ReadClockCompleter::
 void AmlHrtimerServer::Stop(StopRequest& request, StopCompleter::Sync& completer) {
   size_t timer_index = TimerIndexFromId(request.id());
   if (timer_index >= kNumberOfTimers) {
-    FDF_LOG(ERROR, "Invalid timer id: %lu", request.id());
+    fdf::error("Invalid timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
@@ -370,24 +368,24 @@ void AmlHrtimerServer::Stop(StopRequest& request, StopCompleter::Sync& completer
       IsaTimerMux1::Get().ReadFrom(&*mmio_).set_TIMERI_EN(false).WriteTo(&*mmio_);
       break;
     default:
-      FDF_LOG(ERROR, "Invalid internal stop timer id: %lu", request.id());
+      fdf::error("Invalid internal stop timer id: {}", request.id());
       completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInternalError));
       return;
   }
   std::visit(
       overloaded{
           [&](StartAndWaitCompleter::Async& completer) {
-            FDF_LOG(DEBUG, "Received Stop canceling wait for timer id: %zu", request.id());
+            fdf::debug("Received Stop canceling wait for timer id: {}", request.id());
             RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::StopWait, 0);
             completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kCanceled));
           },
           [&](StartAndWait2Completer::Async& completer) {
-            FDF_LOG(DEBUG, "Received Stop canceling wait2 for timer id: %zu", request.id());
+            fdf::debug("Received Stop canceling wait2 for timer id: {}", request.id());
             RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::StopWait2, 0);
             completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kCanceled));
           },
           [&](std::monostate& empty) {
-            FDF_LOG(DEBUG, "Received Stop canceling timer id: %zu", request.id());
+            fdf::debug("Received Stop canceling timer id: {}", request.id());
             RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::Stop, 0);
           }},
       timers_[timer_index].power_enabled_wait_completer);
@@ -405,17 +403,17 @@ void AmlHrtimerServer::RecordEvent(int64_t now, uint64_t id, EventType type, uin
 }
 
 void AmlHrtimerServer::Start(StartRequest& request, StartCompleter::Sync& completer) {
-  FDF_LOG(DEBUG, "Timer id: %zu start, requested ticks: %lu", request.id(), request.ticks());
+  fdf::debug("Timer id: {} start, requested ticks: {}", request.id(), request.ticks());
   RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::Start, request.ticks());
   size_t timer_index = TimerIndexFromId(request.id());
   if (timer_index >= kNumberOfTimers) {
-    FDF_LOG(ERROR, "Invalid timer id: %lu", request.id());
+    fdf::error("Invalid timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
   timers_[timer_index].start_ticks_left = request.ticks();
   if (!request.resolution().duration()) {
-    FDF_LOG(ERROR, "Invalid resolution, no duration for timer id: %zu", request.id());
+    fdf::error("Invalid resolution, no duration for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
@@ -430,41 +428,40 @@ void AmlHrtimerServer::Start(StartRequest& request, StartCompleter::Sync& comple
 
 void AmlHrtimerServer::StartAndWait(StartAndWaitRequest& request,
                                     StartAndWaitCompleter::Sync& completer) {
-  FDF_LOG(DEBUG, "Timer id: %zu start and wait, requested ticks: %lu", request.id(),
-          request.ticks());
+  fdf::debug("Timer id: {} start and wait, requested ticks: {}", request.id(), request.ticks());
   RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::StartAndWait,
               request.ticks());
   size_t timer_index = TimerIndexFromId(request.id());
   if (timer_index >= kNumberOfTimers) {
-    FDF_LOG(ERROR, "Invalid timer id: %lu", request.id());
+    fdf::error("Invalid timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
   // Fail power enabled StartAndWait if power management is not functional.
   if (!sag_) {
-    FDF_LOG(ERROR, "Power management not functional. StartAndWait failed for timer id: %lu",
-            request.id());
+    fdf::error("Power management not functional. StartAndWait failed for timer id: {}",
+               request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
     return;
   }
   if (!timers_properties_[timer_index].supports_notifications) {
-    FDF_LOG(ERROR, "Notifications not supported for timer id: %lu", request.id());
+    fdf::error("Notifications not supported for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kNotSupported));
     return;
   }
   if (!timers_[timer_index].irq.is_valid()) {
-    FDF_LOG(ERROR, "Invalid IRQ for timer id: %lu", request.id());
+    fdf::error("Invalid IRQ for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInternalError));
     return;
   }
   if (!std::holds_alternative<std::monostate>(timers_[timer_index].power_enabled_wait_completer)) {
-    FDF_LOG(ERROR, "Invalid state for wait, already waiting for timer id: %lu", request.id());
+    fdf::error("Invalid state for wait, already waiting for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
     return;
   }
   timers_[timer_index].start_ticks_left = request.ticks();
   if (!request.resolution().duration()) {
-    FDF_LOG(ERROR, "Invalid resolution, no duration for timer id: %zu", request.id());
+    fdf::error("Invalid resolution, no duration for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
@@ -477,48 +474,47 @@ void AmlHrtimerServer::StartAndWait(StartAndWaitRequest& request,
   if (request.setup_event().is_valid()) {
     request.setup_event().signal(0, ZX_EVENT_SIGNALED);
   } else {
-    FDF_LOG(WARNING, "Invalid setup_event for timer id: %zu", request.id());
+    fdf::warn("Invalid setup_event for timer id: {}", request.id());
   }
   timers_[timer_index].power_enabled_wait_completer = completer.ToAsync();
 }
 
 void AmlHrtimerServer::StartAndWait2(StartAndWait2Request& request,
                                      StartAndWait2Completer::Sync& completer) {
-  FDF_LOG(DEBUG, "Timer id: %zu start and wait2, requested ticks: %lu", request.id(),
-          request.ticks());
+  fdf::debug("Timer id: {} start and wait2, requested ticks: {}", request.id(), request.ticks());
   RecordEvent(zx::clock::get_monotonic().get(), request.id(), EventType::StartAndWait2,
               request.ticks());
   size_t timer_index = TimerIndexFromId(request.id());
   if (timer_index >= kNumberOfTimers) {
-    FDF_LOG(ERROR, "Invalid timer id: %lu", request.id());
+    fdf::error("Invalid timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
   // Fail power enabled StartAndWait2 if power management is not functional.
   if (!sag_) {
-    FDF_LOG(ERROR, "Power management not functional. StartAndWait2 failed for timer id: %lu",
-            request.id());
+    fdf::error("Power management not functional. StartAndWait2 failed for timer id: {}",
+               request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
     return;
   }
   if (!timers_properties_[timer_index].supports_notifications) {
-    FDF_LOG(ERROR, "Notifications not supported for timer id: %lu", request.id());
+    fdf::error("Notifications not supported for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kNotSupported));
     return;
   }
   if (!timers_[timer_index].irq.is_valid()) {
-    FDF_LOG(ERROR, "Invalid IRQ for timer id: %lu", request.id());
+    fdf::error("Invalid IRQ for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInternalError));
     return;
   }
   if (!std::holds_alternative<std::monostate>(timers_[timer_index].power_enabled_wait_completer)) {
-    FDF_LOG(ERROR, "Invalid state for wait, already waiting for timer id: %lu", request.id());
+    fdf::error("Invalid state for wait, already waiting for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
     return;
   }
   timers_[timer_index].start_ticks_left = request.ticks();
   if (!request.resolution().duration()) {
-    FDF_LOG(ERROR, "Invalid resolution, no duration for timer id: %zu", request.id());
+    fdf::error("Invalid resolution, no duration for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
@@ -547,7 +543,7 @@ fit::result<const fuchsia_hardware_hrtimer::DriverError> AmlHrtimerServer::Start
         current_ticks = std::numeric_limits<uint16_t>::max();
       } else {
         if (start_ticks > std::numeric_limits<uint16_t>::max()) {
-          FDF_LOG(ERROR, "Invalid ticks range: %lu for timer id: %zu", start_ticks, id);
+          fdf::error("Invalid ticks range: {} for timer id: {}", start_ticks, id);
           return fit::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs);
         }
         current_ticks = static_cast<uint32_t>(start_ticks);
@@ -570,10 +566,10 @@ fit::result<const fuchsia_hardware_hrtimer::DriverError> AmlHrtimerServer::Start
       case zx::msec(1).to_nsecs():   input_clock_selection = 3; break;
         // clang-format on
       default:
-        FDF_LOG(ERROR, "Invalid resolution: %lu nsecs for timer id: %zu", resolution_nsecs, id);
+        fdf::error("Invalid resolution: {} nsecs for timer id: {}", resolution_nsecs, id);
         return fit::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs);
     }
-    FDF_LOG(TRACE, "Timer id: %zu resolution: %lu nsecs", id, resolution_nsecs);
+    fdf::trace("Timer id: {} resolution: {} nsecs", id, resolution_nsecs);
   } else if (timers_properties_[timer_index].supports_1usec &&
              timers_properties_[timer_index].supports_10usecs &&
              timers_properties_[timer_index].supports_100usecs) {
@@ -584,12 +580,12 @@ fit::result<const fuchsia_hardware_hrtimer::DriverError> AmlHrtimerServer::Start
           case zx::usec(100).to_nsecs(): input_clock_selection = 3; break;
         // clang-format on
       default:
-        FDF_LOG(ERROR, "Invalid resolution: %lu nsecs for timer id: %zu", resolution_nsecs, id);
+        fdf::error("Invalid resolution: {} nsecs for timer id: {}", resolution_nsecs, id);
         return fit::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs);
     }
-    FDF_LOG(TRACE, "Timer id: %zu resolution: %lu nsecs", id, resolution_nsecs);
+    fdf::trace("Timer id: {} resolution: {} nsecs", id, resolution_nsecs);
   } else {
-    FDF_LOG(ERROR, "Invalid resolution state, unsupported combination for timer id: %zu", id);
+    fdf::error("Invalid resolution state, unsupported combination for timer id: {}", id);
     return fit::error(fuchsia_hardware_hrtimer::DriverError::kInternalError);
   }
 
@@ -674,12 +670,12 @@ fit::result<const fuchsia_hardware_hrtimer::DriverError> AmlHrtimerServer::Start
           .WriteTo(&*mmio_);
       break;
     default:
-      FDF_LOG(ERROR, "Invalid internal state for timer id: %zu", id);
+      fdf::error("Invalid internal state for timer id: {}", id);
       return fit::error(fuchsia_hardware_hrtimer::DriverError::kInternalError);
   }
   timers_[timer_index].last_ticks = current_ticks;
-  FDF_LOG(DEBUG, "Timer id: %zu started, start ticks left: %lu last ticks: %lu", id,
-          timers_[timer_index].start_ticks_left, timers_[timer_index].last_ticks);
+  fdf::debug("Timer id: {} started, start ticks left: {} last ticks: {}", id,
+             timers_[timer_index].start_ticks_left, timers_[timer_index].last_ticks);
   RecordEvent(zx::clock::get_monotonic().get(), id, EventType::StartHardware,
               timers_[timer_index].last_ticks);
   return fit::success();
@@ -688,12 +684,12 @@ fit::result<const fuchsia_hardware_hrtimer::DriverError> AmlHrtimerServer::Start
 void AmlHrtimerServer::SetEvent(SetEventRequest& request, SetEventCompleter::Sync& completer) {
   size_t timer_index = TimerIndexFromId(request.id());
   if (timer_index >= kNumberOfTimers) {
-    FDF_LOG(ERROR, "Invalid timer id: %lu", request.id());
+    fdf::error("Invalid timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kInvalidArgs));
     return;
   }
   if (!timers_properties_[timer_index].supports_notifications) {
-    FDF_LOG(ERROR, "Notifications not supported for timer id: %lu", request.id());
+    fdf::error("Notifications not supported for timer id: {}", request.id());
     completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kNotSupported));
     return;
   }

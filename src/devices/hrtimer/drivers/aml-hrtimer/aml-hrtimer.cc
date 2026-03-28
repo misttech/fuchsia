@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <zircon/syscalls-next.h>
 
@@ -14,7 +15,7 @@ namespace hrtimer {
 zx::result<> AmlHrtimer::Start() {
   zx::result pdev_result = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to pdev protocol: %s", pdev_result.status_string());
+    fdf::error("Failed to connect to pdev protocol: {}", pdev_result);
     return pdev_result.take_error();
   }
   fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> pdev(
@@ -22,16 +23,16 @@ zx::result<> AmlHrtimer::Start() {
 
   auto mmio = pdev->GetMmioById(0);
   if (!mmio.ok()) {
-    FDF_LOG(ERROR, "Call to GetMmioById failed: %s", mmio.FormatDescription().c_str());
+    fdf::error("Call to GetMmioById failed: {}", mmio.FormatDescription().c_str());
     return zx::error(mmio.status());
   }
   if (mmio->is_error()) {
-    FDF_LOG(ERROR, "GetMmioById failed: %s", zx_status_get_string(mmio->error_value()));
+    fdf::error("GetMmioById failed: {}", zx_status_get_string(mmio->error_value()));
     return mmio->take_error();
   }
 
   if (!mmio->value()->has_vmo() || !mmio->value()->has_size() || !mmio->value()->has_offset()) {
-    FDF_LOG(ERROR, "GetMmioById returned invalid MMIO");
+    fdf::error("GetMmioById returned invalid MMIO");
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -39,7 +40,7 @@ zx::result<> AmlHrtimer::Start() {
       fdf::MmioBuffer::Create(mmio->value()->offset(), mmio->value()->size(),
                               std::move(mmio->value()->vmo()), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (mmio_buffer.is_error()) {
-    FDF_LOG(ERROR, "Failed to map MMIO: %s", mmio_buffer.status_string());
+    fdf::error("Failed to map MMIO: {}", mmio_buffer);
     return zx::error(mmio_buffer.error_value());
   }
 
@@ -48,12 +49,11 @@ zx::result<> AmlHrtimer::Start() {
   for (auto& irq : irqs) {
     auto result_irq = pdev->GetInterruptById(count++, 0);
     if (!result_irq.ok()) {
-      FDF_LOG(ERROR, "Call to GetInterruptById failed: %s", result_irq.FormatDescription().c_str());
+      fdf::error("Call to GetInterruptById failed: {}", result_irq.FormatDescription().c_str());
       return zx::error(result_irq->error_value());
     }
     if (result_irq->is_error()) {
-      FDF_LOG(ERROR, "GetInterruptById failed: %s",
-              zx_status_get_string(result_irq->error_value()));
+      fdf::error("GetInterruptById failed: {}", zx_status_get_string(result_irq->error_value()));
       return result_irq->take_error();
     }
     irq = std::move(result_irq->value()->irq);
@@ -63,11 +63,9 @@ zx::result<> AmlHrtimer::Start() {
 
   auto sag_connect = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
   if (!config_.enable_suspend()) {
-    FDF_LOG(WARNING,
-            "fuchsia.power.SuspendEnabled config disabled, continue without power support");
+    fdf::warn("fuchsia.power.SuspendEnabled config disabled, continue without power support");
   } else if (sag_connect.is_error() || !sag_connect->is_valid()) {
-    FDF_LOG(WARNING, "Failed to connect to SAG: %s continue without power support",
-            sag_connect.status_string());
+    fdf::warn("Failed to connect to SAG: {} continue without power support", sag_connect);
   } else {
     fidl::SyncClient<fuchsia_power_system::ActivityGovernor> local_sag(std::move(*sag_connect));
     sag.emplace(std::move(local_sag));
@@ -81,12 +79,12 @@ zx::result<> AmlHrtimer::Start() {
       bindings_.CreateHandler(server_.get(), dispatcher(), fidl::kIgnoreBindingClosure),
       kDeviceName);
   if (result_dev.is_error()) {
-    FDF_LOG(ERROR, "Failed to add input report service: %s", result_dev.status_string());
+    fdf::error("Failed to add input report service: {}", result_dev);
     return result_dev.take_error();
   }
 
   if (zx::result result_dev = CreateDevfsNode(); result_dev.is_error()) {
-    FDF_LOG(ERROR, "Failed to export to devfs: %s", result_dev.status_string());
+    fdf::error("Failed to export to devfs: {}", result_dev);
     return result_dev.take_error();
   }
 
@@ -123,7 +121,7 @@ zx::result<> AmlHrtimer::CreateDevfsNode() {
   fidl::WireResult result = fidl::WireCall(node())->AddChild(
       args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child {}", result.status_string());
     return zx::error(result.status());
   }
   controller_.Bind(std::move(controller_endpoints.client));
