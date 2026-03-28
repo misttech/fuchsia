@@ -43,8 +43,8 @@ bool Fusb302Sensors::UpdateComparatorsResult() {
   } else if (configured_power_role_ == usb_pd::PowerRole::kSink) {
     cc_termination = ConfigChannelTerminationFromFixedComparatorResult(status0.bc_lvl());
     if (cc_termination == usb_pd::ConfigChannelTermination::kRp3000mA && status0.comp()) {
-      FDF_LOG(WARNING, "%s pin voltage exceeds 2.05V (c/o variable comparator)",
-              ConfigChannelPinSwitchToString(configured_wired_cc_pin_));
+      fdf::warn("{} pin voltage exceeds 2.05V (c/o variable comparator)",
+                ConfigChannelPinSwitchToString(configured_wired_cc_pin_));
       cc_termination = usb_pd::ConfigChannelTermination::kUnknown;
     }
   } else {
@@ -58,9 +58,9 @@ bool Fusb302Sensors::UpdateComparatorsResult() {
   cc_termination_.set(cc_termination);
 
   if (state_changed) {
-    FDF_LOG(INFO, "Voltage comparators result: VBUS %s, CC wire termination %s",
-            vbus_power_good ? ">= 4.0 V" : "< 4.0 V",
-            ConfigChannelTerminationToString(cc_termination));
+    fdf::info("Voltage comparators result: VBUS {}, CC wire termination {}",
+              vbus_power_good ? ">= 4.0 V" : "< 4.0 V",
+              ConfigChannelTerminationToString(cc_termination));
   }
   return state_changed;
 }
@@ -71,8 +71,8 @@ bool Fusb302Sensors::UpdatePowerRoleDetectionResult() {
   const bool state_changed = power_role_detection_state_.get() != power_role_detection_state;
   power_role_detection_state_.set(power_role_detection_state);
   if (state_changed) {
-    FDF_LOG(INFO, "Power role detection state: %s",
-            PowerRoleDetectionStateToString(power_role_detection_state));
+    fdf::info("Power role detection state: {}",
+              PowerRoleDetectionStateToString(power_role_detection_state));
     SyncDerivedPowerRoleDetectionState();
   }
   return state_changed;
@@ -85,7 +85,7 @@ void Fusb302Sensors::SyncDerivedPowerRoleDetectionState() {
   detected_wired_cc_pin_.set(wired_cc_pin);
 
   if (wired_cc_pin == usb_pd::ConfigChannelPinSwitch::kNone) {
-    FDF_LOG(TRACE, "Power role detection result: running");
+    fdf::trace("Power role detection result: running");
     detected_power_role_.set(usb_pd::PowerRole::kSink);
     return;
   }
@@ -95,10 +95,10 @@ void Fusb302Sensors::SyncDerivedPowerRoleDetectionState() {
   const usb_pd::PowerRole power_role = PowerRoleFromDetectionState(power_role_detection_state);
   detected_power_role_.set(power_role);
 
-  FDF_LOG(INFO, "Power role detection result: state %s, power %s, Config Channel on %s",
-          PowerRoleDetectionStateToString(power_role_detection_state),
-          usb_pd::PowerRoleToString(power_role),
-          usb_pd::ConfigChannelPinSwitchToString(wired_cc_pin));
+  fdf::info("Power role detection result: state {}, power {}, Config Channel on {}",
+            PowerRoleDetectionStateToString(power_role_detection_state),
+            usb_pd::PowerRoleToString(power_role),
+            usb_pd::ConfigChannelPinSwitchToString(wired_cc_pin));
 }
 
 }  // namespace fusb302

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 
 namespace {
@@ -14,7 +15,7 @@ class FailerDriver : public fdf::DriverBase {
       : fdf::DriverBase("failer", std::move(start_args), std::move(driver_dispatcher)) {}
 
   zx::result<> Start() override {
-    FDF_LOG(INFO, "This driver is returning a ZX_ERR_NOT_SUPPORTED error.");
+    fdf::info("This driver is returning a ZX_ERR_NOT_SUPPORTED error.");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 };

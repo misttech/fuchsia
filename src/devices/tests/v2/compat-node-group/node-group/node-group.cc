@@ -6,6 +6,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace fcdt = fuchsia_compat_nodegroup_test;
 
@@ -20,7 +21,7 @@ class TestCompositeDriver : public fdf::DriverBase {
   zx::result<> Start() override {
     auto connect_result = incoming()->Connect<fcdt::Waiter>();
     if (connect_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to start node-group driver: %s", connect_result.status_string());
+      fdf::error("Failed to start node-group driver: {}", connect_result);
       node().reset();
       return connect_result.take_error();
     }

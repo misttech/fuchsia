@@ -8,6 +8,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
@@ -37,7 +38,7 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
   auto pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>(kPdevName);
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     CompleteStart(pdev_client_end.take_error());
     return;
   }
@@ -45,13 +46,13 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
 
   if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to forward mac address metadata: %s", result.status_string());
+    fdf::error("Failed to forward mac address metadata: {}", result);
     CompleteStart(result.take_error());
     return;
   }
   if (zx::result result = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve mac address metadata: %s", result.status_string());
+    fdf::error("Failed to serve mac address metadata: {}", result);
     CompleteStart(result.take_error());
     return;
   }
@@ -60,9 +61,9 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
       fuchsia_hardware_serial::SerialPortInfo::kSerializableName);
   if (metadata.is_error()) {
     if (metadata.status_value() == ZX_ERR_NOT_FOUND) {
-      FDF_LOG(DEBUG, "Serial port info metadata not found.");
+      fdf::debug("Serial port info metadata not found.");
     } else {
-      FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+      fdf::error("Failed to get metadata: {}", metadata);
       CompleteStart(metadata.take_error());
       return;
     }
@@ -85,7 +86,7 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
   if (driver_config_.enable_suspend()) {
     zx::result result = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
     if (result.is_error() || !result->is_valid()) {
-      FDF_LOG(WARNING, "Failed to connect to activity governor: %s", result.status_string());
+      fdf::warn("Failed to connect to activity governor: {}", result);
       CompleteStart(result.take_error());
     }
     sag = std::move(result.value());
@@ -103,8 +104,8 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
   zx::result node_controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (node_controller_endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create NodeController endpoints %s",
-            node_controller_endpoints.status_string());
+    fdf::error("Failed to create NodeController endpoints {}",
+               node_controller_endpoints.status_string());
     CompleteStart(node_controller_endpoints.take_error());
     return;
   }
@@ -119,8 +120,7 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
   zx::result<> add_result =
       outgoing()->AddService<fuchsia_hardware_serialimpl::Service>(std::move(handler), kChildName);
   if (add_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add fuchsia_hardware_serialimpl::Service %s",
-            add_result.status_string());
+    fdf::error("Failed to add fuchsia_hardware_serialimpl::Service {}", add_result.status_string());
     CompleteStart(add_result.take_error());
     return;
   }
@@ -165,19 +165,19 @@ AmlUart& AmlUartV2::aml_uart_for_testing() {
 void AmlUartV2::OnAddChildResult(
     fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>& add_child_result) {
   if (!add_child_result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", add_child_result.status_string());
+    fdf::error("Failed to add child {}", add_child_result.status_string());
     CompleteStart(zx::error(add_child_result.status()));
     return;
   }
 
   if (add_child_result.value().is_error()) {
-    FDF_LOG(ERROR, "Failed to add child. NodeError: %d",
-            static_cast<uint32_t>(add_child_result.value().error_value()));
+    fdf::error("Failed to add child. NodeError: {}",
+               static_cast<uint32_t>(add_child_result.value().error_value()));
     CompleteStart(zx::error(ZX_ERR_INTERNAL));
     return;
   }
 
-  FDF_LOG(INFO, "Successfully started aml-uart-dfv2 driver.");
+  fdf::info("Successfully started aml-uart-dfv2 driver.");
   CompleteStart(zx::ok());
 }
 

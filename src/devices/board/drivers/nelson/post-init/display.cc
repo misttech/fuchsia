@@ -171,13 +171,13 @@ zx::result<> PostInit::InitDisplay() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, display_dev),
                                                           fidl::ToWire(fidl_arena, spec));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "AddNodeGroup Display(display_dev) request failed: %s",
-            result.FormatDescription().data());
+    fdf::error("AddNodeGroup Display(display_dev) request failed: {}",
+               result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "AddNodeGroup Display(display_dev) failed: %s",
-            zx_status_get_string(result->error_value()));
+    fdf::error("AddNodeGroup Display(display_dev) failed: {}",
+               zx_status_get_string(result->error_value()));
     return result->take_error();
   }
 

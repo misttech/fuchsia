@@ -48,7 +48,7 @@ class GenericSuspend : public fdf::DriverBase,
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_power_suspend::Suspender> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unexpected suspend FIDL call: 0x%lx", metadata.method_ordinal);
+    fdf::error("Unexpected suspend FIDL call: 0x{:x}", metadata.method_ordinal);
   }
 
   void GetSuspendStates(GetSuspendStatesCompleter::Sync& completer) override;

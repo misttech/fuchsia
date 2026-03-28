@@ -8,6 +8,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/test/cpp/bind.h>
@@ -60,8 +61,8 @@ class RootDriver : public fdf::DriverBase {
         .Then([this, client = std::move(endpoints->client)](
                   fidl::Result<fdf::Node::AddChild>& add_result) mutable {
           if (add_result.is_error()) {
-            FDF_LOG(ERROR, "Failed to AddChild: %s",
-                    add_result.error_value().FormatDescription().c_str());
+            fdf::error("Failed to AddChild: {}",
+                       add_result.error_value().FormatDescription().c_str());
             node_.AsyncTeardown();
             return;
           }

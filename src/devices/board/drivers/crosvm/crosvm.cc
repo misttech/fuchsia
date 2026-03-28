@@ -11,6 +11,7 @@
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
 #include <lib/driver/devicetree/visitors/registry.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/resource.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -46,7 +47,7 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
   // Root host resource and construction is handled first.
   zx::result<zx::resource> msi{};
   if (msi = GetResource<fuchsia_kernel::MsiResource>(incoming()); msi.is_error()) {
-    FDF_LOG(ERROR, "Couldn't obtain MSI resource: %s", msi.status_string());
+    fdf::error("Couldn't obtain MSI resource: {}", msi.status_string());
     return msi.take_error();
   }
   msi_resource_ = *std::move(msi);
@@ -55,7 +56,7 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
   // root host to allocate exclusive MMIO regions for PCI BAR allocations.
   zx::result<zx::resource> mmio{};
   if (mmio = GetResource<fuchsia_kernel::MmioResource>(incoming()); mmio.is_error()) {
-    FDF_LOG(ERROR, "Couldn't obtain MMIO resource: %s", mmio.status_string());
+    fdf::error("Couldn't obtain MMIO resource: {}", mmio.status_string());
     return mmio.take_error();
   }
   mmio_resource_ = *std::move(mmio);
@@ -66,11 +67,12 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
                      PCI_ADDRESS_SPACE_MEMORY);
 
   for (const auto& pci_range : pci_visitor.ranges()) {
-    FDF_LOG(DEBUG, "%02X.%02X.%01X: %s base %#lx size %#zx %sprefetchable, %saliased",
-            pci_range.bus_number(), pci_range.device_number(), pci_range.function_number(),
-            pci_dt::AddressSpaceLabel(pci_range.address_space()),
-            *pci_range.range.child_bus_address(), *pci_range.range.length(),
-            (pci_range.prefetchable()) ? "" : "non-", (pci_range.aliased_or_below()) ? "" : "not ");
+    fdf::debug("{}.{}.{}: {} base {:#0x} size {:#0x} {}, {}", pci_range.bus_number(),
+               pci_range.device_number(), pci_range.function_number(),
+               pci_dt::AddressSpaceLabel(pci_range.address_space()),
+               *pci_range.range.child_bus_address(), *pci_range.range.length(),
+               (pci_range.prefetchable()) ? "" : "non-",
+               (pci_range.aliased_or_below()) ? "" : "not ");
     ZX_DEBUG_ASSERT_MSG(pci_range.address_space() == pci_dt::AddressSpace::Mmio64,
                         "Expecting only 64 bit addresses.");
     uint64_t address = *pci_range.range.child_bus_address();
@@ -80,8 +82,8 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
       case pci_dt::AddressSpace::Mmio32:
       case pci_dt::AddressSpace::Mmio64: {
         if (zx::result result = root_host_->AddMmioRange(address, length); result.is_error()) {
-          FDF_LOG(ERROR, "failed to add region [%#lx, %#lx) to MMIO allocators: %s", address,
-                  address + length, result.status_string());
+          fdf::error("failed to add region [{:#0x}, {:#0x}) to MMIO allocators: {}", address,
+                     address + length, result.status_string());
         }
         break;
       }
@@ -93,15 +95,14 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
         };
         if (zx_status_t status = root_host_->Io().AddRegion(io, RegionAllocator::AllowOverlap::No);
             status != ZX_OK) {
-          FDF_LOG(ERROR, "Failed to add IO region { %#lx - %#lx } to the PCI root allocator: %s",
-                  address, address + length, zx_status_get_string(status));
+          fdf::error("Failed to add IO region [ {:#0x} - {:#0x} ] to the PCI root allocator: {}",
+                     address, address + length, zx_status_get_string(status));
         }
         break;
       }
 
       case pci_dt::AddressSpace::Configuration: {
-        FDF_LOG(WARNING,
-                "Unsupported \"Configuration\" address space entry in pci ranges, ignoring.");
+        fdf::warn("Unsupported \"Configuration\" address space entry in pci ranges, ignoring.");
         break;
       }
     }
@@ -133,22 +134,22 @@ zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
   zx_status_t status = zx::vmo::create_physical(/*resource=*/mmio_resource_, /*paddr=*/ecam_address,
                                                 /*size=*/vmo_size, /*result=*/&ecam);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create allocate ECAM for PCI: %s", zx_status_get_string(status));
+    fdf::error("Failed to create allocate ECAM for PCI: {}", zx_status_get_string(status));
     return zx::error(status);
   }
-  FDF_LOG(DEBUG, "ecam [%#lx, %#lx)", ecam_address, ecam_size + ecam_address);
+  fdf::debug("ecam [{:#0x}, {:#0x})", ecam_address, ecam_size + ecam_address);
   root_host_->mcfgs().push_back(
       {.address = ecam_address, .pci_segment = 0, .start_bus_number = 0, .end_bus_number = 0});
 
   zx::result<zx::resource> irq;
   if (irq = GetResource<fuchsia_kernel::IrqResource>(incoming()); irq.is_error()) {
-    FDF_LOG(ERROR, "Couldn't obtain IRQ resource: %s", irq.status_string());
+    fdf::error("Couldn't obtain IRQ resource: {}", irq.status_string());
     return irq.take_error();
   }
 
   zx::result<zx::resource> iommu;
   if (iommu = GetResource<fuchsia_kernel::IommuResource>(incoming()); iommu.is_error()) {
-    FDF_LOG(ERROR, "Couldn't obtain IRQ resource: %s", iommu.status_string());
+    fdf::error("Couldn't obtain IRQ resource: {}", iommu.status_string());
     return iommu.take_error();
   }
 

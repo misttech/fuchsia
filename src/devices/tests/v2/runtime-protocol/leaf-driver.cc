@@ -113,7 +113,7 @@ class LeafDriver : public fdf::DriverBase {
   }
 
   result<> UnbindNode(const zx_status_t& status) {
-    FDF_LOG(ERROR, "Failed to start leaf driver: %s", zx_status_get_string(status));
+    fdf::error("Failed to start leaf driver: {}", zx_status_get_string(status));
     node_.AsyncTeardown();
     return ok();
   }

@@ -62,8 +62,8 @@ zx::result<> PostInit::InitBacklight() {
 
   fit::result persisted_metadata = fidl::Persist(kMetadata);
   if (!persisted_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to persist metadata: %s",
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist metadata: {}",
+               persisted_metadata.error_value().FormatDescription().c_str());
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -116,13 +116,13 @@ zx::result<> PostInit::InitBacklight() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, backlight_dev), fidl::ToWire(fidl_arena, composite_node_spec));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "%s: AddCompositeNodeSpec Backlight(backlight) request failed: %s", __func__,
-            result.FormatDescription().data());
+    fdf::error("{}: AddCompositeNodeSpec Backlight(backlight) request failed: {}", __func__,
+               result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "%s: AddCompositeNodeSpec Backlight(backlight) failed: %s", __func__,
-            zx_status_get_string(result->error_value()));
+    fdf::error("{}: AddCompositeNodeSpec Backlight(backlight) failed: {}", __func__,
+               zx_status_get_string(result->error_value()));
     return result->take_error();
   }
   return zx::ok();

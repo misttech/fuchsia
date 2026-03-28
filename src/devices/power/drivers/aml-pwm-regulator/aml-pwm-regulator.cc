@@ -6,6 +6,7 @@
 
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
 #include <string>
@@ -27,8 +28,8 @@ AmlPwmRegulator::AmlPwmRegulator(const VregMetadata& metadata,
 void AmlPwmRegulator::SetVoltageStep(SetVoltageStepRequestView request,
                                      SetVoltageStepCompleter::Sync& completer) {
   if (request->step >= num_steps_) {
-    FDF_LOG(ERROR, "Requested step (%u) is larger than allowed (total number of steps %u).",
-            request->step, num_steps_);
+    fdf::error("Requested step ({}) is larger than allowed (total number of steps {}).",
+               request->step, num_steps_);
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -41,13 +42,13 @@ void AmlPwmRegulator::SetVoltageStep(SetVoltageStepRequestView request,
   auto config_result = pwm_proto_client_->GetConfig();
   if (!config_result.ok() || config_result->is_error()) {
     auto status = config_result.ok() ? config_result->error_value() : config_result.status();
-    FDF_LOG(ERROR, "Unable to get PWM config. %s", zx_status_get_string(status));
+    fdf::error("Unable to get PWM config. {}", zx_status_get_string(status));
     completer.ReplyError(status);
     return;
   }
 
   if (config_result->value()->config.period_ns == 0) {
-    FDF_LOG(ERROR, "PWM period config of 0ns is invalid.");
+    fdf::error("PWM period config of 0ns is invalid.");
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -64,12 +65,12 @@ void AmlPwmRegulator::SetVoltageStep(SetVoltageStepRequestView request,
 
   auto result = pwm_proto_client_->SetConfig(cfg);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Unable to configure PWM. %s", result.status_string());
+    fdf::error("Unable to configure PWM. {}", result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Unable to configure PWM. %s", zx_status_get_string(result->error_value()));
+    fdf::error("Unable to configure PWM. {}", zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -102,8 +103,7 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
     const VregMetadata& metadata, AmlPwmRegulatorDriver& driver) {
   auto connect_result = driver.incoming()->Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm");
   if (connect_result.is_error()) {
-    FDF_LOG(ERROR, "Unable to connect to fidl protocol - status: %s",
-            connect_result.status_string());
+    fdf::error("Unable to connect to fidl protocol - status: {}", connect_result.status_string());
     return connect_result.take_error();
   }
 
@@ -112,12 +112,12 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
       std::move(connect_result.value()));
   auto result = pwm_proto_client->Enable();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "VREG(%s): Unable to enable PWM - %s", name.c_str(), result.status_string());
+    fdf::error("VREG({}): Unable to enable PWM - {}", name.c_str(), result.status_string());
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "VREG(%s): Unable to enable PWM - %s", name.c_str(),
-            zx_status_get_string(result->error_value()));
+    fdf::error("VREG({}): Unable to enable PWM - {}", name.c_str(),
+               zx_status_get_string(result->error_value()));
     return result->take_error();
   }
   auto device = std::make_unique<AmlPwmRegulator>(metadata, std::move(pwm_proto_client));
@@ -131,7 +131,7 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
         }),
         name);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+      fdf::error("Failed to add Device service {}", result);
       return result.take_error();
     }
   }
@@ -145,7 +145,7 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
 
   zx::result child = fdf::AddChild(driver.node(), driver.logger(), name, properties, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+    fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
   device->controller_.Bind(std::move(child.value()));
@@ -157,32 +157,32 @@ zx::result<> AmlPwmRegulatorDriver::Start() {
   zx::result pdev_client =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client.value())};
   zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_hardware_vreg::VregMetadata>();
   if (metadata_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
+    fdf::error("Failed to get metadata: {}", metadata_result);
     return metadata_result.take_error();
   }
   const auto& metadata = metadata_result.value();
 
   // Validate
   if (!metadata.name().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing name field");
+    fdf::error("Metadata missing name field");
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!metadata.min_voltage_uv().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing min_voltage_uv field");
+    fdf::error("Metadata missing min_voltage_uv field");
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!metadata.voltage_step_uv().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing voltage_step_uv field");
+    fdf::error("Metadata missing voltage_step_uv field");
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!metadata.num_steps().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing num_steps field");
+    fdf::error("Metadata missing num_steps field");
     return zx::error(ZX_ERR_INTERNAL);
   }
 

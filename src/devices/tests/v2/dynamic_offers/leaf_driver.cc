@@ -6,6 +6,7 @@
 #include <fidl/fuchsia.offers.test/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -41,13 +42,13 @@ class LeafDriver : public fdf::DriverBase {
   void AsyncCallDoThenAck() {
     auto callback = [this](fidl::Result<ft::Handshake::Do>& result) mutable {
       if (!result.is_ok()) {
-        FDF_LOG(ERROR, "Handshake Do failed: %s", result.error_value().status_string());
+        fdf::error("Handshake Do failed: {}", result.error_value().status_string());
         UnbindNode(result.error_value().status());
         return;
       }
       auto ack_result = waiter_->Ack();
       if (ack_result.is_error()) {
-        FDF_LOG(ERROR, "Ack failed: %s", ack_result.error_value().status_string());
+        fdf::error("Ack failed: {}", ack_result.error_value().status_string());
         UnbindNode(result.error_value().status());
       }
     };
@@ -55,7 +56,7 @@ class LeafDriver : public fdf::DriverBase {
   }
 
   void UnbindNode(const zx_status_t& status) {
-    FDF_LOG(ERROR, "Failed to start leaf driver: %s", zx_status_get_string(status));
+    fdf::error("Failed to start leaf driver: {}", zx_status_get_string(status));
     node().reset();
   }
 

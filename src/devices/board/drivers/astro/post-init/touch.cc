@@ -30,7 +30,7 @@ zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view 
                      fuchsia_hardware_pin::Pull pull) {
   zx::result pin = incoming->Connect<fuchsia_hardware_pin::Service::Device>(node_name);
   if (pin.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to pin node: %s", pin.status_string());
+    fdf::error("Failed to connect to pin node: {}", pin.status_string());
     return pin.take_error();
   }
 
@@ -38,11 +38,11 @@ zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view 
   auto config = fuchsia_hardware_pin::wire::Configuration::Builder(arena).pull(pull).Build();
   fidl::WireResult result = fidl::WireCall(*pin)->Configure(config);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Call to Configure failed: %s", result.FormatDescription().c_str());
+    fdf::error("Call to Configure failed: {}", result.FormatDescription().c_str());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Configure failed: %s", result.FormatDescription().c_str());
+    fdf::error("Configure failed: {}", result.FormatDescription().c_str());
     return result->take_error();
   }
   return zx::ok();
@@ -125,8 +125,8 @@ zx::result<> AddFocaltechTouch(
 
   fit::result persisted_metadata = fidl::Persist(kDeviceInfo);
   if (persisted_metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to persist focaltech metadata: %s",
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist focaltech metadata: {}",
+               persisted_metadata.error_value().FormatDescription().c_str());
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -168,12 +168,12 @@ zx::result<> AddFocaltechTouch(
   fdf::WireUnownedResult result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node), fidl::ToWire(fidl_arena, composite_node_spec));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send AddCompositeNodeSpec request: %s", result.status_string());
+    fdf::error("Failed to send AddCompositeNodeSpec request: {}", result.status_string());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to add composite node spec: %s",
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to add composite node spec: {}",
+               zx_status_get_string(result->error_value()));
     return result->take_error();
   }
 
@@ -192,7 +192,7 @@ zx::result<> PostInit::InitTouch() {
     default:
       break;
   }
-  FDF_LOG(ERROR, "Invalid panel type for Astro: %" PRIu32, static_cast<uint32_t>(panel_type_));
+  fdf::error("Invalid panel type for Astro: {}", static_cast<uint32_t>(panel_type_));
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -223,12 +223,12 @@ zx::result<> PostInit::InitGoodixTouch() {
 
   if (auto result = composite_manager_->AddSpec(goodix_node_spec); result.is_error()) {
     if (result.error_value().is_framework_error()) {
-      FDF_LOG(ERROR, "Call to AddSpec failed: %s",
-              result.error_value().framework_error().FormatDescription().c_str());
+      fdf::error("Call to AddSpec failed: {}",
+                 result.error_value().framework_error().FormatDescription().c_str());
       return zx::error(result.error_value().framework_error().status());
     }
     if (result.error_value().is_domain_error()) {
-      FDF_LOG(ERROR, "AddSpec failed");
+      fdf::error("AddSpec failed");
       return zx::error(ZX_ERR_INTERNAL);
     }
   }
@@ -247,7 +247,7 @@ zx::result<> PostInit::InitFocaltechTouch() {
 
   auto status = AddFocaltechTouch(pbus_);
   if (!status.is_ok()) {
-    FDF_LOG(ERROR, "ft3x27: DdkAddCompositeNodeSpec failed: %s", status.status_string());
+    fdf::error("ft3x27: DdkAddCompositeNodeSpec failed: {}", status.status_string());
     return status;
   }
 

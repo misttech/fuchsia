@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 
 namespace {
@@ -15,7 +16,7 @@ class FailerReplacementDriver : public fdf::DriverBase {
   }
 
   zx::result<> Start() override {
-    FDF_LOG(INFO, "This driver is returning OK.");
+    fdf::info("This driver is returning OK.");
     return zx::ok();
   }
 };

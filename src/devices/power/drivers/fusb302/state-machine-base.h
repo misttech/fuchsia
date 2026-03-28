@@ -99,19 +99,19 @@ inline void StateMachineBase<StateMachine, State, Input>::Run(Input input) {
     if (current_state_differs_from_previous_state_) {
       current_state_differs_from_previous_state_ = false;
       const State entering_state = current_state_.get();
-      FDF_LOG(TRACE, "State machine %s entering new state %s", debug_name_,
-              StateToString(entering_state));
+      fdf::trace("State machine {} entering new state {}", debug_name_,
+                 StateToString(entering_state));
       EnterState(entering_state);
     }
 
     const State evaluate_state = current_state_.get();
-    FDF_LOG(TRACE, "State machine %s evaluating new input in state %s", debug_name_,
-            StateToString(evaluate_state));
+    fdf::trace("State machine {} evaluating new input in state {}", debug_name_,
+               StateToString(evaluate_state));
     State next_state = NextState(input, evaluate_state);
 
     if (next_state != evaluate_state) {
-      FDF_LOG(TRACE, "State machine %s exiting state %s preparing to enter state %s", debug_name_,
-              StateToString(evaluate_state), StateToString(next_state));
+      fdf::trace("State machine {} exiting state {} preparing to enter state {}", debug_name_,
+                 StateToString(evaluate_state), StateToString(next_state));
       ExitState(current_state_.get());
       current_state_differs_from_previous_state_ = true;
     }
@@ -124,16 +124,16 @@ template <class StateMachine, typename State, typename Input>
 inline void StateMachineBase<StateMachine, State, Input>::ForceStateTransition(State new_state) {
   const State previous_state = current_state_.get();
   if (previous_state == new_state) {
-    FDF_LOG(TRACE,
-            "State machine %s forced to transition to state %s but already there; "
-            "no actions triggered",
-            debug_name_, StateToString(previous_state));
+    fdf::trace(
+        "State machine {} forced to transition to state {} but already there; "
+        "no actions triggered",
+        debug_name_, StateToString(previous_state));
     return;
   }
 
   if (!current_state_differs_from_previous_state_) {
-    FDF_LOG(TRACE, "State machine %s exiting state %s preparing for forced transition to state %s",
-            debug_name_, StateToString(previous_state), StateToString(new_state));
+    fdf::trace("State machine {} exiting state {} preparing for forced transition to state {}",
+               debug_name_, StateToString(previous_state), StateToString(new_state));
     ExitState(previous_state);
   }
   current_state_differs_from_previous_state_ = true;

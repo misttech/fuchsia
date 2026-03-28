@@ -164,13 +164,13 @@ zx::result<> PostInit::InitDisplay() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, display_dev),
                                                           fidl::ToWire(fidl_arena, node_group));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "AddCompositeSpec Display(display_dev) request failed: %s",
-            result.FormatDescription().data());
+    fdf::error("AddCompositeSpec Display(display_dev) request failed: {}",
+               result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "AddCompositeSpec Display(display_dev) failed: %s",
-            zx_status_get_string(result->error_value()));
+    fdf::error("AddCompositeSpec Display(display_dev) failed: {}",
+               zx_status_get_string(result->error_value()));
     return result->take_error();
   }
 

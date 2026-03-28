@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.basicdriver.ctftest/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace {
 
@@ -21,19 +22,19 @@ class BasicDriver : public fdf::DriverBase,
         outgoing()->AddService<fuchsia_basicdriver_ctftest::Service>(std::move(handler)).is_ok());
 
     SendAck();
-    FDF_LOG(INFO, "Started driver!");
+    fdf::info("Started driver!");
     return zx::ok();
   }
 
   void SendAck() {
-    FDF_LOG(INFO, "Sending ack!");
+    fdf::info("Sending ack!");
     auto waiter = incoming()->Connect<fuchsia_basicdriver_ctftest::Waiter>();
     ZX_ASSERT(waiter.is_ok());
     ZX_ASSERT(fidl::Call(waiter.value())->Ack().is_ok());
   }
 
   void Ping(PingCompleter::Sync& completer) override {
-    FDF_LOG(INFO, "Replying to Ping");
+    fdf::info("Replying to Ping");
     completer.Reply(42u);
   }
 

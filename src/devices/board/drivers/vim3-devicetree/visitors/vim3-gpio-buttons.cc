@@ -30,8 +30,8 @@ zx::result<> Vim3GpioButtonsVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   fit::result persisted_metadata = fidl::Persist(kMetadata);
   if (!persisted_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to persist pin metadata: %s",
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist pin metadata: {}",
+               persisted_metadata.error_value().FormatDescription().c_str());
     return zx::error(persisted_metadata.error_value().status());
   }
 

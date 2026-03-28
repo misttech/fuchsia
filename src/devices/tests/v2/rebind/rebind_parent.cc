@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/legacy-bind-constants/legacy-bind-constants.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <zircon/errors.h>
 
@@ -34,7 +35,7 @@ class RebindParentServer : public fidl::Server<fuchsia_rebind_test::RebindParent
  private:
   void RemoveChild(RemoveChildCompleter::Sync& completer) override {
     if (!node_controller_.has_value()) {
-      FDF_LOG(ERROR, "Child device does not exist");
+      fdf::error("Child device does not exist");
       completer.Reply(fit::error(ZX_ERR_BAD_STATE));
       return;
     }

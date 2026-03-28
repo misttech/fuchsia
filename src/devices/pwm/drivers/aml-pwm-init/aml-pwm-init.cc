@@ -102,7 +102,8 @@ zx_status_t PwmInitDevice::Init() {
   {
     fidl::WireResult result = wifi_32k768_clk_->Enable();
     if (!result.ok()) {
-      fdf::warn("Failed to send Enable request to clock for wifi_32k768: {}", result.status_string());
+      fdf::warn("Failed to send Enable request to clock for wifi_32k768: {}",
+                result.status_string());
     } else {  // only check the returned result if we actually got a valid response.
       if (result->is_error()) {
         fdf::warn("Failed to enable clock for wifi_32k768: {}",
@@ -153,7 +154,8 @@ zx_status_t PwmInitDevice::Init() {
   fidl::WireResult config_result =
       bt_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputLow);
   if (!config_result.ok()) {
-    fdf::error("Failed to send SetBufferMode request to bt gpio: {}", config_result.status_string());
+    fdf::error("Failed to send SetBufferMode request to bt gpio: {}",
+               config_result.status_string());
     return config_result.status();
   }
   if (config_result->is_error()) {

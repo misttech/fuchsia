@@ -46,7 +46,7 @@ struct MmioInfo {
   static zx::result<MmioInfo> Create(fdf::MmioBuffer mmio) {
     auto register_count = mmio.get_size() / sizeof(T);
     if (mmio.get_size() % sizeof(T)) {
-      FDF_LOG(ERROR, "MMIO size does not cover full registers");
+      fdf::error("MMIO size does not cover full registers");
       return zx::error(ZX_ERR_INTERNAL);
     }
 

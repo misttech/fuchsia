@@ -31,7 +31,7 @@ zx::result<> Fusb302Identity::ReadIdentity() {
   chip_version.append("_rev");
   chip_version.push_back(device_id.RevisionCharacter());
 
-  FDF_LOG(INFO, "Reporting %s - %s", chip_version.c_str(), device_id.ProductString());
+  fdf::info("Reporting {} - {}", chip_version.c_str(), device_id.ProductString());
 
   root_node_.RecordString("Product", device_id.ProductString());
   root_node_.RecordString("Version", chip_version);

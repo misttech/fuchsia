@@ -22,10 +22,10 @@ zx::result<> Pciroot::CreateInterruptsAndRouting(
     std::span<const pci_dt::Gicv3InterruptMapElement> interrupts) {
   // This is only used for allocating the interrupt objects mapped to PCI.
   for (const auto& entry : interrupts) {
-    FDF_LOG(DEBUG, "%02X.%02X.%02x: pin %u int %#x %s %s", entry.child_unit_address.bus(),
-            entry.child_unit_address.device(), entry.child_unit_address.function(), entry.pin,
-            entry.parent.int_number, pci_dt::Gicv3InterruptTypeLabel(entry.parent.type),
-            pci_dt::Gicv3InterruptFlagsLabel(entry.parent.flags));
+    fdf::debug("{}.{}.{}: pin {} int {:#x} {} {}", entry.child_unit_address.bus(),
+               entry.child_unit_address.device(), entry.child_unit_address.function(), entry.pin,
+               entry.parent.int_number, pci_dt::Gicv3InterruptTypeLabel(entry.parent.type),
+               pci_dt::Gicv3InterruptFlagsLabel(entry.parent.flags));
     ZX_DEBUG_ASSERT_MSG(entry.parent.flags == pci_dt::Gicv3InterruptFlags::LevelTriggered,
                         "Expected interrupt-map to contain level triggered interrupts");
     uint32_t vector = entry.parent.int_number;
@@ -37,8 +37,8 @@ zx::result<> Pciroot::CreateInterruptsAndRouting(
                                                  /*options=*/0,
                                                  /*result=*/&interrupt);
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Couldn't create interrupt object for vector %#x (handle: %#x): %s", vector,
-                irq_resource_.get(), zx_status_get_string(status));
+        fdf::error("Couldn't create interrupt object for vector {:#x} (handle: {:#x}): {}", vector,
+                   irq_resource_.get(), zx_status_get_string(status));
         return zx::error(status);
       }
       interrupts_.push_back(
@@ -83,7 +83,7 @@ zx_status_t Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
 
   zx::vmo cam{};
   if (zx_status_t status = cam_.duplicate(ZX_RIGHT_SAME_RIGHTS, &cam); status != ZX_OK) {
-    FDF_LOG(WARNING, "couldn't duplicate ecam handle: %s", zx_status_get_string(status));
+    fdf::warn("couldn't duplicate ecam handle: {}", zx_status_get_string(status));
   }
   info->cam = {.vmo = cam.release(), .is_extended = is_extended_};
   return ZX_OK;

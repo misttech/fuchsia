@@ -40,39 +40,39 @@ HardwareStateChanges Fusb302Signals::ServiceInterrupts() {
   auto interrupt = InterruptReg::ReadFrom(i2c_);
   auto interrupt_a = InterruptAReg::ReadFrom(i2c_);
   auto interrupt_b = InterruptBReg::ReadFrom(i2c_);
-  FDF_LOG(DEBUG, "Servicing interrupts: Interrupt 0x%02x, InterruptA 0x%02x, InterruptB 0x%02x",
-          interrupt.reg_value(), interrupt_a.reg_value(), interrupt_b.reg_value());
+  fdf::debug("Servicing interrupts: Interrupt 0x{:02x}, InterruptA 0x{:02x}, InterruptB 0x{:02x}",
+             interrupt.reg_value(), interrupt_a.reg_value(), interrupt_b.reg_value());
 
   if (interrupt.i_vbusok()) {
-    FDF_LOG(TRACE, "Interrupt: VBUS power good voltage comparator changed");
+    fdf::trace("Interrupt: VBUS power good voltage comparator changed");
     if (sensors_.UpdateComparatorsResult()) {
       changes.port_state_changed = true;
     }
   }
 
   if (interrupt.i_comp_chng()) {
-    FDF_LOG(TRACE, "Interrupt: variable voltage comparator output changed");
+    fdf::trace("Interrupt: variable voltage comparator output changed");
     if (sensors_.UpdateComparatorsResult()) {
       changes.port_state_changed = true;
     }
   }
 
   if (interrupt.i_bc_lvl()) {
-    FDF_LOG(TRACE, "Interrupt: fixed CC voltage comparators output changed");
+    fdf::trace("Interrupt: fixed CC voltage comparators output changed");
     if (sensors_.UpdateComparatorsResult()) {
       changes.port_state_changed = true;
     }
   }
 
   if (interrupt_a.i_togdone()) {
-    FDF_LOG(TRACE, "Interrupt: hardware power role detection finished");
+    fdf::trace("Interrupt: hardware power role detection finished");
     if (sensors_.UpdatePowerRoleDetectionResult()) {
       changes.port_state_changed = true;
     }
   }
 
   if (interrupt.i_crc_chk()) {
-    FDF_LOG(TRACE, "Interrupt: received PD message (correct CRC)");
+    fdf::trace("Interrupt: received PD message (correct CRC)");
     [[maybe_unused]] zx::result<> result = protocol_.DrainReceiveFifo();
   }
 
@@ -80,10 +80,10 @@ HardwareStateChanges Fusb302Signals::ServiceInterrupts() {
   // protocol layer learns it doesn't need to send a GoodCRC anymore.
   if (interrupt_b.i_gcrcsent()) {
     if (protocol_.UsesHardwareAcceleratedGoodCrcNotifications()) {
-      FDF_LOG(TRACE, "Interrupt: sent hardware-generated GoodCRC");
+      fdf::trace("Interrupt: sent hardware-generated GoodCRC");
       protocol_.DidTransmitHardwareGeneratedGoodCrc();
     } else {
-      FDF_LOG(WARNING, "Interrupt: sent hardware-generated GoodCRC - unexpected and ignored");
+      fdf::warn("Interrupt: sent hardware-generated GoodCRC - unexpected and ignored");
     }
   }
 
@@ -93,7 +93,7 @@ HardwareStateChanges Fusb302Signals::ServiceInterrupts() {
     // dropped. So, if we receive a Soft Reset, it must be the first message
     // in the queue.
     if (protocol_.FirstUnreadMessage().header().message_type() == usb_pd::MessageType::kSoftReset) {
-      FDF_LOG(TRACE, "Converting Soft Reset received message to soft reset notice");
+      fdf::trace("Converting Soft Reset received message to soft reset notice");
       changes.received_reset = true;
 
       [[maybe_unused]] zx::result<> result = protocol_.MarkMessageAsRead();
@@ -101,39 +101,37 @@ HardwareStateChanges Fusb302Signals::ServiceInterrupts() {
   }
 
   if (interrupt_a.i_hardrst()) {
-    FDF_LOG(ERROR, "Interrupt: received a Hard Reset ordered set. We'll lose power soon!");
+    fdf::error("Interrupt: received a Hard Reset ordered set. We'll lose power soon!");
     changes.received_reset = true;
   }
 
   if (interrupt_a.i_retryfail()) {
-    FDF_LOG(WARNING,
-            "Interrupt: timed out waiting for GoodCRC. Cable or host missing USB PD support?");
+    fdf::warn("Interrupt: timed out waiting for GoodCRC. Cable or host missing USB PD support?");
     protocol_.DidTimeoutWaitingForGoodCrc();
   }
 
   // Log errors that shouldn't happen.
 
   if (interrupt.i_alert()) {
-    FDF_LOG(TRACE, "Interrupt: PHY error");
+    fdf::trace("Interrupt: PHY error");
     auto status1 = Status1Reg::ReadFrom(i2c_);
-    FDF_LOG(ERROR, "PHY error: TX queue %s, RX queue %s", status1.tx_full() ? "full" : "ok",
-            status1.rx_full() ? "full" : "ok");
+    fdf::error("PHY error: TX queue {}, RX queue {}", status1.tx_full() ? "full" : "ok",
+               status1.rx_full() ? "full" : "ok");
   }
 
   if (interrupt.i_collision()) {
-    FDF_LOG(ERROR,
-            "BMC PHY discarded transmission due to CC activity. PD collision avoidance failed.");
+    fdf::error("BMC PHY discarded transmission due to CC activity. PD collision avoidance failed.");
   }
 
   if (interrupt_a.i_ocp_temp()) {
-    FDF_LOG(TRACE, "Interrupt: thermal alert");
+    fdf::trace("Interrupt: thermal alert");
     auto status1 = Status1Reg::ReadFrom(i2c_);
-    FDF_LOG(ERROR, "Thermal alert! Junction temperature %s, VCONN over-protection %s",
-            status1.ovrtemp() ? "too high" : "ok", status1.ocp() ? "tripped" : "ok");
+    fdf::error("Thermal alert! Junction temperature {}, VCONN over-protection {}",
+               status1.ovrtemp() ? "too high" : "ok", status1.ocp() ? "tripped" : "ok");
   }
 
   if (interrupt_a.i_hardsent()) {
-    FDF_LOG(ERROR, "Interrupt: transmitted  a Hard Reset ordered set. We'll lose power soon!");
+    fdf::error("Interrupt: transmitted  a Hard Reset ordered set. We'll lose power soon!");
   }
 
   return changes;
@@ -152,7 +150,7 @@ zx::result<> Fusb302Signals::InitInterruptUnit() {
                            .set_m_bc_lvl(false)
                            .WriteTo(i2c_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to write Mask register: %s", zx_status_get_string(status));
+    fdf::error("Failed to write Mask register: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -168,7 +166,7 @@ zx::result<> Fusb302Signals::InitInterruptUnit() {
                .set_m_hardrst(false)
                .WriteTo(i2c_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to write MaskA register: %s", zx_status_get_string(status));
+    fdf::error("Failed to write MaskA register: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -176,7 +174,7 @@ zx::result<> Fusb302Signals::InitInterruptUnit() {
     mask_b.set_m_gcrcsent(!protocol_.UsesHardwareAcceleratedGoodCrcNotifications());
   });
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to write MaskB register: %s", result.status_string());
+    fdf::error("Failed to write MaskB register: {}", result);
     return result;
   }
 

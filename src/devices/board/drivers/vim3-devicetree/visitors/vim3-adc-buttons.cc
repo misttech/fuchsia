@@ -43,8 +43,8 @@ zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonsMetadata(fdf_devicetree::Node& 
 
   fit::result persisted_metadata = fidl::Persist(metadata);
   if (!persisted_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to perist buttons metadata %s",
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to perist buttons metadata {}",
+               persisted_metadata.error_value().FormatDescription().c_str());
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -54,7 +54,7 @@ zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonsMetadata(fdf_devicetree::Node& 
   }};
   node.AddMetadata(adc_buttons_metadata);
 
-  FDF_LOG(DEBUG, "Adding vim3 adc button metadata for node '%s' ", node.name().c_str());
+  fdf::debug("Adding vim3 adc button metadata for node '{}' ", node.name().c_str());
 
   return zx::ok();
 }

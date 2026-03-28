@@ -10,6 +10,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/channel.h>
 #include <lib/fdf/cpp/protocol.h>
 #include <lib/fdf/dispatcher.h>
@@ -51,7 +52,7 @@ class RootDriver : public fdf::DriverBase,
 
     zx::result<> status = outgoing()->AddService<ft::Service>(std::move(handler), kChildName);
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Failed to add service %s", status.status_string());
+      fdf::error("Failed to add service {}", status);
     }
 
     auto result = AddChild();

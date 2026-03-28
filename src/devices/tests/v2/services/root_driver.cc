@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.services.test/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace ft = fuchsia_services_test;
 
@@ -28,7 +29,7 @@ class RootDriver : public fdf::DriverBase,
 
     auto result = outgoing()->AddService<ft::Device>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add Device service: %s", result.status_string());
+      fdf::error("Failed to add Device service: {}", result);
       return result.take_error();
     }
     return zx::ok();

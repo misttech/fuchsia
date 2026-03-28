@@ -78,8 +78,8 @@ zx::result<> PostInit::InitTouch() {
 
   fit::result persisted_metadata = fidl::Persist(kDeviceInfo);
   if (persisted_metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to persist focaltech metadata: %s",
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist focaltech metadata: {}",
+               persisted_metadata.error_value().FormatDescription().c_str());
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -128,12 +128,12 @@ zx::result<> PostInit::InitTouch() {
   fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node), fidl::ToWire(fidl_arena, composite_node_spec));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send AddCompositeNodeSpec request: %s", result.status_string());
+    fdf::error("Failed to send AddCompositeNodeSpec request: {}", result.status_string());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to add composite node spec: %s",
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to add composite node spec: {}",
+               zx_status_get_string(result->error_value()));
   }
 
   return zx::ok();

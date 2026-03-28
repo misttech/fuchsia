@@ -8,6 +8,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/nodegroupbind/test/cpp/bind.h>
 
@@ -194,7 +195,7 @@ class RootDriver : public fdf::DriverBase {
       ft::Service::InstanceHandler handler({.device = std::move(device)});
       zx::result<> status = outgoing()->AddService<ft::Service>(std::move(handler), kLeftName);
       if (status.is_error()) {
-        FDF_LOG(ERROR, "Failed to add service %s", status.status_string());
+        fdf::error("Failed to add service {}", status);
       }
     }
 
@@ -206,7 +207,7 @@ class RootDriver : public fdf::DriverBase {
       ft::Service::InstanceHandler handler({.device = std::move(device)});
       zx::result<> status = outgoing()->AddService<ft::Service>(std::move(handler), kRightName);
       if (status.is_error()) {
-        FDF_LOG(ERROR, "Failed to add service %s", status.status_string());
+        fdf::error("Failed to add service {}", status);
       }
     }
 
@@ -218,15 +219,15 @@ class RootDriver : public fdf::DriverBase {
       ft::Service::InstanceHandler handler({.device = std::move(device)});
       zx::result<> status = outgoing()->AddService<ft::Service>(std::move(handler), kOptionalName);
       if (status.is_error()) {
-        FDF_LOG(ERROR, "Failed to add service %s", status.status_string());
+        fdf::error("Failed to add service {}", status);
       }
     }
 
     // Setup the node group manager client.
     auto dgm_client = incoming()->Connect<fdf::CompositeNodeManager>();
     if (dgm_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to NodeGroupManager: %s",
-              zx_status_get_string(dgm_client.error_value()));
+      fdf::error("Failed to connect to NodeGroupManager: {}",
+                 zx_status_get_string(dgm_client.error_value()));
       DropNode();
       return dgm_client.take_error();
     }
@@ -249,7 +250,7 @@ class RootDriver : public fdf::DriverBase {
       auto right_result = AddChild(kRightName, 1, one_right_controller_,
                                    bindlib::TEST_BIND_PROPERTY_ONE_RIGHT, []() {});
       if (!right_result) {
-        FDF_LOG(ERROR, "Failed to start right child.");
+        fdf::error("Failed to start right child.");
         DropNode();
       }
     };
@@ -258,7 +259,7 @@ class RootDriver : public fdf::DriverBase {
       auto left_result = AddChild(kLeftName, 1, one_left_controller_,
                                   bindlib::TEST_BIND_PROPERTY_ONE_LEFT, std::move(add_right));
       if (!left_result) {
-        FDF_LOG(ERROR, "Failed to start left child.");
+        fdf::error("Failed to start left child.");
         DropNode();
       }
     };
@@ -274,7 +275,7 @@ class RootDriver : public fdf::DriverBase {
       auto left_result = AddChild(kLeftName, 2, two_left_controller_,
                                   bindlib::TEST_BIND_PROPERTY_TWO_LEFT, []() {});
       if (!left_result) {
-        FDF_LOG(ERROR, "Failed to start left child.");
+        fdf::error("Failed to start left child.");
         DropNode();
       }
     };
@@ -287,7 +288,7 @@ class RootDriver : public fdf::DriverBase {
         AddChild(kRightName, 2, two_right_controller_, bindlib::TEST_BIND_PROPERTY_TWO_RIGHT,
                  std::move(add_spec_then_left));
     if (!right_result) {
-      FDF_LOG(ERROR, "Failed to start right child.");
+      fdf::error("Failed to start right child.");
       DropNode();
     }
   }
@@ -302,7 +303,7 @@ class RootDriver : public fdf::DriverBase {
       auto right_result = AddChild(kRightName, 3, three_right_controller_,
                                    bindlib::TEST_BIND_PROPERTY_THREE_RIGHT, std::move(add_spec));
       if (!right_result) {
-        FDF_LOG(ERROR, "Failed to start right child.");
+        fdf::error("Failed to start right child.");
         DropNode();
       }
     };
@@ -311,7 +312,7 @@ class RootDriver : public fdf::DriverBase {
         AddChild(kLeftName, 3, three_left_controller_, bindlib::TEST_BIND_PROPERTY_THREE_LEFT,
                  std::move(add_right_then_spec));
     if (!left_result) {
-      FDF_LOG(ERROR, "Failed to start left child.");
+      fdf::error("Failed to start left child.");
       DropNode();
     }
   }
@@ -325,7 +326,7 @@ class RootDriver : public fdf::DriverBase {
       auto right_result = AddChild(kRightName, 4, four_right_controller_,
                                    bindlib::TEST_BIND_PROPERTY_FOUR_RIGHT, []() {});
       if (!right_result) {
-        FDF_LOG(ERROR, "Failed to start right child.");
+        fdf::error("Failed to start right child.");
         DropNode();
       }
     };
@@ -335,7 +336,7 @@ class RootDriver : public fdf::DriverBase {
           AddChild(kOptionalName, 4, four_optional_controller_,
                    bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL, std::move(add_right));
       if (!optional_result) {
-        FDF_LOG(ERROR, "Failed to start optional child.");
+        fdf::error("Failed to start optional child.");
         DropNode();
       }
     };
@@ -345,7 +346,7 @@ class RootDriver : public fdf::DriverBase {
       auto left_result = AddChild(kLeftName, 4, four_left_controller_,
                                   bindlib::TEST_BIND_PROPERTY_FOUR_LEFT, std::move(add_optional));
       if (!left_result) {
-        FDF_LOG(ERROR, "Failed to start left child.");
+        fdf::error("Failed to start left child.");
         DropNode();
       }
     };
@@ -369,19 +370,19 @@ class RootDriver : public fdf::DriverBase {
       return false;
     }
 
-    auto add_callback = [this, &controller, node_name, callback = std::move(callback),
-                         client = std::move(endpoints->client)](
-                            fidl::Result<fdf::Node::AddChild>& result) mutable {
-      if (result.is_error()) {
-        FDF_LOG(ERROR, "Adding child failed: %s", result.error_value().FormatDescription().c_str());
-        DropNode();
-        return;
-      }
+    auto add_callback =
+        [this, &controller, node_name, callback = std::move(callback),
+         client = std::move(endpoints->client)](fidl::Result<fdf::Node::AddChild>& result) mutable {
+          if (result.is_error()) {
+            fdf::error("Adding child failed: {}", result.error_value().FormatDescription().c_str());
+            DropNode();
+            return;
+          }
 
-      controller.Bind(std::move(client), dispatcher());
-      FDF_LOG(INFO, "Successfully added child %s.", node_name.c_str());
-      callback();
-    };
+          controller.Bind(std::move(client), dispatcher());
+          fdf::info("Successfully added child {}.", node_name.c_str());
+          callback();
+        };
 
     node_client_->AddChild({std::move(args), std::move(endpoints->server), {}})
         .Then(std::move(add_callback));
@@ -394,14 +395,14 @@ class RootDriver : public fdf::DriverBase {
         .Then([this, dev_group_name, callback = std::move(callback)](
                   fidl::Result<fdf::CompositeNodeManager::AddSpec>& create_result) {
           if (create_result.is_error()) {
-            FDF_LOG(ERROR, "AddSpec failed: %s",
-                    create_result.error_value().FormatDescription().c_str());
+            fdf::error("AddSpec failed: {}",
+                       create_result.error_value().FormatDescription().c_str());
             DropNode();
             return;
           }
 
           auto name = dev_group_name.has_value() ? dev_group_name.value() : "";
-          FDF_LOG(INFO, "Succeeded adding node group %s.", name.c_str());
+          fdf::info("Succeeded adding node group {}.", name.c_str());
           callback();
         });
   }

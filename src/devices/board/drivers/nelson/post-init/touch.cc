@@ -31,7 +31,7 @@ zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view 
                      fuchsia_hardware_pin::Pull pull) {
   zx::result pin = incoming->Connect<fuchsia_hardware_pin::Service::Device>(node_name);
   if (pin.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to pin node: %s", pin.status_string());
+    fdf::error("Failed to connect to pin node: {}", pin.status_string());
     return pin.take_error();
   }
 
@@ -39,11 +39,11 @@ zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view 
   auto config = fuchsia_hardware_pin::wire::Configuration::Builder(arena).pull(pull).Build();
   fidl::WireResult result = fidl::WireCall(*pin)->Configure(config);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Call to Configure failed: %s", result.FormatDescription().c_str());
+    fdf::error("Call to Configure failed: {}", result.FormatDescription().c_str());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Configure failed: %s", result.FormatDescription().c_str());
+    fdf::error("Configure failed: {}", result.FormatDescription().c_str());
     return result->take_error();
   }
   return zx::ok();
@@ -147,13 +147,13 @@ zx::result<> PostInit::InitTouch() {
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, touch_dev), fidl::ToWire(fidl_arena, composite_node_spec));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "AddCompositeNodeSpec Touch(touch_dev) request failed: %s",
-            result.FormatDescription().data());
+    fdf::error("AddCompositeNodeSpec Touch(touch_dev) request failed: {}",
+               result.FormatDescription().data());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "AddCompositeNodeSpec Touch(touch_dev) failed: %s",
-            zx_status_get_string(result->error_value()));
+    fdf::error("AddCompositeNodeSpec Touch(touch_dev) failed: {}",
+               zx_status_get_string(result->error_value()));
     return zx::error(result->error_value());
   }
   return zx::ok();

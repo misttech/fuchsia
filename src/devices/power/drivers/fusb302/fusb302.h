@@ -66,7 +66,7 @@ class Fusb302 : public fidl::WireServer<fuchsia_hardware_powersource::Source> {
     irq_handler_.Cancel();
     const zx_status_t status = irq_.destroy();
     if (status != ZX_OK) {
-      FDF_LOG(WARNING, "zx::interrupt::destroy() failed: %s", zx_status_get_string(status));
+      fdf::warn("zx::interrupt::destroy() failed: {}", zx_status_get_string(status));
     }
     timeout_handler_.Cancel();
   }

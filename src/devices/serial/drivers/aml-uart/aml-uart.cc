@@ -128,7 +128,7 @@ zx_status_t AmlUart::Config(uint32_t baud_rate, uint32_t flags) {
   constexpr uint32_t kCrystalClockSpeed = 24000000;
   uint32_t baud_bits = (kCrystalClockSpeed / 3) / baud_rate - 1;
   if (baud_bits & (~AML_UART_REG5_NEW_BAUD_RATE_MASK)) {
-    FDF_LOG(ERROR, "%s: baud rate %u too large", __func__, baud_rate);
+    fdf::error("{}: baud rate {} too large", __func__, baud_rate);
     return ZX_ERR_OUT_OF_RANGE;
   }
   auto baud = Reg5::Get()
@@ -205,7 +205,7 @@ zx_status_t AmlUart::Enable(bool enable) {
   if (enable && !enabled_) {
     zx::result irq = pdev_.GetInterrupt(0, 0);
     if (irq.is_error()) {
-      FDF_LOG(ERROR, "Failed to get pdev: %s", irq.status_string());
+      fdf::error("Failed to get pdev: {}", irq);
       return irq.status_value();
     }
     irq_ = std::move(irq.value());
@@ -351,7 +351,7 @@ void AmlUart::Write(WriteRequestView request, fdf::Arena& arena, WriteCompleter:
 void AmlUart::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_serialimpl::Device> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(WARNING, "handle_unknown_method in fuchsia_hardware_serialimpl::Device server.");
+  fdf::warn("handle_unknown_method in fuchsia_hardware_serialimpl::Device server.");
 }
 
 void AmlUart::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,

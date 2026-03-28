@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.gpio/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <cinttypes>
 
@@ -36,7 +37,7 @@ void PostInit::Start(fdf::StartCompleter completer) {
   zx::result pbus =
       incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>("pbus");
   if (pbus.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to PlatformBus: %s", pbus.status_string());
+    fdf::error("Failed to connect to PlatformBus: {}", pbus.status_string());
     return completer(pbus.take_error());
   }
   pbus_.Bind(*std::move(pbus));
@@ -44,8 +45,7 @@ void PostInit::Start(fdf::StartCompleter completer) {
   zx::result composite_manager =
       incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
   if (composite_manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to CompositeNodeManager: %s",
-            composite_manager.status_string());
+    fdf::error("Failed to connect to CompositeNodeManager: {}", composite_manager.status_string());
     return completer(composite_manager.take_error());
   }
   composite_manager_ = fidl::SyncClient(*std::move(composite_manager));
@@ -55,8 +55,7 @@ void PostInit::Start(fdf::StartCompleter completer) {
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create controller endpoints: %s",
-            controller_endpoints.status_string());
+    fdf::error("Failed to create controller endpoints: {}", controller_endpoints.status_string());
     return completer(controller_endpoints.take_error());
   }
   controller_.Bind(std::move(controller_endpoints->client));
@@ -88,12 +87,12 @@ void PostInit::Start(fdf::StartCompleter completer) {
   auto result = parent_->AddChild({std::move(args), std::move(controller_endpoints->server), {}});
   if (result.is_error()) {
     if (result.error_value().is_framework_error()) {
-      FDF_LOG(ERROR, "Failed to add child: %s",
-              result.error_value().framework_error().FormatDescription().c_str());
+      fdf::error("Failed to add child: {}",
+                 result.error_value().framework_error().FormatDescription().c_str());
       return completer(zx::error(result.error_value().framework_error().status()));
     }
     if (result.error_value().is_domain_error()) {
-      FDF_LOG(ERROR, "Failed to add child");
+      fdf::error("Failed to add child");
       return completer(zx::error(ZX_ERR_INTERNAL));
     }
   }
@@ -109,9 +108,9 @@ zx::result<> PostInit::InitBoardInfo() {
   }
 
   if (board_build_ != BOARD_REV_DVT && board_build_ != BOARD_REV_PVT) {
-    FDF_LOG(ERROR, "Unsupported board revision %u", board_build_);
+    fdf::error("Unsupported board revision {}", static_cast<uint32_t>(board_build_));
   } else {
-    FDF_LOG(INFO, "Detected board rev 0x%x", board_build_);
+    fdf::info("Detected board rev 0x{:x}", static_cast<uint32_t>(board_build_));
   }
   return zx::ok();
 }
@@ -119,7 +118,7 @@ zx::result<> PostInit::InitBoardInfo() {
 zx::result<> PostInit::IdentifyPanel() {
   zx::result<uint8_t> panel_vendor_result = ReadGpios(kDisplayPanelVendorNodeNames);
   if (panel_vendor_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to read display panel vendor: %s", panel_vendor_result.status_string());
+    fdf::error("Failed to read display panel vendor: {}", panel_vendor_result.status_string());
     return panel_vendor_result.take_error();
   }
 
@@ -132,7 +131,7 @@ zx::result<> PostInit::IdentifyPanel() {
       panel_type_ = display::PanelType::kInnoluxP070acbFitipowerJd9364;
       return zx::ok();
   }
-  FDF_LOG(ERROR, "Invalid panel vendor: %" PRIu8, static_cast<uint8_t>(panel_vendor));
+  fdf::error("Invalid panel vendor: {}", static_cast<uint8_t>(panel_vendor));
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -144,11 +143,11 @@ zx::result<> PostInit::SetBoardInfo() {
 
   auto result = pbus_.buffer(arena)->SetBoardInfo(board_info);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Call to SetBoardInfo failed: %s", result.FormatDescription().c_str());
+    fdf::error("Call to SetBoardInfo failed: {}", result.FormatDescription().c_str());
     return zx::error(result.error().status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "SetBoardInfo failed: %s", zx_status_get_string(result->error_value()));
+    fdf::error("SetBoardInfo failed: {}", zx_status_get_string(result->error_value()));
     return result->take_error();
   }
 
@@ -161,7 +160,7 @@ zx::result<uint8_t> PostInit::ReadGpios(cpp20::span<const char* const> node_name
   for (size_t i = 0; i < node_names.size(); i++) {
     zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(node_names[i]);
     if (gpio.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to GPIO node: %s", gpio.status_string());
+      fdf::error("Failed to connect to GPIO node: {}", gpio.status_string());
       return gpio.take_error();
     }
 
@@ -172,17 +171,17 @@ zx::result<uint8_t> PostInit::ReadGpios(cpp20::span<const char* const> node_name
           gpio_client->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
       if (result.is_error()) {
         if (result.error_value().is_framework_error()) {
-          FDF_LOG(ERROR, "Call to SetBufferMode failed: %s",
-                  result.error_value().framework_error().FormatDescription().c_str());
+          fdf::error("Call to SetBufferMode failed: {}",
+                     result.error_value().framework_error().FormatDescription().c_str());
           return zx::error(result.error_value().framework_error().status());
         }
         if (result.error_value().is_domain_error()) {
-          FDF_LOG(ERROR, "SetBufferMode failed: %s",
-                  zx_status_get_string(result.error_value().domain_error()));
+          fdf::error("SetBufferMode failed: {}",
+                     zx_status_get_string(result.error_value().domain_error()));
           return zx::error(result.error_value().domain_error());
         }
 
-        FDF_LOG(ERROR, "Unknown error from call to SetBufferMode");
+        fdf::error("Unknown error from call to SetBufferMode");
         return zx::error(ZX_ERR_BAD_STATE);
       }
     }
@@ -191,17 +190,16 @@ zx::result<uint8_t> PostInit::ReadGpios(cpp20::span<const char* const> node_name
       fidl::Result<fuchsia_hardware_gpio::Gpio::Read> result = gpio_client->Read();
       if (result.is_error()) {
         if (result.error_value().is_framework_error()) {
-          FDF_LOG(ERROR, "Call to Read failed: %s",
-                  result.error_value().framework_error().FormatDescription().c_str());
+          fdf::error("Call to Read failed: {}",
+                     result.error_value().framework_error().FormatDescription().c_str());
           return zx::error(result.error_value().framework_error().status());
         }
         if (result.error_value().is_domain_error()) {
-          FDF_LOG(ERROR, "Read failed: %s",
-                  zx_status_get_string(result.error_value().domain_error()));
+          fdf::error("Read failed: {}", zx_status_get_string(result.error_value().domain_error()));
           return zx::error(result.error_value().domain_error());
         }
 
-        FDF_LOG(ERROR, "Unknown error from call to Read");
+        fdf::error("Unknown error from call to Read");
         return zx::error(ZX_ERR_BAD_STATE);
       }
 

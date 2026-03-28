@@ -39,7 +39,7 @@ class Handler : public fidl::WireServer<fuchsia_test_syscalls::Control> {
     if (outgoing_ != nullptr) {
       const zx::result<> result = outgoing_->RemoveService<fuchsia_test_syscalls::ControlService>();
       if (result.is_error()) {
-        FDF_LOG(ERROR, "Failed to remove ControlService.");
+        fdf::error("Failed to remove ControlService.");
       }
       outgoing_.reset();
     }
@@ -53,7 +53,7 @@ class Handler : public fidl::WireServer<fuchsia_test_syscalls::Control> {
     const zx::result<> result =
         outgoing->AddService<fuchsia_test_syscalls::ControlService>(std::move(h));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add ControlService, this is probably not what you want.");
+      fdf::error("Failed to add ControlService, this is probably not what you want.");
     }
   }
 
@@ -130,7 +130,7 @@ __EXPORT zx_status_t zx_system_suspend_enter(zx_handle_t resource,
     }
   }
 
-  FDF_LOG(ERROR, "syscall_intercept::state_instance is not initialized.");
+  fdf::error("syscall_intercept::state_instance is not initialized.");
   // Returning an error here if the instrumentation is in a bad state.
   // Between the unexpected error and the log message this should
   // hopefully be enough of a suggestion as to where the problem

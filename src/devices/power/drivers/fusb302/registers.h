@@ -101,8 +101,8 @@ class Fusb302Register : public hwreg::I2cRegisterBase<RegType, uint8_t, 1> {
 
     const zx_status_t write_status = reg.WriteTo(i2c);
     if (write_status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to write register 0x%02x over I2C: %s", reg.reg_addr(),
-              zx_status_get_string(write_status));
+      fdf::error("Failed to write register 0x{:02x} over I2C: {}", reg.reg_addr(),
+                 zx_status_get_string(write_status));
       return zx::error_result(write_status);
     }
     return zx::ok();

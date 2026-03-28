@@ -10,6 +10,7 @@
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/manager/publisher-dev.h>
 #include <lib/driver/devicetree/visitors/load-visitors.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include "visitors/vim3-adc-buttons.h"
 #include "visitors/vim3-gpio-buttons.h"
@@ -23,54 +24,54 @@ zx::result<> Vim3Devicetree::Start() {
 
   zx::result manager = fdf_devicetree::Manager::CreateFromNamespace(*incoming());
   if (manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to create devicetree manager: %d", manager.error_value());
+    fdf::error("Failed to create devicetree manager: {}", manager.error_value());
     return manager.take_error();
   }
 
   auto visitors = fdf_devicetree::LoadVisitors(symbols());
   if (visitors.is_error()) {
-    FDF_LOG(ERROR, "Failed to create visitors: %s", visitors.status_string());
+    fdf::error("Failed to create visitors: {}", visitors.status_string());
     return visitors.take_error();
   }
 
   // Insert visitors with workarounds for vim3.
   if (zx::result result = (*visitors)->RegisterVisitor<Vim3AdcButtonsVisitor>();
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to register vim3 adc buttons visitor");
+    fdf::error("Failed to register vim3 adc buttons visitor");
     return result.take_error();
   };
 
   if (zx::result result = (*visitors)->RegisterVisitor<Vim3GpioButtonsVisitor>();
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to register vim3 gpio buttons visitor");
+    fdf::error("Failed to register vim3 gpio buttons visitor");
     return result.take_error();
   };
 
   if (zx::result result = (*visitors)->RegisterVisitor<Vim3WifiVisitor>(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to register vim3 wifi visitor");
+    fdf::error("Failed to register vim3 wifi visitor");
     return result.take_error();
   };
 
   if (zx::result result = (*visitors)->RegisterVisitor<Vim3NnaVisitor>(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to register vim3 nna visitor");
+    fdf::error("Failed to register vim3 nna visitor");
     return result.take_error();
   };
 
   zx::result<> status = manager->Walk(*(visitors.value()));
   if (status.is_error()) {
-    FDF_LOG(ERROR, "Failed to walk the device tree: %s", status.status_string());
+    fdf::error("Failed to walk the device tree: {}", status.status_string());
     return status.take_error();
   }
 
   zx::result pbus = incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
   if (pbus.is_error() || !pbus->is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect to pbus: %s", pbus.status_string());
+    fdf::error("Failed to connect to pbus: {}", pbus);
     return pbus.take_error();
   }
 
   zx::result group_manager = incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
   if (group_manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to device group manager: %s", group_manager.status_string());
+    fdf::error("Failed to connect to device group manager: {}", group_manager);
     return group_manager.take_error();
   }
 
@@ -79,7 +80,7 @@ zx::result<> Vim3Devicetree::Start() {
   fdf_devicetree::PublisherDev publisher(pbus_client, mgr_client, node_);
   status = manager->PublishDevices(publisher);
   if (status.is_error()) {
-    FDF_LOG(ERROR, "Failed to publish devices: %s", status.status_string());
+    fdf::error("Failed to publish devices: {}", status);
     return status.take_error();
   }
 

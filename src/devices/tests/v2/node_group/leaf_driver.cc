@@ -6,6 +6,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -32,7 +33,7 @@ class LeafDriver : public fdf::DriverBase {
   void RunAsync() {
     auto connect_result = incoming()->Connect<ft::Waiter>();
     if (connect_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to start leaf driver: %s", connect_result.status_string());
+      fdf::error("Failed to start leaf driver: {}", connect_result);
       node().reset();
       return;
     }
@@ -41,25 +42,24 @@ class LeafDriver : public fdf::DriverBase {
                                                     dispatcher()};
     auto work_result = DoWork(client);
     if (work_result.is_error()) {
-      FDF_LOG(ERROR, "DoWork was not successful: %s", work_result.status_string());
+      fdf::error("DoWork was not successful: {}", work_result);
       return;
     }
 
-    FDF_LOG(INFO, "Completed RunAsync successfully.");
+    fdf::info("Completed RunAsync successfully.");
   }
 
  private:
   zx::result<uint32_t> GetNumber(std::string_view instance) {
     auto device = incoming()->Connect<ft::Service::Device>(instance);
     if (device.status_value() != ZX_OK) {
-      FDF_LOG(WARNING, "Failed to connect to %s: %s", instance.data(), device.status_string());
+      fdf::warn("Failed to connect to {}: {}", instance.data(), device);
       return device.take_error();
     }
 
     auto result = fidl::WireCall(*device)->GetNumber();
     if (result.status() != ZX_OK) {
-      FDF_LOG(WARNING, "Failed to call number on %s: %s", instance.data(),
-              result.lossy_description());
+      fdf::warn("Failed to call number on {}: {}", instance.data(), result.lossy_description());
       return zx::error(result.status());
     }
     return zx::ok(result.value().number);
@@ -73,7 +73,7 @@ class LeafDriver : public fdf::DriverBase {
       return zx::ok();
     }
     if (*number != 1) {
-      FDF_LOG(ERROR, "Wrong number for left: expecting 1, saw %d", *number);
+      fdf::error("Wrong number for left: expecting 1, saw {}", *number);
       [[maybe_unused]] auto result = waiter->Ack(ZX_ERR_INTERNAL);
       return zx::ok();
     }
@@ -85,7 +85,7 @@ class LeafDriver : public fdf::DriverBase {
       return zx::ok();
     }
     if (*number != 2) {
-      FDF_LOG(ERROR, "Wrong number for right: expecting 2, saw %d", *number);
+      fdf::error("Wrong number for right: expecting 2, saw {}", *number);
       [[maybe_unused]] auto result = waiter->Ack(ZX_ERR_INTERNAL);
       return zx::ok();
     }
@@ -93,9 +93,9 @@ class LeafDriver : public fdf::DriverBase {
     // Check the optional device.
     number = GetNumber("opt");
     if (number.is_error()) {
-      FDF_LOG(INFO, "No 'opt' parent.");
+      fdf::info("No 'opt' parent.");
     } else if (*number != 3) {
-      FDF_LOG(ERROR, "Wrong number for opt: expecting 3, saw %d", *number);
+      fdf::error("Wrong number for opt: expecting 3, saw {}", *number);
       [[maybe_unused]] auto result = waiter->Ack(ZX_ERR_INTERNAL);
       return zx::ok();
     }
@@ -107,7 +107,7 @@ class LeafDriver : public fdf::DriverBase {
       return zx::ok();
     }
     if (*number != 1) {
-      FDF_LOG(ERROR, "Wrong number for default: expecting 1, saw %d", *number);
+      fdf::error("Wrong number for default: expecting 1, saw {}", *number);
       [[maybe_unused]] auto result = waiter->Ack(ZX_ERR_INTERNAL);
       return zx::ok();
     }

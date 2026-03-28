@@ -6,6 +6,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 namespace fdf {
@@ -65,7 +66,7 @@ class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Device> {
   }
 
   void UnbindNode(zx_status_t status) {
-    FDF_LOG(ERROR, "Failed to start root driver: %s", zx_status_get_string(status));
+    fdf::error("Failed to start root driver: {}", zx_status_get_string(status));
     node().reset();
   }
 

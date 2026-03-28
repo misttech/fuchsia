@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/trace/event.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls-next.h>
@@ -61,7 +62,7 @@ zx::result<> GenericSuspend::CreateDevfsNode() {
   fidl::Arena arena;
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "Error creating devfs node");
+    fdf::error("Error creating devfs node");
     return connector.take_error();
   }
 
@@ -82,7 +83,7 @@ zx::result<> GenericSuspend::CreateDevfsNode() {
   fidl::WireResult result = fidl::WireCall(node())->AddChild(
       args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child {}", result.status_string());
     return zx::error(result.status());
   }
   controller_.Bind(std::move(controller_endpoints.client));
@@ -98,7 +99,7 @@ zx::result<> GenericSuspend::Start() {
   auto result =
       outgoing()->AddService<fuchsia_hardware_power_suspend::SuspendService>(std::move(handler));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Suspender service %s", result.status_string());
+    fdf::error("Failed to add Suspender service {}", result);
     return result.take_error();
   }
 
@@ -106,7 +107,7 @@ zx::result<> GenericSuspend::Start() {
 
   zx::result resource = GetCpuResource();
   if (!resource.is_ok()) {
-    FDF_LOG(ERROR, "Failed to get CPU Resource: %s", resource.status_string());
+    fdf::error("Failed to get CPU Resource: {}", resource);
     return resource.take_error();
   }
 
@@ -114,11 +115,11 @@ zx::result<> GenericSuspend::Start() {
 
   zx::result create_devfs_node_result = CreateDevfsNode();
   if (create_devfs_node_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to export to devfs %s", create_devfs_node_result.status_string());
+    fdf::error("Failed to export to devfs {}", create_devfs_node_result);
     return create_devfs_node_result.take_error();
   }
 
-  FDF_LOG(INFO, "Started Generic Suspend Driver");
+  fdf::info("Started Generic Suspend Driver");
 
   return zx::ok();
 }
@@ -149,11 +150,11 @@ zx::result<WakeSourceReport> GenericSuspend::SystemSuspendEnter() {
   // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
   WakeSourceReport report;
   const auto entry_count = sizeof(report.entries) / sizeof(report.entries[0]);
-  FDF_LOG(DEBUG, "entry_count requested: %lu", entry_count);
+  fdf::debug("entry_count requested: {}", entry_count);
   const zx_status_t status =
       zx_system_suspend_enter(cpu_resource_.get(), ZX_TIME_INFINITE, /*options=*/0, &report.header,
                               report.entries, entry_count, &report.actual_entry_count);
-  FDF_LOG(DEBUG, "entry_count actual: %d", report.actual_entry_count);
+  fdf::debug("entry_count actual: {}", report.actual_entry_count);
   if (status != ZX_OK) {
     return zx::error(status);
   }
@@ -166,7 +167,7 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
 
   if (!request->has_state_index() || request->state_index() != 0) {
     // This driver only supports one suspend state for now.
-    FDF_LOG(ERROR, "Invalid argument to suspend");
+    fdf::error("Invalid argument to suspend");
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -175,15 +176,15 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
     n.RecordInt(fobs::kSuspendAttemptedAt, function_start);
   });
 
-  FDF_LOG(INFO, "on suspend: current monotonic time %ld", zx_clock_get_monotonic());
+  fdf::info("on suspend: current monotonic time {}", zx_clock_get_monotonic());
   auto suspend_start = zx_clock_get_boot();
   zx::result<WakeSourceReport> result = SystemSuspendEnter();
   auto suspend_return = zx_clock_get_boot();
-  FDF_LOG(INFO, "on resume: current monotonic time %ld", zx_clock_get_monotonic());
+  fdf::info("on resume: current monotonic time {}", zx_clock_get_monotonic());
 
   if (result.is_error()) {
     auto error_value = result.error_value();
-    FDF_LOG(ERROR, "zx_system_suspend_enter failed: %s", zx_status_get_string(error_value));
+    fdf::error("zx_system_suspend_enter failed: {}", zx_status_get_string(error_value));
     inspect_events_.CreateEntry([suspend_return](inspect::Node& n) {
       n.RecordInt(fobs::kSuspendFailedAt, suspend_return);
     });

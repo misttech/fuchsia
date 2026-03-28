@@ -26,7 +26,7 @@ PmemDevice::PmemDevice(zx::bti bti, std::unique_ptr<Backend> backend, zx::resour
 PmemDevice::~PmemDevice() {}
 
 zx_status_t PmemDevice::Init() {
-  FDF_LOG(DEBUG, "initialization starting");
+  fdf::debug("initialization starting");
   // reset the device
   DeviceReset();
 
@@ -37,7 +37,7 @@ zx_status_t PmemDevice::Init() {
   if (DeviceFeaturesSupported() & VIRTIO_F_VERSION_1) {
     DriverFeaturesAck(VIRTIO_F_VERSION_1);
     if (zx_status_t status = DeviceStatusFeaturesOk(); status != ZX_OK) {
-      FDF_LOG(ERROR, "Feature negotiation failed: %s", zx_status_get_string(status));
+      fdf::error("Feature negotiation failed: {}", zx_status_get_string(status));
       return status;
     }
   }
@@ -46,14 +46,14 @@ zx_status_t PmemDevice::Init() {
   virtio_pmem_config config{};
   ReadDeviceConfig(offsetof(virtio_pmem_config, start), &config.start);
   ReadDeviceConfig(offsetof(virtio_pmem_config, size), &config.size);
-  FDF_LOG(DEBUG, "config address: %#lx length %#lx", config.start, config.size);
+  fdf::debug("config address: {:#x} length {:#x}", config.start, config.size);
 
   const size_t rounded_size = fbl::round_up<size_t>(config.size, zx_system_get_page_size());
 
   zx_status_t status =
       zx::vmo::create_physical(mmio_resource_, config.start, rounded_size, &phys_vmo_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
+    fdf::error("failed to create VMO: {}", zx_status_get_string(status));
     return status;
   }
   // Physical VMOs have a default cache policy of uncached. The persistent
@@ -61,28 +61,28 @@ zx_status_t PmemDevice::Init() {
   // cached policy is more appropriate.
   status = phys_vmo_.set_cache_policy(ZX_CACHE_POLICY_CACHED);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to set cache policy: %s", zx_status_get_string(status));
+    fdf::error("failed to set cache policy: {}", zx_status_get_string(status));
     return status;
   }
 
   // Initialize request virtqueue.
   status = request_virtio_queue_.Init(0);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to initialize req_vq : %s", zx_status_get_string(status));
+    fdf::error("failed to initialize req_vq : {}", zx_status_get_string(status));
     return status;
   }
 
   // set DRIVER_OK
   DriverStatusOk();
 
-  FDF_LOG(DEBUG, "initialization succeeded");
+  fdf::debug("initialization succeeded");
 
   return ZX_OK;
 }
 
-void PmemDevice::IrqRingUpdate() { FDF_LOG(DEBUG, "%s: Got irq ring update, ignoring", tag()); }
+void PmemDevice::IrqRingUpdate() { fdf::debug("{}: Got irq ring update, ignoring", tag()); }
 
-void PmemDevice::IrqConfigChange() { FDF_LOG(DEBUG, "%s: Got irq config change, ignoring", tag()); }
+void PmemDevice::IrqConfigChange() { fdf::debug("{}: Got irq config change, ignoring", tag()); }
 
 zx::result<zx::vmo> PmemDevice::clone_vmo() {
   zx::vmo vmo;
@@ -119,7 +119,7 @@ zx::result<> PmemDriver::Start() {
   zx::result add_result =
       outgoing()->AddService<fuchsia_hardware_virtio_pmem::Service>(std::move(handler));
   if (add_result.is_error()) {
-    FDF_LOG(ERROR, "Unable to add service: %s", add_result.status_string());
+    fdf::error("Unable to add service: {}", add_result);
     return add_result.take_error();
   }
 
@@ -131,7 +131,7 @@ void PmemDriver::Get(GetCompleter::Sync& completer) {
     zx::result cloned_vmo = device_->clone_vmo();
     completer.Reply({std::move(cloned_vmo)});
   } else {
-    FDF_LOG(WARNING, "Get called with uninitialized device.");
+    fdf::warn("Get called with uninitialized device.");
     completer.Close(ZX_ERR_BAD_STATE);
   }
 }
@@ -139,33 +139,32 @@ void PmemDriver::Get(GetCompleter::Sync& completer) {
 void PmemDriver::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_virtio_pmem::Device> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(WARNING, "Unknown FIDL method received ordinal %lu, closing channel",
-          metadata.method_ordinal);
+  fdf::warn("Unknown FIDL method received ordinal {}, closing channel", metadata.method_ordinal);
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx::result<std::unique_ptr<PmemDevice>> PmemDriver::CreatePmemDevice() {
   zx::result pci_client_result = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get pci client: %s", pci_client_result.status_string());
+    fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
   }
 
   zx::result mmio_result = incoming()->Connect<fuchsia_kernel::MmioResource>();
   if (mmio_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to MmioResource: %s", mmio_result.status_string());
+    fdf::error("Failed to connect to MmioResource: {}", mmio_result);
     return mmio_result.take_error();
   }
   fidl::WireResult mmio_resource = fidl::WireCall(*mmio_result)->Get();
   if (!mmio_resource.ok()) {
-    FDF_LOG(ERROR, "Failed to get mmio resource: %s", mmio_resource.status_string());
+    fdf::error("Failed to get mmio resource: {}", mmio_resource.status_string());
     return zx::error(mmio_resource.status());
   }
 
   zx::result bti_and_backend_result =
       virtio::GetBtiAndBackend(std::move(pci_client_result).value());
   if (!bti_and_backend_result.is_ok()) {
-    FDF_LOG(ERROR, "GetBtiAndBackend failed: %s", bti_and_backend_result.status_string());
+    fdf::error("GetBtiAndBackend failed: {}", bti_and_backend_result);
     return bti_and_backend_result.take_error();
   }
   auto [bti, backend] = std::move(bti_and_backend_result).value();

@@ -10,6 +10,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -42,7 +43,7 @@ class RootDriver : public fdf::DriverBase, public fdf::Server<ft::Root> {
         }),
         kChildName);
     if (outgoing_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add service %s", outgoing_result.status_string());
+      fdf::error("Failed to add service {}", outgoing_result);
       return outgoing_result.take_error();
     }
     // Start the driver.

@@ -32,7 +32,7 @@ Fusb302Controls::Fusb302Controls(fidl::ClientEnd<fuchsia_hardware_i2c::Device>& 
 Fusb302Controls::~Fusb302Controls() = default;
 
 zx::result<> Fusb302Controls::ResetIntoPowerRoleDiscovery() {
-  FDF_LOG(TRACE, "Configuring for hardware power role discovery");
+  fdf::trace("Configuring for hardware power role discovery");
 
   wired_cc_pin_.set(usb_pd::ConfigChannelPinSwitch::kNone);
   power_role_.set(usb_pd::PowerRole::kSink);
@@ -65,9 +65,9 @@ zx::result<> Fusb302Controls::ConfigureAllRoles(usb_pd::ConfigChannelPinSwitch w
                                                 usb_pd::PowerRole power_role,
                                                 usb_pd::DataRole data_role,
                                                 usb_pd::SpecRevision spec_revision) {
-  FDF_LOG(DEBUG, "New Type C Port state: power role %s, Config Channel on %s",
-          usb_pd::PowerRoleToString(power_role),
-          usb_pd::ConfigChannelPinSwitchToString(wired_cc_pin));
+  fdf::debug("New Type C Port state: power role {}, Config Channel on {}",
+             usb_pd::PowerRoleToString(power_role),
+             usb_pd::ConfigChannelPinSwitchToString(wired_cc_pin));
 
   wired_cc_pin_.set(wired_cc_pin);
   power_role_.set(power_role);
@@ -85,7 +85,7 @@ zx::result<> Fusb302Controls::ConfigureAllRoles(usb_pd::ConfigChannelPinSwitch w
   // We don't use read-modify-write operations to act on Reset.
   zx_status_t status = ResetReg::Get().FromValue(0).set_pd_reset(true).WriteTo(i2c_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to write Reset register: %s", zx_status_get_string(status));
+    fdf::error("Failed to write Reset register: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -115,17 +115,17 @@ zx::result<> Fusb302Controls::PushStateToPowerRoleDetectionControl() {
     const Fusb302RoleDetectionMode power_role_detection_mode =
         Fusb302RoleDetectionMode::kDualPowerRole;
     if (control2.mode() != power_role_detection_mode) {
-      FDF_LOG(INFO, "Changing automated power role detection mode from %s to %s",
-              Fusb302RoleDetectionModeToString(control2.mode()),
-              Fusb302RoleDetectionModeToString(power_role_detection_mode));
+      fdf::info("Changing automated power role detection mode from {} to {}",
+                Fusb302RoleDetectionModeToString(control2.mode()),
+                Fusb302RoleDetectionModeToString(power_role_detection_mode));
     }
 
     const bool automated_power_role_detection_enabled =
         (wired_cc_pin_.get() == usb_pd::ConfigChannelPinSwitch::kNone);
     if (control2.toggle() != automated_power_role_detection_enabled) {
-      FDF_LOG(INFO, "Changing automated power role detection from %s to %s",
-              control2.toggle() ? "true" : "false",
-              automated_power_role_detection_enabled ? "true" : "false");
+      fdf::info("Changing automated power role detection from {} to {}",
+                control2.toggle() ? "true" : "false",
+                automated_power_role_detection_enabled ? "true" : "false");
     }
 
     control2.set_tog_save_pwr(Control2Reg::SleepDuration::k0ms)
@@ -168,23 +168,23 @@ zx::result<> Fusb302Controls::PushStateToSwitchBlocks() {
 
   return Switches0Reg::ReadModifyWrite(i2c_, [&](Switches0Reg& switches0) {
     if (switches0.SwitchBlockConfigFor(wired_pin_id) != wired_pin_connection) {
-      FDF_LOG(WARNING, "Changing %s pin connection from %s of %s",
-              ConfigChannelPinIdToString(wired_pin_id),
-              SwitchBlockConfigToString(switches0.SwitchBlockConfigFor(wired_pin_id)),
-              SwitchBlockConfigToString(wired_pin_connection));
+      fdf::warn("Changing {} pin connection from {} of {}",
+                ConfigChannelPinIdToString(wired_pin_id),
+                SwitchBlockConfigToString(switches0.SwitchBlockConfigFor(wired_pin_id)),
+                SwitchBlockConfigToString(wired_pin_connection));
     }
 
     if (switches0.SwitchBlockConfigFor(other_pin_id) != other_pin_connection) {
-      FDF_LOG(WARNING, "Changing %s pin connection from %s to %s",
-              ConfigChannelPinIdToString(other_pin_id),
-              SwitchBlockConfigToString(switches0.SwitchBlockConfigFor(other_pin_id)),
-              SwitchBlockConfigToString(other_pin_connection));
+      fdf::warn("Changing {} pin connection from {} to {}",
+                ConfigChannelPinIdToString(other_pin_id),
+                SwitchBlockConfigToString(switches0.SwitchBlockConfigFor(other_pin_id)),
+                SwitchBlockConfigToString(other_pin_connection));
     }
 
     if (switches0.MeasureBlockInput() != wired_pin_switch) {
-      FDF_LOG(WARNING, "Changing measure block input from %s to %s",
-              ConfigChannelPinSwitchToString(switches0.MeasureBlockInput()),
-              ConfigChannelPinSwitchToString(wired_pin_switch));
+      fdf::warn("Changing measure block input from {} to {}",
+                ConfigChannelPinSwitchToString(switches0.MeasureBlockInput()),
+                ConfigChannelPinSwitchToString(wired_pin_switch));
     }
 
     switches0.SetSwitchBlockConfig(wired_pin_id, wired_pin_connection)
@@ -197,22 +197,23 @@ zx::result<> Fusb302Controls::PushStateToBmcPhyConfig() {
   return Switches1Reg::ReadModifyWrite(i2c_, [&](Switches1Reg& switches1) {
     const usb_pd::ConfigChannelPinSwitch wired_pin_switch = wired_cc_pin_.get();
     if (switches1.BmcPhyConnection() != wired_pin_switch) {
-      FDF_LOG(INFO, "Changing BMC PHY CC pin connection from %s to %s",
-              ConfigChannelPinSwitchToString(switches1.BmcPhyConnection()),
-              ConfigChannelPinSwitchToString(wired_pin_switch));
+      fdf::info("Changing BMC PHY CC pin connection from {} to {}",
+                ConfigChannelPinSwitchToString(switches1.BmcPhyConnection()),
+                ConfigChannelPinSwitchToString(wired_pin_switch));
     }
 
     const usb_pd::PowerRole power_role = power_role_.get();
     if (switches1.power_role() != power_role) {
-      FDF_LOG(INFO, "Changing GoodCRC header field 'Power Role' from %s to %s",
-              usb_pd::PowerRoleToString(switches1.power_role()),
-              usb_pd::PowerRoleToString(power_role));
+      fdf::info("Changing GoodCRC header field 'Power Role' from {} to {}",
+                usb_pd::PowerRoleToString(switches1.power_role()),
+                usb_pd::PowerRoleToString(power_role));
     }
 
     const usb_pd::DataRole data_role = data_role_.get();
     if (switches1.data_role() != data_role) {
-      FDF_LOG(INFO, "Changing GoodCRC header field 'Data Role' from %s to %s",
-              usb_pd::DataRoleToString(switches1.data_role()), usb_pd::DataRoleToString(data_role));
+      fdf::info("Changing GoodCRC header field 'Data Role' from {} to {}",
+                usb_pd::DataRoleToString(switches1.data_role()),
+                usb_pd::DataRoleToString(data_role));
     }
 
     // Having the FUSB302 auto-reply with GoodCRC is necessary to meet the USB
@@ -239,9 +240,9 @@ zx::result<> Fusb302Controls::PushStateToBmcPhyConfig() {
     const bool generate_good_crc_replies =
         wired_pin_switch != usb_pd::ConfigChannelPinSwitch::kNone;
     if (switches1.auto_crc() != generate_good_crc_replies) {
-      FDF_LOG(INFO, "Changing 'Generate GoodCRC replies' from %s to %s",
-              switches1.auto_crc() ? "true" : "false",
-              generate_good_crc_replies ? "true" : "false");
+      fdf::info("Changing 'Generate GoodCRC replies' from {} to {}",
+                switches1.auto_crc() ? "true" : "false",
+                generate_good_crc_replies ? "true" : "false");
     }
 
     switches1.set_power_role(power_role)
@@ -317,9 +318,9 @@ zx::result<> Fusb302Controls::PushStateToPdProtocolConfig() {
     const bool retry_sending_on_good_crc_timeout = true;
 
     if (control3.auto_retry() != retry_sending_on_good_crc_timeout) {
-      FDF_LOG(INFO, "Changing 'Retry sending on GoodCRC timeout' from %s to %s",
-              control3.auto_retry() ? "true" : "false",
-              retry_sending_on_good_crc_timeout ? "true" : "false");
+      fdf::info("Changing 'Retry sending on GoodCRC timeout' from {} to {}",
+                control3.auto_retry() ? "true" : "false",
+                retry_sending_on_good_crc_timeout ? "true" : "false");
     }
 
     control3.set_send_hard_reset(false)
@@ -375,7 +376,7 @@ zx::result<> Fusb302Controls::WaitForTransmitQueueFlush() {
     zx::nanosleep(zx::deadline_after(zx::usec(10)));
   }
 
-  FDF_LOG(ERROR, "Timed out waiting for the transmit queue to flush");
+  fdf::error("Timed out waiting for the transmit queue to flush");
   return zx::error(ZX_ERR_TIMED_OUT);
 }
 
@@ -387,7 +388,7 @@ zx::result<> Fusb302Controls::WaitForReceiveQueueFlush() {
     zx::nanosleep(zx::deadline_after(zx::usec(10)));
   }
 
-  FDF_LOG(ERROR, "Timed out waiting for the receive queue to flush");
+  fdf::error("Timed out waiting for the receive queue to flush");
   return zx::error(ZX_ERR_TIMED_OUT);
 }
 

@@ -5,6 +5,7 @@
 #include "src/devices/power/drivers/fusb302/fusb302.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/result.h>
@@ -40,7 +41,7 @@ void Fusb302::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_
 void Fusb302::HandleTimeout(async_dispatcher_t*, async::WaitBase*, zx_status_t status,
                             const zx_packet_signal_t*) {
   HardwareStateChanges changes;
-  FDF_LOG(TRACE, "State machine timer fired off");
+  fdf::trace("State machine timer fired off");
   changes.timer_signaled = true;
   ProcessStateChanges(changes);
 }
@@ -79,7 +80,7 @@ void Fusb302::ProcessStateChanges(HardwareStateChanges changes) {
 zx_status_t Fusb302::ResetHardwareAndStartPowerRoleDetection() {
   auto status = ResetReg::Get().FromValue(0).set_sw_res(true).WriteTo(i2c_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to write Reset register: %s", zx_status_get_string(status));
+    fdf::error("Failed to write Reset register: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -99,14 +100,14 @@ zx_status_t Fusb302::ResetHardwareAndStartPowerRoleDetection() {
 zx_status_t Fusb302::Init() {
   zx::result<> result = identity_.ReadIdentity();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize inspect: %s", result.status_string());
+    fdf::error("Failed to initialize inspect: {}", result);
     return result.error_value();
   }
 
   zx_status_t status = ResetHardwareAndStartPowerRoleDetection();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "ResetHardwareAndStartPowerRoleDetection() failed: %s",
-            zx_status_get_string(status));
+    fdf::error("ResetHardwareAndStartPowerRoleDetection() failed: {}",
+               zx_status_get_string(status));
     return status;
   }
 
@@ -122,7 +123,7 @@ zx::result<> Fusb302::WaitAsyncForTimer(zx::timer& timer) {
   auto status = timeout_handler_.Begin(dispatcher_.async_dispatcher(),
                                        fit::bind_member(this, &Fusb302::HandleTimeout));
   if (status != ZX_OK) {
-    FDF_LOG(WARNING, "Failed to wait on timer: %s", zx_status_get_string(status));
+    fdf::warn("Failed to wait on timer: {}", zx_status_get_string(status));
   }
   return zx::make_result(status);
 }
@@ -135,7 +136,7 @@ zx::result<> Fusb302Device::Start() {
   {
     zx::result result = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to open i2c service: %s", result.status_string());
+      fdf::error("Failed to open i2c service: {}", result);
       return result.take_error();
     }
     i2c = std::move(result.value());
@@ -143,7 +144,7 @@ zx::result<> Fusb302Device::Start() {
   {
     zx::result result = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to open gpio service: %s", result.status_string());
+      fdf::error("Failed to open gpio service: {}", result);
       return result.take_error();
     }
 
@@ -155,15 +156,15 @@ zx::result<> Fusb302Device::Start() {
                                 .Build();
     if (auto result = fidl::WireCall(gpio)->ConfigureInterrupt(interrupt_config);
         !result.ok() || result->is_error()) {
-      FDF_LOG(ERROR, "GPIO ConfigureInterrupt() failed: %s",
-              result.ok() ? zx_status_get_string(result->error_value())
-                          : result.FormatDescription().c_str());
+      fdf::error("GPIO ConfigureInterrupt() failed: {}",
+                 result.ok() ? zx_status_get_string(result->error_value())
+                             : result.FormatDescription().c_str());
     }
 
     if (auto result = fidl::WireCall(gpio)->GetInterrupt({}); !result.ok() || result->is_error()) {
-      FDF_LOG(ERROR, "GPIO GetInterrupt() failed: %s",
-              result.ok() ? zx_status_get_string(result->error_value())
-                          : result.FormatDescription().c_str());
+      fdf::error("GPIO GetInterrupt() failed: {}", result.ok()
+                                                       ? zx_status_get_string(result->error_value())
+                                                       : result.FormatDescription().c_str());
     } else {
       irq = std::move(result->value()->interrupt);
     }
@@ -178,7 +179,7 @@ zx::result<> Fusb302Device::Start() {
                                                std::move(gpio), std::move(irq));
   auto status = device_->Init();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Init() failed: %s", zx_status_get_string(status));
+    fdf::error("Init() failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -186,12 +187,12 @@ zx::result<> Fusb302Device::Start() {
       source_bindings_.CreateHandler(device_.get(), dispatcher(), fidl::kIgnoreBindingClosure),
       kDeviceName);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+    fdf::error("Failed to add Device service {}", result);
     return result.take_error();
   }
 
   if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to export to devfs %s", result.status_string());
+    fdf::error("Failed to export to devfs {}", result);
     return result.take_error();
   }
 
@@ -225,7 +226,7 @@ zx::result<> Fusb302Device::CreateDevfsNode() {
   fidl::WireResult result = fidl::WireCall(node())->AddChild(
       args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child {}", result.status_string());
     return zx::error(result.status());
   }
   controller_.Bind(std::move(controller_endpoints.client));

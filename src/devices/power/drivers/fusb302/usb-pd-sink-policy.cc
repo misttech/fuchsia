@@ -52,50 +52,46 @@ namespace {
 
 // `supply_data` must be the first PDO in a USB PD source capabilities list.
 void LogSourceAttributes(FixedPowerSupplyData supply_data) {
-  FDF_LOG(INFO,
-          "Source Attributes: USB suspend %s, "
-          "unconstrained power: %s, dual role power: %s, power range: %s, "
-          "usb communication: %s, dual role data: %s",
-          supply_data.requires_usb_suspend() ? "required" : "not required",
-          supply_data.has_unconstrained_power() ? "yes" : "no",
-          supply_data.supports_dual_role_power() ? "yes" : "no",
-          supply_data.supports_extended_power_range() ? "extended" : "standard",
-          supply_data.supports_usb_communications() ? "yes" : "no",
-          supply_data.supports_dual_role_data() ? "yes" : "no");
+  fdf::info(
+      "Source Attributes: USB suspend {}, "
+      "unconstrained power: %s, dual role power: %s, power range: %s, "
+      "usb communication: %s, dual role data: %s",
+      supply_data.requires_usb_suspend() ? "required" : "not required",
+      supply_data.has_unconstrained_power() ? "yes" : "no",
+      supply_data.supports_dual_role_power() ? "yes" : "no",
+      supply_data.supports_extended_power_range() ? "extended" : "standard",
+      supply_data.supports_usb_communications() ? "yes" : "no",
+      supply_data.supports_dual_role_data() ? "yes" : "no");
 }
 
 void LogSourcePowerCapability(PowerData power_data, int power_data_object_index) {
   switch (power_data.supply_type()) {
     case PowerSupplyType::kFixedSupply: {
       FixedPowerSupplyData fixed_supply(power_data);
-      FDF_LOG(INFO, "Source Capability #%d: Fixed Power - %" PRId32 " mV @ %" PRId32 " mA",
-              power_data_object_index, fixed_supply.voltage_mv(),
-              fixed_supply.maximum_current_ma());
+      fdf::info("Source Capability #{}: Fixed Power - {} mV @ {} mA", power_data_object_index,
+                fixed_supply.voltage_mv(), fixed_supply.maximum_current_ma());
       break;
     }
 
     case PowerSupplyType::kBattery: {
       BatteryPowerSupplyData battery_supply(power_data);
-      FDF_LOG(INFO,
-              "Source Capability #%d: Battery - [%" PRId32 " - %" PRId32 "] mV, %" PRId32 " mW",
-              power_data_object_index, battery_supply.minimum_voltage_mv(),
-              battery_supply.maximum_voltage_mv(), battery_supply.maximum_power_mw());
+      fdf::info("Source Capability #{}: Battery - [{} - {}] mV, {} mW", power_data_object_index,
+                battery_supply.minimum_voltage_mv(), battery_supply.maximum_voltage_mv(),
+                battery_supply.maximum_power_mw());
       break;
     }
 
     case PowerSupplyType::kVariableSupply: {
       VariablePowerSupplyData variable_supply(power_data);
-      FDF_LOG(INFO,
-              "Source Capability #%d: Variable Power - [%" PRId32 " - %" PRId32 "] mV @ %" PRId32
-              " mA",
-              power_data_object_index, variable_supply.minimum_voltage_mv(),
-              variable_supply.maximum_voltage_mv(), variable_supply.maximum_current_ma());
+      fdf::info("Source Capability #{}: Variable Power - [{} - {}] mV @ {} mA",
+                power_data_object_index, variable_supply.minimum_voltage_mv(),
+                variable_supply.maximum_voltage_mv(), variable_supply.maximum_current_ma());
       break;
     }
 
     case PowerSupplyType::kAugmentedPowerDataObject:
-      FDF_LOG(INFO, "Source Capability #%d: Augmented PDO (unsupported) - 0x%08" PRIx32,
-              power_data_object_index, power_data.bits);
+      fdf::info("Source Capability #{}: Augmented PDO (unsupported) - {:#08x}",
+                power_data_object_index, power_data.bits);
       break;
   }
 }
@@ -106,26 +102,26 @@ void LogSinkPowerRequestData(PowerRequestData request_data,
   int related_source_pdo_position =
       static_cast<int>(request_data.related_power_data_object_position());
 
-  FDF_LOG(INFO,
-          "Power Request Attributes: source PDO #%d, power give back: %s, capability mismatch: %s, "
-          "usb communication: %s, usb suspend: %s, PHY message support: %s, power range: %s",
-          related_source_pdo_position,
-          request_data.supports_power_give_back() ? "supported" : "not supported",
-          request_data.capability_mismatch() ? "yes" : "no",
-          request_data.supports_usb_communications() ? "yes" : "no",
-          request_data.prefers_waiving_usb_suspend() ? "waive asked" : "ok",
-          request_data.supports_unchunked_extended_messages() ? "extended" : "standard",
-          request_data.supports_extended_power_range() ? "extended" : "standard");
+  fdf::info(
+      "Power Request Attributes: source PDO #{}, power give back: {}, capability mismatch: {}, "
+      "usb communication: %s, usb suspend: %s, PHY message support: %s, power range: %s",
+      related_source_pdo_position,
+      request_data.supports_power_give_back() ? "supported" : "not supported",
+      request_data.capability_mismatch() ? "yes" : "no",
+      request_data.supports_usb_communications() ? "yes" : "no",
+      request_data.prefers_waiving_usb_suspend() ? "waive asked" : "ok",
+      request_data.supports_unchunked_extended_messages() ? "extended" : "standard",
+      request_data.supports_extended_power_range() ? "extended" : "standard");
 
   if (related_source_pdo_position == 0) {
-    FDF_LOG(ERROR, "Non-standard Power Request: using reserved related source PDO value #0");
+    fdf::error("Non-standard Power Request: using reserved related source PDO value #0");
     return;
   }
 
   // Casting will not overflow because the position is a positive 4-bit integer.
   if (static_cast<size_t>(related_source_pdo_position) > source_capabilities.size()) {
-    FDF_LOG(ERROR, "Invalid Power Request: related source PDO value #%d exceeds PDO list size %zu",
-            related_source_pdo_position, source_capabilities.size());
+    fdf::error("Invalid Power Request: related source PDO value #{} exceeds PDO list size {}",
+               related_source_pdo_position, source_capabilities.size());
     return;
   }
 
@@ -139,33 +135,32 @@ void LogSinkPowerRequestData(PowerRequestData request_data,
           (int64_t{supply_data.voltage_mv()} * fixed_request.operating_current_ma()) / 1'000;
       int64_t limit_power_mw =
           (int64_t{supply_data.voltage_mv()} * fixed_request.limit_current_ma()) / 1'000;
-      FDF_LOG(INFO,
-              "Fixed Power Request: Operating %" PRId32 " mV @ %" PRId32 " mA => %" PRId64
-              " mW, "
-              "Limit %" PRId32 " mV @ %" PRId32 " mA => %" PRId64 " mW",
-              supply_data.voltage_mv(), fixed_request.operating_current_ma(), operating_power_mw,
-              supply_data.voltage_mv(), fixed_request.limit_current_ma(), limit_power_mw);
+      fdf::info(
+          "Fixed Power Request: Operating {} mV @ {} mA => {} mW, "
+          "Limit {} mV @ {} mA => {} mW",
+          supply_data.voltage_mv(), fixed_request.operating_current_ma(), operating_power_mw,
+          supply_data.voltage_mv(), fixed_request.limit_current_ma(), limit_power_mw);
       break;
     }
 
     case PowerSupplyType::kVariableSupply: {
       FixedVariableSupplyPowerRequestData fixed_request(request_data);
-      FDF_LOG(INFO, "Variable Power Request: Operating %" PRId32 " mA, Limit %" PRId32 " mA",
-              fixed_request.operating_current_ma(), fixed_request.limit_current_ma());
+      fdf::info("Variable Power Request: Operating {} mA, Limit {} mA",
+                fixed_request.operating_current_ma(), fixed_request.limit_current_ma());
       break;
     }
 
     case PowerSupplyType::kBattery: {
       BatteryPowerRequestData battery_request(request_data);
-      FDF_LOG(INFO, "Battery Power Request: Operating %" PRId32 " mW, Limit %" PRId32 " mW",
-              battery_request.operating_power_mw(), battery_request.limit_power_mw());
+      fdf::info("Battery Power Request: Operating {} mW, Limit {} mW",
+                battery_request.operating_power_mw(), battery_request.limit_power_mw());
 
       break;
     }
 
     case PowerSupplyType::kAugmentedPowerDataObject:
-      FDF_LOG(INFO, "Augmented Power Request: Augmented RDO (unsupported) - 0x%08" PRIx32,
-              static_cast<uint32_t>(request_data));
+      fdf::info("Augmented Power Request: Augmented RDO (unsupported) - {:#08x}",
+                static_cast<uint32_t>(request_data));
       break;
   }
 }
@@ -173,13 +168,13 @@ void LogSinkPowerRequestData(PowerRequestData request_data,
 }  // namespace
 
 void SinkPolicy::LogSourcePowerCapabilities() {
-  FDF_LOG(INFO, "Received USB PD source capabilities");
+  fdf::info("Received USB PD source capabilities");
   // The cast does not overflow (causing UB) because the maximum vector size is
   // `Header::kMaxDataObjectCount`.
   const int32_t capabilities_count = static_cast<int32_t>(source_capabilities_.size());
 
   if (source_capabilities_.empty()) {
-    FDF_LOG(ERROR, "USB PD SourceCapabilities message has no capabilities (empty PDO list)!");
+    fdf::error("USB PD SourceCapabilities message has no capabilities (empty PDO list)!");
     return;
   }
 
@@ -187,7 +182,7 @@ void SinkPolicy::LogSourcePowerCapabilities() {
   if (first_power_data.supply_type() == PowerSupplyType::kFixedSupply) {
     LogSourceAttributes(FixedPowerSupplyData(first_power_data));
   } else {
-    FDF_LOG(WARNING, "Non-standard USB PD source! First capability must be Fixed Power");
+    fdf::warn("Non-standard USB PD source! First capability must be Fixed Power");
   }
 
   for (int i = 0; i < capabilities_count; ++i) {
@@ -234,8 +229,8 @@ PowerRequestData SinkPolicy::GetPowerRequest() const {
         break;
       }
       default:
-        FDF_LOG(DEBUG, "Skipping unsupported power type %" PRIu8,
-                static_cast<uint8_t>(power_data.supply_type()));
+        fdf::debug("Skipping unsupported power type {}",
+                   static_cast<uint8_t>(power_data.supply_type()));
         break;
     }
   }

@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pin/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/inspect/cpp/reader.h>
 
 #include <array>
@@ -96,8 +97,8 @@ zx::result<display::PanelType> GetPanelType(PanelVendor panel_vendor,
       }
       break;
   }
-  FDF_LOG(ERROR, "Invalid GPIO panel type: panel vendor %" PRIu32 " panel DDIC model %" PRIu32,
-          static_cast<uint32_t>(panel_vendor), static_cast<uint32_t>(panel_ddic_model));
+  fdf::error("Invalid GPIO panel type: panel vendor {} panel DDIC model {}",
+             static_cast<uint32_t>(panel_vendor), static_cast<uint32_t>(panel_ddic_model));
   return zx::error(ZX_ERR_INVALID_ARGS);
 }
 
@@ -109,7 +110,7 @@ void PostInit::Start(fdf::StartCompleter completer) {
   zx::result pbus =
       incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>("pbus");
   if (pbus.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to PlatformBus: %s", pbus.status_string());
+    fdf::error("Failed to connect to PlatformBus: {}", pbus.status_string());
     return completer(pbus.take_error());
   }
   pbus_.Bind(*std::move(pbus));
@@ -117,8 +118,7 @@ void PostInit::Start(fdf::StartCompleter completer) {
   zx::result composite_manager =
       incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
   if (composite_manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to CompositeNodeManager: %s",
-            composite_manager.status_string());
+    fdf::error("Failed to connect to CompositeNodeManager: {}", composite_manager.status_string());
     return completer(composite_manager.take_error());
   }
   composite_manager_ = fidl::SyncClient(*std::move(composite_manager));
@@ -128,8 +128,7 @@ void PostInit::Start(fdf::StartCompleter completer) {
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create controller endpoints: %s",
-            controller_endpoints.status_string());
+    fdf::error("Failed to create controller endpoints: {}", controller_endpoints.status_string());
     return completer(controller_endpoints.take_error());
   }
   controller_.Bind(std::move(controller_endpoints->client));
@@ -169,12 +168,12 @@ void PostInit::Start(fdf::StartCompleter completer) {
   auto result = parent_->AddChild({std::move(args), std::move(controller_endpoints->server), {}});
   if (result.is_error()) {
     if (result.error_value().is_framework_error()) {
-      FDF_LOG(ERROR, "Failed to add child: %s",
-              result.error_value().framework_error().FormatDescription().c_str());
+      fdf::error("Failed to add child: {}",
+                 result.error_value().framework_error().FormatDescription().c_str());
       return completer(zx::error(result.error_value().framework_error().status()));
     }
     if (result.error_value().is_domain_error()) {
-      FDF_LOG(ERROR, "Failed to add child");
+      fdf::error("Failed to add child");
       return completer(zx::error(ZX_ERR_INTERNAL));
     }
   }
@@ -189,12 +188,12 @@ zx::result<> PostInit::InitBoardInfo() {
     return board_build.take_error();
   }
 
-  FDF_LOG(INFO, "Detected board rev 0x%x", *board_build);
+  fdf::info("Detected board rev 0x{:x}", *board_build);
 
   if (*board_build >= kMaxSupportedBuild) {
     // We have detected a new board rev. Print this warning just in case the
     // new board rev requires additional support that we were not aware of
-    FDF_LOG(INFO, "Unsupported board revision detected (%u)", *board_build);
+    fdf::info("Unsupported board revision detected ({})", *board_build);
   }
   board_build_ = *board_build;
 
@@ -212,7 +211,7 @@ zx::result<> PostInit::IdentifyPanel() {
   zx::result<uint32_t> panel_vendor_result =
       ReadGpios({kPanelVendorNodeNames.data(), kPanelVendorNodeNames.size()});
   if (panel_vendor_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to read panel vendor GPIOs: %s", panel_vendor_result.status_string());
+    fdf::error("Failed to read panel vendor GPIOs: {}", panel_vendor_result.status_string());
     return panel_vendor_result.take_error();
   }
   // The cast result will always be a valid member because the `ReadGpios()`
@@ -222,8 +221,8 @@ zx::result<> PostInit::IdentifyPanel() {
   zx::result<uint32_t> panel_ddic_model_result =
       ReadGpios({kPanelDdicModelNodeNames.data(), kPanelDdicModelNodeNames.size()});
   if (panel_ddic_model_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to read panel DDIC model GPIOs: %s",
-            panel_ddic_model_result.status_string());
+    fdf::error("Failed to read panel DDIC model GPIOs: {}",
+               panel_ddic_model_result.status_string());
     return panel_ddic_model_result.take_error();
   }
   PanelDdicModel panel_ddic_model =
@@ -231,7 +230,7 @@ zx::result<> PostInit::IdentifyPanel() {
 
   zx::result<display::PanelType> panel_type_result = GetPanelType(panel_vendor, panel_ddic_model);
   if (panel_type_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get panel type: %s", panel_type_result.status_string());
+    fdf::error("Failed to get panel type: {}", panel_type_result.status_string());
     return panel_type_result.take_error();
   }
   panel_type_ = std::move(panel_type_result).value();
@@ -242,7 +241,7 @@ zx::result<> PostInit::IdentifyPanel() {
 zx::result<> PostInit::SetInspectProperties() {
   auto inspect_sink = incoming()->Connect<fuchsia_inspect::InspectSink>();
   if (inspect_sink.is_error() || !inspect_sink->is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect to InspectSink: %s", inspect_sink.status_string());
+    fdf::error("Failed to connect to InspectSink: {}", inspect_sink.status_string());
     return inspect_sink.take_error();
   }
 
@@ -263,7 +262,7 @@ zx::result<uint32_t> PostInit::ReadGpios(cpp20::span<const char* const> node_nam
   for (size_t i = 0; i < node_names.size(); i++) {
     zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(node_names[i]);
     if (gpio.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to GPIO node: %s", gpio.status_string());
+      fdf::error("Failed to connect to GPIO node: {}", gpio.status_string());
       return gpio.take_error();
     }
 
@@ -274,17 +273,17 @@ zx::result<uint32_t> PostInit::ReadGpios(cpp20::span<const char* const> node_nam
           gpio_client->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
       if (result.is_error()) {
         if (result.error_value().is_framework_error()) {
-          FDF_LOG(ERROR, "Call to SetBufferMode failed: %s",
-                  result.error_value().framework_error().FormatDescription().c_str());
+          fdf::error("Call to SetBufferMode failed: {}",
+                     result.error_value().framework_error().FormatDescription().c_str());
           return zx::error(result.error_value().framework_error().status());
         }
         if (result.error_value().is_domain_error()) {
-          FDF_LOG(ERROR, "SetBufferMode failed: %s",
-                  zx_status_get_string(result.error_value().domain_error()));
+          fdf::error("SetBufferMode failed: {}",
+                     zx_status_get_string(result.error_value().domain_error()));
           return zx::error(result.error_value().domain_error());
         }
 
-        FDF_LOG(ERROR, "Unknown error from call to SetBufferMode");
+        fdf::error("Unknown error from call to SetBufferMode");
         return zx::error(ZX_ERR_BAD_STATE);
       }
     }
@@ -293,17 +292,16 @@ zx::result<uint32_t> PostInit::ReadGpios(cpp20::span<const char* const> node_nam
       auto result = gpio_client->Read();
       if (result.is_error()) {
         if (result.error_value().is_framework_error()) {
-          FDF_LOG(ERROR, "Call to Read failed: %s",
-                  result.error_value().framework_error().FormatDescription().c_str());
+          fdf::error("Call to Read failed: {}",
+                     result.error_value().framework_error().FormatDescription().c_str());
           return zx::error(result.error_value().framework_error().status());
         }
         if (result.error_value().is_domain_error()) {
-          FDF_LOG(ERROR, "Read failed: %s",
-                  zx_status_get_string(result.error_value().domain_error()));
+          fdf::error("Read failed: {}", zx_status_get_string(result.error_value().domain_error()));
           return zx::error(result.error_value().domain_error());
         }
 
-        FDF_LOG(ERROR, "Unknown error from call to Read");
+        fdf::error("Unknown error from call to Read");
         return zx::error(ZX_ERR_BAD_STATE);
       }
 
@@ -324,11 +322,11 @@ zx::result<> PostInit::SetBoardInfo() {
 
   auto result = pbus_.buffer(arena)->SetBoardInfo(board_info);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Call to SetBoardInfo failed: %s", result.FormatDescription().c_str());
+    fdf::error("Call to SetBoardInfo failed: {}", result.FormatDescription().c_str());
     return zx::error(result.error().status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "SetBoardInfo failed: %s", zx_status_get_string(result->error_value()));
+    fdf::error("SetBoardInfo failed: {}", zx_status_get_string(result->error_value()));
     return result->take_error();
   }
 
@@ -417,12 +415,12 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
 
   if (auto result = composite_manager_->AddSpec(selina_node_spec); result.is_error()) {
     if (result.error_value().is_framework_error()) {
-      FDF_LOG(ERROR, "Call to AddSpec failed: %s",
-              result.error_value().framework_error().FormatDescription().c_str());
+      fdf::error("Call to AddSpec failed: {}",
+                 result.error_value().framework_error().FormatDescription().c_str());
       return zx::error(result.error_value().framework_error().status());
     }
     if (result.error_value().is_domain_error()) {
-      FDF_LOG(ERROR, "AddSpec failed");
+      fdf::error("AddSpec failed");
       return zx::error(ZX_ERR_INTERNAL);
     }
   }
@@ -433,7 +431,7 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
 zx::result<> PostInit::EnableSelinaOsc() {
   zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("selina-osc-en");
   if (gpio.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to GPIO node: %s", gpio.status_string());
+    fdf::error("Failed to connect to GPIO node: {}", gpio.status_string());
     return gpio.take_error();
   }
 
@@ -441,7 +439,7 @@ zx::result<> PostInit::EnableSelinaOsc() {
 
   zx::result pin = incoming()->Connect<fuchsia_hardware_pin::Service::Device>("selina-osc-en");
   if (pin.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to GPIO node: %s", pin.status_string());
+    fdf::error("Failed to connect to GPIO node: {}", pin.status_string());
     return pin.take_error();
   }
 
@@ -453,13 +451,13 @@ zx::result<> PostInit::EnableSelinaOsc() {
   }};
   if (auto result = osc_en_pin->Configure(std::move(config)); result.is_error()) {
     if (result.error_value().is_framework_error()) {
-      FDF_LOG(ERROR, "Call to set SELINA_OSC_EN configuraiton failed: %s",
-              result.error_value().framework_error().FormatDescription().c_str());
+      fdf::error("Call to set SELINA_OSC_EN configuraiton failed: {}",
+                 result.error_value().framework_error().FormatDescription().c_str());
       return zx::error(result.error_value().framework_error().status());
     }
     if (result.error_value().is_domain_error()) {
-      FDF_LOG(ERROR, "Failed to set SELINA_OSC_EN configuration: %s",
-              zx_status_get_string(result.error_value().domain_error()));
+      fdf::error("Failed to set SELINA_OSC_EN configuration: {}",
+                 zx_status_get_string(result.error_value().domain_error()));
       return zx::error(result.error_value().domain_error());
     }
   }
@@ -467,13 +465,13 @@ zx::result<> PostInit::EnableSelinaOsc() {
   if (auto result = osc_en_gpio->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
       result.is_error()) {
     if (result.error_value().is_framework_error()) {
-      FDF_LOG(ERROR, "Call to set SELINA_OSC_EN to input failed: %s",
-              result.error_value().framework_error().FormatDescription().c_str());
+      fdf::error("Call to set SELINA_OSC_EN to input failed: {}",
+                 result.error_value().framework_error().FormatDescription().c_str());
       return zx::error(result.error_value().framework_error().status());
     }
     if (result.error_value().is_domain_error()) {
-      FDF_LOG(ERROR, "Failed to set SELINA_OSC_EN to input function: %s",
-              zx_status_get_string(result.error_value().domain_error()));
+      fdf::error("Failed to set SELINA_OSC_EN to input function: {}",
+                 zx_status_get_string(result.error_value().domain_error()));
       return zx::error(result.error_value().domain_error());
     }
   }

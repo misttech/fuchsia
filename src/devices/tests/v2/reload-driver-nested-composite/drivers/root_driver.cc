@@ -5,6 +5,7 @@
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/reloaddriverbind/test/cpp/bind.h>
 
@@ -122,8 +123,8 @@ class RootDriver : public fdf::DriverBase {
 
     auto cnm_client = incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
     if (cnm_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to CompositeNodeManager: %s",
-              zx_status_get_string(cnm_client.error_value()));
+      fdf::error("Failed to connect to CompositeNodeManager: {}",
+                 zx_status_get_string(cnm_client.error_value()));
       return cnm_client.take_error();
     }
 
@@ -131,13 +132,13 @@ class RootDriver : public fdf::DriverBase {
         std::move(cnm_client.value()));
     auto result = composite_node_manager->AddSpec(spec1);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to AddSpec 1: %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Failed to AddSpec 1: {}", result.error_value().FormatDescription().c_str());
       return zx::error(ZX_ERR_INTERNAL);
     }
 
     result = composite_node_manager->AddSpec(spec2);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to AddSpec 2: %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Failed to AddSpec 2: {}", result.error_value().FormatDescription().c_str());
       return zx::error(ZX_ERR_INTERNAL);
     }
 

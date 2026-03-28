@@ -84,19 +84,17 @@ void Fusb302Protocol::ProcessReceivedMessage(const usb_pd::Message& message) {
   if (header.message_type() == usb_pd::MessageType::kGoodCrc) {
     // Discard repeated GoodCRCs.
     if (transmission_state_ != TransmissionState::kPending) {
-      FDF_LOG(WARNING,
-              "PD protocol de-synchronization: discarded GoodCRC with MessageID %" PRIu8
-              ". No unacknowledged message.",
-              static_cast<uint8_t>(header.message_id()));
+      fdf::warn(
+          "PD protocol de-synchronization: discarded GoodCRC with MessageID {}. No unacknowledged message.",
+          static_cast<uint8_t>(header.message_id()));
       return;
     }
 
     if (header.message_id() != next_transmitted_message_id_) {
-      FDF_LOG(WARNING,
-              "PD protocol de-synchronization: discarded GoodCRC with MessageID %" PRIu8
-              "; while waiting for a GoodCRC for MessageID is %" PRIu8,
-              static_cast<uint8_t>(header.message_id()),
-              static_cast<uint8_t>(next_transmitted_message_id_));
+      fdf::warn(
+          "PD protocol de-synchronization: discarded GoodCRC with MessageID {}; while waiting for a GoodCRC for MessageID is {}",
+          static_cast<uint8_t>(header.message_id()),
+          static_cast<uint8_t>(next_transmitted_message_id_));
       return;
     }
 
@@ -106,16 +104,16 @@ void Fusb302Protocol::ProcessReceivedMessage(const usb_pd::Message& message) {
   }
 
   if (header.message_type() == usb_pd::MessageType::kSoftReset) {
-    FDF_LOG(WARNING, "PD protocol de-synchronization: received Soft Reset with MessageID %" PRIu8,
-            static_cast<uint8_t>(header.message_id()));
+    fdf::warn("PD protocol de-synchronization: received Soft Reset with MessageID {}",
+              static_cast<uint8_t>(header.message_id()));
 
     // usbpd3.1 6.8.1 "Soft Reset and Protocol error" states that the MessageID
     // counter must be reset before sending the Soft Reset / Accept messages in
     // the soft reset sequence. This implies that Soft Reset messages must
     // always have a Message ID of zero.
     if (header.message_id() != usb_pd::MessageId(0)) {
-      FDF_LOG(WARNING, "Received Soft Reset with non-zero Message ID %" PRIu8,
-              static_cast<uint8_t>(header.message_id()));
+      fdf::warn("Received Soft Reset with non-zero Message ID {}",
+                static_cast<uint8_t>(header.message_id()));
     }
 
     // Both the Source and Sink sub-sections in usbpd3.1 8.3.3.4 "SOP Soft Reset
@@ -143,43 +141,39 @@ void Fusb302Protocol::ProcessReceivedMessage(const usb_pd::Message& message) {
         next_expected_message_id_.has_value(),
         "next_expected_message_id_ should be known after having received a message");
     if (header.message_id() == next_expected_message_id_.value().Next()) {
-      FDF_LOG(WARNING,
-              "Received message with MessageID %" PRIu8
-              " while expecting to have to send GoodCRC for Message ID %" PRIu8
-              ". Fixing state, assuming GoodCRC was auto-generated.",
-              static_cast<uint8_t>(header.message_id()),
-              static_cast<uint8_t>(next_expected_message_id_.value()));
+      fdf::warn(
+          "Received message with MessageID {} while expecting to have to send GoodCRC for Message ID {}. Fixing state, assuming GoodCRC was auto-generated.",
+          static_cast<uint8_t>(header.message_id()),
+          static_cast<uint8_t>(next_expected_message_id_.value()));
       next_expected_message_id_ = header.message_id();
     } else {
-      FDF_LOG(WARNING,
-              "PD protocol de-synchronization: discarded message with MessageID %" PRIu8
-              " because we still need to send GoodCRC for MessageID %" PRIu8,
-              static_cast<uint8_t>(header.message_id()),
-              static_cast<uint8_t>(next_expected_message_id_.value()));
+      fdf::warn(
+          "PD protocol de-synchronization: discarded message with MessageID {} because we still need to send GoodCRC for MessageID {}",
+          static_cast<uint8_t>(header.message_id()),
+          static_cast<uint8_t>(next_expected_message_id_.value()));
       return;
     }
   } else {
     if (next_expected_message_id_.has_value()) {
       if (header.message_id() != next_expected_message_id_.value()) {
-        FDF_LOG(WARNING,
-                "PD re-transmission: discarded message with MessageID %" PRIu8
-                " because next expected MessageID is %" PRIu8,
-                static_cast<uint8_t>(header.message_id()),
-                static_cast<uint8_t>(next_expected_message_id_.value()));
+        fdf::warn(
+            "PD re-transmission: discarded message with MessageID {} because next expected MessageID is {}",
+            static_cast<uint8_t>(header.message_id()),
+            static_cast<uint8_t>(next_expected_message_id_.value()));
         return;
       }
     } else {
       next_expected_message_id_ = header.message_id();
-      FDF_LOG(INFO, "PD protocol stream started at MessageID %" PRIu8,
-              static_cast<uint8_t>(next_expected_message_id_.value()));
+      fdf::info("PD protocol stream started at MessageID {}",
+                static_cast<uint8_t>(next_expected_message_id_.value()));
     }
   }
 
   good_crc_transmission_pending_ = true;
 
   if (received_message_queue_.full()) {
-    FDF_LOG(WARNING, "PD received message queue (size %" PRIu32 ") full! Dropping oldest message.",
-            received_message_queue_.size());
+    fdf::warn("PD received message queue (size {}) full! Dropping oldest message.",
+              received_message_queue_.size());
     received_message_queue_.pop();
   }
   received_message_queue_.push(message);
@@ -248,8 +242,7 @@ void Fusb302Protocol::DidReceiveSoftReset() {
 
 void Fusb302Protocol::DidTimeoutWaitingForGoodCrc() {
   if (transmission_state_ != TransmissionState::kPending) {
-    FDF_LOG(WARNING,
-            "Hardware PD layer reported GoodCRC timeout, but we weren't expecting any GoodCRC.");
+    fdf::warn("Hardware PD layer reported GoodCRC timeout, but we weren't expecting any GoodCRC.");
     return;
   }
   transmission_state_ = TransmissionState::kTimedOut;
@@ -261,8 +254,7 @@ void Fusb302Protocol::DidTransmitHardwareGeneratedGoodCrc() {
       "Received hardware-generated GoodCRC notification in a mode that does not require it.");
 
   if (!good_crc_transmission_pending_) {
-    FDF_LOG(WARNING,
-            "Hardware PD layer reported transmitting a GoodCRC, but we didn't need to send one");
+    fdf::warn("Hardware PD layer reported transmitting a GoodCRC, but we didn't need to send one");
   }
 
   // We will not be using the GoodCRC template, but stamping also performs all
@@ -276,7 +268,7 @@ void Fusb302Protocol::DidTransmitHardwareGeneratedGoodCrc() {
     zx::result<> transmit_result = Transmit(queued_transmission_.value());
     queued_transmission_ = std::nullopt;
     if (transmit_result.is_error()) {
-      FDF_LOG(WARNING, "Failed to transmit queued PD message: %s", transmit_result.status_string());
+      fdf::warn("Failed to transmit queued PD message: {}", transmit_result);
     }
   }
 }
