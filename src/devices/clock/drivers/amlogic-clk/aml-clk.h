@@ -75,7 +75,7 @@ class AmlClock : public fdf::DriverBase,
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_clockimpl::ClockImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unexpected clockimpl FIDL call: 0x%lx", metadata.method_ordinal);
+    fdf::error("Unexpected clockimpl FIDL call: 0x{:x}", metadata.method_ordinal);
   }
 
   // CLK FIDL implementation.
@@ -84,7 +84,7 @@ class AmlClock : public fdf::DriverBase,
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_clock_measure::Measurer> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unexpected Clock FIDL call: 0x%lx", metadata.method_ordinal);
+    fdf::error("Unexpected Clock FIDL call: 0x{:x}", metadata.method_ordinal);
   }
 
  private:

@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <string.h>
 
 #include <bind/fuchsia/clock/cpp/bind.h>
@@ -111,7 +112,7 @@ zx_status_t AmlClock::PopulateRegisterBlocks(uint32_t device_id, fdf::PDev& pdev
 
       zx::result smc_resource = pdev.GetSmc(0);
       if (smc_resource.is_error()) {
-        FDF_LOG(ERROR, "Failed to get SMC: %s", smc_resource.status_string());
+        fdf::error("Failed to get SMC: {}", smc_resource);
         return smc_resource.status_value();
       }
 
@@ -165,7 +166,7 @@ zx_status_t AmlClock::PopulateRegisterBlocks(uint32_t device_id, fdf::PDev& pdev
       break;
     }
     default:
-      FDF_LOG(ERROR, "Unsupported SOC DID: %u", device_id);
+      fdf::error("Unsupported SOC DID: {}", device_id);
       return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;
@@ -176,7 +177,7 @@ zx::result<> AmlClock::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
   }
 
@@ -186,13 +187,12 @@ zx::result<> AmlClock::Start() {
   // Serve clock IDs metadata.
   if (zx::result result = clock_ids_metadata_server_.SetMetadataFromPDevIfExists(pdev);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set metadata for clock ID's metadata server: %s",
-            result.status_string());
+    fdf::error("Failed to set metadata for clock ID's metadata server: {}", result);
     return result.take_error();
   }
   if (zx::result result = clock_ids_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve clock ID's: %s", result.status_string());
+    fdf::error("Failed to serve clock ID's: {}", result);
     return result.take_error();
   }
 #endif
@@ -200,13 +200,12 @@ zx::result<> AmlClock::Start() {
   // Serve clock init metadata.
   if (zx::result result = clock_init_metadata_server_.SetMetadataFromPDevIfExists(pdev);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set metadata for clock init metadata server: %s",
-            result.status_string());
+    fdf::error("Failed to set metadata for clock init metadata server: {}", result);
     return result.take_error();
   }
   if (zx::result result = clock_init_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve clock init metadata: %s", result.status_string());
+    fdf::error("Failed to serve clock init metadata: {}", result);
     return result.take_error();
   }
 
@@ -215,7 +214,7 @@ zx::result<> AmlClock::Start() {
   {
     zx::result hiu_mmio = pdev.MapMmio(kHiuMmio);
     if (hiu_mmio.is_error()) {
-      FDF_LOG(ERROR, "Failed to map HIU mmio: %s", hiu_mmio.status_string());
+      fdf::error("Failed to map HIU mmio: {}", hiu_mmio);
       return hiu_mmio.take_error();
     }
     hiu_mmio_.emplace(std::move(hiu_mmio.value()));
@@ -224,7 +223,7 @@ zx::result<> AmlClock::Start() {
   {
     zx::result dosbus_mmio = pdev.MapMmio(kDosbusMmio);
     if (dosbus_mmio.is_error()) {
-      FDF_LOG(ERROR, "Failed to map DOS mmio: %s", dosbus_mmio.status_string());
+      fdf::error("Failed to map DOS mmio: {}", dosbus_mmio);
       return dosbus_mmio.take_error();
     }
     dosbus_mmio_.emplace(std::move(dosbus_mmio.value()));
@@ -234,7 +233,7 @@ zx::result<> AmlClock::Start() {
   // MMIO regions.
   zx::result device_info = pdev.GetDeviceInfo();
   if (device_info.is_error()) {
-    FDF_LOG(ERROR, "Failed to get device info: %s", device_info.status_string());
+    fdf::error("Failed to get device info: {}", device_info);
     return device_info.take_error();
   }
 
@@ -243,7 +242,7 @@ zx::result<> AmlClock::Start() {
     // TODO(https://fxbug.dev/318736574) : Remove and rely only on GetDeviceInfo.
     zx::result board_info = pdev.GetBoardInfo();
     if (board_info.is_error()) {
-      FDF_LOG(ERROR, "Failed to get board info: %s", board_info.status_string());
+      fdf::error("Failed to get board info: {}", board_info);
       return board_info.take_error();
     }
 
@@ -254,11 +253,11 @@ zx::result<> AmlClock::Start() {
           device_info->did = PDEV_DID_AMLOGIC_G12B_CLK;
           break;
         default:
-          FDF_LOG(ERROR, "Unsupported PID 0x%x for VID 0x%x", board_info->pid, board_info->vid);
+          fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info->pid, board_info->vid);
           return zx::error(ZX_ERR_INVALID_ARGS);
       }
     } else {
-      FDF_LOG(ERROR, "Unsupported VID 0x%x", board_info->vid);
+      fdf::error("Unsupported VID 0x{:x}", board_info->vid);
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
   }
@@ -266,7 +265,7 @@ zx::result<> AmlClock::Start() {
   if (device_info->mmio_count > kMsrMmio) {
     zx::result msr_mmio = pdev.MapMmio(kMsrMmio);
     if (msr_mmio.is_error()) {
-      FDF_LOG(ERROR, "Failed to map MSR mmio: %s", msr_mmio.status_string());
+      fdf::error("Failed to map MSR mmio: {}", msr_mmio);
       return msr_mmio.take_error();
     }
     msr_mmio_ = std::move(msr_mmio.value());
@@ -276,7 +275,7 @@ zx::result<> AmlClock::Start() {
   if (device_info->pid == PDEV_PID_AMLOGIC_A1 && device_info->mmio_count > kCpuCtrlMmio) {
     zx::result cpuctrl_mmio = pdev.MapMmio(kCpuCtrlMmio);
     if (cpuctrl_mmio.is_error()) {
-      FDF_LOG(ERROR, "Failed to map cpuctrl mmio: %s", cpuctrl_mmio.status_string());
+      fdf::error("Failed to map cpuctrl mmio: {}", cpuctrl_mmio);
       return cpuctrl_mmio.take_error();
     }
     cpuctrl_mmio_ = std::move(cpuctrl_mmio.value());
@@ -284,7 +283,7 @@ zx::result<> AmlClock::Start() {
 
   zx_status_t status = PopulateRegisterBlocks(device_info->did, pdev);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to populate register blocks: %s", zx_status_get_string(status));
+    fdf::error("Failed to populate register blocks: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -294,13 +293,13 @@ zx::result<> AmlClock::Start() {
               this, fdf::Dispatcher::GetCurrent()->get(), fidl::kIgnoreBindingClosure),
       }));
   if (add_service_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add clock-impl service %s", add_service_result.status_string());
+    fdf::error("Failed to add clock-impl service {}", add_service_result);
     return add_service_result.take_error();
   }
 
   status = InitChildNode();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to initialize child node: %s", zx_status_get_string(status));
+    fdf::error("Failed to initialize child node: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();
@@ -309,7 +308,7 @@ zx::result<> AmlClock::Start() {
 zx_status_t AmlClock::InitChildNode() {
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "Failed to bind devfs connecter to dispatcher: %s", connector.status_string());
+    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
     return connector.status_value();
   }
 
@@ -328,7 +327,7 @@ zx_status_t AmlClock::InitChildNode() {
 
   zx::result result = AddChild(kChildNodeName, devfs_add_args, properties, offers);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add device: %s", result.status_string());
+    fdf::error("Failed to add device: {}", result);
     return result.status_value();
   }
   child_node_controller_.Bind(std::move(result.value()));
@@ -343,7 +342,7 @@ void AmlClock::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_clock_measure::Meas
 
 zx_status_t AmlClock::ClkTogglePll(uint32_t id, const bool enable) {
   if (id >= pll_count_) {
-    FDF_LOG(ERROR, "Invalid clkid: %d, pll count %zu", id, pll_count_);
+    fdf::error("Invalid clkid: {}, pll count {}", id, pll_count_);
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -477,11 +476,11 @@ void AmlClock::IsEnabled(IsEnabledRequestView request, fdf::Arena& arena,
 
 void AmlClock::SetRate(SetRateRequestView request, fdf::Arena& arena,
                        SetRateCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "%s: clk = %u, hz = %lu", __func__, request->id, request->hz);
+  fdf::trace("{}: clk = {}, hz = {}", __func__, request->id, request->hz);
 
   if (request->hz >= UINT32_MAX) {
-    FDF_LOG(ERROR, "%s: requested rate exceeds uint32_max, clkid = %u, rate = %lu", __func__,
-            request->id, request->hz);
+    fdf::error("{}: requested rate exceeds uint32_max, clkid = {}, rate = {}", __func__,
+               request->id, request->hz);
     completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -504,7 +503,7 @@ void AmlClock::SetRate(SetRateRequestView request, fdf::Arena& arena,
 
 void AmlClock::QuerySupportedRate(QuerySupportedRateRequestView request, fdf::Arena& arena,
                                   QuerySupportedRateCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "%s: clkid = %u, max_rate = %lu", __func__, request->id, request->hz);
+  fdf::trace("{}: clkid = {}, max_rate = {}", __func__, request->id, request->hz);
 
   MesonRateClock* target_clock;
   zx_status_t st = GetMesonRateClock(request->id, &target_clock);
@@ -523,7 +522,7 @@ void AmlClock::QuerySupportedRate(QuerySupportedRateRequestView request, fdf::Ar
 
 void AmlClock::GetRate(GetRateRequestView request, fdf::Arena& arena,
                        GetRateCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "%s: clkid = %u", __func__, request->id);
+  fdf::trace("{}: clkid = {}", __func__, request->id);
 
   MesonRateClock* target_clock;
   zx_status_t st = GetMesonRateClock(request->id, &target_clock);
@@ -545,18 +544,17 @@ zx_status_t AmlClock::IsSupportedMux(uint32_t id, uint16_t supported_mask) {
   const uint16_t type = static_cast<uint16_t>(aml_clk_common::AmlClkType(id));
 
   if ((type & supported_mask) == 0) {
-    FDF_LOG(ERROR, "%s: Unsupported mux type for operation, clkid = %u", __func__, id);
+    fdf::error("{}: Unsupported mux type for operation, clkid = {}", __func__, id);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   if (!muxes_ || mux_count_ == 0) {
-    FDF_LOG(ERROR, "%s: Platform does not have mux support.", __func__);
+    fdf::error("{}: Platform does not have mux support.", __func__);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   if (index >= mux_count_) {
-    FDF_LOG(ERROR, "%s: Mux index out of bounds, count = %lu, idx = %u", __func__, mux_count_,
-            index);
+    fdf::error("{}: Mux index out of bounds, count = {}, idx = {}", __func__, mux_count_, index);
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -579,8 +577,8 @@ void AmlClock::SetInput(SetInputRequestView request, fdf::Arena& arena,
   const meson_clk_mux_t& mux = muxes_[index];
 
   if (request->idx >= mux.n_inputs) {
-    FDF_LOG(ERROR, "%s: mux input index out of bounds, max = %u, idx = %u.", __func__, mux.n_inputs,
-            request->idx);
+    fdf::error("{}: mux input index out of bounds, max = {}, idx = {}.", __func__, mux.n_inputs,
+               request->idx);
     completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
     return;
   }
@@ -749,7 +747,7 @@ zx_status_t AmlClock::GetMesonRateClock(const uint32_t id, MesonRateClock** out)
   switch (type) {
     case aml_clk_common::aml_clk_type::kMesonPll:
       if (clkid >= pll_count_) {
-        FDF_LOG(ERROR, "%s: HIU PLL out of range, clkid = %hu.", __func__, clkid);
+        fdf::error("{}: HIU PLL out of range, clkid = {}.", __func__, clkid);
         return ZX_ERR_INVALID_ARGS;
       }
 
@@ -757,15 +755,15 @@ zx_status_t AmlClock::GetMesonRateClock(const uint32_t id, MesonRateClock** out)
       return ZX_OK;
     case aml_clk_common::aml_clk_type::kMesonCpuClk:
       if (clkid >= cpu_clks_.size()) {
-        FDF_LOG(ERROR, "%s: cpu clk out of range, clkid = %hu.", __func__, clkid);
+        fdf::error("{}: cpu clk out of range, clkid = {}.", __func__, clkid);
         return ZX_ERR_INVALID_ARGS;
       }
 
       *out = &cpu_clks_[clkid];
       return ZX_OK;
     default:
-      FDF_LOG(ERROR, "%s: Unsupported clock type, type = 0x%hx\n", __func__,
-              static_cast<unsigned short>(type));
+      fdf::error("{}: Unsupported clock type, type = 0x{:x}\n", __func__,
+                 static_cast<unsigned short>(type));
       return ZX_ERR_NOT_SUPPORTED;
   }
 

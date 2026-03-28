@@ -6,6 +6,7 @@
 
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/cpp/mmio-view.h>
@@ -29,12 +30,12 @@ Vim3Clock::Vim3Clock(fdf::DriverStartArgs start_args,
     : DriverBase("vim3_clk", std::move(start_args), std::move(driver_dispatcher)) {}
 
 zx::result<> Vim3Clock::Start() {
-  FDF_LOG(INFO, "Vim3Clock::Start()");
+  fdf::info("Vim3Clock::Start()");
 
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
   }
 
@@ -44,13 +45,12 @@ zx::result<> Vim3Clock::Start() {
   // Serve clock IDs metadata.
   if (zx::result result = clock_ids_metadata_server_.SetMetadataFromPDevIfExists(pdev);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set metadata for clock ID's metadata server: %s",
-            result.status_string());
+    fdf::error("Failed to set metadata for clock ID's metadata server: {}", result);
     return result.take_error();
   }
   if (zx::result result = clock_ids_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve clock ID's: %s", result.status_string());
+    fdf::error("Failed to serve clock ID's: {}", result);
     return result.take_error();
   }
 #endif
@@ -58,26 +58,25 @@ zx::result<> Vim3Clock::Start() {
   // Serve clock init metadata.
   if (zx::result result = clock_init_metadata_server_.SetMetadataFromPDevIfExists(pdev);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set metadata for clock init metadata server: %s",
-            result.status_string());
+    fdf::error("Failed to set metadata for clock init metadata server: {}", result);
     return result.take_error();
   }
   if (zx::result result = clock_init_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve clock init metadata: %s", result.status_string());
+    fdf::error("Failed to serve clock init metadata: {}", result);
     return result.take_error();
   }
 
   zx::result hiu_mmio = pdev.MapMmio(kHiuMmioIndex);
   if (hiu_mmio.is_error()) {
-    FDF_LOG(ERROR, "Failed to map HIU mmio, st = %s", zx_status_get_string(hiu_mmio.error_value()));
+    fdf::error("Failed to map HIU mmio, st = {}", zx_status_get_string(hiu_mmio.error_value()));
     return hiu_mmio.take_error();
   }
   hiu_mmio_ = std::move(hiu_mmio.value());
 
   zx::result dos_mmio = pdev.MapMmio(kDosMmioIndex);
   if (dos_mmio.is_error()) {
-    FDF_LOG(ERROR, "Failed to map DOS mmio, st = %s", zx_status_get_string(dos_mmio.error_value()));
+    fdf::error("Failed to map DOS mmio, st = {}", zx_status_get_string(dos_mmio.error_value()));
     return dos_mmio.take_error();
   }
   dos_mmio_ = std::move(dos_mmio.value());
@@ -90,7 +89,7 @@ zx::result<> Vim3Clock::Start() {
                                             fidl::kIgnoreBindingClosure),
       }));
   if (add_service_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", add_service_result.status_string());
+    fdf::error("Failed to add Device service {}", add_service_result);
     return add_service_result.take_error();
   }
 
@@ -120,7 +119,7 @@ zx::result<> Vim3Clock::Start() {
 
 void Vim3Clock::Enable(fuchsia_hardware_clockimpl::wire::ClockImplEnableRequest* request,
                        fdf::Arena& arena, EnableCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "Enable - clkid = %u", request->id);
+  fdf::trace("Enable - clkid = {}", request->id);
 
   const uint32_t id = request->id;
 
@@ -144,7 +143,7 @@ void Vim3Clock::Enable(fuchsia_hardware_clockimpl::wire::ClockImplEnableRequest*
 
 void Vim3Clock::Disable(fuchsia_hardware_clockimpl::wire::ClockImplDisableRequest* request,
                         fdf::Arena& arena, DisableCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "Disable - clkid = %u", request->id);
+  fdf::trace("Disable - clkid = {}", request->id);
 
   const uint32_t id = request->id;
 
@@ -168,20 +167,20 @@ void Vim3Clock::Disable(fuchsia_hardware_clockimpl::wire::ClockImplDisableReques
 
 void Vim3Clock::IsEnabled(fuchsia_hardware_clockimpl::wire::ClockImplIsEnabledRequest* request,
                           fdf::Arena& arena, IsEnabledCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "IsEnabled - clkid = %u", request->id);
+  fdf::trace("IsEnabled - clkid = {}", request->id);
 
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void Vim3Clock::SetRate(fuchsia_hardware_clockimpl::wire::ClockImplSetRateRequest* request,
                         fdf::Arena& arena, SetRateCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "SetRate clkid = %u, hz = %lu", request->id, request->hz);
+  fdf::trace("SetRate clkid = {}, hz = {}", request->id, request->hz);
 
   MesonRateClock* target;
   zx_status_t result = GetMesonRateClock(request->id, &target);
   if (result != ZX_OK) {
     completer.buffer(arena).ReplyError(result);
-    FDF_LOG(ERROR, "Failed to get Rate clock, clkid = %u", request->id);
+    fdf::error("Failed to get Rate clock, clkid = {}", request->id);
     return;
   }
 
@@ -198,13 +197,13 @@ void Vim3Clock::SetRate(fuchsia_hardware_clockimpl::wire::ClockImplSetRateReques
 void Vim3Clock::QuerySupportedRate(
     fuchsia_hardware_clockimpl::wire::ClockImplQuerySupportedRateRequest* request,
     fdf::Arena& arena, QuerySupportedRateCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "QuerySupportedRate clkid = %u, hz = %lu", request->id, request->hz);
+  fdf::trace("QuerySupportedRate clkid = {}, hz = {}", request->id, request->hz);
 
   MesonRateClock* target;
   zx_status_t st = GetMesonRateClock(request->id, &target);
   if (st != ZX_OK) {
     completer.buffer(arena).ReplyError(st);
-    FDF_LOG(ERROR, "Failed to get Rate clock, clkid = %u", request->id);
+    fdf::error("Failed to get Rate clock, clkid = {}", request->id);
     return;
   }
 
@@ -220,13 +219,13 @@ void Vim3Clock::QuerySupportedRate(
 
 void Vim3Clock::GetRate(fuchsia_hardware_clockimpl::wire::ClockImplGetRateRequest* request,
                         fdf::Arena& arena, GetRateCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "GetRate clkid = %u", request->id);
+  fdf::trace("GetRate clkid = {}", request->id);
 
   MesonRateClock* target;
   zx_status_t st = GetMesonRateClock(request->id, &target);
   if (st != ZX_OK) {
     completer.buffer(arena).ReplyError(st);
-    FDF_LOG(ERROR, "Failed to get Rate clock, clkid = %u", request->id);
+    fdf::error("Failed to get Rate clock, clkid = {}", request->id);
     return;
   }
 
@@ -242,7 +241,7 @@ void Vim3Clock::GetRate(fuchsia_hardware_clockimpl::wire::ClockImplGetRateReques
 
 void Vim3Clock::SetInput(fuchsia_hardware_clockimpl::wire::ClockImplSetInputRequest* request,
                          fdf::Arena& arena, SetInputCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "SetInput clkid = %u", request->id);
+  fdf::trace("SetInput clkid = {}", request->id);
 
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
@@ -250,21 +249,21 @@ void Vim3Clock::SetInput(fuchsia_hardware_clockimpl::wire::ClockImplSetInputRequ
 void Vim3Clock::GetNumInputs(
     fuchsia_hardware_clockimpl::wire::ClockImplGetNumInputsRequest* request, fdf::Arena& arena,
     GetNumInputsCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "GetNumInputs clkid = %u", request->id);
+  fdf::trace("GetNumInputs clkid = {}", request->id);
 
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void Vim3Clock::GetInput(fuchsia_hardware_clockimpl::wire::ClockImplGetInputRequest* request,
                          fdf::Arena& arena, GetInputCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "GetInput clkid = %u", request->id);
+  fdf::trace("GetInput clkid = {}", request->id);
 
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void Vim3Clock::GetClockProperties(fdf::Arena& arena,
                                    GetClockPropertiesCompleter::Sync& completer) {
-  FDF_LOG(TRACE, "GetClockProperties");
+  fdf::trace("GetClockProperties");
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -297,7 +296,7 @@ zx_status_t Vim3Clock::GetMesonRateClock(uint32_t clk, MesonRateClock** out) {
   switch (type) {
     case aml_clk_common::aml_clk_type::kMesonPll:
       if (clkid >= plls_.size()) {
-        FDF_LOG(ERROR, "HIU PLL out of range, clkid = %hu.", clkid);
+        fdf::error("HIU PLL out of range, clkid = {}.", clkid);
         return ZX_ERR_INVALID_ARGS;
       }
 
@@ -305,14 +304,14 @@ zx_status_t Vim3Clock::GetMesonRateClock(uint32_t clk, MesonRateClock** out) {
       return ZX_OK;
     case aml_clk_common::aml_clk_type::kMesonCpuClk:
       if (clkid >= cpu_clks_.size()) {
-        FDF_LOG(ERROR, "cpu clk out of range, clkid = %hu.", clkid);
+        fdf::error("cpu clk out of range, clkid = {}.", clkid);
         return ZX_ERR_INVALID_ARGS;
       }
 
       *out = &cpu_clks_[clkid];
       return ZX_OK;
     default:
-      FDF_LOG(ERROR, "Unsupported clock type, type = 0x%hx\n", static_cast<unsigned short>(type));
+      fdf::error("Unsupported clock type, type = 0x{:x}\n", static_cast<unsigned short>(type));
       return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -333,7 +332,7 @@ void Vim3Clock::InitGates() {
     }
   }
 
-  FDF_LOG(INFO, "vim3 clock gates initialized with %lu entries", gates_.size());
+  fdf::info("vim3 clock gates initialized with {} entries", gates_.size());
 }
 
 void Vim3Clock::InitHiu() {
@@ -345,7 +344,7 @@ void Vim3Clock::InitHiu() {
     newpll.Init();
   }
 
-  FDF_LOG(INFO, "vim3 hiu plls initialized with %lu entries", plls_.size());
+  fdf::info("vim3 hiu plls initialized with {} entries", plls_.size());
 }
 
 void Vim3Clock::InitCpuClks() {
@@ -357,7 +356,7 @@ void Vim3Clock::InitCpuClks() {
                            kG12bCpuClks[i].initial_hz);
   }
 
-  FDF_LOG(INFO, "vim3 cpu plls initialized with %lu entries", cpu_clks_.size());
+  fdf::info("vim3 cpu plls initialized with {} entries", cpu_clks_.size());
 }
 
 }  // namespace vim3_clock

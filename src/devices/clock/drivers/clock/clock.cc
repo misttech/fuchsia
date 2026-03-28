@@ -7,6 +7,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fdf/dispatcher.h>
 #include <lib/fit/defer.h>
@@ -79,13 +80,12 @@ void ClockDevice::Enable(EnableCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->Enable(id_);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send Enable request to clock %u: %s", id_, result.status_string());
+    fdf::error("Failed to send Enable request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to enable clock %u: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to enable clock {}: {}", id_, zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -99,13 +99,12 @@ void ClockDevice::Disable(DisableCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->Disable(id_);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send Disable request to clock %u: %s", id_, result.status_string());
+    fdf::error("Failed to send Disable request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to disable clock %u: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to disable clock {}: {}", id_, zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -119,13 +118,13 @@ void ClockDevice::IsEnabled(IsEnabledCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->IsEnabled(id_);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send IsEnabled request to clock %u: %s", id_, result.status_string());
+    fdf::error("Failed to send IsEnabled request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to check if clock %u is enabled: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to check if clock {} is enabled: {}", id_,
+               zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -141,14 +140,13 @@ void ClockDevice::SetRate(SetRateRequestView request, SetRateCompleter::Sync& co
                            fdf::WireUnownedResult<fuchsia_hardware_clockimpl::ClockImpl::SetRate>&
                                result) mutable {
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to send SetRate request to clock %u: %s", id_,
-                  result.status_string());
+          fdf::error("Failed to send SetRate request to clock {}: {}", id_, result.status_string());
           completer.ReplyError(result.status());
           return;
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to set rate for clock %u: %s", id_,
-                  zx_status_get_string(result->error_value()));
+          fdf::error("Failed to set rate for clock {}: {}", id_,
+                     zx_status_get_string(result->error_value()));
           completer.ReplyError(result->error_value());
           return;
         }
@@ -164,8 +162,8 @@ void ClockDevice::ClockDevice::QuerySupportedRate(QuerySupportedRateRequestView 
   fdf::WireUnownedResult result =
       clock_impl_.sync().buffer(arena)->QuerySupportedRate(id_, request->hz_in);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send QuerySupportedRate request to clock %u: %s", id_,
-            result.status_string());
+    fdf::error("Failed to send QuerySupportedRate request to clock {}: {}", id_,
+               result.status_string());
     completer.ReplyError(result.status());
     return;
   }
@@ -173,8 +171,8 @@ void ClockDevice::ClockDevice::QuerySupportedRate(QuerySupportedRateRequestView 
     // TODO(b/426652785): ZX_ERR_OUT_OF_RANGE is a sentinel value that means that no suitable rate
     // could be found.
     if (result->error_value() != ZX_ERR_OUT_OF_RANGE) {
-      FDF_LOG(ERROR, "Failed to query supported rate for clock %u: %s", id_,
-              zx_status_get_string(result->error_value()));
+      fdf::error("Failed to query supported rate for clock {}: {}", id_,
+                 zx_status_get_string(result->error_value()));
     }
     completer.ReplyError(result->error_value());
     return;
@@ -187,13 +185,13 @@ void ClockDevice::GetRate(GetRateCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->GetRate(id_);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send GetRate request to clock %u: %s", id_, result.status_string());
+    fdf::error("Failed to send GetRate request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to get rate rate for clock %u: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to get rate rate for clock {}: {}", id_,
+               zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -205,13 +203,13 @@ void ClockDevice::SetInput(SetInputRequestView request, SetInputCompleter::Sync&
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->SetInput(id_, request->idx);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send SetInput request to clock %u: %s", id_, result.status_string());
+    fdf::error("Failed to send SetInput request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to set input for clock %u: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to set input for clock {}: {}", id_,
+               zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -223,14 +221,13 @@ void ClockDevice::GetNumInputs(GetNumInputsCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->GetNumInputs(id_);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send GetNumInputs request to clock %u: %s", id_,
-            result.status_string());
+    fdf::error("Failed to send GetNumInputs request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to get number of inputs for clock %u: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to get number of inputs for clock {}: {}", id_,
+               zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -242,13 +239,13 @@ void ClockDevice::GetInput(GetInputCompleter::Sync& completer) {
   fdf::Arena arena{'CLOC'};
   fdf::WireUnownedResult result = clock_impl_.sync().buffer(arena)->GetInput(id_);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send GetInput request to clock %u: %s", id_, result.status_string());
+    fdf::error("Failed to send GetInput request to clock {}: {}", id_, result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to get input for clock %u: %s", id_,
-            zx_status_get_string(result->error_value()));
+    fdf::error("Failed to get input for clock {}: {}", id_,
+               zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -263,7 +260,7 @@ void ClockDevice::GetProperties(GetPropertiesCompleter::Sync& completer) {
 void ClockDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unexpected Clock FIDL call: 0x%lx", metadata.method_ordinal);
+  fdf::error("Unexpected Clock FIDL call: 0x{:x}", metadata.method_ordinal);
 }
 
 zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
@@ -274,8 +271,7 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
                               bool report_initial_conditions) {
   zx::result clock_impl = incoming->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to the clock-impl FIDL protocol: %s",
-            clock_impl.status_string());
+    fdf::error("Failed to connect to the clock-impl FIDL protocol: {}", clock_impl);
     return clock_impl.status_value();
   }
 
@@ -311,7 +307,7 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
   zx::result result = outgoing->AddService<fuchsia_hardware_clock::Service>(
       std::move(instance_handler), child_name_);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add clock service to outgoing directory: %s", result.status_string());
+    fdf::error("Failed to add clock service to outgoing directory: {}", result);
     return result.status_value();
   }
 
@@ -321,15 +317,14 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
   result = outgoing->AddService<fuchsia_hardware_clock::DebugService>(
       std::move(debug_instance_handler), child_name_);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add clock debug service to outgoing directory: %s",
-            result.status_string());
+    fdf::error("Failed to add clock debug service to outgoing directory: {}", result);
     return result.status_value();
   }
 
   zx::result node = fdf::AddChild(parent_node, *fdf::Logger::GlobalInstance(), child_name_,
                                   node_properties, node_offers);
   if (node.is_error()) {
-    FDF_LOG(ERROR, "Failed to create child node: %s", node.status_string());
+    fdf::error("Failed to create child node: {}", node);
     return node.status_value();
   }
 
@@ -384,8 +379,7 @@ void ClockDevice::WaitForDriverCompleted(
 zx::result<> ClockDriver::Start() {
   zx::result clock_impl = incoming()->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to the clock-impl FIDL protocol: %s",
-            clock_impl.status_string());
+    fdf::error("Failed to connect to the clock-impl FIDL protocol: {}", clock_impl);
     return clock_impl.take_error();
   }
 
@@ -396,7 +390,7 @@ zx::result<> ClockDriver::Start() {
     zx::result result =
         fdf_metadata::GetMetadataIfExists<fuchsia_hardware_clockimpl::InitMetadata>(incoming());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to get metadata: %s", result.status_string());
+      fdf::error("Failed to get metadata: {}", result);
       return result.take_error();
     }
     metadata = std::move(result.value());
@@ -405,7 +399,7 @@ zx::result<> ClockDriver::Start() {
     zx_status_t status = ConfigureClocks(metadata.value(), std::move(clock_impl.value()),
                                          reported_initial_conditions);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to configure clocks: %s", zx_status_get_string(status));
+      fdf::error("Failed to configure clocks: {}", zx_status_get_string(status));
       return zx::error(status);
     }
 
@@ -414,17 +408,17 @@ zx::result<> ClockDriver::Start() {
 
     zx::result node = AddChild("clock-init", node_properties, {});
     if (node.is_error()) {
-      FDF_LOG(ERROR, "Failed to create child node: %s", node.status_string());
+      fdf::error("Failed to create child node: {}", node);
       return node.take_error();
     }
     clock_init_child_node_ = std::move(node.value());
   } else {
-    FDF_LOG(INFO, "No init metadata provided");
+    fdf::info("No init metadata provided");
   }
 
   zx_status_t status = CreateClockDevices(reported_initial_conditions);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create clock devices: %s", zx_status_get_string(status));
+    fdf::error("Failed to create clock devices: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -621,8 +615,7 @@ zx_status_t ClockDriver::CreateClockDevices(
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   zx::result clock_impl = incoming()->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to the clock-impl FIDL protocol: %s",
-            clock_impl.status_string());
+    fdf::error("Failed to connect to the clock-impl FIDL protocol: {}", clock_impl);
     return clock_impl.error_value();
   }
 
@@ -642,7 +635,7 @@ zx_status_t ClockDriver::CreateClockDevices(
   zx::result clock_nodes_metadata =
       fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(incoming());
   if (clock_nodes_metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to get clock IDs: %s", clock_nodes_metadata.status_string());
+    fdf::error("Failed to get clock IDs: {}", clock_nodes_metadata);
     return clock_nodes_metadata.status_value();
   }
 
@@ -653,7 +646,7 @@ zx_status_t ClockDriver::CreateClockDevices(
 
   for (const auto& node : clock_nodes.value()) {
     if (!node.clock_id().has_value()) {
-      FDF_LOG(ERROR, "Clock ID Metadata has an entry with no clock id");
+      fdf::error("Clock ID Metadata has an entry with no clock id");
       return ZX_ERR_INVALID_ARGS;
     }
     const uint32_t clock_id = node.clock_id().value();
@@ -679,7 +672,7 @@ zx_status_t ClockDriver::CreateClockDevices(
         clock_device->Init(incoming(), outgoing(), node_name(), node.node_id(), this->node(),
                            !reported_initial_conditions.contains(clock_id));
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to initialize clock device: %s", zx_status_get_string(status));
+      fdf::error("Failed to initialize clock device: {}", zx_status_get_string(status));
       return status;
     }
 
@@ -723,7 +716,7 @@ zx_status_t ClockDriver::ConfigureClocks(
   for (const auto& step : metadata.steps()) {
     auto call = step.call();
     if (!call.has_value()) {
-      FDF_LOG(ERROR, "Clock Metadata init step is missing a call field");
+      fdf::error("Clock Metadata init step is missing a call field");
       return ZX_ERR_INVALID_ARGS;
     }
     auto clock_id = step.id();
@@ -732,11 +725,11 @@ zx_status_t ClockDriver::ConfigureClocks(
     // Delay doesn't apply to any particular clock ID so we enforce that the ID field is
     // unset. Every other type of init call requires an ID so we enforce that ID is set.
     if (which == fuchsia_hardware_clockimpl::InitCall::Tag::kDelay && clock_id.has_value()) {
-      FDF_LOG(ERROR, "Clock Init Delay calls must not have an ID, id = %u", clock_id.value());
+      fdf::error("Clock Init Delay calls must not have an ID, id = {}", clock_id.value());
       return ZX_ERR_INVALID_ARGS;
     }
     if (which != fuchsia_hardware_clockimpl::InitCall::Tag::kDelay && !clock_id.has_value()) {
-      FDF_LOG(ERROR, "Clock init calls must have an ID");
+      fdf::error("Clock init calls must have an ID");
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -753,13 +746,13 @@ zx_status_t ClockDriver::ConfigureClocks(
       case fuchsia_hardware_clockimpl::InitCall::Tag::kEnable: {
         fdf::WireUnownedResult result = clock_impl.buffer(arena)->Enable(clock_id.value());
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to send Enable request for clock %u: %s", clock_id.value(),
-                  result.status_string());
+          fdf::error("Failed to send Enable request for clock {}: {}", clock_id.value(),
+                     result.status_string());
           return result.status();
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to enable clock %u: %s", clock_id.value(),
-                  zx_status_get_string(result->error_value()));
+          fdf::error("Failed to enable clock {}: {}", clock_id.value(),
+                     zx_status_get_string(result->error_value()));
           return result->error_value();
         }
 
@@ -769,13 +762,13 @@ zx_status_t ClockDriver::ConfigureClocks(
       case fuchsia_hardware_clockimpl::InitCall::Tag::kDisable: {
         fdf::WireUnownedResult result = clock_impl.buffer(arena)->Disable(clock_id.value());
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to send Disable request for clock %u: %s", clock_id.value(),
-                  result.status_string());
+          fdf::error("Failed to send Disable request for clock {}: {}", clock_id.value(),
+                     result.status_string());
           return result.status();
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to disable clock %u: %s", clock_id.value(),
-                  zx_status_get_string(result->error_value()));
+          fdf::error("Failed to disable clock {}: {}", clock_id.value(),
+                     zx_status_get_string(result->error_value()));
           return result->error_value();
         }
 
@@ -786,13 +779,13 @@ zx_status_t ClockDriver::ConfigureClocks(
         fdf::WireUnownedResult result =
             clock_impl.buffer(arena)->SetRate(clock_id.value(), call->rate_hz().value());
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to send SetRate request for clock %u: %s", clock_id.value(),
-                  result.status_string());
+          fdf::error("Failed to send SetRate request for clock {}: {}", clock_id.value(),
+                     result.status_string());
           return result.status();
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to set rate for clock %u: %s", clock_id.value(),
-                  zx_status_get_string(result->error_value()));
+          fdf::error("Failed to set rate for clock {}: {}", clock_id.value(),
+                     zx_status_get_string(result->error_value()));
           return result->error_value();
         }
 
@@ -804,13 +797,13 @@ zx_status_t ClockDriver::ConfigureClocks(
         fdf::WireUnownedResult result =
             clock_impl.buffer(arena)->SetInput(clock_id.value(), call->input_idx().value());
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to send SetInput request for clock %u: %s", clock_id.value(),
-                  result.status_string());
+          fdf::error("Failed to send SetInput request for clock {}: {}", clock_id.value(),
+                     result.status_string());
           return result.status();
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to set input for clock %u: %s", clock_id.value(),
-                  zx_status_get_string(result->error_value()));
+          fdf::error("Failed to set input for clock {}: {}", clock_id.value(),
+                     zx_status_get_string(result->error_value()));
           return result->error_value();
         }
         break;
@@ -819,7 +812,7 @@ zx_status_t ClockDriver::ConfigureClocks(
         zx::nanosleep(zx::deadline_after(zx::duration(call->delay().value())));
         break;
       default:
-        FDF_LOG(WARNING, "Unhandled init call");
+        fdf::warn("Unhandled init call");
         break;
     }
   }
