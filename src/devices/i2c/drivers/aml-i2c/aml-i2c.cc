@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/trace/event.h>
 #include <zircon/assert.h>
@@ -25,7 +26,7 @@ zx_status_t SetClockDelay(uint16_t quarter_clock_delay, uint16_t clock_low_delay
                           const fdf::MmioBuffer& regs_iobuff) {
   if (quarter_clock_delay > aml_i2c::Control::kQtrClkDlyMax ||
       clock_low_delay > aml_i2c::TargetAddr::kSclLowDelayMax) {
-    FDF_LOG(ERROR, "invalid clock delay");
+    fdf::error("invalid clock delay");
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -56,15 +57,15 @@ zx::result<fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues> GetDelay(fdf::P
           .clock_low_delay = 0,
       }));
     }
-    FDF_LOG(ERROR, "Failed to get delay values: %s", delay.status_string());
+    fdf::error("Failed to get delay values: {}", delay);
     return delay.take_error();
   }
   if (!delay->quarter_clock_delay().has_value()) {
-    FDF_LOG(ERROR, "Delay missing `quarter_clock_delay` field");
+    fdf::error("Delay missing `quarter_clock_delay` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!delay->clock_low_delay().has_value()) {
-    FDF_LOG(ERROR, "Delay missing `clock_low_delay` field");
+    fdf::error("Delay missing `clock_low_delay` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
   return zx::ok(std::move(delay.value()));
@@ -85,7 +86,7 @@ void AmlI2c::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_s
     return;
   }
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to wait for interrupt: %s", zx_status_get_string(status));
+    fdf::error("Failed to wait for interrupt: {}", zx_status_get_string(status));
     return;
   }
   irq_.ack();
@@ -242,13 +243,13 @@ zx_status_t AmlI2c::StartIrqThread() {
           if (completer_.has_value()) {
             (*std::move(completer_))(zx::ok());
           } else {
-            FDF_LOG(ERROR, "Irq thread dispatcher prematurely shutdown.");
+            fdf::error("Irq thread dispatcher prematurely shutdown.");
           }
         });
       },
       kRoleName);
   if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create dispatcher: %s", dispatcher.status_string());
+    fdf::error("Failed to create dispatcher: {}", dispatcher);
     return dispatcher.status_value();
   }
   irq_dispatcher_.emplace(std::move(dispatcher.value()));
@@ -262,7 +263,7 @@ zx_status_t AmlI2c::StartIrqThread() {
 void AmlI2c::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_i2cimpl::Device> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+  fdf::error("Unknown method {}", metadata.method_ordinal);
 }
 
 void AmlI2c::GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) {
@@ -321,18 +322,18 @@ zx::result<> AmlI2c::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to pdev protocol: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to pdev protocol: {}", pdev_client_end);
     return pdev_client_end.take_error();
   }
 
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
   if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set metadata for metadata server: %s", result.status_string());
+    fdf::error("Failed to set metadata for metadata server: {}", result);
     return result.take_error();
   }
   if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve metadata: %s", result.status_string());
+    fdf::error("Failed to serve metadata: {}", result);
     return result.take_error();
   }
 
@@ -344,21 +345,21 @@ zx::result<> AmlI2c::Start() {
 
   zx::result delay = GetDelay(pdev);
   if (delay.is_error()) {
-    FDF_LOG(ERROR, "Failed to get delay values: %s", delay.status_string());
+    fdf::error("Failed to get delay values: {}", delay);
     return delay.take_error();
   }
 
   zx_status_t status = SetClockDelay(delay->quarter_clock_delay().value(),
                                      delay->clock_low_delay().value(), regs_iobuff());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to set clock delay: %s", zx_status_get_string(status));
+    fdf::error("Failed to set clock delay: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   {
     zx::result interrupt = pdev.GetInterrupt(0);
     if (interrupt.is_error()) {
-      FDF_LOG(ERROR, "Failed to get interrupt: %s", interrupt.status_string());
+      fdf::error("Failed to get interrupt: {}", interrupt);
       return interrupt.take_error();
     }
     irq_ = std::move(interrupt.value());
@@ -366,25 +367,25 @@ zx::result<> AmlI2c::Start() {
 
   status = zx::event::create(0, &event_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "zx_event_create failed: %s", zx_status_get_string(status));
+    fdf::error("zx_event_create failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = ServeI2cImpl();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to serve i2c impl fidl protocol: %s", zx_status_get_string(status));
+    fdf::error("Failed to serve i2c impl fidl protocol: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = StartIrqThread();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to start irq thread: %s", zx_status_get_string(status));
+    fdf::error("Failed to start irq thread: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = CreateChildNode();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create aml-i2c child node: %s", zx_status_get_string(status));
+    fdf::error("Failed to create aml-i2c child node: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();
@@ -408,7 +409,7 @@ zx_status_t AmlI2c::ServeI2cImpl() {
 
   zx::result result = outgoing()->AddService<fuchsia_hardware_i2cimpl::Service>(std::move(handler));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add I2C impl service to outgoing: %s", result.status_string());
+    fdf::error("Failed to add I2C impl service to outgoing: {}", result);
     return result.status_value();
   }
 
@@ -419,8 +420,7 @@ zx_status_t AmlI2c::CreateChildNode() {
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (!controller_endpoints.is_ok()) {
-    FDF_LOG(ERROR, "Failed to create controller endpoints: %s",
-            controller_endpoints.status_string());
+    fdf::error("Failed to create controller endpoints: {}", controller_endpoints);
     return controller_endpoints.status_value();
   }
 
@@ -432,7 +432,7 @@ zx_status_t AmlI2c::CreateChildNode() {
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+    fdf::error("Failed to add child: {}", child);
     return child.status_value();
   }
   child_controller_.Bind(std::move(child.value()));

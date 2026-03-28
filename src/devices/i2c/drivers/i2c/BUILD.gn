@@ -49,6 +49,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/metadata/cpp",
   ]
 }

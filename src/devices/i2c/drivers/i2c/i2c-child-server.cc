@@ -40,7 +40,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
       }),
       child_name);
   if (serve_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", serve_result.status_string());
+    fdf::error("Failed to add Device service {}", serve_result);
     return serve_result.take_error();
   }
 
@@ -48,7 +48,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
   zx::result connector =
       i2c_child_server->devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "Failed to bind devfs connector. %s", connector.status_string());
+    fdf::error("Failed to bind devfs connector. {}", connector);
     return connector.take_error();
   }
 
@@ -78,8 +78,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
                   incoming->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                       std::move(server));
               if (result.is_error()) {
-                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
-                        result.status_string());
+                fdf::warn("Failed to connect to power token service: {}", result);
               }
             },
     });
@@ -87,7 +86,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
     zx::result result = outgoing->AddService<fuchsia_hardware_power::PowerTokenService>(
         std::move(handler), child_name);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      fdf::error("Failed to add power token service: {}", result);
       return result.take_error();
     }
 
@@ -99,7 +98,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
   zx::result controller =
       fdf::AddChild(node_client, logger, child_name, devfs_args, properties, offers);
   if (controller.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child %s.", controller.status_string());
+    fdf::error("Failed to add child {}.", controller);
     return controller.take_error();
   }
 
