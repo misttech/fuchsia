@@ -9,6 +9,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fit/function.h>
 
@@ -25,13 +26,13 @@ zx::result<> SpiDriver::Start() {
   zx::result metadata_result =
       fdf_metadata::GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(incoming());
   if (metadata_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get SPI metadata: %s", metadata_result.status_string());
+    fdf::error("Failed to get SPI metadata: {}", metadata_result);
     return metadata_result.take_error();
   }
   fuchsia_hardware_spi_businfo::SpiBusMetadata& metadata = metadata_result.value();
 
   if (!metadata.bus_id()) {
-    FDF_LOG(ERROR, "No bus ID metadata provided");
+    fdf::error("No bus ID metadata provided");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -40,8 +41,7 @@ zx::result<> SpiDriver::Start() {
   zx::result scheduler_role_name_result =
       fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(incoming());
   if (scheduler_role_name_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get scheduler role name: %s",
-            scheduler_role_name_result.status_string());
+    fdf::error("Failed to get scheduler role name: {}", scheduler_role_name_result);
     return scheduler_role_name_result.take_error();
   }
   if (scheduler_role_name_result.value().has_value()) {
@@ -50,7 +50,7 @@ zx::result<> SpiDriver::Start() {
     zx::result result = fdf::SynchronizedDispatcher::Create(
         {}, "SPI", [](fdf_dispatcher_t*) {}, scheduler_role_name.role());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create SynchronizedDispatcher: %s", result.status_string());
+      fdf::error("Failed to create SynchronizedDispatcher: {}", result);
       return result.take_error();
     }
 
@@ -58,7 +58,7 @@ zx::result<> SpiDriver::Start() {
     // dispatcher instead of the default dispatcher passed to this method.
     fidl_dispatcher_.emplace(*std::move(result));
 
-    FDF_LOG(DEBUG, "Using dispatcher with role \"%s\"", scheduler_role_name.role().c_str());
+    fdf::debug("Using dispatcher with role \"{}\"", scheduler_role_name.role().c_str());
   }
 
   zx::result spi_impl_client_end = incoming()->Connect<fuchsia_hardware_spiimpl::Service::Device>();
@@ -70,7 +70,7 @@ zx::result<> SpiDriver::Start() {
 
   zx::result child = AddOwnedChild(kChildNodeName);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add owned child: %s", child.status_string());
+    fdf::error("Failed to add owned child: {}", child);
     return child.take_error();
   }
   child_ = std::move(child.value());
@@ -80,7 +80,7 @@ zx::result<> SpiDriver::Start() {
       return result.take_error();
     }
   } else {
-    FDF_LOG(INFO, "No channels supplied.");
+    fdf::info("No channels supplied.");
   }
 
   return zx::ok();
@@ -116,8 +116,7 @@ zx::result<> SpiDriver::AddChildren(
                     incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                         std::move(server));
                 if (result.is_error()) {
-                  FDF_LOG(WARNING, "Failed to connect to power token service: %s",
-                          result.status_string());
+                  fdf::warn("Failed to connect to power token service: {}", result);
                 }
               },
       });
@@ -125,7 +124,7 @@ zx::result<> SpiDriver::AddChildren(
       zx::result result = outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(
           std::move(handler), name);
       if (result.is_error()) {
-        FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+        fdf::error("Failed to add power token service: {}", result);
         return result.take_error();
       }
 
@@ -141,14 +140,14 @@ zx::result<> SpiDriver::AddChildren(
         client.Clone(), cs, has_siblings, fidl_dispatcher(), std::move(controller_client)));
 
     if (!ac.check()) {
-      FDF_LOG(ERROR, "Out of memory");
+      fdf::error("Out of memory");
       return zx::error(ZX_ERR_NO_MEMORY);
     }
 
     auto serve_result =
         outgoing()->AddService<fuchsia_hardware_spi::Service>(dev->CreateInstanceHandler(), name);
     if (serve_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add SPI service: %s", serve_result.status_string());
+      fdf::error("Failed to add SPI service: {}", serve_result);
       return serve_result.take_error();
     }
 
@@ -182,12 +181,11 @@ zx::result<> SpiDriver::AddChildren(
 
     auto result = fidl::WireCall(child_.node_)->AddChild(args, std::move(controller_server), {});
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to add SPI child node: %s",
-              result.error().FormatDescription().c_str());
+      fdf::error("Failed to add SPI child node: {}", result.error().FormatDescription().c_str());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to add SPI child node");
+      fdf::error("Failed to add SPI child node");
       return zx::error(ZX_ERR_INTERNAL);
     }
 

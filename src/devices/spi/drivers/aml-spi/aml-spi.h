@@ -15,6 +15,7 @@
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
@@ -302,7 +303,7 @@ class AmlSpiDriver : public fdf::DriverBase {
                   fidl::WireUnownedResult<fuchsia_hardware_platform_device::Device::GetMetadata>&
                       result) mutable {
           if (!result.ok()) {
-            FDF_LOG(ERROR, "Failed to send GetMetadata request: %s", result.status_string());
+            fdf::error("Failed to send GetMetadata request: {}", result.status_string());
             completer.complete_error(result.status());
             return;
           }
@@ -312,8 +313,7 @@ class AmlSpiDriver : public fdf::DriverBase {
               completer.complete_ok(std::nullopt);
               return;
             }
-            FDF_LOG(ERROR, "Failed to get metadata: %s",
-                    zx_status_get_string(result->error_value()));
+            fdf::error("Failed to get metadata: {}", zx_status_get_string(result->error_value()));
             completer.complete_error(result->error_value());
             return;
           }
@@ -321,8 +321,8 @@ class AmlSpiDriver : public fdf::DriverBase {
           std::span<uint8_t> persisted_metadata = result->value()->metadata;
           fit::result metadata = fidl::Unpersist<FidlType>(persisted_metadata);
           if (metadata.is_error()) {
-            FDF_LOG(ERROR, "Failed to unpersist metadata: %s",
-                    zx_status_get_string(metadata.error_value().status()));
+            fdf::error("Failed to unpersist metadata: {}",
+                       zx_status_get_string(metadata.error_value().status()));
             completer.complete_error(metadata.error_value().status());
             return;
           }

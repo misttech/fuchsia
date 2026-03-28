@@ -45,6 +45,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//sdk/lib/async",
     "//sdk/lib/component/outgoing/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/fit",
     "//src/devices/bind/fuchsia:fuchsia_cpp",

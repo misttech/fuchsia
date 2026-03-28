@@ -10,6 +10,7 @@
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/thread.h>
@@ -44,7 +45,7 @@ constexpr size_t kReset6RegisterOffset = 0x1c;
 constexpr uint32_t kSpi0ResetMask = 1 << 1;
 constexpr uint32_t kSpi1ResetMask = 1 << 6;
 
-#define dump_reg(reg) FDF_LOG(ERROR, "%-21s (+%02x): %08x", #reg, reg, mmio_.Read32(reg))
+#define dump_reg(reg) fdf::error("{:<21} (+{:02x}): {:08x}", #reg, reg, mmio_.Read32(reg))
 
 void AmlSpi::DumpState() {
   // skip registers with side-effects
@@ -349,7 +350,7 @@ bool AmlSpi::StartExchange(SpiRequest request) {
     reset_->WriteRegister32(kReset6RegisterOffset, reset_mask_, reset_mask_)
         .Then([this](auto& result) mutable {
           if (!result.ok() || result.value().is_error()) {
-            FDF_LOG(WARNING, "Failed to reset SPI controller");
+            fdf::warn("Failed to reset SPI controller");
           }
 
           InitRegisters();  // The registers must be reinitialized after resetting the IP.
@@ -692,14 +693,14 @@ zx_status_t AmlSpi::ExchangeDma(const uint8_t* txdata, uint8_t* out_rxdata, uint
 
   zx_status_t status = tx_buffer_.vmo.op_range(ZX_VMO_OP_CACHE_CLEAN, 0, size, nullptr, 0);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to clean cache: %s", zx_status_get_string(status));
+    fdf::error("Failed to clean cache: {}", zx_status_get_string(status));
     return status;
   }
 
   if (out_rxdata) {
     status = rx_buffer_.vmo.op_range(ZX_VMO_OP_CACHE_CLEAN, 0, size, nullptr, 0);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to clean cache: %s", zx_status_get_string(status));
+      fdf::error("Failed to clean cache: {}", zx_status_get_string(status));
       return status;
     }
   }
@@ -742,7 +743,7 @@ zx_status_t AmlSpi::ExchangeDma(const uint8_t* txdata, uint8_t* out_rxdata, uint
   if (out_rxdata) {
     status = rx_buffer_.vmo.op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, 0, size, nullptr, 0);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to invalidate cache: %s", zx_status_get_string(status));
+      fdf::error("Failed to invalidate cache: {}", zx_status_get_string(status));
       return status;
     }
 
@@ -817,10 +818,10 @@ fbl::Array<AmlSpi::ChipInfo> AmlSpiDriver::InitChips(
     }
 
     char fragment_name[32] = {};
-    snprintf(fragment_name, 32, "gpio-cs-%d", index);
+    snprintf(fragment_name, 32, "gpio-cs-%u", index);
     zx::result client = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(fragment_name);
     if (client.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to GPIO device: %s", client.status_string());
+      fdf::error("Failed to connect to GPIO device: {}", client);
       return fbl::Array<AmlSpi::ChipInfo>();
     }
     chips[i].gpio = fidl::WireClient(std::move(*client), dispatcher());
@@ -836,7 +837,7 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
     zx::result pdev_client =
         incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
     if (pdev_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
+      fdf::error("Failed to connect to platform device: {}", pdev_client);
       return completer(pdev_client.take_error());
     }
 
@@ -846,7 +847,7 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
   {
     zx::result compat_client = incoming()->Connect<fuchsia_driver_compat::Service::Device>("pdev");
     if (compat_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to compat: %s", compat_client.status_string());
+      fdf::error("Failed to connect to compat: {}", compat_client);
       return completer(compat_client.take_error());
     }
 
@@ -870,7 +871,7 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
                       fpromise::result<std::optional<fuchsia_hardware_amlogic_metadata::SpiConfig>,
                                        zx_status_t>>>& results) mutable {
                 if (results.is_error()) {
-                  FDF_LOG(ERROR, "Failed to get resources");
+                  fdf::error("Failed to get resources");
                   return completer(zx::error(ZX_ERR_INTERNAL));
                 }
 
@@ -891,8 +892,8 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
 
                 fpromise::result spi_bus_metadata = std::get<3>(results.value());
                 if (spi_bus_metadata.is_error()) {
-                  FDF_LOG(ERROR, "Failed to get spi bus metadata: %s",
-                          zx_status_get_string(spi_bus_metadata.error()));
+                  fdf::error("Failed to get spi bus metadata: {}",
+                             zx_status_get_string(spi_bus_metadata.error()));
                   return completer(zx::error(spi_bus_metadata.error()));
                 }
 
@@ -900,23 +901,23 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
                 if (role_name.is_ok()) {
                   zx::result result = ServeRoleName(role_name.value());
                   if (result.is_error()) {
-                    FDF_LOG(ERROR, "Failed to serve role name: %s", result.status_string());
+                    fdf::error("Failed to serve role name: {}", result);
                     return completer(result.take_error());
                   }
                 } else {
-                  FDF_LOG(ERROR, "Failed to get role name: %s",
-                          zx_status_get_string(spi_bus_metadata.error()));
+                  fdf::error("Failed to get role name: {}",
+                             zx_status_get_string(spi_bus_metadata.error()));
                   return completer(zx::error(role_name.error()));
                 }
 
                 fpromise::result config = std::get<5>(results.value());
                 if (config.is_error()) {
-                  FDF_LOG(ERROR, "Failed to get config metadata: %s",
-                          zx_status_get_string(config.error()));
+                  fdf::error("Failed to get config metadata: {}",
+                             zx_status_get_string(config.error()));
                   return completer(zx::error(config.error()));
                 }
                 if (!config.value().has_value()) {
-                  FDF_LOG(ERROR, "Failed to get config metadata: ZX_ERR_NOT_FOUND");
+                  fdf::error("Failed to get config metadata: ZX_ERR_NOT_FOUND");
                   return completer(zx::error(ZX_ERR_NOT_FOUND));
                 }
 
@@ -935,7 +936,7 @@ zx::result<> AmlSpiDriver::ServeRoleName(
   if (zx::result result = scheduler_role_name_metadata_server_.Serve(*outgoing(), dispatcher(),
                                                                      unwrapped_scheduler_role_name);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve scheduler role name metadata: %s", result.status_string());
+    fdf::error("Failed to serve scheduler role name metadata: {}", result);
     return result.take_error();
   }
 
@@ -952,13 +953,13 @@ void AmlSpiDriver::AddNode(
     if (spi_bus_metadata.has_value()) {
       if (zx::result result = spi_metadata_server_.SetMetadata(spi_bus_metadata.value());
           result.is_error()) {
-        FDF_LOG(ERROR, "Failed to set metadata for metadata server: %s", result.status_string());
+        fdf::error("Failed to set metadata for metadata server: {}", result);
         return completer(result.take_error());
       }
     }
     if (zx::result result = spi_metadata_server_.Serve(*outgoing(), dispatcher());
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to serve metadata server: %s", result.status_string());
+      fdf::error("Failed to serve metadata server: {}", result);
       return completer(result.take_error());
     }
   }
@@ -970,15 +971,15 @@ void AmlSpiDriver::AddNode(
   const uint32_t max_clock_div_reg_value =
       config.use_enhanced_clock_mode() ? EnhanceCntl::kEnhanceClkDivMax : ConReg::kDataRateMax;
   if (config.clock_divider_register_value() > max_clock_div_reg_value) {
-    FDF_LOG(ERROR, "Metadata clock divider value is too large: %u",
-            config.clock_divider_register_value());
+    fdf::error("Metadata clock divider value is too large: {}",
+               config.clock_divider_register_value());
     return completer(zx::error(ZX_ERR_INVALID_ARGS));
   }
 
   zx::result reset_register_client =
       incoming()->Connect<fuchsia_hardware_registers::Service::Device>("reset");
   if (reset_register_client.is_error()) {
-    FDF_LOG(WARNING, "Did not bind the reset register client.");
+    fdf::warn("Did not bind the reset register client.");
   }
 
   AmlSpi::DmaBuffer tx_buffer, rx_buffer;
@@ -996,7 +997,7 @@ void AmlSpiDriver::AddNode(
     if (status != ZX_OK) {
       return completer(zx::error(status));
     }
-    FDF_LOG(DEBUG, "Got BTI and contiguous buffers, DMA may be used");
+    fdf::debug("Got BTI and contiguous buffers, DMA may be used");
   }
 
   fbl::Array<AmlSpi::ChipInfo> chips = InitChips(config);
@@ -1026,7 +1027,7 @@ void AmlSpiDriver::AddNode(
     });
     auto result = outgoing()->AddService<fuchsia_hardware_spiimpl::Service>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "AddService failed: %s", result.status_string());
+      fdf::error("AddService failed: {}", result);
       return completer(zx::error(result.error_value()));
     }
   }
@@ -1034,8 +1035,7 @@ void AmlSpiDriver::AddNode(
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (!controller_endpoints.is_ok()) {
-    FDF_LOG(ERROR, "Failed to create controller endpoints: %s",
-            controller_endpoints.status_string());
+    fdf::error("Failed to create controller endpoints: {}", controller_endpoints);
     return completer(controller_endpoints.take_error());
   }
 
@@ -1064,11 +1064,11 @@ void AmlSpiDriver::AddNode(
   parent_->AddChild(args, std::move(controller_endpoints->server), {})
       .Then([completer = std::move(completer)](auto& result) mutable {
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Call to add child failed: %s", result.status_string());
+          fdf::error("Call to add child failed: {}", result.status_string());
           return completer(zx::error(result.status()));
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to add child");
+          fdf::error("Failed to add child");
           return completer(zx::error(ZX_ERR_INTERNAL));
         }
         completer(zx::ok());
@@ -1078,19 +1078,18 @@ void AmlSpiDriver::AddNode(
 fpromise::promise<zx::interrupt, zx_status_t> AmlSpiDriver::GetInterrupt() {
   fpromise::bridge<zx::interrupt, zx_status_t> bridge;
 
-  pdev_->GetInterruptById(0, 0).Then(
-      [completer = std::move(bridge.completer)](auto& result) mutable {
-        if (!result.ok()) {
-          FDF_LOG(ERROR, "Call to get SPI interrupt failed: %s", result.status_string());
-          completer.complete_error(result.status());
-        } else if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to get SPI interrupt: %s",
-                  zx_status_get_string(result->error_value()));
-          completer.complete_error(result->error_value());
-        } else {
-          completer.complete_ok(std::move(result->value()->irq));
-        }
-      });
+  pdev_->GetInterruptById(0, 0).Then([completer =
+                                          std::move(bridge.completer)](auto& result) mutable {
+    if (!result.ok()) {
+      fdf::error("Call to get SPI interrupt failed: {}", result.status_string());
+      completer.complete_error(result.status());
+    } else if (result->is_error()) {
+      fdf::error("Failed to get SPI interrupt: {}", zx_status_get_string(result->error_value()));
+      completer.complete_error(result->error_value());
+    } else {
+      completer.complete_ok(std::move(result->value()->irq));
+    }
+  });
 
   return bridge.consumer.promise_or(fpromise::error(ZX_ERR_INTERNAL));
 }
@@ -1114,25 +1113,25 @@ fpromise::promise<zx::bti, zx_status_t> AmlSpiDriver::GetBti() {
 zx_status_t AmlSpi::DmaBuffer::Create(const zx::bti& bti, size_t size, DmaBuffer* out_dma_buffer) {
   zx_status_t status = zx::vmo::create_contiguous(bti, size, 0, &out_dma_buffer->vmo);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create DMA VMO: %s", zx_status_get_string(status));
+    fdf::error("Failed to create DMA VMO: {}", zx_status_get_string(status));
     return status;
   }
 
   status = out_dma_buffer->pinned.Pin(out_dma_buffer->vmo, bti,
                                       ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE | ZX_BTI_CONTIGUOUS);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to pin DMA VMO: %s", zx_status_get_string(status));
+    fdf::error("Failed to pin DMA VMO: {}", zx_status_get_string(status));
     return status;
   }
   if (out_dma_buffer->pinned.region_count() != 1) {
-    FDF_LOG(ERROR, "Invalid region count for contiguous VMO: %u",
-            out_dma_buffer->pinned.region_count());
+    fdf::error("Invalid region count for contiguous VMO: {}",
+               out_dma_buffer->pinned.region_count());
     return status;
   }
 
   status = out_dma_buffer->mapped.Map(out_dma_buffer->vmo);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map DMA VMO: %s", zx_status_get_string(status));
+    fdf::error("Failed to map DMA VMO: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -1208,34 +1207,33 @@ fpromise::promise<fdf::MmioBuffer, zx_status_t> AmlSpiDriver::MapMmio(
     fidl::WireClient<fuchsia_hardware_platform_device::Device>& pdev, uint32_t mmio_id) {
   fpromise::bridge<fdf::MmioBuffer, zx_status_t> bridge;
 
-  pdev->GetMmioById(mmio_id).Then(
-      [mmio_id, completer = std::move(bridge.completer)](auto& result) mutable {
-        if (!result.ok()) {
-          FDF_LOG(ERROR, "Call to get MMIO %u failed: %s", mmio_id, result.status_string());
-          return completer.complete_error(result.status());
-        }
-        if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to get MMIO %u: %s", mmio_id,
-                  zx_status_get_string(result->error_value()));
-          return completer.complete_error(result->error_value());
-        }
+  pdev->GetMmioById(mmio_id).Then([mmio_id,
+                                   completer = std::move(bridge.completer)](auto& result) mutable {
+    if (!result.ok()) {
+      fdf::error("Call to get MMIO {} failed: {}", mmio_id, result.status_string());
+      return completer.complete_error(result.status());
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to get MMIO {}: {}", mmio_id, zx_status_get_string(result->error_value()));
+      return completer.complete_error(result->error_value());
+    }
 
-        auto& mmio = *result->value();
-        if (!mmio.has_offset() || !mmio.has_size() || !mmio.has_vmo()) {
-          FDF_LOG(ERROR, "Invalid MMIO returned for ID %u", mmio_id);
-          return completer.complete_error(ZX_ERR_BAD_STATE);
-        }
+    auto& mmio = *result->value();
+    if (!mmio.has_offset() || !mmio.has_size() || !mmio.has_vmo()) {
+      fdf::error("Invalid MMIO returned for ID {}", mmio_id);
+      return completer.complete_error(ZX_ERR_BAD_STATE);
+    }
 
-        zx::result mmio_buffer = fdf::MmioBuffer::Create(
-            mmio.offset(), mmio.size(), std::move(mmio.vmo()), ZX_CACHE_POLICY_UNCACHED_DEVICE);
-        if (mmio_buffer.is_error()) {
-          FDF_LOG(ERROR, "Failed to map MMIO %u: %s", mmio_id,
-                  zx_status_get_string(mmio_buffer.error_value()));
-          return completer.complete_error(mmio_buffer.error_value());
-        }
+    zx::result mmio_buffer = fdf::MmioBuffer::Create(
+        mmio.offset(), mmio.size(), std::move(mmio.vmo()), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+    if (mmio_buffer.is_error()) {
+      fdf::error("Failed to map MMIO {}: {}", mmio_id,
+                 zx_status_get_string(mmio_buffer.error_value()));
+      return completer.complete_error(mmio_buffer.error_value());
+    }
 
-        completer.complete_ok(*std::move(mmio_buffer));
-      });
+    completer.complete_ok(*std::move(mmio_buffer));
+  });
 
   return bridge.consumer.promise_or(fpromise::error(ZX_ERR_BAD_STATE));
 }

@@ -5,6 +5,7 @@
 #include "spi-child.h"
 
 #include <lib/async/cpp/task.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/trace/event.h>
 #include <zircon/errors.h>
 
@@ -35,8 +36,8 @@ void SpiChild::TransmitVector(TransmitVectorRequestView request,
               sizeof(TransmitVectorCompleter::Async)>(
               [completer = completer.ToAsync()](auto& result) mutable {
                 if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-                  FDF_LOG(ERROR, "Couldn't complete SpiImpl::TransmitVector: %s",
-                          zx_status_get_string(status));
+                  fdf::error("Couldn't complete SpiImpl::TransmitVector: {}",
+                             zx_status_get_string(status));
                   completer.Reply(status);
                 } else {
                   completer.Reply(ZX_OK);
@@ -59,12 +60,12 @@ void SpiChild::ReceiveVector(ReceiveVectorRequestView request,
               void(fdf::WireUnownedResult<fuchsia_hardware_spiimpl::SpiImpl::ReceiveVector>&),
               sizeof(request_data)>([request_data = std::move(request_data)](auto& result) mutable {
             if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-              FDF_LOG(ERROR, "Couldn't complete SpiImpl::ReceiveVector: %s",
-                      zx_status_get_string(status));
+              fdf::error("Couldn't complete SpiImpl::ReceiveVector: {}",
+                         zx_status_get_string(status));
               request_data.completer.Reply(status, {});
             } else if (result->value()->data.size() != request_data.size) {
-              FDF_LOG(ERROR, "Expected %u bytes != received %zu bytes", request_data.size,
-                      result->value()->data.size());
+              fdf::error("Expected {} bytes != received {} bytes", request_data.size,
+                         result->value()->data.size());
               request_data.completer.Reply(ZX_ERR_INTERNAL, {});
             } else {
               request_data.completer.Reply(ZX_OK, result->value()->data);
@@ -87,12 +88,12 @@ void SpiChild::ExchangeVector(ExchangeVectorRequestView request,
               void(fdf::WireUnownedResult<fuchsia_hardware_spiimpl::SpiImpl::ExchangeVector>&),
               sizeof(request_data)>([request_data = std::move(request_data)](auto& result) mutable {
             if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-              FDF_LOG(ERROR, "Couldn't complete SpiImpl::ExchangeVector: %s",
-                      zx_status_get_string(status));
+              fdf::error("Couldn't complete SpiImpl::ExchangeVector: {}",
+                         zx_status_get_string(status));
               request_data.completer.Reply(status, {});
             } else if (result->value()->rxdata.size() != request_data.txdata_count) {
-              FDF_LOG(ERROR, "Expected %zu bytes != received %zu bytes", request_data.txdata_count,
-                      result->value()->rxdata.size());
+              fdf::error("Expected {} bytes != received {} bytes", request_data.txdata_count,
+                         result->value()->rxdata.size());
               request_data.completer.Reply(ZX_ERR_INTERNAL, {});
             } else {
               request_data.completer.Reply(ZX_OK, result->value()->rxdata);
@@ -110,8 +111,8 @@ void SpiChild::RegisterVmo(RegisterVmoRequestView request, RegisterVmoCompleter:
               sizeof(RegisterVmoCompleter::Async)>(
               [completer = completer.ToAsync()](auto& result) mutable {
                 if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-                  FDF_LOG(ERROR, "Couldn't complete SpiImpl::RegisterVmo: %s",
-                          zx_status_get_string(status));
+                  fdf::error("Couldn't complete SpiImpl::RegisterVmo: {}",
+                             zx_status_get_string(status));
                   completer.ReplyError(status);
                 } else {
                   completer.ReplySuccess();
@@ -130,8 +131,8 @@ void SpiChild::UnregisterVmo(UnregisterVmoRequestView request,
               sizeof(UnregisterVmoCompleter::Async)>(
               [completer = completer.ToAsync()](auto& result) mutable {
                 if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-                  FDF_LOG(ERROR, "Couldn't complete SpiImpl::UnregisterVmo: %s",
-                          zx_status_get_string(status));
+                  fdf::error("Couldn't complete SpiImpl::UnregisterVmo: {}",
+                             zx_status_get_string(status));
                   completer.ReplyError(status);
                 } else {
                   completer.ReplySuccess(std::move(result->value()->vmo));
@@ -150,8 +151,8 @@ void SpiChild::Transmit(TransmitRequestView request, TransmitCompleter::Sync& co
               sizeof(TransmitCompleter::Async)>(
               [completer = completer.ToAsync()](auto& result) mutable {
                 if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-                  FDF_LOG(ERROR, "Couldn't complete SpiImpl::TransmitVmo: %s",
-                          zx_status_get_string(status));
+                  fdf::error("Couldn't complete SpiImpl::TransmitVmo: {}",
+                             zx_status_get_string(status));
                   completer.ReplyError(status);
                 } else {
                   completer.ReplySuccess();
@@ -166,21 +167,21 @@ void SpiChild::Receive(ReceiveRequestView request, ReceiveCompleter::Sync& compl
       ->ReceiveVmo(cs_, request->buffer)
       .ThenExactlyOnce(fit::inline_callback<
                        void(fdf::WireUnownedResult<fuchsia_hardware_spiimpl::SpiImpl::ReceiveVmo>&),
-                       sizeof(ReceiveCompleter::Async)>([completer = completer.ToAsync()](
-                                                            auto& result) mutable {
-        if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-          FDF_LOG(ERROR, "Couldn't complete SpiImpl::ReceiveVmo: %s", zx_status_get_string(status));
-          completer.ReplyError(status);
-        } else {
-          completer.ReplySuccess();
-        }
-      }));
+                       sizeof(ReceiveCompleter::Async)>(
+          [completer = completer.ToAsync()](auto& result) mutable {
+            if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
+              fdf::error("Couldn't complete SpiImpl::ReceiveVmo: {}", zx_status_get_string(status));
+              completer.ReplyError(status);
+            } else {
+              completer.ReplySuccess();
+            }
+          }));
 }
 
 void SpiChild::Exchange(ExchangeRequestView request, ExchangeCompleter::Sync& completer) {
   if (request->tx_buffer.size != request->rx_buffer.size) {
-    FDF_LOG(ERROR, "tx_buffer and rx_buffer size must match. %zu (tx) != %zu (rx)",
-            request->tx_buffer.size, request->rx_buffer.size);
+    fdf::error("tx_buffer and rx_buffer size must match. {} (tx) != {} (rx)",
+               request->tx_buffer.size, request->rx_buffer.size);
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -195,8 +196,8 @@ void SpiChild::Exchange(ExchangeRequestView request, ExchangeCompleter::Sync& co
               sizeof(ExchangeCompleter::Async)>(
               [completer = completer.ToAsync()](auto& result) mutable {
                 if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-                  FDF_LOG(ERROR, "Couldn't complete SpiImpl::ExchangeVmo: %s",
-                          zx_status_get_string(status));
+                  fdf::error("Couldn't complete SpiImpl::ExchangeVmo: {}",
+                             zx_status_get_string(status));
                   completer.ReplyError(status);
                 } else {
                   completer.ReplySuccess();
@@ -221,7 +222,7 @@ void SpiChild::AssertCs(AssertCsCompleter::Sync& completer) {
                            sizeof(AssertCsCompleter::Async)>(
           [completer = completer.ToAsync()](auto& result) mutable {
             if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-              FDF_LOG(ERROR, "SpiImpl::LockBus failed: %s", zx_status_get_string(status));
+              fdf::error("SpiImpl::LockBus failed: {}", zx_status_get_string(status));
               completer.Reply(status);
             } else {
               completer.Reply(ZX_OK);
@@ -242,7 +243,7 @@ void SpiChild::DeassertCs(DeassertCsCompleter::Sync& completer) {
           sizeof(DeassertCsCompleter::Async)>(
           [completer = completer.ToAsync()](auto& result) mutable {
             if (zx_status_t status = FidlStatus(result); status != ZX_OK) {
-              FDF_LOG(ERROR, "SpiImpl::UnlockBus failed: %s", zx_status_get_string(status));
+              fdf::error("SpiImpl::UnlockBus failed: {}", zx_status_get_string(status));
               completer.Reply(status);
             } else {
               completer.Reply(ZX_OK);
