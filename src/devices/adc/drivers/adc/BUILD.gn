@@ -23,6 +23,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_cpp",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//src/devices/bind/fuchsia.adc:fuchsia.adc_cpp",
     "//src/devices/lib/amlogic",

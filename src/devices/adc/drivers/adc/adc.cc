@@ -8,6 +8,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 #include <bind/fuchsia/adc/cpp/bind.h>
@@ -78,11 +79,11 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
     fdf::Arena arena('ADC_');
     const auto result = fdf::WireCall(adc_impl).buffer(arena)->GetResolution();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to GetResolution %s", result.FormatDescription().c_str());
+      fdf::error("Failed to GetResolution {}", result.FormatDescription().c_str());
       return zx::error(ZX_ERR_INTERNAL);
     }
     if (result->is_error()) {
-      FDF_LOG(WARNING, "Failed to GetResolution %d", result->error_value());
+      fdf::warn("Failed to GetResolution {}", result->error_value());
     } else {
       resolution = result->value()->resolution;
     }
@@ -101,7 +102,7 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
         }),
         dev->name_);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+      fdf::error("Failed to add Device service {}", result);
       return zx::error(result.status_value());
     }
   }
@@ -134,7 +135,7 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
   fidl::WireResult result =
       fidl::WireCall(adc->node())->AddChild(args, std::move(controller_endpoints.server), {});
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child {}", result.status_string());
     return zx::error(result.status());
   }
   dev->controller_.Bind(std::move(controller_endpoints.client));
@@ -150,7 +151,7 @@ zx::result<> Adc::Start() {
     return metadata.take_error();
   }
   if (!metadata->channels().has_value()) {
-    FDF_LOG(ERROR, "Metadata is missing its channels property");
+    fdf::error("Metadata is missing its channels property");
     return zx::error(ZX_ERR_INTERNAL);
   }
   auto channels = std::move(*metadata->channels());
@@ -167,7 +168,7 @@ zx::result<> Adc::Start() {
   std::sort(channels.begin(), channels.end(), adc_cmp_lt);
   auto result = std::adjacent_find(channels.begin(), channels.end(), adc_cmp_eq);
   if (result != channels.end()) {
-    FDF_LOG(ERROR, "adc channel '%d' was published more than once", *result->idx());
+    fdf::error("adc channel '{}' was published more than once", *result->idx());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -175,13 +176,13 @@ zx::result<> Adc::Start() {
   for (auto channel : channels) {
     auto adcimpl = incoming()->Connect<fuchsia_hardware_adcimpl::Service::Device>();
     if (adcimpl.is_error()) {
-      FDF_LOG(ERROR, "Failed to open adcimpl service: %s", adcimpl.status_string());
+      fdf::error("Failed to open adcimpl service: {}", adcimpl);
       return adcimpl.take_error();
     }
 
     auto device = AdcDevice::Create(std::move(adcimpl.value()), std::move(channel), this);
     if (device.is_error()) {
-      FDF_LOG(ERROR, "Failed to add create device %s", device.status_string());
+      fdf::error("Failed to add create device {}", device.status_value());
       return zx::error(device.status_value());
     }
     devices_.emplace_back(std::move(*device));
@@ -194,7 +195,7 @@ void Adc::Stop() {
   for (auto& dev : devices_) {
     auto result = dev->controller()->Remove();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Could not remove child: %s", result.status_string());
+      fdf::error("Could not remove child: {}", result.status_string());
     }
   }
 }

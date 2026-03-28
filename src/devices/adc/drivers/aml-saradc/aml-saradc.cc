@@ -6,6 +6,7 @@
 
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
@@ -157,7 +158,7 @@ zx::result<> AmlSaradc::CreateNode() {
   fidl::WireResult result =
       fidl::WireCall(node())->AddChild(args, std::move(controller_endpoints.server), {});
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child {}", result.status_string());
     return zx::error(result.status());
   }
   controller_.Bind(std::move(controller_endpoints.client));
@@ -183,7 +184,7 @@ zx::result<> AmlSaradc::Start() {
 
   fdf::PDev pdev{std::move(pdev_client_end.value())};
   if (!pdev.is_valid()) {
-    FDF_LOG(ERROR, "Failed to get pdev");
+    fdf::error("Failed to get pdev");
     return zx::error(ZX_ERR_NO_RESOURCES);
   }
 
@@ -226,12 +227,12 @@ zx::result<> AmlSaradc::Start() {
                                             fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+    fdf::error("Failed to add Device service {}", result);
     return result.take_error();
   }
 
   if (zx::result result = CreateNode(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to create node %s", result.status_string());
+    fdf::error("Failed to create node {}", result);
     return result.take_error();
   }
 
