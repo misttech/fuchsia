@@ -9,6 +9,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/node/cpp/add_child.h>
 #include <lib/fit/defer.h>

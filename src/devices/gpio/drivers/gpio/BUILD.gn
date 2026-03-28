@@ -48,6 +48,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//zircon/system/ulib/fbl",
   ]
 }

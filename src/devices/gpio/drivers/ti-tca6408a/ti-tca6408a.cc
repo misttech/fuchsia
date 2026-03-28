@@ -7,6 +7,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace {
 
@@ -24,7 +25,7 @@ zx::result<> TiTca6408aDevice::Start() {
   {
     zx::result result = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to open i2c service: %s", result.status_string());
+      fdf::error("Failed to open i2c service: {}", result);
       return result.take_error();
     }
     i2c = std::move(result.value());
@@ -43,37 +44,36 @@ zx::result<> TiTca6408aDevice::Start() {
                                             fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+    fdf::error("Failed to add Device service {}", result);
     return result.take_error();
   }
 
   zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev);
     return pdev.take_error();
   }
 
   if (zx::result result = pin_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set pin metadata from platform device: %s", result.status_string());
+    fdf::error("Failed to set pin metadata from platform device: {}", result);
     return result.take_error();
   }
   if (zx::result result = pin_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve pin metadata: %s", result.status_string());
+    fdf::error("Failed to serve pin metadata: {}", result);
     return result.take_error();
   }
 
   if (zx::result result =
           scheduler_role_name_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set scheduler role name metadata from platform device: %s",
-            result.status_string());
+    fdf::error("Failed to set scheduler role name metadata from platform device: {}", result);
     return result.take_error();
   }
   if (zx::result result = scheduler_role_name_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve scheduler role name metadata: %s", result.status_string());
+    fdf::error("Failed to serve scheduler role name metadata: {}", result);
     return result.take_error();
   }
 
@@ -83,7 +83,7 @@ zx::result<> TiTca6408aDevice::Start() {
 void TiTca6408aDevice::Stop() {
   auto status = controller_->Remove();
   if (!status.ok()) {
-    FDF_LOG(ERROR, "Could not remove child: %s", status.status_string());
+    fdf::error("Could not remove child: {}", status.status_string());
   }
 }
 
@@ -95,7 +95,7 @@ zx::result<> TiTca6408aDevice::CreateNode() {
   zx::result child =
       AddChild(kDeviceName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+    fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
   controller_.Bind(std::move(child.value()));
@@ -174,7 +174,7 @@ zx::result<uint8_t> TiTca6408a::ReadBit(Register reg, uint32_t index) {
   auto status = i2c_.WriteReadSyncRetries(&address, sizeof(address), &value, sizeof(value),
                                           kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
+    fdf::error("Failed to read register {}: {}", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
@@ -189,14 +189,14 @@ zx::result<> TiTca6408a::SetBit(Register reg, uint32_t index) {
   auto status = i2c_.WriteReadSyncRetries(&address, sizeof(address), &value, sizeof(value),
                                           kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
+    fdf::error("Failed to read register {}: {}", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
   const uint8_t write_buf[2] = {address, static_cast<uint8_t>(value | bit)};
   status = i2c_.WriteSyncRetries(write_buf, sizeof(write_buf), kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to write register %u: %s", address, zx_status_get_string(status.status));
+    fdf::error("Failed to write register {}: {}", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
@@ -211,14 +211,14 @@ zx::result<> TiTca6408a::ClearBit(Register reg, uint32_t index) {
   auto status = i2c_.WriteReadSyncRetries(&address, sizeof(address), &value, sizeof(value),
                                           kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to read register %u: %s", address, zx_status_get_string(status.status));
+    fdf::error("Failed to read register {}: {}", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 
   const uint8_t write_buf[2] = {address, static_cast<uint8_t>(value & ~bit)};
   status = i2c_.WriteSyncRetries(write_buf, sizeof(write_buf), kI2cRetries, kI2cRetryDelay);
   if (status.status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to write register %u: %s", address, zx_status_get_string(status.status));
+    fdf::error("Failed to write register {}: {}", address, zx_status_get_string(status.status));
     return zx::error(status.status);
   }
 

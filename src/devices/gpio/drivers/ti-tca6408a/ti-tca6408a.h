@@ -34,7 +34,7 @@ class TiTca6408a : public fdf::Server<fuchsia_hardware_pinimpl::PinImpl> {
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_pinimpl::PinImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+    fdf::error("Unknown method {}", metadata.method_ordinal);
   }
 
   enum class Register : uint8_t {

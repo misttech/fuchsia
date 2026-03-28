@@ -79,7 +79,7 @@ class AmlGpio : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_pinimpl::PinImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unexpected pinimpl FIDL call: 0x%lx", metadata.method_ordinal);
+    fdf::error("Unexpected pinimpl FIDL call: 0x{:x}", metadata.method_ordinal);
   }
 
   void Read(fuchsia_hardware_pinimpl::wire::PinImplReadRequest* request, fdf::Arena& arena,

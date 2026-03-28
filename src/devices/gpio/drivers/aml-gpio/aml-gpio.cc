@@ -8,6 +8,7 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/trace/event.h>
 
@@ -51,36 +52,35 @@ fpromise::promise<void, zx_status_t> InitMetadataServer(
         if (zx::result result =
                 metadata_server.Serve(outgoing, fdf::Dispatcher::GetCurrent()->async_dispatcher());
             result.is_error()) {
-          FDF_LOG(ERROR, "Failed to serve metadata server: %s", result.status_string());
+          fdf::error("Failed to serve metadata server: {}", result);
           return completer.complete_error(result.status_value());
           return;
         }
 
         if (!persisted_metadata.ok()) {
-          FDF_LOG(ERROR, "Failed to send GetMetadata request: %s",
-                  persisted_metadata.status_string());
+          fdf::error("Failed to send GetMetadata request: {}", persisted_metadata.status_string());
           return completer.complete_error(persisted_metadata.status());
         }
         if (persisted_metadata->is_error()) {
           if (persisted_metadata->error_value() == ZX_ERR_NOT_FOUND) {
-            FDF_LOG(DEBUG, "Not forwarding metadata: Metadata not found");
+            fdf::debug("Not forwarding metadata: Metadata not found");
             return completer.complete_ok();
           }
-          FDF_LOG(ERROR, "Failed to get metadata: %s",
-                  zx_status_get_string(persisted_metadata->error_value()));
+          fdf::error("Failed to get metadata: {}",
+                     zx_status_get_string(persisted_metadata->error_value()));
           return completer.complete_error(persisted_metadata->error_value());
         }
 
         fit::result metadata =
             fidl::Unpersist<FidlType>(persisted_metadata.value()->metadata.get());
         if (metadata.is_error()) {
-          FDF_LOG(ERROR, "Failed to unpersist metadata: %s",
-                  zx_status_get_string(metadata.error_value().status()));
+          fdf::error("Failed to unpersist metadata: {}",
+                     zx_status_get_string(metadata.error_value().status()));
           return completer.complete_error(metadata.error_value().status());
         }
 
         if (zx::result result = metadata_server.SetMetadata(metadata.value()); result.is_error()) {
-          FDF_LOG(ERROR, "Failed to set metadata for metadata server: %s", result.status_string());
+          fdf::error("Failed to set metadata for metadata server: {}", result);
           return completer.complete_error(result.status_value());
         }
 
@@ -108,7 +108,7 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
   {
     zx::result result = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to platform device: %s", result.status_string());
+      fdf::error("Failed to connect to platform device: {}", result);
       completer(result.take_error());
       return;
     }
@@ -124,15 +124,15 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
                         fpromise::result<void, zx_status_t>, fpromise::result<void, zx_status_t>,
                         fpromise::result<void, zx_status_t>>>& results) mutable {
             if (results.is_error()) {
-              FDF_LOG(ERROR, "One of the promises abandoned its completer");
+              fdf::error("One of the promises abandoned its completer");
               return completer(zx::error(ZX_ERR_INTERNAL));
             }
 
             {
               fpromise::result result = std::get<0>(results.value());
               if (result.is_error()) {
-                FDF_LOG(ERROR, "Failed to initialize resources: %s",
-                        zx_status_get_string(result.error()));
+                fdf::error("Failed to initialize resources: {}",
+                           zx_status_get_string(result.error()));
                 return completer(zx::error(result.error()));
               }
             }
@@ -140,8 +140,8 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
             {
               fpromise::result result = std::get<1>(results.value());
               if (result.is_error()) {
-                FDF_LOG(ERROR, "Failed to initialize pin metadata server: %s",
-                        zx_status_get_string(result.error()));
+                fdf::error("Failed to initialize pin metadata server: {}",
+                           zx_status_get_string(result.error()));
                 return completer(zx::error(result.error()));
               }
             }
@@ -149,8 +149,8 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
             {
               fpromise::result result = std::get<2>(results.value());
               if (result.is_error()) {
-                FDF_LOG(ERROR, "Failed to initialize scheduler role name metadata server: %s",
-                        zx_status_get_string(result.error()));
+                fdf::error("Failed to initialize scheduler role name metadata server: {}",
+                           zx_status_get_string(result.error()));
                 return completer(zx::error(result.error()));
               }
             }
@@ -166,15 +166,15 @@ fpromise::promise<void, zx_status_t> AmlGpioDriver::InitResources() {
   pdev_->GetNodeDeviceInfo().Then(
       [this, completer = std::move(bridge.completer)](auto& info) mutable {
         if (!info.ok()) {
-          FDF_LOG(ERROR, "Call to get device info failed: %s", info.status_string());
+          fdf::error("Call to get device info failed: {}", info.status_string());
           return completer.complete_error(info.status());
         }
         if (info->is_error()) {
-          FDF_LOG(ERROR, "Failed to get device info: %s", zx_status_get_string(info.status()));
+          fdf::error("Failed to get device info: {}", zx_status_get_string(info.status()));
           return completer.complete_error(info->error_value());
         }
         if (!info->value()->has_pid() || !info->value()->has_irq_count()) {
-          FDF_LOG(ERROR, "No pid or irq_count entry in device info");
+          fdf::error("No pid or irq_count entry in device info");
           return completer.complete_error(ZX_ERR_BAD_STATE);
         }
 
@@ -192,15 +192,15 @@ void AmlGpioDriver::OnGetNodeDeviceInfo(
     pdev_->GetBoardInfo().Then([this, irq_count = info.irq_count(),
                                 completer = std::move(completer)](auto& board_info) mutable {
       if (!board_info.ok()) {
-        FDF_LOG(ERROR, "Call to get board info failed: %s", board_info.status_string());
+        fdf::error("Call to get board info failed: {}", board_info.status_string());
         return completer.complete_error(board_info.status());
       }
       if (board_info->is_error()) {
-        FDF_LOG(ERROR, "Failed to get board info: %s", zx_status_get_string(board_info.status()));
+        fdf::error("Failed to get board info: {}", zx_status_get_string(board_info.status()));
         return completer.complete_error(board_info->error_value());
       }
       if (!board_info->value()->has_vid() || !board_info->value()->has_pid()) {
-        FDF_LOG(ERROR, "No vid or pid entry in board info");
+        fdf::error("No vid or pid entry in board info");
         return completer.complete_error(ZX_ERR_BAD_STATE);
       }
 
@@ -229,7 +229,7 @@ void AmlGpioDriver::OnGetBoardInfo(
         pid = PDEV_PID_AMLOGIC_S905D3;
         break;
       default:
-        FDF_LOG(ERROR, "Unsupported PID 0x%x for VID 0x%x", board_info.pid(), board_info.vid());
+        fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info.pid(), board_info.vid());
         return completer.complete_error(ZX_ERR_INVALID_ARGS);
     }
   } else if (board_info.vid() == PDEV_VID_KHADAS) {
@@ -238,11 +238,11 @@ void AmlGpioDriver::OnGetBoardInfo(
         pid = PDEV_PID_AMLOGIC_A311D;
         break;
       default:
-        FDF_LOG(ERROR, "Unsupported PID 0x%x for VID 0x%x", board_info.pid(), board_info.vid());
+        fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info.pid(), board_info.vid());
         return completer.complete_error(ZX_ERR_INVALID_ARGS);
     }
   } else {
-    FDF_LOG(ERROR, "Unsupported VID 0x%x", board_info.vid());
+    fdf::error("Unsupported VID 0x{:x}", board_info.vid());
     return completer.complete_error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -307,7 +307,7 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
       gpio_interrupt = &a1_interrupt_block;
       break;
     default:
-      FDF_LOG(ERROR, "Unsupported SOC PID %u", pid);
+      fdf::error("Unsupported SOC PID {}", pid);
       return completer.complete_error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -317,13 +317,13 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
   fbl::Array<AmlGpio::InterruptInfo> irq_info(new (&ac) AmlGpio::InterruptInfo[irq_count],
                                               irq_count);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "irq_info alloc failed");
+    fdf::error("irq_info alloc failed");
     return completer.complete_error(ZX_ERR_NO_MEMORY);
   }
 
   zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
     return completer.complete_error(pdev_client.status_value());
   }
 
@@ -332,7 +332,7 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
                             std::move(mmios[MMIO_GPIO_AO]), std::move(mmios[MMIO_GPIO_INTERRUPTS]),
                             gpio_blocks, gpio_interrupt, pid, std::move(irq_info)));
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Device object alloc failed");
+    fdf::error("Device object alloc failed");
     return completer.complete_error(ZX_ERR_NO_MEMORY);
   }
 
@@ -342,7 +342,7 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
     });
     auto result = outgoing()->AddService<fuchsia_hardware_pinimpl::Service>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "AddService failed: %s", result.status_string());
+      fdf::error("AddService failed: {}", result);
       return completer.complete_error(result.error_value());
     }
   }
@@ -354,8 +354,7 @@ void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
   zx::result controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (!controller_endpoints.is_ok()) {
-    FDF_LOG(ERROR, "Failed to create controller endpoints: %s",
-            controller_endpoints.status_string());
+    fdf::error("Failed to create controller endpoints: {}", controller_endpoints);
     return completer(controller_endpoints.take_error());
   }
 
@@ -382,11 +381,11 @@ void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
   parent_->AddChild(args, std::move(controller_endpoints->server), {})
       .Then([completer = std::move(completer)](auto& result) mutable {
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Call to add child failed: %s", result.status_string());
+          fdf::error("Call to add child failed: {}", result.status_string());
           return completer(zx::error(result.status()));
         }
         if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to add child");
+          fdf::error("Failed to add child");
           return completer(zx::error(ZX_ERR_INTERNAL));
         }
 
@@ -446,7 +445,7 @@ void AmlGpio::Read(fuchsia_hardware_pinimpl::wire::PinImplReadRequest* request, 
   const AmlGpioBlock* block;
   uint32_t pinindex;
   if ((status = AmlPinToBlock(request->pin, &block, &pinindex)) != ZX_OK) {
-    FDF_LOG(ERROR, "Pin not found %u", request->pin);
+    fdf::error("Pin not found {}", request->pin);
     return completer.buffer(arena).ReplyError(status);
   }
 
@@ -463,7 +462,7 @@ void AmlGpio::SetBufferMode(fuchsia_hardware_pinimpl::wire::PinImplSetBufferMode
   const AmlGpioBlock* block;
   uint32_t pinindex;
   if ((status = AmlPinToBlock(request->pin, &block, &pinindex)) != ZX_OK) {
-    FDF_LOG(ERROR, "Pin not found %u", request->pin);
+    fdf::error("Pin not found {}", request->pin);
     return completer.buffer(arena).ReplyError(status);
   }
 
@@ -513,21 +512,21 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
 
   uint32_t index = GetUnusedIrqIndex(request->pin);
   if (index > irq_info_.size()) {
-    FDF_LOG(ERROR, "No free IRQ indicies %u, irq_count = %zu", (int)index, irq_info_.size());
+    fdf::error("No free IRQ indicies {}, irq_count = {}", (int)index, irq_info_.size());
     return completer.buffer(arena).ReplyError(ZX_ERR_NO_RESOURCES);
   }
 
   for (const InterruptInfo& irq : irq_info_) {
     if (irq.pin == request->pin) {
-      FDF_LOG(ERROR, "GPIO Interrupt already configured for this pin %u", (int)index);
+      fdf::error("GPIO Interrupt already configured for this pin {}", (int)index);
       return completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_EXISTS);
     }
   }
-  FDF_LOG(DEBUG, "GPIO Interrupt index %d allocated", (int)index);
+  fdf::debug("GPIO Interrupt index {} allocated", (int)index);
   const AmlGpioBlock* block;
   uint32_t pinindex;
   if ((status = AmlPinToBlock(request->pin, &block, &pinindex)) != ZX_OK) {
-    FDF_LOG(ERROR, "Pin not found %u", request->pin);
+    fdf::error("Pin not found {}", request->pin);
     return completer.buffer(arena).ReplyError(status);
   }
 
@@ -588,8 +587,8 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
         fdf::Arena arena('GPIO');
         // ReleaseInterrupt was called before we got the interrupt from platform bus.
         if (irq_info_[index].pin != irq_index) {
-          FDF_LOG(WARNING, "Pin %u interrupt released before it could be returned to the client",
-                  irq_index);
+          fdf::warn("Pin {} interrupt released before it could be returned to the client",
+                    irq_index);
           return completer.buffer(arena).ReplyError(ZX_ERR_CANCELED);
         }
 
@@ -600,12 +599,11 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
         }
 
         if (!out_irq.ok()) {
-          FDF_LOG(ERROR, "Call to pdev_get_interrupt failed: %s", out_irq.status_string());
+          fdf::error("Call to pdev_get_interrupt failed: {}", out_irq.status_string());
           return completer.buffer(arena).ReplyError(out_irq.status());
         }
         if (out_irq->is_error()) {
-          FDF_LOG(ERROR, "pdev_get_interrupt failed: %s",
-                  zx_status_get_string(out_irq->error_value()));
+          fdf::error("pdev_get_interrupt failed: {}", zx_status_get_string(out_irq->error_value()));
           return completer.buffer(arena).Reply(out_irq->take_error());
         }
 
@@ -614,7 +612,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
         if (status == ZX_OK) {
           completer.buffer(arena).ReplySuccess(std::move(out_irq->value()->irq));
         } else {
-          FDF_LOG(ERROR, "Failed to duplicate interrupt handle: %s", zx_status_get_string(status));
+          fdf::error("Failed to duplicate interrupt handle: {}", zx_status_get_string(status));
           ClearIrqIndex(irq_index, index);
           irq_info_[index] = InterruptInfo{};
           completer.buffer(arena).ReplyError(status);
@@ -674,12 +672,12 @@ void AmlGpio::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureRequest*
   const AmlGpioBlock* block;
   uint32_t pinindex;
   if ((status = AmlPinToBlock(request->pin, &block, &pinindex)) != ZX_OK) {
-    FDF_LOG(ERROR, "Pin not found %u", request->pin);
+    fdf::error("Pin not found {}", request->pin);
     return completer.buffer(arena).ReplyError(status);
   }
 
   if (request->config.has_function() && request->config.function() > kAltFnMax) {
-    FDF_LOG(ERROR, "Pin mux alt config out of range %lu", request->config.function());
+    fdf::error("Pin mux alt config out of range {}", request->config.function());
     return completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
   }
   if (request->config.has_drive_strength_ua() && pid_ == PDEV_PID_AMLOGIC_A113) {
@@ -699,7 +697,7 @@ void AmlGpio::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureRequest*
     // Validate there are enough wake vector interrupts.
     auto result = pdev_.sync()->GetInterruptById(wake_vector_pins_.size(), 0);
     if (!result.ok() || result->is_error()) {
-      FDF_LOG(ERROR, "Not enough interrupts");
+      fdf::error("Not enough interrupts");
       completer.buffer(arena).ReplyError(ZX_ERR_IO_INVALID);
       return;
     }
@@ -707,12 +705,12 @@ void AmlGpio::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureRequest*
     zx_status_t status =
         result->value()->irq.get_info(ZX_INFO_INTERRUPT, &info, sizeof(info), nullptr, nullptr);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to get interrupt info");
+      fdf::error("Failed to get interrupt info");
       completer.buffer(arena).ReplyError(status);
       return;
     }
     if (!(info.options & /* ZX_INTERRUPT_WAKE_VECTOR */ 0x20)) {
-      FDF_LOG(ERROR, "Not enough wake vector interrupts");
+      fdf::error("Not enough wake vector interrupts");
       completer.buffer(arena).ReplyError(status);
       return;
     }
@@ -822,7 +820,7 @@ void AmlGpio::SetDriveStrength(uint32_t index, const AmlGpioBlock* block,
   } else if (drive_strength_ua <= 4000) {
     ds_val = DRV_4000UA;
   } else {
-    FDF_LOG(ERROR, "Invalid drive strength %lu, default to 4000 uA", drive_strength_ua);
+    fdf::error("Invalid drive strength {}, default to 4000 uA", drive_strength_ua);
     ds_val = DRV_4000UA;
   }
 
@@ -871,34 +869,33 @@ fpromise::promise<fdf::MmioBuffer, zx_status_t> AmlGpioDriver::MapMmio(
     fidl::WireClient<fuchsia_hardware_platform_device::Device>& pdev, uint32_t mmio_id) {
   fpromise::bridge<fdf::MmioBuffer, zx_status_t> bridge;
 
-  pdev->GetMmioById(mmio_id).Then(
-      [mmio_id, completer = std::move(bridge.completer)](auto& result) mutable {
-        if (!result.ok()) {
-          FDF_LOG(ERROR, "Call to get MMIO %u failed: %s", mmio_id, result.status_string());
-          return completer.complete_error(result.status());
-        }
-        if (result->is_error()) {
-          FDF_LOG(ERROR, "Failed to get MMIO %u: %s", mmio_id,
-                  zx_status_get_string(result->error_value()));
-          return completer.complete_error(result->error_value());
-        }
+  pdev->GetMmioById(mmio_id).Then([mmio_id,
+                                   completer = std::move(bridge.completer)](auto& result) mutable {
+    if (!result.ok()) {
+      fdf::error("Call to get MMIO {} failed: {}", mmio_id, result.status_string());
+      return completer.complete_error(result.status());
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to get MMIO {}: {}", mmio_id, zx_status_get_string(result->error_value()));
+      return completer.complete_error(result->error_value());
+    }
 
-        auto& mmio = *result->value();
-        if (!mmio.has_offset() || !mmio.has_size() || !mmio.has_vmo()) {
-          FDF_LOG(ERROR, "Invalid MMIO returned for ID %u", mmio_id);
-          return completer.complete_error(ZX_ERR_BAD_STATE);
-        }
+    auto& mmio = *result->value();
+    if (!mmio.has_offset() || !mmio.has_size() || !mmio.has_vmo()) {
+      fdf::error("Invalid MMIO returned for ID {}", mmio_id);
+      return completer.complete_error(ZX_ERR_BAD_STATE);
+    }
 
-        zx::result mmio_buffer = fdf::MmioBuffer::Create(
-            mmio.offset(), mmio.size(), std::move(mmio.vmo()), ZX_CACHE_POLICY_UNCACHED_DEVICE);
-        if (mmio_buffer.is_error()) {
-          FDF_LOG(ERROR, "Failed to map MMIO %u: %s", mmio_id,
-                  zx_status_get_string(mmio_buffer.error_value()));
-          return completer.complete_error(mmio_buffer.error_value());
-        }
+    zx::result mmio_buffer = fdf::MmioBuffer::Create(
+        mmio.offset(), mmio.size(), std::move(mmio.vmo()), ZX_CACHE_POLICY_UNCACHED_DEVICE);
+    if (mmio_buffer.is_error()) {
+      fdf::error("Failed to map MMIO {}: {}", mmio_id,
+                 zx_status_get_string(mmio_buffer.error_value()));
+      return completer.complete_error(mmio_buffer.error_value());
+    }
 
-        completer.complete_ok(*std::move(mmio_buffer));
-      });
+    completer.complete_ok(*std::move(mmio_buffer));
+  });
 
   return bridge.consumer.promise_or(fpromise::error(ZX_ERR_BAD_STATE));
 }
