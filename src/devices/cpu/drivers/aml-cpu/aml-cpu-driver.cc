@@ -5,6 +5,7 @@
 #include "src/devices/cpu/drivers/aml-cpu/aml-cpu-driver.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <soc/aml-common/aml-cpu-metadata.h>
 
@@ -17,28 +18,28 @@ AmlCpuDriver::AmlCpuDriver(fdf::DriverStartArgs start_args,
 zx::result<> AmlCpuDriver::Start() {
   auto pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
     return zx::error(pdev_client.take_error());
   }
   fdf::PDev pdev(std::move(pdev_client.value()));
 
   zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_amlogic_metadata::CpuMetadata>();
   if (metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+    fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
   }
   if (!metadata->performance_domains().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing `performance_domains` field");
+    fdf::error("Metadata missing `performance_domains` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!metadata->operating_points().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing `operating_points` field");
+    fdf::error("Metadata missing `operating_points` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   zx::result config = LoadConfiguration(pdev);
   if (config.is_error()) {
-    FDF_LOG(ERROR, "Failed to load cpu configuration: %s", config.status_string());
+    fdf::error("Failed to load cpu configuration: {}", config);
     return config.take_error();
   }
 
@@ -52,7 +53,7 @@ zx::result<> AmlCpuDriver::Start() {
         PerformanceDomainOpPoints(perf_domain, metadata->operating_points().value());
     auto device = BuildPerformanceDomain(perf_domain, pd_op_points, config.value());
     if (device.is_error()) {
-      FDF_LOG(ERROR, "Failed to build performance domain node: %s", device.status_string());
+      fdf::error("Failed to build performance domain node: {}", device);
       return zx::error(device.error_value());
     }
 
@@ -63,7 +64,7 @@ zx::result<> AmlCpuDriver::Start() {
     auto result = outgoing()->AddService<fuchsia_hardware_cpu_ctrl::Service>(std::move(handler),
                                                                              device->GetName());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add service: %s", result.status_string());
+      fdf::error("Failed to add service: {}", result);
       return result.take_error();
     }
 
@@ -85,8 +86,8 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     zx::result pll_clock_client =
         incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
     if (pll_clock_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to get clock protocol from fragment '%s': %s\n", fragment_name,
-              pll_clock_client.status_string());
+      fdf::error("Failed to get clock protocol from fragment '{}': {}\n", fragment_name,
+                 pll_clock_client);
       return zx::error(pll_clock_client.status_value());
     }
     pll_div16_client = std::move(*pll_clock_client);
@@ -95,8 +96,8 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     zx::result cpu_clock_client =
         incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
     if (cpu_clock_client.is_error()) {
-      FDF_LOG(ERROR, "Failed to get clock protocol from fragment '%s': %s\n", fragment_name,
-              cpu_clock_client.status_string());
+      fdf::error("Failed to get clock protocol from fragment '{}': {}\n", fragment_name,
+                 cpu_clock_client);
       return zx::error(cpu_clock_client.status_value());
     }
     cpu_div16_client = std::move(*cpu_clock_client);
@@ -106,8 +107,8 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
   zx::result clock_client =
       incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
   if (clock_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to get clock protocol from fragment '%s': %s\n", fragment_name,
-            clock_client.status_string());
+    fdf::error("Failed to get clock protocol from fragment '{}': {}\n", fragment_name,
+               clock_client);
     return zx::error(clock_client.status_value());
   }
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> cpu_scaler_client{std::move(*clock_client)};
@@ -120,7 +121,7 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     zx::result client_end_result =
         incoming()->Connect<fuchsia_hardware_power::Service::Device>(fragment_name);
     if (client_end_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create power client, st = %s", client_end_result.status_string());
+      fdf::error("Failed to create power client, st = {}", client_end_result);
       return zx::error(client_end_result.error_value());
     }
 
@@ -133,7 +134,7 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
   auto st = device->Init(std::move(pll_div16_client), std::move(cpu_div16_client),
                          std::move(cpu_scaler_client), std::move(power_client));
   if (st != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to initialize device: %s", zx_status_get_string(st));
+    fdf::error("Failed to initialize device: {}", zx_status_get_string(st));
     return zx::error(st);
   }
 

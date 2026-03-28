@@ -36,7 +36,7 @@ zx_status_t GetPopularVoltageTable(const zx::resource& smc_resource) {
     zx_smc_result_t smc_result;
     zx_status_t status = zx_smc_call(smc_resource.get(), &smc_params, &smc_result);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "zx_smc_call failed: %s", zx_status_get_string(status));
+      fdf::error("zx_smc_call failed: {}", zx_status_get_string(status));
       return status;
     }
   }
@@ -50,14 +50,14 @@ zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev) {
 
   zx::result mmio_result = pdev.MapMmio(0);
   if (mmio_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to map mmio: %s", mmio_result.status_string());
+    fdf::error("Failed to map mmio: {}", mmio_result);
     return mmio_result.take_error();
   }
   auto mmio_buffer = std::move(mmio_result.value());
 
   zx::result device_info = pdev.GetDeviceInfo();
   if (device_info.is_error()) {
-    FDF_LOG(ERROR, "Failed to get device info: %s", device_info.status_string());
+    fdf::error("Failed to get device info: {}", device_info);
     return device_info.take_error();
   }
   config.info = std::move(device_info.value());
@@ -67,13 +67,13 @@ zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev) {
   if (config.info.pid == PDEV_PID_AMLOGIC_A5) {
     zx::result smc_resource = pdev.GetSmc(0);
     if (smc_resource.is_error()) {
-      FDF_LOG(ERROR, "Failed to get SMC: %s", smc_resource.status_string());
+      fdf::error("Failed to get SMC: {}", smc_resource);
       return smc_resource.take_error();
     }
 
     st = GetPopularVoltageTable(smc_resource.value());
     if (st != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to get popular voltage table: %s", zx_status_get_string(st));
+      fdf::error("Failed to get popular voltage table: {}", zx_status_get_string(st));
       return zx::error(st);
     }
     config.fragments_per_pf_domain = kFragmentsPerPfDomainA5;
@@ -121,12 +121,12 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   std::scoped_lock lock(lock_);
 
   if (requested_opp >= operating_points_.size()) {
-    FDF_LOG(ERROR, "Requested opp is out of bounds, opp = %u\n", requested_opp);
+    fdf::error("Requested opp is out of bounds, opp = {}\n", requested_opp);
     return ZX_ERR_OUT_OF_RANGE;
   }
 
   if (!out_opp) {
-    FDF_LOG(ERROR, "out_opp may not be null");
+    fdf::error("out_opp may not be null");
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -142,17 +142,17 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   auto reset_voltage_func = [this, initial_opp]() {
     auto result = this->pwr_->RequestVoltage(initial_opp.volt_uv());
     if (!result.ok()) {
-      FDF_LOG(ERROR, "FIDL Call Failed to restore voltage to original setting: %s",
-              result.status_string());
+      fdf::error("FIDL Call Failed to restore voltage to original setting: {}",
+                 result.status_string());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to restore voltage to original setting: %s",
-              zx_status_get_string(result->error_value()));
+      fdf::error("Failed to restore voltage to original setting: {}",
+                 zx_status_get_string(result->error_value()));
     }
     uint32_t actual_voltage = result->value()->actual_voltage;
     if (actual_voltage != initial_opp.volt_uv()) {
-      FDF_LOG(ERROR, "Restored voltage does not match, requested = %u, got = %u",
-              initial_opp.volt_uv(), actual_voltage);
+      fdf::error("Restored voltage does not match, requested = {}, got = {}", initial_opp.volt_uv(),
+                 actual_voltage);
     }
   };
 
@@ -161,9 +161,9 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   *out_opp = requested_opp;
 
   // TODO(b/376589801): Consider publishing this via inspect.
-  FDF_LOG(DEBUG, "Scaling from %u MHz %u mV to %u MHz %u mV", initial_opp.freq_hz() / 1000000,
-          initial_opp.volt_uv() / 1000, target_opp.freq_hz() / 1000000,
-          target_opp.volt_uv() / 1000);
+  fdf::debug("Scaling from {} MHz {} mV to {} MHz {} mV", initial_opp.freq_hz() / 1000000,
+             initial_opp.volt_uv() / 1000, target_opp.freq_hz() / 1000000,
+             target_opp.volt_uv() / 1000);
 
   if (initial_opp.freq_hz() == target_opp.freq_hz() &&
       initial_opp.volt_uv() == target_opp.volt_uv()) {
@@ -177,20 +177,20 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
     ZX_ASSERT(pwr_.is_valid());
     fidl::WireResult result = pwr_->RequestVoltage(target_opp.volt_uv());
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send RequestVoltage request: %s", result.status_string());
+      fdf::error("Failed to send RequestVoltage request: {}", result.status_string());
       return result.error().status();
     }
 
     if (result->is_error()) {
-      FDF_LOG(ERROR, "RequestVoltage call returned error: %s",
-              zx_status_get_string(result->error_value()));
+      fdf::error("RequestVoltage call returned error: {}",
+                 zx_status_get_string(result->error_value()));
       return result->error_value();
     }
 
     uint32_t actual_voltage = result->value()->actual_voltage;
     if (actual_voltage != target_opp.volt_uv()) {
-      FDF_LOG(ERROR, "Actual voltage does not match, requested = %u, got = %u",
-              target_opp.volt_uv(), actual_voltage);
+      fdf::error("Actual voltage does not match, requested = {}, got = {}", target_opp.volt_uv(),
+                 actual_voltage);
       reset_voltage_func();
       return ZX_ERR_INTERNAL;
     }
@@ -202,7 +202,7 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   // Set the frequency next.
   fidl::WireResult result = cpuscaler_->SetRate(target_opp.freq_hz());
   if (!result.ok() || result->is_error()) {
-    FDF_LOG(ERROR, "Could not set CPU frequency: %s", result.FormatDescription().c_str());
+    fdf::error("Could not set CPU frequency: {}", result.FormatDescription().c_str());
 
     if (!result.ok()) {
       return result.status();
@@ -213,12 +213,12 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   reset_frequency = [this, initial_opp]() {
     auto result = this->cpuscaler_->SetRate(initial_opp.freq_hz());
     if (!result.ok()) {
-      FDF_LOG(ERROR, "FIDL Call Failed to restore frequency to original setting: %s",
-              result.status_string());
+      fdf::error("FIDL Call Failed to restore frequency to original setting: {}",
+                 result.status_string());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to restore frequency to original setting: %s",
-              zx_status_get_string(result->error_value()));
+      fdf::error("Failed to restore frequency to original setting: {}",
+                 zx_status_get_string(result->error_value()));
     }
   };
 
@@ -228,28 +228,28 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
     ZX_ASSERT(pwr_.is_valid());
     fidl::WireResult result = pwr_->RequestVoltage(target_opp.volt_uv());
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send RequestVoltage request: %s", result.status_string());
+      fdf::error("Failed to send RequestVoltage request: {}", result.status_string());
       return result.error().status();
     }
 
     if (result->is_error()) {
-      FDF_LOG(ERROR, "RequestVoltage call returned error: %s",
-              zx_status_get_string(result->error_value()));
+      fdf::error("RequestVoltage call returned error: {}",
+                 zx_status_get_string(result->error_value()));
       return result->error_value();
     }
 
     uint32_t actual_voltage = result->value()->actual_voltage;
     if (actual_voltage != target_opp.volt_uv()) {
-      FDF_LOG(ERROR,
-              "Failed to set cpu voltage, requested = %u, got = %u. "
-              "Voltage and frequency mismatch!",
-              target_opp.volt_uv(), actual_voltage);
+      fdf::error(
+          "Failed to set cpu voltage, requested = {}, got = {}. "
+          "Voltage and frequency mismatch!",
+          target_opp.volt_uv(), actual_voltage);
       reset_voltage_func();
       return ZX_ERR_INTERNAL;
     }
   }
 
-  FDF_LOG(DEBUG, "switch opp from %u to %u success!\n", current_operating_point_, requested_opp);
+  fdf::debug("switch opp from {} to {} success!\n", current_operating_point_, requested_opp);
 
   current_operating_point_ = requested_opp;
 
@@ -274,11 +274,11 @@ zx_status_t AmlCpu::Init(fidl::ClientEnd<fuchsia_hardware_clock::Clock> plldiv16
 
     fidl::WireResult result = plldiv16_->Enable();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send request to enable plldiv16: %s", result.status_string());
+      fdf::error("Failed to send request to enable plldiv16: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to enable plldiv16: %s", zx_status_get_string(result->error_value()));
+      fdf::error("Failed to enable plldiv16: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -288,11 +288,11 @@ zx_status_t AmlCpu::Init(fidl::ClientEnd<fuchsia_hardware_clock::Clock> plldiv16
 
     fidl::WireResult result = cpudiv16_->Enable();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send request to enable cpudiv16: %s", result.status_string());
+      fdf::error("Failed to send request to enable cpudiv16: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to enable cpudiv16: %s", zx_status_get_string(result->error_value()));
+      fdf::error("Failed to enable cpudiv16: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -302,14 +302,14 @@ zx_status_t AmlCpu::Init(fidl::ClientEnd<fuchsia_hardware_clock::Clock> plldiv16
 
     fidl::WireResult voltage_range_result = pwr_->GetSupportedVoltageRange();
     if (!voltage_range_result.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetSupportedVoltageRange request: %s",
-              voltage_range_result.status_string());
+      fdf::error("Failed to send GetSupportedVoltageRange request: {}",
+                 voltage_range_result.status_string());
       return voltage_range_result.status();
     }
 
     if (voltage_range_result->is_error()) {
-      FDF_LOG(ERROR, "GetSupportedVoltageRange returned error: %s",
-              zx_status_get_string(voltage_range_result->error_value()));
+      fdf::error("GetSupportedVoltageRange returned error: {}",
+                 zx_status_get_string(voltage_range_result->error_value()));
       return voltage_range_result->error_value();
     }
 
@@ -318,14 +318,13 @@ zx_status_t AmlCpu::Init(fidl::ClientEnd<fuchsia_hardware_clock::Clock> plldiv16
 
     fidl::WireResult register_result = pwr_->RegisterPowerDomain(min_voltage, max_voltage);
     if (!register_result.ok()) {
-      FDF_LOG(ERROR, "Failed to send RegisterPowerDomain request: %s",
-              register_result.status_string());
+      fdf::error("Failed to send RegisterPowerDomain request: {}", register_result.status_string());
       return voltage_range_result.status();
     }
 
     if (register_result->is_error()) {
-      FDF_LOG(ERROR, "RegisterPowerDomain returned error: %s",
-              zx_status_get_string(register_result->error_value()));
+      fdf::error("RegisterPowerDomain returned error: {}",
+                 zx_status_get_string(register_result->error_value()));
       return register_result->error_value();
     }
   }
@@ -335,12 +334,12 @@ zx_status_t AmlCpu::Init(fidl::ClientEnd<fuchsia_hardware_clock::Clock> plldiv16
   zx_status_t result = SetCurrentOperatingPointInternal(kInitialOpp, &actual);
 
   if (result != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to set initial opp, st = %d", result);
+    fdf::error("Failed to set initial opp, st = {}", zx_status_get_string(result));
     return result;
   }
 
   if (actual != kInitialOpp) {
-    FDF_LOG(ERROR, "Failed to set initial opp, requested = %u, actual = %u", kInitialOpp, actual);
+    fdf::error("Failed to set initial opp, requested = {}, actual = {}", kInitialOpp, actual);
     return ZX_ERR_INTERNAL;
   }
 
@@ -351,9 +350,9 @@ void AmlCpu::SetCpuInfo(uint32_t cpu_version_packed) {
   const uint8_t major_revision = (cpu_version_packed >> 24) & 0xff;
   const uint8_t minor_revision = (cpu_version_packed >> 8) & 0xff;
   const uint8_t cpu_package_id = (cpu_version_packed >> 20) & 0x0f;
-  FDF_LOG(INFO, "major revision number: 0x%x", major_revision);
-  FDF_LOG(INFO, "minor revision number: 0x%x", minor_revision);
-  FDF_LOG(INFO, "cpu package id number: 0x%x", cpu_package_id);
+  fdf::info("major revision number: 0x{:x}", major_revision);
+  fdf::info("minor revision number: 0x{:x}", minor_revision);
+  fdf::info("cpu package id number: 0x{:x}", cpu_package_id);
 
   inspect_major_revision_ = cpu_info_.CreateUint("cpu_major_revision", major_revision);
   inspect_minor_revision_ = cpu_info_.CreateUint("cpu_minor_revision", minor_revision);
@@ -364,7 +363,7 @@ void AmlCpu::GetOperatingPointInfo(GetOperatingPointInfoRequestView request,
                                    GetOperatingPointInfoCompleter::Sync& completer) {
   auto operating_points = GetOperatingPoints();
   if (request->opp >= operating_points.size()) {
-    FDF_LOG(INFO, "Requested an operating point that's out of bounds, %u\n", request->opp);
+    fdf::info("Requested an operating point that's out of bounds, {}\n", request->opp);
     completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
     return;
   }
