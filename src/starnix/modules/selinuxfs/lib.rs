@@ -6,7 +6,7 @@
 
 use starnix_sync::LockEqualOrBefore;
 
-use seq_lock::SeqLock;
+use seq_lock::{SeqLock, SeqLockable, WriteSize};
 
 use selinux::policy::metadata::POLICYDB_VERSION_MAX;
 use selinux::policy::{AccessDecision, AccessVector};
@@ -82,6 +82,13 @@ struct SeLinuxStatusValue {
     policyload: u32,
     /// `0` means allow and `1` means deny unknown object classes/permissions.
     deny_unknown: u32,
+}
+
+// SAFETY: `SeLinuxStatusValue` can be safely written to shared memory in 4-byte chunks
+// because it is composed solely of u32s. It does not include an inline sequence lock.
+unsafe impl SeqLockable for SeLinuxStatusValue {
+    const WRITE_SIZE: WriteSize = WriteSize::Four;
+    const HAS_INLINE_SEQUENCE: bool = false;
 }
 
 type StatusSeqLock = SeqLock<SeLinuxStatusHeader, SeLinuxStatusValue>;

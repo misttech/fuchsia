@@ -14,12 +14,13 @@ use std::error::Error;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
+use zx::HandleBased;
 
 use futures::io::{AsyncReadExt, Cursor};
 use fxt::TraceRecord;
 use fxt::profiler::ProfilerRecord;
 use fxt::session::SessionParser;
-use seq_lock::SeqLock;
+use seq_lock::{SeqLock, SeqLockable, WriteSize};
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -68,9 +69,10 @@ struct PerfMetadataHeader {
     compat_version: u32,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Copy, Clone, IntoBytes, Immutable)]
 struct PerfMetadataValue {
+    lock: u32,
     index: u32,
     offset: i64,
     time_enabled: u64,
@@ -94,6 +96,14 @@ struct PerfMetadataValue {
     aux_tail: u64,
     aux_offset: u64,
     aux_size: u64,
+}
+
+// SAFETY: `PerfMetadataValue` can be safely written to shared memory in 8-byte chunks.
+// This is because it is composed of two u32s followed by only u64s.
+// The first u32 is the `lock` field, which is why HAS_INLINE_SEQUENCE is true.
+unsafe impl SeqLockable for PerfMetadataValue {
+    const WRITE_SIZE: WriteSize = WriteSize::Eight;
+    const HAS_INLINE_SEQUENCE: bool = true;
 }
 
 struct PerfState {
@@ -212,7 +222,8 @@ pub struct PerfEventFile {
     // Pointer to the perf_event_mmap_page metadata's data_head.
     // TODO(https://fxbug.dev/460203776) Remove Arc after figuring out
     // "borrowed value does not live long enough" issue.
-    data_head_pointer: Arc<AtomicPtr<u64>>,
+    _data_head_pointer: Arc<AtomicPtr<u64>>,
+    seq_lock: SeqLock<PerfMetadataHeader, PerfMetadataValue>,
 }
 
 // PerfEventFile object that implements FileOps.
@@ -403,79 +414,23 @@ impl FileOps for PerfEventFile {
         if buffer_size == 0 {
             return error!(EINVAL);
         }
+
+        // Update metadata page now that we have new information.
+        // Also update `data_head` to indicate that this first page has finished writing.
+        // SAFETY: Current usage has only one read call on the seq lock value (here), and
+        // one write call (a few lines down). This means that this read call will return
+        // correct data (no write occurring midway through read). fxr/1539565 will make
+        // sure read will return with correct values.
+        let mut metadata_value: PerfMetadataValue = unsafe { self.seq_lock.get() };
         let page_size = zx::system_get_page_size() as u64;
+        metadata_value.data_head = page_size;
+        metadata_value.data_size = buffer_size - page_size;
+        // Write directly to memory location (not MemoryObject).
+        self.seq_lock.set_value(metadata_value);
 
+        // Write to a MemoryObject and return it (expected return type for get_memory()).
         security::check_perf_event_read_access(current_task, &self)?;
-
-        // TODO(https://fxbug.dev/460246292) confirm when to create metadata.
-        // Create metadata structs. Currently we hardcode everything just to get
-        // something E2E working.
-        let metadata_header = PerfMetadataHeader { version: 1, compat_version: 2 };
-        let metadata_value = PerfMetadataValue {
-            index: 2,
-            offset: 19337,
-            time_enabled: 0,
-            time_running: 0,
-            __bindgen_anon_1: perf_event_mmap_page__bindgen_ty_1 { capabilities: 30 },
-            pmc_width: 0,
-            time_shift: 0,
-            time_mult: 0,
-            time_offset: 0,
-            time_zero: 0,
-            size: 0,
-            __reserved_1: 0,
-            time_cycles: 0,
-            time_mask: 0,
-            __reserved: [0; 928usize],
-            data_head: page_size,
-            // Start reading from 0; it is the user's responsibility to increment on their end.
-            data_tail: 0,
-            data_offset: page_size,
-            data_size: (buffer_size - page_size) as u64,
-            aux_head: 0,
-            aux_tail: 0,
-            aux_offset: 0,
-            aux_size: 0,
-        };
-
-        // Then, wrap metadata in a SeqLock so that user can be made aware of updates.
-        // SeqLock is formatted thusly:
-        //   header_struct : any size, values should not change
-        //   sequence_counter : u32
-        //   value_struct : any size, needs locking because each value can change
-        // We split our perf_event_mmap_page accordingly. The `version` and `compat_version`
-        // should not change while the params below the `lock` may change.
-        // Sequence counter for `lock` param gets inserted between these via
-        // the `SeqLock` implementation.
         let perf_event_file = self.perf_event_file.read();
-        // VMO does not implement Copy trait. We duplicate the VMO handle
-        // so that we can pass it to the SeqLock and the MemoryObject.
-        let vmo_handle_copy = match perf_event_file
-            .perf_data_vmo
-            .as_handle_ref()
-            .duplicate(zx::Rights::SAME_RIGHTS)
-        {
-            Ok(h) => h,
-            Err(_) => return error!(EINVAL),
-        };
-
-        // SAFETY: This is ok right now because we are the only reference to this memory.
-        // Once there are multiple references we should update this comment to confirm that
-        // there are only atomic accesses to this memory (see seq_lock lib.rs for details).
-        let mut seq_lock = match unsafe {
-            SeqLock::new_from_vmo(metadata_header, metadata_value, vmo_handle_copy.into())
-        } {
-            Ok(s) => s,
-            Err(_) => return error!(EINVAL),
-        };
-
-        // Now, the perf_data_vmo contains the full metadata page enclosed in a SeqLock.
-        // Save data_head pointer so that we can write atomically to it after profiling.
-        let metadata_struct = seq_lock.get_map_address() as *mut PerfMetadataValue;
-        // SAFETY: This is ok as we previously set the exact format (PerfMetadataValue).
-        let data_head_pointer = unsafe { std::ptr::addr_of_mut!((*metadata_struct).data_head) };
-        self.data_head_pointer.store(data_head_pointer, Ordering::Release);
-
         match perf_event_file.perf_data_vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS) {
             Ok(vmo) => {
                 let memory = MemoryObject::Vmo(vmo.into());
@@ -885,6 +840,63 @@ fn ping_receiver(
     let _ = profiling_complete_receiver.recv().unwrap();
 }
 
+// Creates a seq lock for the given VMO. Initializes the seq lock with
+// known initial values (unknown values default to 0).
+// Does NOT actually save this as a memory object until mmap() is called.
+//
+// # Safety
+//
+// The caller must ensure that the kernel maintains exclusive write access to this VMO and
+// there are only atomic accesses to this memory (see seq_lock lib.rs for details).
+unsafe fn create_seq_lock(
+    vmo_handle_ref: &zx::NullableHandle,
+) -> SeqLock<PerfMetadataHeader, PerfMetadataValue> {
+    // Currently we hardcode everything just to get something E2E working.
+    let metadata_header = PerfMetadataHeader { version: 1, compat_version: 2 };
+    let metadata_value = PerfMetadataValue {
+        lock: 0,
+        index: 3,
+        offset: 19337,
+        time_enabled: 0,
+        time_running: 0,
+        __bindgen_anon_1: perf_event_mmap_page__bindgen_ty_1 { capabilities: 30 },
+        pmc_width: 0,
+        time_shift: 0,
+        time_mult: 0,
+        time_offset: 0,
+        time_zero: 0,
+        size: 0,
+        __reserved_1: 0,
+        time_cycles: 0,
+        time_mask: 0,
+        __reserved: [0; 928usize],
+        data_head: 0,
+        // Start reading from 0; it is the user's responsibility to increment on their end.
+        data_tail: 0,
+        // We know the data will start after 1 page size so we can set this now.
+        data_offset: zx::system_get_page_size() as u64,
+        // We can only calculate this value when mmap() is called. Initialize to 0.
+        data_size: 0,
+        aux_head: 0,
+        aux_tail: 0,
+        aux_offset: 0,
+        aux_size: 0,
+    };
+    let vmo = zx::Vmo::from(vmo_handle_ref.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+
+    // Create a SeqLock and safely initialize the `header` and `value` for it.
+    // SeqLock is formatted thusly:
+    //   header_struct : any size, params `version` and `compat_version` should not change
+    //   sequence_counter : u32, this is the lock and should increment
+    //   value_struct : any size, each param can change
+    //
+    // SAFETY: See safety requirements on `create_seq_lock`.
+    unsafe {
+        SeqLock::new_from_vmo(metadata_header, metadata_value, vmo)
+            .expect("failed to create seq_lock for perf metadata")
+    }
+}
+
 pub fn sys_perf_event_open(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -996,6 +1008,10 @@ pub fn sys_perf_event_open(
     // Pass cloned into the thread.
     let cloned_data_head_pointer = Arc::clone(&data_head_pointer);
 
+    // SAFETY: This is safe because the kernel maintains exclusive write access to this VMO and
+    // there are only atomic accesses to this memory (see seq_lock lib.rs for details).
+    let seq_lock = unsafe { create_seq_lock(vmo_handle_copy.as_ref().unwrap()) };
+
     let closure = async move |_: LockedAndTask<'_>| {
         let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
 
@@ -1065,7 +1081,8 @@ pub fn sys_perf_event_open(
         _cpu: cpu,
         perf_event_file: RwLock::new(perf_event_file),
         security_state: security::perf_event_alloc(current_task),
-        data_head_pointer: data_head_pointer,
+        _data_head_pointer: data_head_pointer,
+        seq_lock: seq_lock,
     });
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
     let file_handle =
