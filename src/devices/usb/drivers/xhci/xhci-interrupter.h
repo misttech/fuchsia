@@ -33,13 +33,12 @@ class Interrupter {
       });
 
       if (post_task_status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to post the irq handler cancel task: %s",
-                zx_status_get_string(post_task_status));
+        fdf::error("Failed to post the irq handler cancel task: {}",
+                   zx_status_get_string(post_task_status));
       } else {
         cancel_completion.Wait();
         if (cancel_status != ZX_OK) {
-          FDF_LOG(ERROR, "Failed to cancel the irq handler: %s",
-                  zx_status_get_string(cancel_status));
+          fdf::error("Failed to cancel the irq handler: {}", zx_status_get_string(cancel_status));
         }
       }
 

@@ -44,7 +44,7 @@ void TestFunction::ExpectIn(ExpectInRequest& request, ExpectInCompleter::Sync& c
 void TestFunction::Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) {
   zx::result<> result = SetFunctionInterface(request.connect());
   if (result.is_error()) {
-    FDF_LOG(ERROR, "SetFunctionInterface failed %s", result.status_string());
+    fdf::error("SetFunctionInterface failed {}", result);
   }
   completer.Reply();
 }
@@ -87,7 +87,7 @@ zx::result<std::vector<uint8_t>> TestFunction::DoControl(
 zx::result<> TestFunction::Start() {
   zx::result child = AddOwnedChild(kName);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child %s", child.status_string());
+    fdf::error("Failed to add child {}", child);
     return child.take_error();
   }
   child_ = std::move(*child);
@@ -100,7 +100,7 @@ zx::result<> TestFunction::Start() {
                                           fidl::kIgnoreBindingClosure),
           }));
   if (serve_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", serve_result.status_string());
+    fdf::error("Failed to add Device service {}", serve_result);
     return serve_result.take_error();
   }
 

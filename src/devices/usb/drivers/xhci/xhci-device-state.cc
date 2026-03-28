@@ -15,8 +15,7 @@ DeviceState::~DeviceState() {
     auto status =
         hci_->RunSynchronously(kPrimaryInterrupter, hci_->DisableSlotCommand(*this).box());
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Could not DisableSlot for %u on DeviceState destruction %d", GetSlot(),
-              status);
+      fdf::error("Could not DisableSlot for {} on DeviceState destruction {}", GetSlot(), status);
     }
   }
 
@@ -153,7 +152,7 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot, uint8_t
   std::unique_ptr<dma_buffer::PagedBuffer> output_context_buffer;
   zx_status_t status = InitializeSlotBuffer(*hci, slot, port, hub_info, &slot_context_buffer);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to initialize slot buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to initialize slot buffer: {}", zx_status_get_string(status));
     return fpromise::make_error_promise(status);
   }
 
@@ -161,7 +160,7 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot, uint8_t
   fbl::AutoLock _(&transaction_lock_);
   status = tr_.Init(&hci->interrupter(interrupter_target).ring(), mmio);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to allocate the transfer ring: %s", zx_status_get_string(status));
+    fdf::error("Failed to allocate the transfer ring: {}", zx_status_get_string(status));
     return fpromise::make_result_promise(
                fpromise::result<TRB*, zx_status_t>(fpromise::error(status)))
         .box();
@@ -169,7 +168,7 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot, uint8_t
 
   status = InitializeEndpointContext(*hci, slot, port, hub_info, slot_context_buffer.get());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to initialize endpoint context: %s", zx_status_get_string(status));
+    fdf::error("Failed to initialize endpoint context: {}", zx_status_get_string(status));
     return fpromise::make_result_promise(
                fpromise::result<TRB*, zx_status_t>(fpromise::error(status)))
         .box();
@@ -177,7 +176,7 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot, uint8_t
 
   status = InitializeOutputContextBuffer(*hci, slot, port, hub_info, dcbaa, &output_context_buffer);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to initialize output context buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to initialize output context buffer: {}", zx_status_get_string(status));
     return fpromise::make_result_promise(
                fpromise::result<TRB*, zx_status_t>(fpromise::error(status)))
         .box();
@@ -191,7 +190,7 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot, uint8_t
   command.set_BSR(bsr);
   auto command_context = command_ring->AllocateContext();
   if (!command_context) {
-    FDF_LOG(ERROR, "No memory.");
+    fdf::error("No memory.");
     return fpromise::make_result_promise(
                fpromise::result<TRB*, zx_status_t>(fpromise::error(ZX_ERR_NO_MEMORY)))
         .box();

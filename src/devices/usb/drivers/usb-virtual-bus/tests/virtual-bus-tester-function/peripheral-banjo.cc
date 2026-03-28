@@ -6,6 +6,7 @@
 
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <usb/request-cpp.h>
 
@@ -21,24 +22,24 @@ zx::result<> BanjoTestFunction::Start() {
   zx::result<ddk::UsbFunctionProtocolClient> function =
       compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
   if (function.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect function %s", function.status_string());
+    fdf::error("Failed to connect function {}", function);
     return function.take_error();
   }
   function_ = *function;
 
   zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "usb_function_alloc_interface failed");
+    fdf::error("usb_function_alloc_interface failed");
     return zx::error(status);
   }
   status = function_.AllocEp(USB_DIR_OUT, &descriptor_.bulk_out.b_endpoint_address);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "usb_function_alloc_ep failed");
+    fdf::error("usb_function_alloc_ep failed");
     return zx::error(status);
   }
   status = function_.AllocEp(USB_DIR_IN, &descriptor_.bulk_in.b_endpoint_address);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "usb_function_alloc_ep failed");
+    fdf::error("usb_function_alloc_ep failed");
     return zx::error(status);
   }
 
@@ -51,7 +52,7 @@ zx::result<> BanjoTestFunction::Start() {
 
   zx::result<> connect_result = SetFunctionInterface(true);
   if (connect_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set function interface %s", connect_result.status_string());
+    fdf::error("Failed to set function interface {}", connect_result);
     return connect_result.take_error();
   }
 

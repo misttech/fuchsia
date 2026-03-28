@@ -60,7 +60,7 @@ void Device::In(InRequest& request, InCompleter::Sync& completer) {
 zx::result<> Device::Start() {
   zx::result<ddk::UsbProtocolClient> usb = compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming());
   if (usb.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect function %s", usb.status_string());
+    fdf::error("Failed to connect function {}", usb);
     return usb.take_error();
   }
   usb_client_ = *usb;
@@ -87,17 +87,17 @@ zx::result<> Device::Start() {
     }
   }
   if (!bulk_out_addr_) {
-    FDF_LOG(ERROR, "could not find bulk out endpoint");
+    fdf::error("could not find bulk out endpoint");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   if (!bulk_in_addr_) {
-    FDF_LOG(ERROR, "could not find bulk in endpoint");
+    fdf::error("could not find bulk in endpoint");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   zx::result child = AddOwnedChild(kName);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child %s", child.status_string());
+    fdf::error("Failed to add child {}", child);
     return child.take_error();
   }
   child_ = std::move(*child);
@@ -108,7 +108,7 @@ zx::result<> Device::Start() {
                                             fidl::kIgnoreBindingClosure),
       }));
   if (serve_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", serve_result.status_string());
+    fdf::error("Failed to add Device service {}", serve_result);
     return serve_result.take_error();
   }
 

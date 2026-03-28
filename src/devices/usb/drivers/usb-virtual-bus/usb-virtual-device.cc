@@ -18,8 +18,8 @@ void UsbVirtualDevice::UsbDciRequestQueue(usb_request_t* usb_request,
 
   uint8_t index = EpAddressToIndex(request.request()->header.ep_address);
   if (index >= USB_MAX_EPS) {
-    FDF_LOG(ERROR, "usb_virtual_bus_device_queue bad endpoint %u\n",
-            request.request()->header.ep_address);
+    fdf::error("usb_virtual_bus_device_queue bad endpoint {}\n",
+               request.request()->header.ep_address);
     request.Complete(ZX_ERR_INVALID_ARGS, 0);
     return;
   }

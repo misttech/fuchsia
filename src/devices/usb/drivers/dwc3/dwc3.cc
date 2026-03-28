@@ -150,8 +150,7 @@ class QualcommExtension final : public PlatformExtension {
     if (!driver_start) {
       if (fidl::Result result = fidl::Call(reset_client_)->ToggleWithTimeout(zx::usec(1500).get());
           result.is_error()) {
-        FDF_LOG(ERROR, "Failed to toggle reset %s",
-                result.error_value().FormatDescription().c_str());
+        fdf::error("Failed to toggle reset {}", result.error_value().FormatDescription().c_str());
         return zx::error(result.error_value().is_domain_error()
                              ? result.error_value().domain_error()
                              : result.error_value().framework_error().status());
@@ -260,7 +259,7 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
       fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
                                           "dwc3-interconnect", [](fdf_dispatcher_t*) {});
   if (dispatcher.is_error()) {
-    fdf::error("Failed to create interconnect dispatcher: {}", dispatcher.status_string());
+    fdf::error("Failed to create interconnect dispatcher: {}", dispatcher);
     return nullptr;
   }
 
@@ -424,8 +423,7 @@ zx::eventpair Dwc3::AcquireWakeLease() {
   zx::result<fidl::ClientEnd<fuchsia_power_system::ActivityGovernor>> connect_sag_result =
       incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
   if (connect_sag_result.is_error()) {
-    fdf::warn("Failed to connect to SystemActivityGovernor: {}.",
-              connect_sag_result.status_string());
+    fdf::warn("Failed to connect to SystemActivityGovernor: {}.", connect_sag_result);
     return {};
   }
 
@@ -1395,7 +1393,7 @@ void Dwc3::OnConnectStatusChanged(
     if (wake_lease.is_valid()) {
       zx_status_t status = wake_lease.duplicate(ZX_RIGHT_SAME_RIGHTS, &connection_lease_);
       if (status != ZX_OK) {
-        fdf::error("Failed to duplicate wake lease: {}", status);
+        fdf::error("Failed to duplicate wake lease: {}", zx_status_get_string(status));
       }
     }
   } else {

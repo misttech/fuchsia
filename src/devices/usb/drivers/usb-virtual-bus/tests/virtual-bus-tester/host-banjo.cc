@@ -5,6 +5,7 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host-banjo.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <usb/request-cpp.h>
 
@@ -73,7 +74,7 @@ void BanjoDevice::QueueIn(size_t size) {
 zx::result<> BanjoDevice::Start() {
   zx::result result = Device::Start();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to start %s", result.status_string());
+    fdf::error("Failed to start {}", result);
     return result.take_error();
   }
 

@@ -431,7 +431,7 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
 
   auto status = DeviceStateChangedLocked();
   if (status != ZX_OK) {
-    fdf::error("DeviceStateChangedLocked failed: {}", status);
+    fdf::error("DeviceStateChangedLocked failed: {}", zx_status_get_string(status));
     return status;
   }
   lock.release();
@@ -869,7 +869,7 @@ void UsbPeripheral::ClearFunctions() {
 
     if (listener_.is_valid()) {
       if (fidl::Status status = fidl::WireCall(listener_)->FunctionsCleared(); !status.ok()) {
-        fdf::error("Failed to send FunctionsCleared request: {}", status);
+        fdf::error("Failed to send FunctionsCleared request: {}", status.status_string());
       }
     }
   }

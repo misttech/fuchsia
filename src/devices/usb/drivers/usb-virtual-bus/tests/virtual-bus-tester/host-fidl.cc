@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace virtualbus {
 
@@ -14,12 +15,12 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 void FidlDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
   bulk_out_ep_->CancelAll().ThenExactlyOnce([](auto& result) {
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to cancel all %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Failed to cancel all {}", result.error_value().FormatDescription().c_str());
     }
   });
   bulk_in_ep_->CancelAll().ThenExactlyOnce([](auto& result) {
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to cancel all %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Failed to cancel all {}", result.error_value().FormatDescription().c_str());
     }
   });
   completer(zx::ok());
@@ -28,7 +29,7 @@ void FidlDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
 void FidlDevice::QueueOut(std::vector<uint8_t> data) {
   std::optional<usb::FidlRequest> req = bulk_out_ep_.GetRequest();
   if (!req) {
-    FDF_LOG(ERROR, "No requests available");
+    fdf::error("No requests available");
     out_completer_->Reply(zx::error(ZX_ERR_BAD_STATE));
     out_completer_.reset();
     return;
@@ -47,7 +48,7 @@ void FidlDevice::QueueOut(std::vector<uint8_t> data) {
   requests.emplace_back(req->take_request());
   auto result = bulk_out_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    fdf::error("Failed to QueueRequests {}", result.error_value().FormatDescription().c_str());
     out_completer_->Reply(zx::error(ZX_ERR_INTERNAL));
     out_completer_.reset();
     return;
@@ -57,7 +58,7 @@ void FidlDevice::QueueOut(std::vector<uint8_t> data) {
 void FidlDevice::QueueIn(size_t size) {
   std::optional<usb::FidlRequest> req = bulk_in_ep_.GetRequest();
   if (!req) {
-    FDF_LOG(ERROR, "No requests available");
+    fdf::error("No requests available");
     in_completer_->Reply(zx::error(ZX_ERR_BAD_STATE));
     in_completer_.reset();
     return;
@@ -69,7 +70,7 @@ void FidlDevice::QueueIn(size_t size) {
   requests.emplace_back(req->take_request());
   auto result = bulk_in_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    fdf::error("Failed to QueueRequests {}", result.error_value().FormatDescription().c_str());
     in_completer_->Reply(zx::error(ZX_ERR_INTERNAL));
     in_completer_.reset();
     return;
@@ -123,45 +124,45 @@ void FidlDevice::InComplete(std::vector<fendpoint::Completion> completions) {
 zx::result<> FidlDevice::Start() {
   zx::result result = Device::Start();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to start %s", result.status_string());
+    fdf::error("Failed to start {}", result);
     return result.take_error();
   }
 
   zx::result dispatcher =
       fdf::SynchronizedDispatcher::Create({}, "ep-dispatcher", [](fdf_dispatcher_t*) {}, "");
   if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create dispatcher %s", dispatcher.status_string());
+    fdf::error("Failed to create dispatcher {}", dispatcher);
     return dispatcher.take_error();
   }
   dispatcher_ = std::move(*dispatcher);
 
   auto client = incoming()->Connect<fuchsia_hardware_usb::UsbService::Device>();
   if (client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect fidl protocol");
+    fdf::error("Failed to connect fidl protocol");
     return client.take_error();
   }
 
   zx_status_t status = bulk_out_ep_.Init(bulk_out_addr_, *client, dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
+    fdf::error("Failed to init UsbEndpoint {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = bulk_in_ep_.Init(bulk_in_addr_, *client, dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
+    fdf::error("Failed to init UsbEndpoint {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   if (bulk_out_ep_.AddRequests(1, config_.vmo_data_size(),
                                fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 1) {
-    FDF_LOG(ERROR, "Failed to register VMOs");
+    fdf::error("Failed to register VMOs");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (bulk_in_ep_.AddRequests(1, config_.vmo_data_size(),
                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 1) {
-    FDF_LOG(ERROR, "Failed to register VMOs");
+    fdf::error("Failed to register VMOs");
     return zx::error(ZX_ERR_INTERNAL);
   }
 

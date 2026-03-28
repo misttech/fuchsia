@@ -13,6 +13,7 @@
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/function.h>
 #include <lib/zx/clock.h>
@@ -111,21 +112,21 @@ zx::result<> Dwc2::Start() {
       fit::bind_member<&Dwc2::DispatcherShutdownHandler>(this),
       "fuchsia.devices.usb.drivers.dwc2.interrupt");
   if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "could not create irq-dispatcher: %s", dispatcher.status_string());
+    fdf::error("could not create irq-dispatcher: {}", dispatcher);
     return dispatcher.take_error();
   }
   irq_dispatcher_ = std::move(*dispatcher);
 
   zx_status_t status = Init(config_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Init(): %s", zx_status_get_string(status));
+    fdf::error("Init(): {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   auto thunk = [this]() { this->IrqThread(); };
   status = async::PostTask(irq_dispatcher_.async_dispatcher(), std::move(thunk));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "could not post IrqThread() task: %s", zx_status_get_string(status));
+    fdf::error("could not post IrqThread() task: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -210,7 +211,7 @@ void Dwc2::HandleReset() {
   auto* mmio = get_mmio();
 
   // TODO(b/355271738): Downgrade back to SERIAL when done debugging b/355271738.
-  FDF_LOG(INFO, "\nRESET");
+  fdf::info("\nRESET");
 
   ep0_state_ = Ep0State::DISCONNECTED;
   configured_ = false;
@@ -273,14 +274,14 @@ void Dwc2::HandleReset() {
 // Handler for usbsuspend interrupt.
 void Dwc2::HandleSuspend() {
   // TODO(b/355271738): Logs added to debug b/355271738. Remove when fixed.
-  FDF_LOG(INFO, "%s", __func__);
+  fdf::info("{}", __func__);
   SetConnected(false);
 }
 
 // Handler for enumdone interrupt.
 void Dwc2::HandleEnumDone() {
   // TODO(b/355271738): Logs added to debug b/355271738. Remove when fixed.
-  FDF_LOG(INFO, "%s", __func__);
+  fdf::info("{}", __func__);
   SetConnected(true);
 
   auto* mmio = get_mmio();
@@ -335,7 +336,7 @@ void Dwc2::HandleInEpInterrupt() {
         } else {
           HandleTransferComplete(ep_num);
           if (diepint.nak()) {
-            FDF_LOG(ERROR, "Unhandled interrupt diepint.nak ep_num %u", ep_num);
+            fdf::error("Unhandled interrupt diepint.nak ep_num {}", ep_num);
             DIEPINT::Get(ep_num).ReadFrom(mmio).set_nak(1).WriteTo(mmio);
           }
         }
@@ -343,16 +344,16 @@ void Dwc2::HandleInEpInterrupt() {
 
       // TODO(voydanoff) Implement error recovery for these interrupts
       if (diepint.epdisabled()) {
-        FDF_LOG(ERROR, "Unhandled interrupt diepint.epdisabled for ep_num %u", ep_num);
+        fdf::error("Unhandled interrupt diepint.epdisabled for ep_num {}", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_epdisabled(1).WriteTo(mmio);
       }
       if (diepint.ahberr()) {
-        FDF_LOG(ERROR, "Unhandled interrupt diepint.ahberr for ep_num %u", ep_num);
+        fdf::error("Unhandled interrupt diepint.ahberr for ep_num {}", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_ahberr(1).WriteTo(mmio);
       }
       if (diepint.timeout()) {
-        FDF_LOG(ERROR, "(diepint.timeout) (ep%u) DIEPINT=0x%08x DIEPMSK=0x%08x", ep_num,
-                diepint.reg_value(), diepmsk.reg_value());
+        fdf::error("(diepint.timeout) (ep{}) DIEPINT=0x{:08x} DIEPMSK=0x{:08x}", ep_num,
+                   diepint.reg_value(), diepmsk.reg_value());
 
         // The timeout is due to one of two cases:
         //   1. The core never received an ACK to sent IN-data. In this case, the host
@@ -378,11 +379,11 @@ void Dwc2::HandleInEpInterrupt() {
         return;
       }
       if (diepint.intktxfemp()) {
-        FDF_LOG(ERROR, "Unhandled interrupt diepint.intktxfemp for ep_num %u", ep_num);
+        fdf::error("Unhandled interrupt diepint.intktxfemp for ep_num {}", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_intktxfemp(1).WriteTo(mmio);
       }
       if (diepint.intknepmis()) {
-        FDF_LOG(ERROR, "Unhandled interrupt diepint.intknepmis for ep_num %u", ep_num);
+        fdf::error("Unhandled interrupt diepint.intknepmis for ep_num {}", ep_num);
         DIEPINT::Get(ep_num).ReadFrom(mmio).set_intknepmis(1).WriteTo(mmio);
       }
       if (diepint.inepnakeff()) {
@@ -432,11 +433,11 @@ void Dwc2::HandleOutEpInterrupt() {
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_setup(1).WriteTo(mmio);
 
         memcpy(&cur_setup_, ep0_buffer_->virt(), sizeof(cur_setup_));
-        FDF_LOG(DEBUG,
-                "SETUP bm_request_type: 0x%02x b_request: %u w_value: %u w_index: %u "
-                "w_length: %u\n",
-                cur_setup_.bm_request_type, cur_setup_.b_request, cur_setup_.w_value,
-                cur_setup_.w_index, cur_setup_.w_length);
+        fdf::debug(
+            "SETUP bm_request_type: 0x{:02x} b_request: {} w_value: {} w_index: {} "
+            "w_length: %u\n",
+            cur_setup_.bm_request_type, cur_setup_.b_request, cur_setup_.w_value,
+            cur_setup_.w_index, cur_setup_.w_length);
 
         HandleEp0Setup();
       }
@@ -453,11 +454,11 @@ void Dwc2::HandleOutEpInterrupt() {
       }
       // TODO(voydanoff) Implement error recovery for these interrupts
       if (doepint.epdisabled()) {
-        FDF_LOG(ERROR, "Unhandled interrupt doepint.epdisabled for ep_num %u", ep_num);
+        fdf::error("Unhandled interrupt doepint.epdisabled for ep_num {}", ep_num);
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_epdisabled(1).WriteTo(mmio);
       }
       if (doepint.ahberr()) {
-        FDF_LOG(ERROR, "Unhandled interrupt doepint.ahberr for ep_num %u", ep_num);
+        fdf::error("Unhandled interrupt doepint.ahberr for ep_num {}", ep_num);
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_ahberr(1).WriteTo(mmio);
       }
     }
@@ -477,23 +478,22 @@ zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
     // Handle some special setup requests in this driver
     switch (cur_setup_.b_request) {
       case USB_REQ_SET_ADDRESS:
-        FDF_LOG(INFO, "SET_ADDRESS %d", cur_setup_.w_value);
+        fdf::info("SET_ADDRESS {}", cur_setup_.w_value);
         SetAddress(static_cast<uint8_t>(cur_setup_.w_value));
         now = zx::clock::get_boot();
         elapsed = now - irq_timestamp_;
-        FDF_LOG(
-            INFO,
-            "Took %i microseconds to reply to SET_ADDRESS interrupt\nStarted waiting at %lx\nGot "
-            "hardware IRQ at %lx\nFinished processing at %lx, context switch happened at %lx",
+        fdf::info(
+            "Took {} microseconds to reply to SET_ADDRESS interrupt\nStarted waiting at {:x}\nGot "
+            "hardware IRQ at {:x}\nFinished processing at {:x}, context switch happened at {:x}",
             static_cast<int>(elapsed.to_usecs()), wait_start_time_.get(), irq_timestamp_.get(),
             now.get(), irq_dispatch_timestamp_.get());
         if (elapsed.to_msecs() > 2) {
-          FDF_LOG(ERROR, "Handling SET_ADDRESS took greater than 2ms");
+          fdf::error("Handling SET_ADDRESS took greater than 2ms");
         }
         *out_actual = 0;
         return ZX_OK;
       case USB_REQ_SET_CONFIGURATION:
-        FDF_LOG(INFO, "SET_CONFIGURATION %d", cur_setup_.w_value);
+        fdf::info("SET_CONFIGURATION {}", cur_setup_.w_value);
         configured_ = true;
         if (dci_intf_.is_valid()) {
           status = DoControl(cur_setup_, nullptr, 0, nullptr, 0, out_actual);
@@ -647,7 +647,7 @@ void Dwc2::FlushTxFifo(uint32_t fifo_num) {
     grstctl.ReadFrom(mmio);
     // Retry count of 10000 comes from Amlogic bootloader driver.
     if (++count > 10000) {
-      FDF_LOG(ERROR, "took more than 10k cycles to TX-FIFO flush for FIFO-%d", fifo_num);
+      fdf::error("took more than 10k cycles to TX-FIFO flush for FIFO-{}", fifo_num);
       break;
     }
   } while (grstctl.txfflsh() == 1);
@@ -838,7 +838,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
     }
     case Ep0State::STALL:
     default:
-      FDF_LOG(ERROR, "EP0 state is %d, should not get here", static_cast<int>(ep0_state_));
+      fdf::error("EP0 state is {}, should not get here", static_cast<int>(ep0_state_));
       break;
   }
 }
@@ -847,7 +847,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
 void Dwc2::SoftDisconnect() {
   auto* mmio = get_mmio();
 
-  FDF_LOG(WARNING, "executing USB port soft-disconnect and controller reset");
+  fdf::warn("executing USB port soft-disconnect and controller reset");
   DCTL::Get().ReadFrom(mmio).set_sftdiscon(1).WriteTo(mmio);
   zx::nanosleep(zx::deadline_after(zx::msec(5)));
 
@@ -870,10 +870,10 @@ void Dwc2::HandleEp0TimeoutRecovery() {
 
   const zx::result result = InitController();  // Clears the GRSTCTRL.sftdiscon condition.
   if (result.is_error()) {
-    FDF_LOG(WARNING, "DWC2 core failed InitController (%s) during %s\n", result.status_string(),
-            __PRETTY_FUNCTION__);
+    fdf::warn("DWC2 core failed InitController ({}) during {}\n", result.status_string(),
+              __PRETTY_FUNCTION__);
   }
-  FDF_LOG(INFO, "USB port soft-disconnect and controller reset sequence complete");
+  fdf::info("USB port soft-disconnect and controller reset sequence complete");
 }
 
 // Handles transfer complete events for endpoints other than endpoint zero
@@ -908,10 +908,10 @@ zx::result<> Dwc2::InitController() {
   auto* mmio = get_mmio();
 
   if ((cached_gsnpsid_.version() != 0x400a) && (cached_gsnpsid_.version() != 0x330a)) {
-    FDF_LOG(WARNING,
-            "DWC2 driver has not been tested with IP version 0x%08x. "
-            "The IP has quirks, so things may not work as expected\n",
-            cached_gsnpsid_.reg_value());
+    fdf::warn(
+        "DWC2 driver has not been tested with IP version 0x{:08x}. "
+        "The IP has quirks, so things may not work as expected\n",
+        cached_gsnpsid_.reg_value());
   }
 
   // These should have been checked at init time
@@ -920,7 +920,7 @@ zx::result<> Dwc2::InitController() {
 
   // Reset the controller
   if (const zx::result result = ResetCore(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to reset DWC2 core: %s", result.status_string());
+    fdf::error("Failed to reset DWC2 core: {}", result.status_string());
     return result;
   }
 
@@ -1041,8 +1041,8 @@ void Dwc2::SetConnected(bool connected) {
   if (phy_.is_valid()) {
     auto connect = phy_->ConnectStatusChanged({{.connected = connected, .wake_lease = {}}});
     if (connect.is_error()) {
-      FDF_LOG(WARNING, "Call to ConnectStatusChanged on usb phy failed: %s",
-              connect.error_value().FormatDescription().c_str());
+      fdf::warn("Call to ConnectStatusChanged on usb phy failed: {}",
+                connect.error_value().FormatDescription().c_str());
       // Continue despite failure.
     }
   }
@@ -1085,7 +1085,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
 
   zx::result pdev = incoming()->Connect<fpdev::Service::Device>("pdev");
   if (pdev.is_error()) {
-    FDF_LOG(ERROR, "Connect(): %s", pdev.status_string());
+    fdf::error("Connect(): {}", pdev);
     return pdev.status_value();
   }
   pdev_ = std::make_unique<fdf::PDev>(std::move(*pdev));
@@ -1094,7 +1094,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   // looking for.
   zx::result mmio = pdev_->MapMmio(0);
   if (mmio.is_error()) {
-    FDF_LOG(ERROR, "Failed to map mmio: %s", mmio.status_string());
+    fdf::error("Failed to map mmio: {}", mmio);
     return mmio.status_value();
   }
   mmio_ = std::move(mmio.value());
@@ -1105,14 +1105,14 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   // All revisions of the Synopsis DWC2 core ID should have 0x4f54 (ascii ==
   // 'OT') in their upper bits.
   if (cached_gsnpsid_.ot() != 0x4f54) {
-    FDF_LOG(ERROR, "Unrecognized Synopsis ID in DWC2 core: 0x%08x", cached_gsnpsid_.reg_value());
+    fdf::error("Unrecognized Synopsis ID in DWC2 core: 0x{:08x}", cached_gsnpsid_.reg_value());
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   // Now explicitly reset our core so that we are in a known state and are
   // certain that all DMA has been stopped.
   if (const zx::result result = ResetCore(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to reset DWC2 core: %s", result.status_string());
+    fdf::error("Failed to reset DWC2 core: {}", result.status_string());
     return result.status_value();
   }
 
@@ -1120,7 +1120,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   // pages.
   zx::result bti = pdev_->GetBti(0);
   if (bti.is_error()) {
-    FDF_LOG(ERROR, "Failed to get bti: %s", bti.status_string());
+    fdf::error("Failed to get bti: {}", bti);
     return bti.status_value();
   }
   bti_ = std::move(bti.value());
@@ -1129,26 +1129,26 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   // If the HW was not instantiated with the specific silicon features this
   // driver needs to operate, go no further.
   if (!cached_ghwcfg2_.dynamic_fifo()) {
-    FDF_LOG(ERROR, "DWC2 driver requires dynamic FIFO support (GHWCFG2 = 0x%08x)",
-            cached_ghwcfg2_.reg_value());
+    fdf::error("DWC2 driver requires dynamic FIFO support (GHWCFG2 = 0x{:08x})",
+               cached_ghwcfg2_.reg_value());
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   if (!cached_ghwcfg4_.ded_fifo_en()) {
-    FDF_LOG(ERROR, "DWC2 driver requires dedicated FIFO support (GHWCFG4 = 0x%08x)",
-            cached_ghwcfg4_.reg_value());
+    fdf::error("DWC2 driver requires dedicated FIFO support (GHWCFG4 = 0x{:08x})",
+               cached_ghwcfg4_.reg_value());
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   // Initialize mac address metadata server.
   if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to forward mac address metadata: %s", result.status_string());
+    fdf::error("Failed to forward mac address metadata: {}", result);
     return result.status_value();
   }
   if (zx::result serve = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
       serve.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve mac address metadata: %s", serve.status_string());
+    fdf::error("Failed to serve mac address metadata: {}", serve);
     return serve.status_value();
   }
 
@@ -1156,12 +1156,12 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   if (zx::result result =
           serial_number_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to forward serial number metadata: %s", result.status_string());
+    fdf::error("Failed to forward serial number metadata: {}", result);
     return result.status_value();
   }
   if (zx::result serve = serial_number_metadata_server_.Serve(*outgoing(), dispatcher());
       serve.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve serial number metadata: %s", serve.status_string());
+    fdf::error("Failed to serve serial number metadata: {}", serve);
     return serve.status_value();
   }
 
@@ -1177,14 +1177,14 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
 
   zx::result metadata = pdev_->GetFidlMetadata<fuchsia_hardware_usb_dwc2::Metadata>();
   if (metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+    fdf::error("Failed to get metadata: {}", metadata);
     return ZX_ERR_INTERNAL;
   }
   metadata_ = std::move(metadata.value());
 
   zx::result interrupt = pdev_->GetInterrupt(0, 0);
   if (interrupt.is_error()) {
-    FDF_LOG(ERROR, "Failed to get interrupt: %s", interrupt.status_string());
+    fdf::error("Failed to get interrupt: {}", interrupt);
     return interrupt.status_value();
   }
   irq_ = std::move(interrupt.value());
@@ -1192,8 +1192,8 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12,
                                                                            true, &ep0_buffer_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "dma_buffer::CreateBufferFactory()->CreateContiguous(): %s",
-            zx_status_get_string(status));
+    fdf::error("dma_buffer::CreateBufferFactory()->CreateContiguous(): {}",
+               zx_status_get_string(status));
     return status;
   }
 
@@ -1202,7 +1202,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
           .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service %s", result.status_string());
+    fdf::error("Failed to add service {}", result);
     return result.status_value();
   }
 
@@ -1221,7 +1221,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
 
   zx::result child = AddChild(name(), props, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "AddChild(): %s", child.status_string());
+    fdf::error("AddChild(): {}", child);
     return child.error_value();
   }
   child_.Bind(std::move(*child));
@@ -1240,7 +1240,7 @@ int Dwc2::IrqThread() {
       break;
     }
     if (wait_res != ZX_OK) {
-      FDF_LOG(ERROR, "dwc_usb: irq wait failed, retcode = %d", wait_res);
+      fdf::error("dwc_usb: irq wait failed, retcode = {}", wait_res);
     }
 
     // It doesn't seem that this inner loop should be necessary,
@@ -1273,7 +1273,7 @@ int Dwc2::IrqThread() {
     }
   }
 
-  FDF_LOG(INFO, "dwc_usb: irq thread finished");
+  fdf::info("dwc_usb: irq thread finished");
   return 0;
 }
 
@@ -1308,7 +1308,7 @@ void Dwc2::ConnectToEndpoint(ConnectToEndpointRequest& request,
                              ConnectToEndpointCompleter::Sync& completer) {
   uint8_t ep_num = DWC_ADDR_TO_INDEX(request.ep_addr());
   if (ep_num == DWC_EP0_IN || ep_num == DWC_EP0_OUT || ep_num >= std::size(endpoints_)) {
-    FDF_LOG(ERROR, "Dwc2::UsbDciRequestQueue: bad ep address 0x%02X", request.ep_addr());
+    fdf::error("Dwc2::UsbDciRequestQueue: bad ep address 0x{:02X}", request.ep_addr());
     completer.Reply(fit::as_error(ZX_ERR_IO_NOT_PRESENT));
     return;
   }
@@ -1319,13 +1319,13 @@ void Dwc2::ConnectToEndpoint(ConnectToEndpointRequest& request,
 
 void Dwc2::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
   if (!request.interface().is_valid()) {
-    FDF_LOG(ERROR, "Interface should be valid");
+    fdf::error("Interface should be valid");
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
 
   if (dci_intf_.is_valid()) {
-    FDF_LOG(ERROR, "%s: dci_intf_ already set!", __func__);
+    fdf::error("{}: dci_intf_ already set!", __func__);
     completer.Reply(zx::error(ZX_ERR_ALREADY_BOUND));
     return;
   }
@@ -1361,7 +1361,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   uint8_t ep_num = DWC_ADDR_TO_INDEX(ep_addr);
 
   if (ep_num == DWC_EP0_IN || ep_num == DWC_EP0_OUT || ep_num >= std::size(endpoints_)) {
-    FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: bad ep address 0x%02X", ep_addr);
+    fdf::error("Dwc2::ConfigureEndpoint: bad ep address 0x{:02X}", ep_addr);
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1371,7 +1371,7 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   uint16_t max_packet_size = usb_ep_max_packet2(request.ep_descriptor());
 
   if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
-    FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: isochronous endpoints are not supported");
+    fdf::error("Dwc2::ConfigureEndpoint: isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
@@ -1382,16 +1382,15 @@ void Dwc2::ConfigureEndpoint(ConfigureEndpointRequest& request,
   // static metadata sizes.
   if (is_in) {
     if (ep_num > metadata_.tx_fifo_sizes().size()) {
-      FDF_LOG(ERROR, "Dwc2::ConfigureEndpoint: no allocated TX FIFO space for IN endpoint %d",
-              ep_num);
+      fdf::error("Dwc2::ConfigureEndpoint: no allocated TX FIFO space for IN endpoint {}", ep_num);
       completer.Reply(zx::error(ZX_ERR_NO_RESOURCES));
       return;
     }
     if (max_packet_size > (metadata_.tx_fifo_sizes()[ep_num - 1] * 4)) {
-      FDF_LOG(ERROR,
-              "Dwc2::ConfigureEndpoint: IN  endpoint %d max packet size %d is larger than "
-              "allocated TX FIFO space %d",
-              ep_num, max_packet_size, metadata_.tx_fifo_sizes()[ep_num - 1] * 4);
+      fdf::error(
+          "Dwc2::ConfigureEndpoint: IN  endpoint {} max packet size {} is larger than "
+          "allocated TX FIFO space %d",
+          ep_num, max_packet_size, metadata_.tx_fifo_sizes()[ep_num - 1] * 4);
       completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
       return;
     }
@@ -1427,7 +1426,7 @@ void Dwc2::DisableEndpoint(DisableEndpointRequest& request,
 
   unsigned ep_num = DWC_ADDR_TO_INDEX(request.ep_address());
   if (ep_num == DWC_EP0_IN || ep_num == DWC_EP0_OUT || ep_num >= std::size(endpoints_)) {
-    FDF_LOG(ERROR, "Dwc2::UsbDciConfigEp: bad ep address 0x%02X", request.ep_address());
+    fdf::error("Dwc2::UsbDciConfigEp: bad ep address 0x{:02X}", request.ep_address());
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1477,7 +1476,7 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
   if (DWC_EP_IS_OUT(ep_addr())) {
     size_t length = request.length();
     if (length == 0 || length % max_packet_size != 0) {
-      FDF_LOG(ERROR, "dwc_ep_queue: OUT transfers must be multiple of max packet size");
+      fdf::error("dwc_ep_queue: OUT transfers must be multiple of max packet size");
       RequestComplete(ZX_ERR_INVALID_ARGS, 0, std::move(request));
       return;
     }
@@ -1486,13 +1485,13 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
   std::lock_guard<std::mutex> _(lock);
 
   if (!enabled) {
-    FDF_LOG(ERROR, "dwc_ep_queue ep not enabled!");
+    fdf::error("dwc_ep_queue ep not enabled!");
     RequestComplete(ZX_ERR_BAD_STATE, 0, std::move(request));
     return;
   }
 
   if (!dwc2_->configured_) {
-    FDF_LOG(ERROR, "dwc_ep_queue not configured!");
+    fdf::error("dwc_ep_queue not configured!");
     RequestComplete(ZX_ERR_BAD_STATE, 0, std::move(request));
     return;
   }

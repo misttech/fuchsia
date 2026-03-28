@@ -37,7 +37,7 @@ zx::result<std::vector<dma_buffer::PhysIter>> EndpointServer::get_iter(RequestVa
         iters.push_back(fidl_request.phys_iter(i, max_length));
         break;
       default:
-        FDF_LOG(ERROR, "Not supported buffer type");
+        fdf::error("Not supported buffer type");
         return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     i++;
@@ -57,7 +57,7 @@ void EndpointServer::OnUnbound(
     // Return all already completed events.
     auto status = fidl::SendEvent(server_end)->OnCompletion(std::move(completions_));
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Error sending event: %s", status.error_value().status_string());
+      fdf::error("Error sending event: {}", status.error_value().status_string());
     }
   }
 
@@ -74,9 +74,9 @@ void EndpointServer::OnUnbound(
   }
 
   if (info.is_peer_closed()) {
-    FDF_LOG(INFO, "Client disconnected");
+    fdf::info("Client disconnected");
   } else {
-    FDF_LOG(ERROR, "Server error: %s", info.ToError().status_string());
+    fdf::error("Server error: {}", info.ToError().status_string());
   }
 }
 
@@ -90,14 +90,14 @@ void EndpointServer::RegisterVmos(RegisterVmosRequest& request,
     auto size = *info.size();
 
     if (registered_vmos_.find(id) != registered_vmos_.end()) {
-      FDF_LOG(ERROR, "VMO ID %lu already registered", id);
+      fdf::error("VMO ID {} already registered", id);
       continue;
     }
 
     zx::vmo vmo;
     auto status = zx::vmo::create(size, 0, &vmo);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to pin registered VMO %d", status);
+      fdf::error("Failed to pin registered VMO {}", zx_status_get_string(status));
       continue;
     }
 
@@ -113,7 +113,7 @@ void EndpointServer::RegisterVmos(RegisterVmosRequest& request,
                         paddrs.get(), num_addrs, &pmt);
 
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "zx_bti_pin(): %s", zx_status_get_string(status));
+      fdf::error("zx_bti_pin(): {}", zx_status_get_string(status));
       continue;
     }
 
@@ -140,7 +140,7 @@ void EndpointServer::UnregisterVmos(UnregisterVmosRequest& request,
 
     zx_status_t status = zx_pmt_unpin(registered_vmo.mapped().pmt);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to unpin registered VMO %d", status);
+      fdf::error("Failed to unpin registered VMO {}", zx_status_get_string(status));
       failed_vmo_ids.emplace_back(id);
       errors.emplace_back(status);
       continue;
@@ -167,7 +167,7 @@ void EndpointServer::RequestComplete(zx_status_t status, size_t actual, RequestV
 
     auto status = fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions));
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Error sending event: %s", status.error_value().status_string());
+      fdf::error("Error sending event: {}", status.error_value().status_string());
     }
   }
 }

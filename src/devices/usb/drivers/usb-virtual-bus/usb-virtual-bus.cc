@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,7 +38,7 @@ zx::result<std::unique_ptr<T>> UsbVirtualBus::CreateChild() {
   {
     zx::result result = outgoing()->AddService<typename T::Service>(child->GetInstanceHandler());
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add service %s", result.status_string());
+      fdf::error("Failed to add service {}", result);
       return result.take_error();
     }
   }
@@ -62,7 +63,7 @@ zx::result<std::unique_ptr<T>> UsbVirtualBus::CreateChild() {
   {
     zx::result result = AddChild(T::kName.c_str(), properties, offers);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+      fdf::error("Failed to add child: {}", result);
       return result.take_error();
     }
     child->controller().Bind(std::move(*result));
@@ -79,7 +80,7 @@ zx::result<> UsbVirtualBus::RemoveChild(std::unique_ptr<T>& child) {
   if (child->controller()) {
     auto result = child->controller()->Remove();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to remove child: %s", result.FormatDescription().c_str());
+      fdf::error("Failed to remove child: {}", result.FormatDescription().c_str());
       return zx::error(result.status());
     }
     removed_ = true;
@@ -95,7 +96,7 @@ void UsbVirtualBus::Serve(fidl::ServerEnd<fuchsia_hardware_usb_virtual_bus::Bus>
 zx::result<> UsbVirtualBus::Start() {
   zx::result connector = devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "Error creating devfs node");
+    fdf::error("Error creating devfs node");
     return connector.take_error();
   }
 
@@ -106,7 +107,7 @@ zx::result<> UsbVirtualBus::Start() {
 
   zx::result child = AddOwnedChild(kName, devfs_args);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child %s", child.status_string());
+    fdf::error("Failed to add child {}", child);
     return child.take_error();
   }
   child_ = std::move(*child);
@@ -120,7 +121,7 @@ void UsbVirtualBus::SetConnected(bool connected) {
       dci_intf_->SetConnected(true).Then(
           [](fidl::Result<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>& result) {
             if (result.is_error()) {
-              FDF_LOG(ERROR, "Failed to set connected");
+              fdf::error("Failed to set connected");
             }
           });
     }
@@ -134,7 +135,7 @@ void UsbVirtualBus::SetConnected(bool connected) {
       hci_intf_->RemoveDevice(kDeviceSlotId)
           .Then([](fidl::Result<fuchsia_hardware_usb_hci::UsbHciInterface::RemoveDevice>& result) {
             if (result.is_error()) {
-              FDF_LOG(ERROR, "Failed to remove device");
+              fdf::error("Failed to remove device");
             }
           });
     }
@@ -142,7 +143,7 @@ void UsbVirtualBus::SetConnected(bool connected) {
       dci_intf_->SetConnected(false).Then(
           [](fidl::Result<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>& result) {
             if (result.is_error()) {
-              FDF_LOG(ERROR, "Failed to set connected");
+              fdf::error("Failed to set connected");
             }
           });
     }
@@ -157,7 +158,7 @@ void UsbVirtualBus::FinishConnect() {
   hci_intf_->AddDevice({kDeviceSlotId, kDeviceHubId, kDeviceSpeed})
       .Then([](fidl::Result<fuchsia_hardware_usb_hci::UsbHciInterface::AddDevice>& result) {
         if (result.is_error()) {
-          FDF_LOG(ERROR, "Failed to add device");
+          fdf::error("Failed to add device");
         }
       });
 }
@@ -183,7 +184,7 @@ zx::result<> UsbVirtualBus::SetBusInterface(
     hci_intf_->AddDevice({kDeviceSlotId, kDeviceHubId, kDeviceSpeed})
         .Then([](fidl::Result<fuchsia_hardware_usb_hci::UsbHciInterface::AddDevice>& result) {
           if (result.is_error()) {
-            FDF_LOG(ERROR, "Failed to add device");
+            fdf::error("Failed to add device");
           }
         });
   }
@@ -204,7 +205,7 @@ void UsbVirtualBus::Enable(EnableCompleter::Sync& completer) {
   if (host_ == nullptr) {
     zx::result result = CreateChild<UsbVirtualHost>();
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create host %s", result.status_string());
+      fdf::error("Failed to create host {}", result);
       completer.Reply(result.error_value());
       return;
     }
@@ -213,7 +214,7 @@ void UsbVirtualBus::Enable(EnableCompleter::Sync& completer) {
   if (device_ == nullptr) {
     zx::result result = CreateChild<UsbVirtualDevice>();
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create device %s", result.status_string());
+      fdf::error("Failed to create device {}", result);
       completer.Reply(result.error_value());
       return;
     }
@@ -231,12 +232,12 @@ zx_status_t UsbVirtualBus::Disable() {
   dci_intf_ = {};
   zx::result host_result = RemoveChild(host_);
   if (host_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to remove host %s", host_result.status_string());
+    fdf::error("Failed to remove host {}", host_result);
     // Continue despite failure.
   }
   zx::result device_result = RemoveChild(device_);
   if (host_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to remove device %s", device_result.status_string());
+    fdf::error("Failed to remove device {}", device_result);
     // Continue despite failure.
   }
   return host_result.is_error() ? host_result.error_value() : device_result.status_value();

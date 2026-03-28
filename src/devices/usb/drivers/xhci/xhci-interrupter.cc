@@ -59,7 +59,7 @@ zx_status_t Interrupter::Start(const RuntimeRegisterOffset& offset, fdf::MmioVie
       {}, "xhci-interrupter", [&](fdf_dispatcher_t*) { irq_shutdown_completion_.Signal(); },
       "fuchsia.devices.usb.drivers.xhci.interrupter");
   if (dispatcher_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to create new dispatcher %s", dispatcher_result.status_string());
+    fdf::error("Failed to create new dispatcher {}", dispatcher_result);
     return dispatcher_result.error_value();
   }
   dispatcher_ = std::move(*dispatcher_result);
@@ -102,7 +102,7 @@ zx_status_t Interrupter::StartIrqThread() {
     wake_lease_->HandleInterrupt(kLeaseTimeout);
 
     if (event_ring_.HandleIRQ() != ZX_OK) {
-      FDF_LOG(ERROR, "Error handling IRQ. Exiting async loop.");
+      fdf::error("Error handling IRQ. Exiting async loop.");
       return;
     }
 
@@ -115,7 +115,7 @@ zx_status_t Interrupter::StartIrqThread() {
     // code assumes that interrupts are active and simulates
     // a port status changed event.
     if (event_ring_.Ring0Bringup()) {
-      FDF_LOG(ERROR, "Failed to bring up ring 0");
+      fdf::error("Failed to bring up ring 0");
       return ZX_ERR_INTERNAL;
     }
   }

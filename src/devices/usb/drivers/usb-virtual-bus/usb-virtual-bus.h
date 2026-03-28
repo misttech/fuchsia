@@ -97,7 +97,7 @@ class UsbVirtualBus : public fdf::DriverBase,
     get<T>()->compat_server().reset();
     zx::result result = outgoing()->RemoveService<typename T::Service>();
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to remove device service: %s", result.status_string());
+      fdf::error("Failed to remove device service: {}", result);
       // Continue despite failure.
     }
     get<T>().reset();

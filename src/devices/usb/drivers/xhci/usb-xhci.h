@@ -86,7 +86,7 @@ class UsbXhci : public fdf::DriverBase,
                          ConnectToEndpointCompleter::Sync& completer) override;
   // Stubs for FIDL HCI
   void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "%s unexpected call", __func__);
+    fdf::error("{} unexpected call", __func__);
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
   void GetMaxDeviceCount(GetMaxDeviceCountCompleter::Sync& completer) override {

@@ -33,6 +33,7 @@ source_set("common") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//sdk/lib/driver/power/cpp",

@@ -44,7 +44,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
   auto& mac_address_metadata_server = mac_address_metadata_server_.emplace(child_node_name);
   if (zx::result result = mac_address_metadata_server.ForwardMetadataIfExists(incoming);
       result.is_error()) {
-    fdf::error("Failed to forward mac address metadata: {}", result.status_string());
+    fdf::error("Failed to forward mac address metadata: {}", result);
     return result.take_error();
   }
   if (zx::result result = mac_address_metadata_server.Serve(*outgoing, dispatcher_);
@@ -56,7 +56,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
   auto& serial_number_metadata_server = serial_number_metadata_server_.emplace(child_node_name);
   if (zx::result result = serial_number_metadata_server.ForwardMetadataIfExists(incoming);
       result.is_error()) {
-    fdf::error("Failed to forward serial number metadata: {}", result.status_string());
+    fdf::error("Failed to forward serial number metadata: {}", result);
     return result.take_error();
   }
   if (zx::result result = serial_number_metadata_server.Serve(*outgoing, dispatcher_);
@@ -157,8 +157,7 @@ zx_status_t UsbFunction::UsbFunctionSetInterface(
 
   zx::result<uint8_t> validate_result = peripheral_->ValidateFunction(index_, descriptors, length);
   if (validate_result.is_error()) {
-    fdf::error("UsbFunctionInterfaceClient::ValidateFunction() failed: {}",
-               validate_result.status_string());
+    fdf::error("UsbFunctionInterfaceClient::ValidateFunction() failed: {}", validate_result);
     delete[] descriptors;
     return validate_result.error_value();
   }
@@ -378,8 +377,7 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
 
   zx::result validate_result = peripheral_->ValidateFunction(index_, descriptors, length);
   if (validate_result.is_error()) {
-    fdf::error("UsbFunctionInterfaceClient::ValidateFunction() failed: {}",
-               validate_result.status_string());
+    fdf::error("UsbFunctionInterfaceClient::ValidateFunction() failed: {}", validate_result);
     delete[] descriptors;
     completer.Reply(fit::as_error(validate_result.error_value()));
     return;

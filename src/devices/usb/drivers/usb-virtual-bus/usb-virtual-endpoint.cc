@@ -17,7 +17,7 @@ zx::result<void*> GetBuffer(
     void* buffer;
     auto status = std::get<Request>(req).Mmap(&buffer);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "usb_request_mmap failed: %d", status);
+      fdf::error("usb_request_mmap failed: {}", zx_status_get_string(status));
       return zx::error(status);
     }
     return zx::ok(buffer);
@@ -31,7 +31,7 @@ zx::result<void*> GetBuffer(
       {
         zx::result result = (*mapping_fn)(*request_buffer);
         if (result.is_error()) {
-          FDF_LOG(ERROR, "Failed to map %s", result.status_string());
+          fdf::error("Failed to map {}", result);
           return result.take_error();
         }
         return zx::ok(reinterpret_cast<void*>(result->addr));
@@ -39,7 +39,7 @@ zx::result<void*> GetBuffer(
     case fuchsia_hardware_usb_request::Buffer::Tag::kData:
       return zx::ok(request_buffer->data()->data());
     default:
-      FDF_LOG(ERROR, "%s: Unknown buffer type %u", __func__, static_cast<uint32_t>(buffer_type));
+      fdf::error("{}: Unknown buffer type {}", __func__, static_cast<uint32_t>(buffer_type));
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 }
@@ -64,7 +64,7 @@ fuchsia_hardware_usb_descriptor::UsbSetup GetSetup(RequestVariant& req) {
 
 void UsbEpServer::Connect(fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) {
   if (binding_) {
-    FDF_LOG(ERROR, "Endpoint already bound");
+    fdf::error("Endpoint already bound");
     return;
   }
   binding_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(server_end), this,
@@ -73,7 +73,7 @@ void UsbEpServer::Connect(fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoin
                        auto status =
                            zx::vmar::root_self()->unmap(registered_vmo.addr, registered_vmo.size);
                        if (status != ZX_OK) {
-                         FDF_LOG(ERROR, "Failed to unmap VMO %d", status);
+                         fdf::error("Failed to unmap VMO {}", zx_status_get_string(status));
                          continue;
                        }
                      }
@@ -116,14 +116,14 @@ void UsbEpServer::RegisterVmos(RegisterVmosRequest& request,
     auto size = *info.size();
 
     if (registered_vmos_.find(id) != registered_vmos_.end()) {
-      FDF_LOG(ERROR, "VMO ID %lu already registered", id);
+      fdf::error("VMO ID {} already registered", id);
       continue;
     }
 
     zx::vmo vmo;
     auto status = zx::vmo::create(size, 0, &vmo);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to pin registered VMO %d", status);
+      fdf::error("Failed to pin registered VMO {}", zx_status_get_string(status));
       continue;
     }
 
@@ -132,7 +132,7 @@ void UsbEpServer::RegisterVmos(RegisterVmosRequest& request,
     status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, size,
                                         &mapped_addr);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to map the vmo: %d", status);
+      fdf::error("Failed to map the vmo: {}", zx_status_get_string(status));
       // Try for the next one.
       continue;
     }
@@ -161,7 +161,7 @@ void UsbEpServer::UnregisterVmos(UnregisterVmosRequest& request,
     auto status =
         zx::vmar::root_self()->unmap(registered_vmo.mapped().addr, registered_vmo.mapped().size);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to unmap VMO %d", status);
+      fdf::error("Failed to unmap VMO {}", zx_status_get_string(status));
       failed_vmo_ids.emplace_back(id);
       errors.emplace_back(status);
       continue;
@@ -202,7 +202,7 @@ void UsbEpServer::RequestComplete(zx_status_t status, size_t actual, RequestVari
 
   auto result = fidl::SendEvent(*binding_)->OnCompletion(std::move(completions));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Error sending event: %s", result.error_value().status_string());
+    fdf::error("Error sending event: {}", result.error_value().status_string());
   }
 }
 
@@ -226,7 +226,7 @@ void UsbVirtualEp::ProcessRequests() {
 
       zx::result buffer = GetBuffer(req, fit::bind_member(&server, &UsbEpServer::GetMapped));
       if (buffer.is_error()) {
-        FDF_LOG(ERROR, "Failed to get buffer %s", buffer.status_string());
+        fdf::error("Failed to get buffer {}", buffer);
         server.RequestComplete(buffer.error_value(), 0, req);
         return;
       }
@@ -319,12 +319,12 @@ void UsbVirtualEp::HandleControl(RequestVariant req) {
 
   fuchsia_hardware_usb_descriptor::UsbSetup setup = GetSetup(req);
 
-  FDF_LOG(DEBUG, "%s type: 0x%02X req: %d value: %d index: %d length: %hu", __func__,
-          setup.bm_request_type(), setup.b_request(), setup.w_value(), setup.w_index(),
-          setup.w_length());
+  fdf::debug("{} type: 0x{:02X} req: {} value: {} index: {} length: {}", __func__,
+             setup.bm_request_type(), setup.b_request(), setup.w_value(), setup.w_index(),
+             setup.w_length());
 
   if (!bus_->dci_intf_.is_valid()) {
-    FDF_LOG(ERROR, "Dci Interface not ready");
+    fdf::error("Dci Interface not ready");
     host_.RequestComplete(ZX_ERR_UNAVAILABLE, 0, req);
     return;
   }
@@ -334,7 +334,7 @@ void UsbVirtualEp::HandleControl(RequestVariant req) {
   if (!is_in && setup.w_length() > 0) {
     zx::result result = GetBuffer(req, fit::bind_member(&host_, &UsbEpServer::GetMapped));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to get buffer pointer %s", result.status_string());
+      fdf::error("Failed to get buffer pointer {}", result);
       host_.RequestComplete(result.error_value(), 0, req);
       return;
     }
@@ -353,7 +353,7 @@ void UsbVirtualEp::HandleControl(RequestVariant req) {
           return;
         }
         if (result->read().size() > length) {
-          FDF_LOG(ERROR, "Buffer overflow!");
+          fdf::error("Buffer overflow!");
           host_.RequestComplete(ZX_ERR_NO_MEMORY, 0, req);
           return;
         }
@@ -373,7 +373,7 @@ void UsbVirtualEp::HandleControl(RequestVariant req) {
 
         zx::result buffer = GetBuffer(req, fit::bind_member(&host_, &UsbEpServer::GetMapped));
         if (buffer.is_error()) {
-          FDF_LOG(ERROR, "Failed to get buffer pointer %s", buffer.status_string());
+          fdf::error("Failed to get buffer pointer {}", buffer);
           host_.RequestComplete(buffer.error_value(), 0, req);
           return;
         }

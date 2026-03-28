@@ -68,7 +68,7 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_phy::UsbPhy> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+    fdf::error("Unknown method {}", metadata.method_ordinal);
   }
 
   void WatchConnectStatusChanged(WatchConnectStatusChangedRequest& request,
@@ -92,7 +92,7 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_phy::ConnectionWatcher> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+    fdf::error("Unknown method {}", metadata.method_ordinal);
   }
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_phy::UsbPhy> bindings_;

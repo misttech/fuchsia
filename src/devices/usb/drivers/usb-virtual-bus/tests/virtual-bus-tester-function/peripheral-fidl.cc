@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace virtualbus {
 
@@ -36,7 +37,7 @@ zx::result<> FidlTestFunction::SetFunctionInterface(bool connect) {
 
     fidl::Result result = function_->Configure(std::move(config_req));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Configure failed %s", result.error_value().FormatDescription().c_str());
+      fdf::error("Configure failed {}", result.error_value().FormatDescription().c_str());
       return zx::error(result.error_value().is_framework_error()
                            ? result.error_value().framework_error().status()
                            : ZX_ERR_INTERNAL);
@@ -51,21 +52,21 @@ zx::result<> FidlTestFunction::Start() {
   zx::result client =
       incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect fidl protocol %s", client.status_string());
+    fdf::error("Failed to connect fidl protocol {}", client);
     return client.take_error();
   }
   function_ = fidl::SyncClient(std::move(*client));
 
   zx::result ep_out = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (ep_out.is_error()) {
-    FDF_LOG(ERROR, "Failed to create endpoints %s", ep_out.status_string());
+    fdf::error("Failed to create endpoints {}", ep_out);
     return ep_out.take_error();
   }
   ep_out_client_ = std::move(ep_out->client);
 
   zx::result ep_in = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
   if (ep_in.is_error()) {
-    FDF_LOG(ERROR, "Failed to create endpoints %s", ep_in.status_string());
+    fdf::error("Failed to create endpoints {}", ep_in);
     return ep_in.take_error();
   }
   ep_in_client_ = std::move(ep_in->client);
@@ -87,8 +88,7 @@ zx::result<> FidlTestFunction::Start() {
 
   fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
   if (alloc_result.is_error()) {
-    FDF_LOG(ERROR, "AllocResources failed %s",
-            alloc_result.error_value().FormatDescription().c_str());
+    fdf::error("AllocResources failed {}", alloc_result.error_value().FormatDescription().c_str());
     return zx::error(alloc_result.error_value().is_framework_error()
                          ? alloc_result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -101,25 +101,25 @@ zx::result<> FidlTestFunction::Start() {
 
   zx_status_t status = bulk_out_ep_.Init(std::move(ep_out_client_), dispatcher());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
+    fdf::error("Failed to init UsbEndpoint {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = bulk_in_ep_.Init(std::move(ep_in_client_), dispatcher());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
+    fdf::error("Failed to init UsbEndpoint {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   zx::result<> start_result = TestFunction::Start();
   if (start_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to start %s", start_result.status_string());
+    fdf::error("Failed to start {}", start_result);
     return start_result.take_error();
   }
 
   zx::result<> connect_result = SetFunctionInterface(true);
   if (connect_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set function interface %s", connect_result.status_string());
+    fdf::error("Failed to set function interface {}", connect_result);
     return connect_result.take_error();
   }
 
@@ -155,8 +155,7 @@ void FidlTestFunction::SetConfigured(SetConfiguredRequest& request,
     fidl::Result result =
         function_->ConfigureEndpoint({descriptor_.bulk_out.b_endpoint_address, std::move(config)});
     if (result.is_error()) {
-      FDF_LOG(ERROR, "ConfigureEndpoint failed %s",
-              result.error_value().FormatDescription().c_str());
+      fdf::error("ConfigureEndpoint failed {}", result.error_value().FormatDescription().c_str());
       completer.Reply(zx::error(result.error_value().is_framework_error()
                                     ? result.error_value().framework_error().status()
                                     : ZX_ERR_INTERNAL));
@@ -173,8 +172,7 @@ void FidlTestFunction::SetConfigured(SetConfiguredRequest& request,
     result =
         function_->ConfigureEndpoint({descriptor_.bulk_in.b_endpoint_address, std::move(config)});
     if (result.is_error()) {
-      FDF_LOG(ERROR, "ConfigureEndpoint failed %s",
-              result.error_value().FormatDescription().c_str());
+      fdf::error("ConfigureEndpoint failed {}", result.error_value().FormatDescription().c_str());
       completer.Reply(zx::error(result.error_value().is_framework_error()
                                     ? result.error_value().framework_error().status()
                                     : ZX_ERR_INTERNAL));
@@ -195,7 +193,7 @@ void FidlTestFunction::SetInterface(SetInterfaceRequest& request,
 void FidlTestFunction::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown method %ld", metadata.method_ordinal);
+  fdf::error("Unknown method {}", metadata.method_ordinal);
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -206,7 +204,7 @@ void FidlTestFunction::QueueOut() {
                             .take_request());
   auto result = bulk_out_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    fdf::error("Failed to QueueRequests {}", result.error_value().FormatDescription().c_str());
     expect_out_->Reply(zx::error(ZX_ERR_INTERNAL));
     expect_out_.reset();
     return;
@@ -220,7 +218,7 @@ void FidlTestFunction::QueueIn(std::vector<uint8_t> data) {
       usb::FidlRequest(usb::EndpointType::BULK).add_data(std::move(data), size).take_request());
   auto result = bulk_in_ep_->QueueRequests(std::move(requests));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to QueueRequests %s", result.error_value().FormatDescription().c_str());
+    fdf::error("Failed to QueueRequests {}", result.error_value().FormatDescription().c_str());
     expect_in_->Reply(zx::error(ZX_ERR_INTERNAL));
     expect_in_.reset();
     return;

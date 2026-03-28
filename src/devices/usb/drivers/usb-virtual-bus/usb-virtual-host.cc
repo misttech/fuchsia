@@ -26,8 +26,8 @@ void UsbVirtualHost::UsbHciRequestQueue(usb_request_t* req,
 
   uint8_t index = EpAddressToIndex(request.request()->header.ep_address);
   if (index >= USB_MAX_EPS) {
-    FDF_LOG(ERROR, "usb_virtual_bus_host_queue bad endpoint %u\n",
-            request.request()->header.ep_address);
+    fdf::error("usb_virtual_bus_host_queue bad endpoint {}\n",
+               request.request()->header.ep_address);
     request.Complete(ZX_ERR_INVALID_ARGS, 0);
     return;
   }
@@ -43,7 +43,7 @@ void UsbVirtualHost::SetInterface(SetInterfaceRequest& request,
                                   SetInterfaceCompleter::Sync& completer) {
   zx::result result = bus_->SetBusInterface(std::move(request.interface()));
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set bus interface %s", result.status_string());
+    fdf::error("Failed to set bus interface {}", result);
     completer.Reply(result.take_error());
     return;
   }

@@ -34,6 +34,7 @@ source_set("common") {
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.test.platform:fuchsia.test.platform_cpp",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",

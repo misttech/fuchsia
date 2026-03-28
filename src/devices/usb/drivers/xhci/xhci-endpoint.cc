@@ -37,13 +37,13 @@ void Endpoint::OnUnbound(fidl::UnbindInfo info,
   if (hci_->Running()) {
     auto status = hci_->UsbHciCancelAll(device_id_, ep_addr());
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Could not cancel all %d", status);
+      fdf::error("Could not cancel all {}", zx_status_get_string(status));
     }
 
     status = hci_->RunSynchronously(kPrimaryInterrupter,
                                     hci_->UsbHciDisableEndpoint(device_id_, ep_addr()));
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Could not disable endpoint %d", status);
+      fdf::error("Could not disable endpoint {}", zx_status_get_string(status));
     }
   }
 

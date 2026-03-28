@@ -176,13 +176,13 @@ zx::result<> AmlUsbPhy::ChangeMode(UsbPhyBase& phy, fuchsia_hardware_usb_phy::Mo
   if (unpublish_child) {
     zx::result unpublish = unpublish_child->UnPublish();
     if (unpublish.is_error()) {
-      fdf::warn("Failed to unpublish {}: {}", unpublish_child->name(), unpublish.status_string());
+      fdf::warn("Failed to unpublish {}: {}", unpublish_child->name(), unpublish);
     }
   }
 
   zx::result publish = publish_child->Publish();
   if (publish.is_error()) {
-    fdf::error("Failed to publish {}: {}", publish_child->name(), publish.status_string());
+    fdf::error("Failed to publish {}: {}", publish_child->name(), publish);
     return publish.take_error();
   }
 
@@ -195,7 +195,7 @@ void AmlUsbPhy::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, z
     return;
   }
   if (status != ZX_OK) {
-    fdf::error("irq_.wait failed: {}", status);
+    fdf::error("irq_.wait failed: {}", zx_status_get_string(status));
     return;
   }
 
@@ -214,7 +214,7 @@ void AmlUsbPhy::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, z
           ChangeMode(phy, r5.iddig_curr() == 0 ? fuchsia_hardware_usb_phy::Mode::kHost
                                                : fuchsia_hardware_usb_phy::Mode::kPeripheral);
       if (ret.is_error()) {
-        fdf::error("ChangeMode() failed. {}. Unbinding usb phy driver.", ret.status_string());
+        fdf::error("ChangeMode() failed. {}. Unbinding usb phy driver.", ret);
         controller_->UnbindOnFailure();
       }
     }
