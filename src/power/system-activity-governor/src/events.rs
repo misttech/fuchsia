@@ -139,7 +139,7 @@ impl SagEventLogger {
                 c"power",
                 // Current capacity would cover 3 hours with one suspend/resume cycle per
                 // minute.
-                RecorderOptions { lazy_record: false, capacity: 360, ..Default::default() },
+                RecorderOptions { lazy_record: true, capacity: 360, ..Default::default() },
             )
             .expect("Failed to create system_suspend_state recorder"),
         ));
