@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
 #include <memory>
@@ -36,19 +37,19 @@ class TestSpiDriver : public fdf::DriverBase,
     zx_status_t status =
         compat_server_.inner().AddMetadata(DEVICE_METADATA_PRIVATE, &bus_id_, sizeof bus_id_);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to add metadata: %s", zx_status_get_string(status));
+      fdf::error("Failed to add metadata: {}", zx_status_get_string(status));
       return zx::error(status);
     }
 
     zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
     if (zx::result result = spi_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to set SPI metadata from platform device: %s", result.status_string());
+      fdf::error("Failed to set SPI metadata from platform device: {}", result);
       return result.take_error();
     }
     if (zx::result result = spi_metadata_server_.Serve(*outgoing(), dispatcher());
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to serve SPI metadata: %s", result.status_string());
+      fdf::error("Failed to serve SPI metadata: {}", result);
       return result.take_error();
     }
 
@@ -59,7 +60,7 @@ class TestSpiDriver : public fdf::DriverBase,
       });
       auto result = outgoing()->AddService<fuchsia_hardware_spiimpl::Service>(std::move(handler));
       if (result.is_error()) {
-        FDF_LOG(ERROR, "AddService failed: %s", result.status_string());
+        fdf::error("AddService failed: {}", result);
         return result.take_error();
       }
     }
@@ -70,7 +71,7 @@ class TestSpiDriver : public fdf::DriverBase,
     zx::result child =
         AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
     if (child.is_error()) {
-      FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+      fdf::error("Failed to add child: {}", child);
       return child.take_error();
     }
     child_ = std::move(child.value());

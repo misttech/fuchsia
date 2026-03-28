@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/driver/power/cpp/power-support.h>
@@ -32,11 +33,11 @@ zx::result<> FakeParent::Start() {
         std::move(device_service.value()));
     fidl::Result fidl_config = device_client->GetPowerConfiguration();
     if (fidl_config.is_error()) {
-      FDF_LOG(ERROR, "Failed to get power element configuration.");
+      fdf::error("Failed to get power element configuration.");
       return zx::error(ZX_ERR_INTERNAL);
     }
     if (fidl_config.value().config().empty()) {
-      FDF_LOG(ERROR, "Missing power element configuration.");
+      fdf::error("Missing power element configuration.");
       return zx::error(ZX_ERR_INTERNAL);
     }
     zx::result result =

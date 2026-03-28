@@ -47,6 +47,7 @@ source_set("common") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/sys/cpp",

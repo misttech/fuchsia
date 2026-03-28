@@ -51,6 +51,7 @@ library_headers("virtio-headers") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//src/devices/lib/dma-buffer",
     "//zircon/system/ulib/fbl",

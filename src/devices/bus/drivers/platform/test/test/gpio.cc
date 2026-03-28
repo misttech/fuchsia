@@ -7,6 +7,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
 #include <array>
@@ -69,12 +70,12 @@ zx::result<> TestGpioDriver::Start() {
   zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (zx::result result = pin_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set SPI metadata from platform device: %s", result.status_string());
+    fdf::error("Failed to set SPI metadata from platform device: {}", result);
     return result.take_error();
   }
   if (zx::result result = pin_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve SPI metadata: %s", result.status_string());
+    fdf::error("Failed to serve SPI metadata: {}", result);
     return result.take_error();
   }
 
@@ -85,7 +86,7 @@ zx::result<> TestGpioDriver::Start() {
     });
     auto result = outgoing()->AddService<fuchsia_hardware_pinimpl::Service>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "AddService failed: %s", result.status_string());
+      fdf::error("AddService failed: {}", result);
       return result.take_error();
     }
   }
@@ -96,7 +97,7 @@ zx::result<> TestGpioDriver::Start() {
   zx::result child =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+    fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
   child_ = std::move(child.value());

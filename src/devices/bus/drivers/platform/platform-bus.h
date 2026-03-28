@@ -39,8 +39,8 @@ class PlatformBus : public fdf::DriverBase,
   PlatformBus(fdf::DriverStartArgs start_args,
               fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
-  ~PlatformBus() { FDF_LOG(INFO, "~PlatformBus()"); }
-  void Stop() override { FDF_LOG(INFO, "Stop()"); }
+  ~PlatformBus() { fdf::info("~PlatformBus()"); }
+  void Stop() override { fdf::info("Stop()"); }
 
   using fdf::DriverBase::dispatcher;
   using fdf::DriverBase::driver_dispatcher;
