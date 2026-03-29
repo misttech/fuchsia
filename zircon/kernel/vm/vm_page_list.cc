@@ -33,15 +33,8 @@ DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock);
 // Slab used for allocating all the page list nodes.
 constinit PageSlabAllocator<sizeof(VmPageListNode)> pln_slab_ TA_GUARDED(SlabLock::Get());
 
-// Assert the size of the page list node to prevent accidental size changes. By virtue of being
-// allocated from from a PageSlabAllocator there is some wastage due to the size of the object not
-// being a clean power of two (PageSlabAllocator does not cross objects over page boundaries).
-// At 112 bytes this is 16 bytes off the next power of two. Given that the metadata for a heap
-// allocation is 16 bytes, allocating from a slab will have, at worst, equivalent wastage compared
-// to general heap allocation.
-// In practice we can fit 36 allocations into a page, wasting a 64 (4096 - 36 * 112) bytes, which is
-// less than the 576 (16 * 36) bytes of wastage from heap allocations.
-static_assert(sizeof(VmPageListNode) == 112);
+// Assert the size of the page list node to prevent accidental size changes.
+static_assert(sizeof(VmPageListNode) == 64);
 }  // namespace
 
 void VmPageListNodeDeleter::operator()(VmPageListNode* node) {
@@ -50,22 +43,20 @@ void VmPageListNodeDeleter::operator()(VmPageListNode* node) {
   pln_slab_.deallocate_bytes(node);
 }
 
-VmPlnOwner VmPageListNode::Create(uint64_t offset) {
-  Guard<CriticalMutex> guard{SlabLock::Get()};
-  VmPageListNode* node = pln_slab_.allocate_object<VmPageListNode>();
+VmPlnOwner VmPageListNode::Create() {
+  VmPageListNode* node;
+  {
+    Guard<CriticalMutex> guard{SlabLock::Get()};
+    node = pln_slab_.allocate_object<VmPageListNode>();
+  }
   if (!node) {
     return nullptr;
   }
-  ktl::construct_at(node, offset);
+  ktl::construct_at(node);
   return VmPlnOwner(node);
 }
 
-VmPageListNode::~VmPageListNode() {
-  LTRACEF("%p offset %#" PRIx64 "\n", this, obj_offset_);
-  canary_.Assert();
-
-  DEBUG_ASSERT(HasNoPageOrRef());
-}
+VmPageListNode::~VmPageListNode() { DEBUG_ASSERT(HasNoPageOrRef()); }
 
 VmPageList::VmPageList() { LTRACEF("%p\n", this); }
 
@@ -94,13 +85,17 @@ VmPageOrMarker* VmPageList::LookupOrAllocateInternal(uint64_t offset) {
   LTRACEF_LEVEL(2, "%p offset %#" PRIx64 " node_offset %#" PRIx64 " index %zu\n", this, offset,
                 node_offset, index);
 
-  // lookup the tree node that holds this page
-  auto pln = list_.find(node_offset);
+  // lookup the tree node that holds this page. Use lower_bound instead of find to optimize
+  // later insertion in case of failed lookup.
+  auto pln = list_.lower_bound(node_offset);
   if (pln.IsValid()) {
-    return &pln->Lookup(index);
+    auto [found_offset, node] = *pln;
+    if (found_offset == node_offset) {
+      return &node->Lookup(index);
+    }
   }
 
-  VmPlnOwner pl = VmPageListNode::Create(node_offset);
+  VmPlnOwner pl = VmPageListNode::Create();
   if (!pl) {
     return nullptr;
   }
@@ -109,7 +104,9 @@ VmPageOrMarker* VmPageList::LookupOrAllocateInternal(uint64_t offset) {
 
   VmPageOrMarker& p = pl->Lookup(index);
 
-  list_.insert(ktl::move(pl));
+  if (!list_.insert(pln, node_offset, ktl::move(pl))) {
+    return nullptr;
+  }
   return &p;
 }
 
@@ -124,12 +121,14 @@ void VmPageList::ReturnEmptySlot(uint64_t offset) {
   auto pln = list_.find(node_offset);
   DEBUG_ASSERT(pln.IsValid());
 
+  auto [_, node] = *pln;
+
   // check that the slot was empty
-  [[maybe_unused]] VmPageOrMarker page = ktl::move(pln->Lookup(index));
+  [[maybe_unused]] VmPageOrMarker page = ktl::move(node->Lookup(index));
   DEBUG_ASSERT(page.IsEmpty());
-  if (pln->IsEmpty()) {
+  if (node->IsEmpty()) {
     // node is empty, erase it.
-    list_.erase(*pln);
+    list_.erase(pln);
   }
 }
 
@@ -146,12 +145,14 @@ VmPageOrMarker VmPageList::RemoveContent(uint64_t offset) {
     return VmPageOrMarker::Empty();
   }
 
+  auto [_, node] = *pln;
+
   // free this page
-  VmPageOrMarker page = ktl::move(pln->Lookup(index));
-  if (!page.IsEmpty() && pln->IsEmpty()) {
+  VmPageOrMarker page = ktl::move(node->Lookup(index));
+  if (!page.IsEmpty() && node->IsEmpty()) {
     // if it was the last item in the node, remove the node from the tree
     LTRACEF_LEVEL(2, "%p freeing the list node\n", this);
-    list_.erase(*pln);
+    list_.erase(pln);
   }
   return page;
 }
@@ -175,27 +176,30 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalStartForEnd(
   auto pln = list_.find(node_offset);
   DEBUG_ASSERT(pln.IsValid());
   const size_t node_index = NodeIndex(end_offset);
-  DEBUG_ASSERT(pln->Lookup(node_index).IsIntervalEnd());
+  auto [found_offset, node] = *pln;
+  DEBUG_ASSERT(node->Lookup(node_index).IsIntervalEnd());
 
   // The only populated slots in an interval are the start and the end. So the interval start will
   // either be in the same node as the interval end, or the previous populated node to the left.
   size_t index = node_index;
   while (index > 0) {
     index--;
-    auto slot = &pln->Lookup(index);
+    auto slot = &node->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalStart());
-      return {slot, pln->offset() + index * kPageSize};
+      return {slot, found_offset + index * kPageSize};
     }
   }
 
   // We could not find the start in the same node. Check the previous one.
   pln--;
+  DEBUG_ASSERT(pln.IsValid());
+  auto [prev_offset, prev_node] = *pln;
   for (index = VmPageListNode::kPageFanOut; index >= 1; index--) {
-    auto slot = &pln->Lookup(index - 1);
+    auto slot = &prev_node->Lookup(index - 1);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalStart());
-      return {slot, pln->offset() + (index - 1) * kPageSize};
+      return {slot, prev_offset + (index - 1) * kPageSize};
     }
   }
 
@@ -211,27 +215,30 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalEndForStart(
   auto pln = list_.find(node_offset);
   DEBUG_ASSERT(pln.IsValid());
   const size_t node_index = NodeIndex(start_offset);
-  DEBUG_ASSERT(pln->Lookup(node_index).IsIntervalStart());
+  auto [found_offset, node] = *pln;
+  DEBUG_ASSERT(node->Lookup(node_index).IsIntervalStart());
 
   // The only populated slots in an interval are the start and the end. So the interval end will
   // either be in the same node as the interval start, or the next populated node to the right.
   size_t index = node_index;
   while (index < VmPageListNode::kPageFanOut - 1) {
     index++;
-    auto slot = &pln->Lookup(index);
+    auto slot = &node->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalEnd());
-      return {slot, pln->offset() + index * kPageSize};
+      return {slot, found_offset + index * kPageSize};
     }
   }
 
   // We could not find the end in the same node. Check the next one.
   pln++;
+  DEBUG_ASSERT(pln.IsValid());
+  auto [next_offset, next_node] = *pln;
   for (index = 0; index < VmPageListNode::kPageFanOut; index++) {
-    auto slot = &pln->Lookup(index);
+    auto slot = &next_node->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalEnd());
-      return {slot, pln->offset() + index * kPageSize};
+      return {slot, next_offset + index * kPageSize};
     }
   }
 
@@ -271,9 +278,10 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
   // found some valid node if the offset falls in an interval. If we could not find a valid node,
   // we know that offset cannot lie in an interval, so skip the check.
   if (pln.IsValid()) {
-    if (pln->offset() == node_offset) {
+    auto [found_offset, node] = *pln;
+    if (found_offset == node_offset) {
       // We found the node containing offset. Get the slot.
-      slot = &pln->Lookup(node_index);
+      slot = &node->Lookup(node_index);
       // Short circuit the IsOffsetInIntervalHelper call below if the slot itself is an interval
       // sentinel. This is purely an optimization, and it would be okay to call
       // IsOffsetInIntervalHelper for this case too.
@@ -284,7 +292,7 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
     }
 
     if (!is_in_interval) {
-      found_interval = IsOffsetInIntervalHelper(offset, *pln);
+      found_interval = IsOffsetInIntervalHelper(offset, pln);
       is_in_interval = !!found_interval;
       // If we found an interval, we should have found a valid interval sentinel too.
       DEBUG_ASSERT(!is_in_interval || found_interval->IsInterval());
@@ -300,14 +308,15 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
   // We won't have a valid slot if the node we looked up did not contain the required offset.
   if (!slot) {
     // Allocate the node that would contain offset and then get the slot.
-    VmPlnOwner pl = VmPageListNode::Create(node_offset);
+    VmPlnOwner pl = VmPageListNode::Create();
     if (!pl) {
       return {nullptr, is_in_interval};
     }
-    VmPageListNode& raw_node = *pl;
     slot = &pl->Lookup(node_index);
-    list_.insert(ktl::move(pl));
-    pln = list_.make_iterator(raw_node);
+    pln = list_.insert(node_offset, ktl::move(pl));
+    if (!pln) {
+      return {nullptr, is_in_interval};
+    }
   }
 
   // If offset does not lie in an interval, or if the slot is already a single page interval, there
@@ -351,7 +360,8 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
   if (need_new_end) {
     if (node_index > 0) {
       // The previous slot is in the same node.
-      new_end = &pln->Lookup(node_index - 1);
+      auto [_, node] = *pln;
+      new_end = &node->Lookup(node_index - 1);
     } else {
       // The previous slot is in the node to the left. We might need to allocate a new node to the
       // left if it does not exist. Try to walk left and see if we find the previous node we're
@@ -362,12 +372,13 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
       // end. Additionally, the slot was the left-most slot in its node, which means we are
       // guaranteed to find a node to the left which holds the start of the interval.
       DEBUG_ASSERT(iter.IsValid());
+      auto [prev_found_offset, prev_node] = *iter;
       const uint64_t prev_node_offset = node_offset - VmPageListNode::kPageFanOut * kPageSize;
-      if (iter->offset() == prev_node_offset) {
-        new_end = &iter->Lookup(VmPageListNode::kPageFanOut - 1);
+      if (prev_found_offset == prev_node_offset) {
+        new_end = &prev_node->Lookup(VmPageListNode::kPageFanOut - 1);
       } else {
-        DEBUG_ASSERT(iter->offset() < prev_node_offset);
-        VmPlnOwner pl = VmPageListNode::Create(prev_node_offset);
+        DEBUG_ASSERT(prev_found_offset < prev_node_offset);
+        VmPlnOwner pl = VmPageListNode::Create();
         if (!pl) {
           if (slot->IsEmpty()) {
             ReturnEmptySlot(offset);
@@ -375,7 +386,12 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
           return {nullptr, true};
         }
         new_end = &pl->Lookup(VmPageListNode::kPageFanOut - 1);
-        list_.insert(ktl::move(pl));
+        auto [pln_key, _] = *pln;
+        if (!list_.insert(prev_node_offset, ktl::move(pl))) {
+          return {nullptr, true};
+        }
+        pln = list_.find(pln_key);
+        ASSERT(pln.IsValid());
       }
     }
     DEBUG_ASSERT(new_end);
@@ -385,7 +401,8 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
   if (need_new_start) {
     if (node_index < VmPageListNode::kPageFanOut - 1) {
       // The next slot is in the same node.
-      new_start = &pln->Lookup(node_index + 1);
+      auto [_, node] = *pln;
+      new_start = &node->Lookup(node_index + 1);
     } else {
       // The next slot is in the node to the right. We might need to allocate a new node to the
       // right if it does not exist. Try to walk right and see if we find the next node we're
@@ -396,12 +413,13 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
       // slot was the right-most slot in its node, which means we are guaranteed to find a node to
       // the right which holds the end of the interval.
       DEBUG_ASSERT(iter.IsValid());
+      auto [next_found_offset, next_node] = *iter;
       const uint64_t next_node_offset = node_offset + VmPageListNode::kPageFanOut * kPageSize;
-      if (iter->offset() == next_node_offset) {
-        new_start = &iter->Lookup(0);
+      if (next_found_offset == next_node_offset) {
+        new_start = &next_node->Lookup(0);
       } else {
-        DEBUG_ASSERT(iter->offset() > next_node_offset);
-        VmPlnOwner pl = VmPageListNode::Create(next_node_offset);
+        DEBUG_ASSERT(next_found_offset > next_node_offset);
+        VmPlnOwner pl = VmPageListNode::Create();
         if (!pl) {
           if (slot->IsEmpty()) {
             ReturnEmptySlot(offset);
@@ -409,7 +427,9 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
           return {nullptr, true};
         }
         new_start = &pl->Lookup(0);
-        list_.insert(ktl::move(pl));
+        if (!list_.insert(next_node_offset, ktl::move(pl))) {
+          return {nullptr, true};
+        }
       }
     }
     DEBUG_ASSERT(new_start);
@@ -566,22 +586,20 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
     const uint64_t last_unpopulated = last_node_offset - VmPageListNode::kPageFanOut * kPageSize;
     for (uint64_t node_offset = first_unpopulated; node_offset <= last_unpopulated;
          node_offset += VmPageListNode::kPageFanOut * kPageSize) {
-      VmPlnOwner pl = VmPageListNode::Create(node_offset);
-      if (!pl) {
+      VmPlnOwner pl = VmPageListNode::Create();
+      if (!pl || !list_.insert(node_offset, ktl::move(pl))) {
         // If allocating a new node fails, clean up all the new nodes we might have installed until
         // this point, which is all the empty nodes starting at first_unpopulated to before the node
         // that failed.
         for (uint64_t off = first_unpopulated; off < node_offset;
              off += VmPageListNode::kPageFanOut * kPageSize) {
-          [[maybe_unused]] auto node = list_.erase(off);
-          DEBUG_ASSERT(node->IsEmpty());
+          list_.erase(list_.find(off));
         }
         // Also return the start and end slots that we split above.
         ReturnIntervalSlot(start_offset);
         ReturnIntervalSlot(end_offset);
         return ZX_ERR_NO_MEMORY;
       }
-      list_.insert(ktl::move(pl));
     }
   }
 
@@ -600,15 +618,18 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
   // AwaitingCleanLength was 5 pages, the AwaitingCleanLength's for the 3 slots and the remaining
   // interval at the end of the call should be (in pages): [1, 1, 1, 2]
   // If AwaitingCleanLength had initially been 2, we would instead have: [1, 1, 0, 0]
-  uint64_t awaiting_clean_len = pln->Lookup(first_node_index).GetZeroIntervalAwaitingCleanLength();
+  auto [first_pln_offset, first_pln_node] = *pln;
+  uint64_t awaiting_clean_len =
+      first_pln_node->Lookup(first_node_index).GetZeroIntervalAwaitingCleanLength();
   while (node_offset <= last_node_offset) {
     DEBUG_ASSERT(pln.IsValid());
-    DEBUG_ASSERT(pln->offset() == node_offset);
+    auto [found_offset, node] = *pln;
+    DEBUG_ASSERT(found_offset == node_offset);
     for (size_t index = (node_offset == first_node_offset ? first_node_index : 0);
          index <=
          (node_offset == last_node_offset ? last_node_index : VmPageListNode::kPageFanOut - 1);
          index++) {
-      auto cur = &pln->Lookup(index);
+      auto cur = &node->Lookup(index);
       *cur = VmPageOrMarker::ZeroInterval(VmPageOrMarker::SentinelType::Slot,
                                           start_slot->GetZeroIntervalDirtyState());
       if (awaiting_clean_len > 0) {
@@ -666,10 +687,11 @@ bool VmPageList::IsOffsetInZeroInterval(uint64_t offset) const {
     return false;
   }
   // The page list shouldn't have any empty nodes.
-  DEBUG_ASSERT(!pln->IsEmpty());
+  auto [_, node] = *pln;
+  DEBUG_ASSERT(!node->IsEmpty());
 
   // Check if offset is in an interval also querying the associated sentinel.
-  const VmPageOrMarker* interval = IsOffsetInIntervalHelper(offset, *pln);
+  const VmPageOrMarker* interval = IsOffsetInIntervalHelper(offset, pln);
   DEBUG_ASSERT(!interval || interval->IsInterval());
   return interval ? interval->IsIntervalZero() : false;
 }
@@ -687,8 +709,9 @@ bool VmPageList::IsOffsetInInterval(uint64_t offset) const {
     return false;
   }
   // The page list shouldn't have any empty nodes.
-  DEBUG_ASSERT(!pln->IsEmpty());
-  const VmPageOrMarker* interval = IsOffsetInIntervalHelper(offset, *pln);
+  auto [_, node] = *pln;
+  DEBUG_ASSERT(!node->IsEmpty());
+  const VmPageOrMarker* interval = IsOffsetInIntervalHelper(offset, pln);
   DEBUG_ASSERT(!interval || interval->IsInterval());
   return interval != nullptr;
 }
@@ -722,7 +745,8 @@ zx_status_t VmPageList::AddZeroIntervalInternal(uint64_t start_offset, uint64_t 
     if (!pln.IsValid()) {
       return nullptr;
     }
-    return &pln->Lookup(index);
+    auto [_, node] = *pln;
+    return &node->Lookup(index);
   };
 
   // Check if we can merge this zero interval with a preceding one.
@@ -942,7 +966,8 @@ zx_status_t VmPageList::OverwriteZeroInterval(uint64_t old_start_offset, uint64_
     if (!pln.IsValid()) {
       return nullptr;
     }
-    return &pln->Lookup(index);
+    auto [_, node] = *pln;
+    return &node->Lookup(index);
   };
 
   VmPageOrMarker* old_start =

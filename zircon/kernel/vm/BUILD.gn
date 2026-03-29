@@ -53,6 +53,7 @@ source_set("vm") {
     "//src/lib/zbitl",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/lib/btree",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
     "//zircon/kernel/lib/dump",
@@ -124,6 +125,7 @@ library_headers("headers") {
 
     # <vm/pmm_checker.h> has #include <lib/boot-options/boot-options.h>.
     "//zircon/kernel/lib/boot-options:headers",
+    "//zircon/kernel/lib/btree:headers",
   ]
 
   public_configs = [

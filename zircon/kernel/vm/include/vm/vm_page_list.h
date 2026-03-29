@@ -9,6 +9,7 @@
 
 #include <align.h>
 #include <bits.h>
+#include <lib/btree.h>
 #include <lib/fit/function.h>
 #include <lib/page/size.h>
 #include <zircon/errors.h>
@@ -505,9 +506,9 @@ struct VmPageListNodeDeleter {
 // VmPlnOwner wraps VmPageListNode in a unique_ptr that has single ownership and deletes it using
 // VmPageListNodeDeleter when it goes out of scope.
 using VmPlnOwner = ktl::unique_ptr<VmPageListNode, VmPageListNodeDeleter>;
-class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
+class VmPageListNode final {
  public:
-  explicit VmPageListNode(uint64_t offset) : obj_offset_(offset) {}
+  VmPageListNode() = default;
   ~VmPageListNode();
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmPageListNode);
@@ -515,61 +516,55 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
   static constexpr size_t kPageFanOut = 16;
 
   // Creates a new VmPageListNode. Must be deleted using the specified deleter.
-  static VmPlnOwner Create(uint64_t offset);
+  static VmPlnOwner Create();
 
-  // accessors
-  uint64_t offset() const { return obj_offset_; }
-  uint64_t GetKey() const { return obj_offset_; }
-
-  uint64_t end_offset() const {
-    const uint64_t end = obj_offset_ + kPageFanOut * kPageSize;
+  static uint64_t end_offset(uint64_t base_offset) {
+    DEBUG_ASSERT(NodeOffset(base_offset) == base_offset);
+    const uint64_t end = base_offset + (kPageFanOut * kPageSize);
     // By construction the node cannot overflow, but the compiler does not know this. By explicitly
     // telling it some checks can be avoided as the compiler does not have to consider the case
     // where end wrapped.
-    if (end <= obj_offset_) {
+    if (end <= base_offset) {
       __builtin_unreachable();
     }
     return end;
   }
 
-  void set_offset(uint64_t offset) {
-    DEBUG_ASSERT(!InContainer());
-    obj_offset_ = offset;
+  // for every page or marker in the node call the passed in function.
+  template <typename PTR_TYPE, typename F>
+  zx_status_t ForEveryPage(uint64_t base, F func) {
+    return ForEveryPageInRange<PTR_TYPE>(this, base, func, base, end_offset(base));
   }
 
   // for every page or marker in the node call the passed in function.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPage(F func) {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, offset(), end_offset());
-  }
-
-  // for every page or marker in the node call the passed in function.
-  template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPage(F func) const {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, offset(), end_offset());
+  zx_status_t ForEveryPage(uint64_t base, F func) const {
+    return ForEveryPageInRange<PTR_TYPE>(this, base, func, base, end_offset(base));
   }
 
   // for every page or marker in the node in the range call the passed in function. The range is
   // assumed to be within the nodes object range.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPageInRange(F func, uint64_t start_offset, uint64_t end_offset) {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, start_offset, end_offset);
+  zx_status_t ForEveryPageInRange(uint64_t base, F func, uint64_t start_offset,
+                                  uint64_t end_offset) {
+    return ForEveryPageInRange<PTR_TYPE>(this, base, func, start_offset, end_offset);
   }
 
   // for every page or marker in the node in the range call the passed in function. The range is
   // assumed to be within the nodes object range.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPageInRange(F func, uint64_t start_offset, uint64_t end_offset) const {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, start_offset, end_offset);
+  zx_status_t ForEveryPageInRange(uint64_t base, F func, uint64_t start_offset,
+                                  uint64_t end_offset) const {
+    return ForEveryPageInRange<PTR_TYPE>(this, base, func, start_offset, end_offset);
   }
 
   // Checks if the given offset is part of an interval involving this node. This method cannot find
   // the full interval, since that may require looking at an additional node, but can determine if
   // in an interval or not. Returns any interval sentinel found, otherwise a nullptr.
-  const VmPageOrMarker* IsOffsetInInterval(uint64_t off) const {
-    DEBUG_ASSERT(off >= offset());
-    DEBUG_ASSERT(off < end_offset());
-    const size_t index = (off - obj_offset_) / kPageSize;
+  const VmPageOrMarker* IsOffsetInInterval(uint64_t obj_offset, uint64_t off) const {
+    DEBUG_ASSERT(off >= obj_offset);
+    DEBUG_ASSERT(off < end_offset(obj_offset));
+    const size_t index = (off - obj_offset) / kPageSize;
     // If the target slot is any kind of interval (start, end, individual slot), then we are in an
     // interval.
     if (!pages_[index].IsEmpty()) {
@@ -606,13 +601,11 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
   }
 
   const VmPageOrMarker& Lookup(size_t index) const {
-    canary_.Assert();
     DEBUG_ASSERT(index < kPageFanOut);
     return pages_[index];
   }
 
   VmPageOrMarker& Lookup(size_t index) {
-    canary_.Assert();
     DEBUG_ASSERT(index < kPageFanOut);
     return pages_[index];
   }
@@ -649,14 +642,16 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
   }
 
   template <typename F>
-  void MergeRangeOnto(F migrate_fn, VmPageListNode& other, uint64_t start_offset,
-                      uint64_t end_offset, uint64_t other_start_offset) {
-    DEBUG_ASSERT(other_start_offset >= other.offset());
-    DEBUG_ASSERT(other_start_offset + (end_offset - start_offset) <= other.end_offset());
+  void MergeRangeOnto(uint64_t base, uint64_t other_base, F migrate_fn, VmPageListNode& other,
+                      uint64_t start_offset, uint64_t end_offset, uint64_t other_start_offset) {
+    DEBUG_ASSERT(other_start_offset >= other_base);
+    DEBUG_ASSERT(other_start_offset + (end_offset - start_offset) <=
+                 VmPageListNode::end_offset(other_base));
     ForEveryPageInRange<VmPageOrMarker*>(
+        base,
         [&](VmPageOrMarker* slot, uint64_t offset) {
           const uint64_t other_offset = offset - start_offset + other_start_offset;
-          DEBUG_ASSERT(NodeOffset(other_offset) == other.offset());
+          DEBUG_ASSERT(NodeOffset(other_offset) == other_base);
           migrate_fn(slot, &other.pages_[NodeIndex(other_offset)], other_offset);
           return ZX_ERR_NEXT;
         },
@@ -675,17 +670,17 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
 
  private:
   template <typename PTR_TYPE, typename S, typename F>
-  static zx_status_t ForEveryPageInRange(S self, F func, uint64_t start_offset,
+  static zx_status_t ForEveryPageInRange(S self, uint64_t base, F func, uint64_t start_offset,
                                          uint64_t end_offset) {
     // Assert that the requested range is sensible and falls within our nodes actual offset range.
     DEBUG_ASSERT(end_offset >= start_offset);
-    DEBUG_ASSERT(start_offset >= self->obj_offset_);
-    DEBUG_ASSERT(end_offset <= self->end_offset());
-    const size_t start = (start_offset - self->obj_offset_) / kPageSize;
-    const size_t end = (end_offset - self->obj_offset_) / kPageSize;
+    DEBUG_ASSERT(start_offset >= base);
+    DEBUG_ASSERT(end_offset <= VmPageListNode::end_offset(base));
+    const size_t start = (start_offset - base) / kPageSize;
+    const size_t end = (end_offset - base) / kPageSize;
     for (size_t i = start; i < end; i++) {
       if (!self->pages_[i].IsEmpty()) {
-        zx_status_t status = func(PTR_TYPE{&self->pages_[i]}, self->obj_offset_ + i * kPageSize);
+        zx_status_t status = func(PTR_TYPE{&self->pages_[i]}, base + i * kPageSize);
         if (status != ZX_ERR_NEXT) {
           return status;
         }
@@ -694,9 +689,6 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
     return ZX_ERR_NEXT;
   }
 
-  fbl::Canary<fbl::magic("PLST")> canary_;
-
-  uint64_t obj_offset_ = 0;
   VmPageOrMarker pages_[kPageFanOut];
 
   friend VMPLCursor;
@@ -713,14 +705,24 @@ class VMPLCursor {
 
   // See VMPLCursor::current.
   VmPageOrMarkerRef current_ref() const {
-    return VmPageOrMarkerRef(valid() ? &(node_->pages_[index_]) : nullptr);
+    if (valid()) {
+      auto [node_offset, node] = *node_;
+      return VmPageOrMarkerRef(&node->pages_[index_]);
+    }
+    return VmPageOrMarkerRef(nullptr);
   }
 
   // Retrieve the current VmPageOrMarker pointed at by the cursor. This will be a nullptr if the
   // cursor is no longer valid. The slot pointed at may itself be empty.
   // Note that it is up to the caller to know the offset, which it can track by remembering how
   // many |step|s it has done.
-  const VmPageOrMarker* current() const { return valid() ? &(node_->pages_[index_]) : nullptr; }
+  const VmPageOrMarker* current() const {
+    if (valid()) {
+      auto [node_offset, node] = *node_;
+      return &node->pages_[index_];
+    }
+    return nullptr;
+  }
 
   // Move the cursor to the next entry. The next entry can then be retrieved by calling |current|,
   // and if there is no next entry then current will return a nullptr.
@@ -741,8 +743,9 @@ class VMPLCursor {
   template <typename F>
   zx_status_t ForEveryContiguous(F func) {
     while (valid()) {
+      auto [node_offset, node] = *node_;
       while (index_ < kPageFanOut) {
-        const VmPageOrMarker* slot = &node_->pages_[index_];
+        const VmPageOrMarker* slot = &node->pages_[index_];
         zx_status_t status = func(slot);
         if (status != ZX_ERR_NEXT) {
           return status == ZX_ERR_STOP ? ZX_OK : status;
@@ -760,27 +763,31 @@ class VMPLCursor {
   // |current| is returning a nullptr.
   uint64_t offset() const {
     DEBUG_ASSERT(valid());
-    return node_->obj_offset_ + (static_cast<uint64_t>(index_) * kPageSize);
+    auto [node_offset, node] = *node_;
+    return node_offset + (static_cast<uint64_t>(index_) * kPageSize);
   }
 
  private:
   static constexpr size_t kPageFanOut = VmPageListNode::kPageFanOut;
 
-  VMPLCursor(fbl::WAVLTree<uint64_t, VmPlnOwner>::iterator&& node, uint index)
-      : node_(node), index_(index) {}
+  VMPLCursor(btree::BTree<VmPlnOwner>::iterator node, uint index) : node_(node), index_(index) {}
 
   // Helper to increment the underlying node_, testing for contiguity.
   bool inc_node() {
     // Should only be incrementing if index is at the end, as otherwise we're not being contiguous.
     DEBUG_ASSERT(index_ == kPageFanOut);
-    const uint64_t prev = node_->obj_offset_;
+    auto [prev_offset, _] = *node_;
     node_++;
-    if (node_.IsValid() && node_->obj_offset_ == prev + kPageSize * kPageFanOut) {
-      // node is valid and contiguous, reset the index_ to both remove the terminal sentinel, and
-      // resume iteration from the beginning.
-      index_ = 0;
-      // TODO: Once cursor is in use benchmark the impact of validating that the node is not empty.
-      return true;
+    if (node_.IsValid()) {
+      auto [node_offset, node] = *node_;
+      if (node_offset == prev_offset + kPageSize * kPageFanOut) {
+        // node is valid and contiguous, reset the index_ to both remove the terminal sentinel, and
+        // resume iteration from the beginning.
+        index_ = 0;
+        // TODO: Once cursor is in use benchmark the impact of validating that the node is not
+        // empty.
+        return true;
+      }
     }
     return false;
   }
@@ -790,7 +797,7 @@ class VMPLCursor {
 
   // Current node_ in the underlying page list currently being iterated. If this is invalid then
   // index_ will be kPageFanOut
-  fbl::WAVLTree<uint64_t, VmPlnOwner>::iterator node_;
+  btree::BTree<VmPlnOwner>::iterator node_;
 
   // The index into node_ that is currently being pointed at to be returned by |current|. The
   // sentinel value of kPageFanOut is used to indicate that node_ is no longer valid.
@@ -932,23 +939,22 @@ class VmPageList final {
   // is returned it may still be the case that IsEmpty() on the returned PageOrMarker is true.
   const VmPageOrMarker* Lookup(uint64_t offset) const {
     // lookup the tree node that holds this offset
-    NodeList::const_iterator pln = list_.find(NodeOffset(offset));
-
-    if (!pln.IsValid()) {
-      return nullptr;
+    if (auto pln = list_.find(NodeOffset(offset)); pln.IsValid()) {
+      auto [node_offset, node] = *pln;
+      return &node->Lookup(NodeIndex(offset));
     }
-    return &pln->Lookup(NodeIndex(offset));
+    return nullptr;
   }
 
   // Similar to `Lookup` but returns a VmPageOrMarkerRef that allows for limited mutation of the
   // slot. General mutation requires calling `LookupOrAllocate`.
   VmPageOrMarkerRef LookupMutable(uint64_t offset) {
     // lookup the tree node that holds this offset
-    NodeList::iterator pln = list_.find(NodeOffset(offset));
-    if (!pln.IsValid()) {
-      return VmPageOrMarkerRef(nullptr);
+    if (auto pln = list_.find(NodeOffset(offset)); pln.IsValid()) {
+      auto [node_offset, node] = *pln;
+      return VmPageOrMarkerRef(&node->Lookup(NodeIndex(offset)));
     }
-    return VmPageOrMarkerRef(&pln->Lookup(NodeIndex(offset)));
+    return VmPageOrMarkerRef(nullptr);
   }
 
   // Similar to `LookupMutable` but returns a VMPLCursor that allows for iterating over any
@@ -959,7 +965,7 @@ class VmPageList final {
     if (!pln.IsValid()) {
       return VMPLCursor();
     }
-    return VMPLCursor(ktl::move(pln), static_cast<uint>(NodeIndex(offset)));
+    return VMPLCursor(pln, static_cast<uint>(NodeIndex(offset)));
   }
 
   // Similar to `LookupMutableCursor` but does a lower_bound search instead of a find, returning the
@@ -967,12 +973,12 @@ class VmPageList final {
   VMPLCursor LookupNearestMutableCursor(uint64_t offset) {
     // lookup the tree node that holds this offset or a larger one.
     const uint64_t node_offset = NodeOffset(offset);
-    NodeList::iterator pln = list_.lower_bound(node_offset);
-    if (!pln.IsValid()) {
-      return VMPLCursor();
+    if (NodeList::iterator pln = list_.lower_bound(node_offset); pln.IsValid()) {
+      auto [found_offset, _] = *pln;
+      const uint64_t index = found_offset == node_offset ? NodeIndex(offset) : 0;
+      return VMPLCursor(pln, static_cast<uint>(index));
     }
-    const uint64_t index = pln->offset() == node_offset ? NodeIndex(offset) : 0;
-    return VMPLCursor(ktl::move(pln), static_cast<uint>(index));
+    return VMPLCursor();
   }
 
   // The interval handling flag to be used by LookupOrAllocate. See comments near LookupOrAllocate.
@@ -1098,14 +1104,14 @@ class VmPageList final {
   template <typename F>
   bool MergeRangeOnto(F migrate_fn, VmPageList& other, uint64_t offset, uint64_t end_offset) {
     // Iterate the range in this we are merging.
-    for (auto iter = list_.lower_bound(NodeOffset(offset)); iter && iter->offset() < end_offset;) {
-      VmPageListNode* node = &*iter;
-      iter++;
+    for (auto iter = list_.lower_bound(NodeOffset(offset)); iter && (*iter).first < end_offset;) {
+      auto [node_obj_offset, node] = *iter;
 
       DEBUG_ASSERT(node->HasNoIntervalSentinel());
       // Calculate start and end in |node|
-      uint64_t node_start_off = ktl::max(node->offset(), offset);
-      const uint64_t node_end_off = ktl::min(node->end_offset(), end_offset);
+      uint64_t node_start_off = ktl::max(node_obj_offset, offset);
+      const uint64_t node_end_off =
+          ktl::min(VmPageListNode::end_offset(node_obj_offset), end_offset);
 
       // If offset is not a multiple of kNodeSize then items in this node will need to be split
       // across two different nodes in other.
@@ -1114,32 +1120,36 @@ class VmPageList final {
         const uint64_t other_start_off = node_start_off - offset;
 
         // Find the node in |other| that contains the start address.
-        auto cur_other = other.list_.find(NodeOffset(other_start_off));
+        const uint64_t other_obj_offset = NodeOffset(other_start_off);
+        auto cur_other = other.list_.lower_bound(other_obj_offset);
 
         // Allocate a new node if none was found.
-        if (!cur_other) {
+        if (!cur_other || (*cur_other).first != other_obj_offset) {
           fbl::AllocChecker ac;
-          VmPlnOwner pl = VmPageListNode::Create(NodeOffset(other_start_off));
+          VmPlnOwner pl = VmPageListNode::Create();
           if (!pl) {
             return false;
           }
-          VmPageListNode& raw = *pl;
-          other.list_.insert(ktl::move(pl));
-          cur_other = NodeList::materialize_iterator(raw);
+          cur_other = other.list_.insert(cur_other, other_obj_offset, ktl::move(pl));
+          if (!cur_other) {
+            return false;
+          }
         }
+        VmPageListNode* cur_other_node = (*cur_other).second;
 
         // Cap the range to the end of |cur_other|, which could be less than length of the range in
         // |node|.
-        const uint64_t other_end_off = ktl::min(cur_other->end_offset(), node_end_off - offset);
+        const uint64_t other_end_off =
+            ktl::min(VmPageListNode::end_offset(other_obj_offset), node_end_off - offset);
 
         const uint64_t len = other_end_off - other_start_off;
 
-        node->MergeRangeOnto(migrate_fn, *cur_other, node_start_off, node_start_off + len,
-                             other_start_off);
+        node->MergeRangeOnto(node_obj_offset, other_obj_offset, migrate_fn, *cur_other_node,
+                             node_start_off, node_start_off + len, other_start_off);
 
         // If either nothing was transferred, or all existing content was removed, then remove
         // |cur_other|.
-        if (cur_other->IsEmpty()) {
+        if (cur_other_node->IsEmpty()) {
           other.list_.erase(cur_other);
         }
 
@@ -1149,13 +1159,18 @@ class VmPageList final {
       // if |migrate_fn| chose to leave it, or if the range being processed only partially covered
       // |node|.
       if (node->IsEmpty()) {
-        list_.erase(*node);
+        iter = list_.erase(iter);
+      } else {
+        iter++;
       }
     }
     return true;
   }
 
-  uint64_t HeapAllocationBytes() const { return list_.size() * sizeof(VmPageListNode); }
+  uint64_t HeapAllocationBytes() const {
+    auto utilization = list_.calculate_utilization_slow();
+    return utilization.nodes_in_bytes() + (utilization.stored_values * sizeof(VmPageListNode));
+  }
 
   // Allow the implementation to use a one-past-the-end for VmPageListNode offsets.
   static constexpr uint64_t MAX_SIZE =
@@ -1233,12 +1248,14 @@ class VmPageList final {
   // offset. This node is passed in here so that we can reuse the node the callsite has looked up
   // and avoid an extra lookup. Any interval sentinel found is returned, otherwise a nullptr is
   // returned.
-  const VmPageOrMarker* IsOffsetInIntervalHelper(uint64_t offset,
-                                                 const VmPageListNode& lower_bound) const {
-    if (offset < lower_bound.offset()) {
-      return lower_bound.NodeStartsInInterval();
+  template <typename T>
+  static const VmPageOrMarker* IsOffsetInIntervalHelper(
+      uint64_t offset, btree::BTree<VmPlnOwner>::iterator_impl<T> lower_bound) {
+    auto [obj_offset, node] = *lower_bound;
+    if (offset < obj_offset) {
+      return node->NodeStartsInInterval();
     }
-    return lower_bound.IsOffsetInInterval(offset);
+    return node->IsOffsetInInterval(obj_offset, offset);
   }
 
   // Internal helper for AddZeroInterval.
@@ -1278,8 +1295,8 @@ class VmPageList final {
 
   template <typename PTR_TYPE, typename S, typename F>
   static zx_status_t ForEveryPage(S self, F per_page_func) {
-    for (auto& pl : self->list_) {
-      zx_status_t status = pl.template ForEveryPage<PTR_TYPE, F>(per_page_func);
+    for (auto [node_offset, node] : self->list_) {
+      zx_status_t status = node->template ForEveryPage<PTR_TYPE>(node_offset, per_page_func);
       if (status != ZX_ERR_NEXT) {
         if (status == ZX_ERR_STOP) {
           break;
@@ -1303,16 +1320,23 @@ class VmPageList final {
     DEBUG_ASSERT(IsPageRounded(start_offset));
     DEBUG_ASSERT(IsPageRounded(end_offset));
 
-    while (cur && cur->offset() < end_offset) {
-      uint64_t start = ktl::max(start_offset, cur->offset());
-      uint64_t end = ktl::min(cur->end_offset(), end_offset);
+    while (cur) {
+      auto [cur_offset, node] = *cur;
+      if (cur_offset >= end_offset) {
+        break;
+      }
+      uint64_t start = ktl::max(start_offset, cur_offset);
+      uint64_t end = ktl::min(VmPageListNode::end_offset(cur_offset), end_offset);
       zx_status_t status =
-          cur->template ForEveryPageInRange<PTR_TYPE, F>(per_page_func, start, end);
-      auto prev = cur++;
+          node->template ForEveryPageInRange<PTR_TYPE, F>(cur_offset, per_page_func, start, end);
       if constexpr (NODE_CHECK == NodeCheck::CleanupEmpty) {
-        if (prev->IsEmpty()) {
-          self->list_.erase(prev);
+        if (node->IsEmpty()) {
+          cur = self->list_.erase(cur);
+        } else {
+          cur++;
         }
+      } else {
+        cur++;
       }
       if (status != ZX_ERR_NEXT) {
         return status;
@@ -1403,9 +1427,8 @@ class VmPageList final {
       // page at all and the start_offset is in an interval (Note that in this latter case all
       // offsets in the range [start_offset, end_offset) would lie in the same interval, so we can
       // just check one of them).
-      bool ended_in_interval =
-          in_interval || (expected_next_off == start_offset && cur &&
-                          !!self->IsOffsetInIntervalHelper(start_offset, *cur));
+      bool ended_in_interval = in_interval || (expected_next_off == start_offset && cur &&
+                                               !!IsOffsetInIntervalHelper(start_offset, cur));
       if (!ended_in_interval) {
         status = per_gap_func(expected_next_off, end_offset);
         if (status != ZX_ERR_NEXT && status != ZX_ERR_STOP) {
@@ -1670,7 +1693,7 @@ class VmPageList final {
     return ZX_OK;
   }
 
-  using NodeList = fbl::WAVLTree<uint64_t, VmPlnOwner>;
+  using NodeList = btree::BTree<VmPlnOwner>;
   NodeList list_;
 };
 
