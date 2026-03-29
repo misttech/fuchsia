@@ -214,7 +214,8 @@ zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep
   fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
   fuchsia_hardware_usb_function::EndpointDescriptor desc;
   desc.bm_attributes(ep_desc->bm_attributes);
-  desc.w_max_packet_size(ep_desc->w_max_packet_size);
+  // The FIDL type here is host endian.
+  desc.w_max_packet_size(le16toh(ep_desc->w_max_packet_size));
   desc.b_interval(ep_desc->b_interval);
   ep_config.descriptor(std::move(desc));
 
@@ -222,7 +223,8 @@ zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep
     fuchsia_hardware_usb_function::SuperSpeedEndpointCompanionDescriptor ss;
     ss.b_max_burst(ss_comp_desc->b_max_burst);
     ss.bm_attributes(ss_comp_desc->bm_attributes);
-    ss.w_bytes_per_interval(ss_comp_desc->w_bytes_per_interval);
+    // The FIDL type here is host endian.
+    ss.w_bytes_per_interval(le16toh(ss_comp_desc->w_bytes_per_interval));
     ep_config.super_speed_companion(std::move(ss));
   }
 
@@ -615,7 +617,9 @@ zx_status_t UsbFunction::CommonEndpointConfigure(
     fdescriptor::wire::UsbEndpointDescriptor fep_desc = {
         .b_endpoint_address = ep_address,
         .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
-        .w_max_packet_size = endpoint_configuration.descriptor()->w_max_packet_size(),
+        // TODO(https://fxbug.dev/497048374): FIDL types should use host
+        // endianness.
+        .w_max_packet_size = htole16(endpoint_configuration.descriptor()->w_max_packet_size()),
         .b_interval = endpoint_configuration.descriptor()->b_interval(),
     };
     fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc;
@@ -623,8 +627,10 @@ zx_status_t UsbFunction::CommonEndpointConfigure(
       fss_comp_desc = {
           .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
           .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
+          // TODO(https://fxbug.dev/497048374): FIDL types should use host
+          // endianness.
           .w_bytes_per_interval =
-              endpoint_configuration.super_speed_companion()->w_bytes_per_interval(),
+              htole16(endpoint_configuration.super_speed_companion()->w_bytes_per_interval()),
       };
     }
     auto result = peripheral_->dci_new().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
@@ -643,7 +649,7 @@ zx_status_t UsbFunction::CommonEndpointConfigure(
   usb_endpoint_descriptor_t ep_desc = {
       .b_endpoint_address = ep_address,
       .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
-      .w_max_packet_size = endpoint_configuration.descriptor()->w_max_packet_size(),
+      .w_max_packet_size = htole16(endpoint_configuration.descriptor()->w_max_packet_size()),
       .b_interval = endpoint_configuration.descriptor()->b_interval(),
   };
   usb_ss_ep_comp_descriptor_t ss_comp_desc;
@@ -653,7 +659,7 @@ zx_status_t UsbFunction::CommonEndpointConfigure(
         .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
         .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
         .w_bytes_per_interval =
-            endpoint_configuration.super_speed_companion()->w_bytes_per_interval(),
+            htole16(endpoint_configuration.super_speed_companion()->w_bytes_per_interval()),
     };
     ss_comp_desc_ptr = &ss_comp_desc;
   }

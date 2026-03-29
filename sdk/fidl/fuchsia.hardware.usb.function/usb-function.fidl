@@ -179,12 +179,20 @@ type EndpointDirection = strict enum : uint8 {
 type EndpointConfiguration = table {
     1: descriptor @generated_name("EndpointDescriptor") struct {
         bm_attributes uint8;
+        /// The endpoint's max packet size.
+        ///
+        /// Note: This is expressed in host-endianness, as opposed to the wire
+        /// descriptors that are always little-endian.
         w_max_packet_size uint16;
         b_interval uint8;
     };
     2: super_speed_companion @generated_name("SuperSpeedEndpointCompanionDescriptor") struct {
         b_max_burst uint8;
         bm_attributes uint8;
+        /// The endpoint's max super-speed maximum bytes per interval.
+        ///
+        /// Note: This is expressed in host-endianness, as opposed to the wire
+        /// descriptors that are always little-endian.
         w_bytes_per_interval uint16;
     };
 };
