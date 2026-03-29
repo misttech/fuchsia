@@ -639,6 +639,19 @@ TEST(UsbRequestTest, VmoOffsetBoundsTest) {
   free(request->take());
 }
 
+TEST(UsbRequestTest, InitPreservesAllocSize) {
+  std::optional<Request> request;
+  ASSERT_OK(Request::Alloc(&request, 0, 0, kParentReqSize));
+  size_t alloc_size = request->alloc_size();
+  ASSERT_GT(alloc_size, 0u);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  ASSERT_OK(request->Init(vmo, 0, 0, 0));
+  EXPECT_EQ(request->alloc_size(), alloc_size);
+}
+
 TEST(UsbRequestTest, AllocVmo) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));

@@ -173,7 +173,9 @@ __EXPORT zx_status_t usb_request_alloc_vmo(usb_request_t** out, zx_handle_t vmo_
 // This will free any resources allocated by the usb request but not the usb request itself.
 __EXPORT zx_status_t usb_request_init(usb_request_t* req, zx_handle_t vmo_handle,
                                       uint64_t vmo_offset, uint64_t length, uint8_t ep_address) {
-  memset(req, 0, req->alloc_size);
+  size_t alloc_size = req->alloc_size;
+  memset(req, 0, alloc_size);
+  req->alloc_size = alloc_size;
 
   zx_handle_t dup_handle;
   zx_status_t status = zx_handle_duplicate(vmo_handle, ZX_RIGHT_SAME_RIGHTS, &dup_handle);

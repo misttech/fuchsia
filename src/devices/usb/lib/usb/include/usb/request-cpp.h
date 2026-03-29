@@ -274,7 +274,11 @@ class Request : public operation::Operation<Request<Storage>, OperationTraits, S
   // Initializes the statically allocated usb request with the given VMO.
   // This will free any resources allocated by the usb request but not the usb request itself.
   zx_status_t Init(const zx::vmo& vmo, uint64_t vmo_offset, uint64_t length, uint8_t ep_address) {
-    return usb_request_init(BaseClass::operation_, vmo.get(), vmo_offset, length, ep_address);
+    bool release_frees = BaseClass::operation_->release_frees;
+    zx_status_t status =
+        usb_request_init(BaseClass::operation_, vmo.get(), vmo_offset, length, ep_address);
+    BaseClass::operation_->release_frees = release_frees;
+    return status;
   }
 
   static constexpr size_t RequestSize(size_t parent_req_size) {
