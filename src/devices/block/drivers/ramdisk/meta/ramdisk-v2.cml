@@ -1,4 +1,4 @@
-// Copyright 2023 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -10,7 +10,6 @@
         runner: "driver",
         binary: "driver/ramdisk-v2.so",
         bind: "meta/bind/ramdisk-v2.bindbc",
-        default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [
         { service: "fuchsia.hardware.ramdisk.Service" },

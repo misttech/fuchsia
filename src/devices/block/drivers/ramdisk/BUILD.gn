@@ -63,39 +63,41 @@ driver_bind_rules("ramdisk_v2_bind") {
   deps = [ ":fuchsia.hardware.ramdisk" ]
 }
 
-fuchsia_cc_driver("ramdisk-driver-v2") {
+fuchsia_rust_driver("ramdisk-driver-v2") {
   output_name = "ramdisk-v2"
-  configs += [
-    "//build/config:all_source",
-    "//build/config/fuchsia:enable_zircon_asserts",
-  ]
+  edition = "2024"
+  source_root = "v2/src/lib.rs"
   sources = [
-    "v2/ramdisk-controller.cc",
-    "v2/ramdisk.cc",
+    "v2/src/lib.rs",
+    "v2/src/ramdisk.rs",
   ]
   deps = [
-    ":ramdisk_v2_bind",
-    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
-    "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_cpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
-    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
-    "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/zbi-format",
-    "//src/devices/lib/driver:driver_runtime",
-    "//src/storage/lib/block_server:block_server_cc",
-    "//zircon/system/public",
-    "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-    "//zircon/third_party/ulib/safemath",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+    "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/storage/lib/block_protocol",
+    "//src/storage/lib/block_server",
+    "//src/storage/lib/vfs/rust:vfs",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+    "//third_party/rust_crates:rand",
   ]
 }
 
 fuchsia_driver_component("ramdisk-v2") {
   visibility = [ ":*" ]
   component_name = "ramdisk-v2"
-  deps = [ ":ramdisk-driver-v2" ]
+  deps = [
+    ":ramdisk-driver-v2",
+    ":ramdisk_v2_bind",
+  ]
   info = "meta/ramdisk-info.json"
   manifest = "meta/ramdisk-v2.cml"
 }
@@ -103,7 +105,7 @@ fuchsia_driver_component("ramdisk-v2") {
 fuchsia_driver_package("package") {
   package_name = "ramdisk"
   driver_components = [
-    ":ramdisk",
+    ":ramdisk-v1",
     ":ramdisk-v2",
   ]
 }

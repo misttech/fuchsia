@@ -978,13 +978,7 @@ TEST_P(RamdiskTests, RamdiskTestFifoIntermediateOpFailure) {
   tmpbuf.reset(new uint8_t[kBufferSize]);
 
   for (size_t bad_arg = 0; bad_arg < std::size(requests); bad_arg++) {
-    // Empty out the VMO so we can test reading it
-    memset(tmpbuf.get(), 0, kBufferSize);
-    ASSERT_EQ(obj.vmo.write(tmpbuf.get(), 0, kBufferSize), ZX_OK);
-
-    // Test that invalid intermediate operations cause:
-    // - Previous operations to continue anyway
-    // - Later operations to fail
+    // Create a transaction where one of the requests is bad.
     for (size_t i = 0; i < std::size(requests); i++) {
       requests[i].group = group;
       requests[i].vmoid = obj.vmoid.id;
@@ -993,20 +987,13 @@ TEST_P(RamdiskTests, RamdiskTestFifoIntermediateOpFailure) {
       requests[i].vmo_offset = i;
       requests[i].dev_offset = i;
     }
-    // Inserting "bad argument".
+    // Insert a "bad argument" request.
     requests[bad_arg].length = 0;
     ASSERT_EQ(client.Transaction(requests, std::size(requests)), ZX_ERR_INVALID_ARGS);
 
-    // Test that all operations up the bad argument completed, but the later
-    // ones did not.
-    ASSERT_EQ(obj.vmo.read(tmpbuf.get(), 0, kBufferSize), ZX_OK);
-
-    // First few (successful) operations
-    ASSERT_EQ(memcmp(tmpbuf.get(), originalbuf.get(), kBlockSize * bad_arg), 0);
-    // Later (failed) operations
-    for (size_t i = kBlockSize * (bad_arg + 1); i < kBufferSize; i++) {
-      ASSERT_EQ(tmpbuf[i], 0);
-    }
+    // The block server implementation is not obliged to process requests in the order received, and
+    // it may also choose to validate groups of requests before processing them, so some of the
+    // valid reads might have been executed, but there's nothing we can test for.
   }
 }
 
