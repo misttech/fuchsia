@@ -958,9 +958,9 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     }
     // Release the lock, returning the underlying pointer.
     VmCowPages* release() {
-      auto [ret, lock] = take();
+      VmCowPages* ret = ptr_;
       if (ret) {
-        Guard<CriticalMutex> guard{AdoptLock, ret->lock(), ktl::move(lock)};
+        release_internal();
       }
       return ret;
     }
@@ -985,6 +985,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     Guard<CriticalMutex>::Adoptable&& take_lock() {
       ptr_ = nullptr;
       return ktl::move(lock_);
+    }
+
+    void release_internal() {
+      Guard<CriticalMutex> guard{AdoptLock, ptr_->lock(), ktl::move(lock_)};
+      ptr_ = nullptr;
     }
     // Underlying object pointer and lock. The invariant that this class maintains is that if ptr_
     // is null, then lock_ is invalid, otherwise if ptr_ is non-null then lock_ holds the adoptable
