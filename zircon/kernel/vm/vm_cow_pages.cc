@@ -1234,12 +1234,10 @@ zx_status_t VmCowPages::ForEveryOwnedHierarchyPageInRange(S* self, T func, uint6
   LockedParentWalker walker(parent);
 
   while (start_in_self < end_in_self) {
-    // We attempt to always inline these lambdas, as its a huge performance benefit and has minimal
-    // impact on code size.
     bool stopped_early = false;
     uint64_t parent_content_start = UINT64_MAX;
     uint64_t parent_content_end = 0;
-    auto page_callback = [&](auto p, uint64_t page_offset) __ALWAYS_INLINE {
+    auto page_callback = [&](auto p, uint64_t page_offset) {
       AssertHeld(self->lock_ref());
       uint64_t cur_to_self = start_in_cur - start_in_self;
       // If we had started tracking a run of contiguous parent content then we must walk up once it
@@ -1264,7 +1262,20 @@ zx_status_t VmCowPages::ForEveryOwnedHierarchyPageInRange(S* self, T func, uint6
       }
       return status;
     };
-    auto gap_callback = [&](uint64_t gap_start_offset, uint64_t gap_end_offset) __ALWAYS_INLINE {
+    // For efficiency of the gap_callback we pre-calculate whether or not gaps need to be considered
+    // at all. Although we could use a different kind of page_list_ iteration when not considering
+    // gaps, doing so creates a code branch that causes two usages of the page_callback, which
+    // greatly hurts inlining and code generation.
+    // If can see into a hidden parent, and cannot use content markers to optimize the walk up, then
+    // we need to consider any gaps.
+    const bool consider_gaps = walker.current(self).is_parent_hidden_locked() &&
+                               start_in_cur < walker.current(self).parent_limit_ &&
+                               !walker.current(self).node_has_parent_content_markers();
+
+    auto gap_callback = [&](uint64_t gap_start_offset, uint64_t gap_end_offset) {
+      if (!consider_gaps) {
+        return ZX_ERR_NEXT;
+      }
       // The gap is empty, so walk up if the parent is accessible from any part of it.
       // Mark the range immediately preceding the gap as processed.
       AssertHeld(self->lock_ref());
@@ -1280,34 +1291,15 @@ zx_status_t VmCowPages::ForEveryOwnedHierarchyPageInRange(S* self, T func, uint6
     };
 
     zx_status_t status = ZX_OK;
-    if (walker.current(self).is_parent_hidden_locked() &&
-        start_in_cur < walker.current(self).parent_limit_ &&
-        !walker.current(self).node_has_parent_content_markers()) {
-      // We can see into a hidden parent, and cannot use content markers to optimize the walk up, so
-      // need to consider any gaps.
-      if constexpr (ktl::is_same_v<P, VmPageOrMarker*>) {
-        status = walker.current(self).page_list_.RemovePagesAndIterateGaps(
-            page_callback, gap_callback, start_in_cur, end_in_cur);
-      } else if constexpr (ktl::is_same_v<P, VmPageOrMarkerRef>) {
-        status = walker.current(self).page_list_.ForEveryPageAndGapInRangeMutable(
-            page_callback, gap_callback, start_in_cur, end_in_cur);
-      } else {
-        status = walker.current(self).page_list_.ForEveryPageAndGapInRange(
-            page_callback, gap_callback, start_in_cur, end_in_cur);
-      }
+    if constexpr (ktl::is_same_v<P, VmPageOrMarker*>) {
+      status = walker.current(self).page_list_.RemovePagesAndIterateGaps(
+          page_callback, gap_callback, start_in_cur, end_in_cur);
+    } else if constexpr (ktl::is_same_v<P, VmPageOrMarkerRef>) {
+      status = walker.current(self).page_list_.ForEveryPageAndGapInRangeMutable(
+          page_callback, gap_callback, start_in_cur, end_in_cur);
     } else {
-      // Either we cannot see into a hidden parent, or we are able to utilize parent content
-      // markers, and so do not need to consider gaps and can just directly process the pages.
-      if constexpr (ktl::is_same_v<P, VmPageOrMarker*>) {
-        status =
-            walker.current(self).page_list_.RemovePages(page_callback, start_in_cur, end_in_cur);
-      } else if constexpr (ktl::is_same_v<P, VmPageOrMarkerRef>) {
-        status = walker.current(self).page_list_.ForEveryPageInRangeMutable(
-            page_callback, start_in_cur, end_in_cur);
-      } else {
-        status = walker.current(self).page_list_.ForEveryPageInRange(page_callback, start_in_cur,
-                                                                     end_in_cur);
-      }
+      status = walker.current(self).page_list_.ForEveryPageAndGapInRange(
+          page_callback, gap_callback, start_in_cur, end_in_cur);
     }
     if (status != ZX_OK) {
       return status;
