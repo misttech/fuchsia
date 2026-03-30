@@ -8,6 +8,8 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/metadata.h>
 
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 
@@ -196,9 +198,16 @@ zx_status_t Astro::CreateGpioPlatformDevice() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('GPIO');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, gpio_dev));
+
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(fidl_arena)
+                            .name("aml_gpio")
+                            .Build();
+
+  auto result =
+      pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, gpio_dev), composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
+           result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {

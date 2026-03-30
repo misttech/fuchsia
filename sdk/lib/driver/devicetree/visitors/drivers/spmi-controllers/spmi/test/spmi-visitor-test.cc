@@ -59,7 +59,6 @@ class SpmiVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<Spmi
  public:
   explicit SpmiVisitorTester(std::string_view dtb_path)
       : fdf_devicetree::testing::VisitorTestHelper<SpmiVisitor>(dtb_path, "SpmiBusVisitorTest") {}
-
 };
 
 TEST(SpmiVisitorTest, TwoControllers) {
@@ -200,7 +199,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
       },
       (*vreg_1000.parents2())[1].properties(), false));
 
-  // gpio@2000 and i2c@3000 are referenced by another node, so no composite node specs should be
+  // gpio@2000 and i2c@3000 are referenced by another node, so no node specs should be
   // added for them.
   const auto gpio_2000_list = spmi_tester->GetCompositeNodeSpecs("gpio-2000");
   EXPECT_TRUE(gpio_2000_list.empty());
@@ -263,7 +262,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
       (*target_c_0.parents2())[1].properties(), false));
 
   // The second pbus node is not an SPMI controller and should not have metadata. It does have an
-  // "spmis" property and should have composite parents2 for the SPMI sub-targets that it
+  // "spmis" property and should have parents2 for the SPMI sub-targets that it
   // references.
 
   const auto pbus_node_ignored_list = spmi_tester->GetPbusNodes("not-spmi-abce0000");

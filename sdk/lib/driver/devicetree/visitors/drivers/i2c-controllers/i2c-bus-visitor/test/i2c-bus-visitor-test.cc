@@ -42,7 +42,7 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
   ASSERT_EQ(ZX_OK, i2c_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(i2c_tester->DoPublish().is_ok());
 
-  ASSERT_EQ(3lu, i2c_tester->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(5lu, i2c_tester->GetCompositeNodeSpecs().size());
 
   uint32_t node_tested_count = 0;
   std::vector<fuchsia_hardware_platform_bus::Node> nodes = i2c_tester->GetPbusNodes("i2c-");
@@ -69,12 +69,12 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
     node_tested_count++;
   }
 
-  uint32_t mgr_request_idx = 0;
   for (auto& node : i2c_tester->GetBoardChildNodes("child-")) {
     std::string node_name = node.name;
 
-    fuchsia_driver_framework::CompositeNodeSpec composite_node_spec =
-        i2c_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
+    auto composite_node_specs = i2c_tester->GetCompositeNodeSpecs(node_name);
+    ASSERT_EQ(1lu, composite_node_specs.size());
+    fuchsia_driver_framework::CompositeNodeSpec composite_node_spec = composite_node_specs[0];
     ASSERT_TRUE(composite_node_spec.parents2().has_value());
     const std::vector<fuchsia_driver_framework::ParentSpec2>& parent_specs =
         *composite_node_spec.parents2();

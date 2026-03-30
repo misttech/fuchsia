@@ -16,6 +16,8 @@
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/pwm/cpp/bind.h>
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-s905d3/s905d3-pwm.h>
 
 #include "nelson-gpios.h"
@@ -121,14 +123,19 @@ zx_status_t Nelson::PwmInit() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('PWM_');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, pwm_dev));
+
+  auto composite_spec =
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("amlogic_pwm").Build();
+
+  auto result =
+      pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, pwm_dev), composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: NodeAdd Pwm(pwm_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Pwm(pwm_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: NodeAdd Pwm(pwm_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Pwm(pwm_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }

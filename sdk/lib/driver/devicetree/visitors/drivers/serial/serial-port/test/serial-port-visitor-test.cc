@@ -44,7 +44,6 @@ TEST(SerialPortVisitorTest, TestMetadataAndBindProperty) {
   auto node_count = serial_port_visitor_tester->GetPbusNodes().size();
 
   uint32_t node_tested_count = 0;
-  uint32_t mgr_request_idx = 0;
   for (size_t i = 0; i < node_count; i++) {
     auto node = serial_port_visitor_tester->GetPbusNodes()[i];
 
@@ -65,36 +64,39 @@ TEST(SerialPortVisitorTest, TestMetadataAndBindProperty) {
       EXPECT_EQ(serial_port->serial_vid(), static_cast<uint32_t>(TEST_VID));
       EXPECT_EQ(serial_port->serial_pid(), static_cast<uint32_t>(TEST_PID));
     }
+  }
 
-    if (node.name()->find("bt") != std::string::npos) {
-      node_tested_count++;
-      ASSERT_EQ(1lu, serial_port_visitor_tester->GetCompositeNodeSpecs().size());
+  for (auto& node : serial_port_visitor_tester->GetBoardChildNodes("bt")) {
+    node_tested_count++;
+    ASSERT_EQ(3lu, serial_port_visitor_tester->GetCompositeNodeSpecs().size());
 
-      auto mgr_request = serial_port_visitor_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
-      ASSERT_TRUE(mgr_request.parents2().has_value());
-      ASSERT_EQ(2lu, mgr_request.parents2()->size());
+    auto mgr_requests = serial_port_visitor_tester->GetCompositeNodeSpecs(node.name);
+    auto it = std::find_if(mgr_requests.begin(), mgr_requests.end(),
+                           [&](const auto& spec) { return *spec.name() == node.name; });
+    ASSERT_NE(it, mgr_requests.end());
+    auto mgr_request = *it;
+    ASSERT_TRUE(mgr_request.parents2().has_value());
+    ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
-      // 1st parent is pdev. Skipping that.
-      // 2nd parent is bt-uart.
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-          {{
-              fdf::MakeProperty2(bind_fuchsia_serial::NAME, TEST_NAME),
-              fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
-                                 bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
-          }},
-          (*mgr_request.parents2())[1].properties(), false));
-      EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{
-              fdf::MakeAcceptBindRule2(bind_fuchsia::SERIAL_CLASS,
-                                       static_cast<uint32_t>(TEST_CLASS)),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serial::SERVICE,
-                                       bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
-              // TODO(https://fxbug.dev/467370573): Temporary workaround for a composite issue.
-              // Remove this once the composite issue is resolved.
-              fdf::MakeRejectBindRule2(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),
-          }},
-          (*mgr_request.parents2())[1].bind_rules(), false));
-    }
+    // 1st parent is pdev. Skipping that.
+    // 2nd parent is bt-uart.
+    EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
+        {{
+            fdf::MakeProperty2(bind_fuchsia_serial::NAME, TEST_NAME),
+            fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
+                               bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
+        }},
+        (*mgr_request.parents2())[1].properties(), false));
+    EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
+        {{
+            fdf::MakeAcceptBindRule2(bind_fuchsia::SERIAL_CLASS, static_cast<uint32_t>(TEST_CLASS)),
+            fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serial::SERVICE,
+                                     bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
+            // TODO(https://fxbug.dev/467370573): Temporary workaround for a composite issue.
+            // Remove this once the composite issue is resolved.
+            fdf::MakeRejectBindRule2(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),
+        }},
+        (*mgr_request.parents2())[1].bind_rules(), false));
   }
 
   ASSERT_EQ(node_tested_count, 2u);

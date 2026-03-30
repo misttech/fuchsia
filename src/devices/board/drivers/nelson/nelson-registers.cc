@@ -12,6 +12,8 @@
 #include <lib/ddk/platform-defs.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
@@ -150,14 +152,19 @@ zx_status_t Nelson::RegistersInit() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('REGI');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, registers_dev));
+
+  auto composite_spec =
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("registers").Build();
+
+  auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, registers_dev),
+                                                          composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: NodeAdd Registers(registers_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Registers(registers_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: NodeAdd Registers(registers_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Registers(registers_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }

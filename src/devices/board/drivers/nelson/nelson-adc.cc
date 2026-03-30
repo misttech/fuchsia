@@ -12,6 +12,8 @@
 #include <lib/ddk/platform-defs.h>
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
 #include "src/devices/board/drivers/nelson/nelson.h"
@@ -68,13 +70,19 @@ zx::result<> Nelson::AdcInit() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('ADC_');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, node));
+  auto composite_spec =
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml_saradc").Build();
+
+  auto result =
+      pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, node), composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "NodeAdd (adc) request failed: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "AddCompositeNodeSpec (adc) request failed: %s",
+           result.FormatDescription().data());
     return result->take_error();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "NodeAdd (adc) failed: %s", zx_status_get_string(result->error_value()));
+    zxlogf(ERROR, "AddCompositeNodeSpec (adc) failed: %s",
+           zx_status_get_string(result->error_value()));
     return result->take_error();
   }
 

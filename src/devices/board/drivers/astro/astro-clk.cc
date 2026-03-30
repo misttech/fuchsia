@@ -8,6 +8,8 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-meson/g12a-clk.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 
@@ -96,14 +98,20 @@ zx_status_t Astro::ClkInit() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('CLK_');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, clk_dev));
+
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena)
+                            .name("amlogic_clock")
+                            .Build();
+
+  auto result =
+      pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, clk_dev), composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: NodeAdd Clk(clk_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Clk(clk_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: NodeAdd Clk(clk_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Clk(clk_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }

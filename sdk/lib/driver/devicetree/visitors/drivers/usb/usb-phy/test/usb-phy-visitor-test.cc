@@ -42,8 +42,10 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
   auto nodes = usb_visitor_tester->GetPbusNodes("test");
   ASSERT_EQ(1lu, nodes.size());
 
-  ASSERT_EQ(1lu, usb_visitor_tester->GetCompositeNodeSpecs().size());
-  auto mgr_request = usb_visitor_tester->GetCompositeNodeSpecs()[0];
+  ASSERT_EQ(4lu, usb_visitor_tester->GetCompositeNodeSpecs().size());
+  auto mgr_requests = usb_visitor_tester->GetCompositeNodeSpecs(*nodes[0].name());
+  ASSERT_EQ(1lu, mgr_requests.size());
+  auto mgr_request = mgr_requests[0];
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(3lu, mgr_request.parents2()->size());
 

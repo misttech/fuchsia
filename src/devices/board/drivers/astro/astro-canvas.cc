@@ -7,6 +7,8 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 
@@ -43,14 +45,19 @@ static const fpbus::Node canvas_dev = []() {
 zx_status_t Astro::CanvasInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('CANV');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, canvas_dev));
+
+  auto composite_spec =
+      fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(arena).name("aml_canvas").Build();
+
+  auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, canvas_dev),
+                                                          composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "%s: NodeAdd Canvas(canvas_dev) request failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Canvas(canvas_dev) request failed: %s", __func__,
            result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "%s: NodeAdd Canvas(canvas_dev) failed: %s", __func__,
+    zxlogf(ERROR, "%s: AddCompositeNodeSpec Canvas(canvas_dev) failed: %s", __func__,
            zx_status_get_string(result->error_value()));
     return result->error_value();
   }

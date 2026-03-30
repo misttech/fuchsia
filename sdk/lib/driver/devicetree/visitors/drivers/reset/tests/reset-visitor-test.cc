@@ -36,7 +36,9 @@ TEST(ResetVisitorTest, TestResetProperty) {
   ASSERT_EQ(ZX_OK, reset_tester->manager()->Walk(visitors).status_value());
   ASSERT_TRUE(reset_tester->DoPublish().is_ok());
 
-  auto mgr_request = reset_tester->GetCompositeNodeSpecs()[0];
+  auto mgr_requests = reset_tester->GetCompositeNodeSpecs("test-device");
+  ASSERT_EQ(1lu, mgr_requests.size());
+  auto mgr_request = mgr_requests[0];
   const auto& parents = mgr_request.parents2();
   ASSERT_EQ(parents->size(), 4u);
 

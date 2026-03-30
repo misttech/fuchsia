@@ -10,15 +10,15 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
   static const char* kNodeMonikers[] = {
       "sherlock",
       "sherlock.post-init",
-      "gpio.aml-gpio.gpio",
-      "gpio.aml-gpio.gpio-init",
-      "sherlock-clk.clocks",
-      "sherlock-clk.clocks.clock-init",
+      "gpio.aml_gpio.aml-gpio.gpio",
+      "gpio.aml_gpio.aml-gpio.gpio-init",
+      "sherlock-clk.amlogic_clock",
+      "sherlock-clk.amlogic_clock.clocks.clock-init",
       "gpio-light.aml_light",
       "i2c-0.aml-i2c",
       "i2c-1.aml-i2c",
       "i2c-2.aml-i2c",
-      "canvas.aml-canvas",
+      "canvas.aml_canvas",
       "05_04_a.aml_thermal_pll.thermal",
       "display.amlogic-display.display-coordinator",
       "aml-usb-phy",
@@ -42,12 +42,12 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "sherlock-i2s-audio-out.aml_tdm.sherlock-audio-i2s-out",
       "i2c-1.aml-i2c.i2c.i2c-1-56.focaltech_touch",
       "tee.optee",
-      "gpio-c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0",
+      "gpio-c.aml_gpio_c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0",
       "sherlock-buttons.buttons",
       "i2c-2.aml-i2c.i2c.i2c-2-44.backlight",
       "i2c-0.aml-i2c.i2c.i2c-0-57.tcs3400_light.tcs-3400",
       "aml-secure-mem.aml_securemem.aml-securemem",
-      "pwm.aml-pwm-device.pwm-4.pwm_init",
+      "pwm.amlogic_pwm.aml-pwm-device.pwm-4.pwm_init",
       "aml-ram-ctl.ram",
       "registers",  // registers device
 
@@ -62,10 +62,10 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "aml-thermal-ddr.thermal",
 
       "adc",
-      "adc.aml-saradc.0",
-      "adc.aml-saradc.SHERLOCK_THERMISTOR_BASE",
-      "adc.aml-saradc.SHERLOCK_THERMISTOR_AUDIO",
-      "adc.aml-saradc.SHERLOCK_THERMISTOR_AMBIENT",
+      "adc.aml_saradc.aml-saradc.0",
+      "adc.aml_saradc.aml-saradc.SHERLOCK_THERMISTOR_BASE",
+      "adc.aml_saradc.aml-saradc.SHERLOCK_THERMISTOR_AUDIO",
+      "adc.aml_saradc.aml-saradc.SHERLOCK_THERMISTOR_AMBIENT",
 
       // Audio
       "i2c-0.aml-i2c.i2c.i2c-0-111.audio-tas5720-woofer",
@@ -90,7 +90,7 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
       "aml_video",
       "aml-video-enc",
 
-      "gpio-c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0.nrf52840_radio.ot-radio",
+      "gpio-c.aml_gpio_c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0.nrf52840_radio.ot-radio",
 
       // WLAN
       "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",

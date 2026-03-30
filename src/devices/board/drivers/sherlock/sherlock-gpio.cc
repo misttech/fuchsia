@@ -9,6 +9,8 @@
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 
+#include <sdk/lib/driver/component/cpp/composite_node_spec.h>
+#include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-t931/t931-gpio.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -237,9 +239,15 @@ zx_status_t CreateGpioCPlatformDevice(
   // to ensure that there are no simultaneous accesses to these banks.
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('GPIO');
-  auto result = pbus.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, gpio_c_dev));
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(fidl_arena)
+                            .name("aml_gpio_c")
+                            .Build();
+
+  auto result = pbus.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, gpio_c_dev),
+                                                         composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
+           result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
@@ -339,13 +347,20 @@ zx_status_t Sherlock::CreateGpioPlatformDevice() {
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('GPIO');
-  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, gpio_dev));
+  auto composite_spec = fuchsia_driver_framework::wire::CompositeNodeSpec::Builder(fidl_arena)
+                            .name("aml_gpio")
+                            .Build();
+
+  auto result =
+      pbus_.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, gpio_dev), composite_spec);
   if (!result.ok()) {
-    zxlogf(ERROR, "Failed to send NodeAdd request: %s", result.FormatDescription().data());
+    zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",
+           result.FormatDescription().data());
     return result.status();
   }
   if (result->is_error()) {
-    zxlogf(ERROR, "Failed to add node: %s", zx_status_get_string(result->error_value()));
+    zxlogf(ERROR, "Failed to add composite node spec: %s",
+           zx_status_get_string(result->error_value()));
     return result->error_value();
   }
 

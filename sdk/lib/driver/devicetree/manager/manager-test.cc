@@ -91,6 +91,7 @@ TEST_F(ManagerTest, TestPropertyCallback) {
   EXPECT_EQ(0lu, visitor.expected.size());
 }
 
+// TODO(https://fxbug.dev/488154882): Rename the test and the referenced .dtb.
 TEST_F(ManagerTest, TestPublishesSimpleNode) {
   Manager manager(testing::LoadTestBlob("/pkg/test-data/simple.dtb"));
   DefaultVisitors<> default_visitors;
@@ -100,7 +101,7 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
   ASSERT_EQ(0lu, publisher()->GetPbusNodes().size());
   ASSERT_EQ(2lu, publisher()->GetBoardChildNodes().size());
 
-  ASSERT_EQ(0lu, publisher()->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(2lu, publisher()->GetCompositeNodeSpecs().size());
 
   auto board_child_node_0 = publisher()->GetBoardChildNodes()[0];
 
@@ -413,9 +414,9 @@ TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
 
   ASSERT_EQ(0lu, publisher()->GetPbusNodes().size());
   ASSERT_EQ(2lu, publisher()->GetBoardChildNodes().size());
-  ASSERT_EQ(1lu, publisher()->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(2lu, publisher()->GetCompositeNodeSpecs().size());
 
-  auto mgr_request = publisher()->GetCompositeNodeSpecs()[0];
+  auto mgr_request = publisher()->GetCompositeNodeSpecs()[1];
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
@@ -468,9 +469,9 @@ TEST_F(ManagerTest, TestPbusCompositeSpec) {
 
   ASSERT_EQ(1lu, publisher()->GetPbusNodes().size());
   ASSERT_EQ(1lu, publisher()->GetBoardChildNodes().size());
-  ASSERT_EQ(1lu, publisher()->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(2lu, publisher()->GetCompositeNodeSpecs().size());
 
-  auto mgr_request = publisher()->GetCompositeNodeSpecs()[0];
+  auto mgr_request = publisher()->GetCompositeNodeSpecs()[1];
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 

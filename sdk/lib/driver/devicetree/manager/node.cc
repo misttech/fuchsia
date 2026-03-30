@@ -111,7 +111,6 @@ void Node::AddBootMetadata(fuchsia_hardware_platform_bus::BootMetadata boot_meta
 
 void Node::AddNodeSpec(const fuchsia_driver_framework::ParentSpec2 &spec) {
   parents_.emplace_back(spec);
-  composite_ = true;
 }
 
 void Node::AddSmc(fuchsia_hardware_platform_bus::Smc smc) {
@@ -137,11 +136,11 @@ zx::result<> Node::ChangePublishOrder(uint32_t new_index) {
 }
 
 zx::result<> Node::Publish(PublisherInterface &publisher) {
-  if (node_properties_.empty() && !composite_ && !add_platform_device_) {
-    FDF_LOG(
-        DEBUG,
-        "Not publishing node '%.*s' because it has no node properties, and no platform resources, and it is not a composite node.",
-        static_cast<int>(name().size()), name().data());
+  if (node_properties_.empty() && parents_.empty() && !add_platform_device_) {
+    fdf::debug(
+        "Not publishing node '{}' because it has no node properties, no platform resources, "
+        "and no parent references.",
+        name());
     return zx::ok();
   }
 
@@ -152,25 +151,21 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
   }
 
   // Nodes are published as per below logic -
-  // 1. Node has platform resources
-  //     a. Node references other nodes -> PlatformBus.NodeAdd + CompositeNodeManager.AddSpec
-  //     b. Node does not reference other nodes -> PlatformBus.NodeAdd
+  // 1. Node has platform resources -> PlatformBus.NodeAdd + CompositeNodeManager.AddSpec
   // 2. Node does not have platform resources
-  //     a. Node has bind properties (i.e. compatible string)
-  //        i. Node references other nodes ->  Node.AddChild + CompositeNodeManager.AddSpec
-  //        ii. Node does not reference other nodes -> Node.AddChild
+  //     a. Node has bind properties (i.e. compatible string) ->
+  //            Node.AddChild + CompositeNodeManager.AddSpec
   //     b. Node has no bind properties
   //        i. Node references other nodes -> CompositeNodeManager.AddSpec
   //        ii. Node does not reference other nodes -> Not published
-  //
 
   bool add_board_child = !add_platform_device_ && !node_properties_.empty();
 
   if (add_platform_device_) {
-    FDF_LOG(DEBUG, "Adding node '%s' to pbus with instance id %d.", fdf_name().c_str(), id_);
+    fdf::debug("Adding node '{}' to pbus with instance id {}.", fdf_name(), id_);
 
-    // Pass properties to pbus node directly if we are not adding a composite spec.
-    if (!composite_) {
+    // Pass properties to pbus node directly if there is no parent node.
+    if (parents_.empty()) {
       pbus_node_.properties() = node_properties_;
       if (!driver_host_.empty()) {
         pbus_node_.driver_host() = driver_host_;
@@ -194,57 +189,55 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
     }
   }
 
-  // Add composite node spec if composite.
-  if (composite_) {
-    if (add_platform_device_) {
-      // Construct the platform bus node.
-      fdf::ParentSpec2 platform_node;
-      platform_node.properties() = node_properties_;
-      auto additional_node_properties = std::vector<fdf::NodeProperty2>{
-          fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
-          fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
-                             bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
-          fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
-                             bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
-          fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
-      };
-      platform_node.properties().insert(platform_node.properties().end(),
-                                        additional_node_properties.begin(),
-                                        additional_node_properties.end());
+  // Add composite node spec.
+  if (add_platform_device_) {
+    // Construct the platform bus node.
+    fdf::ParentSpec2 platform_node;
+    platform_node.properties() = node_properties_;
+    auto additional_node_properties = std::vector<fdf::NodeProperty2>{
+        fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                           bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
+                           bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
+        fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
+    };
+    platform_node.properties().insert(platform_node.properties().end(),
+                                      additional_node_properties.begin(),
+                                      additional_node_properties.end());
 
-      platform_node.bind_rules() = std::vector<fdf::BindRule2>{
-          fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                   bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                   bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                                   bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
-      };
-      parents_.insert(parents_.begin(), std::move(platform_node));
-    } else if (add_board_child) {
-      // Construct the non platform bus node.
-      fdf::ParentSpec2 board_child_node;
-      board_child_node.properties() = node_properties_;
+    platform_node.bind_rules() = std::vector<fdf::BindRule2>{
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
+                                 bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
+                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
+                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
+        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
+    };
+    parents_.insert(parents_.begin(), std::move(platform_node));
+  } else if (add_board_child) {
+    // Construct the non platform bus node.
+    fdf::ParentSpec2 board_child_node;
+    board_child_node.properties() = node_properties_;
 
-      for (auto &node_property : node_properties_) {
-        fdf::BindRule2 bind_rule = {node_property.key(),
-                                    fuchsia_driver_framework::Condition::kAccept,
-                                    {node_property.value()}};
-        board_child_node.bind_rules().emplace_back(std::move(bind_rule));
-      }
-      parents_.insert(parents_.begin(), std::move(board_child_node));
+    for (auto &node_property : node_properties_) {
+      fdf::BindRule2 bind_rule = {node_property.key(),
+                                  fuchsia_driver_framework::Condition::kAccept,
+                                  {node_property.value()}};
+      board_child_node.bind_rules().emplace_back(std::move(bind_rule));
     }
+    parents_.insert(parents_.begin(), std::move(board_child_node));
+  }
 
-    FDF_LOG(DEBUG, "Adding composite node spec to '%s' with %zu parents.", fdf_name().data(),
-            parents_.size());
+  FDF_LOG(DEBUG, "Adding composite node spec to '%s' with %zu parents.", fdf_name().data(),
+          parents_.size());
 
-    zx::result<> result = publisher.AddCompositeNodeSpec(
-        fdf_name(), std::move(parents_),
-        !driver_host_.empty() ? std::optional<std::string>(driver_host_) : std::nullopt);
-    if (result.is_error()) {
-      return result.take_error();
-    }
+  zx::result<> result = publisher.AddCompositeNodeSpec(
+      fdf_name(), std::move(parents_),
+      !driver_host_.empty() ? std::optional<std::string>(driver_host_) : std::nullopt);
+  if (result.is_error()) {
+    return result.take_error();
   }
 
   return zx::ok();

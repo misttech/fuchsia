@@ -217,7 +217,7 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
   }
 
   if (node.GetNode()->children().empty()) {
-    // This target has no sub-target children, so add a composite node spec for it.
+    // This target has no sub-target children, so add a node spec for it.
     fuchsia_driver_framework::ParentSpec2 target_spec{{
         .bind_rules =
             {
@@ -371,7 +371,7 @@ zx::result<> SpmiVisitor::FinalizeSubTarget(const SubTarget& sub_target,
     return zx::ok();
   }
 
-  // Only add composite parents for the sub-target if it does not appear in a reference property.
+  // Only add parents for the sub-target if it does not appear in a reference property.
   if (sub_target.parent_specs.empty()) {
     FDF_LOG(ERROR, "No parent specs found for SPMI sub-target \"%s\"", node.name().c_str());
     return zx::error(ZX_ERR_NOT_FOUND);

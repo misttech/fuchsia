@@ -39,7 +39,6 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_TRUE(regulator_visitor_tester->DoPublish().is_ok());
 
   uint32_t node_tested_count = 0;
-  uint32_t mgr_request_idx = 0;
 
   std::vector<fuchsia_hardware_platform_bus::Node> pbus_nodes =
       regulator_visitor_tester->GetPbusNodes("voltage-regulator");
@@ -63,9 +62,11 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
   auto child_nodes = regulator_visitor_tester->GetBoardChildNodes("cpu-ctrl");
   ASSERT_EQ(1lu, child_nodes.size());
   node_tested_count++;
-  ASSERT_EQ(1lu, regulator_visitor_tester->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(3lu, regulator_visitor_tester->GetCompositeNodeSpecs().size());
 
-  auto mgr_request = regulator_visitor_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
+  auto mgr_requests = regulator_visitor_tester->GetCompositeNodeSpecs("cpu-ctrl");
+  ASSERT_EQ(1lu, mgr_requests.size());
+  auto mgr_request = mgr_requests[0];
   ASSERT_TRUE(mgr_request.parents2().has_value());
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
@@ -101,15 +102,16 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
   ASSERT_TRUE(regulator_visitor_tester->DoPublish().is_ok());
 
   uint32_t node_tested_count = 0;
-  uint32_t mgr_request_idx = 0;
 
   for (const auto& node : regulator_visitor_tester->GetBoardChildNodes()) {
     if (node.name.find("cpu-ctrl") != std::string::npos ||
         node.name.find("gpu-ctrl") != std::string::npos) {
       node_tested_count++;
-      ASSERT_EQ(2lu, regulator_visitor_tester->GetCompositeNodeSpecs().size());
+      ASSERT_EQ(4lu, regulator_visitor_tester->GetCompositeNodeSpecs().size());
 
-      auto mgr_request = regulator_visitor_tester->GetCompositeNodeSpecs()[mgr_request_idx++];
+      auto mgr_requests = regulator_visitor_tester->GetCompositeNodeSpecs(node.name);
+      ASSERT_EQ(1lu, mgr_requests.size());
+      auto mgr_request = mgr_requests[0];
       ASSERT_TRUE(mgr_request.parents2().has_value());
       ASSERT_EQ(2lu, mgr_request.parents2()->size());
 

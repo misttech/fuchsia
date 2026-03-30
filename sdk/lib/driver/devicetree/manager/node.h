@@ -158,9 +158,6 @@ class Node {
   // platform bus node. It is generated at runtime and not stable across boots.
   NodeID id_;
 
-  // Boolean to indicate if a composite node spec needs to added.
-  bool composite_ = false;
-
   // Boolean to indicate if a platform device needs to added.
   bool add_platform_device_ = false;
 

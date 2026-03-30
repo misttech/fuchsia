@@ -119,7 +119,7 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
   EXPECT_EQ(init_steps_ctl->steps()[2].call()->Which(),
             fuchsia_hardware_clockimpl::InitCall::Tag::kEnable);
 
-  ASSERT_EQ(2lu, clock_tester->GetCompositeNodeSpecs().size());
+  ASSERT_EQ(5lu, clock_tester->GetCompositeNodeSpecs().size());
 
   // Use name filter to get composite node spec? or just index?
   // The original test iterated over "video" pbus nodes and checked composite requests.

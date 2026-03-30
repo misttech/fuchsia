@@ -21,7 +21,7 @@ to recompile it. This also helps to update and contribute visitors independent o
 ## Writing new visitors
 
 A new visitor will be needed when a new devicetree binding is created. And typically a new
-devicetree binding is created either because a new metadata was introduced, and/or a composite node
+devicetree binding is created either because a new metadata was introduced, and/or a node
 needs to be created from the board driver.
 
 `fx create devicetree visitor --lang cpp --path <visitor path>` can be used as a starting point for
