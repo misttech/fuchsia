@@ -3,13 +3,18 @@
 # found in the LICENSE file.
 
 group("stacktrack") {
-  deps = [ "instrumentation" ]
+  deps = [
+    "collector",
+    "instrumentation",
+  ]
 }
 
 group("tests") {
   testonly = true
   deps = [
+    "collector:tests",
     "instrumentation:tests",
+    "lib/stacktrack_snapshot:tests",
     "lib/stacktrack_vmo:tests",
   ]
 }

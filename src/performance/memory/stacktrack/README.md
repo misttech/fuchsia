@@ -11,6 +11,25 @@ Conversely, stacks that do not bottom-out in a syscall (e.g. pure calculations
 or recursive calls performed entirely in user-space) will **not** be seen or
 recorded by this tool.
 
+## Profiling individual components
+
+* Add `//src/performance/memory/stacktrack/instrumentation/collector.shard.cml`
+  to the `include` list in your component's manifest.
+* Add `//src/performance/memory/stacktrack/collector` to the `subpackages` of
+  your package.
+* C++:
+  * Add `//src/performance/memory/stacktrack/instrumentation` to the `deps` of
+    the `executable` target that you want to profile.
+  * Add `#include <stacktrack/bind.h>` and call `stacktrack_bind_with_fdio()` at
+    the beginning of `main` in your program.
+* Rust:
+  * Add `//src/performance/memory/stacktrack/instrumentation:rust` to the `deps`
+    of the `rustc_binary` target that you want to profile.
+  * Call `stacktrack::bind_with_fdio()` at the beginning of `main` in your
+    program.
+
+* Run your program as usual.
+* The `ffx profile stacktrack` tool, to dump the results, is not yet available.
 
 ## Design
 
