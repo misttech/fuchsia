@@ -24,10 +24,13 @@ use fidl_fuchsia_fs_startup::{
 };
 use fidl_fuchsia_fvm::{ResetMarker, ResetRequest, ResetRequestStream};
 use fidl_fuchsia_fxfs::CryptMarker;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::filesystem::{BlockConnector, Filesystem};
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::{ComponentType, FSConfig, Options};
+use fuchsia_async as fasync;
 use fuchsia_inspect::Property as _;
 use fuchsia_runtime::HandleType;
 use fuchsia_sync::Mutex;
@@ -35,7 +38,7 @@ use futures::future::BoxFuture;
 use futures::stream::{FuturesUnordered, TryStreamExt as _};
 use log::{debug, error, info, warn};
 use mapping::{Mapping, MappingExt as _};
-use regex::Regex;
+use regex_lite::Regex;
 use sha2::{Digest, Sha256};
 use static_assertions::const_assert;
 use std::alloc;
@@ -52,7 +55,6 @@ use uuid::Uuid;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 // See //src/storage/fvm/format.h for a detailed description of the FVM format.
 
@@ -2170,9 +2172,12 @@ mod tests {
         VolumesMarker,
     };
     use fidl_fuchsia_fxfs::{CryptMarker, CryptRequest};
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_storage_block as fblock;
     use fidl_fuchsia_storage_block::BlockMarker;
     use fs_management::DATA_TYPE_GUID;
     use fs_management::format::constants::ZXCRYPT_MAGIC;
+    use fuchsia_async as fasync;
     use fuchsia_component::client::{
         connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_svc,
     };
@@ -2184,7 +2189,6 @@ mod tests {
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     struct Fixture {
         component: Arc<Component>,
