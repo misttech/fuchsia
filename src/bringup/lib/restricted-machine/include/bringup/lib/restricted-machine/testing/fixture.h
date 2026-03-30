@@ -20,6 +20,7 @@
 #include <bringup/lib/restricted-machine/internal/common.h>
 #include <bringup/lib/restricted-machine/machine.h>
 #include <bringup/lib/restricted-machine/testing/machine.h>
+#include <bringup/lib/restricted-machine/testing/needs-next.h>
 
 #if !defined(ZXTEST_SKIP) && !defined(GTEST_SKIP)
 #error "include fixture.gtest.h or fixture.zxtest.h"
@@ -59,7 +60,7 @@ class SupportedMachinesTest : public TestWithParam<restricted_machine::MachineTy
     // all the code for each testsuite run.
     for (const auto &machine_type : ::restricted_machine::kSupportedMachines) {
       if (!::restricted_machine::Environment::HardwareSupported(machine_type)) {
-        GTEST_SKIP() << "unsupported machine type: " << machine_type.AsString();
+        continue;
       }
       auto env = fbl::AdoptRef(new ::restricted_machine::Environment);
       EXPECT_TRUE(env->Initialize(machine_type,
@@ -75,6 +76,13 @@ class SupportedMachinesTest : public TestWithParam<restricted_machine::MachineTy
         environments_[::restricted_machine::MachineType::kNone] = env;
       }
       environments_[machine_type] = std::move(env);
+    }
+  }
+
+  // Provide the base behavior for SetUp.
+  virtual void SetUp() override {
+    if (!has_environment()) {
+      GTEST_SKIP() << "unsupported machine: " << machine().AsString();
     }
   }
 
@@ -107,6 +115,8 @@ class SupportedMachinesTest : public TestWithParam<restricted_machine::MachineTy
     std::unique_ptr<::restricted_machine::Machine> interface(mach.release());
     return interface;
   }
+
+  bool has_environment() const { return environments_.contains(machine()); }
 
   static std::string ParamToText(
       const TestParamInfo<::restricted_machine::testing::SupportedMachinesTest::ParamType> &info) {

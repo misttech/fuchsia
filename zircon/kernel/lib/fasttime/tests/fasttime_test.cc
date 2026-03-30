@@ -39,9 +39,12 @@ class FasttimeTest : public restricted_machine::testing::SupportedMachinesTest {
   }
 
   void SetUp() override {
+    restricted_machine::testing::SupportedMachinesTest::SetUp();
     // Create a restricted_machine::testing::Machine which handles
     // restricted mode and normal mode calls seamlessly.
-    machine_ = CreateMachine();
+    if (has_environment()) {
+      machine_ = CreateMachine();
+    }
   }
 
   void TearDown() override { machine_.reset(); }

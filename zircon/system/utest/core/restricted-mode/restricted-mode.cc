@@ -59,7 +59,10 @@ class RestrictedMode : public restricted_machine::testing::SupportedMachinesTest
     }
   }
 
-  void SetUp() override { RM_NEEDS_NEXT_SKIP; }
+  void SetUp() override {
+    restricted_machine::testing::SupportedMachinesTest::SetUp();
+    RM_NEEDS_NEXT_SKIP;
+  }
   void TearDown() override {}
 
   std::unique_ptr<ArchHelper> GetArchHelper() { return ArchHelperFactory::Create(machine()); }
