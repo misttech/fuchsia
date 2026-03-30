@@ -242,7 +242,7 @@ impl Topology {
 
     #[cfg(test)]
     pub fn get_unsatisfiable_element_id(&self) -> ElementID {
-        self.unsatisfiable_element_id.clone()
+        self.unsatisfiable_element_id
     }
 
     #[cfg(test)]
@@ -301,38 +301,37 @@ impl Topology {
             .enumerate()
             .map(|(index, level)| IndexedPowerLevel { level: *level, index })
             .collect();
-        self.elements
-            .insert(id.clone(), Element::new(id.clone(), name.into(), valid_levels, synthetic));
+        self.elements.insert(id, Element::new(id, name.into(), valid_levels, synthetic));
         Ok(id)
     }
 
     #[cfg(test)]
-    pub fn element_exists(&self, element_id: &ElementID) -> bool {
-        self.elements.contains_key(element_id)
+    pub fn element_exists(&self, element_id: ElementID) -> bool {
+        self.elements.contains_key(&element_id)
     }
 
-    #[allow(dead_code)]
-    pub fn element_is_synthetic(&self, element_id: &ElementID) -> bool {
-        self.elements.get(element_id).and_then(|x| Some(x.synthetic)).unwrap_or(false)
+    #[cfg(test)]
+    pub fn element_is_synthetic(&self, element_id: ElementID) -> bool {
+        self.elements.get(&element_id).and_then(|x| Some(x.synthetic)).unwrap_or(false)
     }
 
-    pub fn element_name(&self, element_id: &ElementID) -> Cow<'_, str> {
+    pub fn element_name(&self, element_id: ElementID) -> Cow<'_, str> {
         Cow::from(
-            self.elements.get(element_id).and_then(|e| Some(e.name.as_str())).unwrap_or_default(),
+            self.elements.get(&element_id).and_then(|e| Some(e.name.as_str())).unwrap_or_default(),
         )
     }
 
-    pub fn remove_element(&mut self, element_id: &ElementID) -> Option<Element> {
-        if self.unsatisfiable_element_id != *element_id {
+    pub fn remove_element(&mut self, element_id: ElementID) -> Option<Element> {
+        if self.unsatisfiable_element_id != element_id {
             self.invalidate_dependent_elements(element_id);
-            self.elements.remove(element_id)
+            self.elements.remove(&element_id)
         } else {
             None
         }
     }
 
-    pub fn minimum_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
-        let Some(elem) = self.elements.get(element_id) else {
+    pub fn minimum_level(&self, element_id: ElementID) -> IndexedPowerLevel {
+        let Some(elem) = self.elements.get(&element_id) else {
             return IndexedPowerLevel::MIN;
         };
         match elem.valid_levels.first().copied() {
@@ -341,8 +340,8 @@ impl Topology {
         }
     }
 
-    pub fn is_valid_level(&self, element_id: &ElementID, level: IndexedPowerLevel) -> bool {
-        let Some(elem) = self.elements.get(element_id) else {
+    pub fn is_valid_level(&self, element_id: ElementID, level: IndexedPowerLevel) -> bool {
+        let Some(elem) = self.elements.get(&element_id) else {
             return false;
         };
         elem.valid_levels.contains(&level)
@@ -350,10 +349,10 @@ impl Topology {
 
     pub fn get_level_index(
         &self,
-        element_id: &ElementID,
+        element_id: ElementID,
         level: &fpb::PowerLevel,
     ) -> Option<&IndexedPowerLevel> {
-        let Some(elem) = self.elements.get(element_id) else {
+        let Some(elem) = self.elements.get(&element_id) else {
             return Some(&IndexedPowerLevel::MIN);
         };
         elem.valid_levels.iter().find(|l| &l.level == level)
@@ -361,13 +360,13 @@ impl Topology {
 
     fn decrement_element_level_index(
         &self,
-        element_id: &ElementID,
+        element_id: ElementID,
         level: &IndexedPowerLevel,
     ) -> IndexedPowerLevel {
         if level.index < 1 {
             return IndexedPowerLevel::MIN;
         }
-        let Some(elem) = self.elements.get(element_id) else {
+        let Some(elem) = self.elements.get(&element_id) else {
             return IndexedPowerLevel::MIN;
         };
         return elem.valid_levels[level.index - 1];
@@ -405,10 +404,10 @@ impl Topology {
             }
             visited.insert(element_level.clone());
 
-            if element_level.level != self.minimum_level(&element_level.element_id) {
+            if element_level.level != self.minimum_level(element_level.element_id) {
                 let mut lower_element_level = element_level.clone();
                 lower_element_level.level = self
-                    .decrement_element_level_index(&element_level.element_id, &element_level.level);
+                    .decrement_element_level_index(element_level.element_id, &element_level.level);
                 element_levels_to_inspect.push(lower_element_level);
             }
             for dep in self.direct_dependencies(&element_level) {
@@ -422,7 +421,7 @@ impl Topology {
     /// Elements that have any type of dependency on the provided ElementID are 'invalidated'
     /// by replacing their dependency on the provided ElementID with the 'unsatisfiable' element that
     /// will never be turned on.
-    fn invalidate_dependent_elements(&mut self, invalid_element_id: &ElementID) {
+    fn invalidate_dependent_elements(&mut self, invalid_element_id: ElementID) {
         // Prior to removing any dependencies that are no longer valid, ensure that we add a
         // dependency to the unsatisfiable element, which forces *future* leases into the
         // pending state and prevents the broker from attempting to turn on other dependent
@@ -433,7 +432,7 @@ impl Topology {
             .filter_map(|(dependent, requires)| {
                 if requires
                     .iter()
-                    .any(|required_level| required_level.element_id == *invalid_element_id)
+                    .any(|required_level| required_level.element_id == invalid_element_id)
                 {
                     Some(dependent.clone())
                 } else {
@@ -446,7 +445,7 @@ impl Topology {
                 &Dependency {
                     dependent: dependent.clone(),
                     requires: ElementLevel {
-                        element_id: self.unsatisfiable_element_id.clone(),
+                        element_id: self.unsatisfiable_element_id,
                         level: IndexedPowerLevel { level: fpb::PowerLevel::MAX, index: 1 },
                     },
                 },
@@ -460,7 +459,7 @@ impl Topology {
                 }
             }
             for requires in self.dependencies.get(&dependent).unwrap().clone() {
-                if requires.element_id == *invalid_element_id {
+                if requires.element_id == invalid_element_id {
                     self.remove_dependency(&Dependency {
                         dependent: dependent.clone(),
                         requires: requires.clone(),
@@ -469,24 +468,24 @@ impl Topology {
                 }
             }
         }
-        self.dependencies.retain(|key, _| key.element_id != *invalid_element_id);
+        self.dependencies.retain(|key, _| key.element_id != invalid_element_id);
     }
 
     /// Checks that a dependency is valid. Returns ModifyDependencyError if not.
     fn check_valid_dependency(&self, dep: &Dependency) -> Result<(), ModifyDependencyError> {
-        if &dep.dependent.element_id == &dep.requires.element_id {
+        if dep.dependent.element_id == dep.requires.element_id {
             return Err(ModifyDependencyError::Invalid);
         }
         if !self.elements.contains_key(&dep.dependent.element_id) {
-            return Err(ModifyDependencyError::NotFound(dep.dependent.element_id.clone()));
+            return Err(ModifyDependencyError::NotFound(dep.dependent.element_id));
         }
         if !self.elements.contains_key(&dep.requires.element_id) {
-            return Err(ModifyDependencyError::NotFound(dep.requires.element_id.clone()));
+            return Err(ModifyDependencyError::NotFound(dep.requires.element_id));
         }
-        if !self.is_valid_level(&dep.dependent.element_id, dep.dependent.level) {
+        if !self.is_valid_level(dep.dependent.element_id, dep.dependent.level) {
             return Err(ModifyDependencyError::Invalid);
         }
-        if !self.is_valid_level(&dep.requires.element_id, dep.requires.level) {
+        if !self.is_valid_level(dep.requires.element_id, dep.requires.level) {
             return Err(ModifyDependencyError::Invalid);
         }
         if self.unsatisfiable_element_id == dep.dependent.element_id {
@@ -517,14 +516,14 @@ impl Topology {
     /// Removes a dependency from the Topology.
     pub fn remove_dependency(&mut self, dep: &Dependency) -> Result<(), ModifyDependencyError> {
         if !self.elements.contains_key(&dep.dependent.element_id) {
-            return Err(ModifyDependencyError::NotFound(dep.dependent.element_id.clone()));
+            return Err(ModifyDependencyError::NotFound(dep.dependent.element_id));
         }
         if !self.elements.contains_key(&dep.requires.element_id) {
-            return Err(ModifyDependencyError::NotFound(dep.requires.element_id.clone()));
+            return Err(ModifyDependencyError::NotFound(dep.requires.element_id));
         }
         let required_levels = self.dependencies.entry(dep.dependent.clone()).or_insert(Vec::new());
         if !required_levels.contains(&dep.requires) {
-            return Err(ModifyDependencyError::NotFound(dep.requires.element_id.clone()));
+            return Err(ModifyDependencyError::NotFound(dep.requires.element_id));
         }
         required_levels.retain(|el| el != &dep.requires);
         self.inspect.on_remove_dependency(&self.elements, dep);
@@ -810,7 +809,7 @@ mod tests {
         });
         assert!(matches!(extra_remove_dep_res, Err(ModifyDependencyError::NotFound { .. })));
 
-        assert_eq!(t.element_exists(&fire), true);
+        assert_eq!(t.element_exists(fire), true);
         t.add_dependency(
             &Dependency {
                 dependent: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
@@ -819,17 +818,17 @@ mod tests {
             &mut EagerInspectWriter,
         )
         .expect("add_dependency failed");
-        t.remove_element(&fire);
-        assert_eq!(t.element_exists(&fire), false);
+        t.remove_element(fire);
+        assert_eq!(t.element_exists(fire), false);
         let removed_element_dep_res = t.remove_dependency(&Dependency {
             dependent: ElementLevel { element_id: fire.clone(), level: BINARY_POWER_LEVEL_ON },
             requires: ElementLevel { element_id: earth.clone(), level: BINARY_POWER_LEVEL_ON },
         });
         assert!(matches!(removed_element_dep_res, Err(ModifyDependencyError::NotFound { .. })));
 
-        assert_eq!(t.element_exists(&air), true);
-        t.remove_element(&air);
-        assert_eq!(t.element_exists(&air), false);
+        assert_eq!(t.element_exists(air), true);
+        t.remove_element(air);
+        assert_eq!(t.element_exists(air), false);
 
         assert_data_tree!(inspect, root: {
            topology: {
@@ -979,8 +978,8 @@ mod tests {
             },
         }}}});
 
-        t.remove_element(&earth);
-        assert_eq!(t.element_exists(&earth), false);
+        t.remove_element(earth);
+        assert_eq!(t.element_exists(earth), false);
         assert_data_tree!(inspect, root: { topology: { "fuchsia.inspect.Graph": { "topology": {
             t.get_unsatisfiable_element().id.to_string() => {
                 meta: {
@@ -1016,8 +1015,8 @@ mod tests {
         let synthetic_element = t
             .add_synthetic_element("Synthetic", &BINARY_POWER_LEVELS)
             .expect("add_synthetic_element failed");
-        assert_eq!(t.element_exists(&synthetic_element), true);
-        assert_eq!(t.element_is_synthetic(&synthetic_element), true);
+        assert_eq!(t.element_exists(synthetic_element), true);
+        assert_eq!(t.element_is_synthetic(synthetic_element), true);
     }
 
     #[fuchsia::test]
@@ -1264,11 +1263,11 @@ mod tests {
         .expect("add_dependency failed");
 
         // Remove A, invalidating C -> A. C now depends on Unsatisfiable.
-        t.remove_element(&a);
+        t.remove_element(a);
 
         // Remove B, invalidating C -> B. C already depends on Unsatisfiable.
         // This should not panic.
-        t.remove_element(&b);
+        t.remove_element(b);
 
         let c_deps: Vec<_> =
             t.direct_dependencies(&ElementLevel { element_id: c.clone(), level: ONE }).collect();

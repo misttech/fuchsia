@@ -6,6 +6,8 @@ use crate::broker::{Lease, LeaseID};
 use crate::topology::{Dependency, Element, Topology};
 use crate::{ElementID, IndexedPowerLevel};
 use either::Either;
+use fidl_fuchsia_power_broker as fpb;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::{ArrayProperty, InspectTypeReparentable, Property};
 use fuchsia_inspect_contrib::graph as igraph;
 use fuchsia_inspect_contrib::graph::{Digraph, DigraphOpts};
@@ -16,7 +18,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
-use {fidl_fuchsia_power_broker as fpb, fuchsia_inspect as inspect};
 
 const ADD_ELEMENT_EVENT: &str = "add_element";
 const ADD_DEPENDENCY_EVENT: &str = "add_dep";

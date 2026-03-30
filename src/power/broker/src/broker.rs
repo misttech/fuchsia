@@ -117,15 +117,15 @@ impl Broker {
         }
     }
 
-    pub fn lookup_name(&self, element_id: &ElementID) -> Cow<'_, str> {
-        self.catalog.topology.element_name(&element_id)
+    pub fn lookup_name(&self, element_id: ElementID) -> Cow<'_, str> {
+        self.catalog.topology.element_name(element_id)
     }
 
     fn lookup_credentials(&self, token: &Token) -> Option<Credential> {
         self.credentials.lookup(token)
     }
 
-    fn unregister_all_credentials_for_element(&mut self, element_id: &ElementID) {
+    fn unregister_all_credentials_for_element(&mut self, element_id: ElementID) {
         self.credentials.unregister_all_for_element(element_id)
     }
 
@@ -146,7 +146,7 @@ impl Broker {
 
     pub fn register_dependency_token(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
         token: Token,
     ) -> Result<(), RegisterDependencyTokenError> {
         let permissions = Permissions::MODIFY_DEPENDENT;
@@ -164,7 +164,7 @@ impl Broker {
 
     pub fn unregister_dependency_token(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
         token: Token,
     ) -> Result<(), UnregisterDependencyTokenError> {
         let Some(credential) = self.lookup_credentials(&token) else {
@@ -175,7 +175,7 @@ impl Broker {
             log::debug!(
                 "unregister_dependency_token: token is registered to {:?}, not {:?}",
                 &credential.get_element(),
-                &element_id,
+                element_id,
             );
             return Err(UnregisterDependencyTokenError::NotAuthorized);
         }
@@ -204,9 +204,8 @@ impl Broker {
     // TODO(b/356400605): Consider simplifying this function by adding support for reverse
     // dependency traversal, so that we do not have to scan all leases, but only elements
     // that directly depend on the disorderly element.
-    fn deactivate_broken_claims(&mut self, element_id: &ElementID, prev_level: IndexedPowerLevel) {
-        let element_level =
-            ElementLevel { element_id: element_id.clone(), level: prev_level.clone() };
+    fn deactivate_broken_claims(&mut self, element_id: ElementID, prev_level: IndexedPowerLevel) {
+        let element_level = ElementLevel { element_id: element_id, level: prev_level.clone() };
         // For each lease, find the dependencies that are parents of the broken element.
         let mut affected_elements = HashSet::new();
         let mut affected_leases = HashSet::new();
@@ -216,7 +215,7 @@ impl Broker {
             .for_each(|(lease_id, lease)| {
                 log::debug!("deactivate_broken_claims({lease_id}, {element_id}@{prev_level})");
                 let lease_element_level = ElementLevel {
-                    element_id: lease.synthetic_element_id.clone(),
+                    element_id: lease.synthetic_element_id,
                     level: IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
                 };
                 let dependencies_lease =
@@ -224,7 +223,7 @@ impl Broker {
                 if !dependencies_lease
                     .iter()
                     .any(|d| {
-                        d.requires.element_id == *element_id && d.requires.level.satisfies(prev_level)
+                        d.requires.element_id == element_id && d.requires.level.satisfies(prev_level)
                     }) {
                     log::debug!("There was no dependency in this lease that required this element to be at that level.");
                     return;
@@ -241,41 +240,41 @@ impl Broker {
 
                 for dependency in broken_dependencies {
                     let mut claim_on_broken_element = false;
-                    if dependency.requires.element_id == *element_id {
+                    if dependency.requires.element_id == element_id {
                         claim_on_broken_element = true;
                     }
                     let affected_claims: Vec<ClaimID> = self.catalog
                         .claims
                         .activated
-                        .for_lease(&lease_id)
+                        .for_lease(*lease_id)
                         .filter(|c| c.dependency == dependency)
                         .map(|c| c.id)
                         .collect();
 
                     for _ in &affected_claims {
-                        affected_elements.insert(dependency.requires.element_id.clone());
-                        affected_leases.insert(lease_id.clone());
+                        affected_elements.insert(dependency.requires.element_id);
+                        affected_leases.insert(*lease_id);
                     }
 
                     if !claim_on_broken_element {
                         for id in affected_claims {
-                            self.catalog.claims.deactivate_claim(&id);
+                            self.catalog.claims.deactivate_claim(id);
                         }
                     }
                 }
             });
         affected_elements.remove(&element_id);
-        let affected_elements: Vec<ElementID> = affected_elements.into_iter().collect();
-        self.update_required_levels(affected_elements.iter(), &mut EagerInspectWriter);
-        if affected_elements.len() > 1 {
-            self.update_required_level(&element_id, prev_level.clone(), &mut EagerInspectWriter);
+        let should_update_this_element = affected_elements.len() > 1;
+        self.update_required_levels(affected_elements.into_iter(), &mut EagerInspectWriter);
+        if should_update_this_element {
+            self.update_required_level(element_id, prev_level.clone(), &mut EagerInspectWriter);
         }
         for lease in affected_leases {
-            self.update_lease_status(&lease);
+            self.update_lease_status(lease);
         }
     }
 
-    pub fn update_current_level(&mut self, element_id: &ElementID, level: IndexedPowerLevel) {
+    pub fn update_current_level(&mut self, element_id: ElementID, level: IndexedPowerLevel) {
         log::debug!("update_current_level({element_id}, {level:?})");
         let is_disorderly_update = self
             .required
@@ -309,7 +308,7 @@ impl Broker {
                 .collect();
             // Find the set of dependents for all claims satisfied:
             let dependents_of_claims_satisfied: HashSet<ElementID> =
-                claims_satisfied.iter().map(|c| c.dependent().element_id.clone()).collect();
+                claims_satisfied.iter().map(|c| c.dependent().element_id).collect();
             // Because at least one of the dependencies of the dependent was
             // satisfied, other previously pending claims requiring the
             // dependent may now be ready to be activated (though they may not
@@ -321,7 +320,7 @@ impl Broker {
             // required level:
             for dependent in dependents_of_claims_satisfied {
                 let pending_claims_on_dependent: Vec<Claim> =
-                    self.catalog.claims.pending.for_required_element(&dependent).cloned().collect();
+                    self.catalog.claims.pending.for_required_element(dependent).cloned().collect();
                 self.activate_claims_if_dependencies_satisfied(pending_claims_on_dependent);
             }
             // Find the set of leases for all claims satisfied:
@@ -333,7 +332,7 @@ impl Broker {
                 &leases_to_check_if_satisfied
             );
             for lease_id in leases_to_check_if_satisfied {
-                self.update_lease_status(&lease_id);
+                self.update_lease_status(lease_id);
             }
             return;
         }
@@ -363,7 +362,7 @@ impl Broker {
             // occurs, we compute the set of activated claims that are no longer valid
             // and immediately deactivate them.
             if is_disorderly_update {
-                self.deactivate_broken_claims(&element_id, prev_level.unwrap().clone());
+                self.deactivate_broken_claims(element_id, prev_level.unwrap().clone());
             }
         }
     }
@@ -374,10 +373,10 @@ impl Broker {
 
     pub fn new_current_level_subscriber(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
     ) -> CurrentLevelSubscriber {
         self.current
-            .get_mut(element_id)
+            .get_mut(&element_id)
             .ok_or_else(|| anyhow!("Element ({element_id}) not added"))
             .unwrap()
             .hanging_get
@@ -386,38 +385,38 @@ impl Broker {
 
     fn update_current_level_internal<I>(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
         level: IndexedPowerLevel,
         inspect_writer: &mut I,
     ) -> Option<IndexedPowerLevel>
     where
         I: InspectUpdateLevel,
     {
-        let previous = self.get_current_level(element_id);
+        let previous = self.get_current_level(&element_id);
         if previous == Some(level) {
             return previous;
         }
-        if let Some(current_level) = self.current.get_mut(element_id) {
+        if let Some(current_level) = self.current.get_mut(&element_id) {
             current_level.publisher.set(level);
             current_level.level = level;
         } else {
             let level_admin = LevelAdmin::<StatusWatchPowerLevelResponder>::new(level);
-            self.current.insert(element_id.clone(), level_admin);
+            self.current.insert(element_id, level_admin);
         }
 
-        inspect_writer.update_current_level(&self.catalog.topology, *element_id, level.level);
+        inspect_writer.update_current_level(&self.catalog.topology, element_id, level.level);
 
         fuchsia_trace::counter!(
             c"power-broker", c"current_level", 0,
-            &self.lookup_name(&element_id).into_owned() => level.level as u32
+            &self.lookup_name(element_id).into_owned() => level.level as u32
         );
 
-        if let Some(transit_level) = self.in_transition.get(element_id) {
+        if let Some(transit_level) = self.in_transition.get(&element_id) {
             if *transit_level == level {
                 log::debug!(
                     "update_current_level_internal({element_id}): transitioned to {level:?}"
                 );
-                self.in_transition.remove(element_id);
+                self.in_transition.remove(&element_id);
                 self.update_required_levels([element_id].into_iter(), inspect_writer);
             }
         }
@@ -437,37 +436,37 @@ impl Broker {
 
     fn update_required_level<I>(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
         level: IndexedPowerLevel,
         inspect_writer: &mut I,
     ) -> Option<IndexedPowerLevel>
     where
         I: InspectUpdateLevel,
     {
-        let previous = self.get_required_level(element_id);
+        let previous = self.get_required_level(&element_id);
         if previous == Some(level) {
             return previous;
         }
-        if self.in_transition.contains_key(element_id) {
+        if self.in_transition.contains_key(&element_id) {
             return previous;
         }
-        self.required.update(element_id, level);
-        if let Some(current_level) = self.current.get(element_id) {
+        self.required.update(&element_id, level);
+        if let Some(current_level) = self.current.get(&element_id) {
             if current_level.level != level {
                 log::debug!("update_required_level({element_id}): transitioning to {level}");
-                self.in_transition.insert(element_id.clone(), level);
+                self.in_transition.insert(element_id, level);
             }
         }
-        inspect_writer.update_required_level(&self.catalog.topology, *element_id, level.level);
+        inspect_writer.update_required_level(&self.catalog.topology, element_id, level.level);
         fuchsia_trace::counter!(
             c"power-broker", c"required_level", 0,
-            &self.lookup_name(&element_id).into_owned() => level.level as u32
+            &self.lookup_name(element_id).into_owned() => level.level as u32
         );
 
         previous
     }
 
-    fn adjust_lease_counter(&mut self, element_id: &ElementID, level: PowerLevel, adj: i64) -> i64 {
+    fn adjust_lease_counter(&mut self, element_id: ElementID, level: PowerLevel, adj: i64) -> i64 {
         if let Some(inner_map) = self.lease_counter.get_mut(&element_id) {
             if let Some(counter) = inner_map.get_mut(&level) {
                 *counter += adj;
@@ -479,14 +478,14 @@ impl Broker {
         } else {
             let mut inner_map = HashMap::new();
             inner_map.insert(level, adj);
-            self.lease_counter.insert(element_id.clone(), inner_map);
+            self.lease_counter.insert(element_id, inner_map);
             return adj;
         }
     }
 
     pub fn acquire_lease(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
         level: IndexedPowerLevel,
         lease_control: zx::Koid,
     ) -> Result<Lease, fpb::LeaseError> {
@@ -499,18 +498,18 @@ impl Broker {
 
         let lease_element_id = self.catalog.create_synthetic_lease_element(
             format!("{}_LEASE", element_id).as_str(),
-            vec![ElementLevel { element_id: element_id.clone(), level: level.clone() }],
+            vec![ElementLevel { element_id: element_id, level: level.clone() }],
         );
         let (lease, claims) = self.catalog.create_lease_and_claims(
             lease_element_id,
-            element_id.clone(),
+            element_id,
             level,
             lease_control,
         );
         // Activate all pending claims that have all of their
         // dependencies satisfied.
         self.activate_claims_if_dependencies_satisfied(claims);
-        self.update_lease_status(&lease.id);
+        self.update_lease_status(lease.id);
         Ok(lease)
     }
 
@@ -534,12 +533,12 @@ impl Broker {
             let requires_level = if let Some(levels) = dependency.requires_level_by_preference {
                 levels
                     .iter()
-                    .find_map(|l| self.catalog.topology.get_level_index(&requires_element_id, l))
+                    .find_map(|l| self.catalog.topology.get_level_index(requires_element_id, l))
                     .ok_or(fpb::LeaseError::InvalidLevel)?
             } else if let Some(level) = dependency.requires_level {
                 self.catalog
                     .topology
-                    .get_level_index(&requires_element_id, &level)
+                    .get_level_index(requires_element_id, &level)
                     .ok_or(fpb::LeaseError::InvalidLevel)?
             } else {
                 return Err(fpb::LeaseError::InvalidLevel);
@@ -565,23 +564,23 @@ impl Broker {
         // Activate all pending claims that have all of their
         // dependencies satisfied.
         self.activate_claims_if_dependencies_satisfied(claims);
-        self.update_lease_status(&lease.id);
+        self.update_lease_status(lease.id);
         Ok(lease)
     }
 
     /// Drops the provided lease, which deactivates the claims associated with it and
     /// begins the orderly drop of the dependency chain.
-    pub fn drop_lease(&mut self, lease_id: &LeaseID) -> Result<(), Error> {
+    pub fn drop_lease(&mut self, lease_id: LeaseID) -> Result<(), Error> {
         // Drop the lease to mark all the relevant claims as deactivated.
         let (lease, claims) = self.catalog.drop(lease_id)?;
         let counter = self.adjust_lease_counter(
-            &lease.underlying_element_id,
+            lease.underlying_element_id,
             lease.underlying_element_level.level,
             -1,
         ) as i64;
         fuchsia_trace::counter!(
             c"power-broker", c"LeaseCounter", lease.underlying_element_level.level.into(),
-            &self.lookup_name(&lease.underlying_element_id).into_owned() => counter
+            &self.lookup_name(lease.underlying_element_id).into_owned() => counter
         );
 
         // Find the set of claims that can be dropped immediately.
@@ -591,12 +590,12 @@ impl Broker {
         // the claim search through this lease.
         self.drop_or_deactivate_claims(&claims_dropped);
         // Remove the lease information and then remove the underlying element.
-        self.catalog.lease_status.remove(lease_id);
+        self.catalog.lease_status.remove(&lease_id);
         self.remove_element(&lease.synthetic_element_id);
         Ok(())
     }
 
-    fn calculate_lease_status(&self, lease_id: &LeaseID) -> LeaseStatus {
+    fn calculate_lease_status(&self, lease_id: LeaseID) -> LeaseStatus {
         // If the lease has any Pending claims, it is still Pending.
         if self.catalog.claims.pending.for_lease(lease_id).next().is_some() {
             return LeaseStatus::Pending;
@@ -616,31 +615,29 @@ impl Broker {
     /// Re-evaluates the lease status and updates the status map.
     /// Returns the status if the overall status has changed.
     /// Returns None if no change occurred or if the lease has already been dropped.
-    pub fn update_lease_status(&mut self, lease_id: &LeaseID) -> Option<LeaseStatus> {
+    pub fn update_lease_status(&mut self, lease_id: LeaseID) -> Option<LeaseStatus> {
         // Return immediately if the lease has already dropped.
         if self.catalog.is_lease_dropped(lease_id) {
             return None;
         }
         // Calculate the current and previous status state.
         let status = self.calculate_lease_status(lease_id);
-        let prev_status = self.catalog.lease_status.update(lease_id, status);
+        let prev_status = self.catalog.lease_status.update(&lease_id, status);
         // Return if no state change has occurred.
         if prev_status.as_ref() == Some(&status) {
             return None;
         };
         log::debug!("update_lease_status({lease_id}) to {status:?}");
         // The lease_status changed, update the required level of the leased element.
-        let (synthetic_element_id, underlying_element_id) = match self.catalog.leases.get(lease_id)
+        let (synthetic_element_id, underlying_element_id) = match self.catalog.leases.get(&lease_id)
         {
-            Some(lease) => {
-                (lease.synthetic_element_id.clone(), lease.underlying_element_id.clone())
-            }
+            Some(lease) => (lease.synthetic_element_id, lease.underlying_element_id),
             None => unreachable!("The lease must be present when updating the status."),
         };
-        self.update_required_levels([synthetic_element_id].iter(), &mut EagerInspectWriter);
+        self.update_required_levels([synthetic_element_id].into_iter(), &mut EagerInspectWriter);
         if prev_status.as_ref() != Some(&status) {
             if let Some(element) = self.catalog.topology.get_element(&underlying_element_id) {
-                let Some(lease) = self.catalog.leases.get(lease_id) else {
+                let Some(lease) = self.catalog.leases.get(&lease_id) else {
                     unreachable!("The lease must be present when updating the status.");
                 };
                 self.catalog.topology.inspect().on_update_lease_status(&element, &lease, &status);
@@ -650,20 +647,20 @@ impl Broker {
     }
 
     #[cfg(test)]
-    pub fn get_lease_status(&self, lease_id: &LeaseID) -> Option<LeaseStatus> {
-        self.catalog.get_lease_status(lease_id)
+    pub fn get_lease_status(&self, lease_id: LeaseID) -> Option<LeaseStatus> {
+        self.catalog.get_lease_status(&lease_id)
     }
 
     pub fn watch_lease_status(
         &mut self,
-        lease_id: &LeaseID,
+        lease_id: LeaseID,
     ) -> UnboundedReceiver<Option<LeaseStatus>> {
-        self.catalog.watch_lease_status(lease_id)
+        self.catalog.watch_lease_status(&lease_id)
     }
 
-    fn update_required_levels<'a, I>(
+    fn update_required_levels<I>(
         &mut self,
-        element_ids: impl IntoIterator<Item = &'a ElementID>,
+        element_ids: impl IntoIterator<Item = ElementID>,
         inspect_writer: &mut I,
     ) where
         I: InspectUpdateLevel,
@@ -697,11 +694,11 @@ impl Broker {
         });
         let (claim_ids, element_ids): (Vec<ClaimID>, Vec<ElementID>) =
             claims_to_activate.map(|c| (c.id, c.requires().element_id)).unzip();
-        for claim_id in &claim_ids {
+        for claim_id in claim_ids {
             self.catalog.claims.activate_claim(claim_id);
         }
 
-        self.update_required_levels(element_ids.iter(), &mut EagerInspectWriter);
+        self.update_required_levels(element_ids.into_iter(), &mut EagerInspectWriter);
     }
 
     /// Examines the direct dependencies of an element level
@@ -713,7 +710,7 @@ impl Broker {
                     log::debug!(
                         "dependency {dep:?} of element_level {element_level:?} is not satisfied: \
                     current level of {:?} = {:?}, {:?} required",
-                        &dep.requires.element_id,
+                        dep.requires.element_id,
                         self.get_current_level(&dep.requires.element_id),
                         &dep.requires.level
                     );
@@ -749,9 +746,9 @@ impl Broker {
                     .catalog
                     .claims
                     .activated
-                    .for_required_element(&claim_to_check.requires().element_id)
+                    .for_required_element(claim_to_check.requires().element_id)
                     .filter(|c| c.lease_id != claim_to_check.lease_id)
-                    .filter(|c| !self.catalog.is_lease_dropped(&c.lease_id));
+                    .filter(|c| !self.catalog.is_lease_dropped(c.lease_id));
                 let related_claim = related_claims.find(|related_claim| {
                     related_claim.dependent().satisfies(claim_to_check.dependent())
                         && related_claim.requires().satisfies(claim_to_check.requires())
@@ -770,7 +767,7 @@ impl Broker {
             }
             let mut has_dependents = false;
             // Only claims belonging to the same lease can be a dependent.
-            for related_claim in self.catalog.claims.activated.for_lease(&claim_to_check.lease_id) {
+            for related_claim in self.catalog.claims.activated.for_lease(claim_to_check.lease_id) {
                 if claim_to_check.dependent().element_id == related_claim.requires().element_id
                     && claim_to_check.dependent().level >= related_claim.requires().level
                     && self.current_level_satisfies(related_claim.requires())
@@ -797,10 +794,10 @@ impl Broker {
     fn drop_or_deactivate_claims(&mut self, claims: &[Claim]) {
         for claim in claims {
             log::debug!("deactivate claim: {claim}");
-            if self.catalog.is_lease_dropped(&claim.lease_id) {
-                self.catalog.claims.drop_claim(&claim.id);
+            if self.catalog.is_lease_dropped(claim.lease_id) {
+                self.catalog.claims.drop_claim(claim.id);
             } else {
-                self.catalog.claims.deactivate_claim(&claim.id);
+                self.catalog.claims.deactivate_claim(claim.id);
             }
         }
         self.update_required_levels(
@@ -823,13 +820,13 @@ impl Broker {
         let initial_current_level = *self
             .catalog
             .topology
-            .get_level_index(&id, &initial_current_level)
+            .get_level_index(id, &initial_current_level)
             .ok_or(AddElementError::Invalid)?;
 
         let mut inspect_writer = AddElementInspectWriter::new(id);
-        self.update_current_level_internal(&id, initial_current_level, &mut inspect_writer);
-        let minimum_level = self.catalog.topology.minimum_level(&id);
-        self.update_required_level(&id, minimum_level, &mut inspect_writer);
+        self.update_current_level_internal(id, initial_current_level, &mut inspect_writer);
+        let minimum_level = self.catalog.topology.minimum_level(id);
+        self.update_required_level(id, minimum_level, &mut inspect_writer);
 
         for dependency in level_dependencies {
             let requires_token = dependency.requires_token.into();
@@ -843,10 +840,10 @@ impl Broker {
             let requires_level = dependency
                 .requires_level_by_preference
                 .iter()
-                .find_map(|l| self.get_level_index(&requires_element_id, &l))
+                .find_map(|l| self.get_level_index(requires_element_id, &l))
                 .ok_or(AddElementError::Invalid)?;
             if let Err(err) = self.add_dependency(
-                &id,
+                id,
                 dependency.dependent_level,
                 requires_token,
                 requires_level.level,
@@ -868,7 +865,7 @@ impl Broker {
     }
 
     #[cfg(test)]
-    fn element_exists(&self, element_id: &ElementID) -> bool {
+    fn element_exists(&self, element_id: ElementID) -> bool {
         self.catalog.topology.element_exists(element_id)
     }
 
@@ -877,19 +874,19 @@ impl Broker {
         // Before removing the element, clear any transiting state and simulate the
         // downward transition from its transiting level to its minimum level. This
         // ensures that all associated claims are cleared.
-        let minimum_level = self.catalog.minimum_level(element_id);
-        if let Some(transition_level) = self.in_transition.get(element_id) {
-            if let Some(current_level) = self.current.get_mut(element_id) {
+        let minimum_level = self.catalog.minimum_level(*element_id);
+        if let Some(transition_level) = self.in_transition.get(&element_id) {
+            if let Some(current_level) = self.current.get_mut(&element_id) {
                 current_level.level = max(*transition_level, current_level.level);
             }
         }
-        self.in_transition.remove(element_id);
-        self.update_current_level(element_id, minimum_level);
+        self.in_transition.remove(&element_id);
+        self.update_current_level(*element_id, minimum_level);
         // Remove all references of the element from the topology.
-        let maybe_element = self.catalog.topology.remove_element(element_id);
-        self.unregister_all_credentials_for_element(element_id);
-        let current_level = self.current.remove(element_id);
-        let required_level = self.required.remove(element_id);
+        let maybe_element = self.catalog.topology.remove_element(*element_id);
+        self.unregister_all_credentials_for_element(*element_id);
+        let current_level = self.current.remove(&element_id);
+        let required_level = self.required.remove(&element_id);
         if let Some(element) = maybe_element {
             self.catalog.topology.inspect().on_remove_element(
                 element,
@@ -897,12 +894,12 @@ impl Broker {
                 required_level.map(|level| level.level),
             );
         }
-        self.lease_counter.remove(element_id);
+        self.lease_counter.remove(&element_id);
     }
 
     pub fn get_level_index(
         &self,
-        element_id: &ElementID,
+        element_id: ElementID,
         level: &fpb::PowerLevel,
     ) -> Option<&IndexedPowerLevel> {
         self.catalog.topology.get_level_index(element_id, level)
@@ -911,7 +908,7 @@ impl Broker {
     /// Checks authorization from requires_token, and if valid, adds a dependency to the Topology.
     pub fn add_dependency<I>(
         &mut self,
-        element_id: &ElementID,
+        element_id: ElementID,
         dependent_level: fpb::PowerLevel,
         requires_token: Token,
         requires_level: fpb::PowerLevel,
@@ -926,7 +923,7 @@ impl Broker {
         let dependent_level = self
             .catalog
             .topology
-            .get_level_index(&element_id, &dependent_level)
+            .get_level_index(element_id, &dependent_level)
             .ok_or(ModifyDependencyError::Invalid)?;
         let requires_level = self
             .catalog
@@ -934,7 +931,7 @@ impl Broker {
             .get_level_index(requires_cred.get_element(), &requires_level)
             .ok_or(ModifyDependencyError::Invalid)?;
         let dependency = Dependency {
-            dependent: ElementLevel { element_id: element_id.clone(), level: *dependent_level },
+            dependent: ElementLevel { element_id: element_id, level: *dependent_level },
             requires: ElementLevel {
                 element_id: requires_cred.get_element().clone(),
                 level: *requires_level,
@@ -976,16 +973,16 @@ pub struct Lease {
 
 impl Lease {
     fn new(
-        synthetic_element_id: &ElementID,
-        underlying_element_id: &ElementID,
+        synthetic_element_id: ElementID,
+        underlying_element_id: ElementID,
         level: IndexedPowerLevel,
         underlying_element_level: IndexedPowerLevel,
         lease_control: zx::Koid,
     ) -> Self {
         Lease {
             id: LeaseID(lease_control.raw_koid()),
-            synthetic_element_id: synthetic_element_id.clone(),
-            underlying_element_id: underlying_element_id.clone(),
+            synthetic_element_id,
+            underlying_element_id,
             level: level.clone(),
             underlying_element_level: underlying_element_level.clone(),
         }
@@ -1032,13 +1029,11 @@ impl Claim {
 }
 
 /// Returns an iterator of unique ElementIDs required by claims.
-fn element_ids_required_by_claims<'a, I>(
-    claims: I,
-) -> impl Iterator<Item = &'a ElementID> + use<'a, I>
+fn element_ids_required_by_claims<'a, I>(claims: I) -> impl Iterator<Item = ElementID> + use<'a, I>
 where
     I: IntoIterator<Item = &'a Claim>,
 {
-    claims.into_iter().map(|c| &c.requires().element_id).unique()
+    claims.into_iter().map(|c| c.requires().element_id).unique()
 }
 
 /// Returns the maximum level required by claims, or None if empty.
@@ -1081,17 +1076,17 @@ impl Catalog {
         self.last_claim_id
     }
 
-    fn add_claim(&mut self, dependency: Dependency, lease_id: &LeaseID) -> Claim {
-        Claim { id: self.next_claim_id(), dependency, lease_id: lease_id.clone() }
+    fn add_claim(&mut self, dependency: Dependency, lease_id: LeaseID) -> Claim {
+        Claim { id: self.next_claim_id(), dependency, lease_id: lease_id }
     }
 
-    fn minimum_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
+    fn minimum_level(&self, element_id: ElementID) -> IndexedPowerLevel {
         self.topology.minimum_level(element_id)
     }
 
     /// Returns true if the lease was dropped (or never existed).
-    fn is_lease_dropped(&self, lease_id: &LeaseID) -> bool {
-        !self.leases.contains_key(lease_id)
+    fn is_lease_dropped(&self, lease_id: LeaseID) -> bool {
+        !self.leases.contains_key(&lease_id)
     }
 
     /// Calculates the required level for each element, according to the
@@ -1100,7 +1095,7 @@ impl Catalog {
     /// claims on the element, the maximum level of all satisfied
     /// leases on the element, or the element's minimum level if there are
     /// no activated claims or satisfied leases.
-    fn calculate_required_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
+    fn calculate_required_level(&self, element_id: ElementID) -> IndexedPowerLevel {
         let minimum_level = self.minimum_level(element_id);
         let activated_claims = self.claims.activated.for_required_element(element_id);
         max(
@@ -1112,9 +1107,9 @@ impl Catalog {
     /// Calculates the maximum level of all satisfied leases on the element.
     fn calculate_level_required_by_leases(
         &self,
-        element_id: &ElementID,
+        element_id: ElementID,
     ) -> Option<IndexedPowerLevel> {
-        self.satisfied_leases_for_element(element_id).map(|l| l.level).max()
+        self.satisfied_leases_for_element(&element_id).map(|l| l.level).max()
     }
 
     /// Returns all satisfied leases for an element.
@@ -1136,14 +1131,13 @@ impl Catalog {
         let mut observed_pairs: HashMap<(ElementID, ElementID), ElementLevel> = HashMap::new();
         claims.sort_unstable_by_key(|claim| {
             (
-                claim.dependent().element_id.clone(),
-                claim.requires().element_id.clone(),
+                claim.dependent().element_id,
+                claim.requires().element_id,
                 usize::MAX - claim.requires().level.index,
             )
         });
         for claim in claims {
-            let element_pair =
-                (claim.dependent().element_id.clone(), claim.requires().element_id.clone());
+            let element_pair = (claim.dependent().element_id, claim.requires().element_id);
             #[allow(clippy::map_entry, reason = "mass allow for https://fxbug.dev/381896734")]
             if observed_pairs.contains_key(&element_pair) {
                 continue;
@@ -1208,8 +1202,8 @@ impl Catalog {
         );
 
         let lease = Lease::new(
-            &lease_element_id,
-            &underlying_element_id,
+            lease_element_id,
+            underlying_element_id,
             IndexedPowerLevel { level: LeasePowerLevel::Satisfied as u8, index: 1 },
             underlying_level.clone(),
             lease_control,
@@ -1221,7 +1215,7 @@ impl Catalog {
                 underlying_level.level,
             );
         }
-        self.leases.insert(lease.id.clone(), lease.clone());
+        self.leases.insert(lease.id, lease.clone());
 
         let lease_element_level = ElementLevel {
             element_id: lease_element_id,
@@ -1232,7 +1226,7 @@ impl Catalog {
             .topology
             .all_direct_and_indirect_dependencies(&lease_element_level)
             .into_iter()
-            .map(|dependency| self.add_claim(dependency, &lease.id))
+            .map(|dependency| self.add_claim(dependency, lease.id))
             .collect::<Vec<Claim>>();
         // Filter claims down to only the essential (i.e. non-redundant) claims.
         let essential_claims = self.filter_out_redundant_claims(claims);
@@ -1245,19 +1239,19 @@ impl Catalog {
     /// Drops an existing lease, and initiates process of releasing all
     /// associated claims.
     /// Returns the dropped lease and a Vec of claims marked to deactivate.
-    fn drop(&mut self, lease_id: &LeaseID) -> Result<(Lease, Vec<Claim>), Error> {
+    fn drop(&mut self, lease_id: LeaseID) -> Result<(Lease, Vec<Claim>), Error> {
         log::debug!("drop(lease:{lease_id})");
-        let lease = self.leases.remove(lease_id).ok_or_else(|| anyhow!("{lease_id} not found"))?;
-        self.lease_status.remove(lease_id);
+        let lease = self.leases.remove(&lease_id).ok_or_else(|| anyhow!("{lease_id} not found"))?;
+        self.lease_status.remove(&lease_id);
         if let Some(element) = self.topology.get_element(&lease.underlying_element_id) {
             self.topology.inspect().on_drop_lease(&element, &lease);
         }
         log::debug!("dropping lease({:?})", &lease);
         // Pending claims should be dropped immediately.
         let pending_claims: Vec<ClaimID> =
-            self.claims.pending.for_lease(&lease.id).map(|c| c.id.clone()).collect::<Vec<_>>();
+            self.claims.pending.for_lease(lease.id).map(|c| c.id).collect::<Vec<_>>();
         for claim_id in pending_claims {
-            if let Some(removed) = self.claims.pending.remove(&claim_id) {
+            if let Some(removed) = self.claims.pending.remove(claim_id) {
                 log::debug!("removing pending claim: {:?}", &removed);
             } else {
                 log::error!("cannot remove pending claim: not found: {}", claim_id);
@@ -1266,7 +1260,7 @@ impl Catalog {
         // Claims should be marked to deactivate in an orderly sequence.
         log::debug!("drop(lease:{lease_id}): marking activated claims to deactivate");
         let claims_to_deactivate: Vec<Claim> =
-            self.claims.activated.mark_to_deactivate(&lease.id).collect();
+            self.claims.activated.mark_to_deactivate(lease.id).collect();
         Ok((lease, claims_to_deactivate))
     }
 
@@ -1317,23 +1311,23 @@ impl ClaimActivationTracker {
     }
 
     /// Activates a pending claim, moving it to activated.
-    fn activate_claim(&mut self, claim_id: &ClaimID) {
+    fn activate_claim(&mut self, claim_id: ClaimID) {
         log::debug!("activate_claim: {claim_id}");
-        self.pending.move_to(&claim_id, &mut self.activated);
+        self.pending.move_to(claim_id, &mut self.activated);
     }
 
     /// Deactivates an activated claim, moving it to pending.
-    fn deactivate_claim(&mut self, claim_id: &ClaimID) {
+    fn deactivate_claim(&mut self, claim_id: ClaimID) {
         log::debug!("deactivate_claim: {claim_id}");
-        self.activated.move_to(&claim_id, &mut self.pending);
-        self.activated.remove_from_claims_to_deactivate(&claim_id);
+        self.activated.move_to(claim_id, &mut self.pending);
+        self.activated.remove_from_claims_to_deactivate(claim_id);
     }
 
     /// Removes a claim from both pending and activated.
-    fn drop_claim(&mut self, claim_id: &ClaimID) {
+    fn drop_claim(&mut self, claim_id: ClaimID) {
         log::debug!("drop_claim: {claim_id}");
-        self.pending.remove(&claim_id);
-        self.activated.remove(&claim_id);
+        self.pending.remove(claim_id);
+        self.activated.remove(claim_id);
     }
 }
 
@@ -1367,35 +1361,32 @@ impl ClaimLookup {
 
     fn add(&mut self, claim: Claim) {
         self.claims_by_required_element_id
-            .entry(claim.requires().element_id.clone())
+            .entry(claim.requires().element_id)
             .or_insert(Vec::new())
-            .push(claim.id.clone());
-        self.claims_by_lease
-            .entry(claim.lease_id.clone())
-            .or_insert(Vec::new())
-            .push(claim.id.clone());
-        self.claims.insert(claim.id.clone(), claim);
+            .push(claim.id);
+        self.claims_by_lease.entry(claim.lease_id).or_insert(Vec::new()).push(claim.id);
+        self.claims.insert(claim.id, claim);
         fuchsia_trace::counter!(
             c"power-broker", self.label, 0,
             "claims" => self.claims.len() as u32
         );
     }
 
-    fn remove(&mut self, id: &ClaimID) -> Option<Claim> {
+    fn remove(&mut self, id: ClaimID) -> Option<Claim> {
         self.remove_from_claims_to_deactivate(id);
-        let Some(claim) = self.claims.remove(id) else {
+        let Some(claim) = self.claims.remove(&id) else {
             return None;
         };
         if let Some(claim_ids) =
             self.claims_by_required_element_id.get_mut(&claim.requires().element_id)
         {
-            claim_ids.retain(|x| x != id);
+            claim_ids.retain(|x| *x != id);
             if claim_ids.is_empty() {
                 self.claims_by_required_element_id.remove(&claim.requires().element_id);
             }
         }
         if let Some(claim_ids) = self.claims_by_lease.get_mut(&claim.lease_id) {
-            claim_ids.retain(|x| x != id);
+            claim_ids.retain(|x| *x != id);
             if claim_ids.is_empty() {
                 self.claims_by_lease.remove(&claim.lease_id);
             }
@@ -1407,15 +1398,15 @@ impl ClaimLookup {
         Some(claim)
     }
 
-    fn remove_from_claims_to_deactivate(&mut self, id: &ClaimID) {
-        let Some(claim) = self.claims.get(id) else {
+    fn remove_from_claims_to_deactivate(&mut self, id: ClaimID) {
+        let Some(claim) = self.claims.get(&id) else {
             return;
         };
         log::debug!("remove_from_claims_to_deactivate: {claim}");
         if let Some(claim_ids) =
             self.claims_to_deactivate_by_element_id.get_mut(&claim.dependent().element_id)
         {
-            claim_ids.retain(|x| x != id);
+            claim_ids.retain(|x| *x != id);
             if claim_ids.is_empty() {
                 self.claims_to_deactivate_by_element_id.remove(&claim.dependent().element_id);
             }
@@ -1426,7 +1417,7 @@ impl ClaimLookup {
     /// deactivated only once all claims dependent on it have already been
     /// deactivated).
     /// Returns an iterator of Claims marked to drop.
-    fn mark_to_deactivate(&mut self, lease_id: &LeaseID) -> impl Iterator<Item = Claim> {
+    fn mark_to_deactivate(&mut self, lease_id: LeaseID) -> impl Iterator<Item = Claim> {
         let claims_marked: Vec<Claim> = self.for_lease(lease_id).cloned().collect();
         log::debug!(
             "marking claims to deactivate for lease {lease_id}: [{}]",
@@ -1434,15 +1425,15 @@ impl ClaimLookup {
         );
         for claim in &claims_marked {
             self.claims_to_deactivate_by_element_id
-                .entry(claim.dependent().element_id.clone())
+                .entry(claim.dependent().element_id)
                 .or_insert(Vec::new())
-                .push(claim.id.clone());
+                .push(claim.id);
         }
         claims_marked.into_iter()
     }
 
     /// Removes claim from this lookup, and adds it to recipient.
-    fn move_to(&mut self, id: &ClaimID, recipient: &mut ClaimLookup) {
+    fn move_to(&mut self, id: ClaimID, recipient: &mut ClaimLookup) {
         if let Some(claim) = self.remove(id) {
             recipient.add(claim);
         }
@@ -1457,17 +1448,17 @@ impl ClaimLookup {
 
     fn for_required_element<'a>(
         &'a self,
-        element_id: &ElementID,
+        element_id: ElementID,
     ) -> impl Iterator<Item = &'a Claim> + 'a {
         self.claims_by_required_element_id
-            .get(element_id)
+            .get(&element_id)
             .into_iter()
             .flat_map(move |claim_ids| self.for_claim_ids(claim_ids))
     }
 
-    fn for_lease<'a>(&'a self, lease_id: &LeaseID) -> impl Iterator<Item = &'a Claim> + 'a {
+    fn for_lease<'a>(&'a self, lease_id: LeaseID) -> impl Iterator<Item = &'a Claim> + 'a {
         self.claims_by_lease
-            .get(lease_id)
+            .get(&lease_id)
             .into_iter()
             .flat_map(move |claim_ids| self.for_claim_ids(claim_ids))
     }
@@ -1476,10 +1467,10 @@ impl ClaimLookup {
     /// been dropped. See ClaimLookup::mark_to_deactivate for more details.
     fn marked_to_deactivate_for_element<'a>(
         &'a self,
-        element_id: &ElementID,
+        element_id: ElementID,
     ) -> impl Iterator<Item = &'a Claim> + 'a {
         self.claims_to_deactivate_by_element_id
-            .get(element_id)
+            .get(&element_id)
             .into_iter()
             .flat_map(move |claim_ids| self.for_claim_ids(claim_ids))
     }
@@ -1598,9 +1589,9 @@ mod tests {
     const TWO: IndexedPowerLevel = IndexedPowerLevel::from_same_level_and_index(2);
 
     #[track_caller]
-    fn assert_element_cleaned_up(broker: &Broker, element_id: &ElementID) {
+    fn assert_element_cleaned_up(broker: &Broker, element_id: ElementID) {
         assert!(
-            !broker.catalog.topology.element_exists(&element_id),
+            !broker.catalog.topology.element_exists(element_id),
             "topology.elements not cleaned up"
         );
         assert_eq!(broker.in_transition.get(&element_id), None, "in_transition not cleaned up");
@@ -1610,10 +1601,10 @@ mod tests {
     }
 
     #[track_caller]
-    fn assert_lease_cleaned_up(catalog: &Catalog, lease_id: &LeaseID) {
-        assert!(!catalog.leases.contains_key(lease_id), "{lease_id} still in catalog.leases");
+    fn assert_lease_cleaned_up(catalog: &Catalog, lease_id: LeaseID) {
+        assert!(!catalog.leases.contains_key(&lease_id), "{lease_id} still in catalog.leases");
         assert!(
-            catalog.lease_status.get(lease_id).is_none(),
+            catalog.lease_status.get(&lease_id).is_none(),
             "{lease_id} still in catalog.lease_status"
         );
         assert_eq!(
@@ -1789,13 +1780,13 @@ mod tests {
         lookup.add(claim_a_2_b_2.clone());
 
         assert_eq!(
-            lookup.mark_to_deactivate(&claim_a_2_b_2.lease_id).collect::<Vec<_>>(),
+            lookup.mark_to_deactivate(claim_a_2_b_2.lease_id).collect::<Vec<_>>(),
             vec![claim_a_1_b_1.clone(), claim_a_2_b_2.clone()]
         );
 
-        assert_eq!(lookup.remove(&claim_a_1_b_1.id), Some(claim_a_1_b_1.clone()));
-        assert_eq!(lookup.remove(&claim_a_2_b_2.id), Some(claim_a_2_b_2.clone()));
-        assert_eq!(lookup.remove(&claim_a_2_b_2.id), None);
+        assert_eq!(lookup.remove(claim_a_1_b_1.id), Some(claim_a_1_b_1.clone()));
+        assert_eq!(lookup.remove(claim_a_2_b_2.id), Some(claim_a_2_b_2.clone()));
+        assert_eq!(lookup.remove(claim_a_2_b_2.id), None);
 
         assert_eq!(lookup.claims.len(), 0);
         assert_eq!(lookup.claims_by_required_element_id.len(), 0);
@@ -1861,7 +1852,7 @@ mod tests {
                 vec![],
             )
             .expect("add_element failed");
-        assert_eq!(broker.lookup_name(&latinum), "Latinum".to_string());
+        assert_eq!(broker.lookup_name(latinum), "Latinum".to_string());
         assert_eq!(
             broker.get_current_level(&latinum),
             Some(IndexedPowerLevel { level: 7, index: 2 })
@@ -1931,21 +1922,21 @@ mod tests {
         assert_eq!(broker.get_required_level(&latinum), Some(ZERO));
 
         // Update current level to 0 to preserve ordering.
-        broker.update_current_level(&latinum, ZERO);
+        broker.update_current_level(latinum, ZERO);
 
         // Update required level to 1.
-        broker.update_required_level(&latinum, ONE, &mut EagerInspectWriter);
+        broker.update_required_level(latinum, ONE, &mut EagerInspectWriter);
 
         // Update required level to 1 again, should have no additional effect.
-        broker.update_required_level(&latinum, ONE, &mut EagerInspectWriter);
+        broker.update_required_level(latinum, ONE, &mut EagerInspectWriter);
 
         // Update current level to 1.
         // This should drop the current required level to ZERO, because there
         // isn't any claim preserving the required level update.
-        broker.update_current_level(&latinum, ONE);
+        broker.update_current_level(latinum, ONE);
 
         // Update current level to 1 again, should have no additional effect.
-        broker.update_current_level(&latinum, ONE);
+        broker.update_current_level(latinum, ONE);
 
         assert_data_tree!(inspect, root: {
         test: {
@@ -2030,7 +2021,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &mithril,
+                mithril,
                 token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -2152,7 +2143,7 @@ mod tests {
         // Unregister token_mithril, then try to add again, which should fail.
         broker
             .unregister_dependency_token(
-                &mithril,
+                mithril,
                 token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("unregister_dependency_token failed");
@@ -2181,7 +2172,7 @@ mod tests {
         let unobtanium = broker
             .add_element("Unobtainium", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
             .expect("add_element failed");
-        assert_eq!(broker.element_exists(&unobtanium), true);
+        assert_eq!(broker.element_exists(unobtanium), true);
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
         assert_data_tree!(inspect, root: {
         test: {
@@ -2234,7 +2225,7 @@ mod tests {
         }});
 
         broker.remove_element(&unobtanium);
-        assert_eq!(broker.element_exists(&unobtanium), false);
+        assert_eq!(broker.element_exists(unobtanium), false);
         assert_data_tree!(inspect, root: {
         test: {
             leases: {},
@@ -2311,12 +2302,12 @@ mod tests {
             Self { elements: HashMap::new() }
         }
 
-        fn update(&mut self, id: &ElementID, required_level: IndexedPowerLevel) {
-            self.elements.insert(id.clone(), required_level);
+        fn update(&mut self, id: ElementID, required_level: IndexedPowerLevel) {
+            self.elements.insert(id, required_level);
         }
 
-        fn remove(&mut self, id: &ElementID) {
-            self.elements.remove(id);
+        fn remove(&mut self, id: ElementID) {
+            self.elements.remove(&id);
         }
 
         #[track_caller]
@@ -2337,18 +2328,18 @@ mod tests {
             Self { leases: HashMap::new() }
         }
 
-        fn update(&mut self, id: &LeaseID, status: LeaseStatus) {
-            self.leases.insert(id.clone(), status);
+        fn update(&mut self, id: LeaseID, status: LeaseStatus) {
+            self.leases.insert(id, status);
         }
 
-        fn remove(&mut self, id: &LeaseID) {
-            self.leases.remove(id);
+        fn remove(&mut self, id: LeaseID) {
+            self.leases.remove(&id);
         }
 
         #[track_caller]
         fn assert_matches(&self, broker: &Broker) {
             for (id, expected_status) in &self.leases {
-                let status = broker.get_lease_status(id).expect(
+                let status = broker.get_lease_status(*id).expect(
                     "No lease exists with id ({id}), forgot to remove it from the matcher?",
                 );
                 assert_eq!(
@@ -2373,24 +2364,24 @@ mod tests {
             .add_element("b", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
             .expect("add_element failed");
 
-        assert_eq!(broker.adjust_lease_counter(&a, 5, 1), 1);
+        assert_eq!(broker.adjust_lease_counter(a, 5, 1), 1);
         // a:5: 1
-        assert_eq!(broker.adjust_lease_counter(&a, 5, 1), 2);
+        assert_eq!(broker.adjust_lease_counter(a, 5, 1), 2);
         // a:5: 2
-        assert_eq!(broker.adjust_lease_counter(&b, 6, 1), 1);
+        assert_eq!(broker.adjust_lease_counter(b, 6, 1), 1);
         // a:5: 2 b:6:1
-        assert_eq!(broker.adjust_lease_counter(&a, 15, 1), 1);
+        assert_eq!(broker.adjust_lease_counter(a, 15, 1), 1);
         // a:5: 2 a:15:1 b:6:1
 
-        assert_eq!(broker.adjust_lease_counter(&a, 5, 1), 3);
+        assert_eq!(broker.adjust_lease_counter(a, 5, 1), 3);
         // a:5: 3 a:15:1 b:6:1
-        assert_eq!(broker.adjust_lease_counter(&a, 5, -1), 2);
+        assert_eq!(broker.adjust_lease_counter(a, 5, -1), 2);
         // a:5: 2 a:15:1 b:6:1
-        assert_eq!(broker.adjust_lease_counter(&b, 6, -1), 0);
+        assert_eq!(broker.adjust_lease_counter(b, 6, -1), 0);
         // a:5: 2 a:15:1 b:6:0
-        assert_eq!(broker.adjust_lease_counter(&a, 5, -1), 1);
+        assert_eq!(broker.adjust_lease_counter(a, 5, -1), 1);
         // a:5: 1 a:15:1 b:6:0
-        assert_eq!(broker.adjust_lease_counter(&a, 15, -1), 0);
+        assert_eq!(broker.adjust_lease_counter(a, 15, -1), 0);
         // a:5: 1 a:15:0 b:6:0
     }
 
@@ -2406,7 +2397,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent1,
+                parent1,
                 parent1_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -2416,7 +2407,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent2,
+                parent2,
                 parent2_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -2447,9 +2438,9 @@ mod tests {
         let mut broker_status = BrokerStatusMatcher::new();
 
         // All elements should start with required level OFF.
-        broker_status.required_level.update(&parent1, OFF);
-        broker_status.required_level.update(&parent2, OFF);
-        broker_status.required_level.update(&child, OFF);
+        broker_status.required_level.update(parent1, OFF);
+        broker_status.required_level.update(parent2, OFF);
+        broker_status.required_level.update(child, OFF);
         broker_status.assert_matches(&broker);
 
         let v01: Vec<u64> = BINARY_POWER_LEVELS.iter().map(|&v| v as u64).collect();
@@ -2526,30 +2517,29 @@ mod tests {
         // P1's required level should become ON.
         // P2's required level should become ON.
         // The lease should be pending, as C isn't ON yet.
-        let lease =
-            broker.acquire_lease(&child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        broker_status.required_level.update(&parent1, ON);
-        broker_status.required_level.update(&parent2, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Pending);
+        let lease = broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        broker_status.required_level.update(parent1, ON);
+        broker_status.required_level.update(parent2, ON);
+        broker_status.lease.update(lease.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
-        assert_eq!(broker.adjust_lease_counter(&child, ON.level, 0), 1);
+        assert_eq!(broker.adjust_lease_counter(child, ON.level, 0), 1);
 
         // Update P1's current level to ON.
         // C's required level should not change, as it also requires P2.
-        broker.update_current_level(&parent1, ON);
+        broker.update_current_level(parent1, ON);
         broker_status.assert_matches(&broker);
 
         // Update P2's current level to ON.
         // C's required level should become ON, as both P1 and P2 are satisfied.
-        broker.update_current_level(&parent2, ON);
-        broker_status.required_level.update(&child, ON);
+        broker.update_current_level(parent2, ON);
+        broker_status.required_level.update(child, ON);
         broker_status.assert_matches(&broker);
 
         // Update C's current level to ON.
         // The lease should now be satisfied.
-        broker.update_current_level(&child, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child, ON);
+        broker_status.lease.update(lease.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // We expect one synthetic element.
@@ -2675,33 +2665,33 @@ mod tests {
         // Dropping the lease should cause both claims to be dropped.
         // C's required level should become OFF.
         // P1 and P2's required level should remain ON, as C depends on them.
-        broker.drop_lease(&lease.id).expect("drop failed");
-        broker_status.required_level.update(&child, OFF);
-        broker_status.lease.remove(&lease.id);
+        broker.drop_lease(lease.id).expect("drop failed");
+        broker_status.required_level.update(child, OFF);
+        broker_status.lease.remove(lease.id);
         broker_status.assert_matches(&broker);
 
-        assert_eq!(broker.adjust_lease_counter(&child, ON.level, 0), 0);
+        assert_eq!(broker.adjust_lease_counter(child, ON.level, 0), 0);
 
         // Drop C's level to OFF.
         // P1's required level should become OFF, as no lease requires it.
         // P2's required level should become OFF, as no lease requires it.
-        broker.update_current_level(&child, OFF);
-        broker_status.required_level.update(&parent1, OFF);
-        broker_status.required_level.update(&parent2, OFF);
+        broker.update_current_level(child, OFF);
+        broker_status.required_level.update(parent1, OFF);
+        broker_status.required_level.update(parent2, OFF);
         broker_status.assert_matches(&broker);
 
         // Try dropping the lease one more time, which should result in an error.
-        let extra_drop = broker.drop_lease(&lease.id);
+        let extra_drop = broker.drop_lease(lease.id);
         assert!(extra_drop.is_err());
 
-        assert_lease_cleaned_up(&broker.catalog, &lease.id);
+        assert_lease_cleaned_up(&broker.catalog, lease.id);
 
         broker.remove_element(&child);
-        assert_element_cleaned_up(&broker, &child);
+        assert_element_cleaned_up(&broker, child);
         broker.remove_element(&parent2);
-        assert_element_cleaned_up(&broker, &parent2);
+        assert_element_cleaned_up(&broker, parent2);
         broker.remove_element(&parent1);
-        assert_element_cleaned_up(&broker, &parent1);
+        assert_element_cleaned_up(&broker, parent1);
     }
 
     #[fuchsia::test]
@@ -2717,7 +2707,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &grandparent,
+                grandparent,
                 grandparent_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -2730,7 +2720,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent,
+                parent,
                 parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -2750,7 +2740,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .add_dependency(
-                &parent,
+                parent,
                 ON.level,
                 grandparent_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
@@ -2763,61 +2753,60 @@ mod tests {
         let mut broker_status = BrokerStatusMatcher::new();
 
         // All elements should start with required level OFF.
-        broker_status.required_level.update(&parent, OFF);
-        broker_status.required_level.update(&grandparent, OFF);
-        broker_status.required_level.update(&child, OFF);
+        broker_status.required_level.update(parent, OFF);
+        broker_status.required_level.update(grandparent, OFF);
+        broker_status.required_level.update(child, OFF);
         broker_status.assert_matches(&broker);
 
         // Lease C, which will result in two claims, one for P as the direct
         // dependency and GP as the transitive dependency.
         // P's required level should remain OFF, it depends on GP.
         // GP's required level should become ON.
-        let lease =
-            broker.acquire_lease(&child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        broker_status.required_level.update(&grandparent, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Pending);
+        let lease = broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        broker_status.required_level.update(grandparent, ON);
+        broker_status.lease.update(lease.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise GP's level to ON.
         // P's required level should become ON.
-        broker.update_current_level(&grandparent, ON);
-        broker_status.required_level.update(&parent, ON);
+        broker.update_current_level(grandparent, ON);
+        broker_status.required_level.update(parent, ON);
         broker_status.assert_matches(&broker);
 
         // Raise P's level to ON.
         // C's required level should become ON.
-        broker.update_current_level(&parent, ON);
-        broker_status.required_level.update(&child, ON);
+        broker.update_current_level(parent, ON);
+        broker_status.required_level.update(child, ON);
         broker_status.assert_matches(&broker);
 
         // Raise C's level to ON.
         // Lease C should now be satisfied as C is ON.
-        broker.update_current_level(&child, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child, ON);
+        broker_status.lease.update(lease.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop Lease C.
         // C's required level should become OFF, as it's claim is dropped.
         // P's required level should remain ON, until C is OFF.
         // GP's required level should remain ON, until P is OFF.
-        broker.drop_lease(&lease.id).expect("drop failed");
-        broker_status.required_level.update(&child, OFF);
-        broker_status.lease.remove(&lease.id);
+        broker.drop_lease(lease.id).expect("drop failed");
+        broker_status.required_level.update(child, OFF);
+        broker_status.lease.remove(lease.id);
         broker_status.assert_matches(&broker);
 
         // Lower C's level to OFF.
         // P's required level should become OFF.
-        broker.update_current_level(&child, OFF);
-        broker_status.required_level.update(&parent, OFF);
+        broker.update_current_level(child, OFF);
+        broker_status.required_level.update(parent, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower P's required level to OFF.
         // GP's required level should become OFF.
-        broker.update_current_level(&parent, OFF);
-        broker_status.required_level.update(&grandparent, OFF);
+        broker.update_current_level(parent, OFF);
+        broker_status.required_level.update(grandparent, OFF);
         broker_status.assert_matches(&broker);
 
-        assert_lease_cleaned_up(&broker.catalog, &lease.id);
+        assert_lease_cleaned_up(&broker.catalog, lease.id);
     }
 
     #[fuchsia::test]
@@ -2844,7 +2833,7 @@ mod tests {
             broker.add_element("GP", 10, vec![10, 90, 200], vec![]).expect("add_element failed");
         broker
             .register_dependency_token(
-                &grandparent,
+                grandparent,
                 grandparent_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -2877,7 +2866,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent,
+                parent,
                 parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -2914,12 +2903,10 @@ mod tests {
         // Grandparent should have a default required level of 10
         // and all others should have a default required level of 0.
         let mut broker_status = BrokerStatusMatcher::new();
-        broker_status.required_level.update(&parent, ZERO);
-        broker_status
-            .required_level
-            .update(&grandparent, IndexedPowerLevel { level: 10, index: 0 });
-        broker_status.required_level.update(&child1, ZERO);
-        broker_status.required_level.update(&child2, ZERO);
+        broker_status.required_level.update(parent, ZERO);
+        broker_status.required_level.update(grandparent, IndexedPowerLevel { level: 10, index: 0 });
+        broker_status.required_level.update(child1, ZERO);
+        broker_status.required_level.update(child2, ZERO);
         broker_status.assert_matches(&broker);
 
         // Acquire lease for Child 1. Initially, Grandparent should have
@@ -2928,102 +2915,98 @@ mod tests {
         // dependency on Grandparent. Grandparent has no dependencies so its
         // level should be raised first.
         let lease1 = broker
-            .acquire_lease(&child1, IndexedPowerLevel { level: 5, index: 1 }, zx::Koid::from_raw(1))
+            .acquire_lease(child1, IndexedPowerLevel { level: 5, index: 1 }, zx::Koid::from_raw(1))
             .expect("acquire failed");
         broker_status
             .required_level
-            .update(&grandparent, IndexedPowerLevel { level: 200, index: 2 });
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
+            .update(grandparent, IndexedPowerLevel { level: 200, index: 2 });
+        broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to 200. Now Parent claim should
         // be enforced, because its dependency on Grandparent is unblocked
         // raising its required level to 50.
-        broker.update_current_level(&grandparent, IndexedPowerLevel { level: 200, index: 2 });
-        broker_status.required_level.update(&parent, IndexedPowerLevel { level: 50, index: 2 });
+        broker.update_current_level(grandparent, IndexedPowerLevel { level: 200, index: 2 });
+        broker_status.required_level.update(parent, IndexedPowerLevel { level: 50, index: 2 });
         broker_status.assert_matches(&broker);
 
         // Update Parent's current level to 50.
         // Parent and Grandparent should have required levels of 50 and 200.
-        broker.update_current_level(&parent, IndexedPowerLevel { level: 50, index: 2 });
-        broker_status.required_level.update(&child1, IndexedPowerLevel { level: 5, index: 1 });
+        broker.update_current_level(parent, IndexedPowerLevel { level: 50, index: 2 });
+        broker_status.required_level.update(child1, IndexedPowerLevel { level: 5, index: 1 });
         broker_status.assert_matches(&broker);
 
         // Update Child 1's current level to 5.
         // Lease Child 1's is now satisfied.
-        broker.update_current_level(&child1, IndexedPowerLevel { level: 5, index: 1 });
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child1, IndexedPowerLevel { level: 5, index: 1 });
+        broker_status.lease.update(lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Acquire a lease for Child 2. Though Child 2 has nominal
         // requirements of Parent at 30 and Grandparent at 100, they are
         // superseded by Child 1's requirements of 50 and 200.
         let lease2 = broker
-            .acquire_lease(&child2, IndexedPowerLevel { level: 3, index: 1 }, zx::Koid::from_raw(2))
+            .acquire_lease(child2, IndexedPowerLevel { level: 3, index: 1 }, zx::Koid::from_raw(2))
             .expect("acquire failed");
-        broker_status.required_level.update(&child2, IndexedPowerLevel { level: 3, index: 1 });
-        broker_status.lease.update(&lease2.id, LeaseStatus::Pending);
+        broker_status.required_level.update(child2, IndexedPowerLevel { level: 3, index: 1 });
+        broker_status.lease.update(lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update Child 2's current level to 3.
         // Lease Child 2's is now satisfied.
-        broker.update_current_level(&child2, IndexedPowerLevel { level: 3, index: 1 });
-        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child2, IndexedPowerLevel { level: 3, index: 1 });
+        broker_status.lease.update(lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for Child 1.
         // Child's required level should be 0.
-        broker.drop_lease(&lease1.id).expect("drop failed");
-        broker_status.required_level.update(&child1, ZERO);
-        broker_status.lease.remove(&lease1.id);
+        broker.drop_lease(lease1.id).expect("drop failed");
+        broker_status.required_level.update(child1, ZERO);
+        broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // Drop Child 1's level to 0.
         // Parent's required level should immediately drop to 30.
         // Grandparent's required level will remain at 200 for now.
-        broker.update_current_level(&child1, ZERO);
-        broker_status.required_level.update(&parent, IndexedPowerLevel { level: 30, index: 1 });
-        broker_status.lease.remove(&lease1.id);
+        broker.update_current_level(child1, ZERO);
+        broker_status.required_level.update(parent, IndexedPowerLevel { level: 30, index: 1 });
+        broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // Lower Parent's current level to 30. Now Grandparent's required level
         // should drop to 90.
-        broker.update_current_level(&parent, IndexedPowerLevel { level: 30, index: 1 });
-        broker_status
-            .required_level
-            .update(&grandparent, IndexedPowerLevel { level: 90, index: 1 });
+        broker.update_current_level(parent, IndexedPowerLevel { level: 30, index: 1 });
+        broker_status.required_level.update(grandparent, IndexedPowerLevel { level: 90, index: 1 });
         broker_status.assert_matches(&broker);
 
         // All claims for Lease 1 should now be cleaned up,
         // even though Lease 2 is still active.
-        assert_lease_cleaned_up(&broker.catalog, &lease1.id);
+        assert_lease_cleaned_up(&broker.catalog, lease1.id);
 
         // Drop lease for Child 2.
         // Child 2's required level should drop to 0.
-        broker.drop_lease(&lease2.id).expect("drop failed");
-        broker_status.required_level.update(&child2, ZERO);
-        broker_status.lease.remove(&lease2.id);
+        broker.drop_lease(lease2.id).expect("drop failed");
+        broker_status.required_level.update(child2, ZERO);
+        broker_status.lease.remove(lease2.id);
         broker_status.assert_matches(&broker);
 
         // Lower Child 2's current level to 0.
         // Parent should have required level 0.
         // Grandparent's required level should remain 90.
-        broker.update_current_level(&child2, ZERO);
-        broker_status.required_level.update(&parent, ZERO);
+        broker.update_current_level(child2, ZERO);
+        broker_status.required_level.update(parent, ZERO);
         broker_status.assert_matches(&broker);
 
         // Lower GrandParent's current level to 90.
-        broker.update_current_level(&grandparent, IndexedPowerLevel { level: 90, index: 1 });
+        broker.update_current_level(grandparent, IndexedPowerLevel { level: 90, index: 1 });
         broker_status.assert_matches(&broker);
 
         // Lower Parent's current level to 0. Grandparent claim should now be
         // dropped and have its default required level of 10.
-        broker.update_current_level(&parent, ZERO);
-        broker_status
-            .required_level
-            .update(&grandparent, IndexedPowerLevel { level: 10, index: 0 });
+        broker.update_current_level(parent, ZERO);
+        broker_status.required_level.update(grandparent, IndexedPowerLevel { level: 10, index: 0 });
         broker_status.assert_matches(&broker);
-        assert_lease_cleaned_up(&broker.catalog, &lease2.id);
+        assert_lease_cleaned_up(&broker.catalog, lease2.id);
     }
 
     #[fuchsia::test]
@@ -3047,7 +3030,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &grandparent,
+                grandparent,
                 grandparent_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -3071,7 +3054,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent,
+                parent,
                 parent_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3106,10 +3089,10 @@ mod tests {
 
         // Initially, all elements should be OFF.
         let mut broker_status = BrokerStatusMatcher::new();
-        broker_status.required_level.update(&parent, OFF);
-        broker_status.required_level.update(&grandparent, OFF);
-        broker_status.required_level.update(&child1, OFF);
-        broker_status.required_level.update(&child2, OFF);
+        broker_status.required_level.update(parent, OFF);
+        broker_status.required_level.update(grandparent, OFF);
+        broker_status.required_level.update(child1, OFF);
+        broker_status.required_level.update(child2, OFF);
         broker_status.assert_matches(&broker);
 
         // Acquire lease for Child 1. Initially, Grandparent
@@ -3117,82 +3100,82 @@ mod tests {
         // on Parent and Parent has a dependency on Grandparent. Grandparent
         // has no dependencies so its level should be raised first.
         let lease1 =
-            broker.acquire_lease(&child1, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        broker_status.required_level.update(&grandparent, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
+            broker.acquire_lease(child1, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        broker_status.required_level.update(grandparent, ON);
+        broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to ON. Now Parent claim should
         // be enforced, because its dependency on Grandparent is unblocked
         // raising its required level to ON.
-        broker.update_current_level(&grandparent, ON);
-        broker_status.required_level.update(&parent, ON);
+        broker.update_current_level(grandparent, ON);
+        broker_status.required_level.update(parent, ON);
         broker_status.assert_matches(&broker);
 
         // Update Parent's current level to ON.
         // Child 1's required level should become ON.
-        broker.update_current_level(&parent, ON);
-        broker_status.required_level.update(&child1, ON);
+        broker.update_current_level(parent, ON);
+        broker_status.required_level.update(child1, ON);
         broker_status.assert_matches(&broker);
 
         // Update Child 1's current level to ON.
         // Lease Child 1's is now satisfied.
-        broker.update_current_level(&child1, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child1, ON);
+        broker_status.lease.update(lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Acquire a lease for Child 2. Child 2 requires Parent and
         // Grandparent ON, which is already met by Child 1's requirements.
         let lease2 =
-            broker.acquire_lease(&child2, ON, zx::Koid::from_raw(2)).expect("acquire failed");
-        broker_status.required_level.update(&child2, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Pending);
+            broker.acquire_lease(child2, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        broker_status.required_level.update(child2, ON);
+        broker_status.lease.update(lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update Child 2's current level to ON.
         // Lease Child 2's is now satisfied.
-        broker.update_current_level(&child2, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child2, ON);
+        broker_status.lease.update(lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for Child 1.
         // Child's required level should be OFF.
-        broker.drop_lease(&lease1.id).expect("drop failed");
-        broker_status.required_level.update(&child1, OFF);
-        broker_status.lease.remove(&lease1.id);
+        broker.drop_lease(lease1.id).expect("drop failed");
+        broker_status.required_level.update(child1, OFF);
+        broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // Drop Child 1's level to OFF.
         // Parent's required level should not be affected.
         // Grandparent's required level should not be affected.
-        broker.update_current_level(&child1, OFF);
-        broker_status.lease.remove(&lease1.id);
+        broker.update_current_level(child1, OFF);
+        broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // All claims for Lease 1 should now be cleaned up,
         // even though Lease 2 is still active.
-        assert_lease_cleaned_up(&broker.catalog, &lease1.id);
+        assert_lease_cleaned_up(&broker.catalog, lease1.id);
 
         // Drop lease for Child 2.
         // Child 2's required level should drop to OFF.
-        broker.drop_lease(&lease2.id).expect("drop failed");
-        broker_status.required_level.update(&child2, OFF);
-        broker_status.lease.remove(&lease2.id);
+        broker.drop_lease(lease2.id).expect("drop failed");
+        broker_status.required_level.update(child2, OFF);
+        broker_status.lease.remove(lease2.id);
         broker_status.assert_matches(&broker);
 
         // Lower Child 2's current level to OFF.
         // Parent should have required level OFF.
         // Grandparent's required level should remain ON.
-        broker.update_current_level(&child2, OFF);
-        broker_status.required_level.update(&parent, OFF);
+        broker.update_current_level(child2, OFF);
+        broker_status.required_level.update(parent, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower Parent's current level to OFF. Grandparent claim should now be
         // dropped and have its default required level of OFF.
-        broker.update_current_level(&parent, OFF);
-        broker_status.required_level.update(&grandparent, OFF);
+        broker.update_current_level(parent, OFF);
+        broker_status.required_level.update(grandparent, OFF);
         broker_status.assert_matches(&broker);
-        assert_lease_cleaned_up(&broker.catalog, &lease2.id);
+        assert_lease_cleaned_up(&broker.catalog, lease2.id);
     }
 
     #[fuchsia::test]
@@ -3213,7 +3196,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_c,
+                element_c,
                 element_c_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -3237,7 +3220,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_b,
+                element_b,
                 element_b_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -3275,7 +3258,7 @@ mod tests {
         let element_d_token = DependencyToken::create();
         broker
             .register_dependency_token(
-                &element_d,
+                element_d,
                 element_d_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -3301,99 +3284,99 @@ mod tests {
 
         // Initially, all elements should be OFF.
         let mut broker_status = BrokerStatusMatcher::new();
-        broker_status.required_level.update(&element_a, OFF);
-        broker_status.required_level.update(&element_b, OFF);
-        broker_status.required_level.update(&element_c, OFF);
-        broker_status.required_level.update(&element_d, OFF);
-        broker_status.required_level.update(&element_e, OFF);
+        broker_status.required_level.update(element_a, OFF);
+        broker_status.required_level.update(element_b, OFF);
+        broker_status.required_level.update(element_c, OFF);
+        broker_status.required_level.update(element_d, OFF);
+        broker_status.required_level.update(element_e, OFF);
         broker_status.assert_matches(&broker);
 
         // Acquire lease for E. C's required level should become on as a result.
         let lease1 =
-            broker.acquire_lease(&element_e, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        broker_status.required_level.update(&element_c, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
+            broker.acquire_lease(element_e, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        broker_status.required_level.update(element_c, ON);
+        broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise C's current level to ON. Now D should have its required level on.
-        broker.update_current_level(&element_c, ON);
-        broker_status.required_level.update(&element_d, ON);
+        broker.update_current_level(element_c, ON);
+        broker_status.required_level.update(element_d, ON);
         broker_status.assert_matches(&broker);
 
         // Update D's current level to ON. Now E should have its required level on.
-        broker.update_current_level(&element_d, ON);
-        broker_status.required_level.update(&element_e, ON);
+        broker.update_current_level(element_d, ON);
+        broker_status.required_level.update(element_e, ON);
         broker_status.assert_matches(&broker);
 
         // Raise E's current level to ON. Now the lease should be satisfied.
-        broker.update_current_level(&element_e, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
+        broker.update_current_level(element_e, ON);
+        broker_status.lease.update(lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Acquire a lease for A. A requires B, which is currently OFF and
         // C, which is already ON.
         let lease2 =
-            broker.acquire_lease(&element_a, ON, zx::Koid::from_raw(2)).expect("acquire failed");
-        broker_status.required_level.update(&element_b, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Pending);
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        broker_status.required_level.update(element_b, ON);
+        broker_status.lease.update(lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update B's current level to ON.
         // A's required level should become ON.
-        broker.update_current_level(&element_b, ON);
-        broker_status.required_level.update(&element_a, ON);
+        broker.update_current_level(element_b, ON);
+        broker_status.required_level.update(element_a, ON);
         broker_status.assert_matches(&broker);
 
         // Update A's current level to ON.
         // The lease on A is now satisfied.
-        broker.update_current_level(&element_a, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied);
+        broker.update_current_level(element_a, ON);
+        broker_status.lease.update(lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for A.
         // A's required level should become OFF.
-        broker.drop_lease(&lease2.id).expect("drop failed");
-        broker_status.required_level.update(&element_a, OFF);
-        broker_status.lease.remove(&lease2.id);
+        broker.drop_lease(lease2.id).expect("drop failed");
+        broker_status.required_level.update(element_a, OFF);
+        broker_status.lease.remove(lease2.id);
         broker_status.assert_matches(&broker);
 
         // Drop lease for E.
         // E's required level should become OFF.
-        broker.drop_lease(&lease1.id).expect("drop failed");
-        broker_status.required_level.update(&element_e, OFF);
-        broker_status.lease.remove(&lease1.id);
+        broker.drop_lease(lease1.id).expect("drop failed");
+        broker_status.required_level.update(element_e, OFF);
+        broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // Lower E's level to OFF.
         // D's required level should become OFF.
-        broker.update_current_level(&element_e, OFF);
-        broker_status.required_level.update(&element_d, OFF);
+        broker.update_current_level(element_e, OFF);
+        broker_status.required_level.update(element_d, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower A's level to OFF.
         // B's required level should become OFF.
-        broker.update_current_level(&element_a, OFF);
-        broker_status.required_level.update(&element_b, OFF);
+        broker.update_current_level(element_a, OFF);
+        broker_status.required_level.update(element_b, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower D's level to OFF.
         // No required levels should change.
-        broker.update_current_level(&element_d, OFF);
+        broker.update_current_level(element_d, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower B's level to OFF.
         // C's required level should now become OFF.
-        broker.update_current_level(&element_b, OFF);
-        broker_status.required_level.update(&element_c, OFF);
+        broker.update_current_level(element_b, OFF);
+        broker_status.required_level.update(element_c, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower C's level to OFF.
-        broker.update_current_level(&element_b, OFF);
+        broker.update_current_level(element_b, OFF);
         broker_status.assert_matches(&broker);
 
         // All claims for both leases should now be cleaned up.
-        assert_lease_cleaned_up(&broker.catalog, &lease1.id);
-        assert_lease_cleaned_up(&broker.catalog, &lease2.id);
+        assert_lease_cleaned_up(&broker.catalog, lease1.id);
+        assert_lease_cleaned_up(&broker.catalog, lease2.id);
     }
 
     #[fuchsia::test]
@@ -3417,7 +3400,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &grandparent,
+                grandparent,
                 grandparent_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("dup failed")
@@ -3441,7 +3424,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent1,
+                parent1,
                 parent1_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3462,7 +3445,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &parent2,
+                parent2,
                 parent2_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3492,71 +3475,71 @@ mod tests {
 
         // Initially, all elements should be OFF.
         let mut broker_status = BrokerStatusMatcher::new();
-        broker_status.required_level.update(&grandparent, OFF);
-        broker_status.required_level.update(&parent1, OFF);
-        broker_status.required_level.update(&parent2, OFF);
-        broker_status.required_level.update(&child, OFF);
+        broker_status.required_level.update(grandparent, OFF);
+        broker_status.required_level.update(parent1, OFF);
+        broker_status.required_level.update(parent2, OFF);
+        broker_status.required_level.update(child, OFF);
         broker_status.assert_matches(&broker);
 
         // Acquire lease for Child.
         let lease1 =
-            broker.acquire_lease(&child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
-        broker_status.required_level.update(&grandparent, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
+            broker.acquire_lease(child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        broker_status.required_level.update(grandparent, ON);
+        broker_status.lease.update(lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to ON. Now both Parent claims should
         // be enforced, because its dependency on Grandparent is unblocked
         // raising its required level to ON.
-        broker.update_current_level(&grandparent, ON);
-        broker_status.required_level.update(&parent1, ON);
-        broker_status.required_level.update(&parent2, ON);
+        broker.update_current_level(grandparent, ON);
+        broker_status.required_level.update(parent1, ON);
+        broker_status.required_level.update(parent2, ON);
         broker_status.assert_matches(&broker);
 
         // Update Parent 1's current level to ON.
         // Child's required level should not increase because Parent 2 is not yet ON.
-        broker.update_current_level(&parent1, ON);
+        broker.update_current_level(parent1, ON);
         broker_status.assert_matches(&broker);
 
         // Update Parent 2's current level to ON.
         // Child's required level should become ON.
-        broker.update_current_level(&parent2, ON);
-        broker_status.required_level.update(&child, ON);
+        broker.update_current_level(parent2, ON);
+        broker_status.required_level.update(child, ON);
         broker_status.assert_matches(&broker);
 
         // Update Child's current level to ON.
         // Lease on Child is now satisfied.
-        broker.update_current_level(&child, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
+        broker.update_current_level(child, ON);
+        broker_status.lease.update(lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for Child.
         // Child's required level should be OFF.
-        broker.drop_lease(&lease1.id).expect("drop failed");
-        broker_status.required_level.update(&child, OFF);
-        broker_status.lease.remove(&lease1.id);
+        broker.drop_lease(lease1.id).expect("drop failed");
+        broker_status.required_level.update(child, OFF);
+        broker_status.lease.remove(lease1.id);
         broker_status.assert_matches(&broker);
 
         // Lower Child's level to OFF.
         // Parent 1's required level should become OFF.
         // Parent 2's required level should become OFF.
         // Grandparent's required level should not be affected.
-        broker.update_current_level(&child, OFF);
-        broker_status.required_level.update(&parent1, OFF);
-        broker_status.required_level.update(&parent2, OFF);
+        broker.update_current_level(child, OFF);
+        broker_status.required_level.update(parent1, OFF);
+        broker_status.required_level.update(parent2, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower Parent 1's level to OFF.
         // Grandparent's required level should not be affected because Parent 2 is still ON.
-        broker.update_current_level(&parent1, OFF);
+        broker.update_current_level(parent1, OFF);
         broker_status.assert_matches(&broker);
 
         // Lower Parent 2's level to OFF.
         // Grandparent's required level should become OFF.
-        broker.update_current_level(&parent2, OFF);
-        broker_status.required_level.update(&grandparent, OFF);
+        broker.update_current_level(parent2, OFF);
+        broker_status.required_level.update(grandparent, OFF);
         broker_status.assert_matches(&broker);
-        assert_lease_cleaned_up(&broker.catalog, &lease1.id);
+        assert_lease_cleaned_up(&broker.catalog, lease1.id);
     }
 
     #[fuchsia::test]
@@ -3583,7 +3566,7 @@ mod tests {
             broker.add_element("B", 0, v012_u8.clone(), vec![]).expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_b,
+                element_b,
                 token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3591,7 +3574,7 @@ mod tests {
             broker.add_element("C", 0, v012_u8.clone(), vec![]).expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_c,
+                element_c,
                 token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3625,12 +3608,12 @@ mod tests {
 
         // Initial required levels for all elements should be 0.
         // Set all current levels to 0.
-        broker.update_current_level(&element_a, ZERO);
-        broker.update_current_level(&element_b, ZERO);
-        broker.update_current_level(&element_c, ZERO);
-        broker_status.required_level.update(&element_a, ZERO);
-        broker_status.required_level.update(&element_b, ZERO);
-        broker_status.required_level.update(&element_c, ZERO);
+        broker.update_current_level(element_a, ZERO);
+        broker.update_current_level(element_b, ZERO);
+        broker.update_current_level(element_c, ZERO);
+        broker_status.required_level.update(element_a, ZERO);
+        broker_status.required_level.update(element_b, ZERO);
+        broker_status.required_level.update(element_c, ZERO);
         broker_status.assert_matches(&broker);
 
         // Lease A[2].
@@ -3642,12 +3625,12 @@ mod tests {
         //
         // A's lease is pending.
         let lease_a =
-            broker.acquire_lease(&element_a, TWO, zx::Koid::from_raw(1)).expect("acquire failed");
-        let lease_a_id = lease_a.id.clone();
-        broker_status.required_level.update(&element_b, ONE);
-        broker_status.required_level.update(&element_c, ONE);
+            broker.acquire_lease(element_a, TWO, zx::Koid::from_raw(1)).expect("acquire failed");
+        let lease_a_id = lease_a.id;
+        broker_status.required_level.update(element_b, ONE);
+        broker_status.required_level.update(element_c, ONE);
         broker_status.assert_matches(&broker);
-        assert_eq!(broker.get_lease_status(&lease_a.id), Some(LeaseStatus::Pending));
+        assert_eq!(broker.get_lease_status(lease_a.id), Some(LeaseStatus::Pending));
 
         // Update B, C's current level to 1.
         //
@@ -3655,9 +3638,9 @@ mod tests {
         // B and C's current level should not change.
         //
         // A's lease should be satisfied.
-        broker.update_current_level(&element_b, ONE);
-        broker.update_current_level(&element_c, ONE);
-        broker_status.required_level.update(&element_a, TWO);
+        broker.update_current_level(element_b, ONE);
+        broker.update_current_level(element_c, ONE);
+        broker_status.required_level.update(element_a, TWO);
         broker_status.assert_matches(&broker);
 
         // Update A's current level to 2.
@@ -3666,8 +3649,8 @@ mod tests {
         // B and C's current level should not change.
         //
         // A's lease should be satisfied.
-        broker.update_current_level(&element_a, TWO);
-        broker_status.lease.update(&lease_a.id, LeaseStatus::Satisfied);
+        broker.update_current_level(element_a, TWO);
+        broker_status.lease.update(lease_a.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop Lease A.
@@ -3675,22 +3658,22 @@ mod tests {
         // A's required level should become 0, as it is no longer leased.
         //
         // Lease A should be pending.
-        broker.drop_lease(&lease_a.id).expect("drop_lease failed");
-        broker_status.required_level.update(&element_a, ZERO);
-        broker_status.lease.remove(&lease_a.id);
+        broker.drop_lease(lease_a.id).expect("drop_lease failed");
+        broker_status.required_level.update(element_a, ZERO);
+        broker_status.lease.remove(lease_a.id);
         broker_status.assert_matches(&broker);
 
         // Update A's current level to 0.
         //
         // B's required level should become 0, as A no longer needs it.
         // C's required level should become 0, as A no longer needs it.
-        broker.update_current_level(&element_a, ZERO);
-        broker_status.required_level.update(&element_b, ZERO);
-        broker_status.required_level.update(&element_c, ZERO);
+        broker.update_current_level(element_a, ZERO);
+        broker_status.required_level.update(element_b, ZERO);
+        broker_status.required_level.update(element_c, ZERO);
         broker_status.assert_matches(&broker);
 
         // All leases should be cleaned up.
-        assert_lease_cleaned_up(&broker.catalog, &lease_a_id);
+        assert_lease_cleaned_up(&broker.catalog, lease_a_id);
     }
 
     #[fuchsia::test]
@@ -3711,7 +3694,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_a,
+                element_a,
                 token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3750,18 +3733,18 @@ mod tests {
 
         // Initial required levels for all elements should be 0.
         // Set all current levels to 0.
-        broker.update_current_level(&element_a, ZERO);
-        broker.update_current_level(&element_b, ZERO);
-        broker.update_current_level(&element_c, ZERO);
-        broker_status.required_level.update(&element_a, ZERO);
-        broker_status.required_level.update(&element_b, ZERO);
-        broker_status.required_level.update(&element_c, ZERO);
+        broker.update_current_level(element_a, ZERO);
+        broker.update_current_level(element_b, ZERO);
+        broker.update_current_level(element_c, ZERO);
+        broker_status.required_level.update(element_a, ZERO);
+        broker_status.required_level.update(element_b, ZERO);
+        broker_status.required_level.update(element_c, ZERO);
         broker_status.assert_matches(&broker);
 
         // Remove A.
         // B & C's required level should remain OFF.
         broker.remove_element(&element_a);
-        broker_status.required_level.remove(&element_a);
+        broker_status.required_level.remove(element_a);
         broker_status.assert_matches(&broker);
 
         // Lease B & C.
@@ -3769,23 +3752,23 @@ mod tests {
         // Both leases should be pending, as they should
         // have a new dependency on the topology unsatisfiable element.
         let lease_b =
-            broker.acquire_lease(&element_b, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+            broker.acquire_lease(element_b, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         let lease_c =
-            broker.acquire_lease(&element_c, ON, zx::Koid::from_raw(2)).expect("acquire failed");
-        broker.update_current_level(&element_a, ON);
-        broker_status.lease.update(&lease_b.id, LeaseStatus::Pending);
-        broker_status.lease.update(&lease_c.id, LeaseStatus::Pending);
+            broker.acquire_lease(element_c, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+        broker.update_current_level(element_a, ON);
+        broker_status.lease.update(lease_b.id, LeaseStatus::Pending);
+        broker_status.lease.update(lease_c.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
-        broker.drop_lease(&lease_b.id).expect("drop_lease failed");
-        broker.drop_lease(&lease_c.id).expect("drop_lease failed");
-        broker_status.lease.remove(&lease_b.id);
-        broker_status.lease.remove(&lease_c.id);
+        broker.drop_lease(lease_b.id).expect("drop_lease failed");
+        broker.drop_lease(lease_c.id).expect("drop_lease failed");
+        broker_status.lease.remove(lease_b.id);
+        broker_status.lease.remove(lease_c.id);
         broker_status.assert_matches(&broker);
 
         // Leases should be cleaned up.
-        assert_lease_cleaned_up(&broker.catalog, &lease_b.id);
-        assert_lease_cleaned_up(&broker.catalog, &lease_c.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_b.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_c.id);
     }
 
     #[fuchsia::test]
@@ -3798,54 +3781,54 @@ mod tests {
         let mut broker_status = BrokerStatusMatcher::new();
 
         // Initial required level should be 0.
-        broker_status.required_level.update(&element, ZERO);
+        broker_status.required_level.update(element, ZERO);
         broker_status.assert_matches(&broker);
 
         // Acquire lease for level 1.
         let lease =
-            broker.acquire_lease(&element, ONE, zx::Koid::from_raw(1)).expect("acquire failed");
+            broker.acquire_lease(element, ONE, zx::Koid::from_raw(1)).expect("acquire failed");
         // Required level should become 1.
-        broker_status.required_level.update(&element, ONE);
+        broker_status.required_level.update(element, ONE);
         broker_status.assert_matches(&broker);
 
         // Drop lease.
-        broker.drop_lease(&lease.id).expect("drop failed");
+        broker.drop_lease(lease.id).expect("drop failed");
         // Required level should stay 1, to preserve orderly transition.
         broker_status.assert_matches(&broker);
 
         // Update current level to 1 to finish transition.
-        broker.update_current_level(&element, ONE);
+        broker.update_current_level(element, ONE);
         // Required level should become 0.
-        broker_status.required_level.update(&element, ZERO);
+        broker_status.required_level.update(element, ZERO);
         broker_status.assert_matches(&broker);
 
         // Acquire and drop a level 2 lease.
         let lease =
-            broker.acquire_lease(&element, TWO, zx::Koid::from_raw(2)).expect("acquire failed");
-        broker.drop_lease(&lease.id).expect("drop failed");
+            broker.acquire_lease(element, TWO, zx::Koid::from_raw(2)).expect("acquire failed");
+        broker.drop_lease(lease.id).expect("drop failed");
         // Required level should stay 0, to preserve orderly transition.
         broker_status.assert_matches(&broker);
 
         // Update current level to 0 to finish transition.
-        broker.update_current_level(&element, ZERO);
+        broker.update_current_level(element, ZERO);
         // Required level should remain 0 as the lease has been dropped.
         broker_status.assert_matches(&broker);
 
         // Acquire lease for level 1 and check required level.
         let lease =
-            broker.acquire_lease(&element, ONE, zx::Koid::from_raw(3)).expect("acquire failed");
-        broker_status.required_level.update(&element, ONE);
+            broker.acquire_lease(element, ONE, zx::Koid::from_raw(3)).expect("acquire failed");
+        broker_status.required_level.update(element, ONE);
         broker_status.assert_matches(&broker);
 
         // Drop lease and check required level.
-        broker.drop_lease(&lease.id).expect("drop failed");
+        broker.drop_lease(lease.id).expect("drop failed");
         // Required level should stay 1, to preserve orderly transition.
         broker_status.assert_matches(&broker);
 
         // Update current level to 1 to finish transition.
-        broker.update_current_level(&element, ONE);
+        broker.update_current_level(element, ONE);
         // Required level should become 0.
-        broker_status.required_level.update(&element, ZERO);
+        broker_status.required_level.update(element, ZERO);
         broker_status.assert_matches(&broker);
     }
 
@@ -3859,7 +3842,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &mithril,
+                mithril,
                 token_mithril.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -3999,7 +3982,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_gp1,
+                element_gp1,
                 token_gp1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -4008,7 +3991,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_gp2,
+                element_gp2,
                 token_gp2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -4039,7 +4022,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_x,
+                element_x,
                 token_x.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -4060,7 +4043,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_p1,
+                element_p1,
                 token_p1.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -4081,7 +4064,7 @@ mod tests {
             .expect("add_element failed");
         broker
             .register_dependency_token(
-                &element_p2,
+                element_p2,
                 token_p2.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed").into(),
             )
             .expect("register_dependency_token failed");
@@ -4150,138 +4133,138 @@ mod tests {
 
         // Grab all required leases and power on all elements.
         let lease_gp2 =
-            broker.acquire_lease(&element_gp2, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+            broker.acquire_lease(element_gp2, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         let lease_c1 =
-            broker.acquire_lease(&element_c1, ON, zx::Koid::from_raw(2)).expect("acquire failed");
+            broker.acquire_lease(element_c1, ON, zx::Koid::from_raw(2)).expect("acquire failed");
         let lease_c2 =
-            broker.acquire_lease(&element_c2, ON, zx::Koid::from_raw(3)).expect("acquire failed");
+            broker.acquire_lease(element_c2, ON, zx::Koid::from_raw(3)).expect("acquire failed");
         let lease_c3 =
-            broker.acquire_lease(&element_c3, ON, zx::Koid::from_raw(4)).expect("acquire failed");
+            broker.acquire_lease(element_c3, ON, zx::Koid::from_raw(4)).expect("acquire failed");
         let lease_c4 =
-            broker.acquire_lease(&element_c4, ON, zx::Koid::from_raw(5)).expect("acquire failed");
-        broker.update_current_level(&element_gp1, ON);
-        broker.update_current_level(&element_gp2, ON);
-        broker.update_current_level(&element_x, ON);
-        broker.update_current_level(&element_p1, ON);
-        broker.update_current_level(&element_p2, ON);
-        broker.update_current_level(&element_c1, ON);
-        broker.update_current_level(&element_c2, ON);
-        broker.update_current_level(&element_c3, ON);
-        broker.update_current_level(&element_c4, ON);
+            broker.acquire_lease(element_c4, ON, zx::Koid::from_raw(5)).expect("acquire failed");
+        broker.update_current_level(element_gp1, ON);
+        broker.update_current_level(element_gp2, ON);
+        broker.update_current_level(element_x, ON);
+        broker.update_current_level(element_p1, ON);
+        broker.update_current_level(element_p2, ON);
+        broker.update_current_level(element_c1, ON);
+        broker.update_current_level(element_c2, ON);
+        broker.update_current_level(element_c3, ON);
+        broker.update_current_level(element_c4, ON);
 
         // At this point, all elements should have required level ON.
-        broker_status.required_level.update(&element_gp1, ON);
-        broker_status.required_level.update(&element_gp2, ON);
-        broker_status.required_level.update(&element_x, ON);
-        broker_status.required_level.update(&element_p1, ON);
-        broker_status.required_level.update(&element_p2, ON);
-        broker_status.required_level.update(&element_c1, ON);
-        broker_status.required_level.update(&element_c2, ON);
-        broker_status.required_level.update(&element_c3, ON);
-        broker_status.required_level.update(&element_c4, ON);
-        broker_status.lease.update(&lease_gp2.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c1.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c2.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c3.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c4.id, LeaseStatus::Satisfied);
+        broker_status.required_level.update(element_gp1, ON);
+        broker_status.required_level.update(element_gp2, ON);
+        broker_status.required_level.update(element_x, ON);
+        broker_status.required_level.update(element_p1, ON);
+        broker_status.required_level.update(element_p2, ON);
+        broker_status.required_level.update(element_c1, ON);
+        broker_status.required_level.update(element_c2, ON);
+        broker_status.required_level.update(element_c3, ON);
+        broker_status.required_level.update(element_c4, ON);
+        broker_status.lease.update(lease_gp2.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c1.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c2.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c3.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c4.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Trigger disorderly drop of X.
         // All parents and grandparents of X should immediately drop to OFF.
         // X's required level should also become OFF, to
         // All leases, except for GP2, should now be pending.
-        broker.update_current_level(&element_x, OFF);
-        broker_status.required_level.update(&element_p1, OFF);
-        broker_status.required_level.update(&element_p2, OFF);
-        broker_status.required_level.update(&element_c1, OFF);
-        broker_status.required_level.update(&element_c2, OFF);
-        broker_status.required_level.update(&element_c3, OFF);
-        broker_status.required_level.update(&element_c4, OFF);
-        broker_status.lease.update(&lease_c1.id, LeaseStatus::Pending);
-        broker_status.lease.update(&lease_c2.id, LeaseStatus::Pending);
-        broker_status.lease.update(&lease_c3.id, LeaseStatus::Pending);
-        broker_status.lease.update(&lease_c4.id, LeaseStatus::Pending);
+        broker.update_current_level(element_x, OFF);
+        broker_status.required_level.update(element_p1, OFF);
+        broker_status.required_level.update(element_p2, OFF);
+        broker_status.required_level.update(element_c1, OFF);
+        broker_status.required_level.update(element_c2, OFF);
+        broker_status.required_level.update(element_c3, OFF);
+        broker_status.required_level.update(element_c4, OFF);
+        broker_status.lease.update(lease_c1.id, LeaseStatus::Pending);
+        broker_status.lease.update(lease_c2.id, LeaseStatus::Pending);
+        broker_status.lease.update(lease_c3.id, LeaseStatus::Pending);
+        broker_status.lease.update(lease_c4.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Turn off all parent/child elements to preserve ordering.
-        broker.update_current_level(&element_p1, OFF);
-        broker.update_current_level(&element_p2, OFF);
-        broker.update_current_level(&element_c1, OFF);
-        broker.update_current_level(&element_c2, OFF);
-        broker.update_current_level(&element_c3, OFF);
-        broker.update_current_level(&element_c4, OFF);
+        broker.update_current_level(element_p1, OFF);
+        broker.update_current_level(element_p2, OFF);
+        broker.update_current_level(element_c1, OFF);
+        broker.update_current_level(element_c2, OFF);
+        broker.update_current_level(element_c3, OFF);
+        broker.update_current_level(element_c4, OFF);
         broker_status.assert_matches(&broker);
 
         // Update X to ON.
         // P1 and P2's required level should become ON.
-        broker.update_current_level(&element_x, ON);
-        broker_status.required_level.update(&element_p1, ON);
-        broker_status.required_level.update(&element_p2, ON);
+        broker.update_current_level(element_x, ON);
+        broker_status.required_level.update(element_p1, ON);
+        broker_status.required_level.update(element_p2, ON);
         broker_status.assert_matches(&broker);
 
         // Update P1 and P2 to ON.
-        broker.update_current_level(&element_p1, ON);
-        broker.update_current_level(&element_p2, ON);
-        broker_status.required_level.update(&element_c1, ON);
-        broker_status.required_level.update(&element_c2, ON);
-        broker_status.required_level.update(&element_c3, ON);
-        broker_status.required_level.update(&element_c4, ON);
+        broker.update_current_level(element_p1, ON);
+        broker.update_current_level(element_p2, ON);
+        broker_status.required_level.update(element_c1, ON);
+        broker_status.required_level.update(element_c2, ON);
+        broker_status.required_level.update(element_c3, ON);
+        broker_status.required_level.update(element_c4, ON);
         broker_status.assert_matches(&broker);
 
         // Update C1, C2, C3, and C4 to ON.
         // All leases should now be satisfied.
-        broker.update_current_level(&element_c1, ON);
-        broker.update_current_level(&element_c2, ON);
-        broker.update_current_level(&element_c3, ON);
-        broker.update_current_level(&element_c4, ON);
-        broker_status.lease.update(&lease_c1.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c2.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c3.id, LeaseStatus::Satisfied);
-        broker_status.lease.update(&lease_c4.id, LeaseStatus::Satisfied);
+        broker.update_current_level(element_c1, ON);
+        broker.update_current_level(element_c2, ON);
+        broker.update_current_level(element_c3, ON);
+        broker.update_current_level(element_c4, ON);
+        broker_status.lease.update(lease_c1.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c2.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c3.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(lease_c4.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop all leases, power down children.
-        broker.drop_lease(&lease_gp2.id).expect("drop_lease failed");
-        broker.drop_lease(&lease_c1.id).expect("drop_lease failed");
-        broker.drop_lease(&lease_c2.id).expect("drop_lease failed");
-        broker.drop_lease(&lease_c3.id).expect("drop_lease failed");
-        broker.drop_lease(&lease_c4.id).expect("drop_lease failed");
-        broker_status.required_level.update(&element_c1, OFF);
-        broker_status.required_level.update(&element_c2, OFF);
-        broker_status.required_level.update(&element_c3, OFF);
-        broker_status.required_level.update(&element_c4, OFF);
-        broker_status.lease.remove(&lease_gp2.id);
-        broker_status.lease.remove(&lease_c1.id);
-        broker_status.lease.remove(&lease_c2.id);
-        broker_status.lease.remove(&lease_c3.id);
-        broker_status.lease.remove(&lease_c4.id);
+        broker.drop_lease(lease_gp2.id).expect("drop_lease failed");
+        broker.drop_lease(lease_c1.id).expect("drop_lease failed");
+        broker.drop_lease(lease_c2.id).expect("drop_lease failed");
+        broker.drop_lease(lease_c3.id).expect("drop_lease failed");
+        broker.drop_lease(lease_c4.id).expect("drop_lease failed");
+        broker_status.required_level.update(element_c1, OFF);
+        broker_status.required_level.update(element_c2, OFF);
+        broker_status.required_level.update(element_c3, OFF);
+        broker_status.required_level.update(element_c4, OFF);
+        broker_status.lease.remove(lease_gp2.id);
+        broker_status.lease.remove(lease_c1.id);
+        broker_status.lease.remove(lease_c2.id);
+        broker_status.lease.remove(lease_c3.id);
+        broker_status.lease.remove(lease_c4.id);
         broker_status.assert_matches(&broker);
 
         // Power down all elements to remove activated claims.
-        broker.update_current_level(&element_c1, OFF);
-        broker.update_current_level(&element_c2, OFF);
-        broker.update_current_level(&element_c3, OFF);
-        broker.update_current_level(&element_c4, OFF);
-        broker_status.required_level.update(&element_p1, OFF);
-        broker_status.required_level.update(&element_p2, OFF);
+        broker.update_current_level(element_c1, OFF);
+        broker.update_current_level(element_c2, OFF);
+        broker.update_current_level(element_c3, OFF);
+        broker.update_current_level(element_c4, OFF);
+        broker_status.required_level.update(element_p1, OFF);
+        broker_status.required_level.update(element_p2, OFF);
         broker_status.assert_matches(&broker);
 
-        broker.update_current_level(&element_p1, OFF);
-        broker.update_current_level(&element_p2, OFF);
-        broker_status.required_level.update(&element_x, OFF);
+        broker.update_current_level(element_p1, OFF);
+        broker.update_current_level(element_p2, OFF);
+        broker_status.required_level.update(element_x, OFF);
         broker_status.assert_matches(&broker);
 
-        broker.update_current_level(&element_x, OFF);
-        broker_status.required_level.update(&element_gp1, OFF);
-        broker_status.required_level.update(&element_gp2, OFF);
+        broker.update_current_level(element_x, OFF);
+        broker_status.required_level.update(element_gp1, OFF);
+        broker_status.required_level.update(element_gp2, OFF);
         broker_status.assert_matches(&broker);
 
         // All leases should be cleaned up.
-        assert_lease_cleaned_up(&broker.catalog, &lease_gp2.id);
-        assert_lease_cleaned_up(&broker.catalog, &lease_c1.id);
-        assert_lease_cleaned_up(&broker.catalog, &lease_c2.id);
-        assert_lease_cleaned_up(&broker.catalog, &lease_c3.id);
-        assert_lease_cleaned_up(&broker.catalog, &lease_c4.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_gp2.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_c1.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_c2.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_c3.id);
+        assert_lease_cleaned_up(&broker.catalog, lease_c4.id);
     }
 
     #[fuchsia::test]
@@ -4298,7 +4281,7 @@ mod tests {
         let token_a = DependencyToken::create();
         broker
             .register_dependency_token(
-                &element_a,
+                element_a,
                 token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
             )
             .unwrap();
@@ -4318,7 +4301,7 @@ mod tests {
         let token_b = DependencyToken::create();
         broker
             .register_dependency_token(
-                &element_b,
+                element_b,
                 token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
             )
             .unwrap();
@@ -4328,7 +4311,7 @@ mod tests {
         let token_d = DependencyToken::create();
         broker
             .register_dependency_token(
-                &element_d,
+                element_d,
                 token_d.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
             )
             .unwrap();
@@ -4348,7 +4331,7 @@ mod tests {
         let token_c = DependencyToken::create();
         broker
             .register_dependency_token(
-                &element_c,
+                element_c,
                 token_c.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into(),
             )
             .unwrap();
@@ -4379,25 +4362,25 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_c), Some(OFF));
 
         // Lease should be Pending.
-        assert_eq!(broker.get_lease_status(&lease.id), Some(LeaseStatus::Pending));
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
 
         // Now satisfy A and D.
-        broker.update_current_level(&element_a, ON);
-        broker.update_current_level(&element_d, ON);
+        broker.update_current_level(element_a, ON);
+        broker.update_current_level(element_d, ON);
 
         // Now B and C should have their required levels updated to ON.
         assert_eq!(broker.get_required_level(&element_b), Some(ON));
         assert_eq!(broker.get_required_level(&element_c), Some(ON));
-        assert_eq!(broker.get_lease_status(&lease.id), Some(LeaseStatus::Pending));
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Pending));
 
         // Now satisfy B and C.
-        broker.update_current_level(&element_b, ON);
-        broker.update_current_level(&element_c, ON);
+        broker.update_current_level(element_b, ON);
+        broker.update_current_level(element_c, ON);
         // Now all dependencies are satisfied.
-        assert_eq!(broker.get_lease_status(&lease.id), Some(LeaseStatus::Satisfied));
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
 
         // Drop the lease.
-        broker.drop_lease(&lease.id).unwrap();
+        broker.drop_lease(lease.id).unwrap();
         // B and C's required levels should immediately drop to OFF.
         assert_eq!(broker.get_required_level(&element_b), Some(OFF));
         assert_eq!(broker.get_required_level(&element_c), Some(OFF));
@@ -4406,8 +4389,8 @@ mod tests {
         assert_eq!(broker.get_required_level(&element_d), Some(ON));
 
         // Power down B and C.
-        broker.update_current_level(&element_b, OFF);
-        broker.update_current_level(&element_c, OFF);
+        broker.update_current_level(element_b, OFF);
+        broker.update_current_level(element_c, OFF);
 
         // Now A and D's required levels levels should drop to OFF.
         assert_eq!(broker.get_required_level(&element_a), Some(OFF));

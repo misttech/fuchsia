@@ -20,8 +20,8 @@ pub struct Credential {
 }
 
 impl Credential {
-    pub fn get_element(&self) -> &ElementID {
-        &self.element
+    pub fn get_element(&self) -> ElementID {
+        self.element
     }
 
     pub fn contains(&self, permissions: Permissions) -> bool {
@@ -30,8 +30,8 @@ impl Credential {
 
     /// Returns true iff self includes these permissions for the given element.
     #[cfg(test)]
-    pub fn authorizes(&self, element: &ElementID, permissions: Permissions) -> bool {
-        self.element == *element && self.permissions.contains(permissions)
+    pub fn authorizes(&self, element: ElementID, permissions: Permissions) -> bool {
+        self.element == element && self.permissions.contains(permissions)
     }
 }
 
@@ -94,7 +94,7 @@ impl Registry {
 
     pub fn register(
         &mut self,
-        element: &ElementID,
+        element: ElementID,
         credential_to_register: CredentialToRegister,
     ) -> Result<(), RegisterCredentialsError> {
         let Some(id) = credential_to_register.broker_token.koid() else {
@@ -140,14 +140,14 @@ impl Registry {
         cred
     }
 
-    fn for_element(&self, element: &ElementID) -> Vec<CredentialID> {
-        let Some(credential_ids) = self.credential_ids_by_element.get(element) else {
+    fn for_element(&self, element: ElementID) -> Vec<CredentialID> {
+        let Some(credential_ids) = self.credential_ids_by_element.get(&element) else {
             return Vec::new();
         };
         credential_ids.iter().cloned().collect()
     }
 
-    pub fn unregister_all_for_element(&mut self, element: &ElementID) {
+    pub fn unregister_all_for_element(&mut self, element: ElementID) {
         let credential_ids = self.for_element(element);
         for id in credential_ids {
             self.unregister_id(&id);
@@ -194,8 +194,8 @@ mod tests {
             id: DependencyToken::create().as_handle_ref().koid().expect("get_koid failed"),
             permissions: Permissions::MODIFY_DEPENDENT,
         };
-        assert_eq!(gold_credential.authorizes(&element_id, Permissions::MODIFY_DEPENDENT), true);
-        assert_eq!(gold_credential.authorizes(&element_id, Permissions::MODIFY_DEPENDENCY), false);
+        assert_eq!(gold_credential.authorizes(element_id, Permissions::MODIFY_DEPENDENT), true);
+        assert_eq!(gold_credential.authorizes(element_id, Permissions::MODIFY_DEPENDENCY), false);
     }
 
     #[fuchsia::test]
@@ -210,7 +210,7 @@ mod tests {
                 .into(),
             permissions: Permissions::MODIFY_DEPENDENT,
         };
-        registry.register(&element_kryptonite, credential_to_register).expect("register failed");
+        registry.register(element_kryptonite, credential_to_register).expect("register failed");
         use zx::HandleBased;
         let token_kryptonite_dup =
             token_kryptonite.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed");
