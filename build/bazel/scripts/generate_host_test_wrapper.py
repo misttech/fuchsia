@@ -189,6 +189,9 @@ def generate_test_wrapper(
     data_runfiles: list[str],
     test_args: list[str],
     bazel_execroot: Path,
+    python_test_lister: str,
+    python_test_interpreter: str,
+    python_test_info_file: Path,
 ) -> int:
     """Generate a Bazel host test wrapper script and related files.
 
@@ -216,6 +219,9 @@ def generate_test_wrapper(
         output_test_runtime_deps_json: The path to the output test runtime deps JSON file.
         test_args: The arguments to pass to the test.
         bazel_execroot: The path to the Bazel execroot.
+        python_test_lister: Optional. The path to the Python test lister tool.
+        python_test_interpreter: Optional. The path to the Python interpreter to use by the test.
+        python_test_imports_file: Optional. The path to the Python test imports file.
     """
     ninja_build_dir = find_ninja_build_dir()
     fuchsia_dir = build_utils.find_fuchsia_dir(from_path=ninja_build_dir)
@@ -361,6 +367,14 @@ def generate_test_wrapper(
         "{{test_name}}": shlex.quote(os.path.basename(entry_point)),
         "{{test_args}}": " ".join([shlex.quote(arg) for arg in real_args]),
         "{{env_vars}}": env_vars_expr,
+        "{{python_test_lister}}": (
+            shlex.quote(python_test_lister) if python_test_lister else ""
+        ),
+        "{{python_test_interpreter}}": (
+            shlex.quote(python_test_interpreter)
+            if python_test_interpreter
+            else ""
+        ),
     }
     launcher_text = host_test_wrapper_template.read_text()
     for substitution, value in subtitutions.items():
@@ -369,6 +383,13 @@ def generate_test_wrapper(
     output_launcher.parent.mkdir(parents=True, exist_ok=True)
     output_launcher.write_text(launcher_text)
     output_launcher.chmod(0o755)
+
+    # Generate a bazel_host_py_test_imports.txt file in the runtime directory,
+    # which will be used by the lister tool.
+    if python_test_info_file:
+        bazel_imports_path = output_runtime_dir / "bazel_host_py_test_info.json"
+        bazel_imports_path.write_text(python_test_info_file.read_text())
+        runtime_deps_paths.append(bazel_imports_path)
 
     # Add all host_test_data() runtime dependencies to the runtime directory
     # and the runtimes_deps list, but do not add them to the generated
@@ -475,6 +496,23 @@ def main() -> int:
         default=Path.cwd(),
         help="The Bazel execroot (default to current directory).",
     )
+    parser.add_argument(
+        "--python-test-lister",
+        type=str,
+        default="",
+        help="For python tests, runtime path of the test lister tool",
+    )
+    parser.add_argument(
+        "--python-test-interpreter",
+        type=str,
+        default="python3",
+        help="For python tests, the interpreter to use by the test.",
+    )
+    parser.add_argument(
+        "--python-test-info",
+        type=Path,
+        help="For python tests, an input file describing the test.",
+    )
     args = parser.parse_args()
 
     return generate_test_wrapper(
@@ -489,6 +527,9 @@ def main() -> int:
         args.data_runfile,
         args.test_arg,
         args.bazel_execroot,
+        args.python_test_lister,
+        args.python_test_interpreter,
+        args.python_test_info,
     )
 
 

@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 import argparse
+import importlib
+import json
 import os
 import sys
 import unittest
@@ -15,15 +17,57 @@ def load_tests_from_file(file_path: str) -> list[str]:
         print(f"File not found: {file_path}", file=sys.stderr)
         return []
 
-    # Assume the test binary is a PYZ archive.
-    try:
-        # Add the PYZ to sys.path so that imports within the module work.
-        sys.path.insert(0, file_path)
+    modules = []
 
-        importer = zipimport.zipimporter(file_path)
+    # For Bazel host tests, a file named bazel_host_py_test_info.json will be in the
+    # current (runtime) directory.
+    # LINT.IfChange(bazel_host_py_test_info_schema)
+    bazel_host_py_test_info_file = "bazel_host_py_test_info.json"
+    if os.path.exists(bazel_host_py_test_info_file):
+        runfiles_dir = file_path + ".runfiles"
+        assert os.path.isdir(
+            runfiles_dir
+        ), f"Test runfiles directory not found: {runfiles_dir}"
 
-        modules = []
+        with open(bazel_host_py_test_info_file, "r") as f:
+            test_info = json.load(f)
+
+        import_paths = test_info["imports"]
+        binary_path = test_info["binary"]
+        # LINT.ThenChange(//build/bazel/host_tests/host_py_test.bzl:bazel_host_py_test_info_schema)
+
+        for path in import_paths:
+            import_path = os.path.join(runfiles_dir, path)
+            sys.path.append(import_path)
+
+        # Get rid of the main runfiles sub-directory (which will be "_main" or a repository name),
+        # and of the .py suffix to compute the module path. E.g.:
+        #
+        #  _main/src/foo/test.py => src.foo.test
+        #
+        # _main/ should have been added as an import path in the loop above.
+        assert binary_path.endswith(
+            ".py"
+        ), f"Binary path {binary_path} does not end with .py"
+        binary_path_components = binary_path[:-3].split("/")
+        assert (
+            binary_path_components[0] in import_paths
+        ), f"{binary_path_components}: Binary path {binary_path} does not start with an valid import path from: {import_paths}"
+        module_name = ".".join(binary_path_components[1:])
         try:
+            module = importlib.import_module(module_name)
+            modules.append(module)
+        except ImportError as e:
+            print(f"Error importing module {module_name}: {e}", file=sys.stderr)
+            return []
+    else:
+        # For the GN case, assume the test binary is a PYZ archive.
+        try:
+            # Add the PYZ to sys.path so that imports within the module work.
+            sys.path.insert(0, file_path)
+
+            importer = zipimport.zipimporter(file_path)
+
             # Try to load the module with the same name as the file
             module_name = os.path.splitext(os.path.basename(file_path))[0]
             modules.append(importer.load_module(module_name))
@@ -41,13 +85,15 @@ def load_tests_from_file(file_path: str) -> list[str]:
                         except Exception:
                             pass
 
-        loader = unittest.TestLoader()
-        suite = unittest.TestSuite()
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+
+    try:
         for module in modules:
             suite.addTests(loader.loadTestsFromModule(module))
 
     except Exception as e:
-        print(f"Error reading file {file_path}: {e}", file=sys.stderr)
+        print(f"Error importing modules for {file_path}: {e}", file=sys.stderr)
         return []
 
     test_names = []
