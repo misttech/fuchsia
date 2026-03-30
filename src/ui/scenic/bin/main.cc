@@ -72,10 +72,6 @@ int main(int argc, const char** argv) {
   if (thread_status != ZX_OK) {
     FX_LOGS(WARNING) << "Failed to apply profile to main thread: " << thread_status;
   }
-  const zx_status_t vmar_status = fuchsia_scheduler::SetRoleForRootVmar("fuchsia.ui.scenic");
-  if (vmar_status != ZX_OK) {
-    FX_LOGS(WARNING) << "Failed to apply profile to root VMAR: " << vmar_status;
-  }
 
   loop.Run();
   FX_LOGS(INFO) << "Quit main Scenic loop.";
