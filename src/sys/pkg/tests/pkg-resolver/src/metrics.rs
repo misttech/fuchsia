@@ -410,7 +410,7 @@ mod pkg_resolver_create_tuf_client {
     // these because StatusCode won't let us create new ones in this range.
     async fn tests(tests: &[(u16, u16, metrics::CreateTufClientMigratedMetricDimensionResult)]) {
         let test_table: Vec<StatusTest> = tests
-            .into_iter()
+            .iter()
             .map(|&(min_code, max_code, status)| StatusTest { min_code, max_code, status })
             .collect();
         verify_status_ranges(&test_table).await
@@ -512,7 +512,7 @@ mod pkg_resolver_update_tuf_client {
     // these because StatusCode won't let us create new ones in this range.
     async fn tests(tests: &[(u16, u16, metrics::UpdateTufClientMigratedMetricDimensionResult)]) {
         let test_table: Vec<StatusTest> = tests
-            .into_iter()
+            .iter()
             .map(|&(min_code, max_code, status)| StatusTest { min_code, max_code, status })
             .collect();
         verify_status_ranges(&test_table).await
