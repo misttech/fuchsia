@@ -14,6 +14,7 @@
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/pmt.h>
@@ -128,7 +129,7 @@ zx_status_t Sdhci::WaitForReset(const SoftwareReset mask) {
     zx::nanosleep(zx::deadline_after(kWaitYieldTime));
   } while (zx::clock::get_monotonic() <= deadline);
 
-  FDF_LOG(ERROR, "sdhci: timed out while waiting for reset");
+  fdf::error("sdhci: timed out while waiting for reset");
   return ZX_ERR_TIMED_OUT;
 }
 
@@ -167,7 +168,7 @@ zx_status_t Sdhci::WaitForInhibit(const PresentState mask) const {
     zx::nanosleep(zx::deadline_after(kWaitYieldTime));
   } while (zx::clock::get_monotonic() <= deadline);
 
-  FDF_LOG(ERROR, "sdhci: timed out while waiting for command/data inhibit");
+  fdf::error("sdhci: timed out while waiting for command/data inhibit");
   return ZX_ERR_TIMED_OUT;
 }
 
@@ -180,7 +181,7 @@ zx_status_t Sdhci::WaitForInternalClockStable() const {
     zx::nanosleep(zx::deadline_after(kWaitYieldTime));
   } while (zx::clock::get_monotonic() <= deadline);
 
-  FDF_LOG(ERROR, "sdhci: timed out while waiting for internal clock to stabilize");
+  fdf::error("sdhci: timed out while waiting for internal clock to stabilize");
   return ZX_ERR_TIMED_OUT;
 }
 
@@ -225,11 +226,11 @@ bool Sdhci::CmdStageComplete() {
 
 void Sdhci::TransferComplete() {
   if (!pending_request_->cmd_complete) {
-    FDF_LOG(ERROR, "Transfer complete interrupt received before command complete");
+    fdf::error("Transfer complete interrupt received before command complete");
     pending_request_->status.set_error(1).set_command_timeout_error(1);
     ErrorRecovery();
   } else if (!pending_request_->data_transfer_complete()) {
-    FDF_LOG(ERROR, "Transfer complete interrupt received before data transferred");
+    fdf::error("Transfer complete interrupt received before data transferred");
     pending_request_->status.set_error(1).set_data_timeout_error(1);
     ErrorRecovery();
   } else {
@@ -302,7 +303,7 @@ void Sdhci::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_st
                       const zx_packet_interrupt_t* interrupt) {
   if (status != ZX_OK) {
     if (status != ZX_ERR_CANCELED) {
-      FDF_LOG(ERROR, "Failed to wait for interrupt: %s", zx_status_get_string(status));
+      fdf::error("Failed to wait for interrupt: {}", zx_status_get_string(status));
     }
     return;
   }
@@ -312,8 +313,8 @@ void Sdhci::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_st
   auto interrupt_status =
       InterruptStatus::Get().ReadFrom(&*regs_mmio_buffer_).WriteTo(&*regs_mmio_buffer_);
 
-  FDF_LOG(DEBUG, "got irq 0x%08x en 0x%08x", interrupt_status.reg_value(),
-          InterruptSignalEnable::Get().ReadFrom(&*regs_mmio_buffer_).reg_value());
+  fdf::debug("got irq 0x{:08x} en 0x{:08x}", interrupt_status.reg_value(),
+             InterruptSignalEnable::Get().ReadFrom(&*regs_mmio_buffer_).reg_value());
 
   std::lock_guard<std::mutex> lock(mtx_);
   if (pending_request_ && !pending_request_->request_complete) {
@@ -400,23 +401,23 @@ void Sdhci::RegisterVmo(RegisterVmoRequestView request, fdf::Arena& arena,
 
     zx_status_t status = stored_vmo.Pin(bti_, read_perm | write_perm, true);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to pin VMO %u for client %u: %s", request->vmo_id, request->client_id,
-              zx_status_get_string(status));
+      fdf::error("Failed to pin VMO {} for client {}: {}", request->vmo_id, request->client_id,
+                 zx_status_get_string(status));
       completer.buffer(arena).ReplyError(status);
       return;
     }
   } else {
     zx_status_t status = stored_vmo.Map(ZX_VM_PERM_READ | write_perm);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to map VMO %u for client %u: %s", request->vmo_id, request->client_id,
-              zx_status_get_string(status));
+      fdf::error("Failed to map VMO {} for client {}: {}", request->vmo_id, request->client_id,
+                 zx_status_get_string(status));
       completer.buffer(arena).ReplyError(status);
       return;
     }
     if (request->offset > stored_vmo.data().size() ||
         request->size > (stored_vmo.data().size() - request->offset)) {
-      FDF_LOG(ERROR, "Invalid size or offset for VMO %u for client %u: %s", request->vmo_id,
-              request->client_id, zx_status_get_string(status));
+      fdf::error("Invalid size or offset for VMO {} for client {}: {}", request->vmo_id,
+                 request->client_id, zx_status_get_string(status));
       completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
       return;
     }
@@ -474,10 +475,10 @@ void Sdhci::Request(RequestRequestView request, fdf::Arena& arena,
 }
 
 void Sdhci::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer) {
-  FDF_LOG(DEBUG, "Enabling CQHCI");
+  fdf::debug("Enabling CQHCI");
   std::lock_guard<std::mutex> lock(mtx_);
   if (pending_request_) {
-    FDF_LOG(ERROR, "Enabled CQHCI with inflight request");
+    fdf::error("Enabled CQHCI with inflight request");
     completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
     return;
   }
@@ -498,11 +499,11 @@ void Sdhci::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync& completer
 void Sdhci::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& completer) {
   std::lock_guard<std::mutex> lock(mtx_);
   if (!cqhci_enabled_) {
-    FDF_LOG(ERROR, "Disabled CQHCI before enabling");
+    fdf::error("Disabled CQHCI before enabling");
     completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
     return;
   }
-  FDF_LOG(INFO, "Disabling CQHCI");
+  fdf::info("Disabling CQHCI");
 
   InterruptSignalEnable::Get()
       .ReadFrom(&*regs_mmio_buffer_)
@@ -524,7 +525,7 @@ void Sdhci::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& complet
 void Sdhci::OnLifelineClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait,
                              zx_status_t status, const zx_packet_signal_t* signal) {
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Lifeline wait failed: %s", zx_status_get_string(status));
+    fdf::error("Lifeline wait failed: {}", zx_status_get_string(status));
     return;
   }
   if (signal->observed & ZX_EVENTPAIR_PEER_CLOSED) {
@@ -534,7 +535,7 @@ void Sdhci::OnLifelineClosed(async_dispatcher_t* dispatcher, async::WaitBase* wa
 
 void Sdhci::OnInterruptDelegateStopped() {
   std::lock_guard<std::mutex> lock(mtx_);
-  FDF_LOG(DEBUG, "sdhci: OnInterruptDelegateStopped");
+  fdf::debug("sdhci: OnInterruptDelegateStopped");
   virtual_irq_handler_.Cancel();
   virtual_irq_lifeline_wait_.Cancel();
   virtual_irq_.reset();
@@ -546,7 +547,7 @@ void Sdhci::OnInterruptDelegateStopped() {
 
   if (zx_status_t status = irq_handler_.Begin(irq_dispatcher_.async_dispatcher());
       status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to bind interrupt to dispatcher: %s", zx_status_get_string(status));
+    fdf::error("Failed to bind interrupt to dispatcher: {}", zx_status_get_string(status));
   }
 }
 
@@ -610,18 +611,18 @@ void Sdhci::InitializeCommandQueueing(InitializeCommandQueueingRequestView reque
 
           if (zx_status_t status = virtual_irq_handler_.Begin(irq_dispatcher_.async_dispatcher());
               status != ZX_OK) {
-            FDF_LOG(ERROR, "Failed to bind virtual irq to dispatcher: %s",
-                    zx_status_get_string(status));
+            fdf::error("Failed to bind virtual irq to dispatcher: {}",
+                       zx_status_get_string(status));
           }
           if (zx_status_t status =
                   virtual_irq_lifeline_wait_.Begin(irq_dispatcher_.async_dispatcher());
               status != ZX_OK) {
-            FDF_LOG(ERROR, "Failed to bind virtual irq lifeline wait to dispatcher: %s",
-                    zx_status_get_string(status));
+            fdf::error("Failed to bind virtual irq lifeline wait to dispatcher: {}",
+                       zx_status_get_string(status));
           }
         }
         if (zx_status_t status = irq_handler_.Cancel(); status != ZX_OK) {
-          FDF_LOG(ERROR, "Failed to unbind interrupt: %s", zx_status_get_string(status));
+          fdf::error("Failed to unbind interrupt: {}", zx_status_get_string(status));
         }
         sync_completion_signal(&completion);
       });
@@ -761,8 +762,8 @@ zx::result<Sdhci::PendingRequest> Sdhci::StartRequest(
     }
 
     if (blockcount > std::numeric_limits<BlockCountType>::max()) {
-      FDF_LOG(ERROR, "Block count (%lu) exceeds the maximum (%u)", blockcount,
-              std::numeric_limits<BlockCountType>::max());
+      fdf::error("Block count ({}) exceeds the maximum ({})", blockcount,
+                 std::numeric_limits<BlockCountType>::max());
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
 
@@ -825,7 +826,7 @@ zx_status_t Sdhci::SetUpDma(const fuchsia_hardware_sdmmc::wire::SdmmcReq& reques
   status = zx_cache_flush(iobuf_->virt(), builder.descriptor_count() * descriptor_size,
                           ZX_CACHE_FLUSH_DATA);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to clean cache: %s", zx_status_get_string(status));
+    fdf::error("Failed to clean cache: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -837,17 +838,17 @@ zx_status_t Sdhci::SetUpDma(const fuchsia_hardware_sdmmc::wire::SdmmcReq& reques
 zx_status_t Sdhci::SetUpBuffer(const fuchsia_hardware_sdmmc::wire::SdmmcReq& request,
                                PendingRequest* const pending_request) {
   if (request.buffers.size() != 1) {
-    FDF_LOG(ERROR, "Only one buffer is supported without DMA");
+    fdf::error("Only one buffer is supported without DMA");
     return ZX_ERR_NOT_SUPPORTED;
   }
   auto& buffer = request.buffers[0];
   if (buffer.size % request.blocksize != 0) {
-    FDF_LOG(ERROR, "Total buffer size (%lu) is not a multiple of the request block size (%u)",
-            buffer.size, request.blocksize);
+    fdf::error("Total buffer size ({}) is not a multiple of the request block size ({})",
+               buffer.size, request.blocksize);
     return ZX_ERR_INVALID_ARGS;
   }
   if (request.blocksize % sizeof(uint32_t) != 0) {
-    FDF_LOG(ERROR, "Block size (%u) is not a multiple of %zu", request.blocksize, sizeof(uint32_t));
+    fdf::error("Block size ({}) is not a multiple of {}", request.blocksize, sizeof(uint32_t));
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -858,13 +859,13 @@ zx_status_t Sdhci::SetUpBuffer(const fuchsia_hardware_sdmmc::wire::SdmmcReq& req
     zx_status_t status =
         pending_request->vmo_mapper.Map(*buffer_vmo, 0, 0, ZX_VM_PERM_READ | write_perm);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to map request VMO: %s", zx_status_get_string(status));
+      fdf::error("Failed to map request VMO: {}", zx_status_get_string(status));
       return status;
     }
 
     if (buffer.offset > pending_request->vmo_mapper.size() ||
         buffer.size > (pending_request->vmo_mapper.size() - buffer.offset)) {
-      FDF_LOG(ERROR, "Buffer size and offset out of range of the VMO");
+      fdf::error("Buffer size and offset out of range of the VMO");
       return ZX_ERR_OUT_OF_RANGE;
     }
 
@@ -875,19 +876,19 @@ zx_status_t Sdhci::SetUpBuffer(const fuchsia_hardware_sdmmc::wire::SdmmcReq& req
     vmo_store::StoredVmo<OwnedVmoInfo>* vmo =
         registered_vmo_stores_[request.client_id].GetVmo(buffer.buffer.vmo_id());
     if (vmo == nullptr) {
-      FDF_LOG(ERROR, "Unknown VMO ID %u for client %u", buffer.buffer.vmo_id(), request.client_id);
+      fdf::error("Unknown VMO ID {} for client {}", buffer.buffer.vmo_id(), request.client_id);
       return ZX_ERR_NOT_FOUND;
     }
 
     // Size and offset were previously validated by RegisterVmo().
     const cpp20::span<uint8_t> data = vmo->data().subspan(vmo->meta().offset, vmo->meta().size);
     if (buffer.offset > data.size() || buffer.size > (data.size() - buffer.offset)) {
-      FDF_LOG(ERROR, "Buffer size and offset out of range of the VMO");
+      fdf::error("Buffer size and offset out of range of the VMO");
       return ZX_ERR_OUT_OF_RANGE;
     }
     pending_request->data = data.subspan(buffer.offset, buffer.size);
   } else {
-    FDF_LOG(ERROR, "Unknown buffer type");
+    fdf::error("Unknown buffer type");
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -920,7 +921,7 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::FinishRequest(
       zx_status_t status = region.buffer.vmo().op_range(ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
                                                         region.offset, region.size, nullptr, 0);
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to clean/invalidate cache: %s", zx_status_get_string(status));
+        fdf::error("Failed to clean/invalidate cache: {}", zx_status_get_string(status));
         return zx::error(status);
       }
     }
@@ -932,55 +933,54 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::FinishRequest(
   }
 
   if (interrupt_status.tuning_error()) {
-    FDF_LOG(ERROR, "Tuning error");
+    fdf::error("Tuning error");
   }
   if (interrupt_status.adma_error()) {
-    FDF_LOG(ERROR, "ADMA error cmd%u", request.cmd_idx);
+    fdf::error("ADMA error cmd{}", request.cmd_idx);
   }
   if (interrupt_status.auto_cmd_error()) {
-    FDF_LOG(ERROR, "Auto cmd error cmd%u", request.cmd_idx);
+    fdf::error("Auto cmd error cmd{}", request.cmd_idx);
   }
   if (interrupt_status.current_limit_error()) {
-    FDF_LOG(ERROR, "Current limit error cmd%u", request.cmd_idx);
+    fdf::error("Current limit error cmd{}", request.cmd_idx);
   }
   if (interrupt_status.data_end_bit_error()) {
-    FDF_LOG(ERROR, "Data end bit error cmd%u", request.cmd_idx);
+    fdf::error("Data end bit error cmd{}", request.cmd_idx);
   }
   if (interrupt_status.data_crc_error()) {
     if (request.suppress_error_messages) {
-      FDF_LOG(DEBUG, "Data CRC error cmd%u", request.cmd_idx);
+      fdf::debug("Data CRC error cmd{}", request.cmd_idx);
     } else {
-      FDF_LOG(ERROR, "Data CRC error cmd%u", request.cmd_idx);
+      fdf::error("Data CRC error cmd{}", request.cmd_idx);
     }
   }
   if (interrupt_status.data_timeout_error()) {
-    FDF_LOG(ERROR, "Data timeout error cmd%u (%zu buffers)", request.cmd_idx,
-            request.buffers.size());
+    fdf::error("Data timeout error cmd{} ({} buffers)", request.cmd_idx, request.buffers.size());
   }
   if (interrupt_status.command_index_error()) {
-    FDF_LOG(ERROR, "Command index error cmd%u", request.cmd_idx);
+    fdf::error("Command index error cmd{}", request.cmd_idx);
   }
   if (interrupt_status.command_end_bit_error()) {
-    FDF_LOG(ERROR, "Command end bit error cmd%u", request.cmd_idx);
+    fdf::error("Command end bit error cmd{}", request.cmd_idx);
   }
   if (interrupt_status.command_crc_error()) {
     if (request.suppress_error_messages) {
-      FDF_LOG(DEBUG, "Command CRC error cmd%u", request.cmd_idx);
+      fdf::debug("Command CRC error cmd{}", request.cmd_idx);
     } else {
-      FDF_LOG(ERROR, "Command CRC error cmd%u", request.cmd_idx);
+      fdf::error("Command CRC error cmd{}", request.cmd_idx);
     }
   }
   if (interrupt_status.command_timeout_error()) {
     if (request.suppress_error_messages) {
-      FDF_LOG(DEBUG, "Command timeout error cmd%u", request.cmd_idx);
+      fdf::debug("Command timeout error cmd{}", request.cmd_idx);
     } else {
-      FDF_LOG(ERROR, "Command timeout error cmd%u", request.cmd_idx);
+      fdf::error("Command timeout error cmd{}", request.cmd_idx);
     }
   }
   if (interrupt_status.reg_value() ==
       InterruptStatusEnable::Get().FromValue(0).set_error(1).reg_value()) {
     // Log an unknown error only if no other bits were set.
-    FDF_LOG(ERROR, "Unknown error cmd%u", request.cmd_idx);
+    fdf::error("Unknown error cmd{}", request.cmd_idx);
   }
 
   return zx::error(ZX_ERR_IO);
@@ -997,13 +997,12 @@ void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& ar
         request->voltage);
     fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(voltage);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      fdf::error("Failed to send VendorConfigureBus request: {}", result.status_string());
       completer.buffer(arena).ReplyError(result.status());
       return;
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to set signal voltage: %s",
-              zx_status_get_string(result->error_value()));
+      fdf::error("Failed to set signal voltage: {}", zx_status_get_string(result->error_value()));
       completer.buffer(arena).Reply(result->take_error());
       return;
     }
@@ -1016,7 +1015,7 @@ void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& ar
   // Validate the controller supports the requested voltage
   if ((request->voltage == fuchsia_hardware_sdmmc::SdmmcVoltage::kV330) &&
       !(info_.caps & fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330)) {
-    FDF_LOG(DEBUG, "sdhci: 3.3V signal voltage not supported");
+    fdf::debug("sdhci: 3.3V signal voltage not supported");
     completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
     return;
   }
@@ -1033,7 +1032,7 @@ void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& ar
       break;
     }
     default:
-      FDF_LOG(ERROR, "sdhci: unknown signal voltage value %u", request->voltage);
+      fdf::error("sdhci: unknown signal voltage value {}", static_cast<uint32_t>(request->voltage));
       completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
       return;
   }
@@ -1047,7 +1046,7 @@ void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& ar
   zx::nanosleep(zx::deadline_after(kVoltageStabilizationTime));
 
   if (ctrl2.ReadFrom(&*regs_mmio_buffer_).voltage_1v8_signalling_enable() != voltage_1v8_value) {
-    FDF_LOG(ERROR, "sdhci: voltage regulator output did not become stable");
+    fdf::error("sdhci: voltage regulator output did not become stable");
     // Cut power to the card if the voltage switch failed.
     PowerControl::Get()
         .ReadFrom(&*regs_mmio_buffer_)
@@ -1057,7 +1056,7 @@ void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& ar
     return;
   }
 
-  FDF_LOG(DEBUG, "sdhci: switch signal voltage to %d", request->voltage);
+  fdf::debug("sdhci: switch signal voltage to {}", static_cast<uint32_t>(request->voltage));
 
   completer.buffer(arena).ReplySuccess();
 }
@@ -1069,12 +1068,12 @@ void Sdhci::SetBusWidth(SetBusWidthRequestView request, fdf::Arena& arena,
         request->bus_width);
     fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(width);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      fdf::error("Failed to send VendorConfigureBus request: {}", result.status_string());
       completer.buffer(arena).ReplyError(result.status());
       return;
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to set bus width: %s", zx_status_get_string(result->error_value()));
+      fdf::error("Failed to set bus width: {}", zx_status_get_string(result->error_value()));
       completer.buffer(arena).Reply(result->take_error());
       return;
     }
@@ -1086,7 +1085,7 @@ void Sdhci::SetBusWidth(SetBusWidthRequestView request, fdf::Arena& arena,
 
   if ((request->bus_width == fuchsia_hardware_sdmmc::SdmmcBusWidth::kEight) &&
       !(info_.caps & fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8)) {
-    FDF_LOG(DEBUG, "sdhci: 8-bit bus width not supported");
+    fdf::debug("sdhci: 8-bit bus width not supported");
     completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
     return;
   }
@@ -1104,14 +1103,14 @@ void Sdhci::SetBusWidth(SetBusWidthRequestView request, fdf::Arena& arena,
       ctrl1.set_extended_data_transfer_width(1).set_data_transfer_width_4bit(0);
       break;
     default:
-      FDF_LOG(ERROR, "sdhci: unknown bus width value %u", request->bus_width);
+      fdf::error("sdhci: unknown bus width value {}", static_cast<uint32_t>(request->bus_width));
       completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
       return;
   }
 
   ctrl1.WriteTo(&*regs_mmio_buffer_);
 
-  FDF_LOG(DEBUG, "sdhci: set bus width to %d", request->bus_width);
+  fdf::debug("sdhci: set bus width to {}", static_cast<uint32_t>(request->bus_width));
 
   completer.buffer(arena).ReplySuccess();
 }
@@ -1136,11 +1135,11 @@ zx_status_t Sdhci::SetBusClock(uint32_t frequency_hz) {
         frequency_hz);
     fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(request);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      fdf::error("Failed to send VendorConfigureBus request: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to set bus clock: %s", zx_status_get_string(result->error_value()));
+      fdf::error("Failed to set bus clock: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
     return ZX_OK;
@@ -1179,12 +1178,12 @@ void Sdhci::SetTiming(SetTimingRequestView request, fdf::Arena& arena,
         fuchsia_hardware_sdhci::wire::DeviceVendorConfigureBusRequest::WithTiming(request->timing);
     fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(timing);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      fdf::error("Failed to send VendorConfigureBus request: {}", result.status_string());
       completer.buffer(arena).ReplyError(result.status());
       return;
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Failed to set timing: %s", zx_status_get_string(result->error_value()));
+      fdf::error("Failed to set timing: {}", zx_status_get_string(result->error_value()));
       completer.buffer(arena).Reply(result->take_error());
       return;
     }
@@ -1228,13 +1227,13 @@ void Sdhci::SetTiming(SetTimingRequestView request, fdf::Arena& arena,
       ctrl2.set_uhs_mode_select(HostControl2::kUhsModeSdr50);
       break;
     default:
-      FDF_LOG(ERROR, "sdhci: unknown timing value %u", request->timing);
+      fdf::error("sdhci: unknown timing value {}", static_cast<uint32_t>(request->timing));
       completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
       return;
   }
   ctrl2.WriteTo(&*regs_mmio_buffer_);
 
-  FDF_LOG(DEBUG, "sdhci: set bus timing to %d", request->timing);
+  fdf::debug("sdhci: set bus timing to {}", static_cast<uint32_t>(request->timing));
 
   completer.buffer(arena).ReplySuccess();
 }
@@ -1244,7 +1243,7 @@ void Sdhci::HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) {
 
   fdf::WireUnownedResult result = sdhci_.buffer(arena_)->HwReset();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send HwReset request: %s", result.status_string());
+    fdf::error("Failed to send HwReset request: {}", result.status_string());
     completer.buffer(arena).ReplyError(result.status());
     return;
   }
@@ -1259,7 +1258,7 @@ zx_status_t Sdhci::PerformVendorTuning(uint32_t cmd_idx) {
   sync_completion_t completion;
   async::PostTask(irq_dispatcher_.async_dispatcher(), [this, &completion]() {
     if (zx_status_t status = irq_handler_.Cancel(); status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to unbind interrupt: %s", zx_status_get_string(status));
+      fdf::error("Failed to unbind interrupt: {}", zx_status_get_string(status));
     }
     sync_completion_signal(&completion);
   });
@@ -1273,18 +1272,18 @@ zx_status_t Sdhci::PerformVendorTuning(uint32_t cmd_idx) {
   async::PostTask(irq_dispatcher_.async_dispatcher(), [this, &completion]() {
     if (zx_status_t status = irq_handler_.Begin(irq_dispatcher_.async_dispatcher());
         status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to wait on interrupt: %s", zx_status_get_string(status));
+      fdf::error("Failed to wait on interrupt: {}", zx_status_get_string(status));
     }
     sync_completion_signal(&completion);
   });
   sync_completion_wait(&completion, zx::duration::infinite().get());
 
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send VendorPerformTuning request: %s", result.status_string());
+    fdf::error("Failed to send VendorPerformTuning request: {}", result.status_string());
     return result.status();
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to perform tuning: %s", zx_status_get_string(result->error_value()));
+    fdf::error("Failed to perform tuning: {}", zx_status_get_string(result->error_value()));
     return result->error_value();
   }
   return ZX_OK;
@@ -1292,7 +1291,7 @@ zx_status_t Sdhci::PerformVendorTuning(uint32_t cmd_idx) {
 
 void Sdhci::PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
                           PerformTuningCompleter::Sync& completer) {
-  FDF_LOG(DEBUG, "sdhci: perform tuning");
+  fdf::debug("sdhci: perform tuning");
 
   if (quirks_ & fuchsia_hardware_sdhci::Quirk::kVendorPerformTuning) {
     completer.buffer(arena).Reply(zx::make_result(PerformVendorTuning(request->cmd_idx)));
@@ -1326,7 +1325,7 @@ void Sdhci::PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
   };
   for (int count = 0; (count < kMaxTuningCount) && ctrl2.execute_tuning(); count++) {
     if (zx::result result = Request(req); result.is_error()) {
-      FDF_LOG(ERROR, "Tuning transfer error: %s", result.status_string());
+      fdf::error("Tuning transfer error: {}", result.status_string());
       completer.buffer(arena).Reply(result.take_error());
       return;
     }
@@ -1342,7 +1341,7 @@ void Sdhci::PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
 
   const bool fail = ctrl2.execute_tuning() || !ctrl2.use_tuned_clock();
 
-  FDF_LOG(DEBUG, "sdhci: tuning fail %d", fail);
+  fdf::debug("sdhci: tuning fail {}", fail);
 
   completer.buffer(arena).Reply(zx::make_result(fail ? ZX_ERR_IO : ZX_OK));
 }
@@ -1411,7 +1410,7 @@ zx_status_t Sdhci::Init() {
   // The core has been reset, which should have stopped any DMAs that were happening when the driver
   // started. It is now safe to release quarantined pages.
   if (status = bti_.release_quarantine(); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to release quarantined pages: %d", status);
+    fdf::error("Failed to release quarantined pages: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -1419,11 +1418,11 @@ zx_status_t Sdhci::Init() {
   const uint16_t vrsn =
       HostControllerVersion::Get().ReadFrom(&*regs_mmio_buffer_).specification_version();
   if (vrsn < HostControllerVersion::kSpecificationVersion300) {
-    FDF_LOG(ERROR, "sdhci: SD version is %u, only version %u is supported", vrsn,
-            HostControllerVersion::kSpecificationVersion300);
+    fdf::error("sdhci: SD version is {}, only version {} is supported", vrsn,
+               HostControllerVersion::kSpecificationVersion300);
     return ZX_ERR_NOT_SUPPORTED;
   }
-  FDF_LOG(INFO, "sdhci: controller version %d", vrsn);
+  fdf::info("sdhci: controller version {}", vrsn);
 
   auto caps0 = Capabilities0::Get().ReadFrom(&*regs_mmio_buffer_);
   auto caps1 = Capabilities1::Get().ReadFrom(&*regs_mmio_buffer_);
@@ -1433,13 +1432,13 @@ zx_status_t Sdhci::Init() {
     // try to get controller specific base clock
     fdf::WireUnownedResult base_clock = sdhci_.buffer(arena_)->GetBaseClock();
     if (!base_clock.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetBaseClock request: %s", base_clock.status_string());
+      fdf::error("Failed to send GetBaseClock request: {}", base_clock.status_string());
       return base_clock.status();
     }
     base_clock_ = base_clock->clock;
   }
   if (base_clock_ == 0) {
-    FDF_LOG(ERROR, "sdhci: base clock is 0!");
+    fdf::error("sdhci: base clock is 0!");
     return ZX_ERR_INTERNAL;
   }
 
@@ -1493,13 +1492,13 @@ zx_status_t Sdhci::Init() {
       host_control1.set_dma_select(HostControl1::kDmaSelect32BitAdma2);
 
       if ((iobuf_->phys() & k32BitPhysAddrMask) != iobuf_->phys()) {
-        FDF_LOG(ERROR, "Got 64-bit physical address, only 32-bit DMA is supported");
+        fdf::error("Got 64-bit physical address, only 32-bit DMA is supported");
         return ZX_ERR_NOT_SUPPORTED;
       }
     }
 
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "sdhci: error allocating DMA descriptors");
+      fdf::error("sdhci: error allocating DMA descriptors");
       return status;
     }
     info_.max_transfer_size = kDmaDescCount * zx_system_get_page_size();
@@ -1544,7 +1543,7 @@ zx_status_t Sdhci::Init() {
       irq_dispatcher.is_ok()) {
     irq_dispatcher_ = *std::move(irq_dispatcher);
   } else {
-    FDF_LOG(ERROR, "Failed to create interrupt dispatcher: %s", irq_dispatcher.status_string());
+    fdf::error("Failed to create interrupt dispatcher: {}", irq_dispatcher.status_string());
     return irq_dispatcher.error_value();
   }
 
@@ -1552,7 +1551,7 @@ zx_status_t Sdhci::Init() {
     irq_handler_.set_object(irq);
     if (zx_status_t status = irq_handler_.Begin(irq_dispatcher_.async_dispatcher());
         status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to wait on interrupt: %s", zx_status_get_string(status));
+      fdf::error("Failed to wait on interrupt: {}", zx_status_get_string(status));
     }
   });
 
@@ -1576,7 +1575,7 @@ zx_status_t Sdhci::Init() {
   zx::result existing_metadata =
       fdf_metadata::GetMetadataIfExists<fuchsia_hardware_sdmmc::SdmmcMetadata>(incoming());
   if (existing_metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", existing_metadata.status_string());
+    fdf::error("Failed to get metadata: {}", existing_metadata.status_string());
     return existing_metadata.status_value();
   }
 
@@ -1602,7 +1601,7 @@ zx_status_t Sdhci::Init() {
   }
 
   if (supports_inline_crypto_) {
-    FDF_LOG(INFO, "enabling cryptographic operation support");
+    fdf::info("enabling cryptographic operation support");
     CommandQueuingConfiguration::Get()
         .ReadFrom(&*regs_cqhci_mmio_buffer_)
         .set_crypto_enable(true)
@@ -1610,11 +1609,11 @@ zx_status_t Sdhci::Init() {
   }
 
   if (zx::result result = metadata_server_.SetMetadata(metadata); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set metadata for metadata server: %s", result.status_string());
+    fdf::error("Failed to set metadata for metadata server: {}", result.status_string());
     return result.status_value();
   }
   if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve metadata server: %s", result.status_string());
+    fdf::error("Failed to serve metadata server: {}", result.status_string());
     return result.status_value();
   }
 
@@ -1628,11 +1627,11 @@ zx_status_t Sdhci::InitMmio() {
   {
     fdf::WireUnownedResult mmio = sdhci_.buffer(arena_)->GetSdhciMmio();
     if (!mmio.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetSdhciMmio request: %s", mmio.status_string());
+      fdf::error("Failed to send GetSdhciMmio request: {}", mmio.status_string());
       return mmio.status();
     }
     if (mmio->is_error()) {
-      FDF_LOG(ERROR, "Failed to get sdhci mmio: %s", zx_status_get_string(mmio->error_value()));
+      fdf::error("Failed to get sdhci mmio: {}", zx_status_get_string(mmio->error_value()));
       return mmio->error_value();
     }
     vmo = std::move(mmio.value()->mmio);
@@ -1642,7 +1641,7 @@ zx_status_t Sdhci::InitMmio() {
   zx::result<fdf::MmioBuffer> regs_mmio_buffer = fdf::MmioBuffer::Create(
       vmo_offset, kRegisterSetSize, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (regs_mmio_buffer.is_error()) {
-    FDF_LOG(ERROR, "sdhci: error %s in mmio_buffer_init", regs_mmio_buffer.status_string());
+    fdf::error("sdhci: error {} in mmio_buffer_init", regs_mmio_buffer);
     return regs_mmio_buffer.status_value();
   }
   regs_mmio_buffer_ = *std::move(regs_mmio_buffer);
@@ -1658,13 +1657,13 @@ zx_status_t Sdhci::InitCqhciMmio() {
   {
     fdf::WireUnownedResult mmio = sdhci_.buffer(arena_)->GetCqhciMmio();
     if (!mmio.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetCqhciMmio request: %s", mmio.status_string());
+      fdf::error("Failed to send GetCqhciMmio request: {}", mmio.status_string());
       return mmio.status();
     }
     if (mmio->is_error()) {
       if (mmio->error_value() != ZX_ERR_NOT_SUPPORTED) {
-        FDF_LOG(ERROR, "Failed to get mmio in InitCqhciMmio: %s",
-                zx_status_get_string(mmio->error_value()));
+        fdf::error("Failed to get mmio in InitCqhciMmio: {}",
+                   zx_status_get_string(mmio->error_value()));
         return mmio->error_value();
       } else {
         return ZX_OK;
@@ -1676,25 +1675,24 @@ zx_status_t Sdhci::InitCqhciMmio() {
 
   size_t vmo_size;
   if (zx_status_t status = vmo.get_size(&vmo_size); status != ZX_OK) {
-    FDF_LOG(ERROR, "error querying mmio vmo size: %s", zx_status_get_string(status));
+    fdf::error("error querying mmio vmo size: {}", zx_status_get_string(status));
     return status;
   }
   if (vmo_size < vmo_offset) {
-    FDF_LOG(ERROR, "cqhci mmio size (%zu) is smaller than offset (%" PRIu64 ")!", vmo_size,
-            vmo_offset);
+    fdf::error("cqhci mmio size ({}) is smaller than offset ({})!", vmo_size, vmo_offset);
     return ZX_ERR_IO_INVALID;
   }
   const size_t cqhci_mmio_size = vmo_size - vmo_offset;
   if (cqhci_mmio_size < kMinimumCqhciMmioSize) {
-    FDF_LOG(ERROR, "cqhci mmio size (%zu) is smaller than expected minimum (%zu)!", cqhci_mmio_size,
-            kMinimumCqhciMmioSize);
+    fdf::error("cqhci mmio size ({}) is smaller than expected minimum ({})!", cqhci_mmio_size,
+               kMinimumCqhciMmioSize);
     return ZX_ERR_IO_INVALID;
   }
 
   zx::result<fdf::MmioBuffer> regs_mmio_buffer = fdf::MmioBuffer::Create(
       vmo_offset, cqhci_mmio_size, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (regs_mmio_buffer.is_error()) {
-    FDF_LOG(ERROR, "error %s in mmio_buffer_init", regs_mmio_buffer.status_string());
+    fdf::error("error {} in mmio_buffer_init", regs_mmio_buffer);
     return regs_mmio_buffer.status_value();
   }
   regs_cqhci_mmio_buffer_ = *std::move(regs_mmio_buffer);
@@ -1708,7 +1706,7 @@ zx::result<> Sdhci::Start() {
   {
     zx::result sdhci = incoming()->Connect<fuchsia_hardware_sdhci::Service::Device>();
     if (sdhci.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to sdhci: %s", sdhci.status_string());
+      fdf::error("Failed to connect to sdhci: {}", sdhci);
       return sdhci.take_error();
     }
     sdhci_.Bind(std::move(sdhci.value()));
@@ -1727,11 +1725,11 @@ zx::result<> Sdhci::Start() {
   {
     fdf::WireUnownedResult bti = sdhci_.buffer(arena_)->GetBti(0);
     if (!bti.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetBti request: %s", bti.status_string());
+      fdf::error("Failed to send GetBti request: {}", bti.status_string());
       return zx::error(bti.status());
     }
     if (bti->is_error()) {
-      FDF_LOG(ERROR, "Failed to get bti: %s", zx_status_get_string(bti->error_value()));
+      fdf::error("Failed to get bti: {}", zx_status_get_string(bti->error_value()));
       return zx::error(bti->error_value());
     }
     bti_ = std::move(bti.value()->bti);
@@ -1740,11 +1738,11 @@ zx::result<> Sdhci::Start() {
   {
     fdf::WireUnownedResult irq = sdhci_.buffer(arena_)->GetInterrupt();
     if (!irq.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetInterrupt request: %s", irq.status_string());
+      fdf::error("Failed to send GetInterrupt request: {}", irq.status_string());
       return zx::error(irq.status());
     }
     if (irq->is_error()) {
-      FDF_LOG(ERROR, "Failed to get interrupt: %s", zx_status_get_string(irq->error_value()));
+      fdf::error("Failed to get interrupt: {}", zx_status_get_string(irq->error_value()));
       return zx::error(irq->error_value());
     }
     irq_ = std::move(irq.value()->irq);
@@ -1755,7 +1753,7 @@ zx::result<> Sdhci::Start() {
   {
     fdf::WireUnownedResult quirks = sdhci_.buffer(arena_)->GetQuirks();
     if (!quirks.ok()) {
-      FDF_LOG(ERROR, "Failed to send GetQuirks request: %s", quirks.status_string());
+      fdf::error("Failed to send GetQuirks request: {}", quirks.status_string());
       return zx::error(quirks.status());
     }
     quirks_ = quirks.value().quirks;
@@ -1765,14 +1763,14 @@ zx::result<> Sdhci::Start() {
   if (!(quirks_ & fuchsia_hardware_sdhci::Quirk::kUseDmaBoundaryAlignment)) {
     dma_boundary_alignment_ = 0;
   } else if (dma_boundary_alignment_ == 0) {
-    FDF_LOG(ERROR, "sdhci: DMA boundary alignment is zero");
+    fdf::error("sdhci: DMA boundary alignment is zero");
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
   // initialize the controller
   status = Init();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: SDHCI Controller init failed", __func__);
+    fdf::error("{}: SDHCI Controller init failed", __func__);
     return zx::error(status);
   }
 
@@ -1785,8 +1783,7 @@ zx::result<> Sdhci::Start() {
             zx::result result = incoming()->Connect<fuchsia_hardware_sdhci::Service::InlineCrypto>(
                 std::move(server_end));
             if (result.is_error()) {
-              FDF_LOG(WARNING, "Failed to connect to inline encryption service: %s",
-                      result.status_string());
+              fdf::warn("Failed to connect to inline encryption service: {}", result);
             }
           },
   });
@@ -1794,7 +1791,7 @@ zx::result<> Sdhci::Start() {
   if (zx::result<> result =
           outgoing()->AddService<fuchsia_hardware_sdmmc::SdmmcService>(std::move(handler));
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service: %s", result.status_string());
+    fdf::error("Failed to add service: {}", result);
     return result;
   }
 
@@ -1814,8 +1811,7 @@ zx::result<> Sdhci::Start() {
                   incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                       std::move(server));
               if (result.is_error()) {
-                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
-                        result.status_string());
+                fdf::warn("Failed to connect to power token service: {}", result);
               }
             },
     });
@@ -1823,7 +1819,7 @@ zx::result<> Sdhci::Start() {
     zx::result result =
         outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      fdf::error("Failed to add power token service: {}", result);
       return result.take_error();
     }
 
@@ -1834,7 +1830,7 @@ zx::result<> Sdhci::Start() {
   zx::result result =
       AddChild(kChildNodeName, std::vector<fuchsia_driver_framework::NodeProperty>{}, offers);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result);
     return result.take_error();
   }
   node_controller_.Bind(std::move(result.value()));

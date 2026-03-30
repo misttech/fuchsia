@@ -12,6 +12,7 @@
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/driver/power/cpp/suspend.h>
 #include <lib/fzl/vmo-mapper.h>

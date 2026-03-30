@@ -9,6 +9,7 @@
 #include <fuchsia/hardware/sdmmc/c/banjo.h>
 #include <inttypes.h>
 #include <lib/async/cpp/task.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/dispatcher.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmo-mapper.h>

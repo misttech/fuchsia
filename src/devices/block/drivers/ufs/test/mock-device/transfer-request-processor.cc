@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include "ufs-mock-device.h"
 
@@ -44,7 +45,8 @@ zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescr
       static_cast<UpiuTransactionCodes>(command_upiu_header->trans_code());
   auto it = handlers_.find(opcode);
   if (it == handlers_.end()) {
-    FDF_LOG(ERROR, "UFS MOCK: transfer request opcode: 0x%x is not supported", opcode);
+    fdf::error("UFS MOCK: transfer request opcode: 0x{:x} is not supported",
+               static_cast<uint32_t>(opcode));
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -68,7 +70,8 @@ zx_status_t TransferRequestProcessor::HandleTransferRequest(TransferRequestDescr
       // Timeout does not trigger a completion interrupt.
       trigger_intr.cancel();
     } else {
-      FDF_LOG(WARNING, "UFS MOCK: transfer request opcode: 0x%x returned an error", opcode);
+      fdf::warn("UFS MOCK: transfer request opcode: 0x{:x} returned an error",
+                static_cast<uint32_t>(opcode));
       ocs = OverallCommandStatus::kInvalid;
     }
   }

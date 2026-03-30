@@ -4,6 +4,7 @@
 
 #include "sdmmc-root-device.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 
 #include <memory>

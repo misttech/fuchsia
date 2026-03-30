@@ -4,6 +4,8 @@
 
 #include "server.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 #include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 #include "src/devices/block/drivers/ufs/upiu/attributes.h"
 #include "src/devices/block/drivers/ufs/upiu/descriptors.h"
@@ -46,7 +48,7 @@ template <typename RequestView, typename InternalType>
 fit::result<QueryErrorCode, std::pair<InternalType, uint8_t>> GetInternalTypeAndIndex(
     const RequestView& request, InternalType max_count) {
   if (!request.has_type()) {
-    FDF_LOG(ERROR, "Invalid FIDL request: missing request type");
+    fdf::error("Invalid FIDL request: missing request type");
     return fit::error(QueryErrorCode::kInvalidIdn);
   }
 
@@ -56,7 +58,7 @@ fit::result<QueryErrorCode, std::pair<InternalType, uint8_t>> GetInternalTypeAnd
   // value.
   uint8_t value = fidl::ToUnderlying(request.type());
   if (value >= static_cast<uint8_t>(max_count)) {
-    FDF_LOG(ERROR, "Cannot convert fidl type to internal Type");
+    fdf::error("Cannot convert fidl type to internal Type");
     return fit::error(QueryErrorCode::kGeneralFailure);
   }
   uint8_t index = 0;
@@ -236,14 +238,14 @@ void UfsServer::SendUicCommand(SendUicCommandRequestView request,
   std::unique_ptr<UicCommand> command = CreateUicCommand(opcode, request);
 
   if (!command) {
-    FDF_LOG(ERROR, "Unsupported UIC command opcode: 0x%x", opcode);
+    fdf::error("Unsupported UIC command opcode: 0x{:x}", static_cast<uint32_t>(opcode));
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
     return;
   }
 
   auto result = command->SendCommand();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to send UicCommand Opcode: 0x%x", opcode);
+    fdf::error("Failed to send UicCommand Opcode: 0x{:x}", static_cast<uint32_t>(opcode));
     completer.ReplyError(result.error_value());
     return;
   }
@@ -285,8 +287,8 @@ void UfsServer::Request(RequestRequestView request, RequestCompleter::Sync& comp
 void UfsServer::ProcessQueryRequestUpiu(const RequestRequestView& request,
                                         RequestCompleter::Sync& completer) {
   if (request->request.size() != sizeof(QueryRequestUpiuData)) {
-    FDF_LOG(ERROR, "Data size mismatch: expected %zu, got %zu", sizeof(QueryRequestUpiuData),
-            request->request.size());
+    fdf::error("Data size mismatch: expected {}, got {}", sizeof(QueryRequestUpiuData),
+               request->request.size());
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }

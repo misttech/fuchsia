@@ -4,6 +4,7 @@
 
 #include "src/devices/block/drivers/nvme/queue-pair.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
 
@@ -32,8 +33,8 @@ zx::result<std::unique_ptr<QueuePair>> QueuePair::Create(zx::unowned_bti bti, ui
   fbl::Vector<TransactionData> txns;
   txns.resize(submission_queue->entry_count(), &ac);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for %u transactions for queue pair with id %u.",
-            submission_queue->entry_count(), queue_id);
+    fdf::error("Failed to allocate memory for {} transactions for queue pair with id {}.",
+               submission_queue->entry_count(), queue_id);
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -44,7 +45,7 @@ zx::result<std::unique_ptr<QueuePair>> QueuePair::Create(zx::unowned_bti bti, ui
       &ac, std::move(*completion_queue), std::move(*submission_queue), std::move(txns),
       std::move(bti), mmio, completion_doorbell, submission_doorbell);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for queue pair with id %u.", queue_id);
+    fdf::error("Failed to allocate memory for queue pair with id {}.", queue_id);
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -84,12 +85,12 @@ zx_status_t QueuePair::CheckForNewCompletion(Completion** completion, IoCommand*
   auto txn_id = (*completion)->command_id();
   {
     if (txn_id > txns_.size()) {
-      FDF_LOG(ERROR, "Completed transaction has invalid ID: %u", txn_id);
+      fdf::error("Completed transaction has invalid ID: {}", txn_id);
       return ZX_ERR_BAD_STATE;
     }
     TransactionData& txn_data = txns_[txn_id];
     if (!txn_data.active) {
-      FDF_LOG(ERROR, "Completed transaction #%u was not active.", txn_id);
+      fdf::error("Completed transaction #{} was not active.", txn_id);
       return ZX_ERR_BAD_STATE;
     }
 
@@ -99,7 +100,7 @@ zx_status_t QueuePair::CheckForNewCompletion(Completion** completion, IoCommand*
     if (txn_data.pmt.is_valid()) {
       zx_status_t status = txn_data.pmt.unpin();
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to unpin IO buffer: %s", zx_status_get_string(status));
+        fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
         return ZX_ERR_INTERNAL;
       }
     }
@@ -155,8 +156,8 @@ zx_status_t QueuePair::Submit(cpp20::span<uint8_t> submission_data,
     // Total pages mapped / touched
     const size_t page_count = (byte_offset + bytes + kPageMask) >> kPageShift;
     if (page_count > kMaxTransferPages) {
-      FDF_LOG(ERROR, "Did not expect a single transaction to transfer more than %u pages.",
-              kMaxTransferPages);
+      fdf::error("Did not expect a single transaction to transfer more than {} pages.",
+                 kMaxTransferPages);
       return ZX_ERR_BAD_STATE;
     }
 
@@ -164,13 +165,13 @@ zx_status_t QueuePair::Submit(cpp20::span<uint8_t> submission_data,
     zx_paddr_t* page_list;
     if (io_cmd == nullptr) {
       if (page_count != 1) {
-        FDF_LOG(ERROR, "Unexpected page count for admin command.");
+        fdf::error("Unexpected page count for admin command.");
         return ZX_ERR_INVALID_ARGS;
       }
       page_list = &single_page;
     } else {
       if (!txn_data.prp_buffer) {
-        FDF_LOG(ERROR, "No PRP buffer was preallocated for this IO transaction.");
+        fdf::error("No PRP buffer was preallocated for this IO transaction.");
         return ZX_ERR_BAD_STATE;
       }
       page_list = static_cast<zx_paddr_t*>(txn_data.prp_buffer->virt());
@@ -183,12 +184,13 @@ zx_status_t QueuePair::Submit(cpp20::span<uint8_t> submission_data,
     zx_status_t status = bti_->pin(options, *data_vmo.value(), page_offset,
                                    page_count << kPageShift, page_list, page_count, &txn_data.pmt);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to pin IO buffer: %s", zx_status_get_string(status));
+      fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(status));
       return status;
     }
 
-    FDF_LOG(TRACE, "Submitting transaction #%zu command %p: op=%s, pages=%zu", index, io_cmd,
-            options == ZX_BTI_PERM_WRITE ? "RD" : "WR", page_count);
+    fdf::trace("Submitting transaction #{} command {}: op={}, pages={}", index,
+               static_cast<const void*>(io_cmd), options == ZX_BTI_PERM_WRITE ? "RD" : "WR",
+               page_count);
 
     submission->data_pointer[0] = page_list[0] | byte_offset;
     if (page_count == 2) {
@@ -232,7 +234,7 @@ zx_status_t QueuePair::PreparePrpList(std::unique_ptr<dma_buffer::PagedBuffer>& 
     // If we're about to cross a page boundary, put the address of the next page here.
     if (prp_index % addresses_per_page == (addresses_per_page - 1)) {
       if (prp_list_page_count == 0) {
-        FDF_LOG(ERROR, "Ran out of PRP pages?");
+        fdf::error("Ran out of PRP pages?");
         return ZX_ERR_INTERNAL;
       }
       addresses[prp_index] = *prp_list_pages;

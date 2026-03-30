@@ -11,6 +11,7 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/controller.h>
 #include <lib/zx/vmar.h>
 #include <stdint.h>
@@ -139,15 +140,15 @@ void UmsFunction::ContinueTransfer() {
   } else if (data_state_ == DATA_STATE_WRITE || data_state_ == DATA_STATE_UNMAP) {
     QueueData(req);
   } else {
-    zxlogf(ERROR, "ContinueTransfer: bad data state %d", data_state_);
+    fdf::error("ContinueTransfer: bad data state {}", static_cast<uint32_t>(data_state_));
   }
 }
 
 void UmsFunction::StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba) {
   zx_off_t offset = lba * kBlockSize;
   if (offset + transfer_bytes > kStorageSize) {
-    zxlogf(ERROR, "StartTransfer: transfer out of range state: %d, lba: %zu transfer_bytes: %u",
-           state, lba, transfer_bytes);
+    fdf::error("StartTransfer: transfer out of range state: {}, lba: {} transfer_bytes: {}",
+               static_cast<uint32_t>(state), lba, transfer_bytes);
     // TODO(voydanoff) report error to host
     return;
   }
@@ -160,7 +161,7 @@ void UmsFunction::StartTransfer(DataState state, uint32_t transfer_bytes, uint64
 }
 
 void UmsFunction::HandleInquiry(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleInquiry");
+  fdf::debug("HandleInquiry");
   scsi::InquiryCDB cmd;
   memcpy(&cmd, cbw->CBWCB, sizeof(cmd));
 
@@ -200,7 +201,7 @@ void UmsFunction::HandleInquiry(ums_cbw_t* cbw) {
       provisioning->set_lbpu(true);
       provisioning->set_provisioning_type(0x02);  // The logical unit is thin provisioned
     } else {
-      zxlogf(ERROR, "Unsupported Inquiry page code=0x%x", cmd.page_code);
+      fdf::error("Unsupported Inquiry page code=0x{:x}", cmd.page_code);
       return;
     }
   }
@@ -209,14 +210,14 @@ void UmsFunction::HandleInquiry(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleTestUnitReady(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleTestUnitReady");
+  fdf::debug("HandleTestUnitReady");
 
   // no data phase here. Just return status OK
   QueueCsw(CSW_SUCCESS);
 }
 
 void UmsFunction::HandleRequestSense(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleRequestSense");
+  fdf::debug("HandleRequestSense");
 
   usb::Request<>* req = &data_req_.value();
   scsi::SenseDataHeader* data;
@@ -233,7 +234,7 @@ void UmsFunction::HandleRequestSense(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleReadCapacity10(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleReadCapacity10");
+  fdf::debug("HandleReadCapacity10");
 
   usb::Request<>* req = &data_req_.value();
   scsi::ReadCapacity10ParameterData* data;
@@ -252,7 +253,7 @@ void UmsFunction::HandleReadCapacity10(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleReadCapacity16(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleReadCapacity16");
+  fdf::debug("HandleReadCapacity16");
 
   usb::Request<>* req = &data_req_.value();
   scsi::ReadCapacity16ParameterData* data;
@@ -267,7 +268,7 @@ void UmsFunction::HandleReadCapacity16(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleModeSense6(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleModeSense6");
+  fdf::debug("HandleModeSense6");
   usb::Request<>* req = &data_req_.value();
   scsi::Mode6ParameterHeader* data;
   req->Mmap(reinterpret_cast<void**>(&data));
@@ -277,7 +278,7 @@ void UmsFunction::HandleModeSense6(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleRead10(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleRead10");
+  fdf::debug("HandleRead10");
 
   scsi::Read10CDB* command = reinterpret_cast<scsi::Read10CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
@@ -286,7 +287,7 @@ void UmsFunction::HandleRead10(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleRead12(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleRead12");
+  fdf::debug("HandleRead12");
 
   scsi::Read12CDB* command = reinterpret_cast<scsi::Read12CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
@@ -295,7 +296,7 @@ void UmsFunction::HandleRead12(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleRead16(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleRead16");
+  fdf::debug("HandleRead16");
 
   scsi::Read16CDB* command = reinterpret_cast<scsi::Read16CDB*>(cbw->CBWCB);
   uint64_t lba = be64toh(command->logical_block_address);
@@ -304,7 +305,7 @@ void UmsFunction::HandleRead16(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleWrite10(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleWrite10");
+  fdf::debug("HandleWrite10");
 
   scsi::Write10CDB* command = reinterpret_cast<scsi::Write10CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
@@ -313,7 +314,7 @@ void UmsFunction::HandleWrite10(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleWrite12(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleWrite12");
+  fdf::debug("HandleWrite12");
 
   scsi::Write12CDB* command = reinterpret_cast<scsi::Write12CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
@@ -322,7 +323,7 @@ void UmsFunction::HandleWrite12(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::HandleWrite16(ums_cbw_t* cbw) {
-  zxlogf(DEBUG, "HandleWrite16");
+  fdf::debug("HandleWrite16");
 
   scsi::Write16CDB* command = reinterpret_cast<scsi::Write16CDB*>(cbw->CBWCB);
   uint64_t lba = be64toh(command->logical_block_address);
@@ -335,8 +336,8 @@ void UmsFunction::HandleUnmap(ums_cbw_t* cbw) {
   uint16_t unmap_data_length =
       sizeof(scsi::UnmapParameterListHeader) + sizeof(scsi::UnmapBlockDescriptor);
   if (betoh16(command->parameter_list_length) != unmap_data_length) {
-    zxlogf(ERROR, "Command parameter list length is invalid: %u != %u",
-           betoh16(command->parameter_list_length), unmap_data_length);
+    fdf::error("Command parameter list length is invalid: {} != {}",
+               betoh16(command->parameter_list_length), unmap_data_length);
     QueueCsw(CSW_FAILED);
     return;
   }
@@ -346,7 +347,7 @@ void UmsFunction::HandleUnmap(ums_cbw_t* cbw) {
 
 void UmsFunction::HandleCbw(ums_cbw_t* cbw) {
   if (le32toh(cbw->dCBWSignature) != CBW_SIGNATURE) {
-    zxlogf(ERROR, "HandleCbw: bad dCBWSignature 0x%x", le32toh(cbw->dCBWSignature));
+    fdf::error("HandleCbw: bad dCBWSignature 0x{:x}", le32toh(cbw->dCBWSignature));
     return;
   }
 
@@ -400,7 +401,7 @@ void UmsFunction::HandleCbw(ums_cbw_t* cbw) {
       HandleUnmap(cbw);
       break;
     default:
-      zxlogf(ERROR, "HandleCbw: unsupported opcode %02Xh", cbw->CBWCB[0]);
+      fdf::error("HandleCbw: unsupported opcode {:02X}h", cbw->CBWCB[0]);
       if (cbw->dCBWDataTransferLength) {
         // queue zero length packet to satisfy data phase
         usb::Request<>* req = &data_req_.value();
@@ -414,8 +415,7 @@ void UmsFunction::HandleCbw(ums_cbw_t* cbw) {
 }
 
 void UmsFunction::CbwComplete(usb::Request<>* req) {
-  zxlogf(DEBUG, "CbwComplete %d %ld", req->request()->response.status,
-         req->request()->response.actual);
+  fdf::debug("CbwComplete {} {}", req->request()->response.status, req->request()->response.actual);
 
   if (req->request()->response.status == ZX_OK &&
       req->request()->response.actual == sizeof(ums_cbw_t)) {
@@ -427,8 +427,8 @@ void UmsFunction::CbwComplete(usb::Request<>* req) {
 }
 
 void UmsFunction::DataComplete(usb::Request<>* req) {
-  zxlogf(DEBUG, "DataComplete %d %ld", req->request()->response.status,
-         req->request()->response.actual);
+  fdf::debug("DataComplete {} {}", req->request()->response.status,
+             req->request()->response.actual);
 
   if (data_state_ == DATA_STATE_WRITE) {
     size_t result = req->CopyFrom(static_cast<char*>(storage_) + data_offset_,
@@ -470,8 +470,7 @@ void UmsFunction::DataComplete(usb::Request<>* req) {
 }
 
 static void CswComplete(usb::Request<>* req) {
-  zxlogf(DEBUG, "CswComplete %d %ld", req->request()->response.status,
-         req->request()->response.actual);
+  fdf::debug("CswComplete {} {}", req->request()->response.status, req->request()->response.actual);
 }
 
 size_t UmsFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptors); }
@@ -503,19 +502,19 @@ zx_status_t UmsFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
 }
 
 zx_status_t UmsFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed) {
-  zxlogf(DEBUG, "UsbFunctionInterfaceSetConfigured %d %d", configured, speed);
+  fdf::debug("UsbFunctionInterfaceSetConfigured {} {}", configured, speed);
   zx_status_t status;
 
   // TODO(voydanoff) fullspeed and superspeed support
   if (configured) {
     if ((status = function_.ConfigEp(&descriptors.out_ep, NULL)) != ZX_OK ||
         (status = function_.ConfigEp(&descriptors.in_ep, NULL)) != ZX_OK) {
-      zxlogf(ERROR, "SetConfigured: ConfigEp failed");
+      fdf::error("SetConfigured: ConfigEp failed");
     }
   } else {
     if ((status = function_.DisableEp(bulk_out_addr_)) != ZX_OK ||
         (status = function_.DisableEp(bulk_in_addr_)) != ZX_OK) {
-      zxlogf(ERROR, "SetConfigured: DisableEp failed");
+      fdf::error("SetConfigured: DisableEp failed");
     }
   }
 
@@ -535,7 +534,7 @@ zx_status_t UmsFunction::UsbFunctionInterfaceSetInterface(uint8_t interface, uin
 }
 
 void UmsFunction::DdkUnbind(ddk::UnbindTxn txn) {
-  zxlogf(DEBUG, "UmsFunction::DdkUnbind");
+  fdf::debug("UmsFunction::DdkUnbind");
 
   function_.CancelAll(bulk_out_addr_);
   function_.CancelAll(bulk_in_addr_);
@@ -551,7 +550,7 @@ void UmsFunction::DdkUnbind(ddk::UnbindTxn txn) {
 }
 
 void UmsFunction::DdkRelease() {
-  zxlogf(DEBUG, "UmsFunction::DdkRelease");
+  fdf::debug("UmsFunction::DdkRelease");
 
   if (storage_) {
     zx_vmar_unmap(zx_vmar_root_self(), (uintptr_t)storage_, kStorageSize);
@@ -601,7 +600,7 @@ int UmsFunction::WorkerLoop() {
 }
 
 zx_status_t UmsFunction::Bind(void* ctx, zx_device_t* parent) {
-  zxlogf(INFO, "UmsFunction::Bind");
+  fdf::info("UmsFunction::Bind");
 
   ddk::UsbFunctionProtocolClient function;
   zx_status_t status = device_get_protocol(parent, ZX_PROTOCOL_USB_FUNCTION, &function);
@@ -612,13 +611,13 @@ zx_status_t UmsFunction::Bind(void* ctx, zx_device_t* parent) {
   fbl::AllocChecker ac;
   auto driver = fbl::make_unique_checked<UmsFunction>(&ac, parent, function);
   if (!ac.check()) {
-    zxlogf(ERROR, "Failed to allocate memory.");
+    fdf::error("Failed to allocate memory.");
     return ZX_ERR_NO_MEMORY;
   }
 
   status = driver->DdkAdd(kDriverName);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed DdkAdd: %s", zx_status_get_string(status));
+    fdf::error("Failed DdkAdd: {}", zx_status_get_string(status));
   }
 
   // The DriverFramework now owns driver.
@@ -631,7 +630,7 @@ void UmsFunction::DdkInit(ddk::InitTxn txn) {
   // we always call txn.Reply() in any outcome.
   zx_status_t status = Init();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Driver initialization failed: %s", zx_status_get_string(status));
+    fdf::error("Driver initialization failed: {}", zx_status_get_string(status));
   }
   txn.Reply(status);
 }
@@ -647,17 +646,17 @@ zx_status_t UmsFunction::Init() {
 
   status = function_.AllocInterface(&descriptors.intf.b_interface_number);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Init: AllocInterface failed");
+    fdf::error("Init: AllocInterface failed");
     return status;
   }
   status = function_.AllocEp(USB_DIR_OUT, &bulk_out_addr_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Init: AllocEp(USB_DIR_OUT, ...) failed");
+    fdf::error("Init: AllocEp(USB_DIR_OUT, ...) failed");
     return status;
   }
   status = function_.AllocEp(USB_DIR_IN, &bulk_in_addr_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Init: AllocEp(USB_DIR_IN, ...) failed");
+    fdf::error("Init: AllocEp(USB_DIR_IN, ...) failed");
     return status;
   }
   descriptors.out_ep.b_endpoint_address = bulk_out_addr_;

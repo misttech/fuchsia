@@ -4,6 +4,7 @@
 
 #include "src/devices/block/drivers/nvme/fake/fake-admin-commands.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/fzl/vmo-mapper.h>
 
@@ -108,7 +109,7 @@ void FakeAdminCommands::Identify(nvme::Submission& default_submission,
       break;
     }
     default:
-      FDF_LOG(ERROR, "unsupported identify structure");
+      fdf::error("unsupported identify structure");
       completion.set_status_code(GenericStatus::kInvalidField);
       break;
   }

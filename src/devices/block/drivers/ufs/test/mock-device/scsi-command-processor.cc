@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <algorithm>
 
@@ -20,7 +21,7 @@ zx::result<uint8_t *> PrdtMapAndGetVirtualAddress(
 
   uint8_t *data_buffer;
   if (auto result = mock_device.MapDmaPaddr(data_buffer_paddr); result.is_error()) {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command could not get virtual address");
+    fdf::error("UFS MOCK: scsi command could not get virtual address");
     return result.take_error();
   } else {
     data_buffer = reinterpret_cast<uint8_t *>(*result);
@@ -39,7 +40,7 @@ zx_status_t CopyBufferToPhysicalRegion(UfsMockDevice &mock_device,
 
     auto data_buffer = PrdtMapAndGetVirtualAddress(mock_device, prdt_upiu);
     if (data_buffer.is_error()) {
-      FDF_LOG(ERROR, "UFS MOCK: Faild to map the data buffer.");
+      fdf::error("UFS MOCK: Faild to map the data buffer.");
       return data_buffer.status_value();
     }
 
@@ -51,7 +52,7 @@ zx_status_t CopyBufferToPhysicalRegion(UfsMockDevice &mock_device,
   }
 
   if (cur_pos != buffer.size()) {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command buffer size is too small");
+    fdf::error("UFS MOCK: scsi command buffer size is too small");
     return ZX_ERR_NO_SPACE;
   }
 
@@ -80,7 +81,7 @@ zx_status_t CopyPhysicalRegionToBuffer(
   }
 
   if (cur_pos != buffer.size()) {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command buffer size is too small");
+    fdf::error("UFS MOCK: scsi command buffer size is too small");
     return ZX_ERR_NO_SPACE;
   }
 
@@ -131,9 +132,8 @@ zx_status_t ScsiCommandProcessor::HandleScsiCommand(
 
   uint8_t lun = command_upiu.header.lun;
   if (!IsProcessableCommand(lun, opcode)) {
-    FDF_LOG(ERROR,
-            "UFS MOCK: Lun(%d) does not support scsi command opcode: 0x%hhx is not supported", lun,
-            static_cast<uint8_t>(opcode));
+    fdf::error("UFS MOCK: Lun({}) does not support scsi command opcode: 0x{:x} is not supported",
+               lun, static_cast<uint8_t>(opcode));
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -152,8 +152,8 @@ zx_status_t ScsiCommandProcessor::HandleScsiCommand(
       data = std::move(*result);
     }
   } else {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command opcode: 0x%hhx is not supported",
-            static_cast<uint8_t>(opcode));
+    fdf::error("UFS MOCK: scsi command opcode: 0x{:x} is not supported",
+               static_cast<uint8_t>(opcode));
     BuildSenseData(response_upiu, scsi::SenseKey::ILLEGAL_REQUEST);
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -186,7 +186,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultRequestSenseHandle
   ZX_ASSERT(command_upiu.header_flags_r());
   if (auto status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
+    fdf::error("UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
     return zx::error(status);
   }
 
@@ -207,10 +207,10 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultRead10Handler(
   off_t start_lba = be32toh(scsi_cdb->logical_block_address);
 
   if (betoh32(command_upiu.expected_data_transfer_length) != block_count * kMockBlockSize) {
-    FDF_LOG(ERROR,
-            "UFS MOCK: scsi READ(10) command, expected_data_transfer_length(%d) and "
-            "transfer_length(%lu) are different.",
-            betoh32(command_upiu.expected_data_transfer_length), block_count * kMockBlockSize);
+    fdf::error(
+        "UFS MOCK: scsi READ(10) command, expected_data_transfer_length({}) and "
+        "transfer_length(%lu) are different.",
+        betoh32(command_upiu.expected_data_transfer_length), block_count * kMockBlockSize);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -242,10 +242,10 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultWrite10Handler(
   off_t start_lba = be32toh(scsi_cdb->logical_block_address);
 
   if (betoh32(command_upiu.expected_data_transfer_length) != block_count * kMockBlockSize) {
-    FDF_LOG(ERROR,
-            "UFS MOCK: scsi WRTIE(10) command, expected_data_transfer_length(%d) and "
-            "transfer_length(%lu) are different.",
-            betoh32(command_upiu.expected_data_transfer_length), block_count * kMockBlockSize);
+    fdf::error(
+        "UFS MOCK: scsi WRTIE(10) command, expected_data_transfer_length({}) and "
+        "transfer_length(%lu) are different.",
+        betoh32(command_upiu.expected_data_transfer_length), block_count * kMockBlockSize);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -280,7 +280,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultReadCapacity10Hand
   ZX_ASSERT(command_upiu.header_flags_r());
   if (auto status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
+    fdf::error("UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
     return zx::error(status);
   }
 
@@ -470,7 +470,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultReadBufferHandler(
   ZX_DEBUG_ASSERT(command_upiu.header_flags_r());
   if (zx_status_t status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
+    fdf::error("UFS MOCK: scsi command, Failed to CopyBufferToPhysicalRegion");
     return zx::error(status);
   }
   return zx::ok(std::move(data_buffer));

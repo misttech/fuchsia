@@ -6,6 +6,7 @@
 
 #include <lib/ddk/binding_driver.h>
 #include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/power/cpp/power-support.h>
 
 #include <format>

@@ -9,6 +9,7 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/driver.h>
 #include <lib/device-protocol/pci.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/param.h>
@@ -30,7 +31,7 @@ void PciSdhci::GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& comp
   fuchsia_hardware_pci::InterruptMode mode = fuchsia_hardware_pci::InterruptMode::kDisabled;
   zx_status_t status = pci_.ConfigureInterruptMode(1, &mode);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: error setting irq mode: %s", kTag, zx_status_get_string(status));
+    fdf::error("{}: error setting irq mode: {}", kTag, zx_status_get_string(status));
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -39,7 +40,7 @@ void PciSdhci::GetInterrupt(fdf::Arena& arena, GetInterruptCompleter::Sync& comp
   zx::interrupt interrupt;
   status = pci_.MapInterrupt(0, &interrupt);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: error getting irq handle: %s", kTag, zx_status_get_string(status));
+    fdf::error("{}: error getting irq handle: {}", kTag, zx_status_get_string(status));
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -51,7 +52,7 @@ void PciSdhci::GetSdhciMmio(fdf::Arena& arena, GetSdhciMmioCompleter::Sync& comp
   if (!mmio_.has_value()) {
     zx_status_t status = pci_.MapMmio(0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &mmio_);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s: error mapping register window: %s", kTag, zx_status_get_string(status));
+      fdf::error("{}: error mapping register window: {}", kTag, zx_status_get_string(status));
       completer.buffer(arena).ReplyError(status);
       return;
     }
@@ -133,13 +134,13 @@ void PciSdhci::DdkUnbind(ddk::UnbindTxn txn) { device_unbind_reply(zxdev()); }
 zx_status_t PciSdhci::Bind(void* /* unused */, zx_device_t* parent) {
   auto dev = std::make_unique<PciSdhci>(parent);
   if (!dev) {
-    zxlogf(ERROR, "%s: out of memory", kTag);
+    fdf::error("{}: out of memory", kTag);
     return ZX_ERR_NO_MEMORY;
   }
 
   zx_status_t status = dev->Init();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to initialize device: %s", zx_status_get_string(status));
+    fdf::error("Failed to initialize device: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -153,13 +154,13 @@ zx_status_t PciSdhci::Bind(void* /* unused */, zx_device_t* parent) {
 zx_status_t PciSdhci::Init() {
   pci_ = ddk::Pci(parent_, "pci");
   if (!pci_.is_valid()) {
-    zxlogf(ERROR, "Failed to connect to PCI protocol");
+    fdf::error("Failed to connect to PCI protocol");
     return ZX_ERR_INTERNAL;
   }
 
   zx_status_t status = pci_.SetBusMastering(true);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to set bus mastering: %s", zx_status_get_string(status));
+    fdf::error("Failed to set bus mastering: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -170,21 +171,21 @@ zx_status_t PciSdhci::Init() {
 
     zx::result result = outgoing_.AddService<fuchsia_hardware_sdhci::Service>(std::move(handler));
     if (result.is_error()) {
-      zxlogf(ERROR, "Failed to add sdhci fidl service to outgoing directory: %s",
-             result.status_string());
+      fdf::error("Failed to add sdhci fidl service to outgoing directory: {}",
+                 result.status_string());
       return result.error_value();
     }
   }
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
   if (endpoints.is_error()) {
-    zxlogf(ERROR, "Failed to create endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create endpoints: {}", endpoints.status_string());
     return endpoints.status_value();
   }
 
   zx::result result = outgoing_.Serve(std::move(endpoints->server));
   if (result.is_error()) {
-    zxlogf(ERROR, "Failed to serve outgoing directory: %s", result.status_string());
+    fdf::error("Failed to serve outgoing directory: {}", result.status_string());
     return result.error_value();
   }
 
@@ -196,7 +197,7 @@ zx_status_t PciSdhci::Init() {
                       .set_runtime_service_offers(offers)
                       .set_outgoing_dir(endpoints->client.TakeChannel()));
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to add device: %s", zx_status_get_string(status));
+    fdf::error("Failed to add device: {}", zx_status_get_string(status));
     return status;
   }
 

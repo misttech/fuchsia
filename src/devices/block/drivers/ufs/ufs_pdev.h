@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ufs.phy/cpp/fidl.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include "src/devices/block/drivers/ufs/ufs.h"
 
@@ -32,7 +33,7 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
   void DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_ufs_phy::Ufshci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "Unknown method in Ufshci server: %lu", metadata.method_ordinal);
+    fdf::error("Unknown method in Ufshci server: {}", metadata.method_ordinal);
   }
 
  private:

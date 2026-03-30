@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/time.h>
 
@@ -17,7 +18,7 @@ namespace ufs {
 zx::result<> UfsPdev::InitResources() {
   auto pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (!pdev.is_ok()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device service: %s", pdev.status_string());
+    fdf::error("Failed to connect to platform device service: {}", pdev);
     return pdev.take_error();
   }
 
@@ -26,7 +27,7 @@ zx::result<> UfsPdev::InitResources() {
   {
     auto mmio_params = dev.GetMmio(0);
     if (mmio_params.is_error()) {
-      FDF_LOG(ERROR, "Failed to get MMIO: %s", mmio_params.status_string());
+      fdf::error("Failed to get MMIO: {}", mmio_params);
       return mmio_params.take_error();
     }
 
@@ -37,7 +38,7 @@ zx::result<> UfsPdev::InitResources() {
   {
     auto bti = dev.GetBti(0);
     if (bti.is_error()) {
-      FDF_LOG(ERROR, "Failed to get BTI: %s", bti.status_string());
+      fdf::error("Failed to get BTI: {}", bti);
       return bti.take_error();
     }
     bti_ = std::move(bti.value());
@@ -46,7 +47,7 @@ zx::result<> UfsPdev::InitResources() {
   {
     auto irq_result = dev.GetInterrupt(0);
     if (irq_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to get IRQ: %s", irq_result.status_string());
+      fdf::error("Failed to get IRQ: {}", irq_result);
       return irq_result.take_error();
     }
     irq_ = std::move(irq_result.value());
@@ -60,8 +61,7 @@ zx::result<> UfsPdev::InitResources() {
     if (default_phy_client_end.is_ok()) {
       ufs_phy_.Bind(std::move(default_phy_client_end.value()));
     } else {
-      FDF_LOG(WARNING, "Could not connect to UFS PHY service: %s",
-              default_phy_client_end.status_string());
+      fdf::warn("Could not connect to UFS PHY service: {}", default_phy_client_end);
     }
   }
 
@@ -104,11 +104,11 @@ zx::result<> UfsPdev::PreLinkStartup() {
   StopUfshciServer();
 
   if (!res.ok()) {
-    FDF_LOG(ERROR, "Failed to call Init: %s", res.status_string());
+    fdf::error("Failed to call Init: {}", res.status_string());
     return zx::error(res.status());
   }
   if (res->is_error()) {
-    FDF_LOG(ERROR, "Init returned error status: %s", zx_status_get_string(res->error_value()));
+    fdf::error("Init returned error status: {}", zx_status_get_string(res->error_value()));
     return zx::error(res->error_value());
   }
 
@@ -118,7 +118,7 @@ zx::result<> UfsPdev::PreLinkStartup() {
 zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> UfsPdev::StartUfshciServer() {
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_ufs_phy::Ufshci>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create endpoints: {}", endpoints);
     return endpoints.take_error();
   }
 
@@ -128,8 +128,8 @@ zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> UfsPdev::StartUfsh
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufshci-worker",
         [this](fdf_dispatcher_t*) { ufshci_dispatcher_shutdown_completion_.Signal(); });
     if (dispatcher.is_error()) {
-      FDF_LOG(ERROR, "Failed to create Ufshci dispatcher: %s",
-              zx_status_get_string(dispatcher.status_value()));
+      fdf::error("Failed to create Ufshci dispatcher: {}",
+                 zx_status_get_string(dispatcher.status_value()));
       return zx::error(dispatcher.status_value());
     }
     ufshci_dispatcher_ = *std::move(dispatcher);
@@ -157,7 +157,7 @@ void UfsPdev::DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) {
                            request.value());
   auto result = dme_set.SendCommand();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "DME_SET 0x%x failed: %s", request.mib_attribute(), result.status_string());
+    fdf::error("DME_SET 0x{:x} failed: {}", request.mib_attribute(), result);
     completer.Reply(zx::error(result.status_value()));
   } else {
     completer.Reply(zx::ok());

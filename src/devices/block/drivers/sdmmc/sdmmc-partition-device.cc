@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <string.h>
 #include <zircon/hw/gpt.h>
 

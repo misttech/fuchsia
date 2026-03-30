@@ -4,6 +4,7 @@
 
 #include <fuchsia/hardware/sdmmc/c/banjo.h>
 #include <inttypes.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/sdmmc/hw.h>
 #include <lib/zx/time.h>

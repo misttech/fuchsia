@@ -4,6 +4,7 @@
 
 #include "src/devices/block/drivers/nvme/nvme.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmo-mapper.h>
@@ -43,9 +44,9 @@ int Nvme::IrqLoop() {
     zx_status_t status = irq_.wait(nullptr);
     if (status != ZX_OK) {
       if (status == ZX_ERR_CANCELED) {
-        FDF_LOG(DEBUG, "Interrupt cancelled. Exiting IRQ loop.");
+        fdf::debug("Interrupt cancelled. Exiting IRQ loop.");
       } else {
-        FDF_LOG(ERROR, "Failed to wait for interrupt: %s", zx_status_get_string(status));
+        fdf::error("Failed to wait for interrupt: {}", zx_status_get_string(status));
       }
       break;
     }
@@ -65,7 +66,7 @@ int Nvme::IrqLoop() {
     if (irq_mode_ == fuchsia_hardware_pci::InterruptMode::kLegacy) {
       status = pci_.AckInterrupt();
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to ack interrupt: %s", zx_status_get_string(status));
+        fdf::error("Failed to ack interrupt: {}", zx_status_get_string(status));
         break;
       }
     }
@@ -82,13 +83,13 @@ zx::result<Completion> Nvme::DoAdminCommandSync(Submission& submission,
   if (admin_data.has_value()) {
     status = admin_data.value()->get_size(&data_size);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to get size of vmo: %s", zx_status_get_string(status));
+      fdf::error("Failed to get size of vmo: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
   status = admin_queue_->Submit(submission, admin_data, 0, data_size, nullptr);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to submit admin command: %s", zx_status_get_string(status));
+    fdf::error("Failed to submit admin command: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -98,7 +99,7 @@ zx::result<Completion> Nvme::DoAdminCommandSync(Submission& submission,
     status = admin_queue_->CheckForNewCompletion(&completion);
     if (status == ZX_ERR_SHOULD_WAIT) {
       if (total_wait >= zx::sec(10)) {  // Wait for up to 10 seconds for an admin command.
-        FDF_LOG(ERROR, "Timed out waiting for admin command: %s", zx_status_get_string(status));
+        fdf::error("Timed out waiting for admin command: {}", zx_status_get_string(status));
         return zx::error(status);
       }
 
@@ -112,17 +113,16 @@ zx::result<Completion> Nvme::DoAdminCommandSync(Submission& submission,
     auto ring_completion_doorbell = fit::defer([&] { admin_queue_->RingCompletionDb(); });
 
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to check completion of admin command: %s",
-              zx_status_get_string(status));
+      fdf::error("Failed to check completion of admin command: {}", zx_status_get_string(status));
       return zx::error(status);
     }
 
     if (completion->status_code_type() == StatusCodeType::kGeneric &&
         completion->status_code() == 0) {
-      FDF_LOG(TRACE, "Completed admin command OK.");
+      fdf::trace("Completed admin command OK.");
     } else {
-      FDF_LOG(ERROR, "Completed admin command ERROR: status type=%01x, status=%02x",
-              completion->status_code_type(), completion->status_code());
+      fdf::error("Completed admin command ERROR: status type={:01x}, status={:02x}",
+                 static_cast<uint32_t>(completion->status_code_type()), completion->status_code());
       return zx::error(ZX_ERR_IO);
     }
 
@@ -174,8 +174,8 @@ void Nvme::ProcessIoSubmissions() {
         }
         return;
       default:
-        FDF_LOG(ERROR, "Failed to submit transaction (command %p): %s", io_cmd,
-                zx_status_get_string(status));
+        fdf::error("Failed to submit transaction (command {}): {}",
+                   static_cast<const void*>(io_cmd), zx_status_get_string(status));
         io_cmd->Complete(ZX_ERR_INTERNAL);
         break;
     }
@@ -190,18 +190,19 @@ void Nvme::ProcessIoCompletions() {
     ring_doorbell = true;
 
     if (io_cmd == nullptr) {
-      FDF_LOG(ERROR, "Completed transaction isn't associated with a command.");
+      fdf::error("Completed transaction isn't associated with a command.");
       continue;
     }
 
     if (completion->status_code_type() == StatusCodeType::kGeneric &&
         completion->status_code() == 0) {
-      FDF_LOG(TRACE, "Completed transaction #%u command %p OK.", completion->command_id(), io_cmd);
+      fdf::trace("Completed transaction #{} command {} OK.", completion->command_id(),
+                 static_cast<const void*>(io_cmd));
       io_cmd->Complete(ZX_OK);
     } else {
-      FDF_LOG(ERROR, "Completed transaction #%u command %p ERROR: status type=%01x, status=%02x",
-              completion->command_id(), io_cmd, completion->status_code_type(),
-              completion->status_code());
+      fdf::error("Completed transaction #{} command {} ERROR: status type={:01x}, status={:02x}",
+                 completion->command_id(), static_cast<const void*>(io_cmd),
+                 static_cast<uint32_t>(completion->status_code_type()), completion->status_code());
       io_cmd->Complete(ZX_ERR_IO);
     }
   }
@@ -214,13 +215,13 @@ void Nvme::ProcessIoCompletions() {
 int Nvme::IoLoop() {
   while (true) {
     if (driver_shutdown_) {  // Check this outside of io_signal_ wait-reset below to avoid deadlock.
-      FDF_LOG(DEBUG, "IO thread exiting.");
+      fdf::debug("IO thread exiting.");
       break;
     }
 
     zx_status_t status = sync_completion_wait(&io_signal_, ZX_TIME_INFINITE);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to wait for sync completion: %s", zx_status_get_string(status));
+      fdf::error("Failed to wait for sync completion: {}", zx_status_get_string(status));
       break;
     }
     sync_completion_reset(&io_signal_);
@@ -244,7 +245,7 @@ void Nvme::QueueIoCommand(IoCommand* io_cmd) {
 }
 
 void Nvme::PrepareStop(fdf::PrepareStopCompleter completer) {
-  FDF_LOG(DEBUG, "Preparing to stop driver.");
+  fdf::debug("Preparing to stop driver.");
   driver_shutdown_ = true;
   if (pci_.is_valid()) {
     pci_.SetBusMastering(false);
@@ -275,24 +276,24 @@ static zx_status_t WaitForReset(bool desired_ready_state, fdf::MmioBuffer* mmio)
   int ms_remaining = kResetWaitMs;
   while (ControllerStatusReg::Get().ReadFrom(mmio).ready() != desired_ready_state) {
     if (ms_remaining-- == 0) {
-      FDF_LOG(ERROR, "Timed out waiting for controller ready state %u: ", desired_ready_state);
+      fdf::error("Timed out waiting for controller ready state {}: ", desired_ready_state);
       return ZX_ERR_TIMED_OUT;
     }
     zx::nanosleep(zx::deadline_after(zx::msec(1)));
   }
-  FDF_LOG(DEBUG, "Controller reached ready state %u (took %u ms).", desired_ready_state,
-          kResetWaitMs - ms_remaining);
+  fdf::debug("Controller reached ready state {} (took {} ms).", desired_ready_state,
+             kResetWaitMs - ms_remaining);
   return ZX_OK;
 }
 
 static zx_status_t CheckMinMaxSize(const std::string& name, size_t our_size, size_t min_size,
                                    size_t max_size) {
   if (our_size < min_size) {
-    FDF_LOG(ERROR, "%s size is too small (ours: %zu, min: %zu).", name.c_str(), our_size, min_size);
+    fdf::error("{} size is too small (ours: {}, min: {}).", name.c_str(), our_size, min_size);
     return ZX_ERR_NOT_SUPPORTED;
   }
   if (our_size > max_size) {
-    FDF_LOG(ERROR, "%s size is too large (ours: %zu, max: %zu).", name.c_str(), our_size, max_size);
+    fdf::error("{} size is too large (ours: {}, max: {}).", name.c_str(), our_size, max_size);
     return ZX_ERR_NOT_SUPPORTED;
   }
   return ZX_OK;
@@ -358,9 +359,9 @@ static void PopulateControllerInspect(const IdentifyController& identify,
   model_number = std::string(model_number.c_str());
   serial_number = std::string(serial_number.c_str());
   firmware_rev = std::string(firmware_rev.c_str());
-  FDF_LOG(INFO, "Model number:  '%s'", model_number.c_str());
-  FDF_LOG(INFO, "Serial number: '%s'", serial_number.c_str());
-  FDF_LOG(INFO, "Firmware rev.: '%s'", firmware_rev.c_str());
+  fdf::info("Model number:  '{}'", model_number.c_str());
+  fdf::info("Serial number: '{}'", serial_number.c_str());
+  fdf::info("Firmware rev.: '{}'", firmware_rev.c_str());
   controller.RecordString("model_number", model_number);
   controller.RecordString("serial_number", serial_number);
   controller.RecordString("firmware_rev", firmware_rev);
@@ -419,7 +420,7 @@ zx_status_t Nvme::Init() {
   }
 
   if (ControllerStatusReg::Get().ReadFrom(&*mmio_).ready()) {
-    FDF_LOG(DEBUG, "Controller is already enabled. Resetting it.");
+    fdf::debug("Controller is already enabled. Resetting it.");
     ControllerConfigReg::Get().ReadFrom(&*mmio_).set_enabled(0).WriteTo(&*mmio_);
     status = WaitForReset(/*desired_ready_state=*/false, &*mmio_);
     if (status != ZX_OK) {
@@ -432,7 +433,7 @@ zx_status_t Nvme::Init() {
       QueuePair::Create(bti_.borrow(), 0, kAdminQueueMaxEntries, caps_reg, *mmio_,
                         /*prealloc_prp=*/false);
   if (admin_queue.is_error()) {
-    FDF_LOG(ERROR, "Failed to set up admin queue: %s", admin_queue.status_string());
+    fdf::error("Failed to set up admin queue: {}", admin_queue.status_string());
     return admin_queue.status_value();
   }
   admin_queue_ = std::move(*admin_queue);
@@ -453,7 +454,7 @@ zx_status_t Nvme::Init() {
       .set_addr(admin_queue_->submission().GetDeviceAddress())
       .WriteTo(&*mmio_);
 
-  FDF_LOG(DEBUG, "Enabling controller.");
+  fdf::debug("Enabling controller.");
   ControllerConfigReg::Get()
       .ReadFrom(&*mmio_)
       .set_controller_ready_independent_of_media(0)
@@ -481,7 +482,7 @@ zx_status_t Nvme::Init() {
       QueuePair::Create(bti_.borrow(), 1, caps_reg.max_queue_entries(), caps_reg, *mmio_,
                         /*prealloc_prp=*/true);
   if (io_queue.is_error()) {
-    FDF_LOG(ERROR, "Failed to set up io queue: %s", io_queue.status_string());
+    fdf::error("Failed to set up io queue: {}", io_queue.status_string());
     return io_queue.status_value();
   }
   io_queue_ = std::move(*io_queue);
@@ -495,7 +496,7 @@ zx_status_t Nvme::Init() {
       "nvme-irq-thread");
   if (thrd_status != thrd_success) {
     status = thrd_status_to_zx_status(thrd_status);
-    FDF_LOG(ERROR, " Failed to create IRQ thread: %s", zx_status_get_string(status));
+    fdf::error(" Failed to create IRQ thread: {}", zx_status_get_string(status));
     return status;
   }
   irq_thread_started_ = true;
@@ -507,7 +508,7 @@ zx_status_t Nvme::Init() {
       "nvme-io-thread");
   if (thrd_status != thrd_success) {
     status = thrd_status_to_zx_status(thrd_status);
-    FDF_LOG(ERROR, " Failed to create IO thread: %s", zx_status_get_string(status));
+    fdf::error(" Failed to create IO thread: {}", zx_status_get_string(status));
     return status;
   }
   io_thread_started_ = true;
@@ -515,14 +516,14 @@ zx_status_t Nvme::Init() {
   zx::vmo admin_data;
   status = zx::vmo::create(kPageSize, 0, &admin_data);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to create vmo: {}", zx_status_get_string(status));
     return status;
   }
 
   fzl::VmoMapper mapper;
   status = mapper.Map(admin_data);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to map vmo: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -530,7 +531,7 @@ zx_status_t Nvme::Init() {
   identify_controller.set_structure(IdentifySubmission::IdentifyCns::kIdentifyController);
   zx::result<Completion> completion = DoAdminCommandSync(identify_controller, admin_data.borrow());
   if (completion.is_error()) {
-    FDF_LOG(ERROR, "Failed to identify controller: %s", completion.status_string());
+    fdf::error("Failed to identify controller: {}", completion.status_string());
     return completion.status_value();
   }
 
@@ -562,14 +563,13 @@ zx_status_t Nvme::Init() {
     GetVolatileWriteCacheSubmission get_vwc_enable;
     completion = DoAdminCommandSync(get_vwc_enable);
     if (completion.is_error()) {
-      FDF_LOG(ERROR, "Failed to get 'Volatile Write Cache' feature: %s",
-              completion.status_string());
+      fdf::error("Failed to get 'Volatile Write Cache' feature: {}", completion.status_string());
       return completion.status_value();
     } else {
       const auto& vwc_completion = completion->GetCompletion<GetVolatileWriteCacheCompletion>();
       volatile_write_cache_enabled_ = vwc_completion.get_volatile_write_cache_enabled();
-      FDF_LOG(DEBUG, "Volatile write cache is %s",
-              volatile_write_cache_enabled_ ? "enabled" : "disabled");
+      fdf::debug("Volatile write cache is {}",
+                 volatile_write_cache_enabled_ ? "enabled" : "disabled");
     }
   }
 
@@ -582,18 +582,16 @@ zx_status_t Nvme::Init() {
   set_queue_count.set_num_submission_queues(1).set_num_completion_queues(1);
   completion = DoAdminCommandSync(set_queue_count);
   if (completion.is_error()) {
-    FDF_LOG(ERROR, "Failed to set feature (number of queues): %s", completion.status_string());
+    fdf::error("Failed to set feature (number of queues): {}", completion.status_string());
     return completion.status_value();
   }
   const auto& ioq_completion = completion->GetCompletion<SetIoQueueCountCompletion>();
   if (ioq_completion.num_submission_queues() < 1) {
-    FDF_LOG(ERROR, "Unexpected IO submission queue count: %u",
-            ioq_completion.num_submission_queues());
+    fdf::error("Unexpected IO submission queue count: {}", ioq_completion.num_submission_queues());
     return ZX_ERR_IO;
   }
   if (ioq_completion.num_completion_queues() < 1) {
-    FDF_LOG(ERROR, "Unexpected IO completion queue count: %u",
-            ioq_completion.num_completion_queues());
+    fdf::error("Unexpected IO completion queue count: {}", ioq_completion.num_completion_queues());
     return ZX_ERR_IO;
   }
 
@@ -607,7 +605,7 @@ zx_status_t Nvme::Init() {
   create_iocq.data_pointer[0] = io_queue_->completion().GetDeviceAddress();
   completion = DoAdminCommandSync(create_iocq);
   if (completion.is_error()) {
-    FDF_LOG(ERROR, "Failed to create IO completion queue: %s", completion.status_string());
+    fdf::error("Failed to create IO completion queue: {}", completion.status_string());
     return completion.status_value();
   }
 
@@ -620,7 +618,7 @@ zx_status_t Nvme::Init() {
   create_iosq.data_pointer[0] = io_queue_->submission().GetDeviceAddress();
   completion = DoAdminCommandSync(create_iosq);
   if (completion.is_error()) {
-    FDF_LOG(ERROR, "Failed to create IO submission queue: %s", completion.status_string());
+    fdf::error("Failed to create IO submission queue: {}", completion.status_string());
     return completion.status_value();
   }
 
@@ -629,7 +627,7 @@ zx_status_t Nvme::Init() {
   identify_ns_list.set_structure(IdentifySubmission::IdentifyCns::kActiveNamespaceList);
   completion = DoAdminCommandSync(identify_ns_list, admin_data.borrow());
   if (completion.is_error()) {
-    FDF_LOG(ERROR, "Failed to identify active namespace list: %s", completion.status_string());
+    fdf::error("Failed to identify active namespace list: {}", completion.status_string());
     return completion.status_value();
   }
 
@@ -637,13 +635,13 @@ zx_status_t Nvme::Init() {
   auto ns_list = static_cast<IdentifyActiveNamespaces*>(mapper.start());
   for (size_t i = 0; i < std::size(ns_list->nsid) && ns_list->nsid[i] != 0; i++) {
     if (i >= kMaxNamespacesToBind) {
-      FDF_LOG(WARNING, "Skipping additional namespaces after adding %zu.", i);
+      fdf::warn("Skipping additional namespaces after adding {}.", i);
       break;
     }
     const uint32_t namespace_id = ns_list->nsid[i];
     zx::result<std::unique_ptr<Namespace>> ns = Namespace::Bind(this, namespace_id);
     if (ns.is_error()) {
-      FDF_LOG(ERROR, "Failed to add namespace %u: %s", namespace_id, ns.status_string());
+      fdf::error("Failed to add namespace {}: {}", namespace_id, ns.status_string());
       return ns.status_value();
     }
     namespaces_.push_back(*std::move(ns));
@@ -656,47 +654,47 @@ zx::result<fit::function<void()>> Nvme::InitResources() {
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
       incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get pci client: %s", pci_client_result.status_string());
+    fdf::error("Failed to get pci client: {}", pci_client_result.status_string());
     return pci_client_result.take_error();
   }
 
   pci_ = ddk::Pci(std::move(pci_client_result).value());
   if (!pci_.is_valid()) {
-    FDF_LOG(ERROR, "Failed to find PCI fragment");
+    fdf::error("Failed to find PCI fragment");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   std::optional<fdf::MmioBuffer> mmio;
   zx_status_t status = pci_.MapMmio(0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &mmio);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map registers: %s", zx_status_get_string(status));
+    fdf::error("Failed to map registers: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   mmio_ = std::move(mmio);
 
   status = pci_.ConfigureInterruptMode(1, &irq_mode_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to configure interrupt: %s", zx_status_get_string(status));
+    fdf::error("Failed to configure interrupt: {}", zx_status_get_string(status));
     return zx::error(status);
   }
-  FDF_LOG(DEBUG, "Interrupt mode: %u", static_cast<uint8_t>(irq_mode_));
+  fdf::debug("Interrupt mode: {}", static_cast<uint8_t>(irq_mode_));
 
   status = pci_.MapInterrupt(0, &irq_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map interrupt: %s", zx_status_get_string(status));
+    fdf::error("Failed to map interrupt: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   status = pci_.SetBusMastering(true);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to enable bus mastering: %s", zx_status_get_string(status));
+    fdf::error("Failed to enable bus mastering: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   auto release = [this] { pci_.SetBusMastering(false); };
 
   status = pci_.GetBti(0, &bti_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to get BTI handle: %s", zx_status_get_string(status));
+    fdf::error("Failed to get BTI handle: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok(std::move(release));
@@ -727,13 +725,13 @@ zx::result<> Nvme::Start() {
   auto result =
       parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
   zx_status_t status = Init();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Driver initialization failed: %s", zx_status_get_string(status));
+    fdf::error("Driver initialization failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 

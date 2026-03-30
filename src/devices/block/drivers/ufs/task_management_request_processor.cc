@@ -4,6 +4,7 @@
 
 #include "task_management_request_processor.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/trace/event.h>
 
 #include <memory>
@@ -22,12 +23,12 @@ zx::result<> TaskManagementRequestProcessor::Init() {
   if (!HostControllerStatusReg::Get()
            .ReadFrom(&register_)
            .utp_task_management_request_list_ready()) {
-    FDF_LOG(ERROR, "UTP task management request list is not ready\n");
+    fdf::error("UTP task management request list is not ready\n");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (UtmrListDoorBellReg::Get().ReadFrom(&register_).door_bell() != 0) {
-    FDF_LOG(ERROR, "UTP task management request list door bell is not ready\n");
+    fdf::error("UTP task management request list door bell is not ready\n");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -54,8 +55,8 @@ uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
             request_list_.GetRequestDescriptor<TaskManagementRequestDescriptor>(slot_num);
         TaskManagementResponseUpiu response(descriptor->GetResponseData());
         if (response.GetHeader().response != UpiuHeaderResponseCode::kTargetSuccess) {
-          FDF_LOG(ERROR, "UTP task management request command failure: response=%x",
-                  response.GetHeader().response);
+          fdf::error("UTP task management request command failure: response={}",
+                     response.GetHeader().response);
           result = zx::error(ZX_ERR_BAD_STATE);
         }
         request_slot.result = result.status_value();
@@ -84,7 +85,7 @@ zx::result<TaskManagementResponseUpiu> TaskManagementRequestProcessor::SendTaskM
 
   if (zx::result<> result = FillDescriptorAndSendRequest(slot.value(), request);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to send upiu: %s", result.status_string());
+    fdf::error("Failed to send upiu: {}", result);
     if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
       return result.take_error();
     }
@@ -99,7 +100,7 @@ zx::result<TaskManagementResponseUpiu> TaskManagementRequestProcessor::SendTaskM
     return result.take_error();
   }
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "SendTaskManagementRequest timed out: %s", zx_status_get_string(status));
+    fdf::error("SendTaskManagementRequest timed out: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   if (request_result != ZX_OK) {
@@ -120,8 +121,8 @@ TaskManagementRequestProcessor::GetTaskManagementServiceResponse(TaskManagementF
   TaskManagementRequestUpiu query_task(function, lun, task_tag);
   zx::result<TaskManagementResponseUpiu> response = SendTaskManagementRequest(query_task);
   if (response.is_error()) {
-    FDF_LOG(ERROR, "Failed to task management(0x%x) command, %s", static_cast<uint8_t>(function),
-            response.status_string());
+    fdf::error("Failed to task management(0x{:x}) command, {}", static_cast<uint8_t>(function),
+               response.status_string());
     return response.take_error();
   }
   return zx::ok(static_cast<TaskManagementServiceResponse>(
@@ -146,7 +147,7 @@ zx::result<> TaskManagementRequestProcessor::FillDescriptorAndSendRequest(
     return result.take_error();
   }
   if (zx::result<> result = RingRequestDoorbell(slot); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to send cmd %s", result.status_string());
+    fdf::error("Failed to send cmd {}", result);
     return result.take_error();
   }
   return zx::ok();

@@ -5,6 +5,7 @@
 #include "src/devices/block/drivers/nvme/namespace.h"
 
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
@@ -55,7 +56,7 @@ zx_status_t Namespace::AddNamespace() {
 
   auto result = controller_->root_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child Namespace: %s", result.status_string());
+    fdf::error("Failed to add child Namespace: {}", result.status_string());
     return result.status();
   }
   return ZX_OK;
@@ -63,14 +64,14 @@ zx_status_t Namespace::AddNamespace() {
 
 zx::result<std::unique_ptr<Namespace>> Namespace::Bind(Nvme* controller, uint32_t namespace_id) {
   if (namespace_id == 0 || namespace_id == ~0u) {
-    FDF_LOG(ERROR, "Attempted to create namespace with invalid id %u.", namespace_id);
+    fdf::error("Attempted to create namespace with invalid id {}.", namespace_id);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   fbl::AllocChecker ac;
   auto ns = fbl::make_unique_checked<Namespace>(&ac, controller, namespace_id);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for namespace %u.", namespace_id);
+    fdf::error("Failed to allocate memory for namespace {}.", namespace_id);
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -129,14 +130,14 @@ zx_status_t Namespace::Init() {
   const uint32_t kPageSize = zx_system_get_page_size();
   zx_status_t status = zx::vmo::create(kPageSize, 0, &admin_data);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to create vmo: {}", zx_status_get_string(status));
     return status;
   }
 
   fzl::VmoMapper mapper;
   status = mapper.Map(admin_data);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to map vmo: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -147,8 +148,7 @@ zx_status_t Namespace::Init() {
   zx::result<Completion> completion =
       controller_->DoAdminCommandSync(identify_ns, admin_data.borrow());
   if (completion.is_error()) {
-    FDF_LOG(ERROR, "Failed to identify namespace %u: %s", namespace_id_,
-            completion.status_string());
+    fdf::error("Failed to identify namespace {}: {}", namespace_id_, completion.status_string());
     return completion.status_value();
   }
 
@@ -160,13 +160,13 @@ zx_status_t Namespace::Init() {
   block_info_.block_size = fmt.lba_data_size_bytes();
 
   if (fmt.metadata_size_bytes()) {
-    FDF_LOG(ERROR, "NVMe drive uses LBA format with metadata (%u bytes), which we do not support.",
-            fmt.metadata_size_bytes());
+    fdf::error("NVMe drive uses LBA format with metadata ({} bytes), which we do not support.",
+               fmt.metadata_size_bytes());
     return ZX_ERR_NOT_SUPPORTED;
   }
   // The NVMe spec only mentions a lower bound. The upper bound may be a false requirement.
   if ((block_info_.block_size < 512) || (block_info_.block_size > 32768)) {
-    FDF_LOG(ERROR, "Cannot handle LBA size of %u.", block_info_.block_size);
+    fdf::error("Cannot handle LBA size of {}.", block_info_.block_size);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -220,12 +220,12 @@ void Namespace::BlockImplQueue(block_op_t* op, block_impl_queue_callback callbac
         io_cmd->Complete(status);
         return;
       }
-      FDF_LOG(TRACE, "Block IO: %s: %u blocks @ LBA %zu",
-              op->command.opcode == BLOCK_OPCODE_WRITE ? "wr" : "rd", op->rw.length,
-              op->rw.offset_dev);
+      fdf::trace("Block IO: {}: {} blocks @ LBA {}",
+                 op->command.opcode == BLOCK_OPCODE_WRITE ? "wr" : "rd", op->rw.length,
+                 op->rw.offset_dev);
       break;
     case BLOCK_OPCODE_FLUSH:
-      FDF_LOG(TRACE, "Block IO: flush");
+      fdf::trace("Block IO: flush");
       break;
     default:
       io_cmd->Complete(ZX_ERR_NOT_SUPPORTED);

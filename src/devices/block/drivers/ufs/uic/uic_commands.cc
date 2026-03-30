@@ -4,6 +4,8 @@
 
 #include "uic_commands.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 #include "src/devices/block/drivers/ufs/registers.h"
 #include "src/devices/block/drivers/ufs/ufs.h"
 
@@ -30,7 +32,7 @@ zx::result<> UicCommand::SendUicCommand() {
 
   // Clear 'UIC command completion status' if set
   if (InterruptStatusReg::Get().ReadFrom(&mmio).uic_command_completion_status()) {
-    FDF_LOG(ERROR, "The previously set uic_command_completion_state was not cleared. \n");
+    fdf::error("The previously set uic_command_completion_state was not cleared. \n");
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -80,9 +82,9 @@ zx::result<> UicCommand::UicPostProcess() {
     auto opcode = UicCommandReg::Get().ReadFrom(&GetController().GetMmio()).command_opcode();
     auto mib_attribute =
         UicCommandArgument1Reg::Get().ReadFrom(&GetController().GetMmio()).mib_attribute();
-    FDF_LOG(ERROR,
-            "Failed to send UIC command, opcode=0x%x, mib_attribute=0x%x, result_code = %u\n",
-            static_cast<uint32_t>(opcode), mib_attribute, result_code);
+    fdf::error(
+        "Failed to send UIC command, opcode=0x{:x}, mib_attribute=0x{:x}, result_code = {}\n",
+        static_cast<uint32_t>(opcode), mib_attribute, result_code);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -173,7 +175,8 @@ zx::result<> DmeHibernateCommand::UicPostProcess() {
   if (power_mode_state != HostControllerStatusReg::PowerModeStatus::kPowerOk &&
       power_mode_state != HostControllerStatusReg::PowerModeStatus::kPowerLocal &&
       power_mode_state != HostControllerStatusReg::PowerModeStatus::kPowerRemote) {
-    FDF_LOG(ERROR, "Failed to change power mode, UPMCRS = 0x%x\n", power_mode_state);
+    fdf::error("Failed to change power mode, UPMCRS = 0x{:x}\n",
+               static_cast<uint32_t>(power_mode_state));
     return zx::error(ZX_ERR_BAD_STATE);
   }
 

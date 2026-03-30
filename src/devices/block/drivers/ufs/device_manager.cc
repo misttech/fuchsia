@@ -4,6 +4,7 @@
 
 #include "src/devices/block/drivers/ufs/device_manager.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
@@ -22,7 +23,7 @@ zx::result<std::unique_ptr<DeviceManager>> DeviceManager::Create(
   auto device_manager = fbl::make_unique_checked<DeviceManager>(
       &ac, controller, transfer_request_processor, properties);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate device manager.");
+    fdf::error("Failed to allocate device manager.");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
   return zx::ok(std::move(device_manager));
@@ -32,7 +33,7 @@ zx::result<> DeviceManager::SendLinkStartUp() {
   DmeLinkStartUpUicCommand link_startup_command(controller_);
   if (zx::result<std::optional<uint32_t>> result = link_startup_command.SendCommand();
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to startup UFS link: %s", result.status_string());
+    fdf::error("Failed to startup UFS link: {}", result);
     return result.take_error();
   }
 
@@ -59,7 +60,7 @@ zx::result<> DeviceManager::DeviceInit() {
       break;
 
     if (zx::clock::get_monotonic() > device_init_time_out) {
-      FDF_LOG(ERROR, "Wait for fDeviceInit timed out");
+      fdf::error("Wait for fDeviceInit timed out");
       return zx::error(ZX_ERR_TIMED_OUT);
     }
     usleep(10000);
@@ -77,10 +78,10 @@ zx::result<> DeviceManager::GetControllerDescriptor() {
   // The field definitions for VersionReg and wSpecVersion are the same.
   // wSpecVersion use big-endian byte ordering.
   auto version = VersionReg::Get().FromValue(betoh16(device_descriptor_.wSpecVersion));
-  FDF_LOG(INFO, "UFS device version %u.%u%u", version.major_version_number(),
-          version.minor_version_number(), version.version_suffix());
+  fdf::info("UFS device version {}.{}{}", version.major_version_number(),
+            version.minor_version_number(), version.version_suffix());
 
-  FDF_LOG(INFO, "%u enabled LUNs found", device_descriptor_.bNumberLU);
+  fdf::info("{} enabled LUNs found", device_descriptor_.bNumberLU);
 
   auto geometry_descriptor = ReadDescriptor<GeometryDescriptor>(DescriptorType::kGeometry);
   if (geometry_descriptor.is_error()) {
@@ -94,16 +95,16 @@ zx::result<> DeviceManager::GetControllerDescriptor() {
   } else if (geometry_descriptor_.bMaxNumberLU == 1) {
     max_lun_count_ = 32;
   } else {
-    FDF_LOG(ERROR, "Invalid Geometry Descriptor bMaxNumberLU value=%d",
-            geometry_descriptor_.bMaxNumberLU);
+    fdf::error("Invalid Geometry Descriptor bMaxNumberLU value={}",
+               geometry_descriptor_.bMaxNumberLU);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   // The kDeviceDensityUnit is defined in the spec as 512.
   // qTotalRawDeviceCapacity use big-endian byte ordering.
   constexpr uint32_t kDeviceDensityUnit = 512;
-  FDF_LOG(INFO, "UFS device total size is %lu bytes",
-          betoh64(geometry_descriptor_.qTotalRawDeviceCapacity) * kDeviceDensityUnit);
+  fdf::info("UFS device total size is {} bytes",
+            betoh64(geometry_descriptor_.qTotalRawDeviceCapacity) * kDeviceDensityUnit);
 
   return zx::ok();
 }
@@ -203,7 +204,7 @@ zx::result<uint32_t> DeviceManager::GetBootLunEnabled() {
   if (boot_lun_enabled.is_error()) {
     return boot_lun_enabled.take_error();
   }
-  FDF_LOG(DEBUG, "bBootLunEn 0x%0x", boot_lun_enabled.value());
+  fdf::debug("bBootLunEn 0x{:x}", boot_lun_enabled.value());
   return zx::ok(boot_lun_enabled.value());
 }
 
@@ -239,7 +240,7 @@ zx::result<> DeviceManager::PostExceptionEventsTask() {
   zx_status_t status = async::PostTask(controller_.exception_event_dispatcher().async_dispatcher(),
                                        [this] { HandleExceptionEvents(); });
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to post Exception Event task: %s", zx_status_get_string(status));
+    fdf::error("Failed to post Exception Event task: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();
@@ -248,16 +249,16 @@ zx::result<> DeviceManager::PostExceptionEventsTask() {
 void DeviceManager::HandleExceptionEvents() {
   zx::result<ExceptionEventStatus> ee_status = GetExceptionEventStatus();
   if (ee_status.is_error()) {
-    FDF_LOG(ERROR, "Failed to get Exception Event Status");
+    fdf::error("Failed to get Exception Event Status");
   }
   if (ee_status->urgent_bkops()) {
     if (auto result = HandleBackgroundOpEvent(); result.is_error()) {
-      FDF_LOG(ERROR, "Failed to handle Background Operations Event");
+      fdf::error("Failed to handle Background Operations Event");
     }
   }
   if (ee_status->too_high_temp() || ee_status->too_low_temp()) {
     // TODO(b/42075643): Implement temp exception handler.
-    FDF_LOG(INFO, "A temperature exception has occurred");
+    fdf::info("A temperature exception has occurred");
   }
 }
 
@@ -362,7 +363,7 @@ zx::result<BackgroundOpStatus> DeviceManager::GetBackgroundOpStatus() {
     return bkop_status_attribute.take_error();
   }
   if (bkop_status_attribute.value() > BackgroundOpStatus::kCritical) {
-    FDF_LOG(ERROR, "Invalid BackgroundOpStatus: %d", bkop_status_attribute.value());
+    fdf::error("Invalid BackgroundOpStatus: {}", bkop_status_attribute.value());
     return zx::error(ZX_ERR_BAD_STATE);
   }
   BackgroundOpStatus background_op_status =
@@ -380,16 +381,16 @@ zx::result<> DeviceManager::ConfigureWriteBooster(inspect::Node &wb_node) {
   }
 
   if (zx::result<> result = EnableWriteBooster(wb_node); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to enable WriteBooster: %s", result.status_string());
+    fdf::error("Failed to enable WriteBooster: {}", result);
     return result.take_error();
   }
 
   auto disable_write_booster = fit::defer([&] {
     if (is_write_booster_enabled_) {
       if (zx::result<> result = DisableWriteBooster(); result.is_error()) {
-        FDF_LOG(ERROR, "Failed to disable WriteBooster: %s", result.status_string());
+        fdf::error("Failed to disable WriteBooster: {}", result);
       } else {
-        FDF_LOG(WARNING, "WriteBooster is disabled");
+        fdf::warn("WriteBooster is disabled");
       }
     }
   });
@@ -425,14 +426,14 @@ zx::result<> DeviceManager::ConfigureWriteBooster(inspect::Node &wb_node) {
       }
     }
   } else {
-    FDF_LOG(WARNING, "Not supported WriteBooster buffer type: 0x%x",
-            static_cast<uint8_t>(write_booster_buffer_type_));
+    fdf::warn("Not supported WriteBooster buffer type: 0x{:x}",
+              static_cast<uint8_t>(write_booster_buffer_type_));
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   if (alloc_units == 0) {
     // Unable to enable WriteBooster due to lack of resources.
-    FDF_LOG(WARNING, "The WriteBooster buffer size is zero.");
+    fdf::warn("The WriteBooster buffer size is zero.");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -444,19 +445,19 @@ zx::result<> DeviceManager::ConfigureWriteBooster(inspect::Node &wb_node) {
 
   zx::result<bool> result = IsWriteBoosterBufferLifeTimeLeft();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to IsWriteBoosterBufferLifeTimeLeft(): %s", result.status_string());
+    fdf::error("Failed to IsWriteBoosterBufferLifeTimeLeft(): {}", result);
     return result.take_error();
   }
   if (!result.value()) {
     // Unable to enable WriteBooster due to lack of resources.
-    FDF_LOG(WARNING, "Exceeded its maximum estimated WriteBooster Buffer life time");
+    fdf::warn("Exceeded its maximum estimated WriteBooster Buffer life time");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   // TODO(https://fxbug.dev/42075643): Need to handle WRITEBOOSTER_FLUSH_NEEDED exception case.
 
   disable_write_booster.cancel();
-  FDF_LOG(INFO, "WriteBooster is enabled");
+  fdf::info("WriteBooster is enabled");
   return zx::ok();
 }
 
@@ -543,7 +544,7 @@ zx::result<bool> DeviceManager::NeedWriteBoosterBufferFlush() {
   }
   if (!result.value()) {
     if (auto result = DisableWriteBooster(); result.is_error()) {
-      FDF_LOG(ERROR, "Failed to disable WriteBooster: %s", result.status_string());
+      fdf::error("Failed to disable WriteBooster: {}", result);
       return result.take_error();
     }
     return zx::ok(false);
@@ -789,7 +790,8 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
           .ReadFrom(&controller_.GetMmio())
           .uic_power_mode_change_request_status();
   if (power_mode_status != HostControllerStatusReg::PowerModeStatus::kPowerLocal) {
-    FDF_LOG(ERROR, "Failed to change power mode: power_mode_status = 0x%x", power_mode_status);
+    fdf::error("Failed to change power mode: power_mode_status = 0x{:x}",
+               static_cast<uint32_t>(power_mode_status));
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -835,7 +837,7 @@ zx::result<> DeviceManager::SetPowerCondition(scsi::PowerCondition target_power_
   zx_status_t status = controller_.StartStopUnit(kPlaceholderTarget, scsi_lun.value(),
                                                  /*immed*/ false, target_power_condition);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to send START STOP UNIT SCSI command: %s", zx_status_get_string(status));
+    fdf::error("Failed to send START STOP UNIT SCSI command: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -883,7 +885,7 @@ zx::result<> DeviceManager::SuspendPower() {
   if (result.value()) {
     // TODO(b/42075643): We need to keep the power mode active until the
     // Writebooster flush is complete.
-    FDF_LOG(WARNING, "WriteBooster buffer flush is needed");
+    fdf::warn("WriteBooster buffer flush is needed");
     return zx::ok();
   }
 
@@ -910,7 +912,7 @@ zx::result<> DeviceManager::SuspendPower() {
 
   current_power_mode_ = target_power_mode;
   properties_.power_suspended.Set(true);
-  FDF_LOG(INFO, "Power suspended.");
+  fdf::info("Power suspended.");
   return zx::ok();
 }
 
@@ -960,7 +962,7 @@ zx::result<> DeviceManager::ResumePower() {
 
   current_power_mode_ = target_power_mode;
   properties_.power_suspended.Set(false);
-  FDF_LOG(INFO, "Power resumed.");
+  fdf::info("Power resumed.");
   return zx::ok();
 }
 
@@ -975,11 +977,11 @@ zx::result<> DeviceManager::InitUfsPowerMode(inspect::Node &controller_node,
   }
   current_power_mode_ = static_cast<UfsPowerMode>(power_mode.value());
   if (current_power_mode_ != UfsPowerMode::kActive) {
-    FDF_LOG(ERROR, "Initial power mode is not active: 0x%x",
-            static_cast<uint8_t>(current_power_mode_));
+    fdf::error("Initial power mode is not active: 0x{:x}",
+               static_cast<uint8_t>(current_power_mode_));
     return zx::error(ZX_ERR_BAD_STATE);
   }
-  FDF_LOG(DEBUG, "bCurrentPowerMode 0x%0x", power_mode.value());
+  fdf::debug("bCurrentPowerMode 0x{:x}", power_mode.value());
 
   current_power_condition_ = power_mode_map_[current_power_mode_].first;
   current_link_state_ = power_mode_map_[current_power_mode_].second;

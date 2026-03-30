@@ -5,6 +5,7 @@
 #include "unit-lib.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fake-bti/bti.h>
 
 #include <memory>
@@ -70,7 +71,7 @@ zx::result<> UfsTest::TaskManagementFillDescriptorAndSendRequest(
 zx::result<> UfsTest::MapVmo(zx::unowned_vmo &vmo, fzl::VmoMapper &mapper, uint64_t offset,
                              uint64_t length) {
   if (zx_status_t status = mapper.Map(*vmo, offset, length); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map IO buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to map IO buffer: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();

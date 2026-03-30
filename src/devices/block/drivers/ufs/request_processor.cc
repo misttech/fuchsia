@@ -4,6 +4,8 @@
 
 #include "request_processor.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 #include "src/devices/block/drivers/ufs/ufs.h"
 
 namespace ufs {
@@ -22,7 +24,7 @@ zx::result<std::unique_ptr<Processor>> RequestProcessor::Create(Ufs &ufs, zx::un
   auto request_processor = fbl::make_unique_checked<Processor>(
       &ac, std::move(request_list.value()), ufs, std::move(bti), mmio, entry_count);
   if (!ac.check()) {
-    FDF_LOG(ERROR, "Failed to allocate request processor.");
+    fdf::error("Failed to allocate request processor.");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
   return zx::ok(std::move(request_processor));
@@ -49,14 +51,14 @@ zx::result<uint8_t> RequestProcessor::ReserveSlot() {
       return zx::ok(slot_num);
     }
   }
-  FDF_LOG(DEBUG, "Failed to reserve a request slot");
+  fdf::debug("Failed to reserve a request slot");
   return zx::error(ZX_ERR_NO_RESOURCES);
 }
 
 zx::result<> RequestProcessor::ClearSlot(RequestSlot &request_slot) {
   if (request_slot.pmt.is_valid()) {
     if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to unpin IO buffer: %s", zx_status_get_string(status));
+      fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
       request_slot.result = status;
       return zx::error(status);
     }

@@ -6,13 +6,14 @@
 
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace ufs {
 
 zx::result<> UfsPci::InitResources() {
   auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (!pci_client_end.is_ok()) {
-    FDF_LOG(ERROR, "Failed to connect to PCI device service: %s", pci_client_end.status_string());
+    fdf::error("Failed to connect to PCI device service: {}", pci_client_end);
     return pci_client_end.take_error();
   }
   pci_ = fidl::WireSyncClient<fuchsia_hardware_pci::Device>(*std::move(pci_client_end));
@@ -21,16 +22,16 @@ zx::result<> UfsPci::InitResources() {
   {
     const auto result = pci_->GetBar(0);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetBar failed: %s", result.status_string());
+      fdf::error("Call to GetBar failed: {}", result.status_string());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "GetBar failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("GetBar failed: {}", zx_status_get_string(result->error_value()));
       return zx::error(result->error_value());
     }
 
     if (!result->value()->result.result.is_vmo()) {
-      FDF_LOG(ERROR, "PCI BAR is not an MMIO BAR.");
+      fdf::error("PCI BAR is not an MMIO BAR.");
       return zx::error(ZX_ERR_WRONG_TYPE);
     }
     mmio_buffer_vmo_ = std::move(result->value()->result.result.vmo());
@@ -41,11 +42,11 @@ zx::result<> UfsPci::InitResources() {
   {
     const auto result = pci_->SetBusMastering(true);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to SetBusMastering failed: %s", result.status_string());
+      fdf::error("Call to SetBusMastering failed: {}", result.status_string());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "SetBusMastering failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("SetBusMastering failed: {}", zx_status_get_string(result->error_value()));
       return zx::error(result->error_value());
     }
   }
@@ -54,7 +55,7 @@ zx::result<> UfsPci::InitResources() {
   {
     const auto result = pci_->GetInterruptModes();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetInterruptModes failed: %s", result.status_string());
+      fdf::error("Call to GetInterruptModes failed: {}", result.status_string());
       return zx::error(result.status());
     }
     if (result->modes.msix_count > 0) {
@@ -64,19 +65,19 @@ zx::result<> UfsPci::InitResources() {
     } else if (result->modes.has_legacy) {
       irq_mode_ = fuchsia_hardware_pci::InterruptMode::kLegacy;
     } else {
-      FDF_LOG(ERROR, "No interrupt modes are supported.");
+      fdf::error("No interrupt modes are supported.");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
-    FDF_LOG(DEBUG, "Interrupt mode: %u", static_cast<uint8_t>(irq_mode_));
+    fdf::debug("Interrupt mode: {}", static_cast<uint8_t>(irq_mode_));
   }
   {
     const auto result = pci_->SetInterruptMode(irq_mode_, 1);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to SetInterruptMode failed: %s", result.status_string());
+      fdf::error("Call to SetInterruptMode failed: {}", result.status_string());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "SetInterruptMode failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("SetInterruptMode failed: {}", zx_status_get_string(result->error_value()));
       return zx::error(result->error_value());
     }
   }
@@ -85,11 +86,11 @@ zx::result<> UfsPci::InitResources() {
   {
     const auto result = pci_->MapInterrupt(0);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to MapInterrupt failed: %s", result.status_string());
+      fdf::error("Call to MapInterrupt failed: {}", result.status_string());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "MapInterrupt failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("MapInterrupt failed: {}", zx_status_get_string(result->error_value()));
       return zx::error(result->error_value());
     }
     irq_ = std::move(result->value()->interrupt);
@@ -99,11 +100,11 @@ zx::result<> UfsPci::InitResources() {
   {
     const auto result = pci_->GetBti(0);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to GetBti failed: %s", result.status_string());
+      fdf::error("Call to GetBti failed: {}", result.status_string());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "GetBti failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("GetBti failed: {}", zx_status_get_string(result->error_value()));
       return zx::error(result->error_value());
     }
     bti_ = std::move(result->value()->bti);
@@ -116,11 +117,11 @@ zx_status_t UfsPci::StopResources() {
   if (pci_.is_valid()) {
     const auto result = pci_->SetBusMastering(false);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to SetBusMastering failed: %s", result.status_string());
+      fdf::error("Call to SetBusMastering failed: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "SetBusMastering failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("SetBusMastering failed: {}", zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -131,7 +132,7 @@ zx::result<> UfsPci::InitQuirk() {
   fuchsia_hardware_pci::wire::DeviceInfo info;
   const auto result = pci_->GetDeviceInfo();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to get PCI device info: %s", result.status_string());
+    fdf::error("Failed to get PCI device info: {}", result.status_string());
     return zx::error(result.status());
   }
   info = result->info;
@@ -144,8 +145,8 @@ zx::result<> UfsPci::InitQuirk() {
   if ((info.vendor_id == kRedHatVendorId) && (info.device_id == kQemuUfsHostController)) {
     qemu_quirk_ = true;
   }
-  FDF_LOG(INFO, "PCI device info: Vendor ID = 0x%x, Device ID = 0x%x", info.vendor_id,
-          info.device_id);
+  fdf::info("PCI device info: Vendor ID = 0x{:x}, Device ID = 0x{:x}", info.vendor_id,
+            info.device_id);
 
   return zx::ok();
 }
@@ -154,11 +155,11 @@ void UfsPci::OnIrqComplete() {
   if (irq_mode_ == fuchsia_hardware_pci::InterruptMode::kLegacy) {
     const fidl::WireResult result = pci_->AckInterrupt();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Call to AckInterrupt failed: %s", result.status_string());
+      fdf::error("Call to AckInterrupt failed: {}", result.status_string());
       return;
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "AckInterrupt failed: %s", zx_status_get_string(result->error_value()));
+      fdf::error("AckInterrupt failed: {}", zx_status_get_string(result->error_value()));
       return;
     }
   }

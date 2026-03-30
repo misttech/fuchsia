@@ -26,6 +26,7 @@ fuchsia_cc_driver("pci-sdhci-driver") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.sdhci:fuchsia.hardware.sdhci_cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/outgoing/cpp",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",

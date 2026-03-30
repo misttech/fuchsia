@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fuchsia/hardware/sdmmc/cpp/banjo.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/fit/defer.h>
@@ -309,7 +310,7 @@ zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
   if (zx::result<> result = parent_->driver_outgoing()->AddService<fuchsia_hardware_cqhci::Service>(
           std::move(handler));
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add cqhci service: %s", result.status_string());
+    fdf::error("Failed to add cqhci service: {}", result);
     return result.status_value();
   }
 

@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_TASK_MANAGEMENT_REQUEST_PROCESSOR_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TASK_MANAGEMENT_REQUEST_PROCESSOR_H_
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/trace/event.h>
 
 #include "request_processor.h"
@@ -23,8 +24,8 @@ class TaskManagementRequestProcessor : public RequestProcessor {
   static zx::result<std::unique_ptr<TaskManagementRequestProcessor>> Create(
       Ufs &ufs, zx::unowned_bti bti, const fdf::MmioView mmio, uint8_t entry_count) {
     if (entry_count > kMaxTaskManagementRequestListSize) {
-      FDF_LOG(ERROR, "Request list size exceeded the maximum size of %d.",
-              kMaxTaskManagementRequestListSize);
+      fdf::error("Request list size exceeded the maximum size of {}.",
+                 kMaxTaskManagementRequestListSize);
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 

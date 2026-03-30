@@ -55,6 +55,7 @@ _common_deps = [
   "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
   "//sdk/lib/driver/compat/cpp",
   "//sdk/lib/driver/component/cpp",
+  "//sdk/lib/driver/logging/cpp",
   "//sdk/lib/driver/mmio/cpp",
   "//sdk/lib/driver/platform-device/cpp/",
   "//sdk/lib/driver/power/cpp",
@@ -179,6 +180,7 @@ group("ufs") {
 }
 
 _test_deps = [
+  "//sdk/lib/driver/logging/cpp",
   "//sdk/lib/driver/power/cpp/testing",
   "//sdk/lib/driver/testing/cpp",
   "//sdk/lib/inspect/testing/cpp",

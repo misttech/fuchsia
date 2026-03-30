@@ -5,6 +5,7 @@
 #include "src/devices/block/drivers/ufs/test/mock-device/task-management-request-processor.h"
 
 #include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include "safemath/safe_conversions.h"
 #include "ufs-mock-device.h"
@@ -29,15 +30,15 @@ void TaskManagementRequestProcessor::HandleTaskManagementRequest(
     status = (it->second)(mock_device_, descriptor);
   } else {
     status = ZX_ERR_NOT_SUPPORTED;
-    FDF_LOG(ERROR, "UFS MOCK: task management function: 0x%x is not supported",
-            static_cast<uint8_t>(function));
+    fdf::error("UFS MOCK: task management function: 0x{:x} is not supported",
+               static_cast<uint8_t>(function));
   }
 
   if (status == ZX_OK) {
     descriptor.set_overall_command_status(OverallCommandStatus::kSuccess);
   } else {
-    FDF_LOG(ERROR, "UFS MOCK: Failed to handle task management request: %s",
-            zx_status_get_string(status));
+    fdf::error("UFS MOCK: Failed to handle task management request: {}",
+               zx_status_get_string(status));
     descriptor.set_overall_command_status(OverallCommandStatus::kInvalid);
   }
 

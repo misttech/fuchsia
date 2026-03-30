@@ -4,6 +4,7 @@
 
 #include "transfer_request_processor.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/trace/event.h>
 
 #include <optional>
@@ -75,17 +76,17 @@ zx::result<> TransferRequestProcessor::Init() {
   UtrListBaseAddressUpperReg::Get().FromValue(paddr >> 32).WriteTo(&register_);
 
   if (!HostControllerStatusReg::Get().ReadFrom(&register_).utp_transfer_request_list_ready()) {
-    FDF_LOG(ERROR, "UTP transfer request list is not ready\n");
+    fdf::error("UTP transfer request list is not ready\n");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell() != 0) {
-    FDF_LOG(ERROR, "UTP transfer request list door bell is not ready\n");
+    fdf::error("UTP transfer request list door bell is not ready\n");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (UtrListCompletionNotificationReg::Get().ReadFrom(&register_).notification() != 0) {
-    FDF_LOG(ERROR, "UTP transfer request list notification is not ready\n");
+    fdf::error("UTP transfer request list notification is not ready\n");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -101,7 +102,7 @@ zx::result<uint8_t> TransferRequestProcessor::ReserveAdminSlot() {
     slot.state = SlotState::kReserved;
     return zx::ok(kAdminCommandSlotNumber);
   }
-  FDF_LOG(DEBUG, "Failed to reserve a admin request slot");
+  fdf::debug("Failed to reserve a admin request slot");
   return zx::error(ZX_ERR_NO_RESOURCES);
 }
 
@@ -170,8 +171,8 @@ zx::result<std::unique_ptr<QueryResponseUpiu>> TransferRequestProcessor::SendQue
     QueryOpcode query_opcode =
         static_cast<QueryOpcode>(request.GetData<QueryRequestUpiuData>()->opcode);
     uint8_t type = request.GetData<QueryRequestUpiuData>()->idn;
-    FDF_LOG(ERROR, "Failed %s(type:0x%x) query request UPIU: %s", QueryOpcodeToString(query_opcode),
-            type, response.status_string());
+    fdf::error("Failed {}(type:0x{:x}) query request UPIU: {}", QueryOpcodeToString(query_opcode),
+               type, response.status_string());
   }
   return response;
 }
@@ -234,7 +235,7 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
             GetBti()->pin(option, *data_vmo.value(), offset, length, data_paddrs.data(),
                           length / kPageSize, &request_slot.pmt);
         status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to pin IO buffer: %s", zx_status_get_string(status));
+      fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(status));
 
       if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
         return result.take_error();
@@ -261,7 +262,7 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
           FillDescriptorAndSendRequest(slot, request.GetDataDirection(), response_offset,
                                        response_length, prdt_offset, prdt_entry_count);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to send upiu: %s", result.status_string());
+    fdf::error("Failed to send upiu: {}", result);
 
     if (zx::result<> result = ClearSlot(request_slot); result.is_error()) {
       return result.take_error();
@@ -279,7 +280,7 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
       return result.take_error();
     }
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "SendRequestUsingSlot request timed out: %s", zx_status_get_string(status));
+      fdf::error("SendRequestUsingSlot request timed out: {}", zx_status_get_string(status));
       return zx::error(status);
     }
     if (request_result != ZX_OK) {
@@ -341,8 +342,7 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
   if (response.GetHeader().event_alert()) {
     if (zx::result result = controller_.GetDeviceManager().PostExceptionEventsTask();
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to handle Exception Event slot[%u]: %s", slot_num,
-              result.status_string());
+      fdf::error("Failed to handle Exception Event slot[{}]: {}", slot_num, result.status_string());
     }
   }
 
@@ -354,8 +354,7 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
   // Check request response.
   zx_status_t status = UpiuCompletion(slot_num, request_slot, is_timeout);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to complete request, slot[%u]: %s", slot_num,
-            zx_status_get_string(status));
+    fdf::error("Failed to complete request, slot[{}]: {}", slot_num, zx_status_get_string(status));
   }
   request_slot.result = status;
 
@@ -370,7 +369,7 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
         .WriteTo(&register_);
 
     if (zx::result result = ClearSlot(request_slot); result.is_error()) {
-      FDF_LOG(ERROR, "Failed to clear slot[%u]: %s", slot_num, result.status_string());
+      fdf::error("Failed to clear slot[{}]: {}", slot_num, result);
     }
   }
 
@@ -458,7 +457,7 @@ zx::result<> TransferRequestProcessor::FillDescriptorAndSendRequest(
     return result.take_error();
   }
   if (zx::result<> result = RingRequestDoorbell(slot); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to send cmd %s", result.status_string());
+    fdf::error("Failed to send cmd {}", result);
     return result.take_error();
   }
   ++inflight_io_count_;
@@ -536,8 +535,10 @@ zx::result<> TransferRequestProcessor::CheckResponse(uint8_t slot_num,
   switch (transaction_type) {
     case UpiuTransactionCodes::kResponse:
       if (response.GetHeader().command_set_type() != UpiuCommandSetType::kScsi) {
-        FDF_LOG(ERROR, "Unknown command(set type = 0x%x) response: ocs=0x%x, header_response=0x%x",
-                response.GetHeader().command_set_type(), ocs, header_response);
+        fdf::error(
+            "Unknown command(set type = 0x{:x}) response: ocs=0x{:x}, header_response=0x{:x}",
+            static_cast<uint32_t>(response.GetHeader().command_set_type()),
+            static_cast<uint32_t>(ocs), static_cast<uint32_t>(header_response));
         return zx::error(ZX_ERR_BAD_STATE);
       }
       // For SCSI commands, check ocs and header_response in CheckScsiAndGetStatusMessage().
@@ -545,16 +546,16 @@ zx::result<> TransferRequestProcessor::CheckResponse(uint8_t slot_num,
     case UpiuTransactionCodes::kQueryResponse:
       if (ocs != OverallCommandStatus::kSuccess ||
           header_response != static_cast<uint8_t>(QueryResponseCode::kSuccess)) {
-        FDF_LOG(ERROR, "Query request failure: ocs=0x%x, header_response=0x%x", ocs,
-                header_response);
+        fdf::error("Query request failure: ocs=0x{:x}, header_response=0x{:x}",
+                   static_cast<uint32_t>(ocs), static_cast<uint32_t>(header_response));
         return zx::error(ZX_ERR_BAD_STATE);
       }
       break;
     default:
       if (ocs != OverallCommandStatus::kSuccess ||
           header_response != UpiuHeaderResponseCode::kTargetSuccess) {
-        FDF_LOG(ERROR, "Generic request(transaction type = 0x%x) failure: ocs=0x%x",
-                transaction_type, ocs);
+        fdf::error("Generic request(transaction type = 0x{:x}) failure: ocs=0x{:x}",
+                   static_cast<uint32_t>(transaction_type), static_cast<uint32_t>(ocs));
         return zx::error(ZX_ERR_BAD_STATE);
       }
       break;

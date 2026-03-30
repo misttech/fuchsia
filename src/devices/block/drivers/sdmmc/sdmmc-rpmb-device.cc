@@ -4,6 +4,7 @@
 
 #include "sdmmc-rpmb-device.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/dispatcher.h>
 
 #include "sdmmc-block-device.h"

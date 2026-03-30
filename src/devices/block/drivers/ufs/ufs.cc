@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
@@ -91,16 +92,15 @@ zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> Ufs::AcquireInit
     const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client) {
   const fidl::WireResult result = lessor_client->Lease(Ufs::kPowerLevelBoot);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Call to Lease failed: %s", result.status_string());
+    fdf::error("Call to Lease failed: {}", result.status_string());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Lease returned error: %s",
-            fdf_power::LeaseErrorToString(result->error_value()));
+    fdf::error("Lease returned error: {}", fdf_power::LeaseErrorToString(result->error_value()));
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!result->value()->lease_control.is_valid()) {
-    FDF_LOG(ERROR, "Lease returned invalid lease control client end.");
+    fdf::error("Lease returned invalid lease control client end.");
     return zx::error(ZX_ERR_BAD_STATE);
   }
   return zx::ok(std::move(result->value()->lease_control));
@@ -140,7 +140,7 @@ zx_status_t Ufs::WaitWithTimeout(fit::function<bool()> wait_for, zx::duration ti
       return ZX_OK;
     }
     if (sleeps_left == 0) {
-      FDF_LOG(ERROR, "%s after %ld usecs", timeout_message.begin(), timeout.to_usecs());
+      fdf::error("{} after {} usecs", timeout_message.begin(), timeout.to_usecs());
       return ZX_ERR_TIMED_OUT;
     }
     zx::nanosleep(zx::deadline_after(granularity));
@@ -156,7 +156,7 @@ zx::result<> Ufs::AllocatePages(zx::vmo& vmo, fzl::VmoMapper& mapper, size_t siz
   }
 
   if (zx_status_t status = mapper.Map(vmo, 0, data_size); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map IO buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to map IO buffer: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();
@@ -184,7 +184,7 @@ zx::result<uint8_t> Ufs::TranslateScsiLunToUfsLun(uint16_t scsi_lun) {
 
   // Logical unit
   if ((scsi_lun & kScsiWellKnownLunIdMask) != 0) {
-    FDF_LOG(ERROR, "Invalid scsi lun: 0x%x", scsi_lun);
+    fdf::error("Invalid scsi lun: 0x{:x}", scsi_lun);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if ((scsi_lun & kMaxLunId) > kMaxLunIndex) {
@@ -221,8 +221,8 @@ void Ufs::ProcessIoSubmissions() {
         fzl::VmoMapper mapper;
         if (zx::result<> result = AllocatePages(data_vmo, mapper, io_cmd->data_length);
             result.is_error()) {
-          FDF_LOG(ERROR, "Failed to allocate data buffer (command %p): %s", io_cmd,
-                  result.status_string());
+          fdf::error("Failed to allocate data buffer (command {}): {}",
+                     static_cast<const void*>(io_cmd), result);
           return;
         }
         memcpy(mapper.start(), io_cmd->data_buffer, io_cmd->data_length);
@@ -238,9 +238,8 @@ void Ufs::ProcessIoSubmissions() {
     }
 
     if (transfer_bytes > max_transfer_bytes_) {
-      FDF_LOG(ERROR,
-              "Request exceeding max transfer size. transfer_bytes=%d, max_transfer_bytes_=%d",
-              transfer_bytes, max_transfer_bytes_);
+      fdf::error("Request exceeding max transfer size. transfer_bytes={}, max_transfer_bytes_={}",
+                 transfer_bytes, max_transfer_bytes_);
       io_cmd->device_op.Complete(ZX_ERR_INVALID_ARGS);
       continue;
     }
@@ -254,8 +253,8 @@ void Ufs::ProcessIoSubmissions() {
         list_add_head(&pending_commands_, &io_cmd->node);
         return;
       }
-      FDF_LOG(ERROR, "Failed to submit SCSI command (command %p): %s", io_cmd,
-              response.status_string());
+      fdf::error("Failed to submit SCSI command (command {}): {}", static_cast<const void*>(io_cmd),
+                 response);
       io_cmd->device_op.Complete(response.error_value());
       io_cmd->data_vmo.reset();
     }
@@ -282,56 +281,54 @@ zx::result<> Ufs::Isr() {
 
   // TODO(https://fxbug.dev/42075643): implement error handlers
   if (interrupt_status.uic_error()) {
-    FDF_LOG(ERROR, "UFS: UIC error on ISR");
+    fdf::error("UFS: UIC error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_uic_error(true).WriteTo(&mmio);
 
     // UECPA for Host UIC Error Code within PHY Adapter Layer.
     if (HostUicErrorCodePhyAdapterLayerReg::Get().ReadFrom(&mmio).uic_phy_adapter_layer_error()) {
-      FDF_LOG(ERROR, "UECPA error code: 0x%x",
-              HostUicErrorCodePhyAdapterLayerReg::Get()
-                  .ReadFrom(&mmio)
-                  .uic_phy_adapter_layer_error_code());
+      fdf::error("UECPA error code: 0x{:x}", HostUicErrorCodePhyAdapterLayerReg::Get()
+                                                 .ReadFrom(&mmio)
+                                                 .uic_phy_adapter_layer_error_code());
     }
     // UECDL for Host UIC Error Code within Data Link Layer.
     if (HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio).uic_data_link_layer_error()) {
-      FDF_LOG(
-          ERROR, "UECDL error code: 0x%x",
+      fdf::error(
+          "UECDL error code: 0x{:x}",
           HostUicErrorCodeDataLinkLayerReg::Get().ReadFrom(&mmio).uic_data_link_layer_error_code());
     }
     // UECN for Host UIC Error Code within Network Layer.
     if (HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio).uic_network_layer_error()) {
-      FDF_LOG(
-          ERROR, "UECN error code: 0x%x",
+      fdf::error(
+          "UECN error code: 0x{:x}",
           HostUicErrorCodeNetworkLayerReg::Get().ReadFrom(&mmio).uic_network_layer_error_code());
     }
     // UECT for Host UIC Error Code within Transport Layer.
     if (HostUicErrorCodeTransportLayerReg::Get().ReadFrom(&mmio).uic_transport_layer_error()) {
-      FDF_LOG(ERROR, "UECT error code: 0x%x",
-              HostUicErrorCodeTransportLayerReg::Get()
-                  .ReadFrom(&mmio)
-                  .uic_transport_layer_error_code());
+      fdf::error("UECT error code: 0x{:x}", HostUicErrorCodeTransportLayerReg::Get()
+                                                .ReadFrom(&mmio)
+                                                .uic_transport_layer_error_code());
     }
     // UECDME for Host UIC Error Code within DME subcomponent.
     if (HostUicErrorCodeReg::Get().ReadFrom(&mmio).uic_dme_error()) {
-      FDF_LOG(ERROR, "UECDME error code: 0x%x",
-              HostUicErrorCodeReg::Get().ReadFrom(&mmio).uic_dme_error_code());
+      fdf::error("UECDME error code: 0x{:x}",
+                 HostUicErrorCodeReg::Get().ReadFrom(&mmio).uic_dme_error_code());
     }
   }
   if (interrupt_status.device_fatal_error_status()) {
-    FDF_LOG(ERROR, "UFS: Device fatal error on ISR");
+    fdf::error("UFS: Device fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_device_fatal_error_status(true).WriteTo(&mmio);
   }
   if (interrupt_status.host_controller_fatal_error_status()) {
-    FDF_LOG(ERROR, "UFS: Host controller fatal error on ISR");
+    fdf::error("UFS: Host controller fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_host_controller_fatal_error_status(true).WriteTo(
         &mmio);
   }
   if (interrupt_status.system_bus_fatal_error_status()) {
-    FDF_LOG(ERROR, "UFS: System bus fatal error on ISR");
+    fdf::error("UFS: System bus fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_system_bus_fatal_error_status(true).WriteTo(&mmio);
   }
   if (interrupt_status.crypto_engine_fatal_error_status()) {
-    FDF_LOG(ERROR, "UFS: Crypto engine fatal error on ISR");
+    fdf::error("UFS: Crypto engine fatal error on ISR");
     InterruptStatusReg::Get().FromValue(0).set_crypto_engine_fatal_error_status(true).WriteTo(
         &mmio);
   }
@@ -361,7 +358,7 @@ zx::result<> Ufs::Isr() {
   }
   if (interrupt_status.uic_command_completion_status()) {
     // TODO(https://fxbug.dev/42075643): Handle UIC completion
-    FDF_LOG(ERROR, "UFS: UIC completion not yet implemented");
+    fdf::error("UFS: UIC completion not yet implemented");
   }
 
   return zx::ok();
@@ -371,15 +368,15 @@ int Ufs::IrqLoop() {
   while (true) {
     if (zx_status_t status = irq_.wait(nullptr); status != ZX_OK) {
       if (status == ZX_ERR_CANCELED) {
-        FDF_LOG(DEBUG, "Interrupt cancelled. Exiting IRQ loop.");
+        fdf::debug("Interrupt cancelled. Exiting IRQ loop.");
       } else {
-        FDF_LOG(ERROR, "Failed to wait for interrupt: %s", zx_status_get_string(status));
+        fdf::error("Failed to wait for interrupt: {}", zx_status_get_string(status));
       }
       break;
     }
 
     if (zx::result<> result = Isr(); result.is_error()) {
-      FDF_LOG(ERROR, "Failed to run interrupt service routine: %s", result.status_string());
+      fdf::error("Failed to run interrupt service routine: {}", result);
     }
     OnIrqComplete();
   }
@@ -390,7 +387,7 @@ int Ufs::AdminLoop() {
   while (true) {
     if (zx_status_t status = sync_completion_wait(&admin_signal_, ZX_TIME_INFINITE);
         status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to wait for sync completion: %s", zx_status_get_string(status));
+      fdf::error("Failed to wait for sync completion: {}", zx_status_get_string(status));
       break;
     }
     sync_completion_reset(&admin_signal_);
@@ -398,7 +395,7 @@ int Ufs::AdminLoop() {
     {
       std::lock_guard<std::mutex> lock(lock_);
       if (driver_shutdown_) {
-        FDF_LOG(DEBUG, "Admin thread exiting.");
+        fdf::debug("Admin thread exiting.");
         break;
       }
     }
@@ -418,7 +415,7 @@ int Ufs::IoLoop() {
     {
       std::lock_guard<std::mutex> lock(lock_);
       if (driver_shutdown_) {
-        FDF_LOG(DEBUG, "IO thread exiting.");
+        fdf::debug("IO thread exiting.");
         break;
       }
 
@@ -468,9 +465,8 @@ void Ufs::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_w
   // Currently, data is only used in the UNMAP command.
   if (device_op->op.command.opcode == BLOCK_OPCODE_TRIM && data.iov_len != 0) {
     if (sizeof(io_cmd->data_buffer) != data.iov_len) {
-      FDF_LOG(ERROR,
-              "The size of the requested data buffer(%zu) and data_buffer(%lu) are different.",
-              data.iov_len, sizeof(io_cmd->data_buffer));
+      fdf::error("The size of the requested data buffer({}) and data_buffer({}) are different.",
+                 data.iov_len, sizeof(io_cmd->data_buffer));
       device_op->Complete(ZX_ERR_INVALID_ARGS);
       return;
     }
@@ -494,9 +490,8 @@ zx_status_t Ufs::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, boo
   }
 
   if (data.iov_len > max_transfer_bytes_) {
-    FDF_LOG(ERROR,
-            "Request exceeding max transfer size. transfer_bytes=%zu, max_transfer_bytes_=%d",
-            data.iov_len, max_transfer_bytes_);
+    fdf::error("Request exceeding max transfer size. transfer_bytes={}, max_transfer_bytes_={}",
+               data.iov_len, max_transfer_bytes_);
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -551,8 +546,8 @@ void Ufs::PopulateVersionInspect(inspect::Node* inspect_node) {
   properties_.version_suffix = version.CreateUint("version_suffix", version_reg.version_suffix());
   inspector().inspector().emplace(std::move(version));
 
-  FDF_LOG(INFO, "Controller version %u.%u found", version_reg.major_version_number(),
-          version_reg.minor_version_number());
+  fdf::info("Controller version {}.{} found", version_reg.major_version_number(),
+            version_reg.minor_version_number());
 }
 
 // Record the constant inspects.
@@ -594,7 +589,7 @@ zx_status_t Ufs::Init() {
   list_initialize(&pending_commands_);
 
   if (zx::result<> result = InitMmioBuffer(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize MMIO buffer: %s", result.status_string());
+    fdf::error("Failed to initialize MMIO buffer: {}", result);
     return result.error_value();
   }
 
@@ -608,39 +603,39 @@ zx_status_t Ufs::Init() {
   auto bkop_node = controller_node.CreateChild("background_operations");
 
   if (zx::result<> result = InitQuirk(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize quirk: %s", result.status_string());
+    fdf::error("Failed to initialize quirk: {}", result);
     return result.error_value();
   }
   if (zx::result<> result = InitController(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize UFS controller: %s", result.status_string());
+    fdf::error("Failed to initialize UFS controller: {}", result);
     return result.error_value();
   }
 
   if (zx::result<> result = InitDeviceInterface(controller_node); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize device interface: %s", result.status_string());
+    fdf::error("Failed to initialize device interface: {}", result);
     return result.error_value();
   }
 
   if (zx::result<> result = device_manager_->GetControllerDescriptor(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get controller descriptor: %s", result.status_string());
+    fdf::error("Failed to get controller descriptor: {}", result);
     return result.error_value();
   }
 
   if (zx::result<> result = device_manager_->ConfigureWriteProtect(wp_node); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to configure Write Protect %s", result.status_string());
+    fdf::error("Failed to configure Write Protect {}", result);
     return result.error_value();
   }
 
   if (zx::result<> result = device_manager_->ConfigureBackgroundOp(bkop_node); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to configure Background Operations %s", result.status_string());
+    fdf::error("Failed to configure Background Operations {}", result);
     return result.error_value();
   }
 
   if (zx::result<> result = device_manager_->ConfigureWriteBooster(wb_node); result.is_error()) {
     if (result.status_value() == ZX_ERR_NOT_SUPPORTED) {
-      FDF_LOG(WARNING, "This device does not support WriteBooster");
+      fdf::warn("This device does not support WriteBooster");
     } else {
-      FDF_LOG(ERROR, "Failed to configure WriteBooster %s", result.status_string());
+      fdf::error("Failed to configure WriteBooster {}", result);
       return result.error_value();
     }
   }
@@ -653,12 +648,12 @@ zx_status_t Ufs::Init() {
 
   zx::result<uint32_t> lun_count;
   if (lun_count = AddLogicalUnits(); lun_count.is_error()) {
-    FDF_LOG(ERROR, "Failed to scan logical units: %s", lun_count.status_string());
+    fdf::error("Failed to scan logical units: {}", lun_count);
     return lun_count.error_value();
   }
 
   if (lun_count.value() == 0) {
-    FDF_LOG(ERROR, "Bind Error. There is no available LUN(lun_count = 0).");
+    fdf::error("Bind Error. There is no available LUN(lun_count = 0).");
     return ZX_ERR_BAD_STATE;
   }
   logical_unit_count_ = lun_count.value();
@@ -673,7 +668,7 @@ zx_status_t Ufs::Init() {
   inspector().inspector().emplace(std::move(wp_node));
   inspector().inspector().emplace(std::move(wb_node));
   inspector().inspector().emplace(std::move(bkop_node));
-  FDF_LOG(INFO, "Bind Success");
+  fdf::info("Bind Success");
 
   return ZX_OK;
 }
@@ -691,7 +686,7 @@ zx::result<> Ufs::InitController() {
     DisableHostController();
   }
   if (zx_status_t status = EnableHostController(); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to enable host controller %d", status);
+    fdf::error("Failed to enable host controller {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -701,8 +696,8 @@ zx::result<> Ufs::InitController() {
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-irq-worker",
         [&](fdf_dispatcher_t*) { irq_worker_shutdown_completion_.Signal(); });
     if (irq_dispatcher.is_error()) {
-      FDF_LOG(ERROR, "Failed to create IRQ dispatcher: %s",
-              zx_status_get_string(irq_dispatcher.status_value()));
+      fdf::error("Failed to create IRQ dispatcher: {}",
+                 zx_status_get_string(irq_dispatcher.status_value()));
       return zx::error(irq_dispatcher.status_value());
     }
     irq_worker_dispatcher_ = *std::move(irq_dispatcher);
@@ -710,7 +705,7 @@ zx::result<> Ufs::InitController() {
     zx_status_t status =
         async::PostTask(irq_worker_dispatcher_.async_dispatcher(), [this] { IrqLoop(); });
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to start IRQ worker loop: %s", zx_status_get_string(status));
+      fdf::error("Failed to start IRQ worker loop: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -723,15 +718,14 @@ zx::result<> Ufs::InitController() {
   // Create Task Management Request Processor
   uint8_t number_of_task_management_request_slots = safemath::checked_cast<uint8_t>(
       CapabilityReg::Get().ReadFrom(&mmio).number_of_utp_task_management_request_slots() + 1);
-  FDF_LOG(DEBUG, "number_of_task_management_request_slots=%d",
-          number_of_task_management_request_slots);
+  fdf::debug("number_of_task_management_request_slots={}", number_of_task_management_request_slots);
 
   auto task_management_request_processor =
       TaskManagementRequestProcessor::Create(*this, bti_.borrow(), mmio.View(0, mmio_buffer_size_),
                                              number_of_task_management_request_slots);
   if (task_management_request_processor.is_error()) {
-    FDF_LOG(ERROR, "Failed to create task management request processor %s",
-            task_management_request_processor.status_string());
+    fdf::error("Failed to create task management request processor {}",
+               task_management_request_processor);
     return task_management_request_processor.take_error();
   }
   task_management_request_processor_ = std::move(*task_management_request_processor);
@@ -739,20 +733,19 @@ zx::result<> Ufs::InitController() {
   // Create Transfer Request Processor
   uint8_t number_of_transfer_request_slots = safemath::checked_cast<uint8_t>(
       CapabilityReg::Get().ReadFrom(&mmio).number_of_utp_transfer_request_slots() + 1);
-  FDF_LOG(DEBUG, "number_of_transfer_request_slots=%d", number_of_transfer_request_slots);
+  fdf::debug("number_of_transfer_request_slots={}", number_of_transfer_request_slots);
 
   auto transfer_request_processor = TransferRequestProcessor::Create(
       *this, bti_.borrow(), mmio.View(0, mmio_buffer_size_), number_of_transfer_request_slots);
   if (transfer_request_processor.is_error()) {
-    FDF_LOG(ERROR, "Failed to create transfer request processor %s",
-            transfer_request_processor.status_string());
+    fdf::error("Failed to create transfer request processor {}", transfer_request_processor);
     return transfer_request_processor.take_error();
   }
   transfer_request_processor_ = std::move(*transfer_request_processor);
 
   auto device_manager = DeviceManager::Create(*this, *transfer_request_processor_, properties_);
   if (device_manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to create device manager %s", device_manager.status_string());
+    fdf::error("Failed to create device manager {}", device_manager);
     return device_manager.take_error();
   }
   device_manager_ = std::move(*device_manager);
@@ -763,8 +756,8 @@ zx::result<> Ufs::InitController() {
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-admin-worker",
         [&](fdf_dispatcher_t*) { admin_worker_shutdown_completion_.Signal(); });
     if (admin_dispatcher.is_error()) {
-      FDF_LOG(ERROR, "Failed to create Admin dispatcher: %s",
-              zx_status_get_string(admin_dispatcher.status_value()));
+      fdf::error("Failed to create Admin dispatcher: {}",
+                 zx_status_get_string(admin_dispatcher.status_value()));
       return zx::error(admin_dispatcher.status_value());
     }
     admin_worker_dispatcher_ = *std::move(admin_dispatcher);
@@ -772,7 +765,7 @@ zx::result<> Ufs::InitController() {
     zx_status_t status =
         async::PostTask(admin_worker_dispatcher_.async_dispatcher(), [this] { AdminLoop(); });
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to start Admin worker loop: %s", zx_status_get_string(status));
+      fdf::error("Failed to start Admin worker loop: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -783,8 +776,8 @@ zx::result<> Ufs::InitController() {
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-io-worker",
         [&](fdf_dispatcher_t*) { io_worker_shutdown_completion_.Signal(); });
     if (io_dispatcher.is_error()) {
-      FDF_LOG(ERROR, "Failed to create IO dispatcher: %s",
-              zx_status_get_string(io_dispatcher.status_value()));
+      fdf::error("Failed to create IO dispatcher: {}",
+                 zx_status_get_string(io_dispatcher.status_value()));
       return zx::error(io_dispatcher.status_value());
     }
     io_worker_dispatcher_ = *std::move(io_dispatcher);
@@ -792,7 +785,7 @@ zx::result<> Ufs::InitController() {
     zx_status_t status =
         async::PostTask(io_worker_dispatcher_.async_dispatcher(), [this] { IoLoop(); });
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to start IO worker loop: %s", zx_status_get_string(status));
+      fdf::error("Failed to start IO worker loop: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -803,8 +796,8 @@ zx::result<> Ufs::InitController() {
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-exception-event-worker",
         [&](fdf_dispatcher_t*) { exception_event_completion_.Signal(); });
     if (ee_dispatcher.is_error()) {
-      FDF_LOG(ERROR, "Failed to create Exception Event dispatcher: %s",
-              zx_status_get_string(ee_dispatcher.status_value()));
+      fdf::error("Failed to create Exception Event dispatcher: {}",
+                 zx_status_get_string(ee_dispatcher.status_value()));
       return zx::error(ee_dispatcher.status_value());
     }
     exception_event_dispatcher_ = *std::move(ee_dispatcher);
@@ -838,32 +831,31 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
       .WriteTo(&mmio);
 
   if (!HostControllerStatusReg::Get().ReadFrom(&mmio).uic_command_ready()) {
-    FDF_LOG(ERROR, "UIC command is not ready\n");
+    fdf::error("UIC command is not ready\n");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   // Send Link Startup UIC command to start the link startup procedure.
   if (zx::result<> result = device_manager_->SendLinkStartUp(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to send Link Startup UIC command %s", result.status_string());
+    fdf::error("Failed to send Link Startup UIC command {}", result);
     return result.take_error();
   }
 
   // The |device_present| bit becomes true if the host controller has successfully received a Link
   // Startup UIC command response and the UFS device has found a physical link to the controller.
   if (!HostControllerStatusReg::Get().ReadFrom(&mmio).device_present()) {
-    FDF_LOG(ERROR, "UFS device not found");
+    fdf::error("UFS device not found");
     return zx::error(ZX_ERR_NOT_FOUND);
   }
-  FDF_LOG(INFO, "UFS device found");
+  fdf::info("UFS device found");
 
   if (zx::result<> result = task_management_request_processor_->Init(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize task management request processor %s",
-            result.status_string());
+    fdf::error("Failed to initialize task management request processor {}", result);
     return result.take_error();
   }
 
   if (zx::result<> result = transfer_request_processor_->Init(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize transfer request processor %s", result.status_string());
+    fdf::error("Failed to initialize transfer request processor {}", result);
     return result.take_error();
   }
 
@@ -872,12 +864,12 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   NopOutUpiu nop_upiu;
   auto nop_response = transfer_request_processor_->SendRequestUpiu<NopOutUpiu, NopInUpiu>(nop_upiu);
   if (nop_response.is_error()) {
-    FDF_LOG(ERROR, "Failed to send NopOutUpiu %s", nop_response.status_string());
+    fdf::error("Failed to send NopOutUpiu {}", nop_response);
     return nop_response.take_error();
   }
 
   if (zx::result<> result = device_manager_->DeviceInit(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize device %s", result.status_string());
+    fdf::error("Failed to initialize device {}", result);
     return result.take_error();
   }
 
@@ -887,7 +879,7 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
 
   if (zx::result<> result = device_manager_->InitReferenceClock(controller_node);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize reference clock %s", result.status_string());
+    fdf::error("Failed to initialize reference clock {}", result);
     return result.take_error();
   }
 
@@ -899,18 +891,18 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   } else {
     if (zx::result<> result = device_manager_->InitUniproAttributes(unipro_node);
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to initialize Unipro attributes %s", result.status_string());
+      fdf::error("Failed to initialize Unipro attributes {}", result);
       return result.take_error();
     }
 
     if (zx::result<> result = device_manager_->InitUicPowerMode(unipro_node); result.is_error()) {
-      FDF_LOG(ERROR, "Failed to initialize UIC power mode %s", result.status_string());
+      fdf::error("Failed to initialize UIC power mode {}", result);
       return result.take_error();
     }
 
     if (zx::result<> result = device_manager_->InitUfsPowerMode(controller_node, attributes_node);
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to initialize UFS power mode %s", result.status_string());
+      fdf::error("Failed to initialize UFS power mode {}", result);
       return result.take_error();
     }
   }
@@ -918,7 +910,7 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
 
   zx::result<uint32_t> result = device_manager_->GetBootLunEnabled();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to check Boot LUN enabled %s", result.status_string());
+    fdf::error("Failed to check Boot LUN enabled {}", result);
     return result.take_error();
   }
   properties_.b_boot_lun_en = attributes_node.CreateUint("bBootLunEn", result.value());
@@ -952,8 +944,8 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
     }
 
     if (unit_descriptor->bLogicalBlockSize >= sizeof(size_t) * 8) {
-      FDF_LOG(ERROR, "Cannot handle the unit descriptor bLogicalBlockSize = %d.",
-              unit_descriptor->bLogicalBlockSize);
+      fdf::error("Cannot handle the unit descriptor bLogicalBlockSize = {}.",
+                 unit_descriptor->bLogicalBlockSize);
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
 
@@ -970,18 +962,17 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
         desc_block_size >
             static_cast<size_t>(device_manager_->GetGeometryDescriptor().bMaxOutBufferSize) *
                 kSectorSize) {
-      FDF_LOG(ERROR, "Cannot handle logical block size of %zu.", desc_block_size);
+      fdf::error("Cannot handle logical block size of {}.", desc_block_size);
       return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
     ZX_ASSERT_MSG(desc_block_size == kBlockSize, "Currently, it only supports a 4KB block size.");
 
     if (desc_block_size != block_size || desc_block_count != block_count) {
-      FDF_LOG(INFO,
-              "Failed to check for disk consistency. (block_size=%zu/%zu, block_count=%ld/%ld)",
-              desc_block_size, block_size, desc_block_count, block_count);
+      fdf::info("Failed to check for disk consistency. (block_size={}/{}, block_count={}/{})",
+                desc_block_size, block_size, desc_block_count, block_count);
       return zx::error(ZX_ERR_BAD_STATE);
     }
-    FDF_LOG(INFO, "LUN-%d block_size=%zu, block_count=%ld", lun, desc_block_size, desc_block_count);
+    fdf::info("LUN-{} block_size={}, block_count={}", lun, desc_block_size, desc_block_count);
 
     // Currently, we only support kPowerOnWriteProtect.
     if (device_manager_->IsPowerOnWritePotectEnabled() &&
@@ -1001,7 +992,7 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
   zx::result<uint32_t> lun_count = ScanAndBindLogicalUnits(kPlaceholderTarget, max_transfer_bytes_,
                                                            max_luns, read_unit_descriptor, options);
   if (lun_count.is_error()) {
-    FDF_LOG(ERROR, "Failed to scan logical units: %s", lun_count.status_string());
+    fdf::error("Failed to scan logical units: {}", lun_count);
     return lun_count.take_error();
   }
 
@@ -1019,7 +1010,7 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
       continue;
     }
     well_known_lun_set_.insert(lun);
-    FDF_LOG(INFO, "Well known LUN-0x%x", static_cast<uint8_t>(lun));
+    fdf::info("Well known LUN-0x{:x}", static_cast<uint8_t>(lun));
   }
 
   return zx::ok(lun_count.value());
@@ -1028,50 +1019,50 @@ zx::result<uint32_t> Ufs::AddLogicalUnits() {
 void Ufs::DumpRegisters() {
   const fdf::MmioBuffer& mmio = mmio_.value();
   CapabilityReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "CapabilityReg::%s", arg); });
+      [](const char* arg) { fdf::debug("CapabilityReg::{}", arg); });
   VersionReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "VersionReg::%s", arg); });
+      [](const char* arg) { fdf::debug("VersionReg::{}", arg); });
 
   InterruptStatusReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "InterruptStatusReg::%s", arg); });
+      [](const char* arg) { fdf::debug("InterruptStatusReg::{}", arg); });
   InterruptEnableReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "InterruptEnableReg::%s", arg); });
+      [](const char* arg) { fdf::debug("InterruptEnableReg::{}", arg); });
 
   HostControllerStatusReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "HostControllerStatusReg::%s", arg); });
+      [](const char* arg) { fdf::debug("HostControllerStatusReg::{}", arg); });
   HostControllerEnableReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "HostControllerEnableReg::%s", arg); });
+      [](const char* arg) { fdf::debug("HostControllerEnableReg::{}", arg); });
 
   UtrListBaseAddressReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtrListBaseAddressReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtrListBaseAddressReg::{}", arg); });
   UtrListBaseAddressUpperReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtrListBaseAddressUpperReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtrListBaseAddressUpperReg::{}", arg); });
   UtrListDoorBellReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtrListDoorBellReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtrListDoorBellReg::{}", arg); });
   UtrListClearReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtrListClearReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtrListClearReg::{}", arg); });
   UtrListRunStopReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtrListRunStopReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtrListRunStopReg::{}", arg); });
   UtrListCompletionNotificationReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtrListCompletionNotificationReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtrListCompletionNotificationReg::{}", arg); });
 
   UtmrListBaseAddressReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtmrListBaseAddressReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtmrListBaseAddressReg::{}", arg); });
   UtmrListBaseAddressUpperReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtmrListBaseAddressUpperReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtmrListBaseAddressUpperReg::{}", arg); });
   UtmrListDoorBellReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtmrListDoorBellReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtmrListDoorBellReg::{}", arg); });
   UtmrListRunStopReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UtmrListRunStopReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UtmrListRunStopReg::{}", arg); });
 
   UicCommandReg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UicCommandReg::%s", arg); });
+      [](const char* arg) { fdf::debug("UicCommandReg::{}", arg); });
   UicCommandArgument1Reg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UicCommandArgument1Reg::%s", arg); });
+      [](const char* arg) { fdf::debug("UicCommandArgument1Reg::{}", arg); });
   UicCommandArgument2Reg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UicCommandArgument2Reg::%s", arg); });
+      [](const char* arg) { fdf::debug("UicCommandArgument2Reg::{}", arg); });
   UicCommandArgument3Reg::Get().ReadFrom(&mmio).Print(
-      [](const char* arg) { FDF_LOG(DEBUG, "UicCommandArgument3Reg::%s", arg); });
+      [](const char* arg) { fdf::debug("UicCommandArgument3Reg::{}", arg); });
 }
 
 zx_status_t Ufs::EnableHostController() {
@@ -1100,13 +1091,13 @@ zx::result<> Ufs::ConfigurePowerManagement() {
   fidl::Arena<> arena;
   const auto power_configs = fidl::ToWire(arena, GetAllPowerConfigs());
   if (power_configs.size() == 0) {
-    FDF_LOG(INFO, "No power configs found.");
+    fdf::info("No power configs found.");
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   auto power_broker = driver_incoming()->Connect<fuchsia_power_broker::Topology>();
   if (power_broker.is_error() || !power_broker->is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect to power broker: %s", power_broker.status_string());
+    fdf::error("Failed to connect to power broker: {}", power_broker);
     return power_broker.take_error();
   }
 
@@ -1118,8 +1109,7 @@ zx::result<> Ufs::ConfigurePowerManagement() {
           fidl::ToNatural(wire_config);
       zx::result result = fdf_power::PowerElementConfiguration::FromFidl(natural_config);
       if (result.is_error()) {
-        FDF_SLOG(ERROR, "Failed to convert power element config from fidl.",
-                 KV("status", result.status_string()));
+        fdf::error("Failed to convert power element config from fidl.: {}", result);
         return result.take_error();
       }
       config = std::move(result.value());
@@ -1127,8 +1117,8 @@ zx::result<> Ufs::ConfigurePowerManagement() {
 
     auto tokens = fdf_power::GetDependencyTokens(*driver_incoming(), config);
     if (tokens.is_error()) {
-      FDF_LOG(ERROR, "Failed to get power dependency tokens: %s.",
-              fdf_power::ErrorToString(tokens.error_value()));
+      fdf::error("Failed to get power dependency tokens: {}.",
+                 fdf_power::ErrorToString(tokens.error_value()));
       return zx::error(ZX_ERR_INTERNAL);
     }
 
@@ -1140,8 +1130,7 @@ zx::result<> Ufs::ConfigurePowerManagement() {
             .Build();
     auto result = fdf_power::AddElement(power_broker.value(), description);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add power element: %s",
-              fdf_power::ErrorToString(result.error_value()));
+      fdf::error("Failed to add power element: {}", fdf_power::ErrorToString(result.error_value()));
       return zx::error(ZX_ERR_INTERNAL);
     }
 
@@ -1157,7 +1146,7 @@ zx::result<> Ufs::ConfigurePowerManagement() {
           fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(element_runner.server),
           &this->hardware_power_element_runner_server_, fidl::kIgnoreBindingClosure);
     } else {
-      FDF_LOG(ERROR, "Unexpected power element: %s", std::string(config.element.name).c_str());
+      fdf::error("Unexpected power element: {}", std::string(config.element.name).c_str());
       return zx::error(ZX_ERR_BAD_STATE);
     }
   }
@@ -1166,8 +1155,8 @@ zx::result<> Ufs::ConfigurePowerManagement() {
   zx::result connect_to_cpu_element_manager =
       driver_incoming()->Connect<fuchsia_power_system::CpuElementManager>();
   if (connect_to_cpu_element_manager.is_error()) {
-    FDF_LOG(ERROR, "CpuElementManager unavailable: %s",
-            zx_status_get_string(connect_to_cpu_element_manager.error_value()));
+    fdf::error("CpuElementManager unavailable: {}",
+               zx_status_get_string(connect_to_cpu_element_manager.error_value()));
     return connect_to_cpu_element_manager.take_error();
   }
 
@@ -1179,8 +1168,8 @@ zx::result<> Ufs::ConfigurePowerManagement() {
       cpu_element_manager->AddExecutionStateDependency(
           {{.dependency_token = std::move(clone), .power_level = 1}});
   if (result.is_error()) {
-    FDF_LOG(ERROR, "CpuElementManager token registration failed: %s",
-            result.error_value().FormatDescription().c_str());
+    fdf::error("CpuElementManager token registration failed: {}",
+               result.error_value().FormatDescription().c_str());
     if (result.error_value().is_framework_error()) {
       return zx::error(result.error_value().framework_error().status());
     }
@@ -1199,8 +1188,8 @@ zx::result<> Ufs::ConfigurePowerManagement() {
   // our power element token with the CpuElementManager protocol
   zx::result lease_control_client_end = AcquireInitLease(hardware_power_lessor_client_);
   if (!lease_control_client_end.is_ok()) {
-    FDF_LOG(ERROR, "Failed to acquire lease on hardware power: %s",
-            zx_status_get_string(lease_control_client_end.status_value()));
+    fdf::error("Failed to acquire lease on hardware power: {}",
+               zx_status_get_string(lease_control_client_end.status_value()));
     return lease_control_client_end.take_error();
   }
   hardware_power_lease_control_client_end_ = std::move(lease_control_client_end.value());
@@ -1226,8 +1215,7 @@ void Ufs::HardwareElementRunner::SetLevel(
       zx::result result = parent_.device_manager_->ResumePower();
       if (result.is_error()) {
         const zx::duration duration = zx::clock::get_monotonic() - start;
-        FDF_LOG(ERROR, "Failed to resume power after %ld us: %s", duration.to_usecs(),
-                result.status_string());
+        fdf::error("Failed to resume power after {} us: {}", duration.to_usecs(), result);
         set_level_completer.Close(ZX_ERR_INTERNAL);
         return;
       }
@@ -1245,7 +1233,7 @@ void Ufs::HardwareElementRunner::SetLevel(
       // Actually lower the hardware's power level.
       zx::result result = parent_.device_manager_->SuspendPower();
       if (result.is_error()) {
-        FDF_LOG(ERROR, "Failed to suspend power: %s", result.status_string());
+        fdf::error("Failed to suspend power: {}", result);
         set_level_completer.Close(ZX_ERR_INTERNAL);
         return;
       }
@@ -1255,7 +1243,7 @@ void Ufs::HardwareElementRunner::SetLevel(
       break;
     }
     default:
-      FDF_LOG(ERROR, "Unexpected power level for hardware power element: %u", required_level);
+      fdf::error("Unexpected power level for hardware power element: {}", required_level);
       set_level_completer.Close(ZX_ERR_INVALID_ARGS);
       return;
   }
@@ -1264,7 +1252,7 @@ void Ufs::HardwareElementRunner::SetLevel(
 void Ufs::HardwareElementRunner::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "ElementRunner received unknown method %lu", metadata.method_ordinal);
+  fdf::error("ElementRunner received unknown method {}", metadata.method_ordinal);
 }
 
 zx::result<> Ufs::Start() {
@@ -1291,7 +1279,7 @@ zx::result<> Ufs::Start() {
   auto result =
       parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
@@ -1313,7 +1301,7 @@ zx::result<> Ufs::Start() {
     });
     zx::result result = outgoing()->AddService<fuchsia_hardware_ufs::Service>(std::move(handler));
     if (result.is_error()) {
-      FDF_SLOG(ERROR, "Failed to add service", KV("status", result.status_string()));
+      fdf::error("Failed to add service: {}", result);
       return result.take_error();
     }
   }

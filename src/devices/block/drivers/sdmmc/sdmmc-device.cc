@@ -9,6 +9,7 @@
 #include <fuchsia/hardware/sdmmc/c/banjo.h>
 #include <inttypes.h>
 #include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/sdio/hw.h>
 #include <lib/zx/time.h>
 #include <stdio.h>
