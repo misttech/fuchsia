@@ -28,10 +28,6 @@
                 // checks when mounting with fscontext= or context=.
                 "MountTest.FsContextRequiresRelabelFromAndTo",
 
-                // TODO: https://fxbug.dev/334094811 - Ignore SELinux options when remounting a
-                // bind mount.
-                "MountTest.BindRemountWithContext",
-
                 // TODO: https://fxbug.dev/334094811 - Reject SELinux mount options before a
                 // policy is loaded.
                 "MountTests/MountOptionValidationTest.RejectedBeforePolicyLoad/*",

@@ -1975,16 +1975,9 @@ fn do_mount_remount(
     let data = current_task.read_path_if_non_null(data_addr)?;
     let mount_options =
         security::sb_eat_lsm_opts(current_task.kernel(), &mut MountParams::parse(data.as_ref())?)?;
-    security::sb_remount(current_task, &mount, mount_options)?;
-    let mut updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
-
-    // TODO: https://fxbug.dev/322875215 - Support non-bind remount and remove this.
-    if target.entry.node.fs().options.flags.contains(MountFlags::RDONLY) {
-        updated_flags |= MountFlags::RDONLY;
-    }
-
-    mount.update_flags(updated_flags);
     if !flags.contains(MountFlags::BIND) {
+        security::sb_remount(current_task, &mount, mount_options)?;
+
         // From <https://man7.org/linux/man-pages/man2/mount.2.html>
         //
         //   Since Linux 2.6.26, the MS_REMOUNT flag can be used with MS_BIND
@@ -1993,6 +1986,14 @@ fn do_mount_remount(
         //   without changing the underlying filesystem.
         track_stub!(TODO("https://fxbug.dev/322875215"), "MS_REMOUNT: Updating superblock flags");
     }
+
+    let mut updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
+    // TODO: https://fxbug.dev/322875215 - Support non-bind remount and remove this.
+    if target.entry.node.fs().options.flags.contains(MountFlags::RDONLY) {
+        updated_flags |= MountFlags::RDONLY;
+    }
+    mount.update_flags(updated_flags);
+
     Ok(())
 }
 
