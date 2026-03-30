@@ -6,7 +6,6 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -62,74 +61,68 @@ static const uint8_t boot_mouse_r_desc[50] = {
     0xC0,        // End Collection
 };
 
-size_t FakeUsbHidFunction::UsbFunctionInterfaceGetDescriptorsSize(void* ctx) {
-  FakeUsbHidFunction* func = static_cast<FakeUsbHidFunction*>(ctx);
-  return func->descriptor_size_;
-}
+void FakeUsbHidFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  const auto& setup = request.setup();
+  const std::vector<uint8_t>& write = request.write();
 
-void FakeUsbHidFunction::UsbFunctionInterfaceGetDescriptors(void* ctx,
-                                                            uint8_t* out_descriptors_buffer,
-                                                            size_t descriptors_size,
-                                                            size_t* out_descriptors_actual) {
-  FakeUsbHidFunction* func = static_cast<FakeUsbHidFunction*>(ctx);
-  memcpy(out_descriptors_buffer, func->descriptor_.get(),
-         std::min(descriptors_size, func->descriptor_size_));
-  *out_descriptors_actual = func->descriptor_size_;
-}
-
-zx_status_t FakeUsbHidFunction::UsbFunctionInterfaceControl(
-    void* ctx, const usb_setup_t* setup, const uint8_t* write_buffer, size_t write_size,
-    uint8_t* out_read_buffer, size_t read_size, size_t* out_read_actual) {
-  FakeUsbHidFunction* func = static_cast<FakeUsbHidFunction*>(ctx);
-
-  if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
-    if (setup->b_request == USB_REQ_GET_DESCRIPTOR) {
-      memcpy(out_read_buffer, func->report_desc_.data(), func->report_desc_.size());
-      *out_read_actual = func->report_desc_.size();
-      return ZX_OK;
+  if (setup.bm_request_type() == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
+    if (setup.b_request() == USB_REQ_GET_DESCRIPTOR) {
+      completer.Reply(zx::ok(report_desc_));
+      return;
     }
   }
-  if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
-    if (setup->b_request == USB_HID_GET_REPORT) {
-      memcpy(out_read_buffer, func->report_.data(), func->report_.size());
-      *out_read_actual = func->report_.size();
-      return ZX_OK;
+  if (setup.bm_request_type() == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
+    if (setup.b_request() == USB_HID_GET_REPORT) {
+      completer.Reply(zx::ok(report_));
+      return;
     }
-    if (setup->b_request == USB_HID_GET_PROTOCOL) {
-      memcpy(out_read_buffer, &func->hid_protocol_, sizeof(func->hid_protocol_));
-      *out_read_actual = sizeof(func->hid_protocol_);
-      return ZX_OK;
-    }
-  }
-  if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
-    if (setup->b_request == USB_HID_SET_REPORT) {
-      memcpy(func->report_.data(), write_buffer, func->report_.size());
-      return ZX_OK;
-    }
-    if (setup->b_request == USB_HID_SET_PROTOCOL) {
-      func->hid_protocol_ = static_cast<fhidbus::wire::HidProtocol>(setup->w_value);
-      return ZX_OK;
+    if (setup.b_request() == USB_HID_GET_PROTOCOL) {
+      std::vector<uint8_t> data(sizeof(hid_protocol_));
+      memcpy(data.data(), &hid_protocol_, sizeof(hid_protocol_));
+      completer.Reply(zx::ok(data));
+      return;
     }
   }
-  return ZX_ERR_IO_REFUSED;
+  if (setup.bm_request_type() == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
+    if (setup.b_request() == USB_HID_SET_REPORT) {
+      report_ = write;
+      completer.Reply(zx::ok(std::vector<uint8_t>{}));
+      return;
+    }
+    if (setup.b_request() == USB_HID_SET_PROTOCOL) {
+      hid_protocol_ = static_cast<fhidbus::wire::HidProtocol>(setup.w_value());
+      completer.Reply(zx::ok(std::vector<uint8_t>{}));
+      return;
+    }
+  }
+  completer.Reply(zx::error(ZX_ERR_IO_REFUSED));
 }
 
-zx_status_t FakeUsbHidFunction::UsbFunctionInterfaceSetConfigured(void* ctx, bool configured,
-                                                                  usb_speed_t speed) {
-  return ZX_OK;
+void FakeUsbHidFunction::SetConfigured(SetConfiguredRequest& request,
+                                       SetConfiguredCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
 }
-zx_status_t FakeUsbHidFunction::UsbFunctionInterfaceSetInterface(void* ctx, uint8_t interface,
-                                                                 uint8_t alt_setting) {
-  return ZX_OK;
+
+void FakeUsbHidFunction::SetInterface(SetInterfaceRequest& request,
+                                      SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
+void FakeUsbHidFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown method: {}", metadata.method_ordinal);
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx::result<> FakeUsbHidFunction::Start() {
-  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    fdf::error("could not connect to UsbFunctionProtocol: {}", function);
-    return function.take_error();
+  zx::result client_end =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (client_end.is_error()) {
+    fdf::error("could not connect to UsbFunctionService: {}", client_end);
+    return client_end.take_error();
   }
-  function_ = *function;
+  function_.Bind(std::move(*client_end));
 
   report_desc_.resize(sizeof(boot_mouse_r_desc));
   memcpy(report_desc_.data(), &boot_mouse_r_desc, sizeof(boot_mouse_r_desc));
@@ -168,16 +161,54 @@ zx::result<> FakeUsbHidFunction::Start() {
       .wDescriptorLength = static_cast<uint16_t>(report_desc_.size()),
   };
 
-  zx_status_t status = function_.AllocInterface(&descriptor_->interface.b_interface_number);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbHidFunction: usb_function_alloc_interface failed");
-    return zx::error(status);
+  zx::result endpoints_res = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (endpoints_res.is_error()) {
+    fdf::error("CreateEndpoints failed: {}", endpoints_res);
+    return endpoints_res.take_error();
   }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_->interrupt.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbHidFunction: usb_function_alloc_ep failed");
-    return zx::error(status);
+
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
+  endpoints.push_back(
+      {fuchsia_hardware_usb_function::EndpointDirection::kIn, std::move(endpoints_res->server)});
+
+  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
+  alloc_req.interface_count() = 1;
+  alloc_req.endpoints() = std::move(endpoints);
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    fdf::error("AllocResources failed: {}", alloc_result.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
   }
+
+  descriptor_->interface.b_interface_number = alloc_result->interface_nums()[0];
+  if (!alloc_result->endpoint_addrs().empty()) {
+    descriptor_->interrupt.b_endpoint_address = alloc_result->endpoint_addrs()[0];
+  }
+
+  endpoints_.push_back(std::move(endpoints_res->client));
+
+  std::vector<uint8_t> desc(descriptor_size_);
+  memcpy(desc.data(), descriptor_.get(), descriptor_size_);
+
+  zx::result iface_endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (iface_endpoints.is_error()) {
+    fdf::error("CreateEndpoints failed: {}", iface_endpoints);
+    return iface_endpoints.take_error();
+  }
+
+  fuchsia_hardware_usb_function::UsbFunctionConfigureRequest config_req;
+  config_req.configuration() = std::move(desc);
+  config_req.iface() = std::move(iface_endpoints->client);
+
+  fidl::Result config_result = function_->Configure(std::move(config_req));
+  if (config_result.is_error()) {
+    fdf::error("Configure failed: {}", config_result.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
 
   fuchsia_driver_framework::DevfsAddArgs devfs_args{};
   std::vector<ffdf::NodeProperty> props{};
@@ -189,7 +220,6 @@ zx::result<> FakeUsbHidFunction::Start() {
     return result.take_error();
   }
 
-  function_.SetInterface(this, &function_interface_ops_);
   return zx::ok();
 }
 

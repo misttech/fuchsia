@@ -63,105 +63,67 @@ static const uint8_t boot_mouse_r_desc[50] = {
     0xC0,        // End Collection
 };
 
-size_t FakeUsbHidFunction::UsbFunctionInterfaceGetDescriptorsSize(void* ctx) {
-  FakeUsbHidFunction* func = static_cast<FakeUsbHidFunction*>(ctx);
-  return func->descriptor_size_;
-}
+void FakeUsbHidFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  const auto& setup = request.setup();
+  const std::vector<uint8_t>& write = request.write();
 
-void FakeUsbHidFunction::UsbFunctionInterfaceGetDescriptors(void* ctx,
-                                                            uint8_t* out_descriptors_buffer,
-                                                            size_t descriptors_size,
-                                                            size_t* out_descriptors_actual) {
-  FakeUsbHidFunction* func = static_cast<FakeUsbHidFunction*>(ctx);
-  memcpy(out_descriptors_buffer, func->descriptor_.get(),
-         std::min(descriptors_size, func->descriptor_size_));
-  *out_descriptors_actual = func->descriptor_size_;
-}
-
-zx_status_t FakeUsbHidFunction::UsbFunctionInterfaceControl(
-    void* ctx, const usb_setup_t* setup, const uint8_t* write_buffer, size_t write_size,
-    uint8_t* out_read_buffer, size_t read_size, size_t* out_read_actual) {
-  FakeUsbHidFunction* func = static_cast<FakeUsbHidFunction*>(ctx);
-
-  fbl::AutoLock lock(&func->mtx_);
-
-  if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
-    if (setup->b_request == USB_REQ_GET_DESCRIPTOR) {
-      memcpy(out_read_buffer, func->report_desc_.data(), func->report_desc_.size());
-      *out_read_actual = func->report_desc_.size();
-      return ZX_OK;
+  if (setup.bm_request_type() == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE)) {
+    if (setup.b_request() == USB_REQ_GET_DESCRIPTOR) {
+      completer.Reply(zx::ok(report_desc_));
+      return;
     }
   }
-  if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
-    if (setup->b_request == USB_HID_GET_REPORT) {
-      memcpy(out_read_buffer, func->report_.data(), func->report_.size());
-      *out_read_actual = func->report_.size();
-      return ZX_OK;
+  if (setup.bm_request_type() == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
+    if (setup.b_request() == USB_HID_GET_REPORT) {
+      completer.Reply(zx::ok(report_));
+      return;
     }
-    if (setup->b_request == USB_HID_GET_PROTOCOL) {
-      memcpy(out_read_buffer, &func->hid_protocol_, sizeof(func->hid_protocol_));
-      *out_read_actual = sizeof(func->hid_protocol_);
-      return ZX_OK;
-    }
-  }
-  if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE)) {
-    if (setup->b_request == USB_HID_SET_REPORT) {
-      memcpy(func->report_.data(), write_buffer, func->report_.size());
-      return ZX_OK;
-    }
-    if (setup->b_request == USB_HID_SET_PROTOCOL) {
-      func->hid_protocol_ = static_cast<fhidbus::wire::HidProtocol>(setup->w_value);
-      return ZX_OK;
+    if (setup.b_request() == USB_HID_GET_PROTOCOL) {
+      std::vector<uint8_t> data(sizeof(hid_protocol_));
+      memcpy(data.data(), &hid_protocol_, sizeof(hid_protocol_));
+      completer.Reply(zx::ok(data));
+      return;
     }
   }
-  return ZX_ERR_IO_REFUSED;
-}
-
-zx_status_t FakeUsbHidFunction::UsbFunctionInterfaceSetConfigured(void* ctx, bool configured,
-                                                                  usb_speed_t speed) {
-  return ZX_OK;
-}
-zx_status_t FakeUsbHidFunction::UsbFunctionInterfaceSetInterface(void* ctx, uint8_t interface,
-                                                                 uint8_t alt_setting) {
-  return ZX_OK;
-}
-
-int FakeUsbHidFunction::Thread() {
-  while (1) {
-    fbl::AutoLock lock(&mtx_);
-    if (!data_out_req_complete_) {
-      event_.Wait(&mtx_);
-    }
-
-    if (!active_) {
-      return 0;
-    }
-
-    data_out_req_complete_ = false;
-    // Release the lock before queueing, as the callback acquires the lock and is sometimes run in
-    // the same thread.
-    lock.release();
-    usb_request_complete_callback_t complete = {
-        .callback =
-            [](void* ctx, usb_request_t* req) {
-              return static_cast<FakeUsbHidFunction*>(ctx)->UsbEndpointOutCallback(req);
-            },
-        .ctx = this,
-    };
-    function_.RequestQueue(data_out_req_->request(), &complete);
+  if (setup.b_request() == USB_HID_SET_REPORT) {
+    report_ = write;
+    completer.Reply(zx::ok(std::vector<uint8_t>{}));
+    return;
   }
-  return 0;
+  if (setup.b_request() == USB_HID_SET_PROTOCOL) {
+    hid_protocol_ = static_cast<fhidbus::wire::HidProtocol>(setup.w_value());
+    completer.Reply(zx::ok(std::vector<uint8_t>{}));
+    return;
+  }
+  completer.Reply(zx::error(ZX_ERR_IO_REFUSED));
+}
+
+void FakeUsbHidFunction::SetConfigured(SetConfiguredRequest& request,
+                                       SetConfiguredCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
+void FakeUsbHidFunction::SetInterface(SetInterfaceRequest& request,
+                                      SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
+void FakeUsbHidFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown method: {}", metadata.method_ordinal);
+  completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
 zx::result<> FakeUsbHidFunction::Start() {
-  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    fdf::error("could not connect to UsbFunctionProtocol: {}", function);
-    return function.take_error();
+  zx::result client_end =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (client_end.is_error()) {
+    fdf::error("could not connect to UsbFunctionService: {}", client_end);
+    return client_end.take_error();
   }
-  function_ = *function;
+  function_.Bind(std::move(*client_end));
 
-  fbl::AutoLock lock(&mtx_);
   report_desc_.resize(sizeof(boot_mouse_r_desc));
   memcpy(report_desc_.data(), &boot_mouse_r_desc, sizeof(boot_mouse_r_desc));
   report_.resize(3);
@@ -207,32 +169,86 @@ zx::result<> FakeUsbHidFunction::Start() {
       .wDescriptorLength = static_cast<uint16_t>(report_desc_.size()),
   };
 
-  zx_status_t status = function_.AllocInterface(&descriptor_->interface.b_interface_number);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbHidFunction: usb_function_alloc_interface failed");
-    return zx::error(status);
+  zx::result endpoints_res = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (endpoints_res.is_error()) {
+    fdf::error("CreateEndpoints failed: {}", endpoints_res);
+    return endpoints_res.take_error();
   }
-  status = function_.AllocEp(USB_DIR_IN, &descriptor_->interrupt_in.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbHidFunction: usb_function_alloc_ep for endpoint in failed");
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_OUT, &descriptor_->interrupt_out.b_endpoint_address);
-  if (status != ZX_OK) {
-    fdf::error("FakeUsbHidFunction: usb_function_alloc_ep for endpoint out failed");
-    return zx::error(status);
+  zx::result endpoints_out_res = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (endpoints_out_res.is_error()) {
+    fdf::error("CreateEndpoints failed: {}", endpoints_out_res);
+    return endpoints_out_res.take_error();
   }
 
-  status = usb::Request<>::Alloc(&data_out_req_, BULK_MAX_PACKET,
-                                 descriptor_->interrupt_out.b_endpoint_address,
-                                 function_.GetRequestSize());
-  if (status != ZX_OK) {
-    return zx::error(status);
+  fuchsia_hardware_usb_function::EndpointResource ep_in;
+  ep_in.direction() = fuchsia_hardware_usb_function::EndpointDirection::kIn;
+  ep_in.endpoint() = std::move(endpoints_res->server);
+
+  fuchsia_hardware_usb_function::EndpointResource ep_out;
+  ep_out.direction() = fuchsia_hardware_usb_function::EndpointDirection::kOut;
+  ep_out.endpoint() = std::move(endpoints_out_res->server);
+
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> endpoints;
+  endpoints.push_back(std::move(ep_in));
+  endpoints.push_back(std::move(ep_out));
+
+  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesRequest alloc_req;
+  alloc_req.interface_count() = 1;
+  alloc_req.endpoints() = std::move(endpoints);
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    fdf::error("AllocResources failed: {}", alloc_result.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  descriptor_->interface.b_interface_number = alloc_result->interface_nums()[0];
+  if (alloc_result->endpoint_addrs().size() > 1) {
+    descriptor_->interrupt_in.b_endpoint_address = alloc_result->endpoint_addrs()[0];
+    descriptor_->interrupt_out.b_endpoint_address = alloc_result->endpoint_addrs()[1];
+  }
+
+  endpoints_.push_back(std::move(endpoints_res->client));
+
+  out_ep_.Init(std::move(endpoints_out_res->client), dispatcher());
+
+  std::vector<uint8_t> desc(descriptor_size_);
+  memcpy(desc.data(), descriptor_.get(), descriptor_size_);
+
+  zx::result iface_endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (iface_endpoints.is_error()) {
+    fdf::error("CreateEndpoints failed: {}", iface_endpoints);
+    return iface_endpoints.take_error();
+  }
+
+  fuchsia_hardware_usb_function::UsbFunctionConfigureRequest config_req;
+  config_req.configuration() = std::move(desc);
+  config_req.iface() = std::move(iface_endpoints->client);
+
+  fidl::Result config_result = function_->Configure(std::move(config_req));
+  if (config_result.is_error()) {
+    fdf::error("Configure failed: {}", config_result.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   active_ = true;
-  thrd_create(
-      &thread_, [](void* ctx) { return static_cast<FakeUsbHidFunction*>(ctx)->Thread(); }, this);
+
+  out_ep_.AddRequests(1, BULK_MAX_PACKET, fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
+
+  std::optional req = out_ep_.GetRequest();
+  FDF_ASSERT(req.has_value());
+
+  std::vector<fuchsia_hardware_usb_request::Request> requests;
+  requests.push_back(req->take_request());
+  fuchsia_hardware_usb_endpoint::EndpointQueueRequestsRequest queue_req;
+  queue_req.req() = std::move(requests);
+  fit::result<fidl::OneWayError> queue_result = out_ep_->QueueRequests(std::move(queue_req));
+  if (queue_result.is_error()) {
+    fdf::error("QueueRequests failed: {}", queue_result.error_value().FormatDescription());
+  }
+
+  fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
 
   fuchsia_driver_framework::DevfsAddArgs devfs_args{};
   std::vector<ffdf::NodeProperty> props{};
@@ -244,22 +260,39 @@ zx::result<> FakeUsbHidFunction::Start() {
     return result.take_error();
   }
 
-  function_.SetInterface(this, &function_interface_ops_);
   return zx::ok();
 }
 
-void FakeUsbHidFunction::UsbEndpointOutCallback(usb_request_t* request) {
-  fbl::AutoLock lock(&mtx_);
-  if (request->response.status == ZX_OK) {
-    report_.resize(request->response.actual);
-    size_t result = usb_request_copy_from(request, report_.data(), report_.size(), 0);
-    ZX_ASSERT(result == request->response.actual);
-  } else {
-    fdf::error("request status: {}", zx_status_get_string(request->response.status));
-    active_ = false;
+void FakeUsbHidFunction::UsbEndpointOutCallback(
+    std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
+  for (auto& completion : completions) {
+    if (*completion.status() == ZX_OK) {
+      usb::FidlRequest wrapped_req(std::move(*completion.request()));
+      report_.resize(*completion.transfer_size());
+      wrapped_req.CopyFrom(0, report_.data(), *completion.transfer_size(), out_ep_.GetMapped());
+      out_ep_.PutRequest(std::move(wrapped_req));
+    } else {
+      fdf::error("request status: {}", zx_status_get_string(*completion.status()));
+      active_ = false;
+      if (completion.request().has_value()) {
+        out_ep_.PutRequest(usb::FidlRequest(std::move(*completion.request())));
+      }
+    }
   }
-  data_out_req_complete_ = true;
-  event_.Signal();
+
+  if (active_) {
+    std::optional req = out_ep_.GetRequest();
+    if (req) {
+      std::vector<fuchsia_hardware_usb_request::Request> requests;
+      requests.push_back(req->take_request());
+      fuchsia_hardware_usb_endpoint::EndpointQueueRequestsRequest queue_req;
+      queue_req.req() = std::move(requests);
+      auto queue_result = out_ep_->QueueRequests(std::move(queue_req));
+      if (queue_result.is_error()) {
+        fdf::error("QueueRequests failed: {}", queue_result.error_value().status());
+      }
+    }
+  }
 }
 
 }  // namespace two_endpoint_hid_function

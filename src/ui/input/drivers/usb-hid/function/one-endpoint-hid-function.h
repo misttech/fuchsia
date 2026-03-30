@@ -6,7 +6,8 @@
 #define SRC_UI_INPUT_DRIVERS_USB_HID_FUNCTION_ONE_ENDPOINT_HID_FUNCTION_H_
 
 #include <fidl/fuchsia.hardware.hidbus/cpp/wire.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/zx/result.h>
 
@@ -15,13 +16,16 @@
 #include <vector>
 
 #include <usb/hid.h>
+#include <usb/usb.h>
 
 namespace one_endpoint_hid_function {
 
 // This driver is for testing the USB-HID driver. It binds as a peripheral USB
 // device and sends fake HID report descriptors and HID reports. The tests for
 // this driver and the USB-HID driver are with the other usb-virtual-bus tests.
-class FakeUsbHidFunction : public fdf::DriverBase {
+class FakeUsbHidFunction
+    : public fdf::DriverBase,
+      public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr std::string kDriverName = "FakeUsbHidFunction";
 
@@ -30,29 +34,18 @@ class FakeUsbHidFunction : public fdf::DriverBase {
 
   zx::result<> Start() override;
 
-  static size_t UsbFunctionInterfaceGetDescriptorsSize(void* ctx);
-
-  static void UsbFunctionInterfaceGetDescriptors(void* ctx, uint8_t* out_descriptors_buffer,
-                                                 size_t descriptors_size,
-                                                 size_t* out_descriptors_actual);
-  static zx_status_t UsbFunctionInterfaceControl(void* ctx, const usb_setup_t* setup,
-                                                 const uint8_t* write_buffer, size_t write_size,
-                                                 uint8_t* out_read_buffer, size_t read_size,
-                                                 size_t* out_read_actual);
-  static zx_status_t UsbFunctionInterfaceSetConfigured(void* ctx, bool configured,
-                                                       usb_speed_t speed);
-  static zx_status_t UsbFunctionInterfaceSetInterface(void* ctx, uint8_t interface,
-                                                      uint8_t alt_setting);
+  // fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface>
+  void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
+  void SetConfigured(SetConfiguredRequest& request,
+                     SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
  private:
-  usb_function_interface_protocol_ops_t function_interface_ops_{
-      .get_descriptors_size = UsbFunctionInterfaceGetDescriptorsSize,
-      .get_descriptors = UsbFunctionInterfaceGetDescriptors,
-      .control = UsbFunctionInterfaceControl,
-      .set_configured = UsbFunctionInterfaceSetConfigured,
-      .set_interface = UsbFunctionInterfaceSetInterface,
-  };
-  ddk::UsbFunctionProtocolClient function_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
+  std::vector<fidl::ClientEnd<fuchsia_hardware_usb_endpoint::Endpoint>> endpoints_;
 
   std::vector<uint8_t> report_desc_;
   std::vector<uint8_t> report_;
