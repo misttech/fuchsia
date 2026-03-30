@@ -144,7 +144,7 @@ impl Partition {
     }
 
     fn get_coreboot_pave_type(label: &str) -> Option<PartitionPaveType> {
-        if let Ok(re) = regex::Regex::new(r"^zircon_(.)\.signed$") {
+        if let Ok(re) = regex_lite::Regex::new(r"^zircon_(.)\.signed$") {
             if let Some(captures) = re.captures(label) {
                 let config = Partition::letter_to_configuration(
                     captures.get(1).unwrap().as_str().chars().last().unwrap(),
