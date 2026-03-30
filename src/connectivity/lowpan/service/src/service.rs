@@ -16,7 +16,7 @@ use futures::prelude::*;
 use futures::task::{Spawn, SpawnExt};
 use lowpan_driver_common::lowpan_fidl::MAX_LOWPAN_DEVICES;
 use lowpan_driver_common::{AsyncCondition, ZxStatus};
-use regex::Regex;
+use regex_lite::Regex;
 use std::collections::HashMap;
 
 use std::sync::LazyLock;
