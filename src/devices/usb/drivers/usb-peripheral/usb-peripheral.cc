@@ -58,12 +58,28 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
 
 void UsbPeripheral::RequestComplete(usb_request_t* req) {
   TRACE_DURATION("usb-peripheral", __func__);
-  fbl::AutoLock l(&pending_requests_lock_);
+
   usb::BorrowedRequest<void> request(req, dci_request_size_);
-  pending_requests_.erase(&request);
-  l.release();
+  zx_status_t status = request.request()->response.status;
+  size_t actual = request.request()->response.actual;
+
+  fit::callback<void()> all_complete_cb;
+  {
+    fbl::AutoLock l(&pending_requests_lock_);
+    pending_requests_.erase(&request);
+    if (pending_requests_.size() == 0 && on_all_pending_requests_complete_) {
+      all_complete_cb = std::move(on_all_pending_requests_complete_);
+    }
+  }
+
+  // Record to monitor before completion to avoid use-after-free.
   usb_monitor_.AddRecord(req);
-  request.Complete(request.request()->response.status, request.request()->response.actual);
+
+  request.Complete(status, actual);
+
+  if (all_complete_cb) {
+    all_complete_cb();
+  }
 }
 
 void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
@@ -876,6 +892,7 @@ void UsbPeripheral::ClearFunctions() {
     UsbDciCancelAll(i);
     UsbDciCancelAll(static_cast<uint8_t>(i | 0x80));
   }
+
   {
     fbl::AutoLock lock(&lock_);
     shutting_down_ = false;
@@ -1246,7 +1263,7 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
 
   fdf::debug("{}", __func__);
   ClearFunctions();
-  completer.Reply();
+  WaitForPendingRequests([completer = completer.ToAsync()]() mutable { completer.Reply(); });
 }
 
 void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView request,
@@ -1269,7 +1286,8 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
     listener_.channel().wait_one(ZX_CHANNEL_PEER_CLOSED | __ZX_OBJECT_HANDLE_CLOSED,
                                  zx::time::infinite(), &observed);
   }
-  completer(zx::ok());
+
+  WaitForPendingRequests([completer = std::move(completer)]() mutable { completer(zx::ok()); });
 }
 
 zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& functions) {
@@ -1388,6 +1406,16 @@ UsbPeripheral::ResourceAllocations UsbPeripheral::GetResourceAllocations(size_t 
   }
 
   return allocations;
+}
+
+void UsbPeripheral::WaitForPendingRequests(fit::callback<void()> callback) {
+  fbl::AutoLock lock(&pending_requests_lock_);
+  if (pending_requests_.size() == 0) {
+    lock.release();
+    callback();
+    return;
+  }
+  on_all_pending_requests_complete_ = std::move(callback);
 }
 
 }  // namespace usb_peripheral

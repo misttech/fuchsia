@@ -77,7 +77,18 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   zx_status_t UsbDciEpClearStall(uint8_t ep_address) { return ZX_ERR_NOT_SUPPORTED; }
   size_t UsbDciGetRequestSize() { return sizeof(usb_request_t); }
 
-  zx_status_t UsbDciCancelAll(uint8_t ep_address) { return ZX_OK; }
+  zx_status_t UsbDciCancelAll(uint8_t ep_address) {
+    std::lock_guard<std::mutex> lock(requests_mutex_);
+    for (auto it = requests_.begin(); it != requests_.end();) {
+      if (it->req->header.ep_address == ep_address) {
+        usb_request_complete(it->req, ZX_ERR_IO_NOT_PRESENT, 0, &it->cb);
+        it = requests_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    return ZX_OK;
+  }
 
   // fuchsia_hardware_usb_dci::UsbDci protocol.
   void ConnectToEndpoint(ConnectToEndpointRequestView req,
@@ -551,6 +562,46 @@ TEST_F(ManagedUsbPeripheralTest, DuplicateRequestQueueing) {
 
   // Complete the outstanding request via the fake DCI to finish the test.
   this->CompleteAll(ZX_OK);
+
+  completion.Wait();
+}
+
+TEST_F(ManagedUsbPeripheralTest, PendingRequestsCompletedOnClearFunctions) {
+  size_t parent_req_size = 0;
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
+
+  std::optional<usb::Request<void>> req;
+  ASSERT_OK(usb::Request<void>::Alloc(&req, 1024, 1 /* ep_address */, parent_req_size));
+
+  libsync::Completion completion;
+
+  struct Context {
+    libsync::Completion* completion;
+    size_t parent_req_size;
+  } context = {
+      .completion = &completion,
+      .parent_req_size = parent_req_size,
+  };
+
+  usb_request_complete_callback_t cb = {
+      .callback =
+          [](void* ctx, usb_request_t* req) {
+            auto* context = static_cast<Context*>(ctx);
+            EXPECT_EQ(req->response.status, ZX_ERR_IO_NOT_PRESENT);
+            usb::Request<void> unused(req, context->parent_req_size);
+            context->completion->Signal();
+          },
+      .ctx = &context,
+  };
+
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { peripheral.UsbPeripheralRequestQueue(req->take(), &cb); });
+
+  // Call ClearFunctions via FIDL.
+  auto client = this->Client();
+  auto result = client->ClearFunctions();
+  ASSERT_TRUE(result.ok());
 
   completion.Wait();
 }

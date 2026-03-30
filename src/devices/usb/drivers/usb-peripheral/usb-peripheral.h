@@ -13,6 +13,7 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/fit/function.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/promise.h>
 #include <lib/trace/event.h>
@@ -300,8 +301,13 @@ class UsbPeripheral : public fdf::DriverBase,
 
   UsbMonitor usb_monitor_;
 
+  // Wait for all pending requests to complete. Call the callback when the queue is empty.
+  // If the queue is already empty, the callback is called immediately.
+  void WaitForPendingRequests(fit::callback<void()> callback) __TA_EXCLUDES(pending_requests_lock_);
+
   fbl::Mutex pending_requests_lock_;
   usb::BorrowedRequestList<void> pending_requests_ __TA_GUARDED(pending_requests_lock_);
+  fit::callback<void()> on_all_pending_requests_complete_ __TA_GUARDED(pending_requests_lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
 
