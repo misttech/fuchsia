@@ -118,6 +118,7 @@ toolchain_utils_action("startfiles") {
   # program and found in the PATH.  Since it's a fundamental system command,
   # there's no need for GN/Ninja to know about a dependency on it as with the
   # toolchain utilities or scripts.
+  mnemonic = "COPY"
   utils = []
   script = true
   deps = [ ":crt1.rsp" ]

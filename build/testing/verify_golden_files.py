@@ -202,12 +202,13 @@ def main() -> int:
     if args.golden_dir:
         outside_goldens = sorted(
             {
-                file
+                str(file)
                 for file in goldens
                 if not Path(file).is_relative_to(args.golden_dir)
             }
         )
         if outside_goldens:
+            outside_goldens = "\n*** ".join(outside_goldens)
             sys.stderr.write(
                 f"""
 *** Some golden files are not within {args.golden_dir}:

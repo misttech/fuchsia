@@ -8,6 +8,7 @@
 
 libc_headers = {
   root_dir = "//sdk/lib/c/include"
+  golden_gen_dir = "$root_dir/gen"
 
   # Each element of the list describes one of the directories where header file
   # sources are found.  The comments for the first element give the schema.
@@ -237,6 +238,7 @@ libc_headers = {
   # //build/bazel/fuchsia_idk/generate_repository.py
   idk_generate_inputs = []
 
+  _all_generated_headers = []
   foreach(set, include_dirs) {
     all_public_headers += filter_exclude(set.public, [ "*.yaml" ])
     all_impl_headers += set.sources
@@ -262,21 +264,13 @@ libc_headers = {
         }
       }
 
-      sysroot_entries += [
-        {
-          sdk = {
-            # Generated headers all go into the same directory regardless of
-            # toolchain.  Make sure this matches set.gen_dir in BUILD.gn.
-            include_dir = get_label_info("${set.dir}($default_toolchain)",
-                                         "target_gen_dir")
-
-            headers = set.generated
-
-            # The deps must ensure they get generated before they're needed.
-            deps = [ root_dir ]
-          }
-        },
-      ]
+      # **NOTE:** When adding new generated headers, Ninja may give errors
+      # about golden files not existing.  If that happens, temporarily comment
+      # out this line such that an `update_goldens=true` build can progress far
+      # enough to create the golden files.  Then uncomment it again so that the
+      # sysroot population won't be all broken; after that just another build
+      # iteration or two should right things fully.
+      _all_generated_headers += set.generated
     }
 
     sysroot_entries += [
@@ -288,4 +282,18 @@ libc_headers = {
       },
     ]
   }
+
+  # The golden files for generated headers from all sets all go into the same
+  # directory in the source tree, so they only need one entry here.
+  sysroot_entries += [
+    {
+      sdk = {
+        include_dir = golden_gen_dir
+        headers = _all_generated_headers
+
+        # The deps must ensure they get generated before they're needed.
+        deps = [ root_dir ]
+      }
+    },
+  ]
 }

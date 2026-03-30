@@ -672,6 +672,15 @@
                 ]
             },
             {
+                "paths": [
+                    "sdk/lib/c/include/gen"
+                ],
+                "notes": [
+                    "//sdk/lib/c/include/BUILD.gn populates this with headers",
+                    "generated from llvm-libc sources with the LLVM license."
+                ]
+            },
+            {
                 "notes": [
                     "Temporarily disabled to allow for third_party repository moves.",
                     "See https://fxbug.dev/474359768 for more info."

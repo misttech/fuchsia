@@ -39,7 +39,7 @@ hdrgen_dir = "$llvm_libc/utils/hdrgen"
 # generated headers are in place.  This checking only ever happens in the
 # $default_toolchain and is not repeated elsewhere.
 group("include") {
-  public_deps = []
+  public_deps = [ ":check-golden($default_toolchain)" ]
   foreach(set, libc_headers.include_dirs) {
     if (defined(set.json_file)) {
       # Each set of generated headers has these targets defined below.
@@ -53,11 +53,30 @@ group("include") {
 }
 
 if (current_toolchain == default_toolchain) {
+  # This is where the golden files of generated headers go.  They are
+  # eventually copied from here by SDK construction.  They are used from here
+  # via proxy headers doing `#include "../..."` with precise relative paths
+  # from the constructed sysroot used by $default_toolchain compilations.
+  golden_gen_dir = libc_headers.golden_gen_dir
+
+  # This is the $target_gen_dir corresponding to that.  This is where things
+  # are generated _specifically_ to populate _that_ directory per se.  The
+  # headers generated from YAML don't go here; they go other places where they
+  # are used directly by the :headers target below, and $golden_gen_dir is
+  # populated with golden copies of _those_ files.  This directory contains the
+  # proxy headers that must sit in $golden_gen_dir so that the files there can
+  # use `#include` with relative paths as if from their installed location to
+  # the installed locations of llvm-libc-types/*.h et al.  Those are only fit
+  # to be _used_ from $golden_gen_dir, but they can't be generated directly
+  # there--only copied by the `update_goldens=true` mode of golden_files().
+  golden_gen_target_gen_dir = get_label_info(golden_gen_dir, "target_gen_dir")
+
+  golden_comparisons = []
+  golden_deps = []
   reified_sets = []
   foreach(set, libc_headers.include_dirs) {
     if (defined(set.json_file)) {
-      # Fill out some derived data from the set.  The set.gen_dir formulation
-      # here must match that used in libc_headers.gni for sdk.include_dir!
+      # Fill out some derived data from the set.
       set.gen_dir = get_label_info(set.dir, "target_gen_dir")
       set.yaml = filter_include(set.public, [ "*.yaml" ])
       set.generated_public = []
@@ -70,7 +89,15 @@ if (current_toolchain == default_toolchain) {
           header_dir += "/"
         }
         assert(header == "$header_dir$header_name.yaml")
-        set.generated_public += [ "${set.gen_dir}/$header_dir$header_name.h" ]
+        _header_relative_path = "$header_dir$header_name.h"
+        _header_gen_path = "${set.gen_dir}/$_header_relative_path"
+        set.generated_public += [ _header_gen_path ]
+        golden_comparisons += [
+          {
+            candidate = _header_gen_path
+            golden = "$golden_gen_dir/$_header_relative_path"
+          },
+        ]
       }
 
       # Accumulate all the header dependencies from the JSON data for the set.
@@ -87,6 +114,7 @@ if (current_toolchain == default_toolchain) {
       # each `.h` file depending only on its particular `.yaml` file.
       python_action_foreach("hdrgen-${set.json_file}") {
         binary_label = ":hdrgen"
+        mnemonic = "HDRGEN(.h)"
 
         # Each `.yaml` in $sources produces the corresponding `.h` in $outputs.
         sources = rebase_path(set.yaml, ".", set.dir)
@@ -142,6 +170,9 @@ if (current_toolchain == default_toolchain) {
               {
                 dir = previous.dir
                 file = header
+
+                # This redirect is just a proxy for another set.
+                proxy = true
               },
             ]
             header = false  # No need to consult more sets.
@@ -153,6 +184,9 @@ if (current_toolchain == default_toolchain) {
             {
               dir = set.dir
               file = header
+
+              # This redirect is from this very set.
+              proxy = false
             },
           ]
         }
@@ -160,34 +194,73 @@ if (current_toolchain == default_toolchain) {
 
       # Now generate a redirecting `#include` file at the expected relative
       # path in ${set.gen_dir} leading to whatever ${some_set.dir} has it.
+      # Likewise, such to go into golden_gen_dir.
       set.redirect_labels = []
       set.gen_count = 0
       foreach(redirect, set.redirects) {
+        redirect.source = "${redirect.dir}/${redirect.file}"
+
         set.gen_count = set.gen_count + 1
         _label = "hdrgen.redirect.${set.gen_count}-${set.json_file}"
         set.redirect_labels += [ ":$_label" ]
-        generated_file(_label) {
-          visibility = [ ":*" ]
-          output_conversion = "list lines"
-          outputs = [ "${set.gen_dir}/${redirect.file}" ]
-          _output_path = rebase_path(outputs[0], root_build_dir)
-          _redirect_path =
-              rebase_path("${redirect.dir}/${redirect.file}", root_build_dir)
-          _relative_path = rebase_path("${redirect.dir}/${redirect.file}",
-                                       get_path_info(outputs[0], "dir"),
-                                       root_build_dir)
-          deps = [ ":hdrgen-${set.json_file}" ]
-          contents = [
-            # The comment line makes each file's contents unique.  This works
-            # around an issue where RBE hard-links identical input files
-            # together and Clang generates differing depfile output based on
-            # whether two identical files are hard links or separate files.
-            "// ${_output_path} -> ${_redirect_path}",
-            "#include \"${_relative_path}\"  // IWYU pragma: export",
+
+        redirect.where = [
+          {
+            dir = set.gen_dir  # Where it's used from.
+            root_dir = root_build_dir  # What that's canonically relative to.
+            gen_dir = dir  # Where it's actually generated.
+            label = _label  # Target label.
+          },
+        ]
+
+        if (!redirect.proxy) {
+          # This is the first redirect for this header, so it can be the one to
+          # handle the unified golden_gen_dir.
+          redirect.where += [
+            {
+              dir = golden_gen_dir
+              root_dir = "//"
+              gen_dir = golden_gen_target_gen_dir
+              label = "$_label.golden"
+            },
           ]
-          metadata = {
-            # Each target rolls up its own build_api("generated_sources") data.
-            generated_sources = rebase_path(outputs, root_build_dir)
+          golden_deps += [ ":$_label.golden" ]
+          golden_comparisons += [
+            {
+              golden = "$golden_gen_dir/${redirect.file}"
+              candidate = "$golden_gen_target_gen_dir/${redirect.file}"
+            },
+          ]
+        }
+
+        foreach(where, redirect.where) {
+          where.gen = "${where.gen_dir}/${redirect.file}"
+          where.redirect = "${where.dir}/${redirect.file}"
+          where.redirect_dir = get_path_info(where.redirect, "dir")
+          where.path = rebase_path(where.redirect, where.root_dir)
+          where.source_path = rebase_path(redirect.source, where.root_dir)
+          where.relative_source_path =
+              rebase_path(redirect.source, where.redirect_dir)
+          generated_file(where.label) {
+            visibility = [ ":*" ]
+            output_conversion = "list lines"
+            outputs = [ where.gen ]
+            deps = [ ":hdrgen-${set.json_file}" ]
+            contents = [
+              # The comment lines make each file's contents unique.  This works
+              # around an issue where RBE hard-links identical input files
+              # together and Clang generates differing depfile output based on
+              # whether two identical files are hard links or separate files.
+              "// ${where.path} ->",
+              "// ${where.source_path}",
+              "#include \"${where.relative_source_path}\" " +
+                  " // IWYU pragma: export",
+            ]
+            metadata = {
+              # Each target rolls up its own build_api("generated_sources")
+              # data.
+              generated_sources = rebase_path(outputs, root_build_dir)
+            }
           }
         }
       }
@@ -209,6 +282,7 @@ if (current_toolchain == default_toolchain) {
       python_action(set.json_file) {
         visibility = [ ":*" ]
         binary_label = ":hdrgen"
+        mnemonic = "HDRGEN(.json)"
 
         sources =
             rebase_path(filter_include(set.public, [ "*.yaml" ]), ".", set.dir)
@@ -237,7 +311,55 @@ if (current_toolchain == default_toolchain) {
           },
         ]
       }
+
+      # Each JSON file gets that separate golden_files() target rather than
+      # just an addition to the golden_comparisons list.  Along with that, the
+      # main check-golden target below also depends on these targets.  This
+      # ensures that all the JSON files must be actually up to date in the
+      # source tree before the check-golden target will even attempt to look at
+      # the golden files for the headers themselves.  The dependency means that
+      # an error in updating the per-set (JSON) target will prevent the build
+      # from even getting to the check-golden target (and anything that depends
+      # on it, like compilations).  With `update_goldens=true`, a repeated
+      # build will then pick up now-correct JSON files so that the instructions
+      # to the check-golden target will be current.
+      golden_deps += [ ":check-${set.json_file}" ]
     }
+  }
+
+  # If the comparisons list goes directly into golden_files() as a list of
+  # scopes, then each golden file will be an input and Ninja will insist
+  # that it already exist before running anything.  With the list in a JSON
+  # file, the golden_files() action gets a chance to run and create new
+  # files in the source tree when update_goldens=true.
+  generated_file("golden-comparisons.json") {
+    visibility = [ ":check-golden" ]
+    outputs = [ "$target_gen_dir/$target_name" ]
+    output_conversion = "json"
+
+    # The golden_comparison list uses GN paths, so turn those into the
+    # appropriate relative paths in the JSON.
+    contents = []
+    foreach(comparison, golden_comparisons) {
+      contents += [
+        {
+          golden = rebase_path(comparison.golden, "//")
+          candidate = rebase_path(comparison.candidate, root_build_dir)
+        },
+      ]
+    }
+  }
+
+  golden_files("check-golden") {
+    visibility = [ ":*" ]
+    dir = golden_gen_dir
+    message = "Changes to generated headers will require API review." +
+              " Build with `update_goldens=true`." +
+              " This will update both checked-in generated headers" +
+              " and API summary files."
+    deps = [ ":golden-comparisons.json" ] + golden_deps
+    _outputs = get_target_outputs(deps[0])
+    comparisons = _outputs[0]
   }
 }
 
