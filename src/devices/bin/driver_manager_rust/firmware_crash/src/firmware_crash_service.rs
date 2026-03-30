@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::Peered;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::StreamExt;
 use log::warn;
@@ -27,7 +26,6 @@ pub struct Watcher {
     parent: Weak<RefCell<FirmwareCrashInner>>,
     crash_index: usize,
     completer: Option<ffc::WatcherGetCrashResponder>,
-    event: Option<zx::EventPair>,
 }
 
 impl Default for FirmwareCrashService {
@@ -122,7 +120,6 @@ impl FirmwareCrashService {
             parent: Rc::downgrade(&self.inner),
             crash_index: 0,
             completer: None,
-            event: None,
         }));
 
         self.inner.borrow_mut().watchers.push(Rc::downgrade(&watcher));
@@ -130,11 +127,8 @@ impl FirmwareCrashService {
         let mut stream = stream;
         while let Some(request) = stream.next().await {
             match request? {
-                ffc::WatcherRequest::GetCrash { payload, responder } => {
-                    watcher.borrow_mut().get_crash(payload, responder);
-                }
-                ffc::WatcherRequest::GetCrashEvent { responder } => {
-                    watcher.borrow_mut().get_crash_event(responder);
+                ffc::WatcherRequest::GetCrash { responder } => {
+                    watcher.borrow_mut().get_crash(responder);
                 }
                 ffc::WatcherRequest::_UnknownMethod { ordinal, .. } => {
                     warn!("fuchsia.firmware.crash/Watcher received unknown method: {}", ordinal);
@@ -156,16 +150,10 @@ impl Watcher {
             let crash = clone_crash(&inner.crashes[self.crash_index]);
             let _ = responder.send(Ok(crash));
             self.crash_index += 1;
-        } else if let Some(event) = &self.event {
-            let _ = event.signal_peer(zx::Signals::NONE, zx::Signals::USER_0);
         }
     }
 
-    fn get_crash(
-        &mut self,
-        request: ffc::WatcherGetCrashRequest,
-        responder: ffc::WatcherGetCrashResponder,
-    ) {
+    fn get_crash(&mut self, responder: ffc::WatcherGetCrashResponder) {
         if self.completer.is_some() {
             let _ = responder.send(Err(ffc::Error::AlreadyPending));
             return;
@@ -179,26 +167,11 @@ impl Watcher {
         if inner.crashes.len() > self.crash_index {
             let crash = clone_crash(&inner.crashes[self.crash_index]);
             self.crash_index += 1;
-            if let Some(event) = &self.event
-                && self.crash_index == inner.crashes.len()
-            {
-                let _ = event.signal_peer(zx::Signals::USER_0, zx::Signals::NONE);
-            }
             let _ = responder.send(Ok(crash));
             return;
         }
 
-        if request.wait_for_crash.unwrap_or(true) {
-            self.completer = Some(responder);
-        } else {
-            let _ = responder.send(Err(ffc::Error::NoCrashAvailable));
-        }
-    }
-
-    fn get_crash_event(&mut self, responder: ffc::WatcherGetCrashEventResponder) {
-        let (h1, h2) = zx::EventPair::create();
-        self.event = Some(h1);
-        let _ = responder.send(h2);
+        self.completer = Some(responder);
     }
 }
 
@@ -221,7 +194,6 @@ fn clone_crash(crash: &ffc::Crash) -> ffc::Crash {
 mod tests {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
-    use futures::FutureExt;
 
     #[fasync::run_singlethreaded(test)]
     async fn test_report_and_watch() {
@@ -247,13 +219,7 @@ mod tests {
         reporter.report(crash).unwrap();
 
         // 2. Watch for crash
-        let result = watcher
-            .get_crash(&ffc::WatcherGetCrashRequest {
-                wait_for_crash: Some(false),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
+        let result = watcher.get_crash().await.unwrap();
         let received = result.unwrap();
         assert_eq!(received.subsystem_name.unwrap(), "test-subsystem");
         assert_eq!(received.count.unwrap(), 1);
@@ -264,13 +230,7 @@ mod tests {
         reporter.report(crash2).unwrap();
 
         // 4. Watch again
-        let result = watcher
-            .get_crash(&ffc::WatcherGetCrashRequest {
-                wait_for_crash: Some(false),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
+        let result = watcher.get_crash().await.unwrap();
         let received2 = result.unwrap();
         assert_eq!(received2.subsystem_name.unwrap(), "test-subsystem");
         assert_eq!(received2.count.unwrap(), 2);
@@ -295,10 +255,7 @@ mod tests {
         });
 
         // 1. Get crash (should hang)
-        let get_fut = watcher.get_crash(&ffc::WatcherGetCrashRequest {
-            wait_for_crash: Some(true),
-            ..Default::default()
-        });
+        let get_fut = watcher.get_crash();
 
         // 2. Report a crash
         let crash =
@@ -309,55 +266,5 @@ mod tests {
         let result = get_fut.await.unwrap();
         let received = result.unwrap();
         assert_eq!(received.subsystem_name.unwrap(), "test-subsystem");
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn test_get_crash_event() {
-        let service = Rc::new(FirmwareCrashService::default());
-        let (reporter, reporter_stream) = create_proxy_and_stream::<ffc::ReporterMarker>();
-        let (watcher, watcher_stream) = create_proxy_and_stream::<ffc::WatcherMarker>();
-
-        let service_clone1 = service.clone();
-        let service_clone2 = service.clone();
-        service_clone1.scope.spawn_local(async move {
-            service_clone2.serve_reporter(reporter_stream).await.unwrap();
-        });
-
-        let service_clone1 = service.clone();
-        let service_clone2 = service.clone();
-        service_clone1.scope.spawn_local(async move {
-            service_clone2.serve_watcher(watcher_stream).await.unwrap();
-        });
-
-        let event = watcher.get_crash_event().await.unwrap();
-
-        // 1. Report a crash
-        let crash =
-            ffc::Crash { subsystem_name: Some("test-subsystem".to_string()), ..Default::default() };
-        reporter.report(crash).unwrap();
-
-        // 2. Event should be signaled
-        fasync::OnSignals::new(&event, zx::Signals::USER_0).await.unwrap();
-
-        // 3. Get the crash
-        let _ = watcher
-            .get_crash(&ffc::WatcherGetCrashRequest {
-                wait_for_crash: Some(false),
-                ..Default::default()
-            })
-            .await
-            .unwrap()
-            .unwrap();
-
-        // 4. Signal should be cleared if no more crashes
-        let timer =
-            fasync::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(10)))
-                .fuse();
-        let signals = fasync::OnSignals::new(&event, zx::Signals::USER_0).fuse();
-        futures::pin_mut!(timer, signals);
-        futures::select! {
-            _ = signals => panic!("Signal should have been cleared"),
-            _ = timer => (),
-        }
     }
 }

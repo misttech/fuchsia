@@ -75,15 +75,10 @@ void FirmwareCrashService::Watcher::NewCrashAvailable() {
     completer_->Reply(fit::success(std::move(crash)));
     crash_index_++;
     completer_.reset();
-    return;
-  }
-  if (event_.has_value()) {
-    event_->signal_peer(0, ZX_USER_SIGNAL_0);
   }
 }
 
-void FirmwareCrashService::Watcher::GetCrash(GetCrashRequest& request,
-                                             GetCrashCompleter::Sync& completer) {
+void FirmwareCrashService::Watcher::GetCrash(GetCrashCompleter::Sync& completer) {
   if (completer_.has_value()) {
     completer.Reply(fit::error(ffc::Error::kAlreadyPending));
     return;
@@ -92,27 +87,11 @@ void FirmwareCrashService::Watcher::GetCrash(GetCrashRequest& request,
     // There is a crash available. Report it.
     auto crash = CloneCrash(parent_->crashes_[crash_index_]);
     crash_index_++;
-    if (event_.has_value() && crash_index_ == parent_->crashes_.size()) {
-      // Clear the signal, no more crashes available.
-      event_->signal_peer(ZX_USER_SIGNAL_0, 0);
-    }
     completer.Reply(fit::success(std::move(crash)));
     return;
   }
-  // No crashes currently available. Check whether we should wait for a crash before replying.
-  if (!request.wait_for_crash().has_value() || request.wait_for_crash().value()) {
-    completer_ = completer.ToAsync();
-    return;
-  }
 
-  completer.Reply(fit::error(ffc::Error::kNoCrashAvailable));
-}
-
-void FirmwareCrashService::Watcher::GetCrashEvent(GetCrashEventCompleter::Sync& completer) {
-  zx::eventpair h1, h2;
-  ZX_ASSERT(zx::eventpair::create(0, &h1, &h2) == ZX_OK);
-  event_ = std::move(h1);
-  completer.Reply({{.event = std::move(h2)}});
+  completer_ = completer.ToAsync();
 }
 
 }  // namespace driver_manager

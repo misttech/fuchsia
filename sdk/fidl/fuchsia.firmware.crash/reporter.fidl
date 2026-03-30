@@ -34,9 +34,6 @@ type Crash = resource table {
 };
 
 type Error = flexible enum {
-    /// Returned if no crash was available and `wait_for_crash` was set to `false`.
-    NO_CRASH_AVAILABLE = 1;
-
     /// Returned if multiple outstanding calls to GetCrash.
     ALREADY_PENDING = 2;
 };
@@ -50,13 +47,5 @@ open protocol Reporter {
 @discoverable(server="platform")
 open protocol Watcher {
     /// Returns crashes as they occur. Each subsequent call will return a new crash.
-    flexible GetCrash(table {
-        /// Whether to wait for a crash before returning. Defaults to true if not set.
-        1: wait_for_crash bool;
-    }) -> (Crash) error Error;
-
-    /// Returns an event which is has `ZX_USER_SIGNAL_0` asserted when a new crash is available.
-    flexible GetCrashEvent() -> (resource struct {
-        event zx.Handle:EVENTPAIR;
-    });
+    flexible GetCrash() -> (Crash) error Error;
 };

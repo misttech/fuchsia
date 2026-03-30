@@ -32,8 +32,7 @@ class FirmwareCrashService final : public fidl::Server<fuchsia_firmware_crash::R
 
    private:
     // fuchsia.firmware.crash/Watcher>
-    void GetCrash(GetCrashRequest& request, GetCrashCompleter::Sync& completer) override;
-    void GetCrashEvent(GetCrashEventCompleter::Sync& completer) override;
+    void GetCrash(GetCrashCompleter::Sync& completer) override;
     void handle_unknown_method(
         fidl::UnknownMethodMetadata<fuchsia_firmware_crash::Watcher> metadata,
         fidl::UnknownMethodCompleter::Sync& completer) override {}
@@ -43,7 +42,6 @@ class FirmwareCrashService final : public fidl::Server<fuchsia_firmware_crash::R
     size_t crash_index_ = 0;
     // Outstanding completer, waiting for a new crash to occur.
     std::optional<GetCrashCompleter::Async> completer_;
-    std::optional<zx::eventpair> event_;
     fidl::ServerBinding<fuchsia_firmware_crash::Watcher> binding_;
   };
 

@@ -45,76 +45,6 @@ TEST_F(FirmwareCrashTest, ReportCrash) {
   RunLoopUntilIdle();
 }
 
-TEST_F(FirmwareCrashTest, WatchNonBlocking) {
-  driver_manager::FirmwareCrashService service(dispatcher());
-  component::OutgoingDirectory outgoing(dispatcher());
-
-  service.Publish(outgoing);
-
-  auto [root_client, root_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-  ASSERT_EQ(outgoing.Serve(std::move(root_server)).status_value(), ZX_OK);
-  auto svc_client = component::OpenDirectoryAt(root_client, component::kServiceDirectory);
-  ASSERT_EQ(svc_client.status_value(), ZX_OK);
-
-  auto watcher_client_end = component::ConnectAt<fuchsia_firmware_crash::Watcher>(*svc_client);
-  ASSERT_EQ(watcher_client_end.status_value(), ZX_OK);
-  auto watcher_client = fidl::Client(std::move(watcher_client_end.value()), dispatcher());
-
-  // Check and see there are no crashes and the reply is non-blocking.
-  bool called = false;
-  watcher_client->GetCrash({{.wait_for_crash = false}}).Then([&](auto& result) {
-    called = true;
-    ASSERT_TRUE(result.is_error());
-    ASSERT_TRUE(result.error_value().is_domain_error());
-    ASSERT_EQ(result.error_value().domain_error(),
-              fuchsia_firmware_crash::Error::kNoCrashAvailable);
-  });
-  RunLoopUntilIdle();
-  ASSERT_TRUE(called);
-
-  // Get the event and check it's not active
-  zx::eventpair event;
-  watcher_client->GetCrashEvent().Then([&](auto& result) {
-    ASSERT_TRUE(result.is_ok());
-    event = std::move(result.value().event());
-  });
-  RunLoopUntilIdle();
-  ASSERT_TRUE(event.is_valid());
-  zx_signals_t signals{};
-  ASSERT_EQ(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &signals),
-            ZX_ERR_TIMED_OUT);
-  ASSERT_EQ(signals, 0u);
-
-  // Report an crash
-  auto reporter_client_end = component::ConnectAt<fuchsia_firmware_crash::Reporter>(*svc_client);
-  ASSERT_EQ(reporter_client_end.status_value(), ZX_OK);
-  auto reporter_client = fidl::Client(std::move(reporter_client_end.value()), dispatcher());
-  auto result = reporter_client->Report({{
-      .subsystem_name = "foo",
-  }});
-  ASSERT_TRUE(result.is_ok());
-  RunLoopUntilIdle();
-
-  // Check to see if crash was available.
-  ASSERT_EQ(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &signals), ZX_OK);
-  ASSERT_EQ(signals, ZX_USER_SIGNAL_0);
-
-  called = false;
-  watcher_client->GetCrash({{.wait_for_crash = false}}).Then([&](auto& result) {
-    called = true;
-    ASSERT_TRUE(result.is_ok()) << result.error_value();
-    ASSERT_EQ(result.value().subsystem_name(), "foo");
-  });
-  RunLoopUntilIdle();
-  ASSERT_TRUE(called);
-
-  // Check one more time to see that the event is no longer active.
-  signals = 0;
-  ASSERT_EQ(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &signals),
-            ZX_ERR_TIMED_OUT);
-  ASSERT_EQ(signals, 0u);
-}
-
 TEST_F(FirmwareCrashTest, WatchBlocking) {
   driver_manager::FirmwareCrashService service(dispatcher());
   component::OutgoingDirectory outgoing(dispatcher());
@@ -132,7 +62,7 @@ TEST_F(FirmwareCrashTest, WatchBlocking) {
 
   // Check and see there are no crashes and reply is blocking.
   bool called = false;
-  watcher_client->GetCrash({{.wait_for_crash = true}}).Then([&](auto& result) {
+  watcher_client->GetCrash().Then([&](auto& result) {
     called = true;
     ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     ASSERT_EQ(result.value().subsystem_name(), "foo");
@@ -189,19 +119,19 @@ TEST_F(FirmwareCrashTest, WatchCountIncreases) {
   auto watcher_client = fidl::Client(std::move(watcher_client_end.value()), dispatcher());
 
   uint32_t call_count = 0;
-  watcher_client->GetCrash({{.wait_for_crash = true}}).Then([&](auto& result) {
+  watcher_client->GetCrash().Then([&](auto& result) {
     call_count++;
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_EQ(result.value().subsystem_name(), "foo");
     ASSERT_EQ(result.value().count(), 1u);
   });
-  watcher_client->GetCrash({{.wait_for_crash = true}}).Then([&](auto& result) {
+  watcher_client->GetCrash().Then([&](auto& result) {
     call_count++;
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_EQ(result.value().subsystem_name(), "bar");
     ASSERT_EQ(result.value().count(), 1u);
   });
-  watcher_client->GetCrash({{.wait_for_crash = true}}).Then([&](auto& result) {
+  watcher_client->GetCrash().Then([&](auto& result) {
     call_count++;
     ASSERT_TRUE(result.is_ok()) << result.error_value();
     ASSERT_EQ(result.value().subsystem_name(), "foo");
