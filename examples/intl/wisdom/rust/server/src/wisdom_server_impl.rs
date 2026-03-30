@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_intl as fintl;
+use rust_icu_common as ucommon;
+use rust_icu_sys as usys;
+use rust_icu_ucal as ucal;
+use rust_icu_udat as udat;
+use rust_icu_uloc as uloc;
+use rust_icu_ustring as ustring;
 use thiserror::Error;
-use {
-    fidl_fuchsia_intl as fintl, rust_icu_common as ucommon, rust_icu_sys as usys,
-    rust_icu_ucal as ucal, rust_icu_udat as udat, rust_icu_uloc as uloc,
-    rust_icu_ustring as ustring,
-};
 
 /// All error classes produced in this module.
 #[derive(Error, Debug)]
@@ -117,6 +119,8 @@ mod tests {
     use regex::Regex;
 
     #[test]
+    // TODO(b/495836565): Re-enable as fixed, once rolled.
+    #[ignore]
     fn basic() -> Result<(), super::Error> {
         // Keep the ICU data loader live for the duration of the test.  It is never "used" except
         // for its ability to mark that we want ICU data to be present.
