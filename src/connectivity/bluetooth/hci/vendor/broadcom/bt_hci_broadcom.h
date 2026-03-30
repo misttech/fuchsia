@@ -72,7 +72,8 @@ class BtHciBroadcom final
 
  private:
   static constexpr size_t kMacAddrLen = 6;
-  static constexpr zx::duration kDefaultIdleThreshold = zx::msec(300);
+  static constexpr zx::duration kDefaultHostIdleThreshold = zx::usec(12500);
+  static constexpr zx::duration kDefaultDevIdleThreshold = zx::usec(62500);
 
   static const std::unordered_map<uint16_t, std::string> kFirmwareMap;
 

@@ -811,7 +811,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
 
 void BtHciBroadcom::NoteActivity(ActivityType activity) {
   drop_level_task_.Cancel();
-  drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultIdleThreshold);
+  drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultHostIdleThreshold);
   executor_->schedule_task(AssertLevel(PowerLevel::kOn));
 }
 
@@ -1027,8 +1027,9 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
         return SetBdaddr(octets);
       })
       .and_then([this]() { return SetDefaultPowerCaps(); })
-      .and_then(
-          [this]() { return EnableLowPowerMode(kDefaultIdleThreshold, kDefaultIdleThreshold); })
+      .and_then([this]() {
+        return EnableLowPowerMode(kDefaultHostIdleThreshold, kDefaultDevIdleThreshold);
+      })
       .and_then([this]() { return AddNode(); })
       .then([this](fpromise::result<void, zx_status_t>& result) {
         zx_status_t status = result.is_ok() ? ZX_OK : result.error();
