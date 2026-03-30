@@ -155,8 +155,18 @@ zx::result<Environment::Allocation> Machine::ThunkPrepare(uint64_t fn_address, u
   arg_array[4] = arg3;
 
   registers_->set_arg_regs(reinterpret_cast<uintptr_t>(arg_mem->base), 0);
-  registers_->set_sp(stack_mem_->base + stack_mem_size_ / 2);
-  registers_->set_shadow_sp(shadow_stack_mem_->base + stack_mem_size_ / 2);
+  // Pick a stack around the middle of the allocation, but keep it page aligned.
+  static const size_t kPageSize = zx_system_get_page_size();
+  static constexpr size_t kMinAlignAt = 16;
+  // If the stack is too small, then we align at 16 bytes.
+  size_t align_at = kPageSize - 1;
+  if (stack_mem_size_ >> 1 < kPageSize) {
+    align_at = kMinAlignAt - 1;
+  }
+  uint64_t aligned_ptr = ((stack_mem_->base + stack_mem_size_ / 2) + align_at) & ~align_at;
+  registers_->set_sp(aligned_ptr);
+  aligned_ptr = ((shadow_stack_mem_->base + stack_mem_size_ / 2) + align_at) & ~align_at;
+  registers_->set_shadow_sp(aligned_ptr);
   registers_->set_tls(reinterpret_cast<TlsStorage*>(tls_mem_->base));
   registers_->set_pc(thunk_addr.value());
   auto result = CommitState();
