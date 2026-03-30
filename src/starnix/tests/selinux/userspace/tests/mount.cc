@@ -8,15 +8,20 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <map>
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-extern std::string DoPrePolicyLoadWork() { return "mount_policy.pp"; }
-
 namespace {
+
+std::map<std::string, fit::result<int>> g_pre_policy_mount_results;
+
+const char* kSelinuxMountOptions[] = {"context", "fscontext", "defcontext", "rootcontext"};
 
 std::string MountOptionsFor(std::string_view mount_path) {
   FILE* mounts = setmntent("/proc/mounts", "r");
@@ -31,14 +36,50 @@ std::string MountOptionsFor(std::string_view mount_path) {
   return result;
 }
 
-TEST(MountTest, NoSelinuxMountOptions) {
-  ASSERT_THAT(mkdir("/mount_tests", 0755), SyscallSucceeds());
-  ASSERT_THAT(mount("tmpfs", "/mount_tests", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
-              SyscallSucceeds());
+class MountOptionValidationTest : public ::testing::TestWithParam<const char*> {};
 
-  std::string mount_options = MountOptionsFor("/mount_tests");
-  ASSERT_THAT(umount("/mount_tests"), SyscallSucceeds());
-  ASSERT_THAT(rmdir("/mount_tests"), SyscallSucceeds());
+TEST_P(MountOptionValidationTest, RejectedBeforePolicyLoad) {
+  const char* option_name = GetParam();
+  auto it = g_pre_policy_mount_results.find(option_name);
+  ASSERT_NE(it, g_pre_policy_mount_results.end()) << "Result for " << option_name << " not found";
+  const auto& result = it->second;
+
+  EXPECT_TRUE(result.is_error()) << "Mount with '" << option_name
+                                 << "' unexpectedly succeeded pre-policy";
+  if (result.is_error()) {
+    EXPECT_EQ(result.error_value(), EINVAL)
+        << "Mount with '" << option_name << "' failed with " << result.error_value() << " ("
+        << strerror(result.error_value()) << "), expected EINVAL";
+  }
+}
+
+TEST_P(MountOptionValidationTest, RejectedWhenInvalid) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
+  }
+
+  const char* option_name = GetParam();
+  test_helper::ScopedTempDir mount_dir;
+
+  // Providing a security context that is not valid in the loaded policy should result in EINVAL.
+  std::string options = std::string(option_name) + "=test_u:object_r:invalid_context_t:s0";
+  EXPECT_THAT(mount("tmpfs", mount_dir.path().c_str(), "tmpfs", 0, options.c_str()),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+INSTANTIATE_TEST_SUITE_P(MountTests, MountOptionValidationTest,
+                         ::testing::ValuesIn(kSelinuxMountOptions),
+                         [](const testing::TestParamInfo<const char*>& info) {
+                           return info.param;
+                         });
+
+TEST(MountTest, NoSelinuxMountOptions) {
+  test_helper::ScopedTempDir mount_dir;
+  ASSERT_THAT(
+      mount("tmpfs", mount_dir.path().c_str(), "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
+      SyscallSucceeds());
+
+  std::string mount_options = MountOptionsFor(mount_dir.path());
 
   EXPECT_TRUE(cpp23::contains(mount_options, "nosuid"));
   EXPECT_TRUE(cpp23::contains(mount_options, "noexec"));
@@ -46,14 +87,12 @@ TEST(MountTest, NoSelinuxMountOptions) {
 }
 
 TEST(MountTest, WithContextOption) {
-  ASSERT_THAT(mkdir("/mount_tests", 0755), SyscallSucceeds());
-  ASSERT_THAT(mount("tmpfs", "/mount_tests", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV,
+  test_helper::ScopedTempDir mount_dir;
+  ASSERT_THAT(mount("tmpfs", mount_dir.path().c_str(), "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV,
                     "context=test_u:object_r:test_mount_fscontext_t:s0"),
               SyscallSucceeds());
 
-  std::string mount_options = MountOptionsFor("/mount_tests");
-  ASSERT_THAT(umount("/mount_tests"), SyscallSucceeds());
-  ASSERT_THAT(rmdir("/mount_tests"), SyscallSucceeds());
+  std::string mount_options = MountOptionsFor(mount_dir.path());
 
   EXPECT_FALSE(cpp23::contains(mount_options, "seclabel"));
   EXPECT_TRUE(cpp23::contains(mount_options, "context="));
@@ -61,27 +100,24 @@ TEST(MountTest, WithContextOption) {
 
 TEST(MountTest, WithSeclabel) {
   // Base policy uses "fs_use_trans" labeling scheme for "tmpfs", which should report "seclabel".
-  ASSERT_THAT(mkdir("/with_seclabel", 0755), SyscallSucceeds());
-  ASSERT_THAT(mount("tmpfs", "/with_seclabel", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
-              SyscallSucceeds());
+  test_helper::ScopedTempDir mount_dir;
+  ASSERT_THAT(
+      mount("tmpfs", mount_dir.path().c_str(), "tmpfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
+      SyscallSucceeds());
 
-  std::string mount_options = MountOptionsFor("/with_seclabel");
-  ASSERT_THAT(umount("/with_seclabel"), SyscallSucceeds());
-  ASSERT_THAT(rmdir("/with_seclabel"), SyscallSucceeds());
+  std::string mount_options = MountOptionsFor(mount_dir.path());
 
   EXPECT_TRUE(cpp23::contains(mount_options, "seclabel"));
 }
 
 TEST(MountTest, WithoutSeclabel) {
   // Base policy uses "genfscon" labeling scheme for "proc", which should not report "seclabel".
-  ASSERT_THAT(mkdir("/without_seclabel", 0755), SyscallSucceeds());
-  ASSERT_THAT(
-      mount("selinuxfs", "/without_seclabel", "selinuxfs", MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
-      SyscallSucceeds());
+  test_helper::ScopedTempDir mount_dir;
+  ASSERT_THAT(mount("selinuxfs", mount_dir.path().c_str(), "selinuxfs",
+                    MS_NOEXEC | MS_NOSUID | MS_NODEV, 0),
+              SyscallSucceeds());
 
-  std::string mount_options = MountOptionsFor("/without_seclabel");
-  ASSERT_THAT(umount("/without_seclabel"), SyscallSucceeds());
-  ASSERT_THAT(rmdir("/without_seclabel"), SyscallSucceeds());
+  std::string mount_options = MountOptionsFor(mount_dir.path());
 
   EXPECT_FALSE(cpp23::contains(mount_options, "seclabel"));
 }
@@ -93,68 +129,74 @@ TEST(MountTest, FsContextRequiresRelabelFromAndTo) {
     GTEST_SKIP() << "Not running with sysadmin capabilities, skipping suite.";
   }
 
-  const char* mount_path = "/mount_relabel_test";
   const char* fscontext = "fscontext=test_u:object_r:test_mount_fscontext_t:s0";
-  ASSERT_THAT(mkdir(mount_path, 0755), SyscallSucceeds());
+  test_helper::ScopedTempDir mount_dir;
 
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   // 1. Verify that mounting fails when 'relabelto' is denied.
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_mount_relabelto_denied_t:s0", [&] {
-    EXPECT_THAT(mount("tmpfs", mount_path, "tmpfs", 0, fscontext), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(mount("tmpfs", mount_dir.path().c_str(), "tmpfs", 0, fscontext),
+                SyscallFailsWithErrno(EACCES));
   }));
 
   // 2. Verify that mounting fails when 'relabelfrom' is denied.
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_mount_relabelfrom_denied_t:s0", [&] {
-    EXPECT_THAT(mount("tmpfs", mount_path, "tmpfs", 0, fscontext), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(mount("tmpfs", mount_dir.path().c_str(), "tmpfs", 0, fscontext),
+                SyscallFailsWithErrno(EACCES));
   }));
 
   // 3. Verify that mounting succeeds when both 'relabelfrom' and 'relabelto' are allowed.
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_mount_relabel_allowed_t:s0", [&] {
-    EXPECT_THAT(mount("tmpfs", mount_path, "tmpfs", 0, fscontext), SyscallSucceeds());
-    EXPECT_THAT(umount(mount_path), SyscallSucceeds());
+    EXPECT_THAT(mount("tmpfs", mount_dir.path().c_str(), "tmpfs", 0, fscontext), SyscallSucceeds());
   }));
-
-  rmdir(mount_path);
 }
 
 TEST(MountTest, BindRemountWithContext) {
-  const char* source_path = "/bind_ctx_source";
-  const char* target_path = "/bind_ctx_target";
+  test_helper::ScopedTempDir source_dir;
+  test_helper::ScopedTempDir target_dir;
   const char* ctx1 = "context=test_u:object_r:test_mount_fscontext_t:s0";
   const char* ctx2 = "context=test_u:object_r:test_mount_relabel_allowed_t:s0";
-
-  ASSERT_THAT(mkdir(source_path, 0755), SyscallSucceeds());
-  ASSERT_THAT(mkdir(target_path, 0755), SyscallSucceeds());
 
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_mount_permissive_t:s0", [&] {
     // 1. Initial mount of tmpfs with ctx1
-    ASSERT_THAT(mount("tmpfs", source_path, "tmpfs", 0, ctx1), SyscallSucceeds());
+    ASSERT_THAT(mount("tmpfs", source_dir.path().c_str(), "tmpfs", 0, ctx1), SyscallSucceeds());
 
     // 2. Bind mount source to target
-    ASSERT_THAT(mount(source_path, target_path, nullptr, MS_BIND, 0), SyscallSucceeds());
+    ASSERT_THAT(mount(source_dir.path().c_str(), target_dir.path().c_str(), nullptr, MS_BIND, 0),
+                SyscallSucceeds());
 
     // 3. Remount the bind mount with SAME context - should succeed
-    EXPECT_THAT(mount(nullptr, target_path, nullptr, MS_BIND | MS_REMOUNT, ctx1),
+    EXPECT_THAT(mount(nullptr, target_dir.path().c_str(), nullptr, MS_BIND | MS_REMOUNT, ctx1),
                 SyscallSucceeds());
 
     // 4. Remount the bind mount with DIFFERENT context - Linux allows this (options are
     // ignored/no-op)
-    EXPECT_THAT(mount(nullptr, target_path, nullptr, MS_BIND | MS_REMOUNT, ctx2),
+    EXPECT_THAT(mount(nullptr, target_dir.path().c_str(), nullptr, MS_BIND | MS_REMOUNT, ctx2),
                 SyscallSucceeds());
 
     // 5. Verify the context is still ctx1 (it was not changed by the remount)
-    EXPECT_TRUE(cpp23::contains(MountOptionsFor(target_path), "test_mount_fscontext_t"));
-
-    // Cleanup
-    ASSERT_THAT(umount(target_path), SyscallSucceeds());
-    ASSERT_THAT(umount(source_path), SyscallSucceeds());
+    EXPECT_TRUE(cpp23::contains(MountOptionsFor(target_dir.path()), "test_mount_fscontext_t"));
   }));
-
-  rmdir(target_path);
-  rmdir(source_path);
 }
 
 }  // namespace
+
+extern std::string DoPrePolicyLoadWork() {
+  for (const char* option : kSelinuxMountOptions) {
+    test_helper::ScopedTempDir mount_dir;
+
+    // Before policy load, any SELinux mount option should result in EINVAL because the kernel
+    // cannot validate the context (or even know which options are valid).
+    std::string options = std::string(option) + "=system_u:object_r:tmp_t:s0";
+    if (mount("tmpfs", mount_dir.path().c_str(), "tmpfs", 0, options.c_str()) != -1) {
+      g_pre_policy_mount_results.emplace(option, fit::ok());
+    } else {
+      g_pre_policy_mount_results.emplace(option, fit::error(errno));
+    }
+  }
+
+  return "mount_policy.pp";
+}
