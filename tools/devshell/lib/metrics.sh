@@ -20,7 +20,7 @@
 # depends on FUCHSIA_DIR being defined correctly.
 
 # Increase the metrics version by 1 when analytics is updated
-_METRICS_VERSION="8"
+_METRICS_VERSION="9"
 _METRICS_ALLOWS_CUSTOM_REPORTING=( "test" "g-review" )
 # If args match the below, then track capture group 1
 _METRICS_TRACK_REGEX=(
@@ -936,6 +936,7 @@ function __send-analytics-batch {
   \"ninja_persistent\":{\"value\":\"$(_get_ninja_persistent_mode)\"},\
   \"other_uuid\":{\"value\":\"${OTHER_TOOLS_ANALYTICS_UUID}\"},\
   \"internal\":{\"value\":${internal}},\
+  \"is_cog\":{\"value\":$(_is_cog)},\
   \"metrics_level\":{\"value\":${METRICS_LEVEL}},\
   \"metrics_version\":{\"value\":${_METRICS_VERSION}},\
   \"nproc\":{\"value\":$(_get_nproc)}\
@@ -1107,6 +1108,14 @@ function _get_nproc {
     nproc
   else
     echo "-1"
+  fi
+}
+
+function _is_cog {
+  if [[ "${PWD}" =~ ^/google/cog/cloud/ || "${PWD}" =~ ^/google/cartfs/mount/ ]]; then
+    echo 1
+  else
+    echo 0
   fi
 }
 
