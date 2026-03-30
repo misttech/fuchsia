@@ -7,9 +7,12 @@ package subprocess
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -135,6 +138,36 @@ func (r *Runner) RunCommand(ctx context.Context, cmd *exec.Cmd) error {
 	return WaitForCmd(ctx, cmd)
 }
 
+// This is an inhouse implementation of `ps` for Linux which isn't guaranteed to
+// be available on all the systems we run on.
+func logRunningProcesses(ctx context.Context) {
+	dir, err := os.Open("/proc")
+	if err != nil {
+		logger.Errorf(ctx, "failed to open /proc: %v", err)
+		return
+	}
+	defer dir.Close()
+
+	files, err := dir.Readdirnames(0)
+	if err != nil {
+		logger.Errorf(ctx, "failed to read /proc: %v", err)
+		return
+	}
+
+	for _, file := range files {
+		// Check if the directory name is a PID, ignore "self".
+		if _, err := strconv.Atoi(file); err == nil {
+			cmdlinePath := fmt.Sprintf("/proc/%s/cmdline", file)
+			cmdline, err := os.ReadFile(cmdlinePath)
+			if err == nil {
+				logger.Warningf(ctx, "PID: %s, Command: %s", file, strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " ")))
+			} else {
+				logger.Warningf(ctx, "failed to read cmdline for PID %s: %v", file, err)
+			}
+		}
+	}
+}
+
 // WaitForCmd waits for the command to finish and sends a SIGTERM and SIGKILL
 // if the command doesn't complete on its own.
 func WaitForCmd(ctx context.Context, cmd *exec.Cmd) error {
@@ -154,6 +187,7 @@ func WaitForCmd(ctx context.Context, cmd *exec.Cmd) error {
 		// Process is done so no need to worry about cleanup. Just exit.
 		return err
 	case <-ctx.Done():
+		logRunningProcesses(ctx)
 		logger.Debugf(ctx, "sending SIGTERM to process %d: %v", cmd.Process.Pid, cmd.Args)
 		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 			logger.Debugf(ctx, "exited cmd %v with error: %s", cmd.Args, err)
