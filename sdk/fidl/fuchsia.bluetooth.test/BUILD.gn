@@ -6,7 +6,8 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.bluetooth.test") {
   name = "fuchsia.bluetooth.test"
-
+  sdk_category = "partner"
+  stable = false
   sdk_area = "Bluetooth"
 
   public_deps = [
