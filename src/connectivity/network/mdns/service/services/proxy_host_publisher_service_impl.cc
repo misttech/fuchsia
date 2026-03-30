@@ -31,12 +31,6 @@ void ProxyHostPublisherServiceImpl::PublishProxyHost(
     return;
   }
 
-  if (addresses.empty()) {
-    FX_LOGS(ERROR) << "PublishProxyHost called with empty address list, closing connection.";
-    Quit(ZX_ERR_INVALID_ARGS);
-    return;
-  }
-
   Media media = options.has_media() ? fidl::To<Media>(options.media()) : Media::kBoth;
   IpVersions ip_versions =
       options.has_ip_versions() ? fidl::To<IpVersions>(options.ip_versions()) : IpVersions::kBoth;

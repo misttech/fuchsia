@@ -113,6 +113,25 @@ TEST_F(AddressResponderTest, HostNameAndAddresses) {
   ExpectNoOther();
 }
 
+// Tests operation with a explicit host name and no addresses.
+TEST_F(AddressResponderTest, HostNameNoAddresses) {
+  AddressResponder under_test(this, kHostFullName, {}, Media::kBoth, IpVersions::kBoth);
+  SetAgent(under_test);
+
+  // Normal startup.
+  under_test.Start(kLocalHostFullName);
+  ExpectNoOther();
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWireless, IpVersions::kV4);
+
+  under_test.ReceiveQuestion(DnsQuestion(kHostFullName, DnsType::kA),
+                             ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
+                             sender_address);
+  ExpectNoOther();
+}
+
 // Tests operation with wired media only.
 TEST_F(AddressResponderTest, WiredOnly) {
   AddressResponder under_test(this, kHostFullName, kAddresses, Media::kWired, IpVersions::kBoth);

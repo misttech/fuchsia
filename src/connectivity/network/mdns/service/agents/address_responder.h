@@ -21,6 +21,11 @@ class AddressResponder : public MdnsAgent {
   // addresses.
   AddressResponder(MdnsAgent::Owner* owner, Media media, IpVersions ip_versions);
 
+  // Creates an |AddressResponder| that responds to queries for the specified host name with local
+  // addresses.
+  AddressResponder(MdnsAgent::Owner* owner, DnsName host_full_name, Media media,
+                   IpVersions ip_versions);
+
   // Creates an |AddressResponder| that responds to queries for the specified host name with the
   // specified addresses. If no addresses are supplied, the responder will respond to queries with
   // local addresses.
@@ -48,6 +53,7 @@ class AddressResponder : public MdnsAgent {
 
   DnsName host_full_name_;
   std::vector<inet::IpAddress> addresses_;
+  bool use_local_addresses_ = false;
   Media media_;
   IpVersions ip_versions_;
   zx::time throttle_state_ = kThrottleStateIdle;

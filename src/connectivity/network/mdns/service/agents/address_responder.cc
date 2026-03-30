@@ -12,7 +12,17 @@
 namespace mdns {
 
 AddressResponder::AddressResponder(MdnsAgent::Owner* owner, Media media, IpVersions ip_versions)
-    : MdnsAgent(owner), media_(media), ip_versions_(ip_versions) {}
+    : MdnsAgent(owner), use_local_addresses_(true), media_(media), ip_versions_(ip_versions) {}
+
+AddressResponder::AddressResponder(MdnsAgent::Owner* owner, DnsName host_full_name, Media media,
+                                   IpVersions ip_versions)
+    : MdnsAgent(owner),
+      host_full_name_(std::move(host_full_name)),
+      use_local_addresses_(true),
+      media_(media),
+      ip_versions_(ip_versions) {
+  FX_DCHECK(!host_full_name_.empty());
+}
 
 AddressResponder::AddressResponder(MdnsAgent::Owner* owner, DnsName host_full_name,
                                    std::vector<inet::IpAddress> addresses, Media media,
@@ -87,7 +97,7 @@ void AddressResponder::MaybeSendAddresses(ReplyAddress reply_address) {
 }
 
 void AddressResponder::SendAddressResources(ReplyAddress reply_address) {
-  if (addresses_.empty()) {
+  if (use_local_addresses_) {
     // Send local addresses. The address value in the resource is invalid, which tells the interface
     // transceivers to send their own addresses.
     SendResource(std::make_shared<DnsResource>(host_full_name_, DnsType::kA),

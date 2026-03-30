@@ -74,8 +74,7 @@ void Mdns::Start(fuchsia::net::interfaces::WatcherPtr interfaces_watcher,
     }
 
     AddAgent(std::make_shared<AddressResponder>(this, MdnsNames::HostFullName(alt_host_name),
-                                                std::vector<inet::IpAddress>{}, Media::kBoth,
-                                                IpVersions::kBoth));
+                                                Media::kBoth, IpVersions::kBoth));
   }
 
   transceiver_.Start(
@@ -350,7 +349,6 @@ bool Mdns::PublishServiceInstance(DnsName host_name, std::vector<inet::IpAddress
 bool Mdns::PublishHost(DnsName host_name, std::vector<inet::IpAddress> addresses, Media media,
                        IpVersions ip_versions, bool perform_probe, HostPublisher* publisher) {
   FX_DCHECK(MdnsNames::IsValidHostName(host_name));
-  FX_DCHECK(!addresses.empty());
   FX_DCHECK(publisher);
   FX_DCHECK(state_ == State::kActive);
 
