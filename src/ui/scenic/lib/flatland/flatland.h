@@ -301,6 +301,14 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // For using as a unique identifier in tests only.
   scheduling::SessionId GetSessionId() const;
 
+  // If true, the FlatlandManager will skip sending present credits and future presentation infos
+  // to this client, and the client is expected to manage its own frame scheduling. This is
+  // intended for use by clients that are doing their own frame scheduling and do not want to be
+  // subject to the flow control of present credits and don't care about future presentation info.
+  //
+  // False by default.
+  bool config_skips_present_credits() const;
+
  private:
   Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
            scheduling::SessionId session_id, std::shared_ptr<FlatlandPresenter> flatland_presenter,

@@ -118,6 +118,14 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
       FX_LOGS(INFO) << "Failed to apply profile to flatland thread: " << status;
     }
   });
+
+  // TODO(fxbug.dev/491886218): Address the edge case where the only Flatland connection(s) that
+  // require present credits, get disconnected but we continue to compute FuturePresentationInfo
+  // for no reason.
+  if (!(config && config->skips_present_credits().value_or(false))) {
+    all_clients_opt_out_present_info_ = false;
+  }
+
   instance->impl = NewFlatland(instance->loop, std::move(request), id,
                                std::bind(&FlatlandManager::DestroyInstanceFunction, this, id),
                                flatland_presenter_, link_system_,
@@ -277,6 +285,10 @@ void FlatlandManager::SendHintsToStartRendering() {
   TRACE_DURATION("gfx", "FlatlandManager::SendHintsToStartRendering");
   CheckIsOnMainThread();
 
+  if (all_clients_opt_out_present_info_) {
+    return;
+  }
+
   // Compute future frame info and send it to all Flatland instances that had updates this frame.
   //
   // `this` is safe to capture, as the callback is guaranteed to run on the calling thread.
@@ -287,6 +299,11 @@ void FlatlandManager::SendHintsToStartRendering() {
 
     // Skip sessions that have exited since their frame was rendered.
     if (instance_kv == flatland_instances_.end()) {
+      continue;
+    }
+
+    // Skip sessions who aren't using present credits.
+    if (instance_kv->second->impl->config_skips_present_credits()) {
       continue;
     }
 

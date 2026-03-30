@@ -172,6 +172,8 @@ class FlatlandManager {
   // destroyed.
   std::atomic<uint32_t> alive_sessions_ = 0;
 
+  bool all_clients_opt_out_present_info_ = true;
+
   // Callbacks for registering View-bound protocols.
   fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::Focuser>, zx_koid_t)>
       register_view_focuser_;
