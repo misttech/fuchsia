@@ -13,7 +13,6 @@
 #include <lib/zx/clock.h>
 
 #include <memory>
-#include <unordered_set>
 
 #include <audio-proto/audio-proto.h>
 #include <fbl/ref_ptr.h>

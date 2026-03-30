@@ -22,17 +22,42 @@ int VirtualAudioCodec::instance_count_ = 0;
 fuchsia_virtualaudio::Configuration VirtualAudioCodec::GetDefaultConfig(
     std::optional<bool> is_input) {
   fuchsia_virtualaudio::Configuration config = {};
-  config.device_name(std::string("Virtual Audio Codec Device") +
-                     (is_input ? (*is_input ? " (input)" : " (output)") : " (no direction)"));
+  std::string device_name = "Virtual Audio Codec Device ";
+  if (is_input.has_value()) {
+    device_name += (*is_input ? "(input)" : "(output)");
+  } else {
+    device_name += "(no direction)";
+  }
+  config.device_name(device_name);
   config.manufacturer_name("Fuchsia Virtual Audio Group");
   config.product_name("Virgil v2, a Virtual Volume Vessel");
-  config.unique_id({{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0}});
+  config.unique_id({{
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      0,
+  }});
 
   // Driver type is Codec.
   fuchsia_virtualaudio::Codec codec = {};
   codec.is_input(is_input);
   codec.plug_properties() = {{
-      .plug_state = fuchsia_hardware_audio::PlugState{{.plugged = true, .plug_state_time = 0}},
+      .plug_state = fuchsia_hardware_audio::PlugState{{
+          .plugged = true,
+          .plug_state_time = 0,
+      }},
       .plug_detect_capabilities = fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired,
   }};
 
@@ -51,8 +76,12 @@ fuchsia_virtualaudio::Configuration VirtualAudioCodec::GetDefaultConfig(
   dai_format_set.bits_per_sample(std::vector<uint8_t>{16});
 
   dai_interconnect.dai_supported_formats(
-      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{std::in_place,
-                                                                              {dai_format_set}});
+      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{
+          std::in_place,
+          {
+              dai_format_set,
+          },
+      });
   codec.dai_interconnect(std::move(dai_interconnect));
   config.device_specific() = fuchsia_virtualaudio::DeviceSpecific::WithCodec(std::move(codec));
 

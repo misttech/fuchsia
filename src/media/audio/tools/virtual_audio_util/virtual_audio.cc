@@ -41,6 +41,7 @@ inline std::string to_string(std::optional<bool> selector, const std::string& tr
 }  // namespace
 
 namespace virtual_audio {
+namespace {
 
 class VirtualAudioUtil {
  public:
@@ -906,7 +907,7 @@ bool VirtualAudioUtil::SetUniqueId(const std::string& unique_id_str) {
     if (use_default) {
       val = kDefaultUniqueId[index];
     } else {
-      val = unique_id_str.size() <= (2 * index + 1)
+      val = unique_id_str.size() <= ((2 * index) + 1)
                 ? 0
                 : fxl::StringToNumber<uint8_t>(unique_id_str.substr(index * 2, 2), fxl::Base::k16);
     }
@@ -1952,6 +1953,7 @@ fuchsia::virtualaudio::ControlSyncPtr& VirtualAudioUtil::GetController(
   }
 }
 
+}  // namespace
 }  // namespace virtual_audio
 
 int main(int argc, const char** argv) {

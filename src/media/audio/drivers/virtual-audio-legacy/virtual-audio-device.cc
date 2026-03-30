@@ -35,7 +35,7 @@ VirtualAudioDevice::Create(const fuchsia_virtualaudio::Configuration& cfg,
       zxlogf(ERROR, "Device type creation not supported");
       return fit::error(fuchsia_virtualaudio::Error::kInternal);
   }
-  auto device = std::make_shared<VirtualAudioDevice>(std::move(is_input), std::move(on_shutdown));
+  auto device = std::make_shared<VirtualAudioDevice>(is_input, std::move(on_shutdown));
 
   // The `device` shared_ptr is held until the server is unbound (i.e. until the channel is closed).
   device->binding_ = fidl::BindServer(device->dispatcher_, std::move(server), device,
@@ -86,7 +86,7 @@ void VirtualAudioDevice::OnFidlServerUnbound(
 }
 
 VirtualAudioDevice::VirtualAudioDevice(std::optional<bool> is_input, fit::closure on_shutdown)
-    : is_input_(std::move(is_input)), on_shutdown_(std::move(on_shutdown)) {}
+    : is_input_(is_input), on_shutdown_(std::move(on_shutdown)) {}
 
 VirtualAudioDevice::~VirtualAudioDevice() {
   // The driver should have been shutdown.

@@ -39,8 +39,12 @@ fuchsia_virtualaudio::Configuration VirtualAudioDai::GetDefaultConfig(bool is_in
   format.min_channels(2);
   format.max_channels(2);
   format.rate_family_flags(ASF_RANGE_FLAG_FPS_48000_FAMILY);
-  ring_buffer.supported_formats(
-      std::optional<std::vector<fuchsia_virtualaudio::FormatRange>>{std::in_place, {format}});
+  ring_buffer.supported_formats(std::optional<std::vector<fuchsia_virtualaudio::FormatRange>>{
+      std::in_place,
+      {
+          format,
+      },
+  });
 
   // Default FIFO is 250 usec (at 48k stereo 16). No internal delay; external delay unspecified.
   ring_buffer.driver_transfer_bytes(48);
@@ -63,8 +67,12 @@ fuchsia_virtualaudio::Configuration VirtualAudioDai::GetDefaultConfig(bool is_in
   item.bits_per_sample(std::vector<uint8_t>{16});
 
   dai_interconnect.dai_supported_formats(
-      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{std::in_place,
-                                                                              {item}});
+      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{
+          std::in_place,
+          {
+              item,
+          },
+      });
 
   dai.dai_interconnect(std::move(dai_interconnect));
 
@@ -255,7 +263,7 @@ void VirtualAudioDai::GetVmo(GetVmoRequest& request, GetVmoCompleter::Sync& comp
   // The ring buffer must be at least min_frames + (rounded up) "driver transfer frames".
   num_ring_buffer_frames_ =
       request.min_frames() +
-      (ring_buffer->driver_transfer_bytes().value() + frame_size_ - 1) / frame_size_;
+      ((ring_buffer->driver_transfer_bytes().value() + frame_size_ - 1) / frame_size_);
 
   num_ring_buffer_frames_ = std::max(
       min_frames, fbl::round_up<uint32_t, uint32_t>(num_ring_buffer_frames_, modulo_frames));

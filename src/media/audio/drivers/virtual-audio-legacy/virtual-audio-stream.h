@@ -153,7 +153,7 @@ class VirtualAudioStream : public audio::SimpleAudioStream {
   uint32_t num_channels_ __TA_GUARDED(domain_token()) = 0;
   affine::Transform ref_time_to_running_frame_ __TA_GUARDED(domain_token());
 
-  zx::clock reference_clock_ __TA_GUARDED(domain_token()) = {};
+  zx::clock reference_clock_ __TA_GUARDED(domain_token());
   int32_t clock_rate_adjustment_ __TA_GUARDED(domain_token()) = 0;
 
   fit::closure on_shutdown_;

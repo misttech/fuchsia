@@ -14,8 +14,8 @@ namespace virtual_audio {
 // static
 fbl::RefPtr<VirtualAudioStream> VirtualAudioStream::Create(
     const fuchsia_virtualaudio::Configuration& cfg, std::weak_ptr<VirtualAudioDevice> owner,
-    zx_device_t* devnode, fit::closure on_shutdown) {
-  return audio::SimpleAudioStream::Create<VirtualAudioStream>(cfg, owner, devnode,
+    zx_device_t* dev_node, fit::closure on_shutdown) {
+  return audio::SimpleAudioStream::Create<VirtualAudioStream>(cfg, std::move(owner), dev_node,
                                                               std::move(on_shutdown));
 }
 
@@ -57,8 +57,12 @@ fuchsia_virtualaudio::Configuration VirtualAudioStream::GetDefaultConfig(bool is
   format.min_channels(2);
   format.max_channels(2);
   format.rate_family_flags(ASF_RANGE_FLAG_FPS_48000_FAMILY);
-  ring_buffer.supported_formats(
-      std::optional<std::vector<fuchsia_virtualaudio::FormatRange>>{std::in_place, {format}});
+  ring_buffer.supported_formats(std::optional<std::vector<fuchsia_virtualaudio::FormatRange>>{
+      std::in_place,
+      {
+          format,
+      },
+  });
 
   // Default FIFO is 250 usec (at 48k stereo 16). No internal delay; external delay unspecified.
   ring_buffer.driver_transfer_bytes(48);
@@ -121,7 +125,7 @@ zx_status_t VirtualAudioStream::Init() {
     strncpy(prod_name_, config_.product_name()->c_str(), sizeof(prod_name_));
   }
   if (config_.unique_id().has_value()) {
-    memcpy(unique_id_.data, &(config_.unique_id().value()[0]), sizeof(unique_id_.data));
+    memcpy(unique_id_.data, config_.unique_id().value().data(), sizeof(unique_id_.data));
   }
 
   InitStreamConfigSpecific();
@@ -172,7 +176,7 @@ void VirtualAudioStream::InitStreamConfigSpecific() {
   }
 
   if (ring_buffer->notifications_per_ring().has_value()) {
-    va_client_notifications_per_ring_ = ring_buffer->notifications_per_ring().value();
+    va_client_notifications_per_ring_ = ring_buffer->notifications_per_ring();
   }
 
   ZX_ASSERT(stream_config->clock_properties().has_value());
@@ -267,7 +271,7 @@ fit::result<VirtualAudioStream::ErrorT, CurrentFormat> VirtualAudioStream::GetFo
       .frames_per_second = frame_rate_,
       .sample_format = sample_format_,
       .num_channels = num_channels_,
-      .external_delay = zx::nsec(external_delay_nsec_),
+      .external_delay = zx::nsec(static_cast<int64_t>(external_delay_nsec_)),
   });
 }
 
@@ -451,8 +455,8 @@ zx_status_t VirtualAudioStream::GetBuffer(const audio::audio_proto::RingBufGetBu
 
 void VirtualAudioStream::SetNotificationPeriods() {
   if (notifications_per_ring_ > 0) {
-    ref_notification_period_ = zx::duration((zx::sec(1) * num_ring_buffer_frames_) /
-                                            (frame_rate_ * notifications_per_ring_));
+    ref_notification_period_ = zx::duration((zx::sec(1) * num_ring_buffer_frames_) / frame_rate_ /
+                                            notifications_per_ring_);
   } else {
     ref_notification_period_ = zx::duration(0);
   }
@@ -464,8 +468,8 @@ void VirtualAudioStream::SetVaClientNotificationPeriods() {
   if (va_client_notifications_per_ring_.has_value() &&
       va_client_notifications_per_ring_.value() > 0) {
     va_client_ref_notification_period_ =
-        zx::duration((zx::sec(1) * num_ring_buffer_frames_) /
-                     (frame_rate_ * va_client_notifications_per_ring_.value()));
+        zx::duration((zx::sec(1) * num_ring_buffer_frames_) / frame_rate_ /
+                     va_client_notifications_per_ring_.value());
   } else {
     va_client_ref_notification_period_ = zx::duration(0);
   }
@@ -489,7 +493,8 @@ zx_status_t VirtualAudioStream::ChangeFormat(const audio::audio_proto::StreamSet
 
   auto parent = parent_.lock();
   ZX_ASSERT(parent);
-  parent->NotifySetFormat(frame_rate_, sample_format_, num_channels_, external_delay_nsec_);
+  parent->NotifySetFormat(frame_rate_, sample_format_, num_channels_,
+                          static_cast<int64_t>(external_delay_nsec_));
 
   return ZX_OK;
 }

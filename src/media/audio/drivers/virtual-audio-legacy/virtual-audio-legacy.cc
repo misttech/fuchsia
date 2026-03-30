@@ -94,7 +94,7 @@ void VirtualAudioLegacy::AddDevice(AddDeviceRequestView request,
   auto config = fidl::ToNatural(request->config);
   ZX_ASSERT(config.device_specific().has_value());
   auto device_id = next_device_id_++;
-  auto result = VirtualAudioDevice::Create(std::move(config), std::move(request->server), parent_,
+  auto result = VirtualAudioDevice::Create(config, std::move(request->server), parent_,
                                            [this, device_id]() { OnDeviceShutdown(device_id); });
   if (!result.is_ok()) {
     zxlogf(ERROR, "Device creation failed with status %d",
