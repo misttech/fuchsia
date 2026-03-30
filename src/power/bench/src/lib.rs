@@ -17,7 +17,8 @@ use std::time::Instant;
 #[derive(FromArgs, Debug)]
 /// Command line argument for the tests
 struct Options {
-    /// number of times to repeat the test
+    /// the format for changing the argument on command line is `-- --repeat N`, e.g.
+    /// fx test -o power-framework-bench-integration-tests --test-filter=*takewakelease -- --repeat 5000
     #[argh(option, default = "1000")]
     repeat: u32,
 
@@ -25,48 +26,66 @@ struct Options {
     #[argh(switch)]
     #[allow(unused)]
     nocapture: bool,
+
+    /// timeout for the test in seconds
+    #[argh(option, default = "10")]
+    timeout_secs: u64,
 }
 
-// The format for changing the argument on command line is `-- --repeat N`, e.g.
-// fx test -o power-framework-bench-integration-tests --test-filter=*takewakelease -- --repeat 5000
-fn determine_loop_count() -> u32 {
-    let args: Options = argh::from_env::<Options>();
-    args.repeat
+/// Runs the given function `func` for `args.repeat` times or until `args.timeout_secs` is reached.
+/// Prints the power broker inspect stats every 1000 iterations.
+/// Returns the number of iterations performed.
+async fn iterate_until_timeout<F>(args: &Options, mut func: F) -> u32
+where
+    F: FnMut(u32),
+{
+    let timeout = std::time::Duration::from_secs(args.timeout_secs);
+    let start = Instant::now();
+    let mut iterations = 0;
+    while start.elapsed() < timeout && iterations < args.repeat {
+        func(iterations);
+        if iterations > 0 && iterations % 1000 == 0 {
+            print_power_broker_inspect_stats(iterations).await;
+        }
+        iterations += 1;
+    }
+    iterations
 }
 
 #[fuchsia::test]
 async fn test_sag_takewakelease() {
-    let total: u32 = determine_loop_count();
+    let args: Options = argh::from_env::<Options>();
 
     let sag_arc = sag_work::obtain_sag_proxy();
     let start = Instant::now();
-    for iteration in 0..total {
+    let iterations = iterate_until_timeout(&args, |_| {
         sag_work::execute(&sag_arc);
-        if iteration > 0 && iteration % 1000 == 0 {
-            print_power_broker_inspect_stats(iteration).await;
-        }
-    }
+    })
+    .await;
+    assert!(iterations > 0, "Test failed to complete at least 1 iteration");
     let duration = start.elapsed();
     println!("Total execution time: {:?}", duration);
-    println!("Average time for each call is {:?}", duration / total);
+    println!("Average time for each call is {:?}", duration / iterations);
 
     // Check how much PB Inspect VMO we used.
-    print_power_broker_inspect_stats(total).await;
+    print_power_broker_inspect_stats(iterations).await;
     ()
 }
 
 #[fuchsia::test]
-fn test_topologytestdaemon_toggle() -> Result<()> {
-    let total: u32 = determine_loop_count();
+async fn test_topologytestdaemon_toggle() -> Result<()> {
+    let args: Options = argh::from_env::<Options>();
 
     let (topology_control, status_channel) = daemon_work::prepare_work();
     let start = Instant::now();
-    for _ in 0..total {
+    let iterations = iterate_until_timeout(&args, |_| {
         daemon_work::execute(&topology_control, &status_channel);
-    }
+    })
+    .await;
+    assert!(iterations > 0, "Test failed to complete at least 1 iteration");
     let duration = start.elapsed();
     println!("Total execution time: {:?}", duration);
-    println!("Average time for each call is {:?}", duration / total);
+    println!("Average time for each call is {:?}", duration / iterations);
     Ok(())
 }
 
@@ -112,28 +131,27 @@ async fn print_power_broker_inspect_stats(iteration: u32) {
 async fn test_large_topology_lease_benchmark() -> Result<()> {
     // TODO(b/491223927): I'd like to get this to at least 100, but starting
     // here, and we'll bump it up as we make improvements.
-    let num_elements = 20;
-    let total: u32 = determine_loop_count();
+    let num_elements = 50;
+    let args: Options = argh::from_env::<Options>();
 
     println!("Building large topology with {} elements...", num_elements);
     let topology_control = daemon_work::prepare_large_topology(num_elements);
     println!("Topology created.");
 
     let start = Instant::now();
-    for iteration in 0..total {
+    let iterations = iterate_until_timeout(&args, |_| {
         daemon_work::execute_acquire_and_drop_rand_lease(&topology_control, num_elements);
-        if iteration > 0 && iteration % 1000 == 0 {
-            print_power_broker_inspect_stats(iteration).await;
-        }
-    }
+    })
+    .await;
+    assert!(iterations > 0, "Test failed to complete at least 1 iteration");
     let duration = start.elapsed();
-    println!("Total execution time over {} iterations: {:?}", total, duration);
+    println!("Total execution time over {} iterations: {:?}", iterations, duration);
     println!(
         "Average time for each execution ({} leases acquire/drop) is {:?}",
-        total,
-        duration / total
+        iterations,
+        duration / iterations
     );
 
-    print_power_broker_inspect_stats(total).await;
+    print_power_broker_inspect_stats(iterations).await;
     Ok(())
 }
