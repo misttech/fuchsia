@@ -22,6 +22,7 @@ test("block-device-test-bin") {
   sources = [ "block-device-test.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:minimal_compat_environment",
     "//sdk/lib/fit",

@@ -6,6 +6,7 @@
 
 #include <endian.h>
 #include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
 #include <stdio.h>
@@ -62,9 +63,8 @@ void UsbMassStorageDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iov
   // Currently, data is only used in the UNMAP command.
   if (device_op->op.command.opcode == BLOCK_OPCODE_TRIM && data.iov_len != 0) {
     if (sizeof(txn->data_buffer) != data.iov_len) {
-      FDF_LOG(ERROR,
-              "The size of the requested data buffer(%zu) and data_buffer(%lu) are different.",
-              data.iov_len, sizeof(txn->data_buffer));
+      fdf::error("The size of the requested data buffer({}) and data_buffer({}) are different.",
+                 data.iov_len, sizeof(txn->data_buffer));
       device_op->Complete(ZX_ERR_INVALID_ARGS);
       return;
     }
@@ -139,7 +139,7 @@ zx_status_t UsbMassStorageDevice::Init() {
   zx::result<ddk::UsbProtocolClient> client =
       compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming());
   if (client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect USB protocol client: %s", client.status_string());
+    fdf::error("Failed to connect USB protocol client: {}", client);
     return client.status_value();
   }
 
@@ -171,8 +171,8 @@ zx_status_t UsbMassStorageDevice::Init() {
   size_t bulk_out_max_packet = 0;
 
   if (interface_descriptor->b_num_endpoints < 2) {
-    FDF_LOG(DEBUG, "UMS: ums_bind wrong number of endpoints: %d",
-            interface_descriptor->b_num_endpoints);
+    fdf::debug("UMS: ums_bind wrong number of endpoints: {}",
+               interface_descriptor->b_num_endpoints);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -192,7 +192,7 @@ zx_status_t UsbMassStorageDevice::Init() {
   }
 
   if (!bulk_in_max_packet || !bulk_out_max_packet) {
-    FDF_LOG(DEBUG, "UMS: ums_bind could not find endpoints");
+    fdf::debug("UMS: ums_bind could not find endpoints");
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -205,7 +205,7 @@ zx_status_t UsbMassStorageDevice::Init() {
     // See USB Mass Storage Class Spec. 3.2 Get Max LUN.
     // Clear the stall.
     usb.ResetEndpoint(0);
-    FDF_LOG(INFO, "Device does not support multiple LUNs");
+    fdf::info("Device does not support multiple LUNs");
     max_lun = 0;
   } else if (status != ZX_OK) {
     return status;
@@ -213,7 +213,7 @@ zx_status_t UsbMassStorageDevice::Init() {
     return ZX_ERR_BAD_STATE;
   }
   block_devs_ = std::vector<std::unique_ptr<scsi::BlockDevice>>(max_lun + 1);
-  FDF_LOG(DEBUG, "UMS: Max lun is: %u", max_lun);
+  fdf::debug("UMS: Max lun is: {}", max_lun);
   max_lun_ = max_lun;
 
   {
@@ -265,8 +265,7 @@ zx_status_t UsbMassStorageDevice::Init() {
 
   status = CheckLunsReady();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed initial check of whether LUNs are ready: %s",
-            zx_status_get_string(status));
+    fdf::error("Failed initial check of whether LUNs are ready: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -274,15 +273,14 @@ zx_status_t UsbMassStorageDevice::Init() {
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ums-worker",
       [&](fdf_dispatcher_t*) { worker_shutdown_completion_.Signal(); });
   if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create dispatcher: %s",
-            zx_status_get_string(dispatcher.status_value()));
+    fdf::error("Failed to create dispatcher: {}", zx_status_get_string(dispatcher.status_value()));
     return dispatcher.status_value();
   }
   worker_dispatcher_ = *std::move(dispatcher);
 
   status = async::PostTask(worker_dispatcher_.async_dispatcher(), [this] { WorkerLoop(); });
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to start worker loop: %s", zx_status_get_string(status));
+    fdf::error("Failed to start worker loop: {}", zx_status_get_string(status));
     return status;
   }
   return ZX_OK;
@@ -291,7 +289,7 @@ zx_status_t UsbMassStorageDevice::Init() {
 zx_status_t UsbMassStorageDevice::Reset() {
   // UMS Reset Recovery. See section 5.3.4 of
   // "Universal Serial Bus Mass Storage Class Bulk-Only Transport"
-  FDF_LOG(DEBUG, "UMS: performing reset recovery");
+  fdf::debug("UMS: performing reset recovery");
   // Step 1: Send  Bulk-Only Mass Storage Reset
   zx_status_t status =
       usb_.ControlOut(USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE, USB_REQ_RESET, 0,
@@ -299,20 +297,20 @@ zx_status_t UsbMassStorageDevice::Reset() {
   usb_protocol_t usb;
   usb_.GetProto(&usb);
   if (status != ZX_OK) {
-    FDF_LOG(DEBUG, "UMS: USB_REQ_RESET failed: %s", zx_status_get_string(status));
+    fdf::debug("UMS: USB_REQ_RESET failed: {}", zx_status_get_string(status));
     return status;
   }
   // Step 2: Clear Feature HALT to the Bulk-In endpoint
   constexpr uint8_t request_type = USB_DIR_OUT | USB_RECIP_ENDPOINT;
   status = usb_.ClearFeature(request_type, USB_ENDPOINT_HALT, bulk_in_addr_, ZX_TIME_INFINITE);
   if (status != ZX_OK) {
-    FDF_LOG(DEBUG, "UMS: clear endpoint halt failed: %s", zx_status_get_string(status));
+    fdf::debug("UMS: clear endpoint halt failed: {}", zx_status_get_string(status));
     return status;
   }
   // Step 3: Clear Feature HALT to the Bulk-Out endpoint
   status = usb_.ClearFeature(request_type, USB_ENDPOINT_HALT, bulk_out_addr_, ZX_TIME_INFINITE);
   if (status != ZX_OK) {
-    FDF_LOG(DEBUG, "UMS: clear endpoint halt failed: %s", zx_status_get_string(status));
+    fdf::debug("UMS: clear endpoint halt failed: {}", zx_status_get_string(status));
     return status;
   }
   return ZX_OK;
@@ -325,7 +323,7 @@ zx_status_t UsbMassStorageDevice::SendCbw(uint8_t lun, uint32_t transfer_length,
   ums_cbw_t* cbw;
   zx_status_t status = usb_request_mmap(req, (void**)&cbw);
   if (status != ZX_OK) {
-    FDF_LOG(DEBUG, "UMS: usb request mmap failed: %s", zx_status_get_string(status));
+    fdf::debug("UMS: usb request mmap failed: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -369,13 +367,13 @@ zx_status_t UsbMassStorageDevice::ReadCsw(uint32_t* out_residue, bool retry) {
       // Stalled. Clear Bulk In endpoint and try to receive CSW again.
       auto status = usb_.ResetEndpoint(bulk_in_addr_);
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "ResetEndpoint failed %d", status);
+        fdf::error("ResetEndpoint failed {}", zx_status_get_string(status));
         return status;
       }
       constexpr uint8_t request_type = USB_DIR_OUT | USB_RECIP_ENDPOINT;
       status = usb_.ClearFeature(request_type, USB_ENDPOINT_HALT, bulk_in_addr_, ZX_TIME_INFINITE);
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "UMS: clear endpoint halt failed: %s", zx_status_get_string(status));
+        fdf::error("UMS: clear endpoint halt failed: {}", zx_status_get_string(status));
         return status;
       }
       return ReadCsw(out_residue, true);
@@ -391,8 +389,8 @@ zx_status_t UsbMassStorageDevice::ReadCsw(uint32_t* out_residue, bool retry) {
   } else {
     // FIXME - best way to handle this?
     // print error and then reset device due to it
-    FDF_LOG(DEBUG, "UMS: CSW verify returned error. Check ums-hw.h csw_status_t for enum = %d",
-            csw_error);
+    fdf::debug("UMS: CSW verify returned error. Check ums-hw.h csw_status_t for enum = {}",
+               csw_error);
     Reset();
     return ZX_ERR_INTERNAL;
   }
@@ -404,14 +402,14 @@ csw_status_t UsbMassStorageDevice::VerifyCsw(usb_request_t* csw_request, uint32_
 
   // check signature is "USBS"
   if (letoh32(csw.dCSWSignature) != CSW_SIGNATURE) {
-    FDF_LOG(DEBUG, "UMS: invalid CSW sig: %08x", letoh32(csw.dCSWSignature));
+    fdf::debug("UMS: invalid CSW sig: {:08x}", letoh32(csw.dCSWSignature));
     return CSW_INVALID;
   }
 
   // check if tag matches the tag of last CBW
   if (letoh32(csw.dCSWTag) != tag_receive_++) {
-    FDF_LOG(DEBUG, "UMS: CSW tag mismatch, expected:%08x got in CSW:%08x", tag_receive_ - 1,
-            letoh32(csw.dCSWTag));
+    fdf::debug("UMS: CSW tag mismatch, expected:{:08x} got in CSW:{:08x}", tag_receive_ - 1,
+               letoh32(csw.dCSWTag));
     return CSW_TAG_MISMATCH;
   }
   // check if success is true or not?
@@ -447,7 +445,7 @@ zx_status_t UsbMassStorageDevice::ExecuteCommandSync(uint8_t target, uint16_t lu
     return ZX_ERR_OUT_OF_RANGE;
   }
   if (data.iov_len > max_transfer_bytes_) {
-    FDF_LOG(ERROR, "Request exceeding max transfer size.");
+    fdf::error("Request exceeding max transfer size.");
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -461,7 +459,7 @@ zx_status_t UsbMassStorageDevice::ExecuteCommandSync(uint8_t target, uint16_t lu
       SendCbw(static_cast<uint8_t>(lun), static_cast<uint32_t>(data.iov_len),
               is_write ? USB_DIR_OUT : USB_DIR_IN, static_cast<uint8_t>(cdb.iov_len), cdb.iov_base);
   if (status != ZX_OK) {
-    FDF_LOG(WARNING, "UMS: SendCbw failed with status %s", zx_status_get_string(status));
+    fdf::warn("UMS: SendCbw failed with status {}", zx_status_get_string(status));
     return status;
   }
 
@@ -470,7 +468,7 @@ zx_status_t UsbMassStorageDevice::ExecuteCommandSync(uint8_t target, uint16_t lu
     // read response
     status = ReadSync(data.iov_len);
     if (status != ZX_OK) {
-      FDF_LOG(WARNING, "UMS: ReadSync failed with status %s", zx_status_get_string(status));
+      fdf::warn("UMS: ReadSync failed with status {}", zx_status_get_string(status));
       return status;
     }
   }
@@ -521,8 +519,8 @@ zx_status_t UsbMassStorageDevice::DoTransaction(Transaction* txn, uint8_t flags,
   zx_status_t status =
       SendCbw(txn->lun, static_cast<uint32_t>(num_bytes), flags, txn->cdb_length, txn->cdb_buffer);
   if (status != ZX_OK) {
-    FDF_LOG(WARNING, "UMS: SendCbw during %s failed with status %s", action.c_str(),
-            zx_status_get_string(status));
+    fdf::warn("UMS: SendCbw during {} failed with status {}", action.c_str(),
+              zx_status_get_string(status));
     return status;
   }
 
@@ -543,7 +541,7 @@ zx_status_t UsbMassStorageDevice::DoTransaction(Transaction* txn, uint8_t flags,
   uint32_t residue;
   status = ReadCsw(&residue);
   if (status == ZX_OK && residue) {
-    FDF_LOG(ERROR, "unexpected residue in %s", action.c_str());
+    fdf::error("unexpected residue in {}", action.c_str());
     status = ZX_ERR_IO;
   }
 
@@ -582,18 +580,17 @@ zx_status_t UsbMassStorageDevice::CheckLunsReady() {
       if (block_device.is_ok() && block_device->block_size_bytes() != 0) {
         block_devs_[lun] = std::move(block_device.value());
         scsi::BlockDevice* dev = block_devs_[lun].get();
-        FDF_LOG(DEBUG, "UMS: block size is: 0x%08x", dev->block_size_bytes());
-        FDF_LOG(DEBUG, "UMS: total blocks is: %lu", dev->block_count());
-        FDF_LOG(DEBUG, "UMS: total size is: %lu", dev->block_count() * dev->block_size_bytes());
-        FDF_LOG(DEBUG, "UMS: read-only: %d removable: %d", dev->write_protected(),
-                dev->removable());
+        fdf::debug("UMS: block size is: {:#010x}", dev->block_size_bytes());
+        fdf::debug("UMS: total blocks is: {}", dev->block_count());
+        fdf::debug("UMS: total size is: {}", dev->block_count() * dev->block_size_bytes());
+        fdf::debug("UMS: read-only: {} removable: {}", dev->write_protected(), dev->removable());
       } else {
         zx_status_t error = block_device.status_value();
         if (error == ZX_OK) {
-          FDF_LOG(ERROR, "UMS zero block size");
+          fdf::error("UMS zero block size");
           error = ZX_ERR_INVALID_ARGS;
         }
-        FDF_LOG(ERROR, "UMS: device_add for block device failed: %s", zx_status_get_string(error));
+        fdf::error("UMS: device_add for block device failed: {}", zx_status_get_string(error));
       }
     } else if (!ready && block_devs_[lun]) {
       block_devs_[lun]->RemoveDevice();
@@ -613,7 +610,7 @@ zx::result<> UsbMassStorageDevice::AllocatePages(zx::vmo& vmo, fzl::VmoMapper& m
   }
 
   if (zx_status_t status = mapper.Map(vmo, 0, data_size); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map IO buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to map IO buffer: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();
@@ -632,8 +629,8 @@ void UsbMassStorageDevice::WorkerLoop() {
           // fdf::DriverBase::outgoing().
           zx_status_t status = CheckLunsReady();
           if (status != ZX_OK) {
-            FDF_LOG(ERROR, "Failed to periodically check whether LUNs are ready: %s",
-                    zx_status_get_string(status));
+            fdf::error("Failed to periodically check whether LUNs are ready: {}",
+                       zx_status_get_string(status));
           }
         });
         continue;
@@ -657,7 +654,7 @@ void UsbMassStorageDevice::WorkerLoop() {
     }
     current_txn = txn;
     const block_op_t& op = txn->device_op.op;
-    FDF_LOG(DEBUG, "UMS PROCESS (%p)", &op);
+    fdf::debug("UMS PROCESS ({})", static_cast<const void*>(&op));
 
     scsi::BlockDevice* dev = block_devs_[txn->lun].get();
     zx_status_t status;
@@ -668,19 +665,19 @@ void UsbMassStorageDevice::WorkerLoop() {
       switch (op.command.opcode) {
         case BLOCK_OPCODE_READ:
           if ((status = DoTransaction(txn, USB_DIR_IN, bulk_in_addr_, "Read")) != ZX_OK) {
-            FDF_LOG(ERROR, "UMS: Read of %u @ %zu failed: %s", op.rw.length, op.rw.offset_dev,
-                    zx_status_get_string(status));
+            fdf::error("UMS: Read of {} @ {} failed: {}", op.rw.length, op.rw.offset_dev,
+                       zx_status_get_string(status));
           }
           break;
         case BLOCK_OPCODE_WRITE:
           if ((status = DoTransaction(txn, USB_DIR_OUT, bulk_out_addr_, "Write")) != ZX_OK) {
-            FDF_LOG(ERROR, "UMS: Write of %u @ %zu failed: %s", op.rw.length, op.rw.offset_dev,
-                    zx_status_get_string(status));
+            fdf::error("UMS: Write of {} @ {} failed: {}", op.rw.length, op.rw.offset_dev,
+                       zx_status_get_string(status));
           }
           break;
         case BLOCK_OPCODE_FLUSH:
           if ((status = DoTransaction(txn, USB_DIR_OUT, 0, "Flush")) != ZX_OK) {
-            FDF_LOG(ERROR, "UMS: Flush failed: %s", zx_status_get_string(status));
+            fdf::error("UMS: Flush failed: {}", zx_status_get_string(status));
           }
           break;
         case BLOCK_OPCODE_TRIM: {
@@ -690,8 +687,8 @@ void UsbMassStorageDevice::WorkerLoop() {
           fzl::VmoMapper mapper;
           if (zx::result<> result = AllocatePages(data_vmo, mapper, sizeof(txn->data_buffer));
               result.is_error()) {
-            FDF_LOG(ERROR, "Failed to allocate data buffer (command %p): %s", txn,
-                    result.status_string());
+            fdf::error("Failed to allocate data buffer (command {}): {}",
+                       static_cast<const void*>(txn), result);
             status = result.status_value();
             break;
           }
@@ -699,7 +696,7 @@ void UsbMassStorageDevice::WorkerLoop() {
           txn->data_vmo = std::move(data_vmo);
 
           if ((status = DoTransaction(txn, USB_DIR_OUT, bulk_out_addr_, "Trim")) != ZX_OK) {
-            FDF_LOG(ERROR, "UMS: Trim failed: %s", zx_status_get_string(status));
+            fdf::error("UMS: Trim failed: {}", zx_status_get_string(status));
           }
           break;
         }
@@ -711,7 +708,7 @@ void UsbMassStorageDevice::WorkerLoop() {
     {
       std::lock_guard<std::mutex> l(txn_lock_);
       if (current_txn == txn) {
-        FDF_LOG(DEBUG, "UMS DONE %d (%p)", status, &op);
+        fdf::debug("UMS DONE {} ({})", status, static_cast<const void*>(&op));
         txn->data_vmo.reset();
         txn->device_op.Complete(status);
         current_txn = nullptr;
@@ -731,12 +728,10 @@ void UsbMassStorageDevice::WorkerLoop() {
     const block_op_t& op = txn->device_op.op;
     switch (op.command.opcode) {
       case BLOCK_OPCODE_READ:
-        FDF_LOG(ERROR, "UMS: read of %u @ %zu discarded during unbind", op.rw.length,
-                op.rw.offset_dev);
+        fdf::error("UMS: read of {} @ {} discarded during unbind", op.rw.length, op.rw.offset_dev);
         break;
       case BLOCK_OPCODE_WRITE:
-        FDF_LOG(ERROR, "UMS: write of %u @ %zu discarded during unbind", op.rw.length,
-                op.rw.offset_dev);
+        fdf::error("UMS: write of {} @ {} discarded during unbind", op.rw.length, op.rw.offset_dev);
         break;
     }
     txn->device_op.Complete(ZX_ERR_IO_NOT_PRESENT);
@@ -763,7 +758,7 @@ zx::result<> UsbMassStorageDevice::Start() {
   auto result =
       parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 

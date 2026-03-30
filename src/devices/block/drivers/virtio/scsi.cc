@@ -5,6 +5,7 @@
 #include "scsi.h"
 
 #include <inttypes.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
@@ -163,21 +164,21 @@ zx::result<> ScsiDriver::Start() {
   auto result =
       parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
       incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get pci client: %s", pci_client_result.status_string());
+    fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
   }
 
   zx::result<std::pair<zx::bti, std::unique_ptr<virtio::Backend>>> bti_and_backend_result =
       virtio::GetBtiAndBackend(std::move(pci_client_result).value());
   if (!bti_and_backend_result.is_ok()) {
-    FDF_LOG(ERROR, "GetBtiAndBackend failed: %s", bti_and_backend_result.status_string());
+    fdf::error("GetBtiAndBackend failed: {}", bti_and_backend_result);
     return bti_and_backend_result.take_error();
   }
   auto [bti, backend] = std::move(bti_and_backend_result).value();
@@ -204,7 +205,7 @@ void ScsiDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
 zx_status_t ScsiDriver::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                                            iovec data) {
   if (!scsi_device_) {
-    FDF_LOG(ERROR, "ExecuteCommandSync called for driver that has not been started.");
+    fdf::error("ExecuteCommandSync called for driver that has not been started.");
     return ZX_ERR_INTERNAL;
   }
 
@@ -238,7 +239,7 @@ zx::result<> ScsiDevice::AllocatePages(zx::vmo& vmo, fzl::VmoMapper& mapper, siz
   }
 
   if (zx_status_t status = mapper.Map(vmo, 0, data_size); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to map IO buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to map IO buffer: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok();
@@ -250,7 +251,7 @@ void ScsiDriver::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bo
   zx_status_t status = ZX_ERR_INTERNAL;
   auto complete_op = fit::defer([&] { device_op->Complete(status); });
   if (!scsi_device_) {
-    FDF_LOG(ERROR, "ExecuteCommandAsync called for driver that has not been started.");
+    fdf::error("ExecuteCommandAsync called for driver that has not been started.");
     return;
   }
 
@@ -266,7 +267,7 @@ void ScsiDriver::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bo
     if (zx::result<> result =
             scsi_device_->AllocatePages(trim_data_vmo.value(), mapper, data.iov_len);
         result.is_error()) {
-      FDF_LOG(ERROR, "Failed to allocate data buffer: %s", result.status_string());
+      fdf::error("Failed to allocate data buffer: {}", result);
       return;
     }
     memcpy(mapper.start(), data.iov_base, data.iov_len);
@@ -510,7 +511,7 @@ zx_status_t ScsiDevice::Init() {
   {
     fbl::AutoLock lock(&lock_);
     if (config_.max_channel > 1) {
-      FDF_LOG(WARNING, "config_.max_channel %d not expected.", config_.max_channel);
+      fdf::warn("config_.max_channel {} not expected.", config_.max_channel);
     }
   }
 
@@ -519,26 +520,26 @@ zx_status_t ScsiDevice::Init() {
   if (DeviceFeaturesSupported() & VIRTIO_F_VERSION_1) {
     DriverFeaturesAck(VIRTIO_F_VERSION_1);
     if (zx_status_t status = DeviceStatusFeaturesOk(); status != ZX_OK) {
-      FDF_LOG(ERROR, "Feature negotiation failed: %s", zx_status_get_string(status));
+      fdf::error("Feature negotiation failed: {}", zx_status_get_string(status));
       return status;
     }
   }
 
   if (!bti().is_valid()) {
-    FDF_LOG(ERROR, "invalid bti handle");
+    fdf::error("invalid bti handle");
     return ZX_ERR_BAD_HANDLE;
   }
   {
     fbl::AutoLock lock(&lock_);
     auto err = control_ring_.Init(/*index=*/Queue::CONTROL);
     if (err) {
-      FDF_LOG(ERROR, "failed to allocate control queue");
+      fdf::error("failed to allocate control queue");
       return err;
     }
 
     err = request_queue_.Init(/*index=*/Queue::REQUEST);
     if (err) {
-      FDF_LOG(ERROR, "failed to allocate request queue");
+      fdf::error("failed to allocate request queue");
       return err;
     }
     request_buffers_size_ =
@@ -550,7 +551,7 @@ zx_status_t ScsiDevice::Init() {
       auto status = buffer_factory->CreateContiguous(bti(), buffer_size, 0, true,
                                                      &scsi_io_slot_table_[i].request_buffer);
       if (status) {
-        FDF_LOG(ERROR, "failed to allocate queue working memory");
+        fdf::error("failed to allocate queue working memory");
         return status;
       }
       scsi_io_slot_table_[i].avail = true;

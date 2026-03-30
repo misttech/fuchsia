@@ -4,6 +4,7 @@
 
 #include <endian.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/fit/function.h>
@@ -50,7 +51,7 @@ class TestController : public fdf::DriverBase, public Controller {
     fidl::WireResult result =
         parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+      fdf::error("Failed to add child: {}", result.status_string());
       return zx::error(result.status());
     }
     return zx::ok();
