@@ -1075,22 +1075,6 @@ impl ComponentInstance {
         Arc::new(GetOutgoing { component: WeakComponentInstance::from(self) })
     }
 
-    /// Obtains the program output dict.
-    pub async fn get_program_output_dict(self: &Arc<Self>) -> Result<Dict, RouterError> {
-        Ok(self
-            .lock_resolved_state()
-            .await
-            .map_err(|e| {
-                RoutingError::from(ComponentInstanceError::ResolveFailed {
-                    moniker: Moniker::root(),
-                    err: ClonableError::from(format_err!("{:?}", e)),
-                })
-            })?
-            .sandbox
-            .program_output_dict
-            .clone())
-    }
-
     /// Obtains the component output dict.
     pub async fn get_component_output_dict(self: &Arc<Self>) -> Result<Dict, RouterError> {
         Ok(self
@@ -1311,6 +1295,7 @@ impl ComponentInstance {
     /// Looks up a component by moniker.
     ///
     /// The component instance in the component will be resolved if that has not already happened.
+    #[cfg(test)]
     pub async fn find_and_maybe_resolve(
         self: &Arc<Self>,
         look_up_moniker: &Moniker,

@@ -893,20 +893,21 @@ mod tests {
     use super::*;
     use crate::model::component::StartReason;
     use crate::model::routing::service::AnonymizedAggregateServiceDir;
-    use crate::model::routing::{CapabilityOpenRequest, RouteSource, RoutingError};
     use crate::model::start::Start;
     use crate::model::testing::out_dir::OutDir;
     use crate::model::testing::routing_test_helpers::{RoutingTest, RoutingTestBuilder};
+    use ::routing::bedrock::dict_ext::DictExt;
+    use ::routing::bedrock::request_metadata::service_metadata;
     use ::routing::capability_source::ComponentCapability;
     use ::routing::component_instance::ComponentInstanceInterface;
+    use ::routing::error::RoutingError;
     use cm_rust::*;
     use cm_rust_testing::*;
-    use errors::OpenError;
     use futures::FutureExt;
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
-    use sandbox::WeakInstanceToken;
+    use sandbox::{Request, WeakInstanceToken};
     use std::collections::HashSet;
     use vfs::pseudo_directory;
 
@@ -950,38 +951,34 @@ mod tests {
                 }),
                 moniker: component_instance.moniker.clone(),
             });
-            let source_clone = source.clone();
             let weak_component = component_instance.clone();
-            let router = Router::new(move |_request, debug: bool, _target: WeakInstanceToken| {
+            let router = Router::new(move |_request, debug: bool, target: WeakInstanceToken| {
                 assert!(!debug);
-                let source = source_clone.clone();
                 let weak_component = weak_component.clone();
                 async move {
                     let component = weak_component.upgrade().map_err(RoutingError::from)?;
-                    let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-                    let mut object_request = FLAGS.to_object_request(server);
-                    CapabilityOpenRequest::new_from_route_source(
-                        RouteSource { source: source.clone(), relative_path: Default::default() },
-                        &component,
-                        OpenRequest::new(
-                            component.execution_scope.clone(),
-                            FLAGS,
-                            vfs::Path::dot(),
-                            &mut object_request,
-                        ),
-                    )
-                    // TODO: better error
-                    .map_err(|_| OpenError::Timeout)?
-                    .open()
-                    .on_timeout(OPEN_SERVICE_TIMEOUT.after_now(), || Err(OpenError::Timeout))
-                    .await
-                    // TODO: better error
-                    .map_err(|_| router_error::RouterError::Internal)?;
-                    Ok(RouterResponse::Capability(DirConnector::from_proxy(
-                        proxy,
-                        RelativePath::dot(),
-                        fio::PERM_READABLE,
-                    )))
+                    let program_output_dict = component
+                        .lock_resolved_state()
+                        .await
+                        .expect("failed to resolve component")
+                        .sandbox
+                        .program_output_dict
+                        .clone();
+                    let service_router = program_output_dict
+                        .get_router_or_not_found::<DirConnector>(
+                            &cm_types::Name::new("my.service.Service").unwrap(),
+                            // We might not be exposing the capability, but the core issue is sameish
+                            // (the component did not declare the capability), and this is test code,
+                            // so hopefully using an only mostly-right error code here doesn't trip
+                            // someone up later.
+                            RoutingError::expose_from_self_not_found(
+                                &component.moniker(),
+                                "my.service.Service",
+                            ),
+                        );
+                    let request =
+                        Request { metadata: service_metadata(cm_types::Availability::Required) };
+                    service_router.route(Some(request), debug, target).await
                 }
                 .boxed()
             });

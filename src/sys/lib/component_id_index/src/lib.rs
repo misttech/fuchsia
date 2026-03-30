@@ -129,6 +129,12 @@ impl Index {
         self.instances.iter().find(|e| &e.moniker == moniker).map(|e| &e.instance_id)
     }
 
+    /// Returns the moniker for the instance ID, if the index contains the instance ID. Will return
+    /// just one of the matches if there are duplicate IDs.
+    pub fn moniker_for_id(&self, id: &InstanceId) -> Option<&Moniker> {
+        self.instances.iter().find(|e| &e.instance_id == id).map(|e| &e.moniker)
+    }
+
     /// Returns true if the index contains the instance ID.
     pub fn contains_id(&self, id: &InstanceId) -> bool {
         self.instance_ids.contains(id)

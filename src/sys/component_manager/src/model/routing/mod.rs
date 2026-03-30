@@ -3,94 +3,22 @@
 // found in the LICENSE file.
 
 pub mod aggregate_router;
-pub mod legacy;
-pub mod open;
-pub mod providers;
 pub mod service;
-pub use ::routing::error::RoutingError;
-pub use open::*;
 
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::storage;
+use ::routing::bedrock::dict_ext::DictExt;
 use ::routing::capability_source::CapabilitySource;
-use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
-use ::routing::mapper::NoopRouteMapper;
-use ::routing::{RouteRequest, RouteSource};
 use async_trait::async_trait;
-use cm_rust::{ExposeDecl, ExposeDeclCommon, ExposeTarget, UseStorageDecl};
-use cm_types::{Availability, Name};
+use cm_rust::UseStorageDecl;
+use cm_types::Availability;
 use errors::ModelError;
 use log::error;
 use router_error::RouterError;
-use std::collections::BTreeMap;
+use routing::component_instance::ComponentInstanceInterface;
+use sandbox::{Capability, RouterResponse};
 use std::sync::Arc;
-use vfs::directory::entry::OpenRequest;
-
-#[async_trait]
-pub trait Route {
-    /// Routes a capability from `target` to its source.
-    ///
-    /// If the capability is not allowed to be routed to the `target`, per the
-    /// [`crate::model::policy::GlobalPolicyChecker`], the capability is not opened and an error
-    /// is returned.
-    async fn route(self, target: &Arc<ComponentInstance>) -> Result<RouteSource, RoutingError>;
-}
-
-#[async_trait]
-impl Route for RouteRequest {
-    async fn route(self, target: &Arc<ComponentInstance>) -> Result<RouteSource, RoutingError> {
-        routing::route_capability(self, target, &mut NoopRouteMapper).await
-    }
-}
-
-#[derive(Debug)]
-pub enum RoutingOutcome {
-    Found,
-    FromVoid,
-}
-
-/// Routes a capability from `target` to its source. Opens the capability if routing succeeds.
-///
-/// If the capability is not allowed to be routed to the `target`, per the
-/// [`crate::model::policy::GlobalPolicyChecker`], the capability is not opened and an error
-/// is returned.
-pub(super) async fn route_and_open_capability(
-    route_request: &RouteRequest,
-    target: &Arc<ComponentInstance>,
-    open_request: OpenRequest<'_>,
-) -> Result<RoutingOutcome, RouterError> {
-    let source = route_request.clone().route(target).await.map_err(RouterError::from)?;
-    if let CapabilitySource::Void(_) = source.source {
-        return Ok(RoutingOutcome::FromVoid);
-    };
-
-    // clone the source as additional context in case of an error
-    CapabilityOpenRequest::new_from_route_source(source, target, open_request)
-        .map_err(|e| RouterError::NotFound(Arc::new(e)))?
-        .open()
-        .await?;
-    Ok(RoutingOutcome::Found)
-}
-
-/// Same as `route_and_open_capability` except this reports the routing failure.
-pub(super) async fn route_and_open_capability_with_reporting(
-    route_request: &RouteRequest,
-    target: &Arc<ComponentInstance>,
-    open_request: OpenRequest<'_>,
-) -> Result<(), RouterError> {
-    let result = route_and_open_capability(route_request, &target, open_request).await;
-    match result {
-        Ok(RoutingOutcome::Found) => Ok(()),
-        Ok(RoutingOutcome::FromVoid) => {
-            Err(RoutingError::SourceCapabilityIsVoid { moniker: target.moniker.clone() }.into())
-        }
-        Err(e) => {
-            report_routing_failure(&route_request, route_request.availability(), &target, &e).await;
-            Err(e)
-        }
-    }
-}
 
 pub struct RoutedStorage {
     backing_dir_info: storage::BackingDirectoryInfo,
@@ -101,8 +29,25 @@ pub(super) async fn route_storage(
     use_storage_decl: UseStorageDecl,
     target: &Arc<ComponentInstance>,
 ) -> Result<RoutedStorage, ModelError> {
-    let storage_source = RouteRequest::UseStorage(use_storage_decl.clone()).route(target).await?;
-    let backing_dir_info = storage::route_backing_directory(target, storage_source.source).await?;
+    let storage_router_capability = target
+        .lock_resolved_state()
+        .await?
+        .sandbox
+        .program_input
+        .namespace()
+        .get_capability(&use_storage_decl.target_path)
+        .expect("namespace is missing used storage capability");
+    let Capability::DirConnectorRouter(router) = storage_router_capability else {
+        panic!("wrong type for used storage capability");
+    };
+    let storage_source: CapabilitySource =
+        match router.route(None, true, target.as_weak().into()).await? {
+            RouterResponse::Debug(data) => {
+                data.try_into().expect("failed to deserialize capability source")
+            }
+            _ => panic!("unexpected return value for debug route"),
+        };
+    let backing_dir_info = storage::route_backing_directory(target, storage_source).await?;
     Ok(RoutedStorage { backing_dir_info, target: WeakComponentInstance::new(target) })
 }
 
@@ -219,16 +164,4 @@ pub async fn report_routing_failure(
             ).await;
         }
     }
-}
-
-/// Group exposes by `target_name`. This will group all exposes that form an aggregate capability
-/// together.
-pub fn aggregate_exposes<'a>(
-    exposes: impl Iterator<Item = &'a ExposeDecl>,
-) -> BTreeMap<(&'a Name, &'a ExposeTarget), Vec<&'a ExposeDecl>> {
-    let mut out: BTreeMap<(&Name, &ExposeTarget), Vec<&ExposeDecl>> = BTreeMap::new();
-    for expose in exposes {
-        out.entry((&expose.target_name(), &expose.target())).or_insert(vec![]).push(expose);
-    }
-    out
 }

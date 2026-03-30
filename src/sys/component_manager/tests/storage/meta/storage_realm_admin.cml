@@ -20,6 +20,11 @@
             url: "#meta/storage_user_with_instance_id.cm",
             environment: "#elf-env",
         },
+        {
+            name: "duplicate_storage_user_with_instance_id",
+            url: "#meta/storage_user_with_instance_id.cm",
+            environment: "#elf-env",
+        },
     ],
     capabilities: [
         {

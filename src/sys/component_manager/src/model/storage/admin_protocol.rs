@@ -11,26 +11,30 @@
 //! with isolated storage without needing to understand component_manager's storage layout.
 
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::storage::{self, BackingDirectoryInfo};
-use ::routing::RouteSource;
-use ::routing::capability_source::{ComponentCapability, ComponentSource};
-use anyhow::{Context, Error, format_err};
-use cm_rust::{StorageDecl, UseDecl};
+use crate::model::routing::RoutingFailureErrorReporter;
+use crate::model::storage;
+use ::routing::capability_source::StorageBackingDirectorySource;
+use ::routing::error::RouteRequestErrorInfo;
+use anyhow::{Error, format_err};
+use cm_rust::{CapabilityDecl, CapabilityTypeName, StorageDecl, StorageDirectorySource, UseDecl};
+use cm_types::RelativePath;
 use component_id_index::InstanceId;
-use fidl::endpoints::ServerEnd;
+use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_io::{self as fio, DirectoryProxy, DirentType};
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_async as fasync;
 use fuchsia_fs::directory as ffs_dir;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
-use moniker::Moniker;
-use routing::DictExt;
+use moniker::{ChildName, Moniker};
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
-use sandbox::{Capability, RouterResponse};
+use routing::{DictExt, WithPorcelain};
+use sandbox::{Capability, DirConnector, Router, RouterResponse};
 use std::path::PathBuf;
 use std::sync::Arc;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync};
 
 #[derive(Debug, PartialEq)]
 enum DirType {
@@ -103,8 +107,8 @@ enum StorageStatusError {
     InconsistentInformation,
 }
 
-impl From<StorageStatusError> for fsys::StatusError {
-    fn from(from: StorageStatusError) -> fsys::StatusError {
+impl From<&StorageStatusError> for fsys::StatusError {
+    fn from(from: &StorageStatusError) -> fsys::StatusError {
         match from {
             StorageStatusError::InconsistentInformation => fsys::StatusError::ResponseInvalid,
             StorageStatusError::NoFilesystemInfo => fsys::StatusError::StatusUnknown,
@@ -113,11 +117,151 @@ impl From<StorageStatusError> for fsys::StatusError {
     }
 }
 
-pub struct StorageAdmin;
+pub struct StorageAdmin {
+    storage_decl: StorageDecl,
+    weak_component: WeakComponentInstance,
+    storage_router: Router<DirConnector>,
+    backing_dir_router: Router<DirConnector>,
+}
 
 impl StorageAdmin {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self)
+    pub async fn new(
+        storage_decl: StorageDecl,
+        weak_component: WeakComponentInstance,
+    ) -> Result<Arc<Self>, Error> {
+        let component = weak_component.upgrade().map_err(|e| {
+            format_err!(
+                "unable to serve storage admin protocol, model reference is no longer valid: {:?}",
+                e,
+            )
+        })?;
+        let sandbox = component.lock_resolved_state().await?.sandbox.clone();
+        let storage_router = match sandbox.program_output_dict.get_capability(&storage_decl.name) {
+            Some(Capability::DirConnectorRouter(storage_router)) => storage_router,
+            _ => {
+                return Err(format_err!(
+                    "unable to serve storage admin protocol: storage router is missing"
+                ));
+            }
+        };
+        let source_dictionary = match &storage_decl.source {
+            StorageDirectorySource::Parent => sandbox.component_input.capabilities(),
+            StorageDirectorySource::Self_ => sandbox.program_output_dict.clone(),
+            StorageDirectorySource::Child(name) => {
+                let child_name = ChildName::parse(name).expect("invalid moniker in manifest");
+                let child = component.lock_resolved_state().await?.get_child(&child_name).cloned().expect("storage source doesn't exist, this should be prevented by manifest validation");
+                child.lock_resolved_state().await?.sandbox.component_output.capabilities()
+            }
+        };
+        let backing_dir_router = match source_dictionary.get_capability(&storage_decl.backing_dir) {
+            Some(Capability::DirConnectorRouter(storage_router)) => storage_router,
+            _ => {
+                return Err(format_err!(
+                    "unable to serve storage admin protocol: storage router is missing"
+                ));
+            }
+        };
+        Ok(Arc::new(Self { storage_decl, weak_component, storage_router, backing_dir_router }))
+    }
+
+    async fn route_storage_as(
+        &self,
+        target: &Arc<ComponentInstance>,
+        debug: bool,
+    ) -> Result<RouterResponse<DirConnector>, fcomponent::Error> {
+        let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
+        let storage_router: Router<DirConnector> = self
+            .storage_router
+            .clone()
+            .with_porcelain_with_default(CapabilityTypeName::Storage)
+            .error_info(RouteRequestErrorInfo::from(&capability_decl))
+            .error_reporter(RoutingFailureErrorReporter::new())
+            .availability(cm_rust::Availability::Transitional)
+            .target(&target)
+            .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
+            .subdir(cm_types::RelativePath::dot().into())
+            .inherit_rights(false)
+            .build();
+        storage_router
+            .route(None, debug, target.as_weak().into())
+            .await
+            .map_err(|_e| fcomponent::Error::Internal)
+    }
+
+    async fn debug_route_storage_as(
+        &self,
+        target: &Arc<ComponentInstance>,
+    ) -> Result<CapabilitySource, fcomponent::Error> {
+        let router_res = self.route_storage_as(&target, true).await?;
+        match router_res {
+            RouterResponse::Capability(_) => {
+                panic!("got capability for debug route")
+            }
+            RouterResponse::Debug(data) => {
+                Ok(data.try_into().expect("failed to deserialize capability source"))
+            }
+            RouterResponse::Unavailable => {
+                panic!("got unavailable for debug route")
+            }
+        }
+    }
+
+    async fn open_storage_as(
+        &self,
+        target: &Arc<ComponentInstance>,
+    ) -> Result<DirConnector, fcomponent::Error> {
+        let router_res = self.route_storage_as(target, false).await?;
+        match router_res {
+            RouterResponse::Capability(dir_connector) => Ok(dir_connector),
+            RouterResponse::Debug(_) => panic!("got debug info for non-debug route"),
+            RouterResponse::Unavailable => Err(fcomponent::Error::Internal),
+        }
+    }
+
+    async fn connect_to_backing_directory(&self) -> Result<fio::DirectoryProxy, fcomponent::Error> {
+        let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
+        let target =
+            self.weak_component.upgrade().map_err(|_| fcomponent::Error::InstanceNotFound)?;
+        let backing_dir_router: Router<DirConnector> = self
+            .backing_dir_router
+            .clone()
+            .with_porcelain_with_default(CapabilityTypeName::Directory)
+            .error_info(RouteRequestErrorInfo::from(&capability_decl))
+            .error_reporter(RoutingFailureErrorReporter::new())
+            .availability(cm_rust::Availability::Transitional)
+            .target(&target)
+            .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
+            .subdir(cm_types::RelativePath::dot().into())
+            .inherit_rights(false)
+            .build();
+        let router_res =
+            backing_dir_router.route(None, false, self.weak_component.clone().into()).await;
+        let dir_connector = match router_res {
+            Ok(RouterResponse::Capability(dir_connector)) => dir_connector,
+            Ok(RouterResponse::Debug(_)) => panic!("got debug info for non-debug route"),
+            Ok(RouterResponse::Unavailable) => return Err(fcomponent::Error::Internal),
+            Err(_e) => return Err(fcomponent::Error::Internal),
+        };
+        let (dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
+        dir_connector
+            .send(server_end, RelativePath::dot(), Some(fio::PERM_READABLE | fio::PERM_WRITABLE))
+            .map_err(|_| fcomponent::Error::Internal)?;
+        Ok(dir_proxy)
+    }
+
+    async fn find_relative_component(
+        &self,
+        relative_moniker: String,
+    ) -> Result<Arc<ComponentInstance>, fcomponent::Error> {
+        let component =
+            self.weak_component.upgrade().map_err(|_| fcomponent::Error::InstanceNotFound)?;
+        let moniker = Moniker::parse_str(&relative_moniker)
+            .map_err(|_| fcomponent::Error::InvalidArguments)?;
+        let absolute_moniker = component.moniker().concat(&moniker);
+        component
+            .find_absolute(&absolute_moniker)
+            .await
+            .map_err(|_| fcomponent::Error::InstanceNotFound)
     }
 
     /// Serves the `fuchsia.sys2/StorageAdmin` protocol over the provided
@@ -131,49 +275,21 @@ impl StorageAdmin {
     /// * `server_end`: Channel to server the protocol over.
     pub async fn serve(
         self: Arc<Self>,
-        storage_decl: StorageDecl,
-        component: WeakComponentInstance,
         mut stream: fsys::StorageAdminRequestStream,
     ) -> Result<(), Error> {
-        let storage_source = RouteSource {
-            source: CapabilitySource::Component(ComponentSource {
-                capability: ComponentCapability::Storage(storage_decl.clone()),
-                moniker: component.moniker.clone(),
-            }),
-            relative_path: Default::default(),
-        };
-        let backing_dir_source_info =
-            storage::route_backing_directory(&component.upgrade()?, storage_source.source)
-                .await
-                .context("could not serve storage protocol, routing backing directory failed")?;
-
-        let component = component.upgrade().map_err(|e| {
-            format_err!(
-                "unable to serve storage admin protocol, model reference is no longer valid: {:?}",
-                e,
-            )
-        })?;
-
         while let Some(request) = stream.try_next().await? {
             match request {
                 fsys::StorageAdminRequest::OpenStorage { relative_moniker, object, responder } => {
                     let fut = async {
-                        let moniker = Moniker::parse_str(&relative_moniker)
-                            .map_err(|_| fcomponent::Error::InvalidArguments)?;
-                        let absolute_moniker = component.moniker().concat(&moniker);
-                        let instance_id = component
-                            .component_id_index()
-                            .id_for_moniker(&absolute_moniker)
-                            .cloned();
-                        let directory = storage::open_isolated_storage(
-                            &backing_dir_source_info,
-                            moniker,
-                            instance_id.as_ref(),
-                        )
-                        .await
-                        .map_err(|_| fcomponent::Error::Internal)?;
-                        directory
-                            .clone(object.into_channel().into())
+                        let target = self.find_relative_component(relative_moniker).await?;
+                        let dir_connector = self.open_storage_as(&target).await?;
+                        let server_end = ServerEnd::new(object.into_channel());
+                        dir_connector
+                            .send(
+                                server_end,
+                                RelativePath::dot(),
+                                Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
+                            )
                             .map_err(|_| fcomponent::Error::Internal)?;
                         Ok(())
                     };
@@ -185,25 +301,25 @@ impl StorageAdmin {
                     responder,
                 } => {
                     let fut = async {
-                        let relative_moniker = Moniker::parse_str(&relative_moniker)
-                            .map_err(|_| fcomponent::Error::InvalidArguments)?;
-                        let root_component = component
-                            .find_and_maybe_resolve(&relative_moniker)
-                            .await
+                        let component = self
+                            .weak_component
+                            .upgrade()
                             .map_err(|_| fcomponent::Error::InstanceNotFound)?;
-                        Ok(root_component)
+                        let source = self.debug_route_storage_as(&component).await?;
+                        let CapabilitySource::StorageBackingDirectory(source) = source else {
+                            return Err(fcomponent::Error::Internal);
+                        };
+
+                        let target = self.find_relative_component(relative_moniker).await?;
+                        Ok((target, source))
                     };
                     match fut.await {
-                        Ok(root_component) => {
+                        Ok((root_component, source)) => {
                             fasync::Task::spawn(
-                                Self::serve_storage_iterator(
-                                    root_component,
-                                    iterator,
-                                    backing_dir_source_info.clone(),
-                                )
-                                .unwrap_or_else(
-                                    |error| warn!(error:?; "Error serving storage iterator"),
-                                ),
+                                Self::serve_storage_iterator(root_component, iterator, source)
+                                    .unwrap_or_else(
+                                        |error| warn!(error:?; "Error serving storage iterator"),
+                                    ),
                             )
                             .detach();
                             responder.send(Ok(()))?;
@@ -214,103 +330,101 @@ impl StorageAdmin {
                     }
                 }
                 fsys::StorageAdminRequest::OpenComponentStorageById { id, object, responder } => {
-                    let instance_id_index = component.component_id_index();
-                    let Ok(instance_id) = id.parse::<InstanceId>() else {
-                        responder.send(Err(fcomponent::Error::InvalidArguments))?;
-                        continue;
+                    let fut = async {
+                        let component = self
+                            .weak_component
+                            .upgrade()
+                            .map_err(|_| fcomponent::Error::InstanceNotFound)?;
+                        let instance_id_index = component.component_id_index();
+                        let Ok(instance_id) = id.parse::<InstanceId>() else {
+                            return Err(fcomponent::Error::InvalidArguments);
+                        };
+                        let Some(moniker) = instance_id_index.moniker_for_id(&instance_id) else {
+                            return Err(fcomponent::Error::ResourceNotFound);
+                        };
+                        let target = component
+                            .find_absolute(&moniker)
+                            .await
+                            .map_err(|_| fcomponent::Error::InstanceNotFound)?;
+                        let dir_connector = self.open_storage_as(&target).await?;
+                        let server_end = ServerEnd::new(object.into_channel());
+                        dir_connector
+                            .send(
+                                server_end,
+                                RelativePath::dot(),
+                                Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
+                            )
+                            .map_err(|_| fcomponent::Error::Internal)?;
+                        Ok(())
                     };
-                    if !instance_id_index.contains_id(&instance_id) {
-                        responder.send(Err(fcomponent::Error::ResourceNotFound))?;
-                        continue;
-                    }
-                    match storage::open_isolated_storage_by_id(
-                        &backing_dir_source_info,
-                        &instance_id,
-                    )
-                    .await
-                    {
-                        Ok(dir) => responder.send(
-                            dir.clone(object.into_channel().into())
-                                .map_err(|_| fcomponent::Error::Internal),
-                        )?,
-                        Err(_) => responder.send(Err(fcomponent::Error::Internal))?,
-                    }
+                    responder.send(fut.await)?;
                 }
                 fsys::StorageAdminRequest::DeleteComponentStorage {
                     relative_moniker: moniker_str,
                     responder,
                 } => {
-                    let parsed_moniker = Moniker::try_from(moniker_str.as_str());
-                    let response = match parsed_moniker {
-                        Err(error) => {
-                            warn!(
-                                error:?;
-                                "couldn't parse string as moniker for storage admin protocol"
-                            );
-                            Err(fcomponent::Error::InvalidArguments)
-                        }
-                        Ok(moniker) => {
-                            let absolute_moniker = component.moniker().concat(&moniker);
-                            let instance_id = component
-                                .component_id_index()
-                                .id_for_moniker(&absolute_moniker)
-                                .cloned();
-                            let res = storage::delete_isolated_storage(
-                                backing_dir_source_info.clone(),
-                                moniker,
-                                instance_id.as_ref(),
-                            )
-                            .await;
-                            match res {
-                                Err(e) => {
-                                    warn!(
-                                        "couldn't delete storage for storage admin protocol: {:?}",
-                                        e
-                                    );
-                                    Err(fcomponent::Error::Internal)
-                                }
-                                Ok(()) => Ok(()),
+                    let fut = async {
+                        let Ok(component) = self.weak_component.upgrade() else {
+                            return Err(fcomponent::Error::InstanceNotFound)?;
+                        };
+                        let source = self.debug_route_storage_as(&component).await?;
+                        let backing_dir_source_info =
+                            storage::route_backing_directory(&component, source)
+                                .await
+                                .map_err(|_| fcomponent::Error::Internal)?;
+                        let Ok(moniker) = Moniker::try_from(moniker_str.as_str()) else {
+                            return Err(fcomponent::Error::InvalidArguments)?;
+                        };
+                        let absolute_moniker = component.moniker().concat(&moniker);
+                        let instance_id = component
+                            .component_id_index()
+                            .id_for_moniker(&absolute_moniker)
+                            .cloned();
+                        let res = storage::delete_isolated_storage(
+                            backing_dir_source_info.clone(),
+                            moniker,
+                            instance_id.as_ref(),
+                        )
+                        .await;
+                        match res {
+                            Err(e) => {
+                                warn!(
+                                    "couldn't delete storage for storage admin protocol: {:?}",
+                                    e
+                                );
+                                Err(fcomponent::Error::Internal)
                             }
+                            Ok(()) => Ok(()),
                         }
                     };
-                    responder.send(response)?
+                    responder.send(fut.await)?
                 }
                 fsys::StorageAdminRequest::GetStatus { responder } => {
-                    if let Ok(storage_root) =
-                        storage::open_storage_root(&backing_dir_source_info).await
-                    {
-                        responder.send_no_shutdown_on_err(
-                            match Self::get_storage_status(&storage_root).await {
-                                Ok(ref status) => Ok(status),
-                                Err(e) => Err(e.into()),
-                            },
-                        )?;
-                    } else {
-                        responder.send_no_shutdown_on_err(Err(fsys::StatusError::Provider))?;
-                    }
+                    let fut = async {
+                        let backing_dir_proxy = self
+                            .connect_to_backing_directory()
+                            .await
+                            .map_err(|_| StorageStatusError::QueryError)?;
+                        Self::get_storage_status(&backing_dir_proxy).await
+                    };
+                    responder.send(fut.await.as_ref().map_err(|e| e.into()))?
                 }
                 fsys::StorageAdminRequest::DeleteAllStorageContents { responder } => {
-                    // TODO(handle error properly)
-                    if let Ok(storage_root) =
-                        storage::open_storage_root(&backing_dir_source_info).await
-                    {
-                        match Self::delete_all_storage(&storage_root, Self::delete_dir_contents)
+                    let fut = async {
+                        let backing_dir_proxy = self
+                            .connect_to_backing_directory()
                             .await
+                            .map_err(|_| fsys::DeletionError::Connection)?;
+                        if let Err(e) =
+                            Self::delete_all_storage(&backing_dir_proxy, Self::delete_dir_contents)
+                                .await
                         {
-                            Ok(_) => responder.send(Ok(()))?,
-                            Err(e) => {
-                                warn!("errors encountered deleting storage: {:?}", e);
-                                responder.send_no_shutdown_on_err(Result::Err(e.into()))?;
-                            }
+                            warn!("errors encountered deleting storage: {:?}", e);
+                            return Err(e.into());
                         }
-                    } else {
-                        // This might not be _entirely_ accurate, but in this error case we weren't
-                        // able to talk to the directory, so that is, in a sense, lack of
-                        // connection.
-                        responder.send_no_shutdown_on_err(Result::Err(
-                            fsys::DeletionError::Connection,
-                        ))?;
-                    }
+                        Ok(())
+                    };
+                    responder.send_no_shutdown_on_err(fut.await)?
                 }
             }
         }
@@ -582,7 +696,7 @@ impl StorageAdmin {
     async fn serve_storage_iterator(
         root_component: Arc<ComponentInstance>,
         iterator: ServerEnd<fsys::StorageIteratorMarker>,
-        storage_capability_source_info: BackingDirectoryInfo,
+        storage_source_info: StorageBackingDirectorySource,
     ) -> Result<(), Error> {
         let mut components_to_visit = vec![root_component];
         let mut storage_users = vec![];
@@ -631,16 +745,12 @@ impl StorageAdmin {
                     _ => continue,
                 };
 
-                let backing_dir_info =
-                    match storage::route_backing_directory(&component, storage_source).await {
-                        Ok(s) => s,
-                        Err(_) => continue,
-                    };
-
-                if backing_dir_info == storage_capability_source_info {
+                if storage_source
+                    == CapabilitySource::StorageBackingDirectory(storage_source_info.clone())
+                {
                     let moniker = component
                         .moniker()
-                        .strip_prefix(&backing_dir_info.storage_source_moniker)
+                        .strip_prefix(&storage_source_info.storage_source_moniker)
                         .unwrap();
                     storage_users.push(moniker);
                     break;

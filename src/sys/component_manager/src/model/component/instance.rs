@@ -17,8 +17,7 @@ use crate::model::events::use_router::EventStreamUseRouter;
 use crate::model::namespace::create_namespace;
 use crate::model::program::{Program, StopConclusion, StopDisposition};
 use crate::model::routing::aggregate_router::AggregateRouter;
-use crate::model::routing::legacy::RouteRequestExt;
-use crate::model::routing::{self, RoutingFailureErrorReporter};
+use crate::model::routing::{RoutedStorage, RoutingFailureErrorReporter};
 use crate::model::start::Start;
 use crate::model::storage::build_storage_admin_dictionary;
 use crate::model::token::{InstanceToken, InstanceTokenState};
@@ -30,7 +29,7 @@ use ::routing::bedrock::request_metadata::{
     IsolatedStoragePath, Metadata, StorageSourceMoniker, StorageSubdir, event_stream_metadata,
 };
 use ::routing::bedrock::sandbox_construction::{
-    self, ComponentSandbox, build_component_sandbox, extend_dict_with_offers,
+    ComponentSandbox, build_component_sandbox, extend_dict_with_offers,
 };
 use ::routing::bedrock::structured_dict::{ComponentInput, StructuredDictMap};
 use ::routing::capability_source::{
@@ -44,7 +43,7 @@ use ::routing::error::{ComponentInstanceError, RouteRequestErrorInfo, RoutingErr
 use ::routing::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
 use ::routing::rights::Rights;
 use ::routing::subdir::SubDir;
-use ::routing::{DictExt, RouteRequest, WeakInstanceTokenExt, WithPorcelain};
+use ::routing::{DictExt, WeakInstanceTokenExt, WithPorcelain};
 use async_trait::async_trait;
 use async_utils::async_once::Once;
 use clonable_error::ClonableError;
@@ -64,7 +63,14 @@ use errors::{
     ResolveActionError, StopError,
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
@@ -83,12 +89,7 @@ use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest, SubNode};
 use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    zx,
-};
+use zx;
 
 /// The mutable state of a component instance.
 pub enum InstanceState {
@@ -230,7 +231,7 @@ pub struct ShutdownInstanceState {
 
     /// Information about used storage capabilities the component had in its manifest. This is
     /// retained because the storage contents will be deleted if this component is destroyed.
-    pub routed_storage: Vec<routing::RoutedStorage>,
+    pub routed_storage: Vec<RoutedStorage>,
 }
 
 pub struct UnresolvedInstanceState {
@@ -815,7 +816,6 @@ impl ResolvedInstanceState {
     /// backed by legacy routing. This [`Dict`] is used to generate the `exposed_dir`.
     pub async fn get_exposed_dict(&self) -> &Dict {
         let create_exposed_dict = async {
-            let component = self.weak_component.upgrade().unwrap();
             let dict = Dict::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
                 let Ok(value) = value else {
@@ -826,45 +826,9 @@ impl ResolvedInstanceState {
                 };
                 let _ = dict.insert(key, value);
             }
-            Self::extend_exposed_dict_with_legacy(&component, self.decl(), &dict);
             dict
         };
         self.exposed_dict.get_or_init(create_exposed_dict).await
-    }
-
-    fn extend_exposed_dict_with_legacy(
-        component: &Arc<ComponentInstance>,
-        decl: &cm_rust::ComponentDecl,
-        target_dict: &Dict,
-    ) {
-        // Filter out capabilities handled by bedrock routing
-        let exposes = decl.exposes.iter().filter(|e| !sandbox_construction::is_supported_expose(e));
-        let exposes_by_target_name = routing::aggregate_exposes(exposes);
-        for ((target_name, _target), exposes) in exposes_by_target_name {
-            let first_expose = exposes.first().expect("invalid empty expose list");
-            let request = match first_expose {
-                cm_rust::ExposeDecl::Service(_) => {
-                    Some(RouteRequest::from_expose_decls(exposes).unwrap())
-                }
-                // These types use bedrock routing.
-                cm_rust::ExposeDecl::Protocol(_)
-                | cm_rust::ExposeDecl::Directory(_)
-                | cm_rust::ExposeDecl::Runner(_)
-                | cm_rust::ExposeDecl::Resolver(_)
-                | cm_rust::ExposeDecl::Config(_) => None,
-                cm_rust::ExposeDecl::Dictionary(_) => None,
-            };
-            let Some(request) = request else {
-                continue;
-            };
-            let Some(capability) = request.into_capability(component) else {
-                continue;
-            };
-            match target_dict.insert_capability(target_name, capability) {
-                Ok(()) => (),
-                Err(e) => warn!("failed to insert {} in target dict: {e:?}", target_name),
-            };
-        }
     }
 
     pub async fn get_exposed_dir(&self, self_target: WeakInstanceToken) -> Arc<dyn DirectoryEntry> {

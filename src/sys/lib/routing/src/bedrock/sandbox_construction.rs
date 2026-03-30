@@ -24,6 +24,11 @@ use cm_rust::{
 };
 use cm_types::{Availability, BorrowedSeparatedPath, IterablePath, Name, SeparatedPath};
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use itertools::Itertools;
@@ -37,11 +42,6 @@ use sandbox::{
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_io as fio,
-    fidl_fuchsia_sys2 as fsys,
-};
 
 /// This type comes from `UseEventStreamDecl`.
 pub type EventStreamFilter = Option<BTreeMap<String, DictionaryValue>>;
@@ -213,6 +213,61 @@ impl Default for ComponentSandbox {
             child_inputs: Default::default(),
             collection_inputs: Default::default(),
         }
+    }
+}
+
+impl From<ComponentSandbox> for Dict {
+    fn from(sandbox: ComponentSandbox) -> Dict {
+        let sandbox_dictionary = Dict::new();
+        sandbox_dictionary
+            .insert(Name::new("framework").unwrap(), sandbox.framework_router.lock().clone().into())
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("component_input").unwrap(),
+                Capability::Dictionary(sandbox.component_input.into()),
+            )
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("component_output").unwrap(),
+                Capability::Dictionary(sandbox.component_output.into()),
+            )
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("program_input").unwrap(),
+                Capability::Dictionary(sandbox.program_input.into()),
+            )
+            .unwrap();
+        sandbox_dictionary
+            .insert(Name::new("program_output").unwrap(), sandbox.program_output_dict.into())
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("capability_sourced").unwrap(),
+                sandbox.capability_sourced_capabilities_dict.into(),
+            )
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("declared_dictionaries").unwrap(),
+                sandbox.declared_dictionaries.into(),
+            )
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("child_inputs").unwrap(),
+                Capability::Dictionary(sandbox.child_inputs.into()),
+            )
+            .unwrap();
+        sandbox_dictionary
+            .insert(
+                Name::new("collection_inputs").unwrap(),
+                Capability::Dictionary(sandbox.collection_inputs.into()),
+            )
+            .unwrap();
+        sandbox_dictionary
     }
 }
 

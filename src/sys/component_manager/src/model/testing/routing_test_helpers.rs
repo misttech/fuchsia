@@ -28,7 +28,12 @@ use component_id_index::InstanceId;
 use errors::ModelError;
 use fidl::endpoints::{self, Proxy, create_proxy};
 use fidl::{self};
+use fidl_fidl_examples_routing_echo as echo;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+use fuchsia_inspect as inspect;
 use futures::channel::oneshot;
 use futures::prelude::*;
 use hooks::HooksRegistration;
@@ -44,10 +49,6 @@ use tempfile::TempDir;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fidl_examples_routing_echo as echo, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fuchsia_inspect as inspect,
-};
 
 #[cfg(feature = "src_model_tests")]
 use {cm_config::InjectedCapabilities, moniker::ChildName};
@@ -1597,7 +1598,6 @@ pub mod capability_util {
         dir_path: &NamespacePath,
     ) -> fio::DirectoryProxy {
         let mut ns = namespace.lock().await;
-        log::warn!("want to remove {dir_path:?}, namespace contents: {:?}", *ns);
         ns.remove(dir_path).unwrap().into_proxy()
     }
 

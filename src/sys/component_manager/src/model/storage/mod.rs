@@ -4,17 +4,17 @@
 
 pub mod admin_protocol;
 use crate::model::component::{ComponentInstance, StartReason, WeakComponentInstance};
-use crate::model::routing::Route;
 use crate::model::start::Start;
 use crate::model::storage::admin_protocol::StorageAdmin;
 use crate::sandbox_util::LaunchTaskOnReceive;
+use ::routing::bedrock::dict_ext::DictExt;
 use ::routing::capability_source::{
     CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
     NamespaceSource,
 };
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
-use ::routing::{RouteRequest, RouteSource};
+use cm_rust::StorageDirectorySource;
 use cm_types::RelativePath;
 use component_id_index::InstanceId;
 use derivative::Derivative;
@@ -23,9 +23,9 @@ use fidl::endpoints::{ServerEnd, create_proxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
-use moniker::Moniker;
+use moniker::{ChildName, Moniker};
 use routing::capability_source::StorageBackingDirectorySource;
-use sandbox::Dict;
+use sandbox::{Dict, DirConnector, Router, RouterResponse};
 use std::path::PathBuf;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
@@ -174,70 +174,79 @@ pub async fn route_backing_directory(
             });
         }
         r => {
-            let type_string =
-                r.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
             return Err(RoutingError::unsupported_route_source(
                 target.moniker.clone(),
-                type_string,
+                r.type_name().map(|s| s.to_string()).unwrap_or_else(|| "<unknown>".to_string()),
             ));
         }
     };
 
-    let source = RouteRequest::StorageBackingDirectory(storage_decl.clone())
-        .route(&storage_component)
-        .await?;
+    let source_dictionary = match &storage_decl.source {
+        StorageDirectorySource::Parent => {
+            storage_component.component_sandbox().await?.component_input.capabilities()
+        }
+        StorageDirectorySource::Self_ => {
+            storage_component.component_sandbox().await?.program_output_dict.clone()
+        }
+        StorageDirectorySource::Child(name) => {
+            let child_name = ChildName::parse(name)
+                .expect("invalid child name, this should be prevented by manifest validation");
+            let child_component = ComponentInstanceInterface::lock_resolved_state(&storage_component).await?.get_child(&child_name).expect("resolver registration references nonexistent static child, this should be prevented by manifest validation");
+            let child_sandbox = child_component.component_sandbox().await?;
+            child_sandbox.component_output.capabilities().clone()
+        }
+    };
+    let backing_dir_router: Router<DirConnector> = source_dictionary.get_router_or_not_found(
+        &storage_decl.backing_dir,
+        RoutingError::BedrockNotPresentInDictionary {
+            moniker: storage_component.moniker().clone().into(),
+            name: storage_decl.backing_dir.to_string(),
+        },
+    );
+    let source: CapabilitySource = match backing_dir_router
+        .route(None, false, storage_component.as_weak().into())
+        .await
+        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?
+    {
+        RouterResponse::Debug(data) => {
+            data.try_into().expect("failed to deserialize capability source")
+        }
+        _ => panic!("unexpected response to debug route"),
+    };
 
     let (dir_source_path, dir_source_instance, dir_subdir) = match source {
-        RouteSource {
-            source:
-                CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
-                    capability,
-                    moniker,
-                    mut backing_dir_subdir,
-                    ..
-                }),
-            relative_path,
-        } => {
+        CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
+            capability,
+            moniker,
+            backing_dir_subdir,
+            ..
+        }) => {
             let dir_source_instance = storage_component.find_absolute(&moniker).await?;
-            if !backing_dir_subdir.extend(relative_path) {
-                return Err(RoutingError::PathTooLong {
-                    moniker: target.moniker.clone().into(),
-                    path: "backing_dir_subdir".to_string(),
-                    keyword: "backing_dir_subdir".into(),
-                });
-            }
             (
                 capability.source_path().expect("directory has no source path?").clone(),
                 Some(dir_source_instance),
                 backing_dir_subdir,
             )
         }
-        RouteSource {
-            source: CapabilitySource::Namespace(NamespaceSource { capability, .. }),
-            relative_path,
-        } => (
+        CapabilitySource::Namespace(NamespaceSource { capability, .. }) => (
             capability.source_path().expect("directory has no source path?").clone(),
             None,
-            relative_path,
+            RelativePath::dot(),
         ),
-        RouteSource {
-            source:
-                CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::Directory(decl),
-                    moniker,
-                }),
-            relative_path,
-        } => {
+        CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Directory(decl),
+            moniker,
+        }) => {
             let dir_source_instance = storage_component.find_absolute(&moniker).await?;
             let source_path = decl.source_path.ok_or(RoutingError::UnsupportedRouteSource {
                 source_type: "component_without_path".to_string(),
                 moniker: moniker.clone().into(),
             })?;
-            (source_path, Some(dir_source_instance), relative_path)
+            (source_path, Some(dir_source_instance), RelativePath::dot())
         }
         s => {
             return Err(RoutingError::UnsupportedRouteSource {
-                source_type: format!("{:?}", s.source.type_name()),
+                source_type: format!("{:?}", s.type_name()),
                 moniker: target.moniker.clone().into(),
             }
             .into());
@@ -256,6 +265,7 @@ pub async fn route_backing_directory(
 /// Open the isolated storage sub-directory from the given storage capability source, creating it
 /// if necessary. The storage sub-directory is based on provided instance ID if present, otherwise
 /// it is based on the provided moniker.
+#[cfg(all(test, not(feature = "src_model_tests")))]
 pub async fn open_isolated_storage(
     storage_source_info: &BackingDirectoryInfo,
     moniker: Moniker,
@@ -278,31 +288,6 @@ pub async fn open_isolated_storage(
             storage_source_info.backing_directory_path.clone(),
             moniker.clone(),
             instance_id.cloned(),
-            e,
-        ))
-    })
-}
-
-/// Open the isolated storage sub-directory from the given storage capability source, creating it
-/// if necessary. The storage sub-directory is based on provided instance ID.
-pub async fn open_isolated_storage_by_id(
-    storage_source_info: &BackingDirectoryInfo,
-    instance_id: &InstanceId,
-) -> Result<fio::DirectoryProxy, ModelError> {
-    let root_dir = open_storage_root(storage_source_info).await?;
-    let storage_path = generate_instance_id_based_storage_path(instance_id);
-
-    fuchsia_fs::directory::create_directory_recursive(
-        &root_dir,
-        storage_path.to_str().expect("must be utf-8"),
-        FLAGS,
-    )
-    .await
-    .map_err(|e| {
-        ModelError::from(StorageError::open_by_id(
-            storage_source_info.storage_provider.as_ref().map(|r| r.moniker().clone()),
-            storage_source_info.backing_directory_path.clone(),
-            instance_id.clone(),
             e,
         ))
     })
@@ -488,11 +473,17 @@ pub fn build_storage_admin_dictionary(
                     "storage admin protocol",
                     Some(component.context.policy().clone()),
                     Arc::new(move |channel, _target, _, _| {
+                        let storage_decl = storage_decl.clone();
+                        let weak_component = weak_component.clone();
                         let stream =
                             ServerEnd::<fsys::StorageAdminMarker>::new(channel).into_stream();
-                        StorageAdmin::new()
-                            .serve(storage_decl.clone(), weak_component.clone(), stream)
-                            .boxed()
+                        async move {
+                            StorageAdmin::new(storage_decl, weak_component)
+                                .await?
+                                .serve(stream)
+                                .await
+                        }
+                        .boxed()
                     }),
                 )
                 .into_router()

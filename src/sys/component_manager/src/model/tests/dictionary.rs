@@ -3,26 +3,24 @@
 // found in the LICENSE file.
 
 use crate::framework::capabilities;
-use crate::model::routing::Route;
 use crate::model::testing::out_dir::OutDir;
 use crate::model::testing::routing_test_helpers::RoutingTestBuilder;
 use ::routing::capability_source::{CapabilitySource, InternalCapability, VoidSource};
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::{RouteRequest, RouteSource};
 use ::routing_test_helpers::dictionary::CommonDictionaryTest;
-use ::routing_test_helpers::{CheckUse, ExpectedResult};
+use ::routing_test_helpers::{CheckUse, ExpectedResult, debug_route_sandbox_path};
 use assert_matches::assert_matches;
 use cm_rust::*;
 use cm_rust_testing::*;
-use cm_types::RelativePath;
 use fidl::endpoints::{self, ServerEnd};
 use fidl_fidl_examples_routing_echo::EchoMarker;
+use fidl_fuchsia_component_runtime as fruntime;
+use fuchsia_async as fasync;
 use fuchsia_component::runtime;
 use futures::{FutureExt, StreamExt};
 use moniker::Moniker;
 use routing_test_helpers::RoutingTestModel;
 use zx_status::Status;
-use {fidl_fuchsia_component_runtime as fruntime, fuchsia_async as fasync};
 
 #[fuchsia::test]
 async fn use_protocol_from_dictionary() {
@@ -177,20 +175,13 @@ async fn use_from_void_dictionary() {
     let test = RoutingTestBuilder::new("root", components).build().await;
     let leaf = test.model.root().find_and_maybe_resolve(&"leaf".parse().unwrap()).await.unwrap();
 
-    let cm_rust::UseDecl::Protocol(use_decl) = use_decl else {
-        unreachable!();
-    };
-    let res = RouteRequest::UseProtocol(use_decl).route(&leaf).await;
+    let res = debug_route_sandbox_path(&leaf, "program_input/namespace/svc/A").await;
     assert_matches!(
         res,
-        Ok(RouteSource {
-            source: CapabilitySource::Void(VoidSource {
-                moniker,
-                capability: InternalCapability::Dictionary(name)
-            }),
-            relative_path
-        }) if moniker == Moniker::root() && name == "dict" &&
-              relative_path == RelativePath::dot()
+        Ok(CapabilitySource::Void(VoidSource {
+            moniker,
+            capability: InternalCapability::Dictionary(name)
+        })) if moniker == Moniker::root() && name == "dict"
     );
 }
 
@@ -241,20 +232,13 @@ async fn use_from_void_nested_dictionary() {
     let test = RoutingTestBuilder::new("root", components).build().await;
     let leaf = test.model.root().find_and_maybe_resolve(&"leaf".parse().unwrap()).await.unwrap();
 
-    let cm_rust::UseDecl::Protocol(use_decl) = use_decl else {
-        unreachable!();
-    };
-    let res = RouteRequest::UseProtocol(use_decl).route(&leaf).await;
+    let res = debug_route_sandbox_path(&leaf, "program_input/namespace/svc/A").await;
     assert_matches!(
         res,
-        Ok(RouteSource {
-            source: CapabilitySource::Void(VoidSource {
-                moniker,
-                capability: InternalCapability::Dictionary(name)
-            }),
-            relative_path
-        }) if moniker == "child".parse().unwrap() && name == "inner" &&
-              relative_path == RelativePath::dot()
+        Ok(CapabilitySource::Void(VoidSource {
+            moniker,
+            capability: InternalCapability::Dictionary(name)
+        })) if moniker == "child".parse().unwrap() && name == "inner"
     );
 }
 

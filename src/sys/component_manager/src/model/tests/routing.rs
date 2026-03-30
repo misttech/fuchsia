@@ -18,7 +18,6 @@ use {
             ActionsManager, DestroyAction, ShutdownAction, ShutdownType, StartAction, StopAction,
         },
         component::{ComponentInstance, IncomingCapabilities, StartReason},
-        routing::{Route, RoutingError},
         testing::{
             echo_service::EchoProtocol, mocks::ControllerActionResponse, out_dir::OutDir,
             routing_test_helpers::*, test_helpers::*,
@@ -31,7 +30,7 @@ use {
             AggregateCapability, AggregateMember, AnonymizedAggregateSource, CapabilitySource,
             ComponentCapability, ComponentSource,
         },
-        error::ComponentInstanceError,
+        error::{ComponentInstanceError, RoutingError},
         resolving::ResolverError,
     },
     assert_matches::assert_matches,
@@ -59,9 +58,10 @@ use {
     maplit::btreemap,
     moniker::{ChildName, ExtendedMoniker, Moniker},
     router_error::RouterError,
-    routing::{RouteRequest, RouteSource, component_instance::ComponentInstanceInterface},
+    routing::component_instance::ComponentInstanceInterface,
     routing_test_helpers::{
-        RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
+        RoutingTestModel, debug_route_sandbox_path, default_service_capability,
+        instantiate_common_routing_tests,
     },
     sandbox::{Connector, Router, RouterResponse, WeakInstanceToken},
     std::time::Duration,
@@ -1636,11 +1636,7 @@ async fn use_with_destroyed_parent() {
 
     // Now attempt to route the service from "c". Should fail because "b" does not exist so we
     // cannot follow it.
-    let UseDecl::Protocol(use_decl) = use_decl else {
-        unreachable!();
-    };
-    let err = RouteRequest::UseProtocol(use_decl)
-        .route(&realm_c)
+    let err = debug_route_sandbox_path(&realm_c, "program_input/namespace/svc/hippo")
         .await
         .expect_err("routing unexpectedly succeeded");
     assert_matches!(
@@ -2162,18 +2158,15 @@ async fn verify_service_route(
     let root = test.model.root();
     let target_component = root.find_and_maybe_resolve(&target_moniker).await.unwrap();
     let agg_component = root.find_and_maybe_resolve(&agg_moniker).await.unwrap();
-    let source = RouteRequest::UseService(use_decl).route(&target_component).await.unwrap();
+    let path = format!("program_input/namespace{}", &use_decl.target_path);
+    let source = debug_route_sandbox_path(&target_component, path).await.unwrap();
     match source {
-        RouteSource {
-            source:
-                CapabilitySource::AnonymizedAggregate(AnonymizedAggregateSource {
-                    members,
-                    capability,
-                    moniker,
-                    ..
-                }),
-            relative_path: _,
-        } => {
+        CapabilitySource::AnonymizedAggregate(AnonymizedAggregateSource {
+            members,
+            capability,
+            moniker,
+            ..
+        }) => {
             let collections: Vec<_> = members
                 .into_iter()
                 .map(|m| match m {
@@ -2777,15 +2770,11 @@ async fn list_service_instances_from_collections() {
         .find_and_maybe_resolve(&["client"].try_into().unwrap())
         .await
         .expect("client instance");
-    let UseDecl::Service(use_decl) = use_decl else { unreachable!() };
-    let source = RouteRequest::UseService(use_decl)
-        .route(&client_component)
+    let source = debug_route_sandbox_path(&client_component, "program_input/namespace/svc/foo")
         .await
-        .expect("failed to route service");
+        .unwrap();
     let anonymized_aggregate_source = match source {
-        RouteSource { source: CapabilitySource::AnonymizedAggregate(source), relative_path: _ } => {
-            source
-        }
+        CapabilitySource::AnonymizedAggregate(source) => source,
         _ => panic!("bad capability source"),
     };
 
@@ -4011,40 +4000,31 @@ async fn injected_capability(test_shadowing: bool) {
         .build()
         .await;
 
-    let use_decl = UseBuilder::protocol().name("foo").path("/svc/foo").build();
-    let UseDecl::Protocol(use_decl) = use_decl else {
-        unreachable!();
-    };
-
     // Verify that `b` can reach protocol `foo` routed from `a`.
     let b = test.model.root().find_and_maybe_resolve(&"b".parse().unwrap()).await.unwrap();
-    let source = RouteRequest::UseProtocol(use_decl.clone()).route(&b).await.unwrap();
+    let source = debug_route_sandbox_path(&b, "program_input/namespace/svc/foo").await.unwrap();
     assert_matches!(
         source,
-        RouteSource {
-            source:
-                CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::Protocol(ProtocolDecl {
-                        name,
-                        source_path: Some(source_path),
-                        ..
-                    }),
-                    moniker,
-                    ..
-                }),
-            relative_path: _,
-        }
+        CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Protocol(ProtocolDecl {
+                name,
+                source_path: Some(source_path),
+                ..
+            }),
+            moniker,
+            ..
+        })
         if name == "foo"
             && source_path == "/svc/foo".parse().unwrap()
             && moniker == ["a"].try_into().unwrap());
 
     // And verify that `c` cannot.
     let c = test.model.root().find_and_maybe_resolve(&"c".parse().unwrap()).await.unwrap();
-    let err = RouteRequest::UseProtocol(use_decl).route(&c).await.unwrap_err();
+    let err = debug_route_sandbox_path(&c, "program_input/namespace/svc/foo").await.unwrap_err();
     assert_matches!(
         err,
         RoutingError::BedrockNotPresentInDictionary { name, moniker }
-        if name == "svc/foo"
+        if name == "program_input/namespace/svc/foo"
             && moniker == "c".parse().unwrap());
 
     // Unresolve b. This should drop the request from `a` and avoid the "receivers must not outlive
@@ -4112,63 +4092,46 @@ async fn injected_capability_in_routed_dictionary() {
         .build()
         .await;
 
-    let use_foo_decl = UseBuilder::protocol().name("foo").path("/svc/foo").build();
-    let UseDecl::Protocol(use_foo_decl) = use_foo_decl else {
-        unreachable!();
-    };
-    let use_bar_decl = UseBuilder::protocol().name("bar").path("/svc/bar").build();
-    let UseDecl::Protocol(use_bar_decl) = use_bar_decl else {
-        unreachable!();
-    };
-
     // Verify that `a` cannot access protocol `foo`.
     let a = test.model.root().find_and_maybe_resolve(&"a".parse().unwrap()).await.unwrap();
-    let err = RouteRequest::UseProtocol(use_foo_decl.clone()).route(&a).await.unwrap_err();
+    let err = debug_route_sandbox_path(&a, "program_input/namespace/svc/foo").await.unwrap_err();
     assert_matches!(
         err,
         RoutingError::BedrockNotPresentInDictionary { name, moniker }
-        if name == "svc/foo"
+        if name == "program_input/namespace/svc/foo"
             && moniker == "a".parse().unwrap());
 
     // Verify that `b` can reach protocol `bar` routed from `a`.
     let b = test.model.root().find_and_maybe_resolve(&"b".parse().unwrap()).await.unwrap();
-    let source = RouteRequest::UseProtocol(use_bar_decl.clone()).route(&b).await.unwrap();
+    let source = debug_route_sandbox_path(&b, "program_input/namespace/svc/bar").await.unwrap();
     assert_matches!(
         source,
-        RouteSource {
-            source:
-                CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::Protocol(ProtocolDecl {
-                        name,
-                        source_path: Some(source_path),
-                        ..
-                    }),
-                    moniker,
-                    ..
-                }),
-            relative_path: _,
-        }
+        CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Protocol(ProtocolDecl {
+                name,
+                source_path: Some(source_path),
+                ..
+            }),
+            moniker,
+            ..
+        })
         if name == "bar"
             && source_path == "/svc/bar".parse().unwrap()
             && moniker == ["a"].try_into().unwrap());
 
     // Verify that `b` can reach injected protocol `foo` routed from `r`.
-    let source = RouteRequest::UseProtocol(use_foo_decl.clone()).route(&b).await.unwrap();
+    let source = debug_route_sandbox_path(&b, "program_input/namespace/svc/foo").await.unwrap();
     assert_matches!(
         source,
-        RouteSource {
-            source:
-                CapabilitySource::Component(ComponentSource {
-                    capability: ComponentCapability::Protocol(ProtocolDecl {
-                        name,
-                        source_path: Some(source_path),
-                        ..
-                    }),
-                    moniker,
-                    ..
-                }),
-            relative_path: _,
-        }
+        CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Protocol(ProtocolDecl {
+                name,
+                source_path: Some(source_path),
+                ..
+            }),
+            moniker,
+            ..
+        })
         if name == "foo"
             && source_path == "/svc/foo".parse().unwrap()
             && moniker == [].try_into().unwrap());

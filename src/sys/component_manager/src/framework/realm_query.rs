@@ -440,9 +440,6 @@ async fn connect_to_storage_admin(
         .await
         .map_err(|_| fsys::ConnectToStorageAdminError::InstanceNotFound)?;
 
-    let storage_admin = StorageAdmin::new();
-    let scope = instance.execution_scope.clone();
-
     let storage_decl = {
         let state = instance.lock_state().await;
         state
@@ -458,10 +455,13 @@ async fn connect_to_storage_admin(
             .clone()
     };
 
+    let storage_admin = StorageAdmin::new(storage_decl, instance.as_weak())
+        .await
+        .map_err(|_| fsys::ConnectToStorageAdminError::BadCapability)?;
+    let scope = instance.execution_scope.clone();
+
     scope.spawn(async move {
-        if let Err(error) =
-            storage_admin.serve(storage_decl, instance.as_weak(), server_end.into_stream()).await
-        {
+        if let Err(error) = storage_admin.serve(server_end.into_stream()).await {
             warn!(
                 moniker:%, error:%; "StorageAdmin created by LifecycleController failed to serve",
             );
