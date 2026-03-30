@@ -70,6 +70,53 @@ class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
             logger.info(f"Trace file generated at: {self.trace_path}")
         await super().teardown_test()
 
+    def _log_summary_stats(
+        self, durations_ms: list[float], metric_name: str
+    ) -> None:
+        if not durations_ms:
+            logger.warning(f"No timing data collected for {metric_name}!")
+            return
+
+        avg_duration = statistics.mean(durations_ms)
+        min_duration = min(durations_ms)
+        max_duration = max(durations_ms)
+        std_dev = (
+            statistics.stdev(durations_ms) if len(durations_ms) > 1 else 0.0
+        )
+
+        logger.info(f"--- {metric_name} Performance Metrics ---")
+        logger.info(f"Iterations: {len(durations_ms)}")
+        logger.info(f"Average:    {avg_duration:.2f} ms")
+        logger.info(f"Minimum:    {min_duration:.2f} ms")
+        logger.info(f"Maximum:    {max_duration:.2f} ms")
+        logger.info(f"Std Dev:    {std_dev:.2f} ms")
+        logger.info("----------------------------------------------")
+
+    def _get_event_durations(
+        self, model: trace_model.Model, event_name: str
+    ) -> list[float]:
+        events = list(
+            trace_utils.filter_events(
+                model.all_events(),
+                category="wlan",
+                name=event_name,
+                type=trace_model.DurationEvent,
+            )
+        )
+        if len(events) < NUM_ITERATIONS:
+            logger.warning(
+                f"Expected {NUM_ITERATIONS} '{event_name}' events but only found {len(events)}."
+            )
+
+        durations_ms = []
+        for event in events:
+            if event.duration is not None:
+                duration_ms = event.duration.to_microseconds_f() / 1000.0
+                durations_ms.append(duration_ms)
+            else:
+                logger.warning(f"Found '{event_name}' event with no duration")
+        return durations_ms
+
     async def test_create_destroy_client_iface(self) -> None:
         async with self.fuchsia_device.tracing.trace_session(
             categories=["wlan"],
@@ -92,38 +139,30 @@ class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
                 self.iface_name = None
 
         model = trace_importing.create_model_from_trace_file_path(
-            self.trace_path, patterns=set(["create_client_iface"])
+            self.trace_path,
+            patterns=set(["create_client_iface", "destroy_client_iface"]),
         )
-        events = list(
-            trace_utils.filter_events(
-                model.all_events(),
-                category="wlan",
-                name="create_client_iface",
-                type=trace_model.DurationEvent,
-            )
+
+        creation_durations_ms = self._get_event_durations(
+            model, "create_client_iface"
         )
-        if len(events) < NUM_ITERATIONS:
-            logger.warning(
-                f"Expected {NUM_ITERATIONS} events but only found {len(events)}."
-            )
+        destruction_durations_ms = self._get_event_durations(
+            model, "destroy_client_iface"
+        )
 
-        durations_ms = []
-        for event in events:
-            if event.duration is not None:
-                duration_ms = event.duration.to_microseconds_f() / 1000.0
-                durations_ms.append(duration_ms)
-            else:
-                logger.warning(
-                    "Found 'create_client_iface' event with no duration"
-                )
-
-        if durations_ms:
+        if creation_durations_ms and destruction_durations_ms:
             # Publish fuchsiaperf data extracted from our trace file.
             fuchsiaperf_data = [
                 {
                     "test_suite": "fuchsia.wlan.wlanix",
                     "label": "CreateClientIface",
-                    "values": durations_ms,
+                    "values": creation_durations_ms,
+                    "unit": "ms",
+                },
+                {
+                    "test_suite": "fuchsia.wlan.wlanix",
+                    "label": "DestroyClientIface",
+                    "values": destruction_durations_ms,
                     "unit": "ms",
                 },
             ]
@@ -142,20 +181,10 @@ class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
             )
 
             # Log summary statistics for our current run.
-            avg_duration = statistics.mean(durations_ms)
-            min_duration = min(durations_ms)
-            max_duration = max(durations_ms)
-            std_dev = (
-                statistics.stdev(durations_ms) if len(durations_ms) > 1 else 0.0
+            self._log_summary_stats(creation_durations_ms, "Interface Creation")
+            self._log_summary_stats(
+                destruction_durations_ms, "Interface Destruction"
             )
-
-            logger.info("--- Interface Creation Performance Metrics ---")
-            logger.info(f"Iterations: {len(durations_ms)}")
-            logger.info(f"Average:    {avg_duration:.2f} ms")
-            logger.info(f"Minimum:    {min_duration:.2f} ms")
-            logger.info(f"Maximum:    {max_duration:.2f} ms")
-            logger.info(f"Std Dev:    {std_dev:.2f} ms")
-            logger.info("----------------------------------------------")
         else:
             logger.error("No timing data collected from trace!")
             asserts.fail("No timing data collected")

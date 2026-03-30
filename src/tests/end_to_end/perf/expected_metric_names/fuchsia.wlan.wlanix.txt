@@ -1,1 +1,2 @@
 fuchsia.wlan.wlanix: CreateClientIface
+fuchsia.wlan.wlanix: DestroyClientIface

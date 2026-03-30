@@ -239,6 +239,7 @@ impl IfaceManager for DeviceMonitorIfaceManager {
     }
 
     async fn destroy_iface(&self, iface_id: u16) -> Result<(), Error> {
+        fuchsia_trace::duration!("wlan", "destroy_client_iface");
         // TODO(b/298030838): Remove unmanaged iface support when wlanix is the sole config path.
         let removed_iface = self.ifaces.lock().remove(&iface_id);
         if let Some(iface) = removed_iface {
