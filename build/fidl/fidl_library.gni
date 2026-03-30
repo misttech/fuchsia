@@ -363,10 +363,7 @@ template("fidl_library") {
 
   plasa_fragment_fidl(plasa_fragment_target_name) {
     testonly = testonly
-    visibility = [
-      ":*",
-      "//sdk/fidl:plasa",
-    ]
+    visibility = [ ":*" ]
     fragment_file = summary_file_json
     dest = "fidl"
     deps = [ ":$compilation_target_name" ]

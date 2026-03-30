@@ -302,15 +302,6 @@ _partner_idk_fidl_libraries_targets_list = [
   # keep-sorted: end
 ]
 
-# The FIDL portion of the platform surface area (plasa).
-group("plasa") {
-  testonly = true
-  deps = []
-  foreach(target, _partner_idk_fidl_libraries_targets_list) {
-    deps += [ "${target}_plasa($fidl_toolchain)" ]
-  }
-}
-
 # Fuchsia IDL (FIDL) files defining much of the API for the SDK.
 sdk_molecule("fidl") {
   visibility = [
