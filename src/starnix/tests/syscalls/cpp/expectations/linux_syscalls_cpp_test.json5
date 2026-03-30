@@ -22,7 +22,6 @@
                 "IoctlTest.SIOCSIFNETMASK_WithMultipleAddressesOnInterface",
 
                 // TODO(https://fxbug.dev/437149654): Started crashing after /dev/loop-control was added.
-                "MountTest.Ext4ReadOnlySmokeTest",
                 "MountTest.Ext4ReadOnlyInMutableStorageSmokeTest",
 
                 // TODO(https://fxbug.dev/479282469)
