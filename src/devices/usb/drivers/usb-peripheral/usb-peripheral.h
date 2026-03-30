@@ -290,6 +290,8 @@ class UsbPeripheral : public fdf::DriverBase,
   usb_speed_t speed_ = 0;
   // Size of our parent's usb_request_t, only relevant to the banjo interface.
   size_t parent_request_size_ = 0;
+  // Size of our parent's DCI request metadata, only relevant to the banjo interface.
+  size_t dci_request_size_ = 0;
   // Registered listener
   fidl::ClientEnd<fuchsia_hardware_usb_peripheral::Events> listener_;
 

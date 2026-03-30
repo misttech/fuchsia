@@ -23,10 +23,12 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <usb/peripheral.h>
+#include <usb/request-cpp.h>
 #include <usb/usb.h>
 
 #include "src/devices/usb/drivers/usb-peripheral/usb-function.h"
@@ -49,8 +51,20 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
                                            fidl::kIgnoreBindingClosure)});
   }
 
-  // USB DCI protocol implementation (No longer used).
-  void UsbDciRequestQueue(usb_request_t* req, const usb_request_complete_callback_t* cb) {}
+  // USB DCI protocol implementation (Banjo - no longer used).
+  void UsbDciRequestQueue(usb_request_t* req, const usb_request_complete_callback_t* cb) {
+    std::lock_guard<std::mutex> lock(requests_mutex_);
+    requests_.push_back({req, *cb});
+  }
+
+  void CompleteAll(zx_status_t status = ZX_OK) {
+    std::lock_guard<std::mutex> lock(requests_mutex_);
+    for (auto& request : requests_) {
+      usb_request_complete(request.req, status, 0, &request.cb);
+    }
+    requests_.clear();
+  }
+
   zx_status_t UsbDciSetInterface(const usb_dci_interface_protocol_t* interface) {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -191,6 +205,13 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   std::optional<fidl::ClientEnd<fdci::UsbDciInterface>> client_;
   compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_DCI, this, &usb_dci_protocol_ops_};
   std::map<uint8_t, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint>> endpoints_;
+
+  struct Request {
+    usb_request_t* req;
+    usb_request_complete_callback_t cb;
+  };
+  std::mutex requests_mutex_;
+  std::vector<Request> requests_;
 };
 
 class FakeUsbFunction
@@ -307,6 +328,7 @@ class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
   fidl::ClientEnd<fdci::UsbDciInterface> TakeDciClient() { return dci_.TakeClient(); }
 
   FakeDevice& dci() { return dci_; }
+  void CompleteAll(zx_status_t status = ZX_OK) { dci_.CompleteAll(status); }
 
  private:
   FakeDevice dci_;
@@ -354,10 +376,24 @@ class UsbPeripheralHarness : public ::testing::Test {
   static constexpr std::string_view kSerialNumber = "Test serial number";
 
   fidl::WireSyncClient<fdci::UsbDciInterface>& dci() { return dci_; }
+
+  void CompleteAll(zx_status_t status = ZX_OK) {
+    dut().RunInEnvironmentTypeContext(
+        [status](UsbPeripheralTestEnvironment& env) { env.CompleteAll(status); });
+  }
+
   fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig>& dut() { return driver_test_; }
 
+  fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device> Client() {
+    auto client_end = driver_test_.Connect<fuchsia_hardware_usb_peripheral::Service::Device>();
+    ZX_ASSERT_MSG(client_end.is_ok(), "Failed to connect to peripheral service: %s",
+                  client_end.status_string());
+    return fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>{
+        std::move(client_end.value())};
+  }
+
  private:
-  bool started_driver_;
+  bool started_driver_ = false;
   fidl::WireSyncClient<fdci::UsbDciInterface> dci_;
   fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig> driver_test_;
 };
@@ -416,7 +452,7 @@ TEST_F(ManagedUsbPeripheralTest, AddsCorrectSerialNumberMetadata) {
 
   EXPECT_EQ(serial[0], (kSerialNumber.size() + 1) * 2);
   EXPECT_EQ(serial[1], USB_DT_STRING);
-  for (size_t i = 0; i < sizeof(kSerialNumber) - 1; i++) {
+  for (size_t i = 0; i < kSerialNumber.size(); i++) {
     EXPECT_EQ(serial[2 + (i * 2)], kSerialNumber[i]);
   }
 }
@@ -434,6 +470,89 @@ TEST_F(ManagedUsbPeripheralTest, WorksWithVendorSpecificCommandWhenConfiguration
       dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
   ASSERT_TRUE(result->is_error());
   ASSERT_EQ(ZX_ERR_BAD_STATE, result->error_value());
+}
+
+TEST_F(ManagedUsbPeripheralTest, SmallRequestQueueing) {
+  size_t parent_req_size = 0;
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
+
+  // Allocate a request that is too small.
+  // We use parent_req_size - 1 for the allocation metadata size.
+  usb_request_t* raw_req;
+  ASSERT_OK(usb_request_alloc(&raw_req, 1024, 1 /* ep_address */, parent_req_size - 1));
+
+  bool called = false;
+  usb_request_complete_callback_t cb = {
+      .callback =
+          [](void* ctx, usb_request_t* req) {
+            EXPECT_EQ(req->response.status, ZX_ERR_INVALID_ARGS);
+            *static_cast<bool*>(ctx) = true;
+            usb_request_release(req);
+          },
+      .ctx = &called,
+  };
+
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { peripheral.UsbPeripheralRequestQueue(raw_req, &cb); });
+
+  EXPECT_TRUE(called);
+}
+
+TEST_F(ManagedUsbPeripheralTest, DuplicateRequestQueueing) {
+  size_t parent_req_size = 0;
+  this->dut().RunInDriverContext(
+      [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
+
+  std::optional<usb::Request<void>> req;
+  ASSERT_OK(usb::Request<void>::Alloc(&req, 1024, 1 /* ep_address */, parent_req_size));
+
+  libsync::Completion completion;
+
+  struct Context {
+    libsync::Completion* completion;
+    size_t parent_req_size;
+  } context = {
+      .completion = &completion,
+      .parent_req_size = parent_req_size,
+  };
+
+  usb_request_complete_callback_t cb = {
+      .callback =
+          [](void* ctx, usb_request_t* req) {
+            auto* context = static_cast<Context*>(ctx);
+            usb::Request<void> unused(req, context->parent_req_size);
+            context->completion->Signal();
+          },
+      .ctx = &context,
+  };
+
+  // Extract the raw request for repeated submission. We will let the final completion callback
+  // clean it up.
+  usb_request_t* raw_req = req->take();
+
+  this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
+    // First queueing should succeed.
+    peripheral.UsbPeripheralRequestQueue(raw_req, &cb);
+    // Queueing the same request again should immediately complete with ZX_ERR_INVALID_ARGS
+    // because it is already in the container. To verify this, we use a test callback.
+    bool called = false;
+    usb_request_complete_callback_t cb2 = {
+        .callback =
+            [](void* ctx, usb_request_t* req) {
+              EXPECT_EQ(req->response.status, ZX_ERR_INVALID_ARGS);
+              *static_cast<bool*>(ctx) = true;
+            },
+        .ctx = &called,
+    };
+    peripheral.UsbPeripheralRequestQueue(raw_req, &cb2);
+    EXPECT_TRUE(called);
+  });
+
+  // Complete the outstanding request via the fake DCI to finish the test.
+  this->CompleteAll(ZX_OK);
+
+  completion.Wait();
 }
 
 TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {

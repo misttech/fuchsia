@@ -127,6 +127,13 @@ class OperationBase {
     return operation::round_up(parent_op_size, kAlignment) + sizeof(NodeType);
   }
 
+  // Returns private node stored inline without creating a wrapper object.
+  static NodeType* PeekNode(OperationType* operation, size_t parent_op_size) {
+    ZX_DEBUG_ASSERT(operation != nullptr);
+    size_t offset = operation::round_up(parent_op_size, kAlignment);
+    return reinterpret_cast<NodeType*>(reinterpret_cast<uintptr_t>(operation) + offset);
+  }
+
   size_t size() const { return node_offset_ + sizeof(NodeType); }
 
   // Returns private node stored inline
@@ -249,7 +256,9 @@ class BorrowedOperation : public OperationBase<D, OperationTraits, CallbackTrait
 
   BorrowedOperation(OperationType* operation, size_t parent_op_size, bool allow_destruct = true)
       : BaseClass(operation, parent_op_size, allow_destruct) {
-    ZX_DEBUG_ASSERT(BaseClass::node()->node_offset() != 0);
+    // Verifies that if the node was initialized, it was initialized at the expected offset.
+    // This allows offset 0 for cases where the private storage starts immediately at the beginning.
+    ZX_DEBUG_ASSERT(BaseClass::node()->node_offset() == BaseClass::node_offset_);
   }
 
   BorrowedOperation(BorrowedOperation&& other)

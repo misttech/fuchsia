@@ -59,12 +59,11 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
 void UsbPeripheral::RequestComplete(usb_request_t* req) {
   TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock l(&pending_requests_lock_);
-  usb::BorrowedRequest<void> request(req, dci_.GetRequestSize());
-
+  usb::BorrowedRequest<void> request(req, dci_request_size_);
   pending_requests_.erase(&request);
   l.release();
-  request.Complete(request.request()->response.status, request.request()->response.actual);
   usb_monitor_.AddRecord(req);
+  request.Complete(request.request()->response.status, request.request()->response.actual);
 }
 
 void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
@@ -74,8 +73,29 @@ void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
     usb_request_complete(usb_request, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
     return;
   }
+  // Ensure the request has enough space for our metadata.
+  if (usb_request->alloc_size < parent_request_size_) {
+    fdf::error("Failed to queue request: insufficient metadata space (found {} bytes, need {}).",
+               usb_request->alloc_size, parent_request_size_);
+    usb_request_complete(usb_request, ZX_ERR_INVALID_ARGS, 0, complete_cb);
+    return;
+  }
+
   fbl::AutoLock l(&pending_requests_lock_);
-  usb::BorrowedRequest<void> request(usb_request, *complete_cb, dci_.GetRequestSize());
+  // Ensure the request is not already in a list, which would indicate
+  // that it has already been queued and not yet completed.
+  // Re-queueing an in-flight request is a bug in the calling driver.
+  if (usb::BorrowedRequest<void>::PeekNode(usb_request, dci_request_size_)->InContainer()) {
+    l.release();  // Release lock before completing the request.
+    fdf::error("Failed to queue request: it is already in-flight.");
+    usb_request_complete(usb_request, ZX_ERR_INVALID_ARGS, 0, complete_cb);
+    return;
+  }
+
+  // Now that we know it's not in a container, it's safe to initialize the callback
+  // and perform the placement-new construct.
+  usb::BorrowedRequest<void> request(usb_request, *complete_cb, dci_request_size_);
+
   [[maybe_unused]] usb_request_complete_callback_t completion;
   completion.ctx = this;
   completion.callback = [](void* ctx, usb_request_t* req) {
@@ -116,7 +136,8 @@ zx::result<> UsbPeripheral::Start() {
     fdf::info("Failed to connect to dci banjo protocol: {}", dci_banjo);
   } else {
     dci_ = dci_banjo.value();
-    parent_request_size_ = usb::BorrowedRequest<void>::RequestSize(dci_.GetRequestSize());
+    dci_request_size_ = dci_.GetRequestSize();
+    parent_request_size_ = usb::BorrowedRequest<void>::RequestSize(dci_request_size_);
   }
 
   if (!dci_.is_valid() && !dci_new_.is_valid()) {
@@ -680,7 +701,8 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
       // String indices are 1-based.
       string_index--;
       if (string_index >= strings_.size()) {
-        fdf::error("Invalid string index: {}", string_index);
+        fdf::error("UsbPeripheral::GetDescriptor: Invalid string index: {} strings_.size()={}",
+                   string_index, strings_.size());
         return ZX_ERR_INVALID_ARGS;
       }
       const char* string = strings_[string_index].text.c_str();
