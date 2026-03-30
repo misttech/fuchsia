@@ -417,7 +417,30 @@ pub async fn serve_impl(
                 repo_client_from_optional_trusted_root(cmd.trusted_root.clone(), repository)
                     .await?;
 
-            repo_client.update().await.context("updating the repository metadata")?;
+            let res = repo_client.update().await;
+            if let Err(e) = &res {
+                let is_expired = match e {
+                    fuchsia_repo::repository::Error::Tuf(tuf::Error::ExpiredMetadata {
+                        ..
+                    }) => true,
+                    _ => e.to_string().contains("expired") || e.to_string().contains("Expired"),
+                };
+
+                if is_expired {
+                    eprintln!("Error: TUF metadata is expired.");
+                    eprintln!(
+                        "This usually happens if the Fuchsia tree hasn't been built or updated in a long time."
+                    );
+                    eprintln!("To fix this:");
+                    eprintln!(
+                        "  If you are using incremental publishing: run `fx serve -C` to clean the repository."
+                    );
+                    eprintln!(
+                        "  Otherwise: run `fx cleanrepo` followed by `fx build` to recreate the repository."
+                    );
+                }
+            }
+            res.context("updating the repository metadata")?;
 
             repo_manager.add(&repo_base_name, repo_client);
 
