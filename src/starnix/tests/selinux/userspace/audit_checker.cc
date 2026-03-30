@@ -67,10 +67,6 @@ void PrintWithTab(int multiplier, const char* format, ...) {
 }
 
 void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name) {
-  if (!logs.size()) {
-    return;
-  }
-
   printf("\n{\n");
   PrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
   PrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
@@ -377,7 +373,11 @@ void AuditChecker::OnTestSuiteEnd(const testing::TestSuite& test_suite) {
     // printing any audit JSON objects.
     sleep(1);
     for (auto test_logs : current_test_suite_raw_logs_) {
-      ExpectationsToJSON(std::get<0>(test_logs), std::get<1>(test_logs));
+      const auto& logs = std::get<0>(test_logs);
+      const auto& test_name = std::get<1>(test_logs);
+      if (!logs.empty() || expectations_map_.count(test_name) > 0) {
+        ExpectationsToJSON(logs, test_name);
+      }
     }
     current_test_suite_raw_logs_.clear();
   }

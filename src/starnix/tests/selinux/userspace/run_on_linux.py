@@ -313,6 +313,8 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
                 "-no-reboot",
                 "-display",
                 "none",
+                "-vga",
+                "none",
                 "-serial",
                 "stdio",
                 "-m",
