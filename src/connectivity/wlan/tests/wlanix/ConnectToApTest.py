@@ -188,7 +188,6 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 raise signals.TestFailure(
                     f'Failed to connect to "{ssid}" with {security}'
                 ) from e
-            logger.info(f'Successfully connected to "{ssid}"!')
 
             state_change = await state_change_queue.get()
             assert isinstance(
@@ -203,6 +202,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 state_change_queue.empty(),
                 "Unexpectedly received additional callback messages.",
             )
+            logger.info(f'Successfully connected to "{ssid}"!')
 
 
 @dataclass
