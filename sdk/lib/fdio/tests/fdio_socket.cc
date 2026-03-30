@@ -8,6 +8,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
+#include <lib/fdio/limits.h>
 #include <lib/fdio/unsafe.h>
 #include <lib/fit/defer.h>
 #include <netinet/in.h>
@@ -20,9 +21,12 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <future>
 #include <latch>
+#include <mutex>
+#include <thread>
 
 #include <fbl/unique_fd.h>
 #include <zxtest/base/parameterized-value.h>
@@ -82,6 +86,14 @@ class Server final : public fidl::testing::WireTestBase<fuchsia_posix_socket::St
     }
   }
 
+  void Accept(AcceptRequestView request, AcceptCompleter::Sync& completer) override {
+    if (on_accept_) {
+      on_accept_(completer);
+    } else {
+      fidl::testing::WireTestBase<fuchsia_posix_socket::StreamSocket>::Accept(request, completer);
+    }
+  }
+
   void GetError(GetErrorCompleter::Sync& completer) override { completer.ReplySuccess(); }
 
   void FillPeerSocket() const {
@@ -100,6 +112,8 @@ class Server final : public fidl::testing::WireTestBase<fuchsia_posix_socket::St
     on_connect_ = std::move(cb);
   }
 
+  void SetOnAccept(fit::function<void(AcceptCompleter::Sync&)> cb) { on_accept_ = std::move(cb); }
+
   uint16_t ShutdownCount() const { return shutdown_count_.load(); }
 
  private:
@@ -107,6 +121,7 @@ class Server final : public fidl::testing::WireTestBase<fuchsia_posix_socket::St
   std::atomic<uint16_t> shutdown_count_ = 0;
 
   fit::function<void(zx::socket&, ConnectCompleter::Sync&)> on_connect_;
+  fit::function<void(AcceptCompleter::Sync&)> on_accept_;
 };
 
 template <int sock_type>
@@ -141,6 +156,8 @@ class BaseTest : public zxtest::Test {
   const Server& server() { return server_.value(); }
 
   Server& mutable_server() { return server_.value(); }
+
+  async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
 
   void set_connected() {
     mutable_server().SetOnConnect(
@@ -481,6 +498,78 @@ TEST_F(TcpSocketTest, PollNoEvents) {
 }
 
 TEST_F(TcpSocketTest, GetFlags) { ASSERT_GE(fcntl(client_fd().get(), F_GETFL), 0); }
+
+TEST_F(TcpSocketTest, AcceptStolenReservation) {
+  // Find the lowest available FD. This is what accept will try to reserve first.
+  int reserved_fd = -1;
+  for (int fd = 0; fd < FDIO_MAX_FD; ++fd) {
+    if (fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
+      reserved_fd = fd;
+      break;
+    }
+  }
+  ASSERT_GE(reserved_fd, 0);
+
+  std::mutex accept_called_mtx;
+  std::condition_variable accept_called_cv;
+  bool accept_called = false;
+  std::mutex reservation_stolen_mtx;
+  std::condition_variable reservation_stolen_cv;
+  bool reservation_stolen = false;
+
+  std::unique_ptr<Server> accepted_server;
+
+  mutable_server().SetOnAccept([&](Server::AcceptCompleter::Sync& completer) {
+    auto endpoints = fidl::Endpoints<fuchsia_posix_socket::StreamSocket>::Create();
+    zx::socket client_socket, server_socket;
+    ASSERT_OK(zx::socket::create(ZX_SOCKET_STREAM, &client_socket, &server_socket));
+
+    // We need to keep the accepted server alive.
+    accepted_server = std::make_unique<Server>(std::move(server_socket));
+    fidl::BindServer(dispatcher(), std::move(endpoints.server), accepted_server.get());
+
+    {
+      std::lock_guard l(accept_called_mtx);
+      accept_called = true;
+      accept_called_cv.notify_all();
+    }
+    {
+      std::unique_lock l(reservation_stolen_mtx);
+      while (!reservation_stolen) {
+        reservation_stolen_cv.wait(l);
+      }
+    }
+
+    fidl::Arena alloc;
+    fuchsia_net::wire::Ipv4SocketAddress fidl_addr = {};
+    completer.ReplySuccess(fuchsia_net::wire::SocketAddress::WithIpv4(alloc, fidl_addr),
+                           std::move(endpoints.client));
+  });
+
+  fbl::unique_fd accepted_fd;
+  std::thread thr([&] { accepted_fd.reset(accept(client_fd().get(), nullptr, nullptr)); });
+
+  {
+    std::unique_lock l(accept_called_mtx);
+    while (!accept_called) {
+      accept_called_cv.wait(l);
+    }
+  }
+
+  // Now steal the reservation.
+  fbl::unique_fd stolen_fd(dup2(client_fd().get(), reserved_fd));
+  ASSERT_EQ(stolen_fd.get(), reserved_fd);
+
+  {
+    std::unique_lock l(reservation_stolen_mtx);
+    reservation_stolen = true;
+    reservation_stolen_cv.notify_all();
+  }
+
+  thr.join();
+  ASSERT_GE(accepted_fd.get(), 0, "accept failed: %s", strerror(errno));
+  ASSERT_NE(accepted_fd.get(), reserved_fd);
+}
 
 using UdpSocketTest = BaseTest<ZX_SOCKET_DATAGRAM>;
 TEST_F(UdpSocketTest, DatagramSendMsg) {

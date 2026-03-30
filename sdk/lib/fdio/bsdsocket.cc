@@ -272,7 +272,7 @@ int accept4(int fd, struct sockaddr* __restrict addr, socklen_t* __restrict addr
   //
   // Ownership of reservations isn't maintained, but that should be OK as long as it isn't assumed.
   for (int i = 0; i < FDIO_MAX_FD; ++i) {
-    if (gstate.fdtab[nfd].try_set(accepted_io)) {
+    if (gstate.fdtab[i].try_set(accepted_io)) {
       return i;
     }
   }
