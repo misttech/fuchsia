@@ -122,6 +122,12 @@ def command(args: argparse.Namespace) -> None:
         all_matches.append(match)
         test_match_names.add(match.matched_name)
 
+    # Filter by host/device if requested
+    if args.host is not None:
+        all_matches = [m for m in all_matches if m.is_host == args.host]
+    if args.device is not None:
+        all_matches = [m for m in all_matches if not m.is_host == args.device]
+
     all_matches.sort(key=lambda x: x.similarity, reverse=True)
 
     if not all_matches:
@@ -286,14 +292,16 @@ class Suggestion:
         matched_name: The (short) name that was matched against.
         similarity: Measure of similarity to search term. 0 = no match, 1 = perfect match
         full_suggestion: A longer string describing this match to the user.
+        is_host: True if this is a host test.
     """
 
     matched_name: str
     similarity: float
     full_suggestion: str
+    is_host: bool = False
 
     def __repr__(self) -> str:
-        return f"Suggestion({self.matched_name}, {self.similarity}, {self.full_suggestion})"
+        return f"Suggestion({self.matched_name}, {self.similarity}, {self.full_suggestion}, {self.is_host})"
 
 
 @dataclasses.dataclass
@@ -653,6 +661,7 @@ class BuildFileMatcher:
                             name,
                             similarity,
                             f"fx {command} {target.target_path}",
+                            is_host=target.is_host,
                         )
                     )
 
@@ -744,10 +753,18 @@ class TestsFileMatcher:
             if self.is_remote:
                 command = "add-host-test" if "linux" in labels else "add-test"
                 message = f"fx {command} {labels[0]}"
+                is_host_val = "linux" in labels
             else:
                 message = f"Build includes: {options[0]}"
+                is_host_val = "fuchsia" not in labels and (
+                    "linux" in labels or "mac" in labels
+                )
             if max_score is not None and max_option is not None:
-                matches.append(Suggestion(max_option, max_score, message))
+                matches.append(
+                    Suggestion(
+                        max_option, max_score, message, is_host=is_host_val
+                    )
+                )
 
         return matches
 
@@ -912,6 +929,18 @@ def main(args_list: list[str] | None = None) -> int:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="If true, print verbose timings for debugging.",
+    )
+    parser.add_argument(
+        "--host",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="If true, only suggest host tests. If false, filter out host tests.",
+    )
+    parser.add_argument(
+        "--device",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="If true, only suggest device tests. If false, filter out device tests.",
     )
     parser.add_argument(
         "--color",

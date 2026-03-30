@@ -538,6 +538,33 @@ class TestBuildFileMatcher(unittest.TestCase):
                     ],
                 )
 
+    def test_standard_test_with_host_toolchain(self) -> None:
+        with tempfile.TemporaryDirectory() as dir:
+            os.makedirs(os.path.join(dir, "src"))
+            with open(os.path.join(dir, "src", "BUILD.gn"), "w") as f:
+                f.write(
+                    """
+test("my_std_test") {
+}
+group("tests") {
+  deps = [ ":my_std_test($host_toolchain)" ]
+}
+"""
+                )
+
+            build_matcher = search_tests.BuildFileMatcher(dir)
+            matcher = search_tests.Matcher(threshold=1)
+
+            self.assertEqual(
+                [
+                    (val.matched_name, val.full_suggestion)
+                    for val in build_matcher.find_matches(
+                        "my_std_test", matcher
+                    )
+                ],
+                [("my_std_test", "fx add-host-test //src:my_std_test")],
+            )
+
 
 class TestTimingTracker(PreserveEnvAndCaptureOutputTestCase):
     def test_timing(self) -> None:
@@ -601,6 +628,7 @@ class TestCommand(PreserveEnvAndCaptureOutputTestCase):
                 )
             )
             f.write(TEST_PACKAGE("integration-tests"))
+            f.write(HOST_TEST("my-host-test"))
 
         os.environ["FUCHSIA_DIR"] = str(self.dir.name)
         os.environ["FUCHSIA_TEST_FETCH_REMOTE"] = "FALSE"
@@ -661,7 +689,7 @@ kernel-tests (62.42% similar)
     fx add-test //src:tests
 integration-tests (59.22% similar)
     fx add-test //src:integration-tests
-(3 more matches not shown)
+(4 more matches not shown)
 """.strip(),
         )
 
@@ -687,6 +715,41 @@ foo-test-component (100.00% similar)
 No matching tests could be found in your Fuchsia checkout.
 """.strip(),
         )
+
+    def test_filtering_host(self) -> None:
+        # Search for "my-host-test" with --host. It should find it.
+        search_tests.main(
+            ["my-host-test", "--host", "--no-color", "--threshold", "1"]
+        )
+        output = self.stdout.getvalue().strip()
+        self.assertTrue("my-host-test" in output)
+        self.assertTrue("fx add-host-test" in output)
+
+        # Search for a device test "foo-test-component" with --host and high threshold. It should NOT find it.
+        self.stdout.truncate(0)
+        self.stdout.seek(0)
+        search_tests.main(
+            ["foo-test-component", "--host", "--no-color", "--threshold", "1"]
+        )
+        output = self.stdout.getvalue().strip()
+        self.assertTrue("No matching tests" in output)
+
+    def test_filtering_device(self) -> None:
+        # Search for "foo-test-component" with --device. It should find it.
+        search_tests.main(
+            ["foo-test-component", "--device", "--no-color", "--threshold", "1"]
+        )
+        output = self.stdout.getvalue().strip()
+        self.assertTrue("foo-test-component" in output)
+
+        # Search for "my-host-test" with --device. It should NOT find it.
+        self.stdout.truncate(0)
+        self.stdout.seek(0)
+        search_tests.main(
+            ["my-host-test", "--device", "--no-color", "--threshold", "1"]
+        )
+        output = self.stdout.getvalue().strip()
+        self.assertTrue("No matching tests" in output)
 
 
 if __name__ == "__main__":

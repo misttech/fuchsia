@@ -1018,8 +1018,12 @@ class AsyncMain:
                         "search-tests",
                         f"--max-results={flags.suggestion_count}",
                         "--color" if flags.style else "--no-color",
-                        arg,
                     ]
+                    if flags.host:
+                        suggestion_args.append("--host")
+                    if flags.device:
+                        suggestion_args.append("--device")
+                    suggestion_args.append(arg)
                     if threshold is not None:
                         suggestion_args += ["--threshold", str(threshold)]
                     if flags.remote_suggestions:
