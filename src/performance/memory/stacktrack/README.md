@@ -3,7 +3,36 @@
 Stacktrack is a profiling tool that records the peak stack usage observed for
 each thread in a process.
 
-## VMO format
+The Stacktrack library runs within the profiled process and wraps the Zircon
+VDSO symbols. Therefore, whenever the process makes a syscall, its current stack
+usage will be analyzed before passing control to the real syscall handler.
+
+Conversely, stacks that do not bottom-out in a syscall (e.g. pure calculations
+or recursive calls performed entirely in user-space) will **not** be seen or
+recorded by this tool.
+
+
+## Design
+
+The Stacktrack library interposes calls to the Zircon VDSO and tracks the
+deepest stack trace observed for each thread. It maintains a list of active
+threads in a shared VMO, allowing external tools to inspect the state of the
+process at any time without requiring cooperation from the process itself (i.e.
+without taking locks or pausing execution).
+
+Each instrumented process shares a read-only handle to its VMOs to a centralized
+component called "stacktrack-collector". The collector can then easily take a
+snapshot, at any time and without any further cooperation from the instrumented
+process, by simply creating a `ZX_VMO_CHILD_SNAPSHOT` of the threads VMO.
+
+In order to guarantee that the resulting snapshot is always consistent, the
+instrumentation updates the VMO using atomic operations. Specifically, when a
+thread's stack trace needs to be updated (because a deeper stack is observed), a
+new node is inserted into the list, and then the old node is removed. This
+insert-then-remove pattern ensures that the thread remains visible from the
+reader's perspective at all times.
+
+### VMO format
 
 The Stacktrack VMO consists of a header followed by an array of nodes, indexed
 by zero-based integers. A linked list is built on top of this array, allowing a
