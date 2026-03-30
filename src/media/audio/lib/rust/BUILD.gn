@@ -27,7 +27,7 @@ template("fuchsia_audio_lib") {
              "//third_party/rust_crates:hound",
              "//third_party/rust_crates:itertools",
              "//third_party/rust_crates:log",
-             "//third_party/rust_crates:regex",
+             "//third_party/rust_crates:regex-lite",
              "//third_party/rust_crates:thiserror",
            ] + invoker.deps
 

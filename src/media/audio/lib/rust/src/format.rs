@@ -7,7 +7,7 @@ use flex_fuchsia_audio as faudio;
 use flex_fuchsia_audio_controller as fac;
 use flex_fuchsia_hardware_audio as fhaudio;
 use flex_fuchsia_media as fmedia;
-use regex::Regex;
+use regex_lite::Regex;
 use std::fmt::Display;
 use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::num::NonZeroU32;
