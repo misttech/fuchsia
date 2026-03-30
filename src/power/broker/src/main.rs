@@ -660,6 +660,7 @@ impl ElementRunnerHandler {
 
     fn start(&mut self, broker: Rc<RefCell<Broker>>, element_runner: fpb::ElementRunnerProxy) {
         let element_id = self.element_id;
+        let element_name = self.element_name.clone();
         let debug_info =
             format!("ElementRunnerHandler<{}:{}>", &self.element_name, &self.element_id);
         // Use a shutdown event to ensure any in progress level transition handshakes are completed
@@ -693,6 +694,7 @@ impl ElementRunnerHandler {
                         wait_for_level = None;
                         if let Some(level) = suppressed_level.take() {
                             log::debug!("{debug_info}: emitting previously suppressed level {:?}", level);
+                            fuchsia_trace::duration!("power-broker", "ElementRunner::SetLevel", "element_name" => element_name.as_str());
                             if let Err(err) = element_runner.set_level(level.level).await {
                                 log::warn!("{debug_info}: set_level error during suppressed level: {:?}", err);
                             } else {
@@ -703,7 +705,6 @@ impl ElementRunnerHandler {
                     required_level = receiver.next() => {
                         match required_level {
                             Some(Some(required_level)) => {
-                                fuchsia_trace::duration!(c"power-broker", c"ElementRunner::required_level");
                                 // While an initial_lease is pending, suppress any SetLevel calls
                                 // that are for a lower power level than the one we are waiting for.
                                 // This allows us to support adding an element with an
@@ -730,7 +731,7 @@ impl ElementRunnerHandler {
                                     }
                                 });
 
-                                fuchsia_trace::duration!(c"power-broker", c"ElementRunner::SetLevel call");
+                                fuchsia_trace::duration!("power-broker", "ElementRunner::SetLevel", "element_name" => element_name.as_str());
                                 if let Err(err) = element_runner.set_level(required_level.level).await {
                                     log::warn!("{debug_info}: set_level error: {:?}", err);
                                 } else {

@@ -275,6 +275,7 @@ impl Broker {
     }
 
     pub fn update_current_level(&mut self, element_id: ElementID, level: IndexedPowerLevel) {
+        fuchsia_trace::duration!("power-broker", "Broker::update_current_level");
         log::debug!("update_current_level({element_id}, {level:?})");
         let is_disorderly_update = self
             .required
@@ -489,6 +490,7 @@ impl Broker {
         level: IndexedPowerLevel,
         lease_control: zx::Koid,
     ) -> Result<Lease, fpb::LeaseError> {
+        fuchsia_trace::duration!("power-broker", "Broker::acquire_lease");
         log::debug!("acquire_lease({element_id}@{level})");
         let counter = self.adjust_lease_counter(element_id, level.level, 1) as i64;
         fuchsia_trace::counter!(
@@ -519,6 +521,7 @@ impl Broker {
         dependencies: Vec<fpb::LeaseDependency>,
         lease_control: zx::Koid,
     ) -> Result<Lease, fpb::LeaseError> {
+        fuchsia_trace::duration!("power-broker", "Broker::acquire_direct_lease");
         log::debug!("acquire_direct_lease({lease_name})");
         let mut required_levels = Vec::new();
         for dependency in dependencies {
@@ -571,6 +574,7 @@ impl Broker {
     /// Drops the provided lease, which deactivates the claims associated with it and
     /// begins the orderly drop of the dependency chain.
     pub fn drop_lease(&mut self, lease_id: LeaseID) -> Result<(), Error> {
+        fuchsia_trace::duration!("power-broker", "Broker::drop_lease");
         // Drop the lease to mark all the relevant claims as deactivated.
         let (lease, claims) = self.catalog.drop(lease_id)?;
         let counter = self.adjust_lease_counter(
@@ -813,6 +817,7 @@ impl Broker {
         valid_levels: Vec<fpb::PowerLevel>,
         level_dependencies: Vec<fpb::LevelDependency>,
     ) -> Result<ElementID, AddElementError> {
+        fuchsia_trace::duration!("power-broker", "Broker::add_element");
         if valid_levels.len() < 1 {
             return Err(AddElementError::Invalid);
         }
@@ -870,6 +875,7 @@ impl Broker {
     }
 
     pub fn remove_element(&mut self, element_id: &ElementID) {
+        fuchsia_trace::duration!("power-broker", "Broker::remove_element");
         log::debug!("removing element {element_id}");
         // Before removing the element, clear any transiting state and simulate the
         // downward transition from its transiting level to its minimum level. This
