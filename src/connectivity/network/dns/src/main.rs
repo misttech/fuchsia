@@ -5,9 +5,13 @@
 use anyhow::{Context as _, Error};
 use dns::async_resolver::{Resolver, Spawner};
 use dns::config::{ServerList, UpdateServersResult};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as net_ext;
 use fidl_fuchsia_net_name::{
     self as fname, LookupAdminRequest, LookupAdminRequestStream, LookupRequest, LookupRequestStream,
 };
+use fidl_fuchsia_net_routes as fnet_routes;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_sync::RwLock;
 use futures::channel::mpsc;
@@ -35,10 +39,6 @@ use trust_dns_resolver::config::{
 use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 use trust_dns_resolver::lookup;
 use unicode_xid::UnicodeXID as _;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as net_ext,
-    fidl_fuchsia_net_routes as fnet_routes, fuchsia_async as fasync,
-};
 
 struct SharedResolver<T>(RwLock<Rc<T>>);
 
@@ -250,7 +250,7 @@ impl FailureStats {
             },
             ResolveErrorKind::Timeout => *timeout += 1,
             // ResolveErrorKind is marked #[non_exhaustive] in trust-dns:
-            // https://github.com/bluejekyll/trust-dns/blob/v0.21.0-alpha.1/crates/resolver/src/error.rs#L29
+            // https://github.com/hickory-dns/hickory-dns/blob/v0.21.0-alpha.1/crates/resolver/src/error.rs#L29
             // So we have to include a wildcard match.
             // TODO(https://github.com/rust-lang/rust/issues/89554): remove once
             // we're able to apply the non_exhaustive_omitted_patterns lint
@@ -333,7 +333,7 @@ fn update_resolver<T: ResolverLookup>(resolver: &SharedResolver<T>, servers: Ser
     // TODO(https://fxbug.dev/42053483): Set ip_strategy once a unified lookup API
     // exists that respects this setting.
     resolver_opts.num_concurrent_reqs = 10;
-    // TODO(https://github.com/bluejekyll/trust-dns/issues/1702): Use the
+    // TODO(https://github.com/hickory-dns/hickory-dns/issues/1702): Use the
     // default server ordering strategy once the algorithm is improved.
     resolver_opts.server_ordering_strategy = ServerOrderingStrategy::UserProvidedOrder;
 
@@ -516,7 +516,7 @@ fn handle_err(source: &str, err: ResolveError) -> fname::LookupError {
             | ProtoErrorKind::FromUtf8(_)
             | ProtoErrorKind::ParseInt(_) => (fname::LookupError::InternalError, None),
             // ProtoErrorKind is marked #[non_exhaustive] in trust-dns:
-            // https://github.com/bluejekyll/trust-dns/blob/v0.21.0-alpha.1/crates/proto/src/error.rs#L66
+            // https://github.com/hickory-dns/hickory-dns/blob/v0.21.0-alpha.1/crates/proto/src/error.rs#L66
             // So we have to include a wildcard match.
             kind => {
                 error!("unhandled variant {:?}", enum_variant_string(kind));
@@ -531,7 +531,7 @@ fn handle_err(source: &str, err: ResolveError) -> fname::LookupError {
         | ResolveErrorKind::Message(_)
         | ResolveErrorKind::NoConnections => (fname::LookupError::InternalError, None),
         // ResolveErrorKind is marked #[non_exhaustive] in trust-dns:
-        // https://github.com/bluejekyll/trust-dns/blob/v0.21.0-alpha.1/crates/resolver/src/error.rs#L29
+        // https://github.com/hickory-dns/hickory-dns/blob/v0.21.0-alpha.1/crates/resolver/src/error.rs#L29
         // So we have to include a wildcard match.
         kind => {
             error!("unhandled variant {:?}", enum_variant_string(kind));
@@ -880,7 +880,7 @@ fn create_ip_lookup_fut<T: ResolverLookup>(
                     //
                     // Thus we explicitly reject such input here.
                     //
-                    // TODO(https://github.com/bluejekyll/trust-dns/issues/1725):
+                    // TODO(https://github.com/hickory-dns/hickory-dns/issues/1725):
                     // Remove this when the implementation is sufficiently
                     // strict.
                     match IpAddr::from_str(hostname) {

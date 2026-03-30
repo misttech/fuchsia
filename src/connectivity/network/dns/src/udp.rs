@@ -27,7 +27,7 @@ impl udp::UdpSocket for DnsUdpSocket {
         // socket. Doing so isn't strictly necessary and is disabled within the
         // provided Trust-DNS implementations. As a result, the same behavior is
         // currently implemented here. See
-        // https://github.com/bluejekyll/trust-dns/commit/e712a2c031572a128d720d6c763a83fe57399d7f
+        // https://github.com/hickory-dns/hickory-dns/commit/e712a2c031572a128d720d6c763a83fe57399d7f
 
         Ok(socket)
     }
