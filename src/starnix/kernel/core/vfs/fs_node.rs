@@ -655,7 +655,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         current_task: &CurrentTask,
         names: &[&FsStr],
     ) -> LookupVec<Result<FsNodeHandle, Errno>> {
-        let mut names = names.into_iter();
+        let mut names = names.iter();
         std::iter::successors(
             names.next().map(|name| self.lookup(locked, node, current_task, name)),
             |prev| match prev {
