@@ -23,7 +23,7 @@ template("audio_device_registry_enumeration_test") {
       "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-component",
-      "//src/media/audio/lib/rust:fuchsia-audio",
+      "//src/media/audio/lib/rust",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:serde",

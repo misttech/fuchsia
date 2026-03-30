@@ -5,6 +5,7 @@
 group("testing") {
   testonly = true
   deps = [
+    "enumeration",
     "fakes",
     "stub_adr:stub_adr_pkg",
   ]
