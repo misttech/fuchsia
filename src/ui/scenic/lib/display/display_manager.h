@@ -93,7 +93,10 @@ class DisplayManager {
   // coordinator (not just individual displays). The default is no.
   bool owns_display_coordinator_ = false;
 
+  zx::time_monotonic last_vsync_timestamp_;
+
   inspect::Node inspect_node_;
+  inspect::LazyNode inspect_lazy_metrics_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(DisplayManager);
 };

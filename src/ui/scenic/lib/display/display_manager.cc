@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fuchsia/ui/composition/internal/cpp/fidl.h>
+#include <lib/async/default.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -71,6 +72,16 @@ void DisplayManager::BindDefaultDisplayCoordinator(
       std::move(coordinator_listener), fit::bind_member<&DisplayManager::OnDisplaysChanged>(this),
       fit::bind_member<&DisplayManager::OnVsync>(this),
       fit::bind_member<&DisplayManager::OnClientOwnershipChange>(this));
+
+  inspect_lazy_metrics_ = inspect_node_.CreateLazyValues("Vsync Metrics", [this, dispatcher]() {
+    inspect::Inspector inspector;
+
+    const zx::time_monotonic now(async_now(dispatcher));
+    const zx::duration duration = now - last_vsync_timestamp_;
+    inspector.GetRoot().RecordInt("time_since_last_vsync_ms", duration.to_msecs());
+
+    return fpromise::make_ok_promise(std::move(inspector));
+  });
 }
 
 void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
@@ -188,6 +199,8 @@ void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timest
     return;
   }
   default_display_->OnVsync(timestamp, displayed_config_stamp);
+
+  last_vsync_timestamp_ = timestamp;
 }
 
 }  // namespace display
