@@ -208,13 +208,13 @@ fn generate_html(writer: &mut dyn std::io::Write, svg: Option<String>) -> Result
         None => std::io::read_to_string(std::io::stdin())?,
     };
 
-    let re_edges = regex::Regex::new(r#"<g id="(\d+_\d+)" class=""#)?;
+    let re_edges = regex_lite::Regex::new(r#"<g id="(\d+_\d+)" class=""#)?;
     let edge_caps = re_edges
         .captures_iter(svg_content.as_str())
         .map(|caps| caps.get(1).map(|the_match| the_match.as_str().to_string()).expect("match1"))
         .collect::<Vec<_>>();
 
-    let re_services = regex::Regex::new(r#"<g id="(\d+)_(\d+)_(.*)_([xyz])" class=""#)?;
+    let re_services = regex_lite::Regex::new(r#"<g id="(\d+)_(\d+)_(.*)_([xyz])" class=""#)?;
     let svc_caps = re_services
         .captures_iter(svg_content.as_str())
         .map(|caps| {

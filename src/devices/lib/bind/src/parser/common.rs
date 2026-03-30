@@ -14,7 +14,7 @@ use nom::multi::{many0, separated_list1};
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Input, Parser};
 use nom_locate::LocatedSpan;
-use regex::Regex;
+use regex_lite::Regex;
 use std::fmt;
 use std::sync::LazyLock;
 use thiserror::Error;
