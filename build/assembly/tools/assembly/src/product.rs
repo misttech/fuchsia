@@ -86,6 +86,9 @@ Resulting product is not supported and may misbehave!
         for pib in replace_pibs {
             product_config.product_input_bundles.insert(pib.release_info.name.clone(), pib);
         }
+
+        // Repackage starnix containers if they have a prebuilt package.
+        product_config.repackage_starnix_containers(&outdir)?;
     }
     let developer_overrides = if let Some(overrides_path) = developer_overrides {
         Some(load_developer_overrides(&overrides_path, suppress_overrides_warning)?)

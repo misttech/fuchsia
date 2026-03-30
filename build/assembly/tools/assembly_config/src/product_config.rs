@@ -15,8 +15,6 @@ use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{PackageBuilder, PackageManifest};
 use product_input_bundle::ProductInputBundle;
 use starnix_container::StarnixContainerGenerator;
-use std::collections::HashMap;
-use std::fs;
 use std::io::Cursor;
 
 pub fn new(args: &ProductArgs) -> Result<()> {
@@ -67,15 +65,17 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         std::fs::create_dir_all(&outdir_path).context("creating container temp dir")?;
         let outdir =
             Utf8PathBuf::try_from(outdir_path).context("converting temp dir path to utf8")?;
-        let base = find_package_in_pibs(&config.product_input_bundles, &container.base)
-            .with_context(|| {
-                format!(
-                    "finding starnix base package '{}' in product input bundles",
-                    &container.base
-                )
-            })?
-            .clone();
-        let hals = find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
+        let base =
+            ProductConfig::find_package_in_pibs(&config.product_input_bundles, &container.base)
+                .with_context(|| {
+                    format!(
+                        "finding starnix base package '{}' in product input bundles",
+                        &container.base
+                    )
+                })?
+                .clone();
+        let hals =
+            ProductConfig::find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
         for (name, manifest) in container.hals.iter().zip(hals.iter()) {
             package_set.insert(
                 name.clone(),
@@ -130,7 +130,7 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
     for package_manifest_path in &args.replace_package {
         let package_manifest = PackageManifest::try_load_from(&package_manifest_path)?;
         let package_name = package_manifest.name();
-        if let Some(path) = find_package_in_product(&mut config, &package_name) {
+        if let Some(path) = config.find_package_in_product(&package_name) {
             *path = package_manifest_path.clone();
         }
     }
@@ -145,55 +145,7 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
     let temp_repackaged_path = Utf8PathBuf::from_path_buf(temp_repackaged_dir.path().to_path_buf())
         .map_err(|p| anyhow::anyhow!("converting temp path to utf8: {:?}", p))?;
 
-    // Replace all packages referenced by starnix containers with the latest version.
-    let mut packages_to_update = HashMap::new();
-
-    // Repackage starnix containers if they have a prebuilt package.
-    for container in &mut config.product.starnix_containers {
-        let container_manifest_path = match &container.images_or_package {
-            StarnixImagesOrPackage::Package(p) => Ok(p.clone()),
-            _ => Err(anyhow::anyhow!(
-                "The hybrid product config command does not support building starnix containers from images.",
-            )),
-        }?;
-        let outdir = temp_repackaged_path.join("repackaged_containers").join(&container.name);
-        fs::create_dir_all(&outdir).context("creating repackaged container dir")?;
-
-        let container_base_manifest_path =
-            find_package_in_pibs(&config.product_input_bundles, &container.base)
-                .with_context(|| {
-                    format!(
-                        "finding starnix base package '{}' in product input bundles",
-                        &container.base
-                    )
-                })?
-                .clone();
-
-        let hals = find_hals_in_pibs(&config.product_input_bundles, &container.hals)?;
-
-        for (name, manifest) in container.hals.iter().zip(hals.iter()) {
-            packages_to_update.insert(name.clone(), manifest.clone());
-        }
-
-        let output_manifest_path = starnix_container::StarnixContainerRepackager {
-            name: container.name.clone(),
-            outdir,
-            container_manifest_path: container_manifest_path.clone(),
-            base: container_base_manifest_path,
-            hals: hals.clone(),
-            skip_subpackages: container.skip_subpackages,
-        }
-        .build(&mut depfile)?;
-        container.images_or_package = StarnixImagesOrPackage::Package(output_manifest_path.clone());
-        packages_to_update.insert(container.name.clone(), output_manifest_path);
-    }
-
-    // Replace the HALs in the product config package sets.
-    for (name, path) in &packages_to_update {
-        if let Some(target_path) = find_package_in_product(&mut config, name) {
-            *target_path = path.clone();
-        }
-    }
+    config.repackage_starnix_containers(&temp_repackaged_path)?;
 
     config.write_to_dir_with_depfile(&args.output, Some(&mut depfile))?;
 
@@ -208,7 +160,7 @@ pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
     let mut config = ProductConfig::from_dir(&args.config)?;
     let mut deps = Depfile::new();
 
-    if let Some(package_manifest_path) = find_package_in_product(&mut config, &args.package_name) {
+    if let Some(package_manifest_path) = config.find_package_in_product(&args.package_name) {
         let manifest =
             PackageManifest::try_load_from(&package_manifest_path).with_context(|| {
                 format!("Loading package manifest to extract: {}", &package_manifest_path)
@@ -271,45 +223,6 @@ pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn find_package_in_product<'a>(
-    config: &'a mut ProductConfig,
-    package_name: impl AsRef<str>,
-) -> Option<&'a mut Utf8PathBuf> {
-    config.product.packages.base.iter_mut().chain(&mut config.product.packages.cache).find_map(
-        |(name, pkg)| {
-            if name == package_name.as_ref() {
-                return Some(&mut pkg.manifest);
-            }
-            return None;
-        },
-    )
-}
-
-fn find_package_in_pibs<'a>(
-    product_input_bundles: &'a std::collections::BTreeMap<String, ProductInputBundle>,
-    package_name: impl AsRef<str>,
-) -> Option<&'a Utf8PathBuf> {
-    product_input_bundles.values().find_map(|pib| {
-        pib.packages.for_product_config.get(package_name.as_ref()).map(|pkg| &pkg.manifest)
-    })
-}
-
-fn find_hals_in_pibs(
-    product_input_bundles: &std::collections::BTreeMap<String, ProductInputBundle>,
-    hal_names: &[String],
-) -> Result<Vec<Utf8PathBuf>> {
-    hal_names
-        .iter()
-        .map(|name| {
-            let hal_package =
-                find_package_in_pibs(product_input_bundles, name).with_context(|| {
-                    format!("finding starnix hal package '{}' in product input bundles", name)
-                })?;
-            Ok(hal_package.clone())
-        })
-        .collect()
 }
 
 #[cfg(test)]
