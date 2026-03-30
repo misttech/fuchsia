@@ -12,6 +12,10 @@ pub struct UsbConfig {
     /// Set this if the platform has a USB peripheral device that needs to be configured.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub peripheral: UsbPeripheralConfig,
+
+    /// Set this to `true` to enable the USB policy and health services.
+    #[serde(default, skip_serializing_if = "crate::common::is_default")]
+    pub enable_policy: bool,
 }
 
 /// Configure how the USB peripheral subsystem should work.
