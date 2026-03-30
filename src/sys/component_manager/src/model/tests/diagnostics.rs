@@ -19,7 +19,12 @@ mod tests {
     use diagnostics_assertions::{AnyProperty, HistogramAssertion, assert_data_tree};
     use diagnostics_hierarchy::DiagnosticsHierarchy;
     use fidl::endpoints::ServerEnd;
+    use fidl_fuchsia_component_runner as fcrunner;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
+    use fuchsia_inspect as inspect;
     use fuchsia_inspect::DiagnosticsHierarchyGetter;
+    use fuchsia_sync as fsync;
     use futures::StreamExt;
     use futures::channel::mpsc;
     use hooks::EventType;
@@ -27,10 +32,6 @@ mod tests {
     use moniker::Moniker;
     use std::future;
     use std::sync::Arc;
-    use {
-        fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-        fuchsia_inspect as inspect, fuchsia_sync as fsync,
-    };
 
     fn get_data(
         hierarchy: &DiagnosticsHierarchy,

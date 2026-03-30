@@ -10,10 +10,11 @@ use component_debug::config::{
 };
 use component_debug::realm::{get_resolved_declaration, resolve_declaration};
 use component_debug::route::{DeclType, RouteOutcome, RouteReport};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_component::client::connect_to_protocol;
 use moniker::Moniker;
 use std::str::FromStr;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_sys2 as fsys};
 
 #[fuchsia::test]
 async fn list() {
@@ -145,7 +146,7 @@ async fn route() {
             service_instances: None,
             dictionary_entries: None,
             outcome: RouteOutcome::Failed,
-        } if capability == "fuchsia.foo.Bar"
+        } if capability == "svc/fuchsia.foo.Bar"
     );
 
     let report = reports.remove(0);
@@ -183,7 +184,7 @@ async fn route() {
             service_instances: None,
             dictionary_entries: None,
             outcome: RouteOutcome::Failed,
-        } if capability == "fuchsia.foo.Bar"
+        } if capability == "svc/fuchsia.foo.Bar"
     );
 
     let report = reports.remove(0);
@@ -248,7 +249,7 @@ async fn route_void() {
             service_instances: None,
             dictionary_entries: None,
             outcome: RouteOutcome::Void,
-        } if capability == "void-protocol" && m == "foo"
+        } if capability == "svc/void-protocol" && m == "foo"
     );
 
     let route_validator = connect_to_protocol::<fsys::RouteValidatorMarker>().unwrap();

@@ -2,30 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::model::component::instance::ResolvedInstanceState;
-use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::routing::{self, BedrockRouteRequest, Route};
+use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
-use ::routing::RouteRequest as LegacyRouteRequest;
+use ::routing::bedrock::sandbox_construction::ComponentSandbox;
 use ::routing::capability_source::CapabilitySource;
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::error::{ComponentInstanceError, RoutingError};
-use anyhow::format_err;
-use clonable_error::ClonableError;
-use cm_rust::{ExposeDecl, NativeIntoFidl, SourceName, UseDecl};
-use cm_types::{Name, RelativePath};
-use futures::future::{BoxFuture, join_all};
+use cm_rust::NativeIntoFidl;
+use cm_types::RelativePath;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_sys2 as fsys;
+use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
-use router_error::{Explain, RouterError};
-use sandbox::{Capability, RouterResponse};
-use std::iter;
-use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_sys2 as fsys,
-};
+use router_error::RouterError;
+use sandbox::{Capability, CapabilityBound, Data, Dict, Router, RouterResponse, WeakInstanceToken};
 
 pub fn serve(
     server_end: zx::Channel,
@@ -76,32 +67,18 @@ async fn validate(
         Moniker::try_from(moniker_str).map_err(|_| fcomponent::Error::InvalidArguments)?;
     let moniker = scope.moniker.concat(&moniker);
 
+    let component_instance_token = scope.clone().into();
     let scope = scope.upgrade().map_err(|_| fcomponent::Error::InstanceNotFound)?;
     let instance =
         scope.find_absolute(&moniker).await.map_err(|_| fcomponent::Error::InstanceNotFound)?;
 
-    // Get all use and expose declarations for this component
-    let (uses, exposes) = {
-        let state = instance.lock_state().await;
-
-        // TODO(https://fxbug.dev/42052917): The error is that the instance is not currently
-        // resolved. Use a better error here, when one exists.
-        let resolved =
-            state.get_resolved_state().ok_or(fcomponent::Error::InstanceCannotResolve)?;
-
-        let mut uses = resolved.decl().uses.to_vec();
-        if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
-            uses.push(use_for_runner(runner));
-        }
-        let exposes = resolved.decl().exposes.to_vec();
-
-        (uses, exposes)
-    };
-
-    let mut reports = validate_uses(uses, &instance).await;
-    let mut expose_reports = validate_exposes(exposes, &instance).await;
-    reports.append(&mut expose_reports);
-
+    let sandbox = instance
+        .lock_resolved_state()
+        .await
+        .map_err(|_| fcomponent::Error::InstanceCannotResolve)?
+        .sandbox
+        .clone();
+    let reports = validate_sandbox(&sandbox, component_instance_token, &scope.moniker).await;
     Ok(reports)
 }
 
@@ -116,558 +93,253 @@ async fn route(
         Moniker::try_from(moniker_str).map_err(|_| fsys::RouteValidatorError::InvalidArguments)?;
     let moniker = scope.moniker.concat(&moniker);
 
+    let component_instance_token = scope.clone().into();
     let scope = scope.upgrade().map_err(|_| fsys::RouteValidatorError::InstanceNotFound)?;
     let instance = scope
         .find_absolute(&moniker)
         .await
         .map_err(|_| fsys::RouteValidatorError::InstanceNotFound)?;
-    let route_requests = {
-        let resolved = instance
-            .lock_resolved_state()
-            .await
-            .map_err(|_| fsys::RouteValidatorError::InstanceNotResolved)?;
-        generate_route_requests(&resolved, targets)?
-    };
 
-    let route_futs = route_requests.into_iter().map(|pair| async {
-        let (target, request) = pair;
+    let sandbox = instance
+        .lock_resolved_state()
+        .await
+        .map_err(|_| fsys::RouteValidatorError::InstanceNotResolved)?
+        .sandbox
+        .clone();
+    let reports = validate_sandbox(&sandbox, component_instance_token, &scope.moniker).await;
 
-        let capability = Some(target.name.into());
-        let decl_type = Some(target.decl_type);
-        let (availability, res) = request.route(&instance).await;
-        match res {
-            Ok(RouteData { outcome, source, service_instances, dictionary_entries }) => {
-                let moniker = extended_moniker_to_str(&scope.moniker, source);
-                fsys::RouteReport {
-                    capability,
-                    decl_type,
-                    outcome: Some(outcome),
-                    error: None,
-                    source_moniker: Some(moniker),
-                    availability,
-                    service_instances,
-                    dictionary_entries,
-                    ..Default::default()
-                }
-            }
-            Err(e) => {
-                let error =
-                    Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() });
-                fsys::RouteReport {
-                    capability,
-                    decl_type,
-                    error,
-                    outcome: Some(fsys::RouteOutcome::Failed),
-                    availability,
-                    ..Default::default()
-                }
-            }
-        }
-    });
-    Ok(join_all(route_futs).await)
-}
-
-#[allow(clippy::needless_collect)]
-fn generate_route_requests(
-    resolved: &ResolvedInstanceState,
-    targets: Vec<fsys::RouteTarget>,
-) -> Result<Vec<(fsys::RouteTarget, RouteRequest)>, fsys::RouteValidatorError> {
     if targets.is_empty() {
-        let mut requests: Vec<_> = resolved
-            .decl()
-            .uses
-            .iter()
-            .map(|use_| {
-                let target = fsys::RouteTarget {
-                    name: use_.source_name().as_str().into(),
-                    decl_type: fsys::DeclType::Use,
-                };
-                let request = RouteRequest::try_from(use_.clone()).unwrap();
-                (target, request)
-            })
-            .collect();
-
-        // `program.runner`, if set, is equivalent to a `use`.
-        if let Some(runner) = resolved.decl().program.as_ref().and_then(|d| d.runner.as_ref()) {
-            let target =
-                fsys::RouteTarget { name: runner.as_str().into(), decl_type: fsys::DeclType::Use };
-            let use_ = use_for_runner(runner);
-            let request = RouteRequest::try_from(use_).unwrap();
-            requests.push((target, request));
+        return Ok(reports);
+    }
+    let mut filtered_reports = vec![];
+    for report in reports {
+        for target in targets.iter() {
+            if target.decl_type != fsys::DeclType::Any && report.decl_type != Some(target.decl_type)
+            {
+                continue;
+            }
+            if report.capability.is_none() {
+                continue;
+            }
+            if !report.capability.as_ref().unwrap().contains(&target.name) {
+                continue;
+            }
+            // This is a matching decl type and the capability name includes the name of the
+            // filter, so we have a match!
+            filtered_reports.push(report);
+            break;
         }
+    }
+    Ok(filtered_reports)
+}
 
-        let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
-        requests.extend(exposes.into_iter().map(|((target_name, _target), e)| {
-            let target = fsys::RouteTarget {
-                name: target_name.to_string(),
-                decl_type: fsys::DeclType::Expose,
-            };
-            let request = RouteRequest::from_expose_decls(e).unwrap();
-            (target, request)
-        }));
-
-        Ok(requests)
-    } else {
-        // Return results that fuzzy match (substring match) `target.name`.
-        let targets = targets
-            .into_iter()
-            .map(|target| match target.decl_type {
-                fsys::DeclType::Any => {
-                    let mut use_target = target.clone();
-                    use_target.decl_type = fsys::DeclType::Use;
-                    let mut expose_target = target;
-                    expose_target.decl_type = fsys::DeclType::Expose;
-                    Either::Left([use_target, expose_target].into_iter())
+async fn validate_sandbox(
+    sandbox: &ComponentSandbox,
+    component_instance_token: WeakInstanceToken,
+    scope: &Moniker,
+) -> Vec<fsys::RouteReport> {
+    let mut reports = vec![];
+    let mut program_input_reports = validate_dictionary(
+        RelativePath::dot(),
+        sandbox.program_input.namespace(),
+        component_instance_token.clone(),
+        fsys::DeclType::Use,
+    )
+    .await;
+    program_input_reports.append(
+        &mut validate_dictionary(
+            RelativePath::dot(),
+            sandbox.program_input.numbered_handles(),
+            component_instance_token.clone(),
+            fsys::DeclType::Use,
+        )
+        .await,
+    );
+    if let Some(runner_router) = sandbox.program_input.runner() {
+        let result = debug_route(runner_router, component_instance_token.clone()).await;
+        let mut report = fsys::RouteReport {
+            capability: Some("<runner>".to_string()),
+            decl_type: Some(fsys::DeclType::Use),
+            ..Default::default()
+        };
+        fill_in_report_with_route_result(&mut report, result);
+        program_input_reports.push(report);
+    }
+    let mut component_output_reports = validate_dictionary(
+        RelativePath::dot(),
+        sandbox.component_output.capabilities(),
+        component_instance_token,
+        fsys::DeclType::Expose,
+    )
+    .await;
+    reports.append(&mut program_input_reports);
+    reports.append(&mut component_output_reports);
+    for report in reports.iter_mut() {
+        if let Some(report_moniker) = report.source_moniker.as_mut() {
+            // The monikers listed in the reports should be restricted to the scope of the
+            // validator.
+            match ExtendedMoniker::parse_str(report_moniker.as_str()) {
+                Ok(ExtendedMoniker::ComponentInstance(moniker)) => {
+                    *report_moniker = moniker
+                        .strip_prefix(&scope)
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|_| "<above scope>".to_string());
                 }
-                _ => Either::Right(iter::once(target)),
-            })
-            .flatten();
-
-        let mut requests = vec![];
-        for target in targets {
-            match target.decl_type {
-                fsys::DeclType::Use => {
-                    requests.extend(resolved.decl().uses.iter().filter_map(|u| {
-                        if !u.source_name().as_str().contains(&target.name) {
-                            return None;
-                        }
-                        // This could be a fuzzy match so update the capability name.
-                        let target = fsys::RouteTarget {
-                            name: u.source_name().to_string(),
-                            decl_type: target.decl_type,
-                        };
-                        let request = RouteRequest::try_from(u.clone()).unwrap();
-                        Some((target, request))
-                    }));
-
-                    // `program.runner`, if set, is equivalent to a `use`.
-                    if let Some(runner) = resolved
-                        .decl()
-                        .program
-                        .as_ref()
-                        .and_then(|d| d.runner.as_ref())
-                        .filter(|r| r.as_str().contains(&target.name))
-                    {
-                        let target = fsys::RouteTarget {
-                            name: runner.as_str().into(),
-                            decl_type: fsys::DeclType::Use,
-                        };
-                        let u = use_for_runner(runner);
-                        let request = RouteRequest::try_from(u).unwrap();
-
-                        requests.push((target, request));
+                Ok(ExtendedMoniker::ComponentManager) => {
+                    if !scope.is_root() {
+                        *report_moniker = "<above scope>".to_string();
                     }
-                }
-                fsys::DeclType::Expose => {
-                    let exposes = routing::aggregate_exposes(resolved.decl().exposes.iter());
-
-                    requests.extend(exposes.into_iter().filter_map(
-                        move |((target_name, _target), e)| {
-                            if !target_name.as_str().contains(&target.name) {
-                                return None;
-                            }
-                            // This could be a fuzzy match so update the capability name.
-                            let target = fsys::RouteTarget {
-                                name: target_name.to_string(),
-                                decl_type: target.decl_type,
-                            };
-                            let request = RouteRequest::from_expose_decls(e).unwrap();
-                            Some((target, request))
-                        },
-                    ));
-                }
-                fsys::DeclType::Any => unreachable!("Any was expanded"),
-                fsys::DeclTypeUnknown!() => {
-                    return Err(fsys::RouteValidatorError::InvalidArguments);
-                }
-            }
-        }
-
-        Ok(requests)
-    }
-}
-
-/// Either is an iterator over two variant iterators.
-///
-/// Similar to `itertools::Either`, but this avoids pulling in a large dependency for a small
-/// iterator type.
-enum Either<T, L: Iterator<Item = T>, R: Iterator<Item = T>> {
-    Left(L),
-    Right(R),
-}
-
-impl<T, L: Iterator<Item = T>, R: Iterator<Item = T>> Iterator for Either<T, L, R> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Left(iter) => iter.next(),
-            Self::Right(iter) => iter.next(),
-        }
-    }
-}
-
-fn use_for_runner(runner: &Name) -> cm_rust::UseDecl {
-    cm_rust::UseDecl::Runner(cm_rust::UseRunnerDecl {
-        source: cm_rust::UseSource::Environment,
-        source_name: runner.clone(),
-        source_dictionary: RelativePath::dot(),
-    })
-}
-
-fn extended_moniker_to_str(scope_moniker: &Moniker, m: ExtendedMoniker) -> String {
-    match m {
-        ExtendedMoniker::ComponentManager => m.to_string(),
-        ExtendedMoniker::ComponentInstance(m) => match m.strip_prefix(scope_moniker) {
-            Ok(r) => r.to_string(),
-            Err(_) => "<above scope>".to_string(),
-        },
-    }
-}
-
-#[derive(Clone, Debug)]
-enum RouteRequest {
-    Bedrock(BedrockRouteRequest),
-    Legacy(LegacyRouteRequest),
-}
-
-#[derive(Debug)]
-struct RouteData {
-    outcome: fsys::RouteOutcome,
-    source: ExtendedMoniker,
-    service_instances: Option<Vec<fsys::ServiceInstance>>,
-    dictionary_entries: Option<Vec<fsys::DictionaryEntry>>,
-}
-
-impl RouteRequest {
-    async fn route(
-        self,
-        instance: &Arc<ComponentInstance>,
-    ) -> (Option<fdecl::Availability>, Result<RouteData, Box<dyn Explain>>) {
-        match self {
-            Self::Legacy(route_request) => {
-                let availability = route_request.availability().map(From::from);
-                let res = Self::route_legacy(route_request, instance)
-                    .await
-                    .map_err(|e| -> Box<dyn Explain> { Box::new(e) });
-                (availability, res)
-            }
-            Self::Bedrock(route_request) => {
-                let availability = Some(route_request.availability().into());
-                let res = Self::route_bedrock(route_request, instance)
-                    .await
-                    .map_err(|e| -> Box<dyn Explain> { Box::new(e) });
-                (availability, res)
-            }
-        }
-    }
-
-    async fn route_legacy(
-        route_request: LegacyRouteRequest,
-        instance: &Arc<ComponentInstance>,
-    ) -> Result<RouteData, RoutingError> {
-        let source = route_request.route(&instance).await?;
-        let source = source.source;
-        let outcome = match &source {
-            CapabilitySource::Void(_) => fsys::RouteOutcome::Void,
-            _ => fsys::RouteOutcome::Success,
-        };
-        let service_instances = match &source {
-            CapabilitySource::AnonymizedAggregate(anonymized_aggregate_source) => Some(
-                anonymized_aggregate_source
-                    .instances
-                    .clone()
-                    .into_iter()
-                    .map(NativeIntoFidl::native_into_fidl)
-                    .collect(),
-            ),
-            _ => None,
-        };
-        Ok(RouteData {
-            outcome,
-            source: source.source_moniker(),
-            service_instances,
-            dictionary_entries: None,
-        })
-    }
-
-    async fn route_bedrock(
-        route_request: BedrockRouteRequest,
-        instance: &Arc<ComponentInstance>,
-    ) -> Result<RouteData, RouterError> {
-        let res: Result<Capability, RouterError> = async move {
-            let resolved_state = instance.lock_resolved_state().await.map_err(|err| {
-                RoutingError::from(ComponentInstanceError::ResolveFailed {
-                    moniker: instance.moniker.clone(),
-                    err: ClonableError::from(format_err!("{:?}", err)),
-                })
-            })?;
-            Ok(route_request.into_router(instance.as_weak(), &resolved_state.sandbox))
-        }
-        .await;
-        let router = res?;
-
-        let mut dictionary_entries = None;
-        let res = match router {
-            Capability::ConnectorRouter(router) => {
-                Self::route_capability(Capability::ConnectorRouter(router), instance).await
-            }
-            Capability::DictionaryRouter(router) => {
-                let res = Self::route_capability(Capability::DictionaryRouter(router.clone()), instance).await;
-                let dict = router
-                    .route(None, false, instance.clone().as_weak().into())
-                    .await
-                    .and_then(|resp| match resp {
-                        RouterResponse::Capability(dict) => Ok(Some(dict)),
-                        RouterResponse::Unavailable => Ok(None),
-                        RouterResponse::Debug(_) => {
-                            warn!("[route_validator] Route returned debug info unexpectedly");
-                            Err(RouterError::Internal)
-                        }
-                    })?;
-                if let Some(dict) = dict {
-                    let mut futs = vec![];
-                    for (key, capability) in dict.enumerate() {
-                        let key_str = key.to_string();
-                        let instance = instance.clone();
-                        futs.push(async move {
-                            let mut name = key_str;
-                            if let Ok(capability) = capability {
-                                if let Ok(source) = Self::route_capability_source(capability, &instance).await {
-                                    let outcome_mark = match source {
-                                        CapabilitySource::Void(_) => "[~]",
-                                        _ => "[✓]",
-                                    };
-                                    let source_moniker = source.source_moniker();
-                                    name = format!("{}  Source: {}  {}", name, source_moniker, outcome_mark);
-                                }
-                            }
-                            fsys::DictionaryEntry {
-                                name: Some(name),
-                                ..Default::default()
-                            }
-                        });
-                    }
-                    dictionary_entries = Some(join_all(futs).await);
-                }
-                res
-            }
-            Capability::DirConnectorRouter(router) => {
-                Self::route_capability(Capability::DirConnectorRouter(router), instance).await
-            }
-            Capability::DataRouter(router) => {
-                Self::route_capability(Capability::DataRouter(router), instance).await
-            }
-            _ => {
-                warn!("[route_validator] Sandbox capability was not a Router type");
-                Err(RouterError::Internal)
-            }
-        };
-        res.and_then(|data| {
-            match CapabilitySource::try_from(data) {
-                Ok(capability_source) => {
-                    let outcome = match &capability_source {
-                        CapabilitySource::Void(_) => fsys::RouteOutcome::Void,
-                        _ => fsys::RouteOutcome::Success,
-                    };
-                    let service_instances = match &capability_source {
-                        CapabilitySource::AnonymizedAggregate(anonymized_aggregate_source) => Some(
-                            anonymized_aggregate_source
-                                .instances
-                                .clone()
-                                .into_iter()
-                                .map(NativeIntoFidl::native_into_fidl)
-                                .collect(),
-                        ),
-                        _ => None,
-                    };
-                    Ok(RouteData {
-                        outcome,
-                        source: capability_source.source_moniker(),
-                        service_instances,
-                        dictionary_entries,
-                    })
                 }
                 Err(e) => {
-                    warn!("[route_validator] failed to convert Data to CapabilitySource: {:?}", e);
-                    Ok(RouteData {
-                        outcome: fsys::RouteOutcome::Failed,
-                        source: ExtendedMoniker::parse_str(".").unwrap(),
-                        service_instances: None,
-                        dictionary_entries,
-                    })
+                    panic!(
+                        "we generated a report with an invalid moniker: {report_moniker:?} {e:?}"
+                    );
                 }
             }
-        })
-    }
-
-    async fn route_capability(
-        capability: Capability,
-        instance: &Arc<ComponentInstance>,
-    ) -> Result<sandbox::Data, RouterError> {
-        match capability {
-            Capability::ConnectorRouter(router) => {
-                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
-                    match resp {
-                        RouterResponse::Debug(data) => Ok(data),
-                        _ => Err(RouterError::Internal),
-                    }
-                })
-            }
-            Capability::DictionaryRouter(router) => {
-                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
-                    match resp {
-                        RouterResponse::Debug(data) => Ok(data),
-                        _ => Err(RouterError::Internal),
-                    }
-                })
-            }
-            Capability::DirConnectorRouter(router) => {
-                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
-                    match resp {
-                        RouterResponse::Debug(data) => Ok(data),
-                        _ => Err(RouterError::Internal),
-                    }
-                })
-            }
-            Capability::DataRouter(router) => {
-                router.route(None, true, instance.clone().as_weak().into()).await.and_then(|resp| {
-                    match resp {
-                        RouterResponse::Debug(data) => Ok(data),
-                        _ => Err(RouterError::Internal),
-                    }
-                })
-            }
-            _ => Err(RouterError::Internal),
         }
-    }
-
-    async fn route_capability_source(
-        capability: Capability,
-        instance: &Arc<ComponentInstance>,
-    ) -> Result<CapabilitySource, RouterError> {
-        let data = Self::route_capability(capability, instance).await?;
-        CapabilitySource::try_from(data).map_err(|_| RouterError::Internal)
-    }
-
-    pub fn from_expose_decls(exposes: Vec<&ExposeDecl>) -> Result<Self, RoutingError> {
-        match BedrockRouteRequest::try_from(&exposes) {
-            Ok(r) => Ok(Self::Bedrock(r)),
-            Err(()) => Ok(Self::Legacy(LegacyRouteRequest::from_expose_decls(exposes)?)),
-        }
-    }
-}
-
-impl From<UseDecl> for RouteRequest {
-    fn from(u: UseDecl) -> Self {
-        match BedrockRouteRequest::try_from(u) {
-            Ok(r) => Self::Bedrock(r),
-            Err(r) => Self::Legacy(r.into()),
-        }
-    }
-}
-
-async fn validate_uses(
-    uses: Vec<UseDecl>,
-    instance: &Arc<ComponentInstance>,
-) -> Vec<fsys::RouteReport> {
-    let mut reports = vec![];
-    for use_ in uses {
-        let capability = Some(use_.source_name().to_string());
-        let decl_type = Some(fsys::DeclType::Use);
-        let route_request = RouteRequest::from(use_);
-        let (availability, res) = route_request.route(instance).await;
-        let report = match res {
-            Ok(RouteData { outcome, source, service_instances, dictionary_entries }) => {
-                let moniker = extended_moniker_to_str(&Moniker::root(), source);
-                fsys::RouteReport {
-                    outcome: Some(outcome),
-                    source_moniker: Some(moniker),
-                    service_instances,
-                    dictionary_entries,
-                    capability,
-                    decl_type,
-                    availability,
-                    ..Default::default()
-                }
-            }
-            Err(e) => {
-                let outcome = Some(fsys::RouteOutcome::Failed);
-                let error =
-                    Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() });
-                fsys::RouteReport {
-                    outcome,
-                    capability,
-                    decl_type,
-                    error,
-                    availability,
-                    ..Default::default()
-                }
-            }
-        };
-        reports.push(report);
     }
     reports
 }
-
-async fn validate_exposes(
-    exposes: Vec<ExposeDecl>,
-    instance: &Arc<ComponentInstance>,
-) -> Vec<fsys::RouteReport> {
-    let mut reports = vec![];
-
-    let exposes = routing::aggregate_exposes(exposes.iter());
-    for ((target_name, _target), e) in exposes {
-        let capability = Some(target_name.to_string());
-        let decl_type = Some(fsys::DeclType::Expose);
-        let report = match RouteRequest::from_expose_decls(e) {
-            Ok(route_request) => {
-                let (availability, res) = route_request.route(instance).await;
-                match res {
-                    Ok(RouteData { outcome, source, service_instances, dictionary_entries }) => {
-                        let moniker = extended_moniker_to_str(&Moniker::root(), source);
-                        fsys::RouteReport {
-                            outcome: Some(outcome),
-                            source_moniker: Some(moniker),
-                            service_instances,
-                            dictionary_entries,
-                            capability,
-                            decl_type,
-                            availability,
-                            ..Default::default()
-                        }
-                    }
-                    Err(e) => {
-                        let error = Some(fsys::RouteError {
-                            summary: Some(e.to_string()),
-                            ..Default::default()
-                        });
-                        fsys::RouteReport {
-                            capability,
-                            decl_type,
-                            outcome: Some(fsys::RouteOutcome::Failed),
-                            error,
-                            availability,
-                            ..Default::default()
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                let error =
-                    Some(fsys::RouteError { summary: Some(e.to_string()), ..Default::default() });
-                fsys::RouteReport {
-                    capability,
-                    decl_type,
-                    outcome: Some(fsys::RouteOutcome::Failed),
-                    error,
-                    ..Default::default()
-                }
-            }
-        };
-        reports.push(report);
+async fn debug_route<T: CapabilityBound>(
+    router: Router<T>,
+    component_instance_token: WeakInstanceToken,
+) -> Result<Data, RouterError> {
+    match router.route(None, true, component_instance_token).await {
+        Ok(RouterResponse::Capability(_)) => {
+            panic!("router gave us capability for a debug route")
+        }
+        Ok(RouterResponse::Unavailable) => {
+            panic!("router gave us unavailable for a debug route")
+        }
+        Ok(RouterResponse::Debug(data)) => Ok(data),
+        Err(e) => Err(e),
     }
-    reports
+}
+
+fn fill_in_report_with_route_result(
+    report: &mut fsys::RouteReport,
+    result: Result<Data, RouterError>,
+) {
+    match result {
+        Ok(source_data) => {
+            let source: CapabilitySource =
+                source_data.try_into().expect("failed to deserialize capability source");
+            let outcome = match &source {
+                CapabilitySource::Void(_) => fsys::RouteOutcome::Void,
+                _ => fsys::RouteOutcome::Success,
+            };
+            report.outcome = Some(outcome);
+            let service_instances = match &source {
+                CapabilitySource::AnonymizedAggregate(anonymized_aggregate_source) => Some(
+                    anonymized_aggregate_source
+                        .instances
+                        .clone()
+                        .into_iter()
+                        .map(NativeIntoFidl::native_into_fidl)
+                        .collect(),
+                ),
+                _ => None,
+            };
+            report.service_instances = service_instances;
+            report.source_moniker = Some(format!("{}", source.source_moniker()));
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            {
+                report.build_time_capability_type = source.type_name().map(|t| t.to_string());
+            }
+        }
+        Err(routing_error) => {
+            report.outcome = Some(fsys::RouteOutcome::Failed);
+            report.error = Some(fsys::RouteError {
+                summary: Some(format!("{:?}", routing_error)),
+                ..fsys::RouteError::default()
+            });
+        }
+    }
+}
+
+fn validate_dictionary(
+    path: RelativePath,
+    dictionary: Dict,
+    component_instance_token: WeakInstanceToken,
+    decl_type: fsys::DeclType,
+) -> BoxFuture<'static, Vec<fsys::RouteReport>> {
+    async move {
+        let mut reports = vec![];
+        for (name, maybe_capability) in dictionary.enumerate() {
+            let Ok(capability) = maybe_capability else {
+                continue;
+            };
+            let mut capability_path = path.clone();
+            assert!(capability_path.push(name));
+            let mut report = fsys::RouteReport {
+                capability: Some(format!("{}", capability_path)),
+                decl_type: Some(decl_type.clone()),
+                ..Default::default()
+            };
+            match capability {
+                Capability::Connector(_) | Capability::DirConnector(_) | Capability::Data(_) => {
+                    report.outcome = Some(fsys::RouteOutcome::Success);
+                    reports.push(report);
+                }
+                Capability::Dictionary(child_dictionary) => {
+                    let mut sub_reports = validate_dictionary(
+                        capability_path,
+                        child_dictionary,
+                        component_instance_token.clone(),
+                        decl_type.clone(),
+                    )
+                    .await;
+                    reports.append(&mut sub_reports);
+                }
+                Capability::ConnectorRouter(router) => {
+                    let result = debug_route(router, component_instance_token.clone()).await;
+                    fill_in_report_with_route_result(&mut report, result);
+                    reports.push(report);
+                }
+                Capability::DirConnectorRouter(router) => {
+                    let result = debug_route(router, component_instance_token.clone()).await;
+                    fill_in_report_with_route_result(&mut report, result);
+                    reports.push(report);
+                }
+                Capability::DataRouter(router) => {
+                    let result = debug_route(router, component_instance_token.clone()).await;
+                    fill_in_report_with_route_result(&mut report, result);
+                    reports.push(report);
+                }
+                Capability::DictionaryRouter(router) => {
+                    let result =
+                        debug_route(router.clone(), component_instance_token.clone()).await;
+                    fill_in_report_with_route_result(&mut report, result);
+
+                    if let Ok(RouterResponse::Capability(routed_dictionary)) =
+                        router.route(None, false, component_instance_token.clone()).await
+                    {
+                        let entries = routed_dictionary
+                            .keys()
+                            .map(|k| fsys::DictionaryEntry {
+                                name: Some(k.as_str().to_string()),
+                                ..Default::default()
+                            })
+                            .collect::<Vec<_>>();
+                        report.dictionary_entries = Some(entries);
+
+                        let mut sub_reports = validate_dictionary(
+                            capability_path,
+                            routed_dictionary,
+                            component_instance_token.clone(),
+                            decl_type.clone(),
+                        )
+                        .await;
+                        reports.append(&mut sub_reports);
+                    }
+                    reports.push(report);
+                }
+                other_value => panic!("unexpected capability type: {other_value:?}"),
+            }
+        }
+        reports
+    }
+    .boxed()
 }
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
@@ -682,7 +354,8 @@ mod tests {
     use cm_rust::*;
     use cm_rust_testing::*;
     use fidl::endpoints;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_io as fio;
 
     async fn route_validator(test: &TestModelResult) -> fsys::RouteValidatorProxy {
         let (proxy, server) = endpoints::create_proxy::<fsys::RouteValidatorMarker>();
@@ -762,20 +435,7 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "elf" && m == "my_child"
-        );
-
-        let report = results.remove(0);
-        assert_matches!(
-            report,
-            fsys::RouteReport {
-                outcome: Some(fsys::RouteOutcome::Success),
-                capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
-                source_moniker: Some(m),
-                error: None,
-                ..
-            } if s == "foo.bar" && m == "my_child"
+            } if s == "<runner>" && m == "my_child"
         );
 
         let report = results.remove(0);
@@ -801,13 +461,8 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "fuchsia.component.Realm" && m == "."
+            } if s == "svc/foo.bar" && m == "my_child"
         );
-
-        assert!(results.is_empty());
-
-        // Validate `my_child`
-        let mut results = validator.validate("my_child").await.unwrap().unwrap();
 
         let report = results.remove(0);
         assert_matches!(
@@ -819,7 +474,30 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "test_runner" && m == "<component_manager>"
+            } if s == "svc/fuchsia.component.Realm" && m == "."
+        );
+
+        assert!(results.is_empty());
+
+        // Validate `my_child`
+        let mut results = validator.validate("my_child").await.unwrap().unwrap();
+
+        results.sort_by_key(|r| Key {
+            capability: r.capability.clone().unwrap(),
+            decl_type: r.decl_type.clone().unwrap(),
+        });
+
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Use),
+                source_moniker: Some(m),
+                error: None,
+                ..
+            } if s == "<runner>" && m == "<component_manager>"
         );
 
         let report = results.remove(0);
@@ -835,9 +513,22 @@ mod tests {
                 ..
             } if s == "dict" && m == "my_child" &&
                 d == [fsys::DictionaryEntry {
-                    name: Some("foo.bar  Source: my_child  [✓]".into()),
+                    name: Some("foo.bar".into()),
                     ..Default::default()
                 }]
+        );
+
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Expose),
+                source_moniker: Some(m),
+                error: None,
+                ..
+            } if s == "dict/foo.bar" && m == "my_child"
         );
 
         let report = results.remove(0);
@@ -931,9 +622,9 @@ mod tests {
             fsys::RouteReport {
                 outcome: Some(fsys::RouteOutcome::Void),
                 capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
+                decl_type: Some(fsys::DeclType::Expose),
                 source_moniker: Some(m),
-                availability: Some(fdecl::Availability::Optional),
+                availability: None,
                 error: None,
                 ..
             } if s == "foo.bar" && m == "my_child"
@@ -945,12 +636,12 @@ mod tests {
             fsys::RouteReport {
                 outcome: Some(fsys::RouteOutcome::Void),
                 capability: Some(s),
-                decl_type: Some(fsys::DeclType::Expose),
+                decl_type: Some(fsys::DeclType::Use),
                 source_moniker: Some(m),
-                availability: Some(fdecl::Availability::Optional),
+                availability: None,
                 error: None,
                 ..
-            } if s == "foo.bar" && m == "my_child"
+            } if s == "svc/foo.bar" && m == "my_child"
         );
 
         // This validation should have caused `my_child` to be resolved
@@ -969,7 +660,7 @@ mod tests {
                 capability: Some(s),
                 decl_type: Some(fsys::DeclType::Expose),
                 source_moniker: Some(m),
-                availability: Some(fdecl::Availability::Optional),
+                availability: None,
                 error: None,
                 ..
             } if s == "foo.bar" && m == "my_child"
@@ -1020,11 +711,11 @@ mod tests {
             fsys::RouteReport {
                 capability: Some(s),
                 outcome: Some(fsys::RouteOutcome::Failed),
-                decl_type: Some(fsys::DeclType::Use),
+                decl_type: Some(fsys::DeclType::Expose),
                 source_moniker: None,
                 error: Some(_),
                 ..
-            } if s == "a"
+            } if s == "c"
         );
 
         let report = results.remove(0);
@@ -1033,11 +724,11 @@ mod tests {
             fsys::RouteReport {
                 capability: Some(s),
                 outcome: Some(fsys::RouteOutcome::Failed),
-                decl_type: Some(fsys::DeclType::Expose),
+                decl_type: Some(fsys::DeclType::Use),
                 source_moniker: None,
                 error: Some(_),
                 ..
-            } if s == "c"
+            } if s == "svc/a"
         );
 
         // This validation should have caused `my_child` to be resolved
@@ -1093,7 +784,7 @@ mod tests {
 
         // Validate the root
         let targets = &[
-            fsys::RouteTarget { name: "biz.buz".parse().unwrap(), decl_type: fsys::DeclType::Use },
+            fsys::RouteTarget { name: "foo.bar".parse().unwrap(), decl_type: fsys::DeclType::Use },
             fsys::RouteTarget {
                 name: "foo.bar".parse().unwrap(),
                 decl_type: fsys::DeclType::Expose,
@@ -1104,21 +795,9 @@ mod tests {
             },
         ];
         let mut results = validator.route(".", targets).await.unwrap().unwrap();
+        results.sort_unstable_by_key(|result| result.capability.clone());
 
         assert_eq!(results.len(), 3);
-
-        let report = results.remove(0);
-        assert_matches!(
-            report,
-            fsys::RouteReport {
-                outcome: Some(fsys::RouteOutcome::Success),
-                capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
-                source_moniker: Some(m),
-                error: None,
-                ..
-            } if s == "biz.buz" && m == "my_child"
-        );
 
         let report = results.remove(0);
         assert_matches!(
@@ -1143,7 +822,20 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "fuchsia.component.Realm" && m == "."
+            } if s == "svc/foo.bar" && m == "my_child"
+        );
+
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Use),
+                source_moniker: Some(m),
+                error: None,
+                ..
+            } if s == "svc/fuchsia.component.Realm" && m == "."
         );
 
         // Validate `my_child`
@@ -1217,13 +909,14 @@ mod tests {
 
         // Validate the root
         let targets = &[
-            fsys::RouteTarget { name: "biz.buz".parse().unwrap(), decl_type: fsys::DeclType::Use },
+            fsys::RouteTarget { name: "foo.bar".parse().unwrap(), decl_type: fsys::DeclType::Use },
             fsys::RouteTarget {
                 name: "foo.bar".parse().unwrap(),
                 decl_type: fsys::DeclType::Expose,
             },
         ];
         let mut results = validator.route(".", targets).await.unwrap().unwrap();
+        results.sort_unstable_by_key(|result| result.capability.clone());
 
         assert_eq!(results.len(), 2);
 
@@ -1233,12 +926,12 @@ mod tests {
             fsys::RouteReport {
                 outcome: Some(fsys::RouteOutcome::Void),
                 capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
+                decl_type: Some(fsys::DeclType::Expose),
                 source_moniker: Some(m),
-                availability: Some(fdecl::Availability::Optional),
+                availability: None,
                 error: None,
                 ..
-            } if s == "biz.buz" && m == "my_child"
+            } if s == "foo.bar" && m == "my_child"
         );
 
         let report = results.remove(0);
@@ -1247,12 +940,12 @@ mod tests {
             fsys::RouteReport {
                 outcome: Some(fsys::RouteOutcome::Void),
                 capability: Some(s),
-                decl_type: Some(fsys::DeclType::Expose),
+                decl_type: Some(fsys::DeclType::Use),
                 source_moniker: Some(m),
-                availability: Some(fdecl::Availability::Optional),
+                availability: None,
                 error: None,
                 ..
-            } if s == "foo.bar" && m == "my_child"
+            } if s == "svc/foo.bar" && m == "my_child"
         );
 
         // Validate `my_child`
@@ -1272,7 +965,7 @@ mod tests {
                 capability: Some(s),
                 decl_type: Some(fsys::DeclType::Expose),
                 source_moniker: Some(m),
-                availability: Some(fdecl::Availability::Optional),
+                availability: None,
                 error: None,
                 ..
             } if s == "biz.buz" && m == "my_child"
@@ -1308,7 +1001,7 @@ mod tests {
                     )
                     .expose(ExposeBuilder::dictionary().name("dict").source(ExposeSource::Self_))
                     .offer(
-                        OfferBuilder::protocol()
+                        OfferBuilder::runner()
                             .name("elf")
                             .source_static_child("my_child")
                             .target(OfferTarget::Capability("dict".parse().unwrap())),
@@ -1336,18 +1029,10 @@ mod tests {
         // Validate the root, passing an empty vector. This should match all capabilities
         let mut results = validator.route(".", &[]).await.unwrap().unwrap();
 
-        let report = results.remove(0);
-        assert_matches!(
-            report,
-            fsys::RouteReport {
-                outcome: Some(fsys::RouteOutcome::Success),
-                capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
-                source_moniker: Some(m),
-                error: None,
-                ..
-            } if s == "elf" && m == "my_child"
-        );
+        results.sort_by_key(|r| Key {
+            capability: r.capability.clone().unwrap(),
+            decl_type: r.decl_type.clone().unwrap(),
+        });
 
         let report = results.remove(0);
         assert_matches!(
@@ -1359,7 +1044,7 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "fuchsia.component.Realm" && m == "."
+            } if s == "<runner>" && m == "my_child"
         );
 
         let report = results.remove(0);
@@ -1388,6 +1073,20 @@ mod tests {
                 capability: Some(s),
                 decl_type: Some(fsys::DeclType::Expose),
                 source_moniker: Some(m),
+                dictionary_entries: None,
+                error: None,
+                ..
+            } if s == "dict/elf" && m == "my_child"
+        );
+
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Expose),
+                source_moniker: Some(m),
                 error: None,
                 ..
             } if s == "exposed_elf" && m == "my_child"
@@ -1406,6 +1105,19 @@ mod tests {
             } if s == "foo.buz" && m == "my_child"
         );
 
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Use),
+                source_moniker: Some(m),
+                error: None,
+                ..
+            } if s == "svc/fuchsia.component.Realm" && m == "."
+        );
+
         assert!(results.is_empty());
 
         // Validate the child, passing an empty vector. Here we only care about checking that the
@@ -1422,7 +1134,7 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "test_runner" && m == "<component_manager>"
+            } if s == "<runner>" && m == "<component_manager>"
         );
     }
 
@@ -1486,34 +1198,12 @@ mod tests {
             decl_type: fsys::DeclType::Any,
         }];
         let mut results = validator.route(".", targets).await.unwrap().unwrap();
-
         assert_eq!(results.len(), 4);
 
-        let report = results.remove(0);
-        assert_matches!(
-            report,
-            fsys::RouteReport {
-                outcome: Some(fsys::RouteOutcome::Success),
-                capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
-                source_moniker: Some(m),
-                error: None,
-                ..
-            } if s == "fuchsia.component.Realm" && m == "."
-        );
-
-        let report = results.remove(0);
-        assert_matches!(
-            report,
-            fsys::RouteReport {
-                outcome: Some(fsys::RouteOutcome::Success),
-                capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
-                source_moniker: Some(m),
-                error: None,
-                ..
-            } if s == "fuchsia.foo" && m == "."
-        );
+        results.sort_by_key(|r| Key {
+            capability: r.capability.clone().unwrap(),
+            decl_type: r.decl_type.clone().unwrap(),
+        });
 
         let report = results.remove(0);
         assert_matches!(
@@ -1541,9 +1231,35 @@ mod tests {
             } if s == "fuchsia.buz" && m == "my_child"
         );
 
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Use),
+                source_moniker: Some(m),
+                error: None,
+                ..
+            } if s == "svc/fuchsia.component.Realm" && m == "."
+        );
+
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Success),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Use),
+                source_moniker: Some(m),
+                error: None,
+                ..
+            } if s == "svc/fuchsia.foo" && m == "."
+        );
+
         // Validate the child (program runner)
         let targets = &[fsys::RouteTarget {
-            name: "test_run".parse().unwrap(),
+            name: "runner".parse().unwrap(),
             decl_type: fsys::DeclType::Any,
         }];
         let mut results = validator.route("my_child", targets).await.unwrap().unwrap();
@@ -1559,7 +1275,7 @@ mod tests {
                 source_moniker: Some(m),
                 error: None,
                 ..
-            } if s == "test_runner" && m == "<component_manager>"
+            } if s == "<runner>" && m == "<component_manager>"
         );
     }
 
@@ -1667,7 +1383,7 @@ mod tests {
         }
 
         let targets = &[fsys::RouteTarget {
-            name: "my_service".parse().unwrap(),
+            name: "foo.bar".parse().unwrap(),
             decl_type: fsys::DeclType::Use,
         }];
         let mut results = validator.route("target", targets).await.unwrap().unwrap();
@@ -1685,7 +1401,7 @@ mod tests {
                 service_instances: Some(_),
                 error: None,
                 ..
-            } if s == "my_service" && m == "."
+            } if s == "svc/foo.bar" && m == "."
         );
         let service_instances = report.service_instances.unwrap();
         assert_eq!(service_instances.len(), 4);
@@ -1753,18 +1469,10 @@ mod tests {
         let mut results = validator.route(".", targets).await.unwrap().unwrap();
         assert_eq!(results.len(), 2);
 
-        let report = results.remove(0);
-        assert_matches!(
-            report,
-            fsys::RouteReport {
-                outcome: Some(fsys::RouteOutcome::Failed),
-                capability: Some(s),
-                decl_type: Some(fsys::DeclType::Use),
-                source_moniker: None,
-                error: Some(_),
-                ..
-            } if s == "a"
-        );
+        results.sort_by_key(|r| Key {
+            capability: r.capability.clone().unwrap(),
+            decl_type: r.decl_type.clone().unwrap(),
+        });
 
         let report = results.remove(0);
         assert_matches!(
@@ -1777,6 +1485,19 @@ mod tests {
                 error: Some(_),
                 ..
             } if s == "c"
+        );
+
+        let report = results.remove(0);
+        assert_matches!(
+            report,
+            fsys::RouteReport {
+                outcome: Some(fsys::RouteOutcome::Failed),
+                capability: Some(s),
+                decl_type: Some(fsys::DeclType::Use),
+                source_moniker: None,
+                error: Some(_),
+                ..
+            } if s == "svc/a"
         );
     }
 }

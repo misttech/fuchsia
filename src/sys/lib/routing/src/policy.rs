@@ -5,7 +5,7 @@
 use crate::capability_source::{
     AnonymizedAggregateSource, BuiltinSource, CapabilitySource, CapabilityToCapabilitySource,
     ComponentSource, EnvironmentSource, FilteredAggregateProviderSource, FilteredProviderSource,
-    FrameworkSource, NamespaceSource, StorageBackingDirectorySource, VoidSource,
+    FrameworkSource, NamespaceSource, RemotedAtSource, StorageBackingDirectorySource, VoidSource,
 };
 use cm_config::{
     AllowlistEntry, AllowlistMatcher, CapabilityAllowlistKey, CapabilityAllowlistSource,
@@ -188,7 +188,7 @@ impl GlobalPolicyChecker {
                     capability: capability.type_name(),
                 }
             }
-            CapabilitySource::RemotedAt(moniker) => {
+            CapabilitySource::RemotedAt(RemotedAtSource { moniker, .. }) => {
                 return Err(PolicyError::InvalidCapabilitySource {
                     moniker: ExtendedMoniker::ComponentInstance(moniker.clone()),
                 });

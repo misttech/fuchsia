@@ -8,6 +8,8 @@ mod tests {
     use cm_rust::{CapabilityDecl, CapabilityTypeName, OfferSource, StorageDirectorySource};
     use cm_rust_testing::*;
     use component_id_index::{IndexEntry, InstanceId};
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_io as fio;
     use moniker::Moniker;
     use routing::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
     use routing::component_instance::ComponentInstanceInterface;
@@ -17,7 +19,7 @@ mod tests {
         CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     };
     use std::collections::HashSet;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, zx_status};
+    use zx_status;
 
     #[fuchsia::test]
     async fn storage_dir_from_cm_namespace() {

@@ -16,7 +16,11 @@ use cm_rust_testing::*;
 use component_id_index::InstanceId;
 use errors::{ActionErrorKind, CreateNamespaceError, ModelError, StartActionError};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use fuchsia_async::TestExecutor;
+use fuchsia_sync as fsync;
 use futures::pin_mut;
 use moniker::Moniker;
 use std::path::Path;
@@ -25,10 +29,6 @@ use vfs::ToObjectRequest;
 use vfs::directory::entry_container::Directory;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path as VfsPath;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fuchsia_sync as fsync,
-};
 
 #[fuchsia::test]
 async fn storage_dir_from_cm_namespace() {

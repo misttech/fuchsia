@@ -45,10 +45,6 @@ type RouteReport = table {
     @available(added=12)
     5: service_instances vector<ServiceInstance>:MAX;
 
-    /// Metadata about the entries in a dictionary. Populated only for dictionaries.
-    @available(added=28)
-    8: dictionary_entries vector<DictionaryEntry>:MAX;
-
     /// The requested level of availability of the capability.
     @available(added=HEAD)
     6: availability fuchsia.component.decl.Availability;
@@ -56,6 +52,14 @@ type RouteReport = table {
     /// The overall outcome of routing.
     @available(added=24)
     7: outcome RouteOutcome;
+
+    /// Metadata about the entries in a dictionary. Populated only for dictionaries.
+    @available(added=28)
+    8: dictionary_entries vector<DictionaryEntry>:MAX;
+
+    /// The type of the capability.
+    @available(added=HEAD)
+    9: build_time_capability_type string:MAX;
 };
 
 @available(added=24)

@@ -9,6 +9,10 @@ use crate::sandbox_util::take_handle_as_stream;
 use cm_rust::NativeIntoFidl;
 use cm_types::{Name, Url};
 use fidl::endpoints::{ClientEnd, ServerEnd};
+use fidl_fuchsia_component_decl as fcdecl;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
 use log::warn;
@@ -22,10 +26,6 @@ use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::directory::entry_container::Directory;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
-use {
-    fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-};
 
 // Number of bytes the header of a vector occupies in a fidl message.
 // TODO(https://fxbug.dev/42181010): This should be a constant in a FIDL library.
@@ -631,8 +631,9 @@ mod tests {
     use component_id_index::InstanceId;
     use fidl::endpoints;
     use fidl::endpoints::{create_endpoints, create_proxy};
+    use fidl_fuchsia_component_decl as fcdecl;
+    use fidl_fuchsia_io as fio;
     use routing_test_helpers::component_id_index::make_index_file;
-    use {fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_io as fio};
 
     fn is_closed(handle: impl fidl::AsHandleRef) -> bool {
         handle

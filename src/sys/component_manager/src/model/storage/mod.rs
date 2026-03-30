@@ -20,6 +20,8 @@ use component_id_index::InstanceId;
 use derivative::Derivative;
 use errors::{ModelError, StorageError};
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::Moniker;
 use routing::capability_source::StorageBackingDirectorySource;
@@ -28,7 +30,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
 
 // TODO: The `use` declaration for storage implicitly carries these rights. While this is
 // correct, it would be more consistent to get the rights from `CapabilityState`.
@@ -173,9 +174,11 @@ pub async fn route_backing_directory(
             });
         }
         r => {
+            let type_string =
+                r.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
             return Err(RoutingError::unsupported_route_source(
                 target.moniker.clone(),
-                r.type_name().to_string(),
+                type_string,
             ));
         }
     };

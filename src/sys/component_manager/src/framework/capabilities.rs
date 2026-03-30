@@ -6,6 +6,7 @@ use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use cm_rust::CapabilityTypeName;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_runtime as fruntime;
@@ -18,7 +19,8 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select};
 use moniker::Moniker;
 use router_error::{Explain, RouterError};
-use routing::capability_source::CapabilitySource;
+use routing::bedrock::request_metadata::Metadata;
+use routing::capability_source::{CapabilitySource, RemotedAtSource};
 use routing::error::RoutingError;
 use sandbox::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dict, DirConnectable, DirConnector,
@@ -601,8 +603,15 @@ where
         target_token: WeakInstanceToken,
     ) -> Result<RouterResponse<C>, RouterError> {
         if debug {
+            let type_name: Option<CapabilityTypeName> =
+                request.and_then(|r| r.metadata.get_metadata());
             return Ok(RouterResponse::Debug(
-                CapabilitySource::RemotedAt(self.moniker.clone()).try_into().unwrap(),
+                CapabilitySource::RemotedAt(RemotedAtSource {
+                    moniker: self.moniker.clone(),
+                    type_name,
+                })
+                .try_into()
+                .unwrap(),
             ));
         }
         let request =
@@ -1149,7 +1158,13 @@ mod tests {
                 Ok(RouterResponse::Debug(data)) => CapabilitySource::try_from(data).unwrap(),
                 other_value => panic!("unexpected response from router: {other_value:?}"),
             };
-        assert_eq!(capability_source, CapabilitySource::RemotedAt(Moniker::root()));
+        assert_eq!(
+            capability_source,
+            CapabilitySource::RemotedAt(RemotedAtSource {
+                moniker: Moniker::root(),
+                type_name: None,
+            })
+        );
 
         drop(router);
         assert_no_remote_capabilities(&remote_capabilities).await;

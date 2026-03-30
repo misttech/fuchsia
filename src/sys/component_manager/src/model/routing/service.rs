@@ -216,7 +216,7 @@ impl AnonymizedAggregateServiceDir {
         let service_name = self.route.service_name.as_str();
         match self.aggregate_capability_provider.route_instance(instance).await {
             Ok((router, source)) => {
-                if source.type_name() != CapabilityTypeName::Service {
+                if source.type_name() != Some(CapabilityTypeName::Service) {
                     // This isn't actually a service capability, so it's not part of the
                     // aggregate and we have nothing to do.
                     return Ok(());
@@ -325,11 +325,16 @@ impl AnonymizedAggregateServiceDir {
 
             // The CapabilitySource must be for a service capability. This is normally detected
             // by the caller before we get here.
-            if source.type_name() != CapabilityTypeName::Service {
+            if source.type_name() != Some(CapabilityTypeName::Service) {
+                let type_string = source
+                    .type_name()
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "<unknown>".to_string());
                 error!(
                     component:% = instance,
                     service_name:% = service_name;
-                    "The CapabilitySource has an invalid type: '{}'.", source.type_name()
+                    "The CapabilitySource has an invalid type: '{}'.",
+                    type_string,
                 );
                 return;
             }
@@ -741,7 +746,7 @@ impl AnonymizedAggregateServiceDir {
         let instance = AggregateInstance::Child(child_name.into());
         let (router, capability_source) =
             self.aggregate_capability_provider.route_instance(&instance).await?;
-        if capability_source.type_name() != CapabilityTypeName::Service {
+        if capability_source.type_name() != Some(CapabilityTypeName::Service) {
             // This isn't actually a service capability, so it's not part of the
             // aggregate and there is nothing to do.
             return Ok(());

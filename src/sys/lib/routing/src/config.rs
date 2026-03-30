@@ -39,7 +39,9 @@ fn source_to_value(
         }) => source_capability,
         CapabilitySource::Component(ComponentSource { capability, .. }) => capability,
         o => {
-            return Err(RoutingError::unsupported_route_source(moniker, o.type_name().to_string()));
+            let type_name =
+                o.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
+            return Err(RoutingError::unsupported_route_source(moniker, type_name));
         }
     };
 

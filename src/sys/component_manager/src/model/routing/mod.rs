@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 pub mod aggregate_router;
-mod bedrock;
 pub mod legacy;
 pub mod open;
 pub mod providers;
@@ -27,8 +26,6 @@ use router_error::RouterError;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
-
-pub use bedrock::RouteRequest as BedrockRouteRequest;
 
 #[async_trait]
 pub trait Route {

@@ -28,6 +28,9 @@ pub struct RouteReport {
     /// the capability in the namespace (for DeclType::Use).
     pub capability: String,
 
+    /// The type of the capability (e.g. protocol, directory, resolver, ...)
+    pub build_time_capability_type: Option<String>,
+
     /// If Some, indicates a routing error for this route.
     pub error_summary: Option<String>,
 
@@ -52,7 +55,17 @@ impl TryFrom<fsys::RouteReport> for RouteReport {
             .map(|e| e.into_iter().map(DictionaryEntry::try_from).collect())
             .transpose()?;
         let error_summary = if let Some(error) = report.error { error.summary } else { None };
-        Ok(RouteReport { decl_type, capability, error_summary, availability, dictionary_entries })
+        Ok(RouteReport {
+            decl_type,
+            capability,
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            build_time_capability_type: report.build_time_capability_type,
+            #[cfg(fuchsia_api_level_less_than = "HEAD")]
+            capability_type: None,
+            error_summary,
+            availability,
+            dictionary_entries,
+        })
     }
 }
 
@@ -101,6 +114,10 @@ fn format(report: &RouteReport) -> Vec<Row> {
     let capability = match report.dictionary_entries {
         Some(_) => format!("{} (Dictionary)", report.capability),
         None => report.capability.clone(),
+    };
+    let capability = match &report.build_time_capability_type {
+        Some(capability_type) => format!("{} {}", capability_type, capability),
+        None => capability,
     };
     let capability = match report.availability {
         Some(cm_rust::Availability::Required) | None => capability,

@@ -20,7 +20,7 @@ type CapabilitySource = strict union {
     8: filtered_aggregate_provider FilteredAggregateProvider;
     9: environment Environment;
     10: void Void;
-    11: remoted_at moniker;
+    11: remoted_at RemotedAt;
     12: storage_backing_directory StorageBackingDirectory;
 };
 
@@ -85,6 +85,11 @@ type StorageBackingDirectory = table {
     3: backing_dir_subdir string:fuchsia.component.decl.MAX_PATH_LENGTH;
     4: storage_subdir string:fuchsia.component.decl.MAX_PATH_LENGTH;
     5: storage_source_moniker moniker;
+};
+
+type RemotedAt = table {
+    1: moniker moniker;
+    2: type_name string:MAX;
 };
 
 type AggregateMember = strict union {

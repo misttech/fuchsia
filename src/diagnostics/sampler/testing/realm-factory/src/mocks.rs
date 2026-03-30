@@ -3,16 +3,15 @@
 // found in the LICENSE file.
 
 use component_id_index::{Index, IndexEntry, InstanceId};
+use fidl_fuchsia_hardware_power_statecontrol as reboot;
+use fidl_fuchsia_mockrebootcontroller as controller;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use moniker::Moniker;
 use std::str::FromStr;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_hardware_power_statecontrol as reboot,
-    fidl_fuchsia_mockrebootcontroller as controller, fuchsia_async as fasync,
-};
 
 /// Test data for moniker <-> ID file.
 /// This will be sent to Sampler as though it were coming from Product Assembly.

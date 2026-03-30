@@ -47,6 +47,14 @@ use errors::{
     StructuredConfigError,
 };
 use fidl::endpoints::{Proxy, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use futures::future::{BoxFuture, join_all};
 use futures::lock::{MappedMutexGuard, Mutex, MutexGuard};
 use hooks::{Event, EventPayload, Hooks};
@@ -73,12 +81,6 @@ use vfs::directory::entry::{
     DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo, OpenRequest,
 };
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem, fidl_fuchsia_process as fprocess,
-    fuchsia_async as fasync,
-};
 
 pub type WeakComponentInstance = WeakComponentInstanceInterface<ComponentInstance>;
 pub type ExtendedInstance = ExtendedInstanceInterface<ComponentInstance>;
@@ -1642,6 +1644,8 @@ pub mod tests {
     use errors::{AddChildError, DynamicCapabilityError};
     use fasync::TestExecutor;
     use fidl::endpoints::DiscoverableProtocolMarker;
+    use fidl_fuchsia_logger as flogger;
+    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use futures::{FutureExt, StreamExt};
     use hooks::EventType;
@@ -1653,7 +1657,6 @@ pub mod tests {
     use vfs::path::Path as VfsPath;
     use vfs::service::host;
     use zx::AsHandleRef;
-    use {fidl_fuchsia_logger as flogger, fuchsia_async as fasync};
 
     const FLAGS: fio::Flags = fio::PERM_READABLE;
 

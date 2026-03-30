@@ -10,10 +10,11 @@ use cm_config::{CapabilityAllowlistKey, CapabilityAllowlistSource};
 use cm_rust::*;
 use cm_rust_testing::*;
 use component_id_index::InstanceId;
+use fidl_fuchsia_io as fio;
 use moniker::{ExtendedMoniker, Moniker};
 use std::collections::HashSet;
 use std::marker::PhantomData;
-use {fidl_fuchsia_io as fio, zx_status};
+use zx_status;
 
 pub struct CommonStorageTest<T: RoutingTestModelBuilder> {
     builder: PhantomData<T>,

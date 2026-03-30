@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::bedrock::request_metadata::Metadata;
-use crate::capability_source::CapabilitySource;
+use crate::capability_source::{CapabilitySource, RemotedAtSource};
 use crate::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
@@ -482,10 +482,15 @@ impl DictExt for Dict {
                                 panic!("component manager generated a non-router capability")
                             }
                         };
+                        let type_name: Option<CapabilityTypeName> =
+                            request.as_ref().and_then(|r| r.metadata.get_metadata());
                         return Ok(Some(GenericRouterResponse::Debug(
-                            CapabilitySource::RemotedAt(remoted_at_moniker)
-                                .try_into()
-                                .expect("failed to serialize capability source"),
+                            CapabilitySource::RemotedAt(RemotedAtSource {
+                                moniker: remoted_at_moniker,
+                                type_name,
+                            })
+                            .try_into()
+                            .expect("failed to serialize capability source"),
                         )));
                     }
                     other => other,

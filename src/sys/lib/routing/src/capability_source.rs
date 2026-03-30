@@ -19,16 +19,15 @@ use cm_rust_derive::FidlDecl;
 use cm_types::{Name, Path, RelativePath};
 use derivative::Derivative;
 use fidl::{persist, unpersist};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_sys2 as fsys;
 use from_enum::FromEnum;
 use futures::future::BoxFuture;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use sandbox::{Capability, Data};
 use std::fmt;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_internal as finternal,
-    fidl_fuchsia_sys2 as fsys,
-};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -199,7 +198,7 @@ pub enum CapabilitySource {
     Void(VoidSource),
     /// The route for this capability extended outside of component manager at the given moniker,
     /// and we thus don't know where the ultimate terminus of it is.
-    RemotedAt(Moniker),
+    RemotedAt(RemotedAtSource),
     /// This capability is a storage capability backed by a directory capability
     /// originating in some component.
     StorageBackingDirectory(StorageBackingDirectorySource),
@@ -288,6 +287,13 @@ pub struct VoidSource {
     pub capability: InternalCapability,
     pub moniker: Moniker,
 }
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, Debug, PartialEq, Clone)]
+#[fidl_decl(fidl_table = "finternal::RemotedAt")]
+pub struct RemotedAtSource {
+    pub moniker: Moniker,
+    pub type_name: Option<CapabilityTypeName>,
+}
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(FidlDecl, Debug, PartialEq, Clone)]
@@ -324,27 +330,30 @@ impl CapabilitySource {
         }
     }
 
-    pub fn type_name(&self) -> CapabilityTypeName {
+    /// Returns the type name of the component. This will be `Some` in all cases except for where a
+    /// capability route exclusively involves routers created outside of component manager, in
+    /// which case this value is not knowable.
+    pub fn type_name(&self) -> Option<CapabilityTypeName> {
         match self {
-            Self::Component(ComponentSource { capability, .. }) => capability.type_name(),
-            Self::Framework(FrameworkSource { capability, .. }) => capability.type_name(),
-            Self::Builtin(BuiltinSource { capability }) => capability.type_name(),
-            Self::Namespace(NamespaceSource { capability }) => capability.type_name(),
+            Self::Component(ComponentSource { capability, .. }) => Some(capability.type_name()),
+            Self::Framework(FrameworkSource { capability, .. }) => Some(capability.type_name()),
+            Self::Builtin(BuiltinSource { capability }) => Some(capability.type_name()),
+            Self::Namespace(NamespaceSource { capability }) => Some(capability.type_name()),
             Self::Capability(CapabilityToCapabilitySource { source_capability, .. }) => {
-                source_capability.type_name()
+                Some(source_capability.type_name())
             }
             Self::AnonymizedAggregate(AnonymizedAggregateSource { capability, .. }) => {
-                capability.type_name()
+                Some(capability.type_name())
             }
             Self::FilteredProvider(FilteredProviderSource { capability, .. })
             | Self::FilteredAggregateProvider(FilteredAggregateProviderSource {
                 capability, ..
-            }) => capability.type_name(),
-            Self::Environment(EnvironmentSource { capability, .. }) => capability.type_name(),
-            Self::Void(VoidSource { capability, .. }) => capability.type_name(),
-            Self::RemotedAt(_) => unimplemented!(),
+            }) => Some(capability.type_name()),
+            Self::Environment(EnvironmentSource { capability, .. }) => Some(capability.type_name()),
+            Self::Void(VoidSource { capability, .. }) => Some(capability.type_name()),
+            Self::RemotedAt(RemotedAtSource { type_name, .. }) => type_name.clone(),
             Self::StorageBackingDirectory(StorageBackingDirectorySource { capability, .. }) => {
-                capability.type_name()
+                Some(capability.type_name())
             }
         }
     }
@@ -362,7 +371,9 @@ impl CapabilitySource {
             | Self::FilteredAggregateProvider(FilteredAggregateProviderSource {
                 moniker, ..
             })
-            | Self::RemotedAt(moniker) => ExtendedMoniker::ComponentInstance(moniker.clone()),
+            | Self::RemotedAt(RemotedAtSource { moniker, .. }) => {
+                ExtendedMoniker::ComponentInstance(moniker.clone())
+            }
             Self::Builtin(_) | Self::Namespace(_) => ExtendedMoniker::ComponentManager,
         }
     }
@@ -407,7 +418,11 @@ impl fmt::Display for CapabilitySource {
                 }
                 Self::Environment(EnvironmentSource { capability, .. }) => capability.to_string(),
                 Self::Void(VoidSource { capability, .. }) => capability.to_string(),
-                Self::RemotedAt(moniker) => format!("route left component manager at {}", moniker),
+                Self::RemotedAt(RemotedAtSource { moniker, type_name }) => format!(
+                    "{} route left component manager at {}",
+                    type_name.map(|t| t.to_string()).unwrap_or_else(|| "unknown".to_string()),
+                    moniker
+                ),
             }
         )
     }
