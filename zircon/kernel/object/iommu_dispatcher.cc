@@ -17,9 +17,6 @@
 
 #include <dev/iommu.h>
 #include <dev/iommu/stub.h>
-#if ARCH_X86
-#include <dev/iommu/intel.h>
-#endif
 
 #define LOCAL_TRACE 0
 
@@ -38,11 +35,6 @@ zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t
         result = StubIommu::Create();
       }
       break;
-#if ARCH_X86
-    case ZX_IOMMU_TYPE_INTEL:
-      result = IntelIommu::Create(ktl::move(desc), desc_len);
-      break;
-#endif
 #if ARCH_ARM64
     // TODO(johngro): Creating a StubIommu is a temporary hack.  It allows
     // user-mode to start to create ARM "SMMU instances", as well as BTIs

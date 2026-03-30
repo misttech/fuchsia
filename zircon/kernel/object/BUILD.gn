@@ -93,9 +93,6 @@ source_set("object") {
     "//zircon/system/ulib/region-alloc",
     "//zircon/system/ulib/zx",
   ]
-  if (current_cpu == "x64") {
-    deps += [ "//zircon/kernel/dev/iommu/intel" ]
-  }
 }
 
 library_headers("headers") {
