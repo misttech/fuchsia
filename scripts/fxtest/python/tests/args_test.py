@@ -162,6 +162,48 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(flags.style, False)
         self.assertEqual(flags.status, False)
 
+    def test_agent_detection(self) -> None:
+        # Ensure agent env vars are NOT set
+        env_without_agents = os.environ.copy()
+        for var in [
+            "ANTIGRAVITY_AGENT",
+            "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "GEMINI_CLI",
+        ]:
+            if var in env_without_agents:
+                del env_without_agents[var]
+
+        with mock.patch.dict(os.environ, env_without_agents, clear=True):
+            flags = args.parse_args([])
+            flags.validate()
+            self.assertEqual(flags.simple, False)
+
+        # Test with each agent env var
+        for var in [
+            "ANTIGRAVITY_AGENT",
+            "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "GEMINI_CLI",
+        ]:
+            env_with_agent = env_without_agents.copy()
+            env_with_agent[var] = "true"
+            with mock.patch.dict(os.environ, env_with_agent, clear=True):
+                flags = args.parse_args([])
+                flags.validate()
+                self.assertEqual(flags.simple, True)
+
+        # Test override with --no-simple
+        for var in [
+            "ANTIGRAVITY_AGENT",
+            "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "GEMINI_CLI",
+        ]:
+            env_with_agent = env_without_agents.copy()
+            env_with_agent[var] = "true"
+            with mock.patch.dict(os.environ, env_with_agent, clear=True):
+                flags = args.parse_args(["--no-simple"])
+                flags.validate()
+                self.assertEqual(flags.simple, False)
+
     def test_json(self) -> None:
         flags = args.parse_args(["--json"])
         flags.validate()

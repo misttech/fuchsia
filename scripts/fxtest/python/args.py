@@ -647,9 +647,15 @@ def parse_args(
         action=argparse.BooleanOptionalAction,
         help="Display the output from passing tests. Some test arguments may be needed.",
     )
+    is_agent = (
+        os.environ.get("ANTIGRAVITY_AGENT")
+        or os.environ.get("ANTIGRAVITY_EDITOR_APP_ROOT")
+        or os.environ.get("GEMINI_CLI")
+    )
     output.add_argument(
         "--simple",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True if is_agent else False,
         help="Remove any color or decoration from output. Disable pretty status printing. Implies --no-style",
     )
     output.add_argument(
