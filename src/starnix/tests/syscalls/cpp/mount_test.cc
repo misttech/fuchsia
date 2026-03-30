@@ -516,6 +516,34 @@ TEST_F(MountTest, NoDev) {
   ASSERT_THAT(umount(dir.c_str()), SyscallSucceeds());
 }
 
+TEST_F(MountTest, CannotExecFromNoexecMount) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  ASSERT_SUCCESS(MakeDir("a"));
+  auto dir = TestPath("a");
+  ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", MS_NOEXEC, nullptr), SyscallSucceeds());
+
+  auto path = dir + "/exe";
+  // Copy /proc/self/exe to the new mount.
+  std::string self_exe_contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/self/exe", &self_exe_contents));
+  ASSERT_TRUE(files::WriteFile(path, self_exe_contents));
+  ASSERT_THAT(chmod(path.c_str(), 0755), SyscallSucceeds());
+
+  // We should still be able to open the file for reading.
+  ASSERT_THAT(fbl::unique_fd(open(path.c_str(), O_RDONLY)).get(), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&path] {
+    char *const argv[] = {const_cast<char *>(path.c_str()), nullptr};
+    EXPECT_THAT(execve(path.c_str(), argv, nullptr), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(umount(dir.c_str()), SyscallSucceeds());
+}
+
 TEST_F(MountTest, UmountIsNotRecursive) {
   // Test that by itself, umount should not umount nested mounts.
   ASSERT_SUCCESS(MakeDir("a"));
