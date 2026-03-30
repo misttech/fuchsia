@@ -4,14 +4,15 @@
 
 use crate::io::{Directory, DirentKind, LocalDirectory, RemoteDirectory};
 use crate::path::{
-    add_source_filename_to_path_if_absent, open_parent_subdir_readable, LocalOrRemoteDirectoryPath,
+    LocalOrRemoteDirectoryPath, add_source_filename_to_path_if_absent, open_parent_subdir_readable,
 };
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use flex_client::ProxyHasDomain;
-use regex::Regex;
+use flex_fuchsia_io as fio;
+use flex_fuchsia_sys2 as fsys;
+use regex_lite::Regex;
 use std::path::PathBuf;
 use thiserror::Error;
-use {flex_fuchsia_io as fio, flex_fuchsia_sys2 as fsys};
 
 #[derive(Error, Debug)]
 pub enum CopyError {
@@ -36,7 +37,9 @@ pub enum CopyError {
     )]
     InstanceNotFound { moniker: String },
 
-    #[error("Encountered an unexpected error when attempting to open a directory with the provider moniker: {moniker}. {error:?}.")]
+    #[error(
+        "Encountered an unexpected error when attempting to open a directory with the provider moniker: {moniker}. {error:?}."
+    )]
     UnexpectedErrorFromMoniker { moniker: String, error: fsys::OpenError },
 
     #[error("No file found at {file} in remote component directory.")]
@@ -255,7 +258,7 @@ async fn maybe_expand_wildcards<D: Directory>(path: &PathBuf, dir: &D) -> Result
         None => {
             return Err(
                 CopyError::NoParentFolder { path: path.to_string_lossy().to_string() }.into()
-            )
+            );
         }
     };
     Ok(entries.iter().map(|file| parent_dir_path.join(file)).collect::<Vec<_>>())
@@ -324,8 +327,8 @@ async fn get_dirents_matching_pattern<D: Directory>(
 mod tests {
     use super::*;
     use crate::test_utils::{
-        create_tmp_dir, generate_directory_paths, generate_file_paths, serve_realm_query, File,
-        SeedPath,
+        File, SeedPath, create_tmp_dir, generate_directory_paths, generate_file_paths,
+        serve_realm_query,
     };
     use std::collections::HashMap;
     use std::fs::{read, write};
