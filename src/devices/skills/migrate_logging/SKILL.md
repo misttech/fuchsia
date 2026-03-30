@@ -55,6 +55,9 @@ fdf::error("Failed to send request: {}, code: {}", zx_status_get_string(status),
 ```
 Carefully process the string parameters replacing all `%x`, `%lu`, `%s`, etc., with `{}`. Pay close attention to format strings that specify width or padding (e.g. `%02x` becomes `{:02x}` and `%-21s` becomes `{:<21}`).
 **IMPORTANT CAVEAT:** Do not blindly replace `%s` or `%u` with `{}` in strings that are passed to standard C functions like `snprintf`, `sprintf`, or macros like `ZX_ASSERT_MSG`. These still require C-style formatting blocks.
+**IMPORTANT CAVEAT (\`%x\` to \`{:x}\`):** When migrating `%x` or `%X` hex formats, pay close attention to any zero-padding or formatting prefix:
+1. If the original format included a `0x` prefix (e.g., `0x%02x`), replacing it with `0x{}` will silently print decimal numbers instead of hex! You MUST use the inner format specifier: `0x{:x}` or drop the explicit `0x` and use `{:#x}`.
+2. If the original format included zero-padding or field widths like `%08x` or `%02X`, preserve them exactly in the new string (e.g., `{:08x}`, `{:02X}`).
 
 **D. Formatting `zx::result` Directly:**
 When formatting a `zx::result` inside an `fdf::` macro, **do not** call `.status_string()`. The Fuchsia environment supplies a specialized `std::formatter` for `zx::result`. Pass the object directly.
