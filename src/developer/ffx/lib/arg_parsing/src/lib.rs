@@ -8,7 +8,7 @@ const DURATION_REGEX: &'static str = r"^(\d+)(h|m|s|ms)$";
 
 /// Parses a Duration from string.
 pub fn parse_duration(value: &str) -> Result<Duration, String> {
-    let re = regex::Regex::new(DURATION_REGEX).unwrap();
+    let re = regex_lite::Regex::new(DURATION_REGEX).unwrap();
     let captures = re
         .captures(&value)
         .ok_or_else(|| format!("Durations must be specified in the form {}", DURATION_REGEX))?;
