@@ -33,6 +33,7 @@
 
                 // TODO(https://fxbug.dev/42066087): CLONE_VM for child processes.
                 "sched.clone",
+                "sched.clone3",
 
                 // Requires a configured timezone.
                 "time.tzalloc_nullptr",
