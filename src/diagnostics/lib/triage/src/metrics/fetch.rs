@@ -9,7 +9,7 @@ use diagnostics_hierarchy::{DiagnosticsHierarchy, SelectResult};
 use fidl_fuchsia_diagnostics::Selector;
 use fidl_fuchsia_inspect::DEFAULT_TREE_NAME;
 use moniker::ExtendedMoniker;
-use regex::Regex;
+use regex_lite::Regex;
 use selectors::{SelectorExt, VerboseError};
 use serde::Serialize;
 use serde_derive::Deserialize;

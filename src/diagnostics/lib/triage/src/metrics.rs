@@ -11,7 +11,7 @@ pub(crate) mod variable;
 
 use fetch::{Fetcher, FileDataFetcher, SelectorString, TrialDataFetcher};
 use metric_value::{MetricValue, Problem};
-use regex::Regex;
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::clone::Clone;

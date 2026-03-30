@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::metrics::fetch::FileDataFetcher;
-use regex::{Match, Regex};
+use regex_lite::{Match, Regex};
 
 /// Analyzes the klog and syslog streams looking for a match to `re` and
 /// collects the capture groups matches when `re` matches. Note that optional

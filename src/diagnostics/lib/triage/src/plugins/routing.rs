@@ -6,7 +6,7 @@ use super::Plugin;
 use super::helpers::analyze_logs;
 use crate::act::Action;
 use crate::metrics::fetch::FileDataFetcher;
-use regex::Regex;
+use regex_lite::Regex;
 
 pub struct RoutingErrorsPlugin {}
 

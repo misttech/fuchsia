@@ -5,7 +5,7 @@
 use super::Plugin;
 use crate::act::Action;
 use crate::metrics::fetch::FileDataFetcher;
-use regex::Regex;
+use regex_lite::Regex;
 
 pub struct CrashesPlugin();
 

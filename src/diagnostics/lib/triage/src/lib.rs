@@ -8,7 +8,7 @@ use crate::metrics::MetricState;
 use crate::metrics::metric_value::MetricValue;
 use anyhow::{Error, bail};
 use injectable_time::{MonotonicInstant, TimeSource};
-use regex::Regex;
+use regex_lite::Regex;
 
 pub(crate) mod act; // Perform appropriate actions and collect results as strings.
 pub(crate) mod act_structured; // Perform appropriate actions and collect serializable actions.

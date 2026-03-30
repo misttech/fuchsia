@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use anyhow::{Error, bail};
 use glob::glob;
-use regex::Regex;
+use regex_lite::Regex;
 use serde::Serialize;
 use serde_derive::Deserialize;
 use std::borrow::Borrow;
