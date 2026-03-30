@@ -8,21 +8,23 @@ use fidl::endpoints::{
     DiscoverableProtocolMarker as _, Proxy, create_proxy, create_request_stream,
 };
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockMarker;
-use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::Fvm;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
 };
-use fs_management::format::constants::{BENCHMARK_FVM_TYPE_GUID, BENCHMARK_FVM_VOLUME_NAME};
-use fuchsia_async as fasync;
+use fs_management::format::constants::{
+    BENCHMARK_FVM_TYPE_GUID, BENCHMARK_FVM_VOLUME_NAME, PAD_RW_PARTITION_LABEL,
+};
 use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_dir_root};
 use std::sync::Arc;
 use storage_benchmarks::block_device::BlockDevice;
 use storage_benchmarks::{BlockDeviceConfig, BlockDeviceFactory};
 use storage_isolated_driver_manager::{
     BlockDeviceMatcher, Guid, create_random_guid, find_block_device, fvm,
+};
+use {
+    fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
 };
 
 const BENCHMARK_FVM_SIZE_BYTES: u64 = 160 * 1024 * 1024;
@@ -130,9 +132,9 @@ impl BenchmarkVolumeFactory {
     /// Creates a factory for volumes in which benchmarks should run in based on the provided
     /// configuration.  Uses various capabilities in the incoming namespace of the process.
     pub async fn from_config(fxfs_blob: bool) -> BenchmarkVolumeFactory {
-        let partitions = Service::open(fpartitions::PartitionServiceMarker).unwrap();
-        let manager = connect_to_protocol::<fpartitions::PartitionsManagerMarker>().unwrap();
         if fxfs_blob {
+            let partitions = Service::open(fpartitions::PartitionServiceMarker).unwrap();
+            let manager = connect_to_protocol::<fpartitions::PartitionsManagerMarker>().unwrap();
             let instance =
                 BenchmarkVolumeFactory::connect_to_test_partition(partitions, manager).await;
             assert!(
@@ -170,22 +172,29 @@ impl BenchmarkVolumeFactory {
         service: Service<fpartitions::PartitionServiceMarker>,
         manager: fpartitions::PartitionsManagerProxy,
     ) -> Option<BenchmarkVolumeFactory> {
-        let service_instances =
-            service.clone().enumerate().await.expect("Failed to enumerate partitions");
         let connector = if let Some(connector) = find_block_device(
             &[
                 BlockDeviceMatcher::Name(BENCHMARK_FVM_VOLUME_NAME),
                 BlockDeviceMatcher::TypeGuid(&BENCHMARK_FVM_TYPE_GUID),
             ],
-            service_instances.into_iter(),
+            service.clone().enumerate().await.expect("Failed to enumerate partitions").into_iter(),
         )
         .await
-        .expect("Failed to find block device")
+        .expect("Error while searching for benchmark-fvm")
         {
-            // If the test FVM already exists, just use it.
+            // If the test partition already exists, just use it.
+            connector
+        } else if let Some(connector) = find_block_device(
+            &[BlockDeviceMatcher::Name(PAD_RW_PARTITION_LABEL)],
+            service.clone().enumerate().await.expect("Failed to enumerate partitions").into_iter(),
+        )
+        .await
+        .expect("Error while searching for pad_rw")
+        {
+            // New partitions can't be created on sorrel but we can use the pad_rw partition.
             connector
         } else {
-            // Otherwise, create it in the GPT.
+            // Otherwise, create the test partition in the GPT.
             let info =
                 manager.get_block_info().await.expect("FIDL error").expect("get_block_info failed");
             let transaction = manager
