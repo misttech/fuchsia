@@ -33,9 +33,15 @@ constexpr std::string_view kCriticalProcessPrefix =
 constexpr std::string_view kBeginDlog = "--- BEGIN DLOG DUMP ---";
 constexpr std::string_view kEndDlog = "--- END DLOG DUMP ---";
 
-zx::duration ExtractTime(const std::string_view line) {
+std::optional<zx::duration> ExtractTime(const std::string_view line) {
   const std::string line_copy(line);
-  return zx::msec(std::stoll(line_copy));
+  const int64_t val = std::stoll(line_copy);
+  // Sometimes (e.g., https://fxbug.dev/458140022), the time is negative and we know it's bogus in
+  // these cases.
+  if (val < 0) {
+    return std::nullopt;
+  }
+  return zx::msec(val);
 }
 
 HwShutdownReason ExtractHwShutdownReason(const std::string_view line) {

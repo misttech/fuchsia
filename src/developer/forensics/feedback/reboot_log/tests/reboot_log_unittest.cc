@@ -637,6 +637,27 @@ INSTANTIATE_TEST_SUITE_P(
             zx::msec(1234),
             std::nullopt,
         },
+        {
+            "NegativeUptime",
+            "HW REBOOT REASON (UNKNOWN)\n\n"
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n-1234\nRUNTIME (ms)\n1098",
+            std::nullopt,
+            zx::msec(1098),
+        },
+        {
+            "NegativeRuntime",
+            "HW REBOOT REASON (UNKNOWN)\n\n"
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n-1098",
+            zx::msec(1234),
+            std::nullopt,
+        },
+        {
+            "NegativeUptimeRuntime",
+            "HW REBOOT REASON (UNKNOWN)\n\n"
+            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n-1234\nRUNTIME (ms)\n-1098",
+            std::nullopt,
+            std::nullopt,
+        },
     })),
     [](const testing::TestParamInfo<TimeTestParam>& info) { return info.param.test_name; });
 
@@ -666,7 +687,24 @@ TEST_P(RebootLogTimeTest, Succeed) {
   }
 }
 
-TEST_F(RebootLogTest, FallbackToSystemTimeTracker) {
+TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NoZirconValues) {
+  WritePreviousSystemTimeContents(R"({"uptime_ms":9876,"runtime_ms":8765})");
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
+                                /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
+
+  ASSERT_TRUE(reboot_log.Uptime().has_value());
+  EXPECT_EQ(*reboot_log.Uptime(), zx::msec(9876));
+  ASSERT_TRUE(reboot_log.Runtime().has_value());
+  EXPECT_EQ(*reboot_log.Runtime(), zx::msec(8765));
+}
+
+TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NegativeZirconValues) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n-1234\nRUNTIME (ms)\n-1098");
   WritePreviousSystemTimeContents(R"({"uptime_ms":9876,"runtime_ms":8765})");
 
   const RebootLog reboot_log(
