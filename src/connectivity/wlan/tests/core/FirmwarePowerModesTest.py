@@ -21,12 +21,26 @@ from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_5G,
     AP_SSID_LENGTH_5G,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import read_ssid
-from mobly import signals, test_runner
+from mobly import test_runner
 from mobly.asserts import assert_equal, assert_true, fail
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
 
 
 class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
@@ -42,17 +56,32 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
 
     async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
-        if not self.test_kit.access_point:
-            raise signals.TestAbortClass(
-                "No access point configured for this test."
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            self.test_kit.access_point.configure_wifi(
+                AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=DEFAULT_2G_CHANNEL,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    security=Security.NONE,
+                                )
+                            ],
+                        )
+                    ]
+                )
             )
-        if isinstance(self.test_kit.access_point, AccessPoint):
+            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_2G)
+        elif isinstance(self.test_kit.access_point, AccessPoint):
             setup_ap(
                 access_point=self.test_kit.access_point,
                 profile_name="whirlwind",
                 channel=AP_DEFAULT_CHANNEL_5G,
                 ssid=ssid,
-                security=Security(security_mode=SecurityMode.OPEN),
+                security=DeprecatedSecurity(
+                    security_mode=DeprecatedSecurityMode.OPEN
+                ),
             )
 
         ps_resp = await self.test_kit.device_monitor.set_power_save_mode(
@@ -146,7 +175,9 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         # This should take no more than 5 seconds, typically.
         await asyncio.sleep(10)
 
-        if isinstance(self.test_kit.access_point, AccessPoint):
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            ap_address = self.test_kit.access_point.get_addr("br-lan")
+        elif isinstance(self.test_kit.access_point, AccessPoint):
             ap_test_interface = self.test_kit.access_point.wlan_5g
             ap_address = utils.get_addr(
                 self.test_kit.access_point.ssh, ap_test_interface
