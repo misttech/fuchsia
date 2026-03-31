@@ -3,9 +3,11 @@
 # found in the LICENSE file.
 """Tests for stack_estimator."""
 
+import argparse
 import io
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
@@ -18,9 +20,8 @@ import graph
 import stack_estimator
 import symbolizer
 
-
-def get_test_data_path(filename: str) -> Path:
-    return Path(__file__).parent.parent / "test_data" / filename
+# This will be set by main() from the command line arguments.
+TESTDATA_DIR: pathlib.Path
 
 
 class TestGraphHelper(unittest.TestCase):
@@ -62,7 +63,7 @@ class TestCallGraph(unittest.TestCase):
     """Tests for call_graph.py."""
 
     def test_parse_stack_sizes(self) -> None:
-        with open(get_test_data_path("test_stack_sizes.json"), "r") as f:
+        with open(TESTDATA_DIR / "test_stack_sizes.json", "r") as f:
             data = json.load(f)
         sizes = call_graph.parse_stack_sizes(data)
         self.assertEqual(sizes["foo"], 16)
@@ -70,16 +71,16 @@ class TestCallGraph(unittest.TestCase):
         self.assertEqual(sizes["main"], 64)
 
     def test_extract_type_id_mapping(self) -> None:
-        with open(get_test_data_path("test_indirect.json"), "r") as f:
+        with open(TESTDATA_DIR / "test_indirect.json", "r") as f:
             data = json.load(f)
         mapping = call_graph.extract_type_id_mapping(data)
         self.assertIn(12345, mapping)
         self.assertCountEqual(mapping[12345], [2000, 3000])
 
     def test_build_call_graph(self) -> None:
-        with open(get_test_data_path("test_call_graph.json"), "r") as f:
+        with open(TESTDATA_DIR / "test_call_graph.json", "r") as f:
             cg_data = json.load(f)
-        with open(get_test_data_path("test_stack_sizes.json"), "r") as f:
+        with open(TESTDATA_DIR / "test_stack_sizes.json", "r") as f:
             ss_data = json.load(f)
 
         stack_sizes = call_graph.parse_stack_sizes(ss_data)
@@ -148,7 +149,7 @@ class TestStackEstimator(unittest.TestCase):
         self.assertEqual(results[ab_scc_id]["max_stack_usage"], 60)
 
     def test_indirect_calls(self) -> None:
-        with open(get_test_data_path("test_indirect.json"), "r") as f:
+        with open(TESTDATA_DIR / "test_indirect.json", "r") as f:
             data = json.load(f)
 
         stack_sizes = call_graph.parse_stack_sizes(data)
@@ -168,7 +169,7 @@ class TestStackEstimator(unittest.TestCase):
         self.assertEqual(results[caller_scc_id]["max_stack_usage"], 40)
 
     def test_end_to_end_combined(self) -> None:
-        with open(get_test_data_path("test_combined.json"), "r") as f:
+        with open(TESTDATA_DIR / "test_combined.json", "r") as f:
             data = json.load(f)
 
         stack_sizes = call_graph.parse_stack_sizes(data)
@@ -226,7 +227,7 @@ class TestStackEstimatorEndToEnd(unittest.TestCase):
             with open(config_path, "w") as f:
                 json.dump(config_data, f)
 
-            callgraph_path = get_test_data_path("test_combined.json")
+            callgraph_path = TESTDATA_DIR / "test_combined.json"
 
             # Capture stdout from a mock run
             # Using patch to redirect stdout and simulate sys.argv
@@ -259,5 +260,27 @@ class TestStackEstimatorEndToEnd(unittest.TestCase):
             self.assertEqual(foo_result["max_stack_usage"], 16)
 
 
+def main() -> None:
+    # unittest.main() can't parse arguments which are not its own,
+    # so we need to parse our arguments first.
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--testdata-dir",
+        required=True,
+        type=pathlib.Path,
+        help="Path to testdata",
+    )
+    # unittest.main() will see the leftover args and complain.
+    # We use parse_known_args to separate them out.
+    args, remaining_argv = parser.parse_known_args()
+
+    # Make TESTDATA_DIR available to the tests.
+    global TESTDATA_DIR
+    TESTDATA_DIR = args.testdata_dir
+
+    # Now, run unittest with its own arguments, plus sys.argv[0]
+    unittest.main(argv=[sys.argv[0]] + remaining_argv)
+
+
 if __name__ == "__main__":
-    unittest.main()
+    main()

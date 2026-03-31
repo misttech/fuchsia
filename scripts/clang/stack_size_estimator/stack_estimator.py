@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import call_graph
@@ -145,7 +146,7 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _load_json_file(path: str) -> Any:
+def _load_json_file(path: Path | str) -> Any:
     try:
         with open(path, "r") as f:
             return json.load(f)
@@ -260,11 +261,12 @@ def _generate_output_json(
     }
 
 
-def main() -> None:
-    """Main entry point for stack estimator tool."""
-    args = _parse_arguments()
-    config = _load_json_file(args.config)
-    data = _load_json_file(args.callgraph)
+def estimate(
+    config_path: Path | str, callgraph_path: Path | str
+) -> dict[str, Any]:
+    """Estimates max stack usage and returns the result as a dictionary."""
+    config = _load_json_file(config_path)
+    data = _load_json_file(callgraph_path)
 
     entry_functions = config.get("entry_functions", ["main"])
     llvm_symbolizer_path = config.get("llvm_symbolizer_path")
@@ -289,7 +291,7 @@ def main() -> None:
         llvm_symbolizer_path, elf_file, list(func_info.keys())
     )
 
-    output = _generate_output_json(
+    return _generate_output_json(
         func_info,
         results,
         addr_to_scc_id,
@@ -299,6 +301,11 @@ def main() -> None:
         name_to_addr,
     )
 
+
+def main() -> None:
+    """Main entry point for stack estimator tool."""
+    args = _parse_arguments()
+    output = estimate(args.config, args.callgraph)
     print(json.dumps(output, indent=2))
 
 
