@@ -486,7 +486,7 @@
     <project name="gwp-asan"
              path="third_party/scudo/gwp_asan"
              remote="https://llvm.googlesource.com/gwp-asan"
-             revision="fe19a10caf9e06006b53d358f1e914a0d4e1514b"/>
+             revision="acc9af61966e60c447bdd34344ffad1cd6a9f54b"/>
     <project name="third_party/shaderc"
              path="third_party/shaderc/src"
              remote="https://fuchsia.googlesource.com/third_party/shaderc"
