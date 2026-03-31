@@ -94,7 +94,13 @@ After making the migration changes in a directory:
 - Resolve any type deduction mismatch or formatting compilation errors that may occur from standardizing string formatting styles.
 - **Do not** run `fx test` or attempt to run tests, as we currently do not have a device attached.
 
-## 6. Commit Your Changes
+## 6. Review Diffs for Migration Accuracy
+Before committing or marking the task as complete, you MUST rigorously review the `git diff` against the original unmigrated codebase (e.g. `git diff HEAD~1..HEAD`). Look for mistakes commonly introduced during bulk edits:
+1. **Dropped `zx_status_get_string()` calls**: `std::format` does not automatically stringify `zx_status_t` integer types. If the original code logged `zx_status_get_string(status)`, the migrated code MUST also wrap the arguments in `zx_status_get_string()`.
+2. **Dropped formatting specifiers**: Check if width, padding, or hex specifiers (e.g., `%08x`, `%p`, `%4u`) were accidentally stripped into empty `{}` brackets. They must be accurately translated into `std::format` equivalents (`{:08x}`, `{:p}`, `{:4}`).
+3. **Dropped `.status_string()` for FIDL results**: If the original code used `.status_string()` on a `fidl::WireResult`, ensure it was NOT mistakenly replaced with `.FormatDescription().c_str()` or completely dropped. It must remain `.status_string()`.
+
+## 7. Commit Your Changes
 After successfully migrating, formatting, and building a driver, make a local git commit for it. The Fuchsia project commit message style looks like:
 
 ```text
@@ -107,5 +113,5 @@ logging macros and update the associated format strings.
 **Note:** Omit the `Test:` line entirely from your commit message, as we are unable to run tests at the moment.
 Make sure you run standard git workflow commands using the correct `GIT_ROOT` directory.
 
-## 7. Keep This Guide Updated
-If you learn something new or discover additional edge cases while performing this migration (e.g. specialized macros, corner cases with build rules), **update this prompt file (`src/devices/agents/migrate_logging.md`)** so that future agents benefit from your learnings.
+## 8. Keep This Guide Updated
+If you learn something new or discover additional edge cases while performing this migration (e.g. specialized macros, corner cases with build rules), **update this prompt file (`src/devices/skills/migrate_logging/SKILL.md`)** so that future agents benefit from your learnings.
