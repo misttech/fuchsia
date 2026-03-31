@@ -342,7 +342,7 @@ pub struct BoardKernelConfig {
 
     /// Allow debug UART to be suspended.
     #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub experimental_allow_debug_uart_suspend: bool,
+    pub allow_debug_uart_suspend: bool,
 }
 
 impl Default for BoardKernelConfig {
@@ -355,7 +355,7 @@ impl Default for BoardKernelConfig {
             serial: None,
             scheduler_prefer_little_cpus: false,
             halt_on_panic: false,
-            experimental_allow_debug_uart_suspend: false,
+            allow_debug_uart_suspend: false,
         }
     }
 }
@@ -556,7 +556,7 @@ mod test {
                 scheduler_prefer_little_cpus: true,
                 halt_on_panic: false,
                 arm64_event_stream_enable: false,
-                experimental_allow_debug_uart_suspend: false,
+                allow_debug_uart_suspend: false,
             },
             platform: PlatformSettings {
                 connectivity: ConnectivityConfig::default(),

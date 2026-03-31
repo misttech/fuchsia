@@ -187,7 +187,7 @@ pub enum KernelArg {
     JitterentropyEntropyPer1000Bytes(u32),
 
     /// Allow debug UART to be suspended.
-    ExperimentalAllowDebugUartSuspend(bool),
+    AllowDebugUartSuspend(bool),
 
     /// Enable the use of a virtually managed kernel heap instead of one managed directly out of the
     /// physmap.
@@ -324,9 +324,7 @@ impl KernelArg {
             Self::JitterentropyEntropyPer1000Bytes(i) => {
                 ("kernel.jitterentropy.entropy_per_1000_bytes", i.to_string())
             }
-            Self::ExperimentalAllowDebugUartSuspend(b) => {
-                ("kernel.experimental_allow_debug_uart_suspend", b.to_string())
-            }
+            Self::AllowDebugUartSuspend(b) => ("kernel.allow_debug_uart_suspend", b.to_string()),
             Self::EnableVirtualHeap(b) => ("kernel.heap.enable-virtual", b.to_string()),
             Self::HeapMaxSizeMib(i) => ("kernel.heap.max-size-mb", i.to_string()),
         };
@@ -352,7 +350,7 @@ impl KernelArg {
             | Self::CprngSeedRequireCmdline(_)
             | Self::CprngSeedRequireJitterEntropy(_)
             | Self::EnableVirtualHeap(_)
-            | Self::ExperimentalAllowDebugUartSuspend(_) => {
+            | Self::AllowDebugUartSuspend(_) => {
                 vec![format!("{}=true", key), format!("{}=false", key)]
             }
 
@@ -426,7 +424,7 @@ impl AddToImage for KernelArg {
             | Self::EnableVirtualHeap(_)
             | Self::HeapMaxSizeMib(_)
             | Self::JitterentropyEntropyPer1000Bytes(_) => true,
-            Self::ExperimentalAllowDebugUartSuspend(_) => false,
+            Self::AllowDebugUartSuspend(_) => false,
         }
     }
     fn add_to_userdebug_images(&self) -> bool {

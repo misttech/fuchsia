@@ -63,11 +63,9 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
     moonflower_power_init_early();
   }
 
-  // TODO(johngro): eventually, stop using this as the flag used to decide when
-  // to load the Moonflower Clock/PMIC control.  Instead, we will want to base this
-  // off some explicit signal that we are running on Moonflower hardware
-  // instead.
-  if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
+  if (BootOptions::Get()->allow_debug_uart_suspend) {
+    // TODO(johngro): make this more generic.  IOW - make sure to do the right
+    // thing for non-moonflower HW as well.
     moonflower_clocks_and_pmic_init_early();
   }
 }

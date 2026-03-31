@@ -205,7 +205,7 @@ void platform_serial_prepare_for_suspend() {
     return;
   }
 
-  if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
+  if (BootOptions::Get()->allow_debug_uart_suspend) {
     gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.PrepareForSuspend(); });
   }
 }
@@ -215,7 +215,7 @@ void platform_serial_wakeup_from_suspend() {
     return;
   }
 
-  if (BootOptions::Get()->experimental_allow_debug_uart_suspend) {
+  if (BootOptions::Get()->allow_debug_uart_suspend) {
     gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.WakeupFromSuspend(); });
   }
 }
