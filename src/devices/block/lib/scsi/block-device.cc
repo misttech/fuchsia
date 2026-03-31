@@ -17,6 +17,10 @@
 
 namespace scsi {
 
+BlockDevice::~BlockDevice() {
+  RemoveDevice();
+}
+
 zx::result<std::unique_ptr<BlockDevice>> BlockDevice::Bind(Controller* controller, uint8_t target,
                                                            uint16_t lun,
                                                            uint32_t max_transfer_bytes,

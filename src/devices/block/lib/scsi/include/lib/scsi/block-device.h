@@ -61,11 +61,15 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
                                                        uint16_t lun, uint32_t max_transfer_bytes,
                                                        DeviceOptions device_options);
 
+  virtual ~BlockDevice();
+
   // Remove this block device.
   void RemoveDevice() {
-    auto result = node_controller_->Remove();
-    if (!result.ok()) {
-      FDF_LOGL(ERROR, logger(), "Failed to call Remove on node controller.");
+    if (node_controller_.is_valid()) {
+      auto result = node_controller_->Remove();
+      if (!result.ok()) {
+        FDF_LOGL(ERROR, logger(), "Failed to call Remove on node controller.");
+      }
     }
   }
 
