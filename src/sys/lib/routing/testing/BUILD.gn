@@ -27,7 +27,6 @@ rustc_library("routing_test_helpers") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx-status",
     "//src/lib/fidl/rust/fidl",
-    "//src/sys/component_manager/lib/sandbox",
     "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_rust/testing",

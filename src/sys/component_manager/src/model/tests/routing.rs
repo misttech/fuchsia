@@ -59,9 +59,9 @@ use {
     moniker::{ChildName, ExtendedMoniker, Moniker},
     router_error::RouterError,
     routing::component_instance::ComponentInstanceInterface,
+    routing::debug_route_sandbox_path,
     routing_test_helpers::{
-        RoutingTestModel, debug_route_sandbox_path, default_service_capability,
-        instantiate_common_routing_tests,
+        RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
     },
     sandbox::{Connector, Router, RouterResponse, WeakInstanceToken},
     std::time::Duration,

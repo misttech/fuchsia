@@ -19,6 +19,11 @@ use cm_rust::*;
 use cm_rust_testing::*;
 use cm_types::{IterablePath, Url};
 use fidl::prelude::*;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_internal as component_internal;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use router_error::Explain;
 use routing::capability_source::{
@@ -37,11 +42,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_internal as component_internal, fidl_fuchsia_io as fio,
-    fidl_fuchsia_sys2 as fsys, zx_status,
-};
+use zx_status;
 
 const TEST_URL_PREFIX: &str = "test:///";
 // Placeholder for when a component resolves to itself, and its name is unknown as a result.
@@ -2056,7 +2057,7 @@ mod tests {
             &vec![VerifyRouteResult {
                 using_node: Moniker::parse_str("b").unwrap(),
                 target_decl: TargetDecl::ResolverFromEnvironment("base".to_string()),
-                capability: Some("base_resolver".parse().unwrap()),
+                capability: Some("base".parse().unwrap()),
                 error: None,
                 route: vec![],
                 source: Some(CapabilitySource::Component(ComponentSource {

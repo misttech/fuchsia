@@ -41,7 +41,7 @@ use cm_types::{IterablePath, Name, RelativePath};
 use fidl_fuchsia_io::RW_STAR_DIR;
 use from_enum::FromEnum;
 use itertools::Itertools;
-use moniker::{ChildName, Moniker, MonikerError};
+use moniker::{ChildName, ExtendedMoniker, Moniker, MonikerError};
 use router_error::Explain;
 use sandbox::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
@@ -58,6 +58,81 @@ pub use bedrock::weak_instance_token_ext::{WeakInstanceTokenExt, test_invalid_in
 pub use bedrock::with_porcelain::WithPorcelain;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+/// Calls `route` on the router at the given path within the component sandbox. Panics if the
+/// sandbox does not hold a router at that path.
+pub async fn debug_route_sandbox_path<C: ComponentInstanceInterface + 'static>(
+    component: &Arc<C>,
+    path: impl Into<String>,
+) -> Result<CapabilitySource, RoutingError> {
+    debug_route_sandbox_path_with_request(component, path, None).await
+}
+
+/// Calls `route` on the router with the given request at the given path within the component
+/// sandbox. Panics if the sandbox does not hold a router at that path.
+pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface + 'static>(
+    component: &Arc<C>,
+    path: impl Into<String>,
+    request: Option<Request>,
+) -> Result<CapabilitySource, RoutingError> {
+    let path_str = path.into();
+    let path = RelativePath::new(&path_str).expect("invalid path string");
+    let sandbox = component.component_sandbox().await.map_err(RoutingError::from)?;
+    let sandbox_dictionary: Dict = sandbox.into();
+    let maybe_response = sandbox_dictionary
+        .get_with_request(
+            &ExtendedMoniker::ComponentManager,
+            &path,
+            request,
+            true,
+            component.as_weak().into(),
+        )
+        .await
+        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?;
+    match maybe_response {
+        Some(GenericRouterResponse::Debug(data)) => {
+            Ok(data.try_into().expect("failed to deserialize capability source"))
+        }
+        None => Err(RoutingError::BedrockNotPresentInDictionary {
+            name: path_str,
+            moniker: component.moniker().clone().into(),
+        }),
+        other_value => {
+            panic!("unexpected response to route: {other_value:?}")
+        }
+    }
+}
+
+/// Routes the backing directory for the storage declaration on the component.
+pub async fn debug_route_storage_backing_directory<C: ComponentInstanceInterface + 'static>(
+    component: &Arc<C>,
+    storage_decl: StorageDecl,
+) -> Result<CapabilitySource, RoutingError> {
+    let component_sandbox = component.component_sandbox().await?;
+    let source_dictionary = match storage_decl.source {
+        StorageDirectorySource::Parent => component_sandbox.component_input.capabilities(),
+        StorageDirectorySource::Self_ => component_sandbox.program_output_dict.clone(),
+        StorageDirectorySource::Child(static_name) => {
+            let child_name = ChildName::parse(static_name)
+                .expect("invalid child name, this should be prevented by manifest validation");
+            let child_component = component
+                .lock_resolved_state()
+                .await?
+                .get_child(&child_name)
+                .expect("resolver registration references nonexistent static child, this should be prevented by manifest validation");
+            let child_sandbox = child_component.component_sandbox().await?;
+            child_sandbox.component_output.capabilities().clone()
+        }
+    };
+    route_capability_inner::<DirConnector, _>(
+        &source_dictionary,
+        &storage_decl.backing_dir,
+        directory_metadata(Availability::Required, Some(RW_STAR_DIR.into()), None),
+        component,
+    )
+    .await
+    .map(|s| s.source)
+}
 
 /// A request to route a capability, together with the data needed to do so.
 #[derive(Clone, Debug)]

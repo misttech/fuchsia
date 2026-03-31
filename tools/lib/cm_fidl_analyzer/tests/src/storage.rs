@@ -319,7 +319,7 @@ mod tests {
             .get(&CapabilityTypeName::Storage)
             .expect("expected a storage capability route");
 
-        assert_eq!(storage.len(), 2);
+        assert_eq!(storage.len(), 1);
         for result in storage {
             assert_eq!(result.using_node, Moniker::parse_str("/storage_provider").unwrap());
             assert_eq!(result.target_decl, TargetDecl::Offer(offer_storage_decl.clone()));

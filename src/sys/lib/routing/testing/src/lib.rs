@@ -20,14 +20,13 @@ use cm_config::{
 };
 use cm_rust::*;
 use cm_rust_testing::*;
-use cm_types::{Name, RelativePath};
+use cm_types::Name;
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_io as fio;
 use moniker::{ExtendedMoniker, Moniker};
-use routing::bedrock::dict_ext::{DictExt, GenericRouterResponse};
 use routing::capability_source::{
     AggregateCapability, AggregateMember, AnonymizedAggregateSource, BuiltinSource,
     CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
@@ -37,7 +36,6 @@ use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use routing::mapper::NoopRouteMapper;
 use routing::{RouteRequest, RouteSource, route_capability};
-use sandbox::Dict;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -191,40 +189,6 @@ pub fn generate_storage_path(
     // that was actually used in the wild.
     dir_path.push("data".to_string());
     dir_path.into_iter().collect()
-}
-
-/// Calls `route` on the router at the given path within the component sandbox. Panics if the
-/// sandbox does not hold a router at that path.
-pub async fn debug_route_sandbox_path<C: ComponentInstanceInterface + 'static>(
-    component: &Arc<C>,
-    path: impl Into<String>,
-) -> Result<CapabilitySource, RoutingError> {
-    let path_str = path.into();
-    let path = RelativePath::new(&path_str).expect("invalid path string");
-    let sandbox = component.component_sandbox().await.map_err(RoutingError::from)?;
-    let sandbox_dictionary: Dict = sandbox.into();
-    let maybe_response = sandbox_dictionary
-        .get_with_request(
-            &ExtendedMoniker::ComponentManager,
-            &path,
-            None,
-            true,
-            component.as_weak().into(),
-        )
-        .await
-        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?;
-    match maybe_response {
-        Some(GenericRouterResponse::Debug(data)) => {
-            Ok(data.try_into().expect("failed to deserialize capability source"))
-        }
-        None => Err(RoutingError::BedrockNotPresentInDictionary {
-            name: path_str,
-            moniker: component.moniker().clone().into(),
-        }),
-        other_value => {
-            panic!("unexpected response to route: {other_value:?}")
-        }
-    }
 }
 
 /// A `RoutingTestModel` attempts to use capabilities from instances in a component model

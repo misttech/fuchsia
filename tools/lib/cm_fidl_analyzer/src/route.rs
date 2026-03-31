@@ -3,10 +3,18 @@
 // found in the LICENSE file.
 
 use crate::component_model::AnalyzerModelError;
+use cm_rust::{
+    Availability, CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, UseDeclCommon,
+};
 use cm_types::Name;
 use moniker::Moniker;
+use routing::bedrock::request_metadata::{
+    config_metadata, dictionary_metadata, directory_metadata, event_stream_metadata,
+    protocol_metadata, resolver_metadata, runner_metadata, service_metadata, storage_metadata,
+};
 use routing::capability_source::CapabilitySource;
 use routing::mapper::RouteSegment;
+use sandbox::Request;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, PartialEq, Debug, Serialize)]
@@ -16,6 +24,45 @@ pub enum TargetDecl {
     Offer(cm_rust::OfferDecl),
     Expose(cm_rust::ExposeDecl),
     ResolverFromEnvironment(String),
+}
+
+impl TargetDecl {
+    pub fn source_name(&self) -> Option<Name> {
+        match self {
+            Self::Use(u) => Some(u.source_name().clone()),
+            Self::Offer(o) => Some(o.source_name().clone()),
+            Self::Expose(e) => Some(e.source_name().clone()),
+            Self::ResolverFromEnvironment(name) => {
+                Some(Name::new(name).expect("invalid resolver name"))
+            }
+        }
+    }
+
+    pub fn to_route_request(&self) -> Request {
+        let (type_name, availability) = match self {
+            Self::Use(u) => (CapabilityTypeName::from(u), *u.availability()),
+            Self::Offer(o) => (CapabilityTypeName::from(o), *o.availability()),
+            Self::Expose(e) => (CapabilityTypeName::from(e), *e.availability()),
+            Self::ResolverFromEnvironment(_) => {
+                (CapabilityTypeName::Resolver, Availability::Required)
+            }
+        };
+        let metadata = match type_name {
+            CapabilityTypeName::Directory => directory_metadata(availability, None, None),
+            CapabilityTypeName::EventStream => {
+                event_stream_metadata(availability, Default::default())
+            }
+            CapabilityTypeName::Protocol => protocol_metadata(availability),
+            CapabilityTypeName::Resolver => resolver_metadata(availability),
+            CapabilityTypeName::Runner => runner_metadata(availability),
+            CapabilityTypeName::Service => service_metadata(availability),
+            CapabilityTypeName::Storage => storage_metadata(availability),
+            CapabilityTypeName::Dictionary => dictionary_metadata(availability),
+            CapabilityTypeName::Config => config_metadata(availability),
+        };
+
+        Request { metadata }
+    }
 }
 
 /// A summary of a specific capability route and the outcome of verification.
