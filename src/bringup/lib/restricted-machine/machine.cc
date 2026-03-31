@@ -35,7 +35,7 @@ extern "C" void restricted_exit(uintptr_t context, zx_restricted_reason_t reason
 
 constexpr uint64_t Machine::kDefaultStackBytes = 8192;
 
-bool Machine::Initialize(uint64_t reserved_stack_size) {
+bool Machine::Initialize(uint64_t reserved_stack_size, zx_exception_report_t* exception_report) {
   registers_ = RegisterStateFactory::Create(environment_->machine());
   registers_->InitializeRegisters();
 
@@ -67,8 +67,9 @@ bool Machine::Initialize(uint64_t reserved_stack_size) {
     shadow_stack_mem_ = std::move(result.value());
   }
 
+  exception_report_ = exception_report;
   if (zx_restricted_bind_state == 0 ||
-      ZX_OK != zx_restricted_bind_state(0, state_vmo_.reset_and_get_address(), nullptr)) {
+      ZX_OK != zx_restricted_bind_state(0, state_vmo_.reset_and_get_address(), exception_report_)) {
     RM_LOG(ERROR) << "Initialize: failed to reset restricted state";
     return false;
   }
@@ -96,9 +97,23 @@ void Machine::LogState(std::optional<zx_restricted_reason_t> if_not_reason) {
   }
   if (last_reason_code_ == ZX_RESTRICTED_REASON_EXCEPTION) {
     zx_restricted_exception_t exception_state = {};
-    if (state_vmo_.read(&exception_state, 0, sizeof(exception_state)) != ZX_OK) {
-      return;
+
+    if (!exception_report_) {
+      // If there's no exception report pointer, then the mode state vmo will
+      // contain a zx_restricted_exception_t.  Just copy it.
+      if (state_vmo_.read(&exception_state, 0, sizeof(exception_state)) != ZX_OK) {
+        return;
+      }
+    } else {
+      // If there is an exception report pointer, then the mode state vmo will
+      // only contain a zx_restricted_state_t.  Copy that, then fill in the
+      // exception report.
+      if (state_vmo_.read(&exception_state.state, 0, sizeof(exception_state.state)) != ZX_OK) {
+        return;
+      }
+      exception_state.exception = *exception_report_;
     }
+
     if (sizeof(exception_state.exception) == exception_state.exception.header.size) {
       RM_LOG(INFO) << "dumping exception state to stdout";
       registers_->PrintExceptionState(exception_state);

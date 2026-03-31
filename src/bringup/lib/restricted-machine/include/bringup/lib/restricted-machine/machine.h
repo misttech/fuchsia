@@ -46,7 +46,12 @@ class Machine {
   //
   // |reserved_stack_size| will be allocated for the stack along with a small
   // amount of memory for TLS usage.
-  virtual bool Initialize(uint64_t reserved_stack_size = kDefaultStackBytes);
+  //
+  // |exception_report| when null, the exception report will be returned in the
+  // mode state vmo.  When non-null, an exception report generated while
+  // executing in restricted mode will be copied here.
+  virtual bool Initialize(uint64_t reserved_stack_size = kDefaultStackBytes,
+                          zx_exception_report_t *exception_report = nullptr);
 
   // Enables or disables the loading and saving of FPU registers on entry to
   // and exit from restricted mode.
@@ -233,6 +238,8 @@ class Machine {
   // Restricted mode state vmo
   zx::vmo state_vmo_ = {};
   zx_restricted_reason_t last_reason_code_ = 0;
+  // If null, the report will be in the mode state vmo.
+  zx_exception_report *exception_report_{};
 
   // We use a unique_ptr here so that we can place the machine specific implementation.
   std::unique_ptr<RegisterState> registers_{};

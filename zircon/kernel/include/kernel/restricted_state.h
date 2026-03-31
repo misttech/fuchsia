@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_RESTRICTED_STATE_H_
 
 #include <lib/user_copy/internal.h>
+#include <lib/user_copy/user_ptr.h>
 #include <lib/zx/result.h>
 #include <zircon/syscalls-next.h>
 
@@ -32,7 +33,12 @@ class VmMapping;
 // since there is no internal locking for efficiency reasons.
 class RestrictedState {
  public:
-  static zx::result<ktl::unique_ptr<RestrictedState>> Create();
+  // Create a |RestrictedState| with an optional exception report pointer.
+  //
+  // When |exception_report_ptr| is null, the exception report will be delivered
+  // via mode state VMO.  When non-null, the exception report will by copied here.
+  static zx::result<ktl::unique_ptr<RestrictedState>> Create(
+      user_out_ptr<zx_exception_report_t> exception_report_ptr);
 
   ~RestrictedState();
   DISALLOW_COPY_ASSIGN_AND_MOVE(RestrictedState);
@@ -97,11 +103,15 @@ class RestrictedState {
   static void ArchDump(const zx_restricted_state_t& state);
 
  private:
-  RestrictedState(fbl::RefPtr<VmObjectPaged> state_vmo, fbl::RefPtr<VmMapping> state_mapping);
+  RestrictedState(fbl::RefPtr<VmObjectPaged> state_vmo, fbl::RefPtr<VmMapping> state_mapping,
+                  user_out_ptr<zx_exception_report_t> exception_report_ptr);
 
   bool in_restricted_ = false;
   uintptr_t vector_ptr_ = 0;
   uintptr_t context_ = 0;
+
+  // May be null.
+  user_out_ptr<zx_exception_report_t> exception_report_ptr_;
 
   // Ref pointer to a vmo holding the restricted state and a kernel mapping of the first page.
   const fbl::RefPtr<VmObjectPaged> state_vmo_;

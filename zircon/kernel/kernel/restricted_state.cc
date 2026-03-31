@@ -17,7 +17,8 @@
 
 static constexpr size_t kStateVmoSize = kPageSize;
 
-zx::result<ktl::unique_ptr<RestrictedState>> RestrictedState::Create() {
+zx::result<ktl::unique_ptr<RestrictedState>> RestrictedState::Create(
+    user_out_ptr<zx_exception_report_t> exception_report_ptr) {
   // Create a VMO.
   static constexpr uint32_t kVmoOptions = 0;
   static constexpr uint32_t kPmmAllocFlags = PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT;
@@ -61,8 +62,8 @@ zx::result<ktl::unique_ptr<RestrictedState>> RestrictedState::Create() {
   }
 
   fbl::AllocChecker ac;
-  ktl::unique_ptr<RestrictedState> rs(
-      new (&ac) RestrictedState(std::move(state_vmo), std::move(state_mapping_result->mapping)));
+  ktl::unique_ptr<RestrictedState> rs(new (&ac) RestrictedState(
+      std::move(state_vmo), std::move(state_mapping_result->mapping), exception_report_ptr));
   if (!ac.check()) {
     return zx::error_result(ZX_ERR_NO_MEMORY);
   }
@@ -73,8 +74,10 @@ zx::result<ktl::unique_ptr<RestrictedState>> RestrictedState::Create() {
 }
 
 RestrictedState::RestrictedState(fbl::RefPtr<VmObjectPaged> state_vmo,
-                                 fbl::RefPtr<VmMapping> state_mapping)
-    : state_vmo_(ktl::move(state_vmo)),
+                                 fbl::RefPtr<VmMapping> state_mapping,
+                                 user_out_ptr<zx_exception_report_t> exception_report_ptr)
+    : exception_report_ptr_(exception_report_ptr),
+      state_vmo_(ktl::move(state_vmo)),
       state_mapping_(ktl::move(state_mapping)),
       state_mapping_ptr_(reinterpret_cast<void*>(state_mapping_->base())) {
   DEBUG_ASSERT(is_kernel_address(reinterpret_cast<vaddr_t>(state_mapping_ptr_)));
