@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/clang/call_graph_section.gni")
 import("//build/config/clang/clang.gni")
 import("//build/config/clang/crash_diagnostics.gni")
 import("//build/config/clang/stack_clash_protection.gni")
@@ -93,6 +94,14 @@ config("crash_diagnostics") {
   }
 }
 
+config("call-graph-section") {
+  if (call_graph_section && !is_gcc && is_elf) {
+    cflags = [ "-fexperimental-call-graph-section" ]
+    asmflags = cflags
+    ldflags = cflags
+  }
+}
+
 config("stack-size-section") {
   if (!is_gcc) {
     cflags = [ "-fstack-size-section" ]
@@ -151,6 +160,7 @@ config("compiler") {
     ":crash_diagnostics",
     ":time-trace",
     ":toolchain_version_stamp",
+    ":call-graph-section",
     ":stack-size-section",
     ":stack-clash-protection",
   ]
