@@ -18,10 +18,13 @@ class UsbDciInterfaceServer : public fidl::WireServer<fuchsia_hardware_usb_dci::
  public:
   explicit UsbDciInterfaceServer(UsbPeripheral* drv) : drv_{drv} {
     auto result = fdf::SynchronizedDispatcher::Create(
-        {}, "usb-dci-interface-server", [&](fdf_dispatcher_t*) { dispatcher_shutdown_.Signal(); });
+        {}, "usb-dci-interface-server",
+        [this](fdf_dispatcher_t*) { dispatcher_shutdown_.Signal(); });
     ZX_ASSERT(result.is_ok());
     dispatcher_ = std::move(*result);
   }
+
+  void Stop();
 
   // fuchsia_hardware_usb_dci::UsbDciInterface protocol implementation.
   void Control(ControlRequestView req, ControlCompleter::Sync& completer) override;

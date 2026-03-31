@@ -46,4 +46,12 @@ void UsbDciInterfaceServer::SetSpeed(SetSpeedRequestView req, SetSpeedCompleter:
   completer.ReplySuccess();
 }
 
+void UsbDciInterfaceServer::Stop() {
+  TRACE_DURATION("usb-peripheral", __func__);
+  dispatcher_.ShutdownAsync();
+  // Ensure the dispatcher is completely shut down before proceeding,
+  // preventing any concurrent access to driver resources during teardown.
+  dispatcher_shutdown_.Wait();
+}
+
 }  // namespace usb_peripheral

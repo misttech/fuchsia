@@ -1279,6 +1279,7 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
 
   stopping_driver_ = true;
   ClearFunctions();
+  intf_srv_.Stop();
   usb_monitor_.Stop();
 
   if (listener_.is_valid()) {
