@@ -6,7 +6,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
-load("//fuchsia/private:fuchsia_cc.bzl", "data_for_features", "fuchsia_cc")
+load("//fuchsia/private:fuchsia_cc.bzl", "fuchsia_cc")
 
 def fuchsia_cc_driver(
         name,
@@ -89,10 +89,10 @@ def fuchsia_cc_driver(
     else:
         shared_library_deps = deps
 
-    features = kwargs.pop("features", []) + [
-        # Ensure that we are statically linking c++.
-        "static_cpp_standard_library",
-    ]
+    features = kwargs.pop("features", []) + select({
+        "@rules_fuchsia//fuchsia/select:dynamic_cpp_standard_library_for_drivers_enabled": [],
+        "//conditions:default": ["static_cpp_standard_library"],
+    })
 
     cc_shared_library_name = name + "_cc_shared_library"
     cc_shared_library(
@@ -112,12 +112,20 @@ def fuchsia_cc_driver(
     tags = kwargs.pop("tags", None)
     testonly = kwargs.pop("testonly", None)
 
+    driver_data = [
+        "@fuchsia_sdk//pkg/sysroot:dist",
+        "@fuchsia_clang//:runtime",
+    ] + select({
+        "@rules_fuchsia//fuchsia/select:dynamic_cpp_standard_library_for_drivers_enabled": ["@fuchsia_clang//:dist"],
+        "//conditions:default": [],
+    })
+
     fuchsia_cc(
         name = name,
         bin_name = shared_lib_name,
         install_root = "driver/",
         native_target = cc_shared_library_name,
-        data = data_for_features(features),
+        data = driver_data,
         deps = deps,
         visibility = visibility,
         testonly = testonly,

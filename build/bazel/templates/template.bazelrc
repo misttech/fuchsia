@@ -138,3 +138,7 @@ common --experimental_exclude_starlark_flags_from_exec_config
 # `@local_config_platform//:host` - see
 # https://github.com/bazelbuild/bazel/issues/26228.
 common --experimental_platform_in_output_dir=True
+
+# Enable dynamic linking of C++ stdlib for drivers in-tree.
+common --@rules_fuchsia//fuchsia/flags:dynamic_cpp_standard_library_for_drivers=True
+

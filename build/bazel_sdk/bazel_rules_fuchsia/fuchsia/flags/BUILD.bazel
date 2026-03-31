@@ -30,3 +30,8 @@ string_flag(
     name = "fuchsia_release_repository",
     build_setting_default = "",
 )
+
+bool_flag(
+    name = "dynamic_cpp_standard_library_for_drivers",
+    build_setting_default = False,
+)
