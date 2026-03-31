@@ -532,4 +532,37 @@ mod tests {
         peers.clear();
         assert_eq!(to_identifier(&peers, &bd_addr), None);
     }
+
+    #[test]
+    fn test_parse_pairing_security_level() {
+        let cases = vec![
+            ("Enc", Ok(LeSecurityLevel::Encrypted)),
+            ("encrypted", Ok(LeSecurityLevel::Encrypted)),
+            ("AUTH", Ok(LeSecurityLevel::Authenticated)),
+            ("authenticated", Ok(LeSecurityLevel::Authenticated)),
+            ("TEST", Err("security level should be 'encrypted' or 'authenticated'")),
+        ];
+        for (input_str, expected) in cases {
+            assert_eq!(input_str.parse::<LeSecurityLevel>(), expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_pairing_transport() {
+        let cases = vec![
+            ("LE", Ok(Transport::LowEnergy)),
+            ("low-energy", Ok(Transport::LowEnergy)),
+            ("c", Ok(Transport::Classic)),
+            ("Classic", Ok(Transport::Classic)),
+            ("bredr", Ok(Transport::Classic)),
+            ("dm", Ok(Transport::DualMode)),
+            ("dual_mode", Ok(Transport::DualMode)),
+            ("both", Ok(Transport::DualMode)),
+            ("dual", Ok(Transport::DualMode)),
+            ("TEST", Err("transport should be 'lowenergy', 'classic', or 'dualmode'")),
+        ];
+        for (input_str, expected) in cases {
+            assert_eq!(input_str.parse::<Transport>(), expected);
+        }
+    }
 }

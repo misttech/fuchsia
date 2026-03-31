@@ -4,9 +4,11 @@
 
 import("//src/developer/ffx/build/ffx_plugin.gni")
 
+# run: fx test ffx_bluetooth_controller_test
 ffx_plugin("ffx_bluetooth_controller") {
   version = "0.1.0"
   edition = "2024"
+  with_unit_tests = true
 
   deps = [
     "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust_fdomain",
@@ -17,6 +19,11 @@ ffx_plugin("ffx_bluetooth_controller") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:prettytable-rs",
+  ]
+
+  test_deps = [
+    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust_fdomain",
+    "//third_party/rust_crates:regex-lite",
   ]
 
   args_sources = [ "src/args.rs" ]

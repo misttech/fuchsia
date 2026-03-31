@@ -97,3 +97,66 @@ fn get_hosts_list(hosts: &Vec<HostInfo>) -> Result<String> {
     }
     Ok(format!("{}", table))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdomain_fuchsia_bluetooth_sys::TechnologyType;
+    use fuchsia_bluetooth::types::{Address, HostId};
+    use regex_lite::Regex;
+
+    fn custom_host(
+        id: HostId,
+        address: Address,
+        active: bool,
+        discoverable: bool,
+        discovering: bool,
+        name: Option<String>,
+    ) -> HostInfo {
+        HostInfo {
+            id,
+            technology: TechnologyType::LowEnergy,
+            addresses: vec![address],
+            active,
+            local_name: name,
+            discoverable,
+            discovering,
+        }
+    }
+
+    #[test]
+    fn test_get_hosts_list() {
+        // Fields for table view of hosts
+        let fields = Regex::new(r"HostId[ \t]+Addresses[ \t]+Active[ \t]+Technology[ \t]+Name[ \t]+Discoverable[ \t]+Discovering").unwrap();
+
+        // No hosts
+        let output = get_hosts_list(&vec![]).unwrap();
+        assert!(!fields.is_match(&output));
+        assert!(output.contains("No controllers detected"));
+
+        let hosts = vec![
+            custom_host(
+                HostId(0xbeef),
+                Address::Public([0x11, 0x00, 0x55, 0x7E, 0xDE, 0xAD]),
+                false,
+                false,
+                false,
+                Some("Sapphire".to_string()),
+            ),
+            custom_host(
+                HostId(0xabcd),
+                Address::Random([0x22, 0x00, 0x55, 0x7E, 0xDE, 0xAD]),
+                false,
+                false,
+                true,
+                None,
+            ),
+        ];
+
+        // Hosts exist
+        let output = get_hosts_list(&hosts).unwrap();
+        assert!(fields.is_match(&output));
+        assert!(output.contains("ef"));
+        assert!(output.contains("cd"));
+    }
+}
