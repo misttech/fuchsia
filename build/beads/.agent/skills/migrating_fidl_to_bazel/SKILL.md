@@ -16,15 +16,8 @@ GN to Bazel.
 1.  Identify the requested `BUILD.gn` files and their `fidl` GN targets based
     on the user request.
 2.  Create a `BUILD.bazel` file in the same directory as the `BUILD.gn` file.
-    Ensure you add a license header using the current year:
-
-    ```bazel
-    # Copyright {current_year} The Fuchsia Authors. All rights reserved.
-    # Use of this source code is governed by a BSD-style license that can be
-    # found in the LICENSE file.
-
-    load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
-    ```
+    See `assets/copyright_header_template.md` for the copyright header template.
+    Add the copyright header to the top of the file.
 
 3.  Define the equivalent Bazel target for the FIDL library. Copy all comments
     from the `BUILD.gn` file. Map the attributes as follows:
@@ -36,9 +29,13 @@ GN to Bazel.
     -   `visibility = ["*"]` -> `visibility = ["//visibility:public"]`
     *(For other values of `visibility`, map to the corresponding visibility in
     Bazel).*
-
-4.  If dependencies are missing Bazel targets, migrate those dependencies first.
-5.  Verify the Bazel target builds successfully:
+4.  If an attribute has a comment just above it or at the same line with it in
+    the BUILD.gn, copy the comment to the same position related to the mapped
+    attribute in the BUILD.bazel file.
+    *(Example: If a comment is above `sources = [`, it should sit directly
+    above `srcs = [` in the `BUILD.bazel` file).*
+5.  If dependencies are missing Bazel targets, migrate those dependencies first.
+6.  Verify the Bazel target builds successfully:
 
     ```bash
     fx bazel build --config=fuchsia //sdk/fidl/{library_name}:{library_name}
@@ -64,7 +61,9 @@ GN to Bazel.
 
 ## 3. Sync FIDL targets back to GN
 
-1.  Remove the `fidl(...)` target from `BUILD.gn`.
+1.  Remove the `fidl(...)` target, and if the `//build/fidl/fidl.gni`is imported
+    in the `//build/tools/bazel2gn/bazel_migration.gni`, remove the `import`
+    statement from the `BUILD.gn`, too.
 2.  Sync the target back from Bazel to GN using the `syncing-bazel-to-gn` skill
     (see `../syncing_bazel_to_gn/SKILL.md`).
 
@@ -76,7 +75,10 @@ GN to Bazel.
     fx format-code --parallel
     ```
 
-2.  Verify the build executes correctly for compatibility tests:
+2. Review the changed code with the checklist in
+    `references/migration_code_review_checklist.md`.
+
+3.  Verify the build executes correctly for compatibility tests:
 
     ```bash
     fx set core.x64
