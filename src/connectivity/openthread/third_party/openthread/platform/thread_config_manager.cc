@@ -100,7 +100,8 @@ ThreadConfigMgrError ThreadConfigManager::ReadConfigValueFromBinArray(const std:
                                                                       size_t* actual_size) const {
   ThreadConfigMgrError error = kThreadConfigMgrNoError;
   const std::lock_guard<std::mutex> read_lock(config_mutex_);
-  otPlatLog(OT_LOG_LEVEL_DEBG, otLogRegion::OT_LOG_REGION_PLATFORM, "RapidJSONAllocator size: %d", config_.GetAllocator().Size());
+  otPlatLog(OT_LOG_LEVEL_DEBG, otLogRegion::OT_LOG_REGION_PLATFORM, "RapidJSONAllocator size: %zu",
+            config_.GetAllocator().Size());
   rapidjson::Value::MemberIterator it = config_.FindMember(key);
 
   if (it == config_.MemberEnd()) {
