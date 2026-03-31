@@ -11,6 +11,13 @@ use crate::pager::run_pager;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, ServerEnd};
 use fidl::{HandleBased, Peered};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_starnix_container as fstarnix;
+use fidl_fuchsia_starnix_runner as fstarnixrunner;
+use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
@@ -22,12 +29,6 @@ use std::future::Future;
 use std::sync::Arc;
 use suspend::{
     ASLEEP_SIGNAL, AWAKE_SIGNAL, SuspendContext, WakeSource, WakeSources, suspend_container,
-};
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_io as fio,
-    fidl_fuchsia_starnix_container as fstarnix, fidl_fuchsia_starnix_runner as fstarnixrunner,
-    fuchsia_async as fasync,
 };
 
 /// The name of the collection that the starnix_kernel is run in.
@@ -271,9 +272,7 @@ pub async fn serve_starnix_manager(
                 suspend_context.wake_sources.lock().remove(&handle.koid().unwrap());
             }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
-                std::thread::spawn(|| {
-                    fasync::LocalExecutor::default().run_singlethreaded(run_pager(payload));
-                });
+                fasync::Task::spawn(run_pager(payload)).detach();
             }
             _ => {}
         }
