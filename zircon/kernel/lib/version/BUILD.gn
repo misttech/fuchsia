@@ -9,10 +9,10 @@ import("//build/dist/generated_resource.gni")
 import("//build/dist/resource.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
-if (toolchain_environment != "kernel") {
+if (current_toolchain != default_toolchain) {
   group("version-string.txt") {
     visibility = [ "//zircon/kernel/*" ]
-    public_deps = [ ":$target_name(//zircon/kernel:kernel_$current_cpu)" ]
+    public_deps = [ ":$target_name($default_toolchain)" ]
   }
 } else {
   declare_args() {
@@ -20,14 +20,6 @@ if (toolchain_environment != "kernel") {
     # If set to the default "", a string is generated based on the
     # status of the fuchsia git repository.
     kernel_version_string = ""
-  }
-
-  library_headers("headers") {
-    headers = [ "lib/version.h" ]
-    public_deps = [
-      "//zircon/kernel/lib/ktl:headers",
-      "//zircon/kernel/lib/libc:headers",
-    ]
   }
 
   # Any resource() targets in data_deps would roll up into the kernel's ELF
@@ -67,6 +59,16 @@ if (toolchain_environment != "kernel") {
         ]
       }
     }
+  }
+}
+
+if (toolchain_environment == "kernel") {
+  library_headers("headers") {
+    headers = [ "lib/version.h" ]
+    public_deps = [
+      "//zircon/kernel/lib/ktl:headers",
+      "//zircon/kernel/lib/libc:headers",
+    ]
   }
 
   source_set("version") {
