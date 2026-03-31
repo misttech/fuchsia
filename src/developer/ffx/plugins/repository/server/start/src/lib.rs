@@ -19,7 +19,7 @@ use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
 use target_holders::{HostAddrHolder, TargetInfoQueryHolder};
 
-pub mod server;
+mod server;
 mod server_impl;
 mod target;
 
@@ -95,7 +95,6 @@ impl FfxMain for ServerStartTool {
                         self.host_address,
                         writer,
                         mode,
-                        None,
                     ))
                     .await;
                 }

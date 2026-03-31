@@ -37,11 +37,6 @@ const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 const ENGINE_MONIKER: &str = "/core/pkg-resolver";
 const MAX_CONSECUTIVE_CONNECT_ATTEMPTS: u8 = 10;
 
-/// Connects to the target and registers the repositories.
-///
-/// Returns a tuple containing:
-/// * `String` - The repository host address as seen by the target.
-/// * `impl Stream` - A stream of forwarded TCP connections from the target.
 async fn connect_to_target(
     target_spec: Option<String>,
     host_address: Option<String>,
@@ -53,7 +48,7 @@ async fn connect_to_target(
     rcs_proxy: &RemoteControlProxy,
     alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
     tunnel_addr: SocketAddr,
-) -> Result<(String, impl Stream<Item = anyhow::Result<TargetTcpStream>>), anyhow::Error> {
+) -> Result<impl Stream<Item = anyhow::Result<TargetTcpStream>>, anyhow::Error> {
     let repo_proxy: RepositoryManagerProxy =
         rcs_fdomain::toolbox::connect_with_timeout::<RepositoryManagerMarker>(
             &rcs_proxy,
@@ -82,7 +77,7 @@ async fn connect_to_target(
         tunnel_addr,
     )
     .await
-    .with_context(|| format!("resolving repository host on {:?}", target_spec))?;
+    .with_context(|| format!("resolving repository rost on {:?}", target_spec))?;
 
     for (repo_name, repo) in repo_manager.repositories() {
         let repo_spec = repo.read().await.spec();
@@ -112,12 +107,9 @@ async fn connect_to_target(
         .await
         .map_err(|e| anyhow!("Failed to register repository: {:?}", e))?;
     }
-    Ok((
-        repo_host,
-        forwarding_stream
-            .map(|s| s.into_stream().map(|r| r.context("target tcp listener")).left_stream())
-            .unwrap_or_else(|| futures::stream::pending().right_stream()),
-    ))
+    Ok(forwarding_stream
+        .map(|s| s.into_stream().map(|r| r.context("target tcp listener")).left_stream())
+        .unwrap_or_else(|| futures::stream::pending().right_stream()))
 }
 
 async fn inner_connect_loop(
@@ -134,7 +126,6 @@ async fn inner_connect_loop(
     host_address: Option<String>,
     tunnel_addr: core::net::SocketAddr,
     connection_sink: &mut mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
-    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<()> {
     let mut target_spec_from_rcs_proxy: Option<String> = None;
     let rcs_proxy = timeout(
@@ -176,13 +167,7 @@ async fn inner_connect_loop(
     )
     .await;
     match connection {
-        Ok((repo_host, proxy_stream)) => {
-            if let Some(tx) = repo_host_tx {
-                if let Err(e) = tx.unbounded_send(repo_host) {
-                    log::warn!("Error sending repo host message: {}", e);
-                }
-            }
-
+        Ok(proxy_stream) => {
             let s = match target_spec_from_rcs_proxy {
                 Some(ref t) => ConnectEvent::StartServeToTarget {
                     repo_path: repo_path.to_string(),
@@ -286,7 +271,6 @@ pub(crate) async fn main_connect_loop(
     host_address: Option<String>,
     tunnel_addr: core::net::SocketAddr,
     mut connection_sink: mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
-    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<()> {
     // We try to reconnect unless MAX_CONSECUTIVE_CONNECT_ATTEMPTS reconnect
     // attempts in immediate succession fail.
@@ -322,7 +306,6 @@ pub(crate) async fn main_connect_loop(
             host_address.clone(),
             tunnel_addr,
             &mut connection_sink,
-            repo_host_tx.clone(),
         )
         .fuse();
 

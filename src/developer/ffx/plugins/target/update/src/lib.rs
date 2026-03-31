@@ -22,11 +22,8 @@ use fidl::Signals;
 use fidl_fuchsia_update_ext::State;
 use fidl_fuchsia_update_installer_ext as installer;
 use fuchsia_async::Timer;
-use fuchsia_repo::repository::RepoProvider as _;
 use futures::future::{FusedFuture as _, FutureExt as _};
-use futures::{StreamExt as _, TryStreamExt as _, pin_mut, select};
-use http_uri_ext::HttpUriExt as _;
-use pkg::PkgServerInstanceInfo as _;
+use futures::{TryStreamExt, pin_mut, select};
 use std::path::PathBuf;
 use std::time::Duration;
 use target_connector::Connector;
@@ -98,19 +95,17 @@ impl UpdateTool {
     ) -> Result<()> {
         let package_server_task = if cmd.product_bundle {
             let product_path =
-                Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
+                Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
             let repo_port: u16 = cmd.product_bundle_port(&self.context)?.try_into().unwrap();
-            Some(
-                Box::pin(server::package_server_task(
-                    self.target_spec,
-                    self.rcs_proxy_connector.clone(),
-                    self.host_address,
-                    self.context.clone(),
-                    product_path,
-                    repo_port,
-                ))
-                .await?,
-            )
+            Box::pin(server::package_server_task(
+                self.target_spec,
+                self.rcs_proxy_connector.clone(),
+                self.host_address,
+                self.context.clone(),
+                product_path,
+                repo_port,
+            ))
+            .await?
         } else if cmd.product_bundle_path.is_some() {
             return_user_error!(
                 "Cannot specify a product bundle without the the `--product-bundle option."
@@ -144,8 +139,8 @@ impl UpdateTool {
                 server_task_result = fused_server_task =>  {
                     // The server should start and run indefiniitely, if we get here there is a problem.
                     match server_task_result {
-                        Ok(_) => return_user_error!("Package server exited successfully, but prematurely"),
-                        Err(e) => return_user_error!("Package server failed to run: {e}")
+                    Ok(_) => return_user_error!("Package server exited successfully, but prematurely"),
+                    Err(e) => return_user_error!("Package server failed to run: {e}")
                     }
                 }
                 update_task_result =  check_task => {
@@ -194,7 +189,7 @@ impl UpdateTool {
             }
             Err(e) => return_user_error!("Error on check-now: {e:?}"),
         };
-        writeln!(writer, "Checking for an update.").bug()?;
+        writeln!(writer, "Checking for an update.").map_err(|e| bug!(e))?;
         if let Some(monitor_server) = monitor_server {
             monitor_state(monitor_server, writer).await?;
         }
@@ -208,88 +203,31 @@ impl UpdateTool {
         cmd: &ForceInstall,
         writer: &mut W,
     ) -> Result<()> {
-        let mut package_server_task = if cmd.product_bundle || cmd.product_bundle_path.is_some() {
+        let package_server_task = if cmd.product_bundle {
             let product_path =
-                Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
+                Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
 
             let repo_port: u16 = cmd.product_bundle_port(&self.context)?.try_into().unwrap();
-            Some(
-                Box::pin(server::package_server_task(
-                    self.target_spec,
-                    self.rcs_proxy_connector.clone(),
-                    self.host_address,
-                    self.context.clone(),
-                    product_path,
-                    repo_port,
-                ))
-                .await?,
-            )
+            Box::pin(server::package_server_task(
+                self.target_spec,
+                self.rcs_proxy_connector.clone(),
+                self.host_address,
+                self.context.clone(),
+                product_path,
+                repo_port,
+            ))
+            .await?
+        } else if cmd.product_bundle_path.is_some() {
+            return_user_error!(
+                "Cannot specify a product bundle without the the `--product-bundle option."
+            );
         } else {
             None
         };
 
         let installer_proxy = self.installer_proxy.await?;
 
-        let update_url = if let Some(url) = &cmd.update_url {
-            url.parse().bug_context("parsing update url")?
-        } else if cmd.packageless {
-            if let Some(server_task) = &mut package_server_task {
-                // Need to get the repo host address from the package server task, because it might
-                // be a tunneled connection.
-                let mut repo_host =
-                    timeout::timeout(Duration::from_secs(30), server_task.repo_host_rx.next())
-                        .await
-                        .bug_context("Timeout waiting for the repo host address")?
-                        .bug_context("Failed to get the repo host address")?;
-                // If package_server_task enters connection loop, we want to get the latest address.
-                while let Ok(Some(host)) = server_task.repo_host_rx.try_next() {
-                    repo_host = host;
-                }
-                let first_alias = (|| -> Result<String, anyhow::Error> {
-                    let product_path =
-                        Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
-                    let repos = product_bundle::get_repositories(product_path.try_into()?)?;
-                    let repo = repos.first().ok_or_else(|| anyhow::anyhow!("No repositories found"))?;
-                    let alias = repo.aliases().first().ok_or_else(|| anyhow::anyhow!("No aliases found"))?;
-                    Ok(alias.to_owned())
-                })()
-                .unwrap_or_else(|e| {
-                    log::warn!("Could not determine the first alias for the product bundle: {e}, defaulting to 'fuchsia.com'");
-                    "fuchsia.com".to_string()
-                });
-                let url = format!(
-                    "http://{}/{}.{}/ota_manifest",
-                    repo_host, server_task.repo_name, first_alias
-                );
-                url.parse().with_bug_context(|| format!("parsing update url: {url}"))?
-            } else {
-                let instance_root = self.context.get("repository.process_dir").bug()?;
-                let mgr = pkg::PkgServerInstances::new(instance_root);
-                let mut instances = mgr.list_instances().bug()?;
-                instances.retain(|i| i.is_running());
-                match instances.as_slice() {
-                    [] => return_user_error!(
-                        "No package servers are running, could not determine the packageless update url"
-                    ),
-                    [instance] => match instance.repo_config.mirrors().first() {
-                        Some(mirror) => mirror
-                            .mirror_url()
-                            .clone()
-                            .extend_dir_with_path("ota_manifest")
-                            .bug_context("extend mirror url")?,
-                        None => return_user_error!(
-                            "No mirrors configured for the running package server"
-                        ),
-                    },
-                    _ => return_user_error!(
-                        "Multiple package servers are running, could not determine the packageless update url, please specify\n{instances:#?}"
-                    ),
-                }
-            }
-        } else {
-            http::Uri::from_static("fuchsia-pkg://fuchsia.com/update")
-        };
-        writeln!(writer, "Using update url: {update_url}").bug()?;
+        let update_url = cmd.update_pkg_url.parse().bug_context("parsing update url")?;
 
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
@@ -297,14 +235,11 @@ impl UpdateTool {
 
             // wait for the server to be registered before running the check.
             let install = async {
-                // Packageless update does not need the server to be registered on the target.
-                if !cmd.packageless {
-                    Box::pin(server::wait_for_device_task(
-                        server_task.repo_name.clone(),
-                        self.rcs_proxy_connector.clone(),
-                    ))
-                    .await?;
-                }
+                Box::pin(server::wait_for_device_task(
+                    server_task.repo_name.clone(),
+                    self.rcs_proxy_connector.clone(),
+                ))
+                .await?;
                 Self::force_install(update_url, cmd.reboot, installer_proxy, writer).await
             };
 
@@ -319,8 +254,8 @@ impl UpdateTool {
                 server_task_result = fused_server_task =>  {
                     // The server should start and run indefiniitely, if we get here there is a problem.
                     match server_task_result {
-                        Ok(_) => return_user_error!("Package server exited successfully, but prematurely"),
-                        Err(e) => return_user_error!("Package server failed to run: {e}")
+                    Ok(_) => return_user_error!("Package server exited successfully, but prematurely"),
+                    Err(e) => return_user_error!("Package server failed to run: {e}")
                     }
                 }
                 update_task_result =  install_task => {
@@ -336,7 +271,7 @@ impl UpdateTool {
     }
 
     async fn force_install<W: std::io::Write>(
-        update_url: http::Uri,
+        pkg_url: http::Uri,
         reboot: bool,
         installer_proxy: InstallerProxy,
         writer: &mut W,
@@ -352,7 +287,7 @@ impl UpdateTool {
             client.create_proxy::<finstaller::RebootControllerMarker>();
 
         let mut update_attempt: installer::UpdateAttemptFDomain = installer::start_update_fdomain(
-            &update_url,
+            &pkg_url,
             options,
             &installer_proxy,
             Some(reboot_controller_server_end),
@@ -360,18 +295,16 @@ impl UpdateTool {
         .await
         .bug_context("starting update")?;
 
-        writeln!(writer, "Installing an update.").bug()?;
-        if update_url.scheme_str() == Some("fuchsia-pkg") {
-            writeln!(
-                writer,
-                "Progress reporting is based on the fraction of packages resolved, so if one package is much
+        writeln!(
+            writer,
+            "Installing an update.
+Progress reporting is based on the fraction of packages resolved, so if one package is much
 larger than the others, then the reported progress could appear to stall near the end.
 Until the update process is improved to have more granular reporting, try using
     ffx inspect show 'core/pkg-resolver'
 for more detail on the progress of update-related downloads.\n"
-            )
-            .bug()?;
-        }
+        )
+        .map_err(|e| bug!(e))?;
         if !reboot {
             reboot_controller.detach().bug_context("notify installer do not reboot")?;
         }
@@ -390,7 +323,7 @@ for more detail on the progress of update-related downloads.\n"
                         ),
                         writer,
                     )?;
-                    write!(writer, "\n").bug()?;
+                    write!(writer, "\n").map_err(|e| bug!(e))?;
                     if reboot {
                         return Ok(());
                     }
@@ -476,7 +409,7 @@ for more detail on the progress of update-related downloads.\n"
             Some(product_path) => product_path.clone(),
             None => {
                 if let Some(product_path) =
-                    context.get::<Option<PathBuf>, _>("product.path").bug()?
+                    context.get::<Option<PathBuf>, _>("product.path").map_err(|e| bug!(e))?
                 {
                     product_path
                 } else {
@@ -493,11 +426,11 @@ fn write_progress<W: std::io::Write>(s: &str, writer: &mut W) -> Result<()> {
     // \r: send cursor to start of line
     // \x1b[K: clear to end of line
     if termion::is_tty(&std::io::stdout()) {
-        write!(writer, "\r{s}\x1b[K").bug()?;
+        write!(writer, "\r{s}\x1b[K").map_err(|e| bug!(e))?;
     } else {
-        writeln!(writer, "{s}").bug()?;
+        writeln!(writer, "{s}").map_err(|e| bug!(e))?;
     }
-    writer.flush().bug()
+    writer.flush().map_err(|e| bug!(e))
 }
 
 /// Handle subcommands for `update channel`.
@@ -510,11 +443,11 @@ async fn handle_channel_control_cmd<W: std::io::Write>(
     match cmd {
         args::channel::Command::Get(_) => {
             let channel = channel_control.get_current().await.map_err(|e: fidl::Error| bug!(e))?;
-            writeln!(writer, "current channel: {}", channel).bug()?;
+            writeln!(writer, "current channel: {}", channel).map_err(|e| bug!(e))?;
         }
         args::channel::Command::Target(_) => {
             let channel = channel_control.get_target().await.map_err(|e: fidl::Error| bug!(e))?;
-            writeln!(writer, "target channel: {}", channel).bug()?;
+            writeln!(writer, "target channel: {}", channel).map_err(|e| bug!(e))?;
         }
         args::channel::Command::Set(args::channel::Set { channel }) => {
             channel_control.set_target(&channel).await.map_err(|e: fidl::Error| bug!(e))?;
@@ -523,11 +456,11 @@ async fn handle_channel_control_cmd<W: std::io::Write>(
             let channels =
                 channel_control.get_target_list().await.map_err(|e: fidl::Error| bug!(e))?;
             if channels.is_empty() {
-                writeln!(writer, "known channels list is empty.").bug()?;
+                writeln!(writer, "known channels list is empty.").map_err(|e| bug!(e))?;
             } else {
-                writeln!(writer, "known channels:").bug()?;
+                writeln!(writer, "known channels:").map_err(|e| bug!(e))?;
                 for channel in channels {
-                    writeln!(writer, "{}", channel).bug()?;
+                    writeln!(writer, "{}", channel).map_err(|e| bug!(e))?;
                 }
             }
         }
@@ -540,10 +473,10 @@ async fn monitor_state<W: std::io::Write>(
     mut stream: MonitorRequestStream,
     writer: &mut W,
 ) -> Result<()> {
-    while let Some(event) = stream.try_next().await.bug()? {
+    while let Some(event) = stream.try_next().await.map_err(|e| bug!(e))? {
         match event {
             MonitorRequest::OnState { state, responder } => {
-                responder.send().bug()?;
+                responder.send().map_err(|e| bug!(e))?;
 
                 let state = State::from(state);
                 // If this gets set to `Some(_)` then we must exit with a user error.
@@ -597,7 +530,7 @@ async fn monitor_state<W: std::io::Write>(
                     return_user_error!("Update failed: {}", e)
                 }
                 if state.is_terminal() {
-                    writeln!(writer, "\n").bug()?;
+                    writeln!(writer, "\n").map_err(|e| bug!(e))?;
                     return Ok(());
                 }
             }
@@ -687,11 +620,16 @@ mod tests {
     use fdomain_client::Peered;
     use fdomain_fuchsia_update::{CommitStatusProviderRequest, ManagerRequest};
     use fdomain_fuchsia_update_channelcontrol::ChannelControlRequest;
+    use ffx_target::TargetInfoQuery;
     use ffx_update_args::Update;
     use ffx_writer::TestBuffers;
+    use fho::{FhoEnvironment, TryFromEnv};
+    use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
     use futures::prelude::*;
     use mock_installer_fdomain::MockUpdateInstallerService;
     use std::sync::Arc;
+    use target_behavior::ConnectionBehavior;
+    use target_holders::FakeInjector;
     use target_holders::fdomain::{fake_async_proxy, fake_proxy};
 
     async fn perform_channel_control_test<V, O>(
@@ -720,45 +658,6 @@ mod tests {
         future::join(fut, stream_fut).await;
         let out = String::from_utf8(buf).unwrap();
         output(out);
-    }
-
-    async fn write_product_bundle(pb_dir: &camino::Utf8Path) {
-        let blobs_dir = pb_dir.join("blobs");
-
-        let repo_name = "fuchsia.com";
-        let metadata_path = pb_dir.join(repo_name);
-        fuchsia_repo::test_utils::make_repo_dir(metadata_path.as_ref(), blobs_dir.as_ref(), None)
-            .await;
-
-        std::fs::write(metadata_path.join("ota_manifest"), b"mock ota manifest content").unwrap();
-
-        let pb = product_bundle::ProductBundle::V2(product_bundle::ProductBundleV2 {
-            product_name: "test".into(),
-            product_version: "test-product-version".into(),
-            partitions: assembly_partitions_config::PartitionsConfig::default(),
-            sdk_version: "test-sdk-version".into(),
-            system_a: None,
-            system_b: None,
-            system_r: None,
-            platform_tools_a: vec![],
-            platform_tools_b: vec![],
-            platform_tools_r: vec![],
-            repositories: vec![product_bundle::Repository {
-                name: repo_name.into(),
-                metadata_path: metadata_path.into(),
-                blobs_path: blobs_dir.clone().into(),
-                delivery_blob_type: 1,
-                root_private_key_path: None,
-                targets_private_key_path: None,
-                snapshot_private_key_path: None,
-                timestamp_private_key_path: None,
-                ota_manifest_signature_path: None,
-            }],
-            update_package_hash: None,
-            virtual_devices_path: None,
-            release_info: None,
-        });
-        pb.write(&pb_dir).unwrap();
     }
 
     #[fuchsia::test]
@@ -852,6 +751,12 @@ mod tests {
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_rcs_proxy: RemoteControlProxy =
+            target_holders::fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+        let fake_rcs_proxy_f: fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy =
+            target_holders::fdomain::fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            });
         let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
             match req {
                 ManagerRequest::CheckNow { responder, .. } => {
@@ -861,7 +766,22 @@ mod tests {
             };
         });
 
-        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
+        let fake_injector = FakeInjector {
+            remote_factory_closure: Box::new(move || {
+                let value = fake_rcs_proxy.clone();
+                Box::pin(async move { Ok(value) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let value = fake_rcs_proxy_f.clone();
+                Box::pin(async move { Ok(value) })
+            }),
+            ..Default::default()
+        };
+
+        let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
+        let target_env = target_behavior::target_interface(&fho_env);
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let tool = UpdateTool {
             cmd: Update {
@@ -878,9 +798,13 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: fake_installer_proxy,
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            target_spec: fake_env.target_spec,
-            rcs_proxy_connector: fake_env.rcs_proxy_connector,
-            host_address: fake_env.host_address,
+            target_spec: Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                TargetInfoQuery::from("1.1.1.1".to_string()),
+            ))),
+            rcs_proxy_connector: Connector::try_from_env(&fho_env)
+                .await
+                .expect("Could not make RCS test connector"),
+            host_address: Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
         };
         let buffers = TestBuffers::default();
         let writer = SimpleWriter::new_test(&buffers);
@@ -921,11 +845,10 @@ mod tests {
 
         let args = ForceInstall {
             reboot: true,
-            update_url: Some("fuchsia-pkg://fuchsia.test/update".into()),
+            update_pkg_url: "fuchsia-pkg://fuchsia.test/update".into(),
             product_bundle: false,
-            product_bundle_port: None,
             product_bundle_path: None,
-            packageless: false,
+            product_bundle_port: None,
         };
 
         let fake_update_manager_proxy =
@@ -934,18 +857,44 @@ mod tests {
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
+        let fake_rcs_proxy: RemoteControlProxy =
+            target_holders::fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
+        let fake_rcs_proxy_f: fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy =
+            target_holders::fdomain::fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            });
+
+        let fake_injector = FakeInjector {
+            remote_factory_closure: Box::new(move || {
+                let value = fake_rcs_proxy.clone();
+                Box::pin(async move { Ok(value) })
+            }),
+            remote_factory_closure_f: Box::new(move || {
+                let value = fake_rcs_proxy_f.clone();
+                Box::pin(async move { Ok(value) })
+            }),
+            ..Default::default()
+        };
+
+        let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
+        let target_env = target_behavior::target_interface(&fho_env);
+        target_env
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let tool = UpdateTool {
-            cmd: Update { cmd: args::Command::ForceInstall(args) },
+            cmd: Update { cmd: args::Command::ForceInstall(args.clone()) },
             context: test_env.context.clone(),
             update_manager_proxy: fake_update_manager_proxy,
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            target_spec: fake_env.target_spec,
-            rcs_proxy_connector: fake_env.rcs_proxy_connector,
-            host_address: fake_env.host_address,
+            target_spec: Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                TargetInfoQuery::from("1.1.1.1".to_string()),
+            ))),
+            rcs_proxy_connector: Connector::try_from_env(&fho_env)
+                .await
+                .expect("Could not make RCS test connector"),
+            host_address: Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
         };
 
         let buffers = TestBuffers::default();
@@ -957,249 +906,14 @@ mod tests {
         assert_eq!(stderr, "");
         assert_eq!(
             stdout,
-            "Using update url: fuchsia-pkg://fuchsia.test/update\n\
-            Installing an update.\n\
-            Progress reporting is based on the fraction of packages resolved, so if one package is much\n\
-            larger than the others, then the reported progress could appear to stall near the end.\n\
-            Until the update process is improved to have more granular reporting, try using\
-            \n    ffx inspect show 'core/pkg-resolver'\n\
+            "Installing an update.\n\
+        Progress reporting is based on the fraction of packages resolved, so if one package is much\n\
+        larger than the others, then the reported progress could appear to stall near the end.\n\
+        Until the update process is improved to have more granular reporting, try using\
+        \n    ffx inspect show 'core/pkg-resolver'\n\
             for more detail on the progress of update-related downloads.\n\n\n\
-            Starting install\n\
-            0.0 0/? Preparing\n\
-            0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n\
-            100.0 1000/1000 Waiting to Reboot\n\n"
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_force_install_packageless() {
-        let test_env = ffx_config::test_init().expect("test env");
-        let client = fdomain_local::local_client_empty();
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let temp_path = temp_dir.path().to_path_buf();
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&test_env.context, serde_json::Value::String(temp_path.to_string_lossy().into()))
-            .unwrap();
-
-        let update_info = installer::UpdateInfo::builder().download_size(1000).build();
-        let mock_installer = Arc::new(MockUpdateInstallerService::with_states(vec![
-            installer::State::Prepare,
-            installer::State::Fetch(
-                installer::UpdateInfoAndProgress::new(update_info, installer::Progress::none())
-                    .unwrap(),
-            ),
-            installer::State::Stage(
-                installer::UpdateInfoAndProgress::new(
-                    update_info,
-                    installer::Progress::builder()
-                        .fraction_completed(0.5)
-                        .bytes_downloaded(500)
-                        .build(),
-                )
-                .unwrap(),
-            ),
-            installer::State::WaitToReboot(installer::UpdateInfoAndProgress::done(update_info)),
-        ]));
-        let fake_installer_proxy = mock_installer.spawn_installer_service(Arc::clone(&client));
-
-        let args = ForceInstall {
-            reboot: true,
-            update_url: None,
-            product_bundle: false,
-            product_bundle_port: None,
-            product_bundle_path: None,
-            packageless: true,
-        };
-
-        let fake_update_manager_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-
-        let repo_url = fuchsia_url::RepositoryUrl::parse_host("fuchsia.com".into()).unwrap();
-        let mirror_url: http::Uri = "http://127.0.0.1:8083/devhost.fuchsia.com".parse().unwrap();
-        let repo_config = fidl_fuchsia_pkg_ext::RepositoryConfigBuilder::new(repo_url)
-            .add_mirror(fidl_fuchsia_pkg_ext::MirrorConfigBuilder::new(mirror_url).unwrap().build())
-            .build();
-
-        pkg::write_instance_info(
-            &test_env.context,
-            pkg::ServerMode::Foreground,
-            "test-server",
-            &"127.0.0.1:8083".parse().unwrap(),
-            fuchsia_repo::repository::RepositorySpec::Pm {
-                path: "/tmp".into(),
-                aliases: std::collections::BTreeSet::new(),
-            },
-            fidl_fuchsia_pkg_ext::RepositoryStorageType::Ephemeral,
-            fidl_fuchsia_pkg_ext::RepositoryRegistrationAliasConflictMode::Replace,
-            repo_config,
-        )
-        .await
-        .expect("write instance info");
-
-        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
-
-        let tool = UpdateTool {
-            cmd: Update { cmd: args::Command::ForceInstall(args) },
-            context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
-            installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            target_spec: fake_env.target_spec,
-            rcs_proxy_connector: fake_env.rcs_proxy_connector,
-            host_address: fake_env.host_address,
-        };
-
-        let buffers = TestBuffers::default();
-        let writer = SimpleWriter::new_test(&buffers);
-        tool.main(writer).await.expect("success");
-
-        let (stdout, stderr) = buffers.into_strings();
-
-        assert_eq!(stderr, "");
-        assert_eq!(
-            stdout,
-            "Using update url: http://127.0.0.1:8083/devhost.fuchsia.com/ota_manifest\n\
-            Installing an update.\n\n\
-            Starting install\n\
-            0.0 0/? Preparing\n\
-            0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n\
-            100.0 1000/1000 Waiting to Reboot\n\n"
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_force_install_product_bundle_packageless() {
-        let test_env = ffx_config::test_init().expect("test env");
-        let client = fdomain_local::local_client_empty();
-        let pb_dir_temp = tempfile::tempdir().unwrap();
-        let pb_dir = camino::Utf8PathBuf::from_path_buf(pb_dir_temp.path().to_path_buf()).unwrap();
-        write_product_bundle(&pb_dir).await;
-
-        let args = ForceInstall {
-            reboot: true,
-            update_url: None,
-            product_bundle: false,
-            product_bundle_port: None,
-            product_bundle_path: Some(pb_dir_temp.path().to_path_buf()),
-            packageless: true,
-        };
-
-        let update_info = installer::UpdateInfo::builder().download_size(1000).build();
-        let (mut states_tx, states_rx) = futures::channel::mpsc::channel(1);
-        let mock_installer =
-            Arc::new(MockUpdateInstallerService::builder().states_receiver(states_rx).build());
-        let fake_installer_proxy =
-            Arc::clone(&mock_installer).spawn_installer_service(Arc::clone(&client));
-
-        let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| match req {
-            fdomain_fuchsia_update::ManagerRequest::CheckNow { responder, options: _, .. } => {
-                responder.send(Ok(())).unwrap();
-            }
-            _ => panic!("Unexpected request: {req:?}"),
-        });
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
-
-        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
-
-        let tool = UpdateTool {
-            cmd: Update { cmd: args::Command::ForceInstall(args) },
-            context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
-            installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            target_spec: fake_env.target_spec,
-            rcs_proxy_connector: fake_env.rcs_proxy_connector,
-            host_address: fake_env.host_address,
-        };
-
-        let buffers = TestBuffers::default();
-        let writer = SimpleWriter::new_test(&buffers);
-        let tool_task = fuchsia_async::Task::local(async move {
-            tool.main(writer).await.expect("success");
-        });
-
-        let mut url_str = None;
-        for _ in 0..100 {
-            let args = mock_installer.captured_args().lock();
-            if let Some(mock_installer_fdomain::CapturedUpdateInstallerRequest::StartUpdate {
-                url,
-                ..
-            }) = args.get(0)
-            {
-                url_str = Some(url.clone());
-                break;
-            }
-            drop(args);
-            fuchsia_async::Timer::new(std::time::Duration::from_millis(100)).await;
-        }
-        let url = url_str.expect("StartUpdate should be called");
-        let client = fuchsia_hyper::new_client();
-        let res = client
-            .request(hyper::Request::get(&url).body(hyper::Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(res.status(), hyper::StatusCode::OK);
-
-        // Unblock the update process after the URL is verified.
-        states_tx.send(installer::State::Prepare).await.unwrap();
-        states_tx
-            .send(installer::State::Fetch(
-                installer::UpdateInfoAndProgress::new(update_info, installer::Progress::none())
-                    .unwrap(),
-            ))
-            .await
-            .unwrap();
-        states_tx
-            .send(installer::State::Stage(
-                installer::UpdateInfoAndProgress::new(
-                    update_info,
-                    installer::Progress::builder()
-                        .fraction_completed(0.5)
-                        .bytes_downloaded(500)
-                        .build(),
-                )
-                .unwrap(),
-            ))
-            .await
-            .unwrap();
-        states_tx
-            .send(installer::State::WaitToReboot(installer::UpdateInfoAndProgress::done(
-                update_info,
-            )))
-            .await
-            .unwrap();
-        drop(states_tx);
-
-        tool_task.await;
-
-        let (stdout, stderr) = buffers.into_strings();
-        assert_eq!(stderr, "");
-        assert!(
-            stdout.ends_with(
-                "Installing an update.\n\n\
-            Starting install\n\
-            0.0 0/? Preparing\n\
-            0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n\
-            100.0 1000/1000 Waiting to Reboot\n\n"
-            ),
-            "stdout: {stdout}",
+            Starting install\n0.0 0/? Preparing\n0.0 0/1000 Fetching\n\
+            50.0 500/1000 Staging\n100.0 1000/1000 Waiting to Reboot\n\n"
         );
     }
 

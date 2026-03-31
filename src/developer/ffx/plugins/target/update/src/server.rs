@@ -8,7 +8,7 @@ use fdomain_fuchsia_pkg_rewrite::{EngineMarker, EngineProxy};
 use fdomain_fuchsia_sys2::OpenDirType;
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{Deferred, Result, bug, return_bug, return_user_error, user_error};
+use fho::{Deferred, FfxMain, Result, bug, return_bug, return_user_error, user_error};
 use fidl_fuchsia_pkg_ext::RepositoryRegistrationAliasConflictMode;
 use fuchsia_async::{Task, Timer};
 use std::io::{Error, ErrorKind};
@@ -52,7 +52,6 @@ impl std::io::Write for LogWriter {
 
 pub(crate) struct PackageServerTask {
     pub(crate) repo_name: String,
-    pub(crate) repo_host_rx: futures::channel::mpsc::UnboundedReceiver<String>,
     pub(crate) task: Task<Result<()>>,
 }
 
@@ -63,7 +62,7 @@ pub(crate) async fn package_server_task(
     context: EnvironmentContext,
     product_bundle: PathBuf,
     repo_port: u16,
-) -> Result<PackageServerTask> {
+) -> Result<Option<PackageServerTask>> {
     log::info!("starting package server for {product_bundle:?}");
 
     // Make the name mostly unique, that way it is easier to remove this update source.
@@ -110,31 +109,30 @@ pub(crate) async fn package_server_task(
         )
     }
 
-    let (repo_host_tx, repo_host_rx) = futures::channel::mpsc::unbounded();
-
+    // Create a local task that runs the repo package server. This is done in-process since it
+    // easier to manage cleaning up the current process vs. having to manage multiple processes.
+    // Task::spawn would be a better alternative, but the Connector<> is not "Send", so it cannot
+    // be used across threads.
+    let connector = rcs_proxy_connector.clone();
     let task = fuchsia_async::Task::local(async move {
+        let tool = ffx_repository_server_start::ServerStartTool {
+            cmd,
+            context,
+            target_spec,
+            rcs_proxy_connector: connector.clone(),
+            host_address,
+        };
+
         let stdout = LogWriter::new("repo_server stdout");
         let stderr = LogWriter::new("repo_server stderr");
 
         let server_writer = VerifiedMachineWriter::new_buffers(None, stdout, stderr);
 
-        let server_result = ffx_repository_server_start::server::run_foreground_server(
-            cmd,
-            context,
-            target_spec,
-            rcs_proxy_connector,
-            host_address,
-            server_writer,
-            pkg::ServerMode::Foreground,
-            Some(repo_host_tx),
-        )
-        .await;
-
+        let server_result = tool.main(server_writer).await;
         log::info!("product bundle server exited: {server_result:?}");
         server_result
     });
-
-    Ok(PackageServerTask { repo_name, repo_host_rx, task })
+    Ok(Some(PackageServerTask { repo_name, task }))
 }
 
 pub(crate) async fn wait_for_device_task(
@@ -436,7 +434,7 @@ async fn try_rcs_proxy_connection(
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
     use ffx_config::TestEnv;
     use ffx_target::TargetInfoQuery;
@@ -460,7 +458,7 @@ pub(crate) mod tests {
     use target_holders::fdomain::RemoteControlProxyHolder;
     use target_holders::{FakeInjector, HostAddrHolder};
 
-    pub(crate) struct FakeTestEnv {
+    struct FakeTestEnv {
         pub context: EnvironmentContext,
         pub rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
         pub host_address: Deferred<HostAddrHolder>,
@@ -469,7 +467,7 @@ pub(crate) mod tests {
     }
 
     impl FakeTestEnv {
-        pub(crate) async fn new(test_env: &TestEnv) -> Self {
+        async fn new(test_env: &TestEnv) -> Self {
             let fake_rcs_proxy: RemoteControlProxy =
                 target_holders::fake_proxy(move |req| handle_rcs_proxy_request(req));
             let fdomain_client = fdomain_local::local_client(move || {
@@ -665,26 +663,29 @@ pub(crate) mod tests {
                 server_channel,
                 responder,
                 ..
-            } => match capability_name.as_str() {
-                RepositoryManagerMarker::PROTOCOL_NAME => {
-                    repo_manager.spawn(
-                        fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(server_channel)
+            } => {
+                match capability_name.as_str() {
+                    RepositoryManagerMarker::PROTOCOL_NAME => {
+                        repo_manager.spawn(
+                            fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(
+                                server_channel,
+                            )
                             .into_stream(),
-                    );
-                    responder.send(Ok(())).expect("Could not send response")
-                }
-                EngineMarker::PROTOCOL_NAME => {
-                    engine.spawn(
-                        fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
-                            .into_stream(),
-                    );
-                    responder.send(Ok(())).expect("Could not send response")
-                }
-                "fuchsia.posix.socket.Provider" => {
-                    responder.send(Ok(())).unwrap();
-                }
-                _ => responder.send(Err(ConnectCapabilityError::NoMatchingCapabilities)).unwrap(),
-            },
+                        );
+                        responder.send(Ok(())).expect("Could not send response")
+                    }
+                    EngineMarker::PROTOCOL_NAME => {
+                        engine.spawn(
+                            fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
+                                .into_stream(),
+                        );
+                        responder.send(Ok(())).expect("Could not send response")
+                    }
+                    _ => {
+                        responder.send(Err(ConnectCapabilityError::NoMatchingCapabilities)).unwrap()
+                    }
+                };
+            }
             _ => panic!("Unexpected request: {:?}", req),
         }
     }

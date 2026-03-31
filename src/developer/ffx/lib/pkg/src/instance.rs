@@ -67,7 +67,7 @@ fn empty_repo_spec() -> RepositorySpec {
 
 impl PkgServerInfo {
     /// Returns true if the process identified by the pid is running.
-    pub fn is_running(&self) -> bool {
+    fn is_running(&self) -> bool {
         let pid: Pid = nix::unistd::Pid::from_raw(
             self.pid.try_into().expect("pid to be representable as i32"),
         );
