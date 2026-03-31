@@ -2905,18 +2905,6 @@ alias(
 )
 
 alias(
-    name = "termtree-0.5.1",
-    actual = "//third_party/rust_crates/vendor/termtree-0.5.1:termtree",
-    tags = ["manual"],
-)
-
-alias(
-    name = "termtree",
-    actual = "//third_party/rust_crates/vendor/termtree-0.5.1:termtree",
-    tags = ["manual"],
-)
-
-alias(
     name = "test-case-3.3.1",
     actual = "//third_party/rust_crates/vendor/test-case-3.3.1:test_case",
     tags = ["manual"],

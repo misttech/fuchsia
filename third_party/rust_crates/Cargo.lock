@@ -1836,7 +1836,6 @@ dependencies = [
  "term_grid",
  "termion",
  "termios",
- "termtree",
  "test-case",
  "textwrap 0.16.2",
  "thiserror 2.0.12",

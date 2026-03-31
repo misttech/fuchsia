@@ -2189,14 +2189,6 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("termtree") {
-  public_deps = [ ":termtree-v0_5_1" ]
-}
-
-group("termtree-0.5.1") {
-  public_deps = [ ":termtree-v0_5_1" ]
-}
-
 group("test-case") {
   public_deps = [ ":test-case-v3_3_1" ]
 }
