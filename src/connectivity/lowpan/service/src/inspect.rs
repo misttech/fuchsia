@@ -689,7 +689,7 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                             inspector.root().record_uint("thread_router_id", x.into());
                         }
                         if let Some(x) = telemetry_data.thread_rloc {
-                            inspector.root().record_uint("thread_rloc", x.into());
+                            inspector.root().record_string("rloc", format!("{:04x}", x));
                         }
                         if let Some(x) = telemetry_data.partition_id {
                             inspector.root().record_uint("partition_id", x.into());
@@ -1468,9 +1468,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                         br_peers_child.record_child(
                                             format!("peer_{}", index),
                                             |br_peer_node| {
-                                                br_peer_node.record_uint(
-                                                    "thread_rloc",
-                                                    br_peer.thread_rloc.unwrap_or(0).into(),
+                                                br_peer_node.record_string(
+                                                    "rloc",
+                                                    format!("{:04x}", br_peer.thread_rloc.unwrap_or(0)),
                                                 );
                                                 br_peer_node.record_uint(
                                                     "age",
@@ -1675,9 +1675,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                     );
                                                 }
                                                 if let Some(y) = neighbor_info.thread_rloc {
-                                                    neighbor_node.record_uint(
-                                                        "thread_rloc",
-                                                        y.into(),
+                                                    neighbor_node.record_string(
+                                                        "rloc",
+                                                        format!("{:04x}", y),
                                                     );
                                                 }
                                                 if let Some(y) = &neighbor_info.radio_link_info {
@@ -1722,9 +1722,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                     );
                                                 }
                                                 if let Some(y) = router.thread_rloc {
-                                                    router_node.record_uint(
-                                                        "thread_rloc",
-                                                        y.into(),
+                                                    router_node.record_string(
+                                                        "rloc",
+                                                        format!("{:04x}", y),
                                                     );
                                                 }
                                                 if let Some(y) = router.router_id {
@@ -1854,9 +1854,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                                 );
                                                             }
                                                             if let Some(z) = config.rloc16 {
-                                                                prefix_node.record_uint(
-                                                                    "rloc16",
-                                                                    z.into(),
+                                                                prefix_node.record_string(
+                                                                    "rloc",
+                                                                    format!("{:04x}", z),
                                                                 );
                                                             }
                                                         },
@@ -1971,7 +1971,7 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                                         }
                                                                         if let Some(w) = z.rloc16 {
                                                                             server_config_child.record_string(
-                                                                                "rloc16",
+                                                                                "rloc",
                                                                                 format!("{:04x}", w),
                                                                             );
                                                                         }
