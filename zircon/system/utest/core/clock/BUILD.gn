@@ -7,6 +7,7 @@ source_set("clock") {
   sources = [ "clock.cc" ]
   deps = [
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
