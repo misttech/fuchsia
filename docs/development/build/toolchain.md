@@ -166,7 +166,7 @@ If the Fuchsia build fails due to a missing `runtime.json` file, you must genera
 ```bash
 python3 ${FUCHSIA_DIR}/scripts/clang/generate_runtimes.py  \
   --clang-prefix ${INSTALL_DIR} --sdk-dir ${IDK_DIR}          \
-  --build-id-dir ${INSTALL_DIR}/lib/.build-id > ${INSTALL_DIR}/lib/runtime.json
+  --build-id-dir ${INSTALL_DIR}/lib/debug/.build-id > ${INSTALL_DIR}/lib/runtime.json
 ```
 
 The generated file contains relative paths used by the Fuchsia build to know where
@@ -212,7 +212,7 @@ DESTDIR=${INSTALL_DIR} ninja install-toolchain-distribution-stripped -j1000
 
 python3 ${FUCHSIA_DIR}/scripts/clang/generate_runtimes.py    \
   --clang-prefix ${INSTALL_DIR} --sdk-dir ${IDK_DIR}            \
-  --build-id-dir ${INSTALL_DIR}/lib/.build-id > ${INSTALL_DIR}/lib/runtime.json
+  --build-id-dir ${INSTALL_DIR}/lib/debug/.build-id > ${INSTALL_DIR}/lib/runtime.json
 ```
 
 ### Building Fuchsia with a Custom Clang
