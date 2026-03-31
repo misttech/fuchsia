@@ -286,11 +286,22 @@ std::optional<GracefulShutdownInfo> ExtractGracefulShutdownInfo(
 
 std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
                           const std::optional<GracefulShutdownInfo>& graceful_info,
-                          const std::string& reboot_reason) {
+                          const std::string& reboot_reason,
+                          std::optional<zx::duration> fallback_uptime,
+                          std::optional<zx::duration> fallback_runtime) {
   std::vector<std::string> lines;
 
   if (zircon_reboot_log.has_value()) {
     lines.push_back(zircon_reboot_log.value());
+  }
+
+  if (fallback_uptime.has_value()) {
+    lines.push_back(fxl::StringPrintf("FALLBACK UPTIME (ms)\n%ld", fallback_uptime->to_msecs()));
+  }
+
+  if (fallback_runtime.has_value()) {
+    lines.push_back(
+        fxl::StringPrintf("FALLBACK RUNTIME (ms)\n%ld\n", fallback_runtime->to_msecs()));
   }
 
   const std::string graceful_action =
@@ -329,12 +340,17 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   ExtractZirconRebootInfo(zircon_reboot_log_path, &hw_reason, &zircon_reason, &zircon_reboot_log,
                           &last_boot_uptime, &last_boot_runtime, &critical_process);
 
+  std::optional<zx::duration> fallback_uptime;
+  std::optional<zx::duration> fallback_runtime;
+
   if (!last_boot_uptime.has_value() && !last_boot_runtime.has_value()) {
     if (const std::optional<SystemTime> system_time =
             GetPreviousSystemTime(previous_system_time_path);
         system_time.has_value()) {
       last_boot_uptime = system_time->uptime;
       last_boot_runtime = system_time->runtime;
+      fallback_uptime = system_time->uptime;
+      fallback_runtime = system_time->runtime;
     }
   }
 
@@ -344,7 +360,8 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       hw_reason, zircon_reason, graceful_info, not_a_fdr, supports_user_initiated_poweroffs);
   const auto reboot_log =
-      MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info->ToRebootReasonString());
+      MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info->ToRebootReasonString(),
+                    fallback_uptime, fallback_runtime);
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
 
   return RebootLog(std::move(final_shutdown_info), reboot_log, dlog, last_boot_uptime,

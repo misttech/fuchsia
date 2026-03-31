@@ -27,6 +27,8 @@ namespace {
 using fuchsia::hardware::power::statecontrol::ShutdownAction;
 using fuchsia::hardware::power::statecontrol::ShutdownReason;
 
+using ::testing::HasSubstr;
+
 struct RebootReasonTestParam {
   std::string test_name;
   std::optional<std::string> zircon_reboot_log;
@@ -699,6 +701,9 @@ TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NoZirconValues) {
   EXPECT_EQ(*reboot_log.Uptime(), zx::msec(9876));
   ASSERT_TRUE(reboot_log.Runtime().has_value());
   EXPECT_EQ(*reboot_log.Runtime(), zx::msec(8765));
+
+  EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK UPTIME (ms)\n9876"));
+  EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK RUNTIME (ms)\n8765"));
 }
 
 TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NegativeZirconValues) {
@@ -716,6 +721,9 @@ TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NegativeZirconValues) {
   EXPECT_EQ(*reboot_log.Uptime(), zx::msec(9876));
   ASSERT_TRUE(reboot_log.Runtime().has_value());
   EXPECT_EQ(*reboot_log.Runtime(), zx::msec(8765));
+
+  EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK UPTIME (ms)\n9876"));
+  EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK RUNTIME (ms)\n8765"));
 }
 
 TEST_F(RebootLogTest, NoPreviousSystemTimeFile) {
