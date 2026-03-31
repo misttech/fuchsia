@@ -27,9 +27,13 @@ trap 'rm -rf "${pkgs_dir}"' EXIT
 python_dir="${FUCHSIA_DIR}/prebuilt/third_party/python3/linux-x64/bin"
 readonly python_dir
 
-# Make sure pip is up-to-date, otherwise some packages fail to install.
+# Make sure pip and pip-tools are up-to-date
 "${python_dir}/python3" -m pip install --quiet --upgrade pip
 "${python_dir}/python3" -m pip install --upgrade setuptools
+"${python_dir}/python3" -m pip install --upgrade pip-tools
+
+# Generate requirements.txt from requirements.in
+(cd "${src_dir}" && "${python_dir}/python3" -m piptools compile requirements.in -o requirements.txt)
 
 "${python_dir}/python3" -m pip download \
   -r "${src_dir}/requirements.txt" \
@@ -48,7 +52,7 @@ cat >>"${configfile}" <<-EOF
   script //pylibs/update-pylibs.sh.
 
   To add/update a Python package:
-    * Edit the //pylibs/requirements.txt file with desired version.
+    * Edit the //pylibs/requirements.in file with desired version.
     * Rerun the //pylibs/update-pylibs.sh script.
   -->
   <projects>
@@ -79,9 +83,11 @@ for archive in "${sorted_archives[@]}"; do
   rm -rf "${dest_dir}"
   mv "${unzip_dir}/${noext}" "${dest_dir}"
 
+  echo "${pkg}==${version}" >> "${pkgs_dir}/versions.txt"
+
   package_exists=false
   is_ignore=false
-  # verifies the py package presence in a requirements.txt file and fetch the package url
+  # verifies the py package presence in a requirements.in file and fetch the package url
   while read -r line; do
     # Checks whether line is empty or comment line
     if [[ ! "$line" =~ "^[[:space:]]*#" && -n "$line" ]]; then
@@ -99,14 +105,14 @@ for archive in "${sorted_archives[@]}"; do
         break
       fi
     fi
-  done <"${src_dir}/requirements.txt"
+  done <"${src_dir}/requirements.in"
 
   if ! "${package_exists}"; then
-    echo -e "${RED}Error: Add ${pkg} package name and path in the requirements.txt.${NORM}"
+    echo -e "${RED}Error: Add ${pkg} package name and path in the requirements.in.${NORM}"
     exit
   fi
 
-  # Ignore packages with ignore tag in the requirements.txt file
+  # Ignore packages with ignore tag in the requirements.in file
   if "${is_ignore}"; then
     echo "Ignoring ${pkg} package in the config file."
     continue

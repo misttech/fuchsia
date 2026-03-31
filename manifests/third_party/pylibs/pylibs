@@ -5,7 +5,7 @@
   script //pylibs/update-pylibs.sh.
 
   To add/update a Python package:
-    * Edit the //pylibs/requirements.txt file with desired version.
+    * Edit the //pylibs/requirements.in file with desired version.
     * Rerun the //pylibs/update-pylibs.sh script.
   -->
   <projects>

@@ -1,6 +1,6 @@
 # Python Dependency Management
 pylibs provides a Python package configuration file and a script to streamline
-dependency management and setup using requirements.txt.
+dependency management and setup using requirements.in. `requirements.in` defines the top-level dependencies and their source paths, while `requirements.txt` is the fully resolved and pinned lockfile generated from it.
 
 
 ## Add new package
@@ -14,14 +14,14 @@ dependency management and setup using requirements.txt.
     code from its upstream repository into the Fuchsia source code.
     See [example bug](https://fxbug.dev/432504093) for reference
 
-3. Add the package to the `requirements.txt` file, including the specific
+3. Add the package to the `requirements.in` file, including the specific
     version and the path within the Fuchsia repository. Example:
 
     `<package>===0.0.1 # third_party/github.com/<package>` for
     `https://fuchsia.googlesource.com/third_party/github.com/<package>`
 
 4. If the package has dependencies, add those package names to
-    `requirements.txt` without specifying versions. The script will determine
+    `requirements.in` without specifying versions. The script will determine
     the correct versions.
 
     Example: `<dep_package> # third_party/github.com/python/<dep_package>`
@@ -40,7 +40,7 @@ dependency management and setup using requirements.txt.
 
 ## Update existing package
 
-1. Update the package version directly in the requirements.txt file and run the
+1. Update the package version directly in the requirements.in file and run the
     `update-pylibs.sh` script.
 
 2. Verify the `pylibs` configuration file to ensure update was successful.
