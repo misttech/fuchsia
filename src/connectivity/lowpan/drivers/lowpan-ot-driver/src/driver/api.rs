@@ -1395,6 +1395,8 @@ where
                 ..Default::default()
             })
             .collect::<Vec<_>>();
+        let mut commissioning_dataset = Default::default();
+        ot.net_data_get_commissioning_dataset(&mut commissioning_dataset);
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1461,6 +1463,18 @@ where
                 external_routes: Some(external_routes),
                 services: Some(services),
                 contexts: Some(lowpan_contexts_info),
+                commissioning_dataset: Some(fidl_fuchsia_lowpan_experimental::CommissioningDataset {
+                    locator: Some(commissioning_dataset.locator()),
+                    session_id: Some(commissioning_dataset.session_id()),
+                    steering_data: Some(commissioning_dataset.steering_data().to_vec()),
+                    joiner_udp_port: Some(commissioning_dataset.joiner_udp_port()),
+                    is_locator_set: Some(commissioning_dataset.is_locator_set()),
+                    is_session_id_set: Some(commissioning_dataset.is_session_id_set()),
+                    is_steering_data_set: Some(commissioning_dataset.is_steering_data_set()),
+                    is_joiner_udp_port_set: Some(commissioning_dataset.is_joiner_udp_port_set()),
+                    has_extra_tlv: Some(commissioning_dataset.has_extra_tlv()),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }),
             ..Default::default()

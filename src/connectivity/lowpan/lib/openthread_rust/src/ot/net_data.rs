@@ -88,6 +88,10 @@ pub trait NetData {
     /// [`otsys::otNetDataGetStableVersion`](crate::otsys::otNetDataGetStableVersion).
     fn net_data_get_stable_version(&self) -> u8;
 
+    /// Functional equivalent of
+    /// [`otsys::otNetDataGetCommissioningDataset`](crate::otsys::otNetDataGetCommissioningDataset).
+    fn net_data_get_commissioning_dataset(&self, dataset: &mut CommissioningDataset);
+
     /// Functional equivalent of [`otsys::otNetDataGetNextOnMeshPrefix`](crate::otsys::otNetDataGetNextOnMeshPrefix).
     fn iter_next_on_mesh_prefix(
         &self,
@@ -143,6 +147,10 @@ impl<T: NetData + Boxable> NetData for ot::Box<T> {
         self.as_ref().net_data_get_version()
     }
 
+    fn net_data_get_commissioning_dataset(&self, dataset: &mut CommissioningDataset) {
+        self.as_ref().net_data_get_commissioning_dataset(dataset);
+    }
+
     fn iter_next_on_mesh_prefix(
         &self,
         ot_iter: &mut otNetworkDataIterator,
@@ -187,6 +195,10 @@ impl NetData for Instance {
 
     fn net_data_get_stable_version(&self) -> u8 {
         unsafe { otNetDataGetStableVersion(self.as_ot_ptr()) }
+    }
+
+    fn net_data_get_commissioning_dataset(&self, dataset: &mut CommissioningDataset) {
+        unsafe { otNetDataGetCommissioningDataset(self.as_ot_ptr(), dataset.as_ot_mut_ptr()) }
     }
 
     fn iter_next_on_mesh_prefix(

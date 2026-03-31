@@ -2022,6 +2022,67 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.commissioning_dataset {
+                                        net_data_child.record_child(
+                                            "commissioning_dataset",
+                                            |dataset_child| {
+                                                if let Some(z) = y.locator {
+                                                    dataset_child.record_string(
+                                                        "locator",
+                                                        format!("{:04x}", z),
+                                                    );
+                                                }
+                                                if let Some(z) = y.session_id {
+                                                    dataset_child.record_uint(
+                                                        "session_id",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.steering_data {
+                                                    dataset_child.record_bytes(
+                                                        "steering_data",
+                                                        z,
+                                                    );
+                                                }
+                                                if let Some(z) = y.joiner_udp_port {
+                                                    dataset_child.record_uint(
+                                                        "joiner_udp_port",
+                                                        z.into()
+                                                    );
+                                                }
+                                                if let Some(z) = y.is_locator_set {
+                                                    dataset_child.record_bool(
+                                                        "is_locator_set",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.is_session_id_set {
+                                                    dataset_child.record_bool(
+                                                        "is_session_id_set",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.is_steering_data_set {
+                                                    dataset_child.record_bool(
+                                                        "is_steering_data_set",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.is_joiner_udp_port_set {
+                                                    dataset_child.record_bool(
+                                                        "is_joiner_udp_port_set",
+                                                        z.into(),
+                                                    );
+                                                }
+                                                if let Some(z) = y.has_extra_tlv {
+                                                    dataset_child.record_bool(
+                                                        "has_extra_tlv",
+                                                        z.into(),
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }
