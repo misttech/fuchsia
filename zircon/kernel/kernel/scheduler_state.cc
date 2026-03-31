@@ -23,12 +23,12 @@ void SchedulerState::RecomputeEffectiveProfile() {
     const SchedDuration new_deadline = ktl::min(ipv.min_deadline, bp.deadline.deadline_ns);
     const SchedDuration new_capacity = new_util * new_deadline;
 
-    ep.SetDeadline({new_capacity, new_deadline, new_util});
+    ep.SetDeadline({new_capacity, new_deadline, new_util}, bp.critical || ipv.critical_count > 0);
   } else if (ipv.uncapped_utilization > SchedUtilization{0}) {
     const SchedUtilization new_util =
         ktl::min(ipv.uncapped_utilization, Scheduler::kThreadUtilizationMax);
     const SchedDuration capacity = new_util * ipv.min_deadline;
-    ep.SetDeadline({capacity, ipv.min_deadline, new_util});
+    ep.SetDeadline({capacity, ipv.min_deadline, new_util}, ipv.critical_count > 0);
   } else {
     // Our thread is fair.  We simply end up inheriting the total weight of the
     // threads blocked behind us.

@@ -30,6 +30,7 @@
 #include <ffl/string.h>
 #include <kernel/auto_preempt_disabler.h>
 #include <kernel/cpu.h>
+#include <kernel/event_limiter.h>
 #include <kernel/lockdep.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
@@ -242,7 +243,8 @@ inline void Scheduler::TraceThreadQueueEvent(const fxt::InternedString& name,
     const zx_instant_mono_t now = current_mono_time();  // TODO(johngro): plumb this in from above
     const bool fair = IsFairThread(thread);
     const bool eligible = fair || (thread->scheduler_state().start_time_ <= now);
-    const size_t cnt = fair_run_queue_.size() + deadline_run_queue_.size() +
+    const size_t cnt = fair_run_queue_.size() + critical_deadline_run_queue_.size() +
+                       deadline_run_queue_.size() +
                        ((active_thread_ && !active_thread_->IsIdle()) ? 1 : 0);
 
     const uint64_t arg0 = thread->tid();
@@ -309,54 +311,46 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
       return ChainLockTransaction::Done;
     }
 
+    const auto print_thread =
+        [output_target](const Scheduler* scheduler, const Thread& thread) TA_REQ(
+            scheduler->queue_lock_) TA_REQ_SHARED(thread.get_lock()) {
+          const SchedulerState& state = thread.scheduler_state();
+          const EffectiveProfile& ep = state.effective_profile();
+          const bool is_active = scheduler->active_thread_ == &thread;
+          if (IsFairThread(&thread)) {
+            fprintf(output_target,
+                    "\t%s name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
+                    " ema=%" PRId64 " T_e=%" PRId64 "\n",
+                    is_active ? "->" : "  ", thread.name(), Format(ep.weight()).c_str(),
+                    scheduler->VariableToMonotonic(state.start_time_).raw_value(),
+                    scheduler->VariableToMonotonic(state.finish_time_).raw_value(),
+                    state.remaining_time_slice_ns().raw_value(),
+                    state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value());
+          } else {
+            fprintf(output_target,
+                    "\t%s name=%s deadline=(%" PRId64 ", %" PRId64 ") start= %" PRId64
+                    " finish= %" PRId64 " ts= %" PRId64 " ema= %" PRId64 " T_e= %" PRId64 " %s\n",
+                    is_active ? "->" : "  ", thread.name(), ep.deadline().capacity_ns.raw_value(),
+                    ep.deadline().deadline_ns.raw_value(), state.start_time().raw_value(),
+                    state.finish_time().raw_value(), state.time_slice_ns().raw_value(),
+                    state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value(),
+                    IsCriticalDeadlineThread(&thread) ? "critical" : "");
+          }
+        };
+
     if (active_thread_ != nullptr) {
       AssertInScheduler(*active_thread_);
-      const SchedulerState& state = const_cast<const Thread*>(active_thread_)->scheduler_state();
-      const EffectiveProfile& ep = state.effective_profile();
-      if (ep.IsFair()) {
-        fprintf(output_target,
-                "\t-> name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
-                " ema=%" PRId64 " T_e=%" PRId64 "\n",
-                active_thread_->name(), Format(ep.weight()).c_str(), state.start_time_.raw_value(),
-                state.finish_time_.raw_value(), state.time_slice_ns_.raw_value(),
-                state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value());
-      } else {
-        fprintf(output_target,
-                "\t-> name=%s deadline=(%" PRId64 ", %" PRId64 ") start=%" PRId64 " finish=%" PRId64
-                " ts=%" PRId64 " ema=%" PRId64 " T_e=%" PRId64 "\n",
-                active_thread_->name(), ep.deadline().capacity_ns.raw_value(),
-                ep.deadline().deadline_ns.raw_value(), state.start_time_.raw_value(),
-                state.finish_time_.raw_value(), state.time_slice_ns_.raw_value(),
-                state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value());
+      print_thread(this, *active_thread_);
+    }
+
+    for (const RunQueue* run_queue :
+         {&critical_deadline_run_queue_, &deadline_run_queue_, &fair_run_queue_}) {
+      for (const Thread& thread : *run_queue) {
+        AssertInScheduler(thread);
+        print_thread(this, thread);
       }
     }
 
-    for (const Thread& thread : deadline_run_queue_) {
-      AssertInScheduler(thread);
-      const SchedulerState& state = thread.scheduler_state();
-      const EffectiveProfile& ep = state.effective_profile();
-      fprintf(output_target,
-              "\t   name=%s deadline=(%" PRId64 ", %" PRId64 ") start=%" PRId64 " finish=%" PRId64
-              " ts=%" PRId64 " ema=%" PRId64 " T_e=%" PRId64 "\n",
-              thread.name(), ep.deadline().capacity_ns.raw_value(),
-              ep.deadline().deadline_ns.raw_value(), state.start_time_.raw_value(),
-              state.finish_time_.raw_value(), state.remaining_time_slice_ns().raw_value(),
-              state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value());
-    }
-
-    for (const Thread& thread : fair_run_queue_) {
-      AssertInScheduler(thread);
-      const SchedulerState& state = thread.scheduler_state();
-      const EffectiveProfile& ep = state.effective_profile();
-      fprintf(output_target,
-              "\t   name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
-              " ema=%" PRId64 " T_e=%" PRId64 "\n",
-              thread.name(), Format(ep.weight()).c_str(),
-              VariableToMonotonic(state.start_time_).raw_value(),
-              VariableToMonotonic(state.finish_time_).raw_value(),
-              state.remaining_time_slice_ns().raw_value(), state.expected_runtime_ns_.raw_value(),
-              state.effective_period().raw_value());
-    }
     return ChainLockTransaction::Done;
   };
   ChainLockTransaction::UntilDone(NoIrqSaveOption, CLT_TAG("Scheduler::Dump"), do_transaction);
@@ -702,6 +696,7 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
         ktrace::Scope trace_steal = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_steal");
 
         DEBUG_ASSERT((&run_queue == &scheduler->fair_run_queue_) ||
+                     (&run_queue == &scheduler->critical_deadline_run_queue_) ||
                      (&run_queue == &scheduler->deadline_run_queue_));
         MarkHasSchedulerAccess(*scheduler);
         const bool is_fair_run_queue = &run_queue == &scheduler->fair_run_queue_;
@@ -769,6 +764,12 @@ Scheduler::DequeueResult Scheduler::StealWork(SchedTime now, SchedProcessingRate
 
         return check_affinity(thread) && is_scheduleable && !thread.has_migrate_fn();
       };
+
+      // Attempt to find a critical deadline thread that can run on this CPU.
+      if (DequeueResult result =
+              steal_from_queue(scheduler->critical_deadline_run_queue_, deadline_predicate)) {
+        return result;
+      }
 
       // Attempt to find a deadline thread that can run on this CPU.
       if (DequeueResult result =
@@ -856,11 +857,31 @@ Scheduler::DequeueResult Scheduler::DequeueFairThread(SchedTime monotonic_eligib
 }
 
 // Dequeues the eligible thread with the earliest deadline. The caller must
-// ensure that there is at least one eligible thread in the queue.
+// ensure that there is at least one eligible thread in either the critical
+// deadline run queue or the deadline run queue.
 Scheduler::DequeueResult Scheduler::DequeueDeadlineThread(SchedTime eligible_time) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_deadline_thread");
+  DEBUG_ASSERT(!critical_deadline_run_queue_.is_empty() || !deadline_run_queue_.is_empty());
 
-  Thread* const eligible_thread = FindEarliestEligibleThread(&deadline_run_queue_, eligible_time);
+  const Thread* critical_thread =
+      FindEarliestEligibleThread(&critical_deadline_run_queue_, eligible_time);
+  const bool is_oversubscribed =
+      power_level_control_.normalized_utilization() > kCpuUtilizationLimit;
+
+  const Thread* eligible_thread = nullptr;
+
+  if (is_oversubscribed && critical_thread) {
+    eligible_thread = critical_thread;
+  } else {
+    const Thread* normal_thread = FindEarliestEligibleThread(&deadline_run_queue_, eligible_time);
+
+    // There must be at least one eligible deadline thread, whether critical or
+    // normal.
+    DEBUG_ASSERT(critical_thread || normal_thread);
+
+    eligible_thread = EarliestDeadlineThread(critical_thread, normal_thread);
+  }
+
   DEBUG_ASSERT_MSG(eligible_thread != nullptr, "eligible_time=%" PRId64, eligible_time.raw_value());
 
   // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
@@ -868,17 +889,19 @@ Scheduler::DequeueResult Scheduler::DequeueDeadlineThread(SchedTime eligible_tim
   // is acceptable because the queue lock is required by this method and the
   // thread is in a queue protectect by the same lock.
   MarkHasOwnedThreadAccess(*eligible_thread);
-  deadline_run_queue_.erase(*eligible_thread);
+  RunQueue* target_queue = IsCriticalDeadlineThread(eligible_thread) ? &critical_deadline_run_queue_
+                                                                     : &deadline_run_queue_;
+  target_queue->erase(*const_cast<Thread*>(eligible_thread));
   TraceThreadQueueEvent("tqe_deque_deadline"_intern, eligible_thread);
   DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
 
-  const SchedulerState& state = const_cast<const Thread*>(eligible_thread)->scheduler_state();
-  if (state.finish_time_ <= eligible_time) {
+  const SchedulerState& state = eligible_thread->scheduler_state();
+  if (state.finish_time() <= eligible_time) {
     kcounter_add(counter_deadline_past, 1);
   }
   trace = KTRACE_END_SCOPE(("start time", Round<uint64_t>(state.start_time_)),
                            ("finish time", Round<uint64_t>(state.finish_time_)));
-  return eligible_thread;
+  return const_cast<Thread*>(eligible_thread);
 }
 
 Thread* Scheduler::FindEarlierFairThread(SchedTime eligible_time, SchedTime finish_time) {
@@ -904,8 +927,45 @@ Thread* Scheduler::FindEarlierFairThread(SchedTime eligible_time, SchedTime fini
   return nullptr;
 }
 
-Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time, SchedTime finish_time) {
-  Thread* const eligible_thread = FindEarliestEligibleThread(&deadline_run_queue_, eligible_time);
+Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
+                                             const Thread* reference_thread) {
+  // The following logic governs how the scheduler finds an earlier deadline
+  // thread than the reference thread based on system load:
+  //
+  // 1. **Scenario A: Feasible Total Demand.** When the combined demand of both
+  //    critical and general queues is within CPU capacity:
+  //    a. If both queues contain eligible tasks, the scheduler selects the task
+  //       with the earliest eligible deadline, regardless of which queue it
+  //       resides in.
+  //    b. If only one queue has eligible tasks, the earliest eligible deadline
+  //       task from that queue is selected.
+  // 2. **Scenario B: Infeasible Total Demand (Oversubscription).** When total
+  //    demand exceeds capacity, the system prioritizes the critical tier:
+  //    a. If the critical deadline queue has eligible tasks, the scheduler
+  //       selects the earliest eligible deadline task from this queue
+  //       exclusively.
+  //    b. The general deadline queue is only serviced if the critical deadline
+  //       queue is empty or only has ineligible tasks.
+  //
+  // If the CPU is oversubscribed, an eligible critical deadline thread takes
+  // precedence over any eligible general deadline thread, including the
+  // reference thread. Otherwise, the scheduler selects the eligible deadline
+  // thread with the earliest deadline, regardless of which type, including the
+  // reference thread.
+
+  const Thread* critical_thread =
+      FindEarliestEligibleThread(&critical_deadline_run_queue_, eligible_time);
+  const bool is_oversubscribed =
+      power_level_control_.normalized_utilization() > kCpuUtilizationLimit;
+
+  const Thread* eligible_thread = nullptr;
+
+  if (is_oversubscribed && critical_thread) {
+    eligible_thread = critical_thread;
+  } else {
+    const Thread* normal_thread = FindEarliestEligibleThread(&deadline_run_queue_, eligible_time);
+    eligible_thread = EarliestDeadlineThread(critical_thread, normal_thread);
+  }
 
   if (eligible_thread != nullptr) {
     // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
@@ -913,28 +973,39 @@ Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time, SchedTime 
     // This is acceptable because the queue lock is required by this method and
     // the thread is in a queue protectect by the same lock.
     MarkHasOwnedThreadAccess(*eligible_thread);
-    if (const_cast<const Thread*>(eligible_thread)->scheduler_state().finish_time() < finish_time) {
-      return eligible_thread;
+    const bool eligible_is_critical = IsCriticalDeadlineThread(eligible_thread);
+    const bool reference_is_critical = IsCriticalDeadlineThread(reference_thread);
+
+    if (is_oversubscribed) {
+      if (eligible_is_critical && !reference_is_critical) {
+        return const_cast<Thread*>(eligible_thread);
+      }
+      if (!eligible_is_critical && reference_is_critical) {
+        return nullptr;
+      }
+    }
+
+    if (eligible_thread->scheduler_state().finish_time() <
+        reference_thread->scheduler_state().finish_time()) {
+      return const_cast<Thread*>(eligible_thread);
     }
   }
 
   return nullptr;
 }
 
-// Returns the time that the next deadline task will become eligible or infinite
-// if there are no ready deadline tasks.
-SchedTime Scheduler::GetNextEligibleTime() {
-  if (deadline_run_queue_.is_empty()) {
-    return SchedTime{ZX_TIME_INFINITE};
-  }
+SchedTime Scheduler::GetNextEligibleTime() const {
+  const auto get_eligible_time = [](const RunQueue& queue) {
+    if (queue.is_empty()) {
+      return SchedTime{ZX_TIME_INFINITE};
+    }
+    const Thread& front = queue.front();
+    MarkHasOwnedThreadAccess(front);
+    return front.scheduler_state().start_time();
+  };
 
-  // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
-  // access to the thread's COVs and exclusive access to the thread's SOVs. This
-  // is acceptable because the queue lock is required by this method and the
-  // thread is in a queue protected by the same lock.
-  const Thread& front = deadline_run_queue_.front();
-  MarkHasOwnedThreadAccess(front);
-  return front.scheduler_state().start_time_;
+  return ktl::min(get_eligible_time(critical_deadline_run_queue_),
+                  get_eligible_time(deadline_run_queue_));
 }
 
 Scheduler::DequeueResult Scheduler::DequeueEarlierFairThread(SchedTime eligible_time,
@@ -965,9 +1036,9 @@ Scheduler::DequeueResult Scheduler::DequeueEarlierFairThread(SchedTime eligible_
 }
 
 Scheduler::DequeueResult Scheduler::DequeueEarlierDeadlineThread(SchedTime eligible_time,
-                                                                 SchedTime finish_time) {
+                                                                 const Thread* reference_thread) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "dequeue_earlier_deadline_thread");
-  Thread* const eligible_thread = FindEarlierDeadlineThread(eligible_time, finish_time);
+  Thread* const eligible_thread = FindEarlierDeadlineThread(eligible_time, reference_thread);
 
   if (eligible_thread != nullptr) {
     // Use MarkHasOwnedThreadAccess to satisfy static annotations for shared
@@ -975,7 +1046,11 @@ Scheduler::DequeueResult Scheduler::DequeueEarlierDeadlineThread(SchedTime eligi
     // This is acceptable because the queue lock is required by this method and
     // the thread is in a queue protected by the same lock.
     MarkHasOwnedThreadAccess(*eligible_thread);
-    deadline_run_queue_.erase(*eligible_thread);
+    if (IsCriticalDeadlineThread(eligible_thread)) {
+      critical_deadline_run_queue_.erase(*eligible_thread);
+    } else {
+      deadline_run_queue_.erase(*eligible_thread);
+    }
     TraceThreadQueueEvent("tqe_deque_earlier_deadline"_intern, eligible_thread);
     DEBUG_ASSERT(eligible_thread->disposition() == Disposition::Associated);
   }
@@ -1027,8 +1102,8 @@ Scheduler::DequeueResult Scheduler::EvaluateNextThread(
         // The current thread is deadline and eligible. Select the eligible
         // thread with the earliest finish time, which may still be the current
         // thread.
-        const SchedTime finish_time = current_thread->scheduler_state().finish_time();
-        if (DequeueResult earlier_thread_result = DequeueEarlierDeadlineThread(now, finish_time)) {
+        if (DequeueResult earlier_thread_result =
+                DequeueEarlierDeadlineThread(now, current_thread)) {
           return earlier_thread_result;
         }
 
@@ -2043,7 +2118,8 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
     // After the current thread has been potentially removed from this
     // scheduler, clear or prune the bandwidth demand cache and re-evaluate the
     // current power level.
-    const bool clear_cache = next_thread->IsIdle() && deadline_run_queue_.is_empty();
+    const bool clear_cache = next_thread->IsIdle() && critical_deadline_run_queue_.is_empty() &&
+                             deadline_run_queue_.is_empty();
     const SchedUtilization utilization_to_remove = clear_cache
                                                        ? bandwidth_reservation_cache_.Clear()
                                                        : bandwidth_reservation_cache_.Prune(now);
@@ -2142,10 +2218,9 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
 
       // Adjust the preemption time to account for a deadline thread becoming
       // eligible before the current time slice expires.
-      preemption_time_ns =
-          IsFairThread(next_thread)
-              ? ClampToDeadline(target_preemption_time_ns_)
-              : ClampToEarlierDeadline(target_preemption_time_ns_, next_state->finish_time_);
+      preemption_time_ns = IsFairThread(next_thread)
+                               ? ClampToDeadline(target_preemption_time_ns_)
+                               : ClampToEarlierDeadline(target_preemption_time_ns_, next_thread);
       DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
 
       trace_start_preemption =
@@ -2184,10 +2259,9 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
       // earlier. If a task that becomes eligible is stolen before the early
       // preemption is handled, this logic will reset to the original target
       // preemption time.
-      preemption_time_ns =
-          IsFairThread(next_thread)
-              ? ClampToDeadline(target_preemption_time_ns_)
-              : ClampToEarlierDeadline(target_preemption_time_ns_, next_state->finish_time_);
+      preemption_time_ns = IsFairThread(next_thread)
+                               ? ClampToDeadline(target_preemption_time_ns_)
+                               : ClampToEarlierDeadline(target_preemption_time_ns_, next_thread);
       DEBUG_ASSERT(preemption_time_ns <= target_preemption_time_ns_);
 
       trace_continue = KTRACE_END_SCOPE(("preemption_time", preemption_time_ns),
@@ -2405,8 +2479,9 @@ SchedTime Scheduler::ClampToDeadline(SchedTime completion_time) {
   return ktl::min(completion_time, GetNextEligibleTime());
 }
 
-SchedTime Scheduler::ClampToEarlierDeadline(SchedTime completion_time, SchedTime finish_time) {
-  const Thread* const thread = FindEarlierDeadlineThread(completion_time, finish_time);
+SchedTime Scheduler::ClampToEarlierDeadline(SchedTime completion_time,
+                                            const Thread* reference_thread) {
+  const Thread* const thread = FindEarlierDeadlineThread(completion_time, reference_thread);
 
   if (thread != nullptr) {
     AssertInScheduler(*thread);
@@ -2536,6 +2611,8 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
     MonotonicToVariableInPlace(state->start_time_);
     MonotonicToVariableInPlace(state->finish_time_);
     fair_run_queue_.insert(thread);
+  } else if (IsCriticalDeadlineThread(thread)) {
+    critical_deadline_run_queue_.insert(thread);
   } else {
     deadline_run_queue_.insert(thread);
   }
@@ -2692,6 +2769,21 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
           power_level_control_.is_enabled() ? bandwidth_reservation_cache_.Remove(thread->tid())
                                             : SchedUtilization{0};
 
+      if (IsCriticalDeadlineThread(thread)) {
+        critical_deadline_utilization_ += ep.deadline().utilization;
+        if (critical_deadline_utilization_ > kCpuUtilizationLimit) {
+          // Use constinit to ensure that EventLimiter is trivially
+          // constructible, since that is required for local statics in the
+          // kernel.
+          static constinit EventLimiter<ZX_SEC(1)> oops_limiter;
+          if (oops_limiter.Ready()) {
+            dprintf(CRITICAL, "Critical deadline utilization %s exceeded limit %s on CPU %u\n",
+                    Format(critical_deadline_utilization_).c_str(),
+                    Format(kCpuUtilizationLimit).c_str(), this_cpu());
+          }
+        }
+      }
+
       UpdateTotalDeadlineUtilization(ep.deadline().utilization - utilization_to_remove);
 
       // Increase the processing rate when the required utilization increases
@@ -2745,6 +2837,11 @@ void Scheduler::Remove(SchedTime now, Thread* thread, cpu_num_t stolen_by) {
       if (power_level_control_.is_enabled() && stolen_by == INVALID_CPU) {
         utilization_to_remove = bandwidth_reservation_cache_.Add(thread->tid(), state.finish_time(),
                                                                  utilization_to_remove);
+      }
+
+      if (IsCriticalDeadlineThread(thread)) {
+        critical_deadline_utilization_ -= effective_profile.deadline().utilization;
+        DEBUG_ASSERT(critical_deadline_utilization_ >= 0);
       }
 
       UpdateTotalDeadlineUtilization(-utilization_to_remove);
@@ -2863,6 +2960,10 @@ void Scheduler::ValidateInvariantsUnconditional() const {
 
   for (const auto& t : fair_run_queue_) {
     ObserveFairThread(t);
+  }
+
+  for (const auto& t : critical_deadline_run_queue_) {
+    ObserveDeadlineThread(t);
   }
 
   for (const auto& t : deadline_run_queue_) {
@@ -3172,6 +3273,7 @@ void Scheduler::MigrateUnpinnedThreads() {
               (void)current;  // We cannot annotate 'current' with [[maybe_unused]] in the capture
                               // list, so suppress the warning using the old school void-cast trick.
               DEBUG_ASSERT((&run_queue == &current->fair_run_queue_) ||
+                           (&run_queue == &current->critical_deadline_run_queue_) ||
                            (&run_queue == &current->deadline_run_queue_));
 
               for (RunQueue::iterator iter = run_queue.begin(); iter.IsValid();) {
@@ -3192,6 +3294,7 @@ void Scheduler::MigrateUnpinnedThreads() {
             };
 
     CreateMoveList(migrating_fair_threads, current->fair_run_queue_);
+    CreateMoveList(migrating_deadline_threads, current->critical_deadline_run_queue_);
     CreateMoveList(migrating_deadline_threads, current->deadline_run_queue_);
   }
 

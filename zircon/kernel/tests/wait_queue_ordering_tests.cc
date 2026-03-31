@@ -153,7 +153,7 @@ struct WaitQueueOrderingTests {
     ss.base_profile_.discipline = SchedDiscipline::Deadline;
     ss.base_profile_.deadline = SchedDeadlineParams{capacity, rel_deadline};
 
-    ss.effective_profile_.SetDeadline(ss.base_profile_.deadline);
+    ss.effective_profile_.SetDeadline(ss.base_profile_.deadline, ss.base_profile_.critical);
 
     ss.start_time_ = start_time;
     ss.time_slice_ns_ = ss.effective_profile().deadline().capacity_ns;

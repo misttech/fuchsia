@@ -37,7 +37,8 @@ static zx::result<SchedulerState::BaseProfile> validate_and_create_profile(
     const zx_profile_info_t& info) {
   // Ensure that none of the flags outside of the set of valid flags has been set.
   constexpr uint32_t kAllFlags = (ZX_PROFILE_INFO_FLAG_PRIORITY | ZX_PROFILE_INFO_FLAG_CPU_MASK |
-                                  ZX_PROFILE_INFO_FLAG_DEADLINE | ZX_PROFILE_INFO_FLAG_NO_INHERIT);
+                                  ZX_PROFILE_INFO_FLAG_DEADLINE | ZX_PROFILE_INFO_FLAG_NO_INHERIT |
+                                  ZX_PROFILE_INFO_FLAG_CRITICAL);
   if ((info.flags & ~kAllFlags) != 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -87,11 +88,17 @@ static zx::result<SchedulerState::BaseProfile> validate_and_create_profile(
     }
   }
 
+  if ((info.flags & ZX_PROFILE_INFO_FLAG_CRITICAL) != 0 &&
+      (info.flags & ZX_PROFILE_INFO_FLAG_DEADLINE) == 0) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   if (info.flags & ZX_PROFILE_INFO_FLAG_PRIORITY) {
     return zx::ok(SchedulerState::BaseProfile(info.priority, inheritable));
   } else {
     DEBUG_ASSERT(inheritable == true);
-    return zx::ok(SchedulerState::BaseProfile(info.deadline_params));
+    const bool critical = (info.flags & ZX_PROFILE_INFO_FLAG_CRITICAL) != 0;
+    return zx::ok(SchedulerState::BaseProfile(info.deadline_params, critical));
   }
 }
 

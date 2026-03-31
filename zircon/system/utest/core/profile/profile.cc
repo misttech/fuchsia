@@ -175,6 +175,27 @@ TEST(SchedulerProfileTest, CreateProfileWithDeadlineIsOk) {
   ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
 }
 
+TEST(SchedulerProfileTest, CreateProfileWithCriticalDeadlineIsOk) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+  zx_profile_info_t profile_info = MakeSchedulerProfileInfo({ZX_MSEC(1), ZX_MSEC(8), ZX_MSEC(10)});
+  profile_info.flags |= ZX_PROFILE_INFO_FLAG_CRITICAL;
+  zx::profile profile;
+
+  ASSERT_OK(zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
+}
+
+TEST(SchedulerProfileTest, CreateProfileWithCriticalWithoutDeadlineIsInvalidArgs) {
+  zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
+  ASSERT_OK(maybe_profile_rsrc.status_value());
+  zx_profile_info_t profile_info = MakeSchedulerProfileInfo(ZX_PRIORITY_DEFAULT);
+  profile_info.flags |= ZX_PROFILE_INFO_FLAG_CRITICAL;
+  zx::profile profile;
+
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx::profile::create(maybe_profile_rsrc.value(), 0u, &profile_info, &profile));
+}
+
 TEST(SchedulerProfileTest, CreateProfileWithZeroCapacityIsInvalidArgs) {
   zx::result<zx::resource> maybe_profile_rsrc = GetSystemProfileResource();
   ASSERT_OK(maybe_profile_rsrc.status_value());

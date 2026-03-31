@@ -754,6 +754,85 @@ __NO_INLINE bool priority_test() {
   END_TEST;
 }
 
+struct SpinControl {
+  ktl::atomic<bool> done{false};
+  uint64_t count{0};
+};
+
+int oversubscription_spin_thread(void* arg) {
+  SpinControl* control = static_cast<SpinControl*>(arg);
+  while (!control->done.load()) {
+    control->count++;
+  }
+  return 0;
+}
+
+__NO_INLINE bool critical_oversubscription_test() {
+  BEGIN_TEST;
+
+  const cpu_mask_t active_mask = Scheduler::PeekActiveMask();
+  if (!active_mask || ispow2(active_mask)) {
+    printf("skipping rest, not enough active cpus\n");
+    END_TEST;
+  }
+
+  const cpu_mask_t current_mask = cpu_num_to_mask(arch_curr_cpu_num());
+  const auto restore_affinity =
+      fit::defer([previous_affinity = Thread::Current::SetCpuAffinity(current_mask)](void) {
+        Thread::Current::SetCpuAffinity(previous_affinity);
+      });
+
+  // Pick a target CPU to bind our threads to.
+  cpu_num_t target_cpu = highest_cpu_set(active_mask & ~current_mask);
+  DEBUG_ASSERT(target_cpu != arch_curr_cpu_num());
+  const cpu_mask_t target_mask = cpu_num_to_mask(target_cpu);
+
+  // Both threads demand 100% of the CPU (10ms capacity every 10ms).
+  const SchedDeadlineParams params{SchedMs(10), SchedMs(10)};
+
+  SchedulerState::BaseProfile critical_profile{params};
+  critical_profile.critical = true;
+
+  SchedulerState::BaseProfile normal_profile{params};
+  normal_profile.critical = false;
+
+  SpinControl critical_control;
+  SpinControl normal_control;
+
+  Thread* critical_thread = Thread::Create("critical-thread", oversubscription_spin_thread,
+                                           &critical_control, DEFAULT_PRIORITY);
+  Thread* normal_thread = Thread::Create("normal-thread", oversubscription_spin_thread,
+                                         &normal_control, DEFAULT_PRIORITY);
+
+  critical_thread->SetCpuAffinity(target_mask);
+  normal_thread->SetCpuAffinity(target_mask);
+
+  critical_thread->SetBaseProfile(critical_profile);
+  normal_thread->SetBaseProfile(normal_profile);
+
+  // Start the threads.
+  critical_thread->Resume();
+  normal_thread->Resume();
+
+  // Let them run for a short duration while oversubscribing the CPU.
+  Thread::Current::SleepRelative(ZX_MSEC(250));
+
+  // Signal them to stop.
+  critical_control.done.store(true);
+  normal_control.done.store(true);
+
+  critical_thread->Join(nullptr, ZX_TIME_INFINITE);
+  normal_thread->Join(nullptr, ZX_TIME_INFINITE);
+
+  // The critical thread should have received vastly more CPU time. In a perfect
+  // system, normal_counter would be 0, but due to context switching and kernel
+  // behavior it might get a few cycles.
+  EXPECT_GT(critical_control.count, normal_control.count * 10,
+            "Critical thread did not receive expected CPU precedence");
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(intensive_thread_tests)
@@ -768,4 +847,5 @@ UNITTEST("mutex_test", mutex_test)
 UNITTEST("preempt_test", preempt_test)
 UNITTEST("priority_test", priority_test)
 UNITTEST("spinlock_test", spinlock_test)
+UNITTEST("critical_oversubscription_test", critical_oversubscription_test)
 UNITTEST_END_TESTCASE(intensive_thread_tests, "intensive_thread", "intensive thread tests")

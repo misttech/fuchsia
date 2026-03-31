@@ -306,6 +306,9 @@ SchedulerState::InheritedProfileValues OwnedWaitQueue::SnapshotThreadIpv(
       ret.AssertConsistency();
       ret.uncapped_utilization += bp.deadline.utilization;
       ret.min_deadline = ktl::min(ret.min_deadline, bp.deadline.deadline_ns);
+      if (bp.critical) {
+        ret.critical_count++;
+      }
     }
   }
 
@@ -319,9 +322,11 @@ void OwnedWaitQueue::ApplyIpvDeltaToThread(const SchedulerState::InheritedProfil
 
   SchedWeight weight_delta = new_ipv ? new_ipv->total_weight : SchedWeight{0};
   SchedUtilization util_delta = new_ipv ? new_ipv->uncapped_utilization : SchedUtilization{0};
+  int32_t critical_delta = new_ipv ? new_ipv->critical_count : 0;
   if (old_ipv != nullptr) {
     weight_delta -= old_ipv->total_weight;
     util_delta -= old_ipv->uncapped_utilization;
+    critical_delta -= old_ipv->critical_count;
   }
 
   SchedulerState& tss = thread.scheduler_state();
@@ -330,9 +335,11 @@ void OwnedWaitQueue::ApplyIpvDeltaToThread(const SchedulerState::InheritedProfil
   tss.effective_profile_.MarkInheritedProfileChanged();
   thread_ipv.total_weight += weight_delta;
   thread_ipv.uncapped_utilization += util_delta;
+  thread_ipv.critical_count += critical_delta;
 
   DEBUG_ASSERT(thread_ipv.total_weight >= SchedWeight{0});
   DEBUG_ASSERT(thread_ipv.uncapped_utilization >= SchedUtilization{0});
+  DEBUG_ASSERT(thread_ipv.critical_count >= 0);
 
   // If a set of IPVs is going away, and the value which is going away was the
   // minimum, then we need to recompute the new minimum by checking the
@@ -398,10 +405,12 @@ void OwnedWaitQueue::ApplyIpvDeltaToOwq(const SchedulerState::InheritedProfileVa
                                         OwnedWaitQueue& owq) {
   SchedWeight weight_delta = new_ipv ? new_ipv->total_weight : SchedWeight{0};
   SchedUtilization util_delta = new_ipv ? new_ipv->uncapped_utilization : SchedUtilization{0};
+  int32_t critical_delta = new_ipv ? new_ipv->critical_count : 0;
 
   if (old_ipv != nullptr) {
     weight_delta -= old_ipv->total_weight;
     util_delta -= old_ipv->uncapped_utilization;
+    critical_delta -= old_ipv->critical_count;
   }
 
   DEBUG_ASSERT(!owq.IsEmpty());
@@ -410,6 +419,7 @@ void OwnedWaitQueue::ApplyIpvDeltaToOwq(const SchedulerState::InheritedProfileVa
 
   iss.ipvs.total_weight += weight_delta;
   iss.ipvs.uncapped_utilization += util_delta;
+  iss.ipvs.critical_count += critical_delta;
   iss.ipvs.min_deadline = owq.collection_.MinInheritableRelativeDeadline();
 
   iss.ipvs.AssertConsistency();

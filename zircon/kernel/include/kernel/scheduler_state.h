@@ -228,9 +228,10 @@ class SchedulerState {
           fair{.weight{SchedulerState::ConvertPriorityToWeight(priority)}} {}
     explicit constexpr BaseProfile(SchedWeight weight, bool inheritable = true)
         : inheritable{inheritable}, fair{.weight{weight}} {}
-    explicit constexpr BaseProfile(SchedDeadlineParams deadline_params)
+    explicit constexpr BaseProfile(SchedDeadlineParams deadline_params, bool critical = false)
         : discipline{SchedDiscipline::Deadline},
           inheritable{true},  // Deadline profiles are always inheritable.
+          critical{critical},
           deadline{deadline_params} {}
 
     constexpr bool IsFair() const { return discipline == SchedDiscipline::Fair; }
@@ -238,6 +239,7 @@ class SchedulerState {
 
     SchedDiscipline discipline{SchedDiscipline::Fair};
     bool inheritable{true};
+    bool critical{false};
 
     union {
       struct {
@@ -338,6 +340,7 @@ class SchedulerState {
         capacity_ns_ = SchedCompactDuration{base_profile.deadline.capacity_ns};
         deadline_ns_ = SchedCompactDuration{base_profile.deadline.deadline_ns};
         utilization_ = base_profile.deadline.utilization;
+        critical_ = base_profile.critical;
       }
     }
 
@@ -352,11 +355,12 @@ class SchedulerState {
       DEBUG_ASSERT(weight >= kMinFairWeight);
       weight_ = weight;
     }
-    constexpr void SetDeadline(SchedDeadlineParams deadline_params) {
+    constexpr void SetDeadline(SchedDeadlineParams deadline_params, bool is_critical) {
       weight_ = kMaxDeadlineWeight;
       capacity_ns_ = SchedCompactDuration{deadline_params.capacity_ns};
       deadline_ns_ = SchedCompactDuration{deadline_params.deadline_ns};
       utilization_ = deadline_params.utilization;
+      critical_ = is_critical;
     }
 
     constexpr SchedWeight weight() const {
@@ -371,6 +375,8 @@ class SchedulerState {
       return SchedDeadlineParams{SchedDuration{capacity_ns_}, SchedDuration{deadline_ns_},
                                  utilization_};
     }
+
+    constexpr bool is_critical() const { return critical_; }
 
     // Returns a signed 32bit diagnostic value representing the effective
     // profile state. Returns either the positive weight or the negative packed
@@ -421,6 +427,7 @@ class SchedulerState {
     SchedCompactDuration capacity_ns_{0};
     SchedCompactDuration deadline_ns_{0};
     SchedUtilization utilization_{0};
+    bool critical_{false};
   };
 
   // Values stored in the SchedulerState of Thread instances which tracks the
@@ -432,6 +439,7 @@ class SchedulerState {
     // Inherited from deadline threads.
     SchedUtilization uncapped_utilization{0};
     SchedDuration min_deadline{SchedDuration::Max()};
+    int32_t critical_count{0};
 
     constexpr bool is_consequential() const {
       return total_weight != SchedWeight{0} || uncapped_utilization != SchedUtilization{0};

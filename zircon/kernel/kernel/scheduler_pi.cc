@@ -207,7 +207,7 @@ SchedulerState::EffectiveProfile ComputeEffectiveProfile(const OwnedWaitQueue& o
     const SchedUtilization utilization =
         ktl::min(Scheduler::kThreadUtilizationMax, iss.ipvs.uncapped_utilization);
     const SchedDuration capacity = utilization * iss.ipvs.min_deadline;
-    ep.SetDeadline({capacity, iss.ipvs.min_deadline, utilization});
+    ep.SetDeadline({capacity, iss.ipvs.min_deadline, utilization}, iss.ipvs.critical_count > 0);
   } else {
     // Note that we cannot assert that the total weight of this OWQ's IPVs has
     // dropped to zero at this point.  It is possible that there are threads

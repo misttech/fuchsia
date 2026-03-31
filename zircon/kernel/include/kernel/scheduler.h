@@ -930,9 +930,11 @@ class Scheduler {
   DequeueResult DequeueDeadlineThread(SchedTime eligible_time) TA_REQ(queue_lock_);
 
   // Removes the eligible deadline thread with a finish time earlier than the
-  // given finish time and returns it or nullptr if one does not exist.
-  DequeueResult DequeueEarlierDeadlineThread(SchedTime eligible_time, SchedTime finish_time)
-      TA_REQ(queue_lock_);
+  // given reference thread's finish time and criticality and returns it or
+  // nullptr if one does not exist.
+  DequeueResult DequeueEarlierDeadlineThread(SchedTime eligible_time,
+                                             const Thread* reference_thread) TA_REQ(queue_lock_)
+      TA_REQ_SHARED(reference_thread->get_lock());
 
   // Returns the eligible fair thread in the run queue with a finish time
   // earlier than the given finish time, or nullptr if one does not exist.
@@ -942,12 +944,13 @@ class Scheduler {
   Thread* FindEarlierFairThread(SchedTime eligible_time, SchedTime finish_time) TA_REQ(queue_lock_);
 
   // Returns the eligible deadline thread in the run queue with a finish time
-  // earlier than the given finish time, or nullptr if one does not exist.
+  // earlier than the given reference thread's finish time and criticality, or
+  // nullptr if one does not exist.
   //
   // See the note in |FindEarliestEligibleThread| for lifecycle rules for the
   // returned pointer (if any)
-  Thread* FindEarlierDeadlineThread(SchedTime eligible_time, SchedTime finish_time)
-      TA_REQ(queue_lock_);
+  Thread* FindEarlierDeadlineThread(SchedTime eligible_time, const Thread* reference_thread)
+      TA_REQ(queue_lock_) TA_REQ_SHARED(reference_thread->get_lock());
 
   // Attempts to steal work from other busy CPUs. Returns nullptr if no work was
   // stolen, otherwise returns a pointer to the stolen thread that is partially
@@ -957,7 +960,7 @@ class Scheduler {
 
   // Returns the time that the next deadline task will become eligible or infinite
   // if there are no ready deadline tasks.
-  SchedTime GetNextEligibleTime() TA_REQ(queue_lock_);
+  SchedTime GetNextEligibleTime() const TA_REQ(queue_lock_);
 
   // Calculates the timeslice of the thread based on the current run queue
   // state.
@@ -970,9 +973,9 @@ class Scheduler {
 
   // Returns the completion time clamped to the start of the earliest deadline
   // thread that will become eligible in that time frame and also has an earlier
-  // finish time than the given finish time.
-  SchedTime ClampToEarlierDeadline(SchedTime completion_time, SchedTime finish_time)
-      TA_REQ(queue_lock_);
+  // finish time than the given reference thread, accounting for criticality.
+  SchedTime ClampToEarlierDeadline(SchedTime completion_time, const Thread* reference_thread)
+      TA_REQ(queue_lock_) TA_REQ_SHARED(reference_thread->get_lock());
 
   // Updates the timeslice of the thread based on the current run queue state.
   // Returns the absolute deadline for the next time slice, which may be earlier
@@ -1014,7 +1017,9 @@ class Scheduler {
     SchedulerState& state = thread->scheduler_state();
 
     const bool is_fair = state.discipline() == SchedDiscipline::Fair;
-    RunQueue& queue = is_fair ? fair_run_queue_ : deadline_run_queue_;
+    const bool is_critical = state.effective_profile().is_critical();
+    RunQueue& queue = is_fair ? fair_run_queue_
+                              : (is_critical ? critical_deadline_run_queue_ : deadline_run_queue_);
     queue.erase(*thread);
 
     if (is_fair) {
@@ -1030,13 +1035,16 @@ class Scheduler {
   // Returns true if there is at least one eligible deadline thread in the
   // run queue.
   bool IsDeadlineThreadEligible(SchedTime eligible_time) TA_REQ(queue_lock_) {
-    if (deadline_run_queue_.is_empty()) {
-      return false;
+    for (const RunQueue* queue : {&critical_deadline_run_queue_, &deadline_run_queue_}) {
+      if (!queue->is_empty()) {
+        const Thread& front = queue->front();
+        AssertInRunQueue(front);
+        if (front.scheduler_state().start_time() <= eligible_time) {
+          return true;
+        }
+      }
     }
-
-    const Thread& front = deadline_run_queue_.front();
-    AssertInRunQueue(front);
-    return front.scheduler_state().start_time() <= eligible_time;
+    return false;
   }
 
   // Returns true if there is at least one eligible fair thread in the run
@@ -1165,12 +1173,38 @@ class Scheduler {
     return thread->scheduler_state().effective_profile_.IsDeadline();
   }
 
+  // Returns true if the given thread is critical deadline scheduled.
+  static bool IsCriticalDeadlineThread(const Thread* thread) TA_REQ_SHARED(thread->get_lock()) {
+    return thread->scheduler_state().effective_profile_.is_critical();
+  }
+
   // Returns true if the given thread's time slice is adjustable under changes to
   // the fair scheduler demand on the CPU.
   static bool IsThreadAdjustable(const Thread* thread) TA_REQ_SHARED(thread->get_lock()) {
     // Checking the thread state avoids unnecessary adjustments on a thread that
     // is no longer competing.
     return !thread->IsIdle() && IsFairThread(thread) && thread->state() == THREAD_READY;
+  }
+
+  // Returns the thread with the earliest finish time. Either or both threads
+  // may be nullptr. If there is tie between primary and secondary, primary is
+  // returned.
+  const Thread* EarliestDeadlineThread(const Thread* primary, const Thread* secondary) const
+      TA_REQ(queue_lock_) {
+    if (primary == nullptr) {
+      return secondary;
+    }
+    if (secondary == nullptr) {
+      return primary;
+    }
+
+    AssertInScheduler(*primary);
+    AssertInScheduler(*secondary);
+    if (primary->scheduler_state().finish_time() <= secondary->scheduler_state().finish_time()) {
+      return primary;
+    }
+
+    return secondary;
   }
 
   // Called by code paths that encounter a thread in the READY state with a
@@ -1304,6 +1338,13 @@ class Scheduler {
   TA_GUARDED(queue_lock_)
   RunQueue deadline_run_queue_;
 
+  // The run queue of critical deadline scheduled threads ready to run, but not currently running.
+  TA_GUARDED(queue_lock_)
+  RunQueue critical_deadline_run_queue_;
+
+  // The total critical deadline utilization of threads associated with this CPU.
+  SchedUtilization critical_deadline_utilization_{0};
+
   // The list of threads that need to run the Save stage of their migrate functions.
   //
   // There are several invariants that must be maintained when interacting with this
@@ -1357,16 +1398,16 @@ class Scheduler {
   SchedUtilization reciprocal_fair_period_{kReciprocalDefaultFairPeriod};
 
   // Utilities to streamline affine transformations.
-  constexpr SchedTime MonotonicToVariable(SchedTime t) TA_REQ(queue_lock_) {
+  constexpr SchedTime MonotonicToVariable(SchedTime t) const TA_REQ(queue_lock_) {
     return fair_affine_transform_.MonotonicToVariable(t);
   }
-  constexpr SchedTime VariableToMonotonic(SchedTime v) TA_REQ(queue_lock_) {
+  constexpr SchedTime VariableToMonotonic(SchedTime v) const TA_REQ(queue_lock_) {
     return fair_affine_transform_.VariableToMonotonic(v);
   }
-  constexpr void MonotonicToVariableInPlace(SchedTime& ref) TA_REQ(queue_lock_) {
+  constexpr void MonotonicToVariableInPlace(SchedTime& ref) const TA_REQ(queue_lock_) {
     fair_affine_transform_.MonotonicToVariableInPlace(ref);
   }
-  constexpr void VariableToMonotonicInPlace(SchedTime& ref) TA_REQ(queue_lock_) {
+  constexpr void VariableToMonotonicInPlace(SchedTime& ref) const TA_REQ(queue_lock_) {
     fair_affine_transform_.VariableToMonotonicInPlace(ref);
   }
 
