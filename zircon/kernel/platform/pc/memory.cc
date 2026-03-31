@@ -85,8 +85,8 @@ void x86_resource_init_hook(unsigned int rl) {
   // An error is likely fatal if the bookkeeping is broken and driver
   ResourceDispatcher::InitializeAllocator(
       ZX_RSRC_KIND_MMIO, 0,
-      (1ull << arch::BootCpuid<arch::CpuidAddressSizeInfo>().phys_addr_bits()) - 1);
-  ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_IOPORT, 0, UINT16_MAX);
+      (1ull << arch::BootCpuid<arch::CpuidAddressSizeInfo>().phys_addr_bits()));
+  ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_IOPORT, 0, UINT16_MAX + 1);
   ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_SYSTEM, 0, ZX_RSRC_SYSTEM_COUNT);
 
   // debug_uart.irq needs to be reserved here. See https://fxbug.dev/42109187.
