@@ -38,9 +38,6 @@ source_set("usb-fastboot-function-common") {
 
   public_deps = [
     ":bind",
-    "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.fastboot:fuchsia.hardware.fastboot_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
@@ -82,7 +79,6 @@ test("usb-fastboot-function-test-bin") {
   sources = [ "unit-tests.cc" ]
   deps = [
     ":usb-fastboot-function-common",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp_mock",
     "//sdk/fidl/fuchsia.hardware.fastboot:fuchsia.hardware.fastboot_cpp_testing",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/inspect/testing/cpp:zxtest",

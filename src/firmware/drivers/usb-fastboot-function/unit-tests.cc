@@ -3,13 +3,9 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.fastboot/cpp/wire_test_base.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo-mock.h>
-#include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
-
-#include <memory>
 
 #include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
 #include <zxtest/zxtest.h>
@@ -17,79 +13,56 @@
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/firmware/drivers/usb-fastboot-function/usb_fastboot_function.h"
 
-// Some test utilities in "fuchsia/hardware/usb/function/cpp/banjo-mock.h" expect the following
-// operators to be implemented.
-
-bool operator==(const usb_request_complete_callback_t& lhs,
-                const usb_request_complete_callback_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_ss_ep_comp_descriptor_t& lhs, const usb_ss_ep_comp_descriptor_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_endpoint_descriptor_t& lhs, const usb_endpoint_descriptor_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_request_t& lhs, const usb_request_t& rhs) {
-  // Only comparing endpoint address. Use ExpectCallWithMatcher for more specific
-  // comparisons.
-  return lhs.header.ep_address == rhs.header.ep_address;
-}
-
-bool operator==(const usb_function_interface_protocol_t& lhs,
-                const usb_function_interface_protocol_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
 namespace usb_fastboot_function {
 namespace {
 
-static constexpr uint32_t kBulkOutEp = 1;
-static constexpr uint32_t kBulkInEp = 2;
+constexpr uint32_t kBulkOutEp = 1;
+constexpr uint32_t kBulkInEp = 2;
 
-class MockFastbootUsbFunction : public ddk::MockUsbFunction {
+class FakeUsbFunction
+    : public fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction> {
  public:
-  zx_status_t UsbFunctionSetInterface(const usb_function_interface_protocol_t* interface) override {
-    // Overriding method to store the interface passed.
-    function_ = *interface;
-    return ddk::MockUsbFunction::UsbFunctionSetInterface(interface);
+  using Base = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction>;
+  using Base::Base;
+
+  void Configure(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb_function::UsbFunction::Configure>::Sync&
+          completer) override {
+    interface_ = std::move(request.iface());
+    completer.Reply(fit::ok());
   }
 
-  zx_status_t UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                                  const usb_ss_ep_comp_descriptor_t* ss_comp_desc) override {
-    // Overriding method to handle valid cases where nullptr is passed. The generated mock tries to
-    // dereference it without checking.
-    usb_endpoint_descriptor_t ep{};
-    usb_ss_ep_comp_descriptor_t ss{};
-    const usb_endpoint_descriptor_t* arg1 = ep_desc ? ep_desc : &ep;
-    const usb_ss_ep_comp_descriptor_t* arg2 = ss_comp_desc ? ss_comp_desc : &ss;
-    return ddk::MockUsbFunction::UsbFunctionConfigEp(arg1, arg2);
+  void AllocResources(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
+    fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
+    ASSERT_EQ(request.endpoints().size(), 2);
+    ASSERT_EQ(request.interface_count(), 2);
+    response.interface_nums() = {0, 1};
+    response.endpoint_addrs() = {kBulkOutEp, kBulkInEp};
+    response.string_indices() = {};
+    for (size_t i = 0; i < 2; i++) {
+      fidl::ServerEnd ep = std::move(request.endpoints()[i].endpoint());
+      fake_endpoint(response.endpoint_addrs()[i]).Connect(dispatcher(), std::move(ep));
+    }
+    completer.Reply(fit::ok(std::move(response)));
   }
 
-  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
-    compat::DeviceServer::BanjoConfig config{.default_proto_id = ZX_PROTOCOL_USB_FUNCTION};
-    config.callbacks[ZX_PROTOCOL_USB_FUNCTION] = banjo_server_.callback();
-    return config;
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> TakeInterface() {
+    return std::move(interface_);
   }
 
-  compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_FUNCTION, this, GetProto()->ops};
-  usb_function_interface_protocol_t function_;
+ private:
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> interface_;
 };
 
-using FakeUsb = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
-                                                       fake_usb_endpoint::FakeEndpoint>;
 class UsbFastbootEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-    device_server_.Initialize("default", std::nullopt, mock_usb_.GetBanjoConfig());
+    device_server_.Initialize("default", std::nullopt);
     EXPECT_EQ(ZX_OK, device_server_.Serve(dispatcher, &to_driver_vfs));
     fuchsia_hardware_usb_function::UsbFunctionService::InstanceHandler handler({
         .device = usb_function_bindings_.CreateHandler(&fake_dev_, dispatcher,
@@ -101,16 +74,8 @@ class UsbFastbootEnvironment : public fdf_testing::Environment {
     return zx::ok();
   }
 
-  // Call set_configured of usb fastboot to bring the interface online.
-  void EnableUsb() {
-    mock_usb_.ExpectConfigEp(ZX_OK, {}, {});
-    mock_usb_.ExpectConfigEp(ZX_OK, {}, {});
-    mock_usb_.function_.ops->set_configured(mock_usb_.function_.ctx, true, USB_SPEED_FULL);
-  }
-
   compat::DeviceServer device_server_;
-  MockFastbootUsbFunction mock_usb_;
-  FakeUsb fake_dev_ = FakeUsb(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  FakeUsbFunction fake_dev_ = FakeUsbFunction(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> usb_function_bindings_;
 };
 
@@ -120,35 +85,48 @@ class UsbFastbootTestConfig final {
   using EnvironmentType = UsbFastbootEnvironment;
 };
 
-using inspect::InspectTestHelper;
-
 class UsbFastbootFunctionTest : public zxtest::Test {
  public:
   void SetUp() override {
-    driver_test_.RunInEnvironmentTypeContext([](UsbFastbootEnvironment& env) {
-      // Expect calls from UsbFastbootFunction initialization
-      env.mock_usb_.ExpectAllocInterface(ZX_OK, 1);
-      env.mock_usb_.ExpectAllocInterface(ZX_OK, 1);
-      env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_OUT, kBulkOutEp);
-      env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_IN, kBulkInEp);
-      env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-      env.fake_dev_.ExpectConnectToEndpoint(kBulkOutEp);
-      env.fake_dev_.ExpectConnectToEndpoint(kBulkInEp);
-    });
     ASSERT_OK(driver_test_.StartDriver().status_value());
     auto device = driver_test_.Connect<fuchsia_hardware_fastboot::Service::Fastboot>();
     EXPECT_OK(device.status_value());
     client_.Bind(std::move(device.value()));
+
+    driver_test_.RunInEnvironmentTypeContext([this](UsbFastbootEnvironment& env) {
+      function_client_.Bind(env.fake_dev_.TakeInterface());
+    });
+
+    driver_test_.RunInDriverContext([](UsbFastbootFunction& driver) {
+      EXPECT_EQ(driver.bulk_in_addr(), kBulkInEp);
+      EXPECT_EQ(driver.bulk_out_addr(), kBulkOutEp);
+    });
   }
 
-  void TearDown() override {
-    driver_test_.RunInEnvironmentTypeContext(
-        [](UsbFastbootEnvironment& env) { env.mock_usb_.VerifyAndClear(); });
+  void TearDown() override {}
+
+  void EnableUsb() {
+    ASSERT_TRUE(function_client_.is_valid());
+    {
+      fidl::Result result = function_client_->SetConfigured({{
+          .configured = true,
+          .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+      }});
+      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+    }
+    {
+      fidl::Result result = function_client_->SetInterface({{
+          .interface = 0,
+          .alt_setting = 1,
+      }});
+      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+    }
   }
 
   fidl::WireSyncClient<fuchsia_hardware_fastboot::FastbootImpl>& client() { return client_; }
 
  protected:
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_client_;
   fidl::WireSyncClient<fuchsia_hardware_fastboot::FastbootImpl> client_;
   fdf_testing::BackgroundDriverTest<UsbFastbootTestConfig> driver_test_;
 };
@@ -168,7 +146,7 @@ void ValidateVmo(const zx::vmo& vmo, std::string_view payload) {
 
 TEST_F(UsbFastbootFunctionTest, ReceiveTestSinglePacket) {
   const std::string_view test_data = "getvar:all";
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   std::thread t([&]() {
     auto res = client()->Receive(0);
@@ -184,7 +162,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveTestSinglePacket) {
 }
 
 TEST_F(UsbFastbootFunctionTest, ReceiveStateReset) {
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   {
     const std::string_view test_data = "getvar:all";
@@ -214,7 +192,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveStateReset) {
 
 TEST_F(UsbFastbootFunctionTest, ReceiveFailsOnError) {
   const std::string_view test_data = "getvar:all";
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   std::thread t([&]() { ASSERT_FALSE(client()->Receive(0)->is_ok()); });
 
@@ -243,7 +221,7 @@ TEST_F(UsbFastbootFunctionTest, Send) {
   fzl::OwnedVmoMapper send_vmo;
   InitializeSendVmo(send_vmo, send_data);
 
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   std::thread t([&]() {
     auto result = client()->Send(send_vmo.Release());
@@ -260,7 +238,7 @@ TEST_F(UsbFastbootFunctionTest, Send) {
 }
 
 TEST_F(UsbFastbootFunctionTest, SendStatesReset) {
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   {
     const std::string_view send_data = "OKAY0.4";
@@ -303,7 +281,7 @@ TEST_F(UsbFastbootFunctionTest, SendFailsOnNonConfiguredInterface) {
 }
 
 TEST_F(UsbFastbootFunctionTest, SendFailOnError) {
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   const std::string_view send_data = "OKAY0.6";
   fzl::OwnedVmoMapper send_vmo;
@@ -320,7 +298,7 @@ TEST_F(UsbFastbootFunctionTest, SendFailOnError) {
 }
 
 TEST_F(UsbFastbootFunctionTest, SendFailsOnZeroContentSize) {
-  driver_test_.RunInEnvironmentTypeContext([&](UsbFastbootEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
   const std::string_view send_data = "OKAY0.4";
   fzl::OwnedVmoMapper send_vmo;
   InitializeSendVmo(send_vmo, send_data);

@@ -71,7 +71,6 @@ void UsbFastbootFunction::QueueTx() {
 
 void UsbFastbootFunction::TxBatchComplete(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
-  std::lock_guard<std::mutex> _(send_lock_);
   for (auto& completion : completions) {
     TxComplete(std::move(completion));
   }
@@ -112,7 +111,6 @@ void UsbFastbootFunction::Send(::fuchsia_hardware_fastboot::wire::FastbootImplSe
     return;
   }
 
-  std::lock_guard<std::mutex> _(send_lock_);
   if (send_completer_.has_value()) {
     // A previous call to Send() is pending
     completer.ReplyError(ZX_ERR_UNAVAILABLE);
@@ -188,7 +186,6 @@ void UsbFastbootFunction::QueueRx() {
 
 void UsbFastbootFunction::RxBatchComplete(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
-  std::lock_guard<std::mutex> _(receive_lock_);
   for (auto& completion : completions) {
     RxComplete(std::move(completion));
   }
@@ -250,7 +247,6 @@ void UsbFastbootFunction::Receive(
     return;
   }
 
-  std::lock_guard<std::mutex> _(receive_lock_);
   if (receive_completer_.has_value()) {
     // A previous call to Receive() is pending
     completer.ReplyError(ZX_ERR_UNAVAILABLE);
@@ -275,40 +271,40 @@ void UsbFastbootFunction::Receive(
   QueueRx();
 }
 
-size_t UsbFastbootFunction::UsbFunctionInterfaceGetDescriptorsSize() {
-  return sizeof(descriptors_);
-}
-
-void UsbFastbootFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* buffer, size_t buffer_size,
-                                                             size_t* out_actual) {
-  const size_t length = std::min(sizeof(descriptors_), buffer_size);
-  std::memcpy(buffer, &descriptors_, length);
-  *out_actual = length;
-}
-
-zx_status_t UsbFastbootFunction::UsbFunctionInterfaceControl(
-    const usb_setup_t* setup, const uint8_t* write_buffer, size_t write_size,
-    uint8_t* out_read_buffer, size_t read_size, size_t* out_read_actual) {
-  if (out_read_actual != NULL) {
-    *out_read_actual = 0;
-  }
-  return ZX_OK;
+void UsbFastbootFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  completer.Reply(zx::ok(std::vector<uint8_t>{}));
 }
 
 zx_status_t UsbFastbootFunction::ConfigureEndpoints(bool enable) {
-  zx_status_t status;
   if (enable) {
-    if ((status = function_.ConfigEp(&descriptors_.bulk_out_ep, NULL)) != ZX_OK ||
-        (status = function_.ConfigEp(&descriptors_.bulk_in_ep, NULL)) != ZX_OK) {
-      zxlogf(ERROR, "usb_function_config_ep failed - %d.", status);
-      return status;
+    for (const auto* ep_desc : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
+      fuchsia_hardware_usb_function::EndpointConfiguration ep_config;
+      fuchsia_hardware_usb_function::EndpointDescriptor desc;
+      desc.bm_attributes(ep_desc->bm_attributes);
+      desc.w_max_packet_size(le16toh(ep_desc->w_max_packet_size));
+      desc.b_interval(ep_desc->b_interval);
+      ep_config.descriptor(std::move(desc));
+
+      fidl::Result result =
+          function_->ConfigureEndpoint({ep_desc->b_endpoint_address, std::move(ep_config)});
+      if (result.is_error()) {
+        fdf::error("ConfigureEndpoint failed: {}", result.error_value().FormatDescription());
+        return result.error_value().is_framework_error()
+                   ? result.error_value().framework_error().status()
+                   : result.error_value().domain_error();
+      }
     }
     configured_ = true;
   } else {
-    if ((status = function_.DisableEp(bulk_out_addr())) != ZX_OK ||
-        (status = function_.DisableEp(bulk_in_addr())) != ZX_OK) {
-      zxlogf(ERROR, "usb_function_disable_ep failed - %d.", status);
-      return status;
+    for (const uint8_t ep_addr : {bulk_out_addr(), bulk_in_addr()}) {
+      fidl::Result result = function_->DisableEndpoint({ep_addr});
+      if (!result.is_ok()) {
+        fdf::error("Failed to disable endpoint {}: {}", ep_addr,
+                   result.error_value().FormatDescription());
+        return result.error_value().is_framework_error()
+                   ? result.error_value().framework_error().status()
+                   : result.error_value().domain_error();
+      }
     }
     configured_ = false;
   }
@@ -316,94 +312,101 @@ zx_status_t UsbFastbootFunction::ConfigureEndpoints(bool enable) {
   return ZX_OK;
 }
 
-zx_status_t UsbFastbootFunction::UsbFunctionInterfaceSetConfigured(bool configured,
-                                                                   usb_speed_t speed) {
-  zxlogf(INFO, "configured? - %d  speed - %d.", configured, speed);
-  return ConfigureEndpoints(configured);
+void UsbFastbootFunction::SetConfigured(SetConfiguredRequest& request,
+                                        SetConfiguredCompleter::Sync& completer) {
+  bool configured = request.configured();
+  fuchsia_hardware_usb_descriptor::UsbSpeed speed = request.speed();
+  fdf::info("configured? - {}  speed - {}.", configured, static_cast<uint32_t>(speed));
+
+  completer.Reply(zx::make_result(ConfigureEndpoints(configured)));
 }
 
-zx_status_t UsbFastbootFunction::UsbFunctionInterfaceSetInterface(uint8_t interface,
-                                                                  uint8_t alt_setting) {
-  zxlogf(INFO, "interface - %d alt_setting - %d.", interface, alt_setting);
+void UsbFastbootFunction::SetInterface(SetInterfaceRequest& request,
+                                       SetInterfaceCompleter::Sync& completer) {
+  uint8_t interface = request.interface();
+  uint8_t alt_setting = request.alt_setting();
+  fdf::info("interface - {}  alt_setting - {}.", interface, alt_setting);
   if (interface != descriptors_.fastboot_intf.b_interface_number || alt_setting > 1) {
-    return ZX_ERR_INVALID_ARGS;
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
   }
-  return ConfigureEndpoints(alt_setting);
+  completer.Reply(zx::make_result(ConfigureEndpoints(alt_setting)));
+}
+
+void UsbFastbootFunction::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("Unknown method {}", metadata.method_ordinal);
 }
 
 zx::result<> UsbFastbootFunction::Start() {
-  std::lock_guard<std::mutex> _guard_receive(receive_lock_);
-  std::lock_guard<std::mutex> _guard_send(send_lock_);
-  zx::result<ddk::UsbFunctionProtocolClient> function =
-      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    zxlogf(ERROR, "Failed to connect function %s", function.status_string());
-    return function.take_error();
-  }
-  function_ = *function;
-
   auto client = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (client.is_error()) {
+    fdf::error("Failed to connect to UsbFunctionService: {}", client.status_string());
+    return client.take_error();
+  }
+  function_.Bind(std::move(*client));
 
-  auto status = function_.AllocInterface(&descriptors_.fastboot_intf.b_interface_number);
+  zx::result bulk_out_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_out_endpoints.is_error()) {
+    return bulk_out_endpoints.take_error();
+  }
+  zx::result bulk_in_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_in_endpoints.is_error()) {
+    return bulk_in_endpoints.take_error();
+  }
+
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
+  fuchsia_hardware_usb_function::EndpointResource out_res;
+  out_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+  out_res.endpoint(std::move(bulk_out_endpoints->server));
+  resources.emplace_back(std::move(out_res));
+
+  fuchsia_hardware_usb_function::EndpointResource in_res;
+  in_res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+  in_res.endpoint(std::move(bulk_in_endpoints->server));
+  resources.emplace_back(std::move(in_res));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  alloc_req.interface_count(2);
+  alloc_req.endpoints(std::move(resources));
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    fdf::error("AllocResources failed: {}", alloc_result.error_value().FormatDescription());
+    return zx::error(alloc_result.error_value().is_framework_error()
+                         ? alloc_result.error_value().framework_error().status()
+                         : alloc_result.error_value().domain_error());
+  }
+
+  auto& response = alloc_result.value();
+  descriptors_.fastboot_intf.b_interface_number = response.interface_nums()[0];
+  descriptors_.placehodler_intf.b_interface_number = response.interface_nums()[1];
+
+  descriptors_.bulk_out_ep.b_endpoint_address = response.endpoint_addrs()[0];
+  descriptors_.bulk_in_ep.b_endpoint_address = response.endpoint_addrs()[1];
+
+  zx_status_t status = bulk_out_ep_.Init(std::move(bulk_out_endpoints->client), dispatcher());
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Fastboot interface alloc failed - %d.", status);
+    fdf::error("bulk_out_ep_.Init failed: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  status = bulk_in_ep_.Init(std::move(bulk_in_endpoints->client), dispatcher());
+  if (status != ZX_OK) {
+    fdf::error("bulk_in_ep_.Init failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
-  status = function_.AllocInterface(&descriptors_.placehodler_intf.b_interface_number);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Placeholder interface alloc failed - %d.", status);
-    return zx::error(status);
-  }
-
-  status = function_.AllocEp(USB_DIR_OUT, &descriptors_.bulk_out_ep.b_endpoint_address);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Bulk out endpoint alloc failed - %d.", status);
-    return zx::error(status);
-  }
-  status = function_.AllocEp(USB_DIR_IN, &descriptors_.bulk_in_ep.b_endpoint_address);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Builk in endpoint alloc failed - %d.", status);
-    return zx::error(status);
-  }
-
-  auto dispatcher =
-      fdf::SynchronizedDispatcher::Create({}, "fastboot-ep-dispatcher", [](fdf_dispatcher_t*) {});
-  if (dispatcher.is_error()) {
-    zxlogf(ERROR, "[bug] fdf::SynchronizedDispatcher::Create(): %s", dispatcher.status_string());
-    return dispatcher.take_error();
-  }
-  dispatcher_ = std::move(dispatcher.value());
-
-  // Allocates a bulk out usb request.
-  status = bulk_out_ep_.Init(descriptors_.bulk_out_ep.b_endpoint_address, *client,
-                             dispatcher_.async_dispatcher());
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "[bug] bulk_out_ep_.Init(): %s", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  // Allocates a bulk in usb request.
-  status = bulk_in_ep_.Init(descriptors_.bulk_in_ep.b_endpoint_address, *client,
-                            dispatcher_.async_dispatcher());
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "[bug] bulk_in_ep_.Init(): %s", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  // Allocates RX requests
-  if (size_t actual = bulk_out_ep_.AddRequests(kMaxRequestCount, kBulkRequestSize,
-                                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
-      actual != kMaxRequestCount) {
-    zxlogf(ERROR, "Failed to allocate RX requests");
+  if (bulk_out_ep_.AddRequests(kMaxRequestCount, kBulkRequestSize,
+                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) !=
+      kMaxRequestCount) {
+    fdf::error("Failed to allocate RX requests");
     return zx::error(ZX_ERR_INTERNAL);
   }
-
-  // Allocates TX requests
-  if (size_t actual = bulk_in_ep_.AddRequests(kMaxRequestCount, kBulkRequestSize,
-                                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
-      actual != kMaxRequestCount) {
-    zxlogf(ERROR, "Failed to allocate TX requests");
+  if (bulk_in_ep_.AddRequests(kMaxRequestCount, kBulkRequestSize,
+                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) !=
+      kMaxRequestCount) {
+    fdf::error("Failed to allocate TX requests");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -413,13 +416,28 @@ zx::result<> UsbFastbootFunction::Start() {
               this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
       }));
   if (serve_result.is_error()) {
-    zxlogf(ERROR, "Failed to add Device service %s", serve_result.status_string());
+    fdf::error("Failed to add Device service {}", serve_result.status_string());
     return serve_result.take_error();
   }
 
-  status = function_.SetInterface(this, &usb_function_interface_protocol_ops_);
-  if (status != ZX_OK) {
-    ZX_PANIC("SetInterface failed %s", zx_status_get_string(status));
+  zx::result iface_endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (iface_endpoints.is_error()) {
+    return iface_endpoints.take_error();
+  }
+  fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
+
+  std::vector<uint8_t> descriptors_buffer(sizeof(descriptors_));
+  memcpy(descriptors_buffer.data(), &descriptors_, sizeof(descriptors_));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure> config_req;
+  config_req.configuration(std::move(descriptors_buffer));
+  config_req.iface(std::move(iface_endpoints->client));
+
+  fidl::Result config_res = function_->Configure(std::move(config_req));
+  if (config_res.is_error()) {
+    fdf::error("Configure failed: {}", config_res.error_value().FormatDescription());
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   is_bound.Set(true);
