@@ -2,6 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+_migration_example_bazel_targets = [
+  {
+    bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated"
+
+    # This copy_outputs is necessary because `go_binary` from
+    # `rules_go` in Bazel places the executable in a
+    # subdirectory of the output directory.
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_example_bin_migrated_/go_example_bin_migrated"
+        ninja = "go_example_bin_migrated"
+      },
+    ]
+    install_host_tool = true
+  },
+]
+
 declare_args() {
   # A list of scopes describing Bazel host targets that are included in the SDK.
   #
@@ -132,20 +149,6 @@ declare_args() {
                                           {
                                             bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugdump_/debugdump"
                                             ninja = "debugdump"
-                                          },
-                                        ]
-                                        install_host_tool = true
-                                      },
-                                      {
-                                        bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:example_bin_migrated"
-
-                                        # This copy_outputs is necessary because `go_binary` from
-                                        # `rules_go` in Bazel places the executable in a
-                                        # subdirectory of the output directory.
-                                        copy_outputs = [
-                                          {
-                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/example_bin_migrated_/example_bin_migrated"
-                                            ninja = "example_bin_migrated"
                                           },
                                         ]
                                         install_host_tool = true

@@ -7,20 +7,15 @@ import("//build/go/go_test.gni")
 import("//build/host.gni")
 
 if (is_host) {
-  # The migrated go_library and go_binary targets are removed.
-
   # You don't need to migrate go_test rules for now.
-  go_test("go_test") {
-    embed = [ ":example_lib" ]
+  go_test("go_go_example_test") {
+    embed = [ ":go_example_lib" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
 
     # Step 1: Go test source file belongs to `go_test` target, which is moved
     # from `go_library` target here.
     sources = [ "main_test.go" ]
   }
-
-  # The `install_host_tools` target is removed, and the dep is replaced with the added entry in
-  # the `default_bazel_root_host_targets` list in `//build/bazel/bazel_root_targets_list.gni`
 }
 
 # These are convenience groups in GN.
@@ -29,23 +24,23 @@ if (is_host) {
 # You do need to update dep paths after you migrate go_binary above.
 group("tests") {
   testonly = true
-  deps = [ ":go_test($host_toolchain)" ]
+  deps = [ ":go_go_example_test($host_toolchain)" ]
 }
 
 group("examples") {
   testonly = true
   deps = [
-    ":go_test($host_toolchain)",
+    ":go_go_example_test($host_toolchain)",
 
     # The GN `install_host_tools` target is removed, and the dep is replaced with the added entry in
     # the `default_bazel_root_host_targets` list in `//build/bazel/bazel_root_targets_list.gni`
-    "//build/bazel/host:bazel_root_host_tools.example_bin_migrated.host_tool($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.go_example_bin_migrated.host_tool($host_toolchain)",
   ]
 }
 
 # The following targets are automatically synced from Bazel to GN by bazel2gn with:
 #
-#   fx bazel2gn -d build/beads/migration_examples/go/after/
+#   fx bazel2gn -d build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after/
 #
 # Add the verify_bazel2gn target below to the `deps` of `//build:bazel2gn_verifications` in
 # `//build/BUILD.gn` to automatically sync the targets below from Bazel to GN.
@@ -82,7 +77,7 @@ if (is_host) {
 }
 
 if (is_host) {
-  go_library("example_lib") {
+  go_library("go_example_lib") {
     sources = [ "main.go" ]
     deps = [ "//third_party/golibs:github.com/kr/pretty" ]
   }

@@ -8,7 +8,7 @@ import("//build/go/go_test.gni")
 import("//build/host.gni")
 
 if (is_host) {
-  go_library("example_lib") {
+  go_library("go_example_lib") {
     sources = [
       "main.go",
       "main_test.go",
@@ -17,13 +17,13 @@ if (is_host) {
   }
 
   # This is a host tool, it is only buildable with `fx build --host`.
-  go_binary("example_bin") {
-    embed = [ ":example_lib" ]
+  go_binary("go_example_bin") {
+    embed = [ ":go_example_lib" ]
   }
 
   # You don't need to migrate go_test rules for now.
-  go_test("example_test") {
-    embed = [ ":example_lib" ]
+  go_test("go_example_test_before") {
+    embed = [ ":go_example_lib" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 
@@ -32,8 +32,8 @@ if (is_host) {
   # You don't need to migrate this tool, instead, set `install_host_tool = true`
   # when adding your migrated Bazel host tool to `//build/bazel/bazel_root_targets_list.gni`.
   install_host_tools("host_tool") {
-    deps = [ ":example_bin" ]
-    outputs = [ "example_bin" ]
+    deps = [ ":go_example_bin" ]
+    outputs = [ "go_example_bin" ]
   }
 }
 
@@ -43,13 +43,13 @@ if (is_host) {
 # You do need to update dep paths after you migrate go_binary above.
 group("tests") {
   testonly = true
-  deps = [ ":example_test($host_toolchain)" ]
+  deps = [ ":go_example_test_before($host_toolchain)" ]
 }
 
 group("examples") {
   testonly = true
   deps = [
-    ":example_test($host_toolchain)",
+    ":go_example_test_before($host_toolchain)",
     ":host_tool($host_toolchain)",
   ]
 }

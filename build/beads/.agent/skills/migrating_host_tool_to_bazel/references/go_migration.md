@@ -2,22 +2,23 @@
 
 ## Template Mapping
 
-| GN template | Bazel rule |
-|-------------|------------|
-| `go_binary` | `go_binary_host_tool` |
-| `go_library` | `go_library` |
+| GN template  | Bazel rule            |
+| ------------ | --------------------- |
+| `go_binary`  | `go_binary_host_tool` |
+| `go_library` | `go_library`          |
 
 ## Template Migration
 
 ### go_binary
 
-| GN field | Bazel attribute | Description |
-|----------|----------------|-------------|
-| `sources` | `srcs`, `embedsrcs`, `data` | GN mixes them; Bazel separates them. |
-| `source_dir` | N/A | Not supported in Bazel. Use full relative paths in `srcs`. |
-| `data` | `data` | |
-| `deps` | `deps` | |
-| `embed` | `embed` | |
+| GN field     | Bazel attribute             | Description                                                |
+| ------------ | --------------------------- | ---------------------------------------------------------- |
+| `sources`    | `srcs`, `embedsrcs`, `data` | GN mixes them; Bazel separates them.                       |
+| `embedsrcs`  | `embedsrcs`                 |                                                            |
+| `source_dir` | N/A                         | Not supported in Bazel. Use full relative paths in `srcs`. |
+| `data`       | `data`                      |                                                            |
+| `deps`       | `deps`                      |                                                            |
+| `embed`      | `embed`                     |                                                            |
 
 #### Example
 
@@ -64,13 +65,14 @@ go_binary_host_tool(
 
 ### go_library
 
-| GN field | Bazel attribute | Description |
-|----------|----------------|-------------|
-| `sources` | `srcs`, `embedsrcs`, `data` | GN mixes them; Bazel separates them. |
-| `source_dir` | N/A | Not supported in Bazel. Use full relative paths in `srcs`. |
-| `data` | `data` | |
-| `deps` | `deps` | |
-| `importpath` | `importpath` | Required in Bazel (e.g., `go.fuchsia.dev/fuchsia/...`). |
+| GN field     | Bazel attribute             | Description                                                |
+| ------------ | --------------------------- | ---------------------------------------------------------- |
+| `sources`    | `srcs`, `embedsrcs`, `data` | GN mixes them; Bazel separates them.                       |
+| `embedsrcs`  | `embedsrcs`                 |                                                            |
+| `source_dir` | N/A                         | Not supported in Bazel. Use full relative paths in `srcs`. |
+| `data`       | `data`                      |                                                            |
+| `deps`       | `deps`                      |                                                            |
+| `importpath` | `importpath`                | Required in Bazel (e.g., `go.fuchsia.dev/fuchsia/...`).    |
 
 NOTE: Before migrating `go_library` targets, move test sources
 (e.g. `*_test.go`) to `go_test` targets. See [go_test](#go_test) for more
@@ -197,9 +199,9 @@ if (is_host) {
 
 In Bazel, separate non-Go sources into the following attributes:
 
-* `srcs`: `.go`, `.s`, `.syso` (and C/C++ sources if `cgo = True`).
-* `embedsrcs`: Files used with `//go:embed`.
-* `data`: Runtime data files.
+- `srcs`: `.go`, `.s`, `.syso` (and C/C++ sources if `cgo = True`).
+- `embedsrcs`: Files used with `//go:embed`.
+- `data`: Runtime data files.
 
 ### Example
 
@@ -269,3 +271,48 @@ go_binary_host_tool(
   target_compatible_with = HOST_CONSTRAINTS,
 )
 ```
+
+## Common Pitfalls and Best Practices
+
+### 1. `importpath` Alignment
+
+The `importpath` attribute in `go_library` **must match exactly** the string
+used in the `import` statements of the `.go` files that depend on it.
+
+- **Pitfall**: If you have multiple targets in the same directory (e.g.,
+  `proto_lib`, `metadata`), automatic generation might append target names
+  (e.g., `importpath = ".../testsharder/proto_lib"`).
+- **Fix**: Verify what `.go` files actually import. If they import
+  `go.fuchsia.dev/fuchsia/path/to/lib/proto`, then the target MUST set
+  `importpath` to that exact value.
+- **Guideline**: Check the `package` statement at the top of `.go` files and
+  the `import` blocks in dependent files to align `importpath` explicitly.
+
+### 2. Strict Dependency Chains
+
+Bazel enforces strict dependency checking for Go compile steps.
+
+- **Failure mode**: `compilepkg: missing strict dependencies: import of "..."`
+- **Fix**: Every package path imported that belongs to the local tree MUST
+  have its corresponding `:target` or `//path/to/target` added to the `deps`
+  list of that specific target scope. Do not assume dependency inheritance
+  works granularly if they aren't explicitly declared.
+
+### 3. Preventing Redundant Binary Syncs
+
+Host tool binaries (`go_binary_host_tool`) compiled by Bazel do not need to be
+synchronized back to GN as `go_binary` rules.
+
+- **Pitfall**: Running `bazel2gn` blindly will generate conflicting
+  `go_binary` targets in GN.
+- **Fix**: Add `# @bazel2gn:skip` on the line immediately preceding
+  `go_binary_host_tool` in `BUILD.bazel` to instruct the synchronizer to
+  ignore it.
+
+### 4. Missing `verify_bazel2gn` Targets
+
+- **Pitfall**: After creating a `BUILD.bazel` file, `bazel2gn` generates a
+  self-verification target in GN (`verify_bazel2gn`). If not hooked up to the
+  main build graph, `fx build` verifications will fail.
+- **Fix**: Always add `"//{directory_path}:verify_bazel2gn"` to the `deps`
+  array of `group("bazel2gn_verifications")` in `//build/BUILD.gn`.

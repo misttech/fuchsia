@@ -13,11 +13,11 @@ load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 #
 # You can verify this target builds correctly with:
 #
-#  fx build --host @//build/beads/migration_examples/go/after:go_library
+#  fx build --host @//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_lib
 #
 go_library(
     # This field matches the name of the target in GN.
-    name = "example_lib",
+    name = "go_example_lib",
 
     # This field should list all non-test library sources.
     #
@@ -41,7 +41,7 @@ go_library(
 #
 # You can verify this target builds correctly with:
 #
-#  fx build --host @//build/beads/migration_examples/go/after:migrated_go_binary
+#  fx build --host @//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated
 #
 # NOTE: We only need to sync back the go_library target for go_test in BUILD.gn, so we skip syncing
 # this target with the following annotation.
@@ -52,10 +52,10 @@ go_binary_host_tool(
     #
     # NOTE: Target name is changed here to avoid name collision only for this example. You should
     # NOT change target names when actually migrating real targets.
-    name = "example_bin_migrated",
+    name = "go_example_bin_migrated",
 
     # This field matches the embed field in GN.
-    embed = [":example_lib"],
+    embed = [":go_example_lib"],
 
     # This field is necessary for host-only targets. It is the equivalent of `if (is_host)` in GN.
     target_compatible_with = HOST_CONSTRAINTS,
