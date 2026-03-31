@@ -12,6 +12,7 @@
 # bazel2gn to be able to generate the correct import statements instead.
 
 import("//build/cpp/sdk_source_set.gni")
+import("//build/fidl/fidl.gni")
 import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")

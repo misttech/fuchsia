@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 # Import the fidl GN template.
-import("//build/fidl/fidl.gni")
 
 # Define a target for our FIDL library by passing it the FIDL source files
 # that make up the library.
