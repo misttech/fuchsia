@@ -14,20 +14,22 @@ use crate::vfs::FdNumber;
 use crate::vfs::socket::{
     SockOptValue, SocketDomain, SocketProtocol, SocketType, ZxioBackedSocket,
 };
-use ebpf::{EbpfProgram, EbpfProgramContext, ProgramArgument, Type};
+use ebpf::{EbpfProgram, EbpfProgramContext, EbpfPtr, ProgramArgument, Type};
 use ebpf_api::{
     AttachType, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE, CgroupSockAddrProgramContext,
-    CgroupSockOptProgramContext, CgroupSockProgramContext, PinnedMap, ProgramType,
-    SocketCookieContext,
+    CgroupSockOptProgramContext, CgroupSockProgramContext, CurrentTaskContext, Map, MapValueRef,
+    MapsContext, PinnedMap, ProgramType, ReturnValueContext, SocketCookieContext,
 };
 use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
+use linux_uapi::bpf_sockopt;
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{EbpfStateLock, FileOpsCore, Locked, OrderedRwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
-use starnix_uapi::errors::{Errno, ErrnoCode};
+use starnix_uapi::errors::{Errno, ErrnoCode, is_error_return_value};
 use starnix_uapi::{
-    CGROUP2_SUPER_MAGIC, bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error,
+    CGROUP2_SUPER_MAGIC, bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error, gid_t,
+    pid_t, uid_t,
 };
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, OnceLock};
@@ -298,16 +300,26 @@ impl SockProgram {
 type AttachedSockProgramCell = OrderedRwLock<Option<SockProgram>, EbpfStateLock>;
 
 mod internal {
-    use ebpf::{ProgramArgument, Type};
+    use ebpf::{EbpfPtr, ProgramArgument, Type};
     use ebpf_api::BPF_SOCKOPT_TYPE;
     use starnix_uapi::{bpf_sockopt, uaddr};
     use std::ops::Deref;
+    use zerocopy::{FromBytes, IntoBytes};
 
-    // Wrapper for `bpf_sockopt` that implements `ProgramArgument` trait and
-    // keeps a buffer for the `optval`.
+    // Wrapper for `bpf_sockopt` that implements `ProgramArgument` trait.
     #[repr(C)]
-    pub struct BpfSockOpt {
-        sockopt: bpf_sockopt,
+    #[derive(IntoBytes, FromBytes)]
+    pub struct BpfSockOpt(bpf_sockopt);
+
+    impl ProgramArgument for &'_ mut BpfSockOpt {
+        fn get_type() -> &'static Type {
+            &*BPF_SOCKOPT_TYPE
+        }
+    }
+
+    /// Wrapper for `bpf_sockopt` that keeps a buffer for the `optval`.
+    pub struct BpfSockOptWithValue {
+        sockopt: BpfSockOpt,
 
         // Buffer used to store the option value. A pointer to the buffer
         // contents is stored in `sockopt`. `Vec::as_mut_ptr()` guarantees that
@@ -317,29 +329,33 @@ mod internal {
         value_buf: Vec<u8>,
     }
 
-    impl BpfSockOpt {
+    impl BpfSockOptWithValue {
         pub fn new(level: u32, optname: u32, value_buf: Vec<u8>, optlen: u32, retval: i32) -> Self {
             let mut sockopt = Self {
-                sockopt: bpf_sockopt {
+                sockopt: BpfSockOpt(bpf_sockopt {
                     level: level as i32,
                     optname: optname as i32,
                     optlen: optlen as i32,
                     retval: retval as i32,
                     ..Default::default()
-                },
+                }),
                 value_buf,
             };
 
             // SAFETY: Setting buffer bounds in unions is safe.
             unsafe {
-                sockopt.sockopt.__bindgen_anon_2.optval =
+                sockopt.sockopt.0.__bindgen_anon_2.optval =
                     uaddr { addr: sockopt.value_buf.as_mut_ptr() as u64 };
-                sockopt.sockopt.__bindgen_anon_3.optval_end = uaddr {
+                sockopt.sockopt.0.__bindgen_anon_3.optval_end = uaddr {
                     addr: sockopt.value_buf.as_mut_ptr().add(sockopt.value_buf.len()) as u64,
                 };
             }
 
             sockopt
+        }
+
+        pub fn as_ptr<'a>(&'a mut self) -> EbpfPtr<'a, BpfSockOpt> {
+            EbpfPtr::from(&mut self.sockopt)
         }
 
         // Returns the value. Consumes `self` since it's not safe to use again
@@ -349,29 +365,74 @@ mod internal {
         }
     }
 
-    impl Deref for BpfSockOpt {
+    impl Deref for BpfSockOptWithValue {
         type Target = bpf_sockopt;
         fn deref(&self) -> &Self::Target {
-            &self.sockopt
-        }
-    }
-
-    impl ProgramArgument for &'_ mut BpfSockOpt {
-        fn get_type() -> &'static Type {
-            &*BPF_SOCKOPT_TYPE
+            &self.sockopt.0
         }
     }
 }
 
-use internal::BpfSockOpt;
+use internal::{BpfSockOpt, BpfSockOptWithValue};
 
 // Context for eBPF programs of type BPF_PROG_TYPE_CGROUP_SOCKOPT.
 struct SockOptProgram(EbpfProgram<SockOptProgram>);
 
+// RunContext for eBPF programs of type BPF_PROG_TYPE_CGROUP_SOCKOPT.
+pub struct SockOptEbpfRunContextImpl<'a> {
+    ebpf_run_context: EbpfRunContextImpl<'a>,
+
+    // Pointer to the BpfSockOpt passed to the program. Used for
+    // `bpf_set_retval` and `bpf_get_retval`.
+    sockopt: EbpfPtr<'a, BpfSockOpt>,
+}
+
+const BPF_SOCKOPT_RETVAL_OFFSET: usize = std::mem::offset_of!(bpf_sockopt, retval);
+
+impl<'a> SockOptEbpfRunContextImpl<'a> {
+    pub fn new(
+        locked: &'a mut Locked<EbpfStateLock>,
+        current_task: &'a CurrentTask,
+        sockopt: EbpfPtr<'a, BpfSockOpt>,
+    ) -> Self {
+        Self { ebpf_run_context: EbpfRunContextImpl::new(locked, current_task), sockopt }
+    }
+}
+
+impl<'a> MapsContext<'a> for SockOptEbpfRunContextImpl<'a> {
+    fn on_map_access(&mut self, map: &Map) {
+        self.ebpf_run_context.on_map_access(map);
+    }
+    fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
+        self.ebpf_run_context.add_value_ref(map_ref);
+    }
+}
+
+impl<'a> CurrentTaskContext for SockOptEbpfRunContextImpl<'a> {
+    fn get_uid_gid(&self) -> (uid_t, gid_t) {
+        self.ebpf_run_context.get_uid_gid()
+    }
+    fn get_tid_tgid(&self) -> (pid_t, pid_t) {
+        self.ebpf_run_context.get_tid_tgid()
+    }
+}
+
+impl<'a> ReturnValueContext for SockOptEbpfRunContextImpl<'a> {
+    fn set_retval(&mut self, value: i32) -> i32 {
+        let sockopt = self.sockopt.get_field::<i32, BPF_SOCKOPT_RETVAL_OFFSET>();
+        sockopt.store_relaxed(value);
+        0
+    }
+    fn get_retval(&self) -> i32 {
+        let sockopt = self.sockopt.get_field::<i32, BPF_SOCKOPT_RETVAL_OFFSET>();
+        sockopt.load_relaxed()
+    }
+}
+
 impl EbpfProgramContext for SockOptProgram {
-    type RunContext<'a> = EbpfRunContextImpl<'a>;
+    type RunContext<'a> = SockOptEbpfRunContextImpl<'a>;
     type Packet<'a> = ();
-    type Arg1<'a> = &'a mut BpfSockOpt;
+    type Arg1<'a> = EbpfPtr<'a, BpfSockOpt>;
     type Arg2<'a> = ();
     type Arg3<'a> = ();
     type Arg4<'a> = ();
@@ -400,10 +461,11 @@ impl SockOptProgram {
         &self,
         locked: &mut Locked<EbpfStateLock>,
         current_task: &'a CurrentTask,
-        sockopt: &'a mut BpfSockOpt,
+        sockopt: &'a mut BpfSockOptWithValue,
     ) -> u64 {
-        let mut run_context = EbpfRunContextImpl::new(locked, current_task);
-        self.0.run_with_1_argument(&mut run_context, sockopt)
+        let sockopt_ptr = sockopt.as_ptr();
+        let mut run_context = SockOptEbpfRunContextImpl::new(locked, current_task, sockopt_ptr);
+        self.0.run_with_1_argument(&mut run_context, sockopt_ptr)
     }
 }
 
@@ -596,39 +658,41 @@ impl CgroupEbpfProgramSet {
 
         let retval = error.as_ref().map(|e| -(e.code.error_code() as i32)).unwrap_or(0);
         let mut bpf_sockopt =
-            BpfSockOpt::new(level, optname, optval.clone(), optlen as u32, retval);
+            BpfSockOptWithValue::new(level, optname, optval.clone(), optlen as u32, retval);
 
         // Run the program.
         let result = prog.run(locked, current_task, &mut bpf_sockopt);
 
-        if bpf_sockopt.retval < 0 {
-            return Err(Errno::new(ErrnoCode::from_return_value(bpf_sockopt.retval as u64)));
-        }
+        let retval = bpf_sockopt.retval;
 
-        match (result, bpf_sockopt.optlen) {
-            // Reject the call if the program returned 0.
-            (0, _) => error!(EPERM),
-
-            // Fail if the program has set an invalid `optlen` (except for the
-            // case handled above).
-            (1, optlen) if optlen < 0 || (optlen as usize) > optval.len() => {
-                error!(EFAULT)
-            }
-
-            // If `optlen` is set to 0 then proceed with the original value.
-            (1, 0) => Ok((optval, optlen)),
-
-            // Return value from `bpf_sockbuf` - it may be different from the
-            // original value.
-            (1, new_optlen) => Ok((bpf_sockopt.take_value(), new_optlen as usize)),
-
-            (result, _) => {
+        let retval = match result {
+            0 if is_error_return_value(retval) => retval,
+            0 => -(linux_uapi::EPERM as i32),
+            1 => retval,
+            _ => {
                 // TODO(https://fxbug.dev/413490751): Change this to panic once
                 // result validation is implemented in the verifier.
                 log_error!("eBPF getsockopt program returned invalid result: {}", result);
-                Ok((optval, optlen))
+                retval
             }
+        };
+
+        if retval < 0 {
+            return Err(Errno::new(ErrnoCode::from_error_code(-retval as i16)));
         }
+
+        let optlen = bpf_sockopt.optlen;
+
+        // Fail if the program has set an invalid `optlen` (except for the
+        // case handled above).
+        if optlen < 0 || (optlen as usize) > optval.len() {
+            return error!(EFAULT);
+        }
+
+        // If `optlen` is set to 0 then proceed with the original value.
+        let value = if optlen == 0 { optval } else { bpf_sockopt.take_value() };
+
+        Ok((value, optlen as usize))
     }
 
     pub fn run_setsockopt_prog(
@@ -655,46 +719,56 @@ impl CgroupEbpfProgramSet {
 
         let buffer_len = buffer.len();
         let optlen = value.len();
-        let mut bpf_sockopt = BpfSockOpt::new(level, optname, buffer, optlen as u32, 0);
+        let mut bpf_sockopt = BpfSockOptWithValue::new(level, optname, buffer, optlen as u32, 0);
         let result = prog.run(locked.cast_locked(), current_task, &mut bpf_sockopt);
 
-        match (result, bpf_sockopt.optlen) {
-            // Reject the call if the program returned 0.
-            (0, _) => SetSockOptProgramResult::Fail(errno!(EPERM)),
+        let retval = bpf_sockopt.retval;
 
+        let retval = match result {
+            0 if is_error_return_value(retval) => retval,
+            0 => -(linux_uapi::EPERM as i32),
+            1 => retval,
+            _ => {
+                // TODO(https://fxbug.dev/413490751): Change this to panic once
+                // result validation is implemented in the verifier.
+                log_error!("eBPF getsockopt program returned invalid result: {}", result);
+                retval
+            }
+        };
+
+        if retval < 0 {
+            return SetSockOptProgramResult::Fail(Errno::new(ErrnoCode::from_error_code(
+                -retval as i16,
+            )));
+        }
+
+        match bpf_sockopt.optlen {
             // `setsockopt` programs can bypass the platform implementation by
             // setting `optlen` to -1.
-            (1, -1) => SetSockOptProgramResult::Bypass,
+            -1 => SetSockOptProgramResult::Bypass,
 
             // If the original value is larger than a page and the program
             // didn't change `optlen` then return the original value. This
             // allows to avoid `EFAULT` below with a no-op program.
-            (1, new_optlen) if optlen > page_size && (new_optlen as usize) == optlen => {
+            new_optlen if optlen > page_size && (new_optlen as usize) == optlen => {
                 SetSockOptProgramResult::Allow(value)
             }
 
             // Fail if the program has set an invalid `optlen` (except for the
             // case handled above).
-            (1, optlen) if optlen < 0 || (optlen as usize) > buffer_len => {
+            optlen if optlen < 0 || (optlen as usize) > buffer_len => {
                 SetSockOptProgramResult::Fail(errno!(EFAULT))
             }
 
             // If `optlen` is set to 0 then proceed with the original value.
-            (1, 0) => SetSockOptProgramResult::Allow(value),
+            0 => SetSockOptProgramResult::Allow(value),
 
             // Return value from `bpf_sockbuf` - it may be different from the
             // original value.
-            (1, optlen) => {
+            optlen => {
                 let mut value = bpf_sockopt.take_value();
                 value.resize(optlen as usize, 0);
                 SetSockOptProgramResult::Allow(value.into())
-            }
-
-            (result, _) => {
-                // TODO(https://fxbug.dev/413490751): Change this to panic once
-                // result validation is implemented in the verifier.
-                log_error!("eBPF setsockopt program returned invalid result: {}", result);
-                SetSockOptProgramResult::Allow(value)
             }
         }
     }

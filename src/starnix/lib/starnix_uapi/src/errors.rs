@@ -464,7 +464,11 @@ macro_rules! from_status_like_fdio {
 }
 
 // Public re-export of macros allows them to be used like regular rust items.
-pub use {errno, errno_from_code, errno_from_zxio_code, error, from_status_like_fdio};
+pub use errno;
+pub use errno_from_code;
+pub use errno_from_zxio_code;
+pub use error;
+pub use from_status_like_fdio;
 
 pub trait SourceContext<T, E> {
     /// Similar to `with_context` in [`anyhow::Context`], but adds the source location of the
@@ -515,6 +519,12 @@ where
         let caller = std::panic::Location::caller();
         self.context(format!("{}, {}", context, caller))
     }
+}
+
+const MAX_ERRNO: i32 = 4095;
+
+pub fn is_error_return_value(value: i32) -> bool {
+    value < 0 && value >= -MAX_ERRNO
 }
 
 #[cfg(test)]

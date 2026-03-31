@@ -469,28 +469,48 @@ fn bpf_sk_fullsock<C: EbpfProgramContext>(
     0.into()
 }
 
-fn bpf_set_retval<C: EbpfProgramContext>(
-    _context: &mut C::RunContext<'_>,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
-) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_set_retval");
-    0.into()
+pub trait ReturnValueContext {
+    fn set_retval(&mut self, value: i32) -> i32;
+    fn get_retval(&self) -> i32;
 }
 
-fn bpf_get_retval<C: EbpfProgramContext>(
-    _context: &mut C::RunContext<'_>,
+pub trait ReturnValueProgramContext: EbpfProgramContext {
+    fn set_retval<'a>(context: &mut Self::RunContext<'a>, value: i32) -> i32;
+    fn get_retval<'a>(context: &mut Self::RunContext<'a>) -> i32;
+}
+
+impl<C: EbpfProgramContext> ReturnValueProgramContext for C
+where
+    for<'a> C::RunContext<'a>: ReturnValueContext,
+{
+    fn set_retval<'a>(context: &mut Self::RunContext<'a>, value: i32) -> i32 {
+        context.set_retval(value)
+    }
+    fn get_retval<'a>(context: &mut Self::RunContext<'a>) -> i32 {
+        context.get_retval()
+    }
+}
+
+fn bpf_set_retval<C: ReturnValueProgramContext>(
+    context: &mut C::RunContext<'_>,
+    value: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    C::set_retval(context, value.as_i32()).into()
+}
+
+fn bpf_get_retval<C: ReturnValueProgramContext>(
+    context: &mut C::RunContext<'_>,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_get_retval");
-    0.into()
+    C::get_retval(context).into()
 }
 
 fn get_common_helpers<C: MapsProgramContext>() -> impl Iterator<Item = (u32, EbpfHelperImpl<C>)> {
@@ -559,7 +579,9 @@ pub trait CgroupSockAddrProgramContext:
 
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKOPT` programs.
-pub trait CgroupSockOptProgramContext: MapsProgramContext + CurrentTaskProgramContext {
+pub trait CgroupSockOptProgramContext:
+    MapsProgramContext + CurrentTaskProgramContext + ReturnValueProgramContext
+{
     fn get_helpers() -> HelperSet<Self> {
         [
             (bpf_func_id_BPF_FUNC_set_retval, EbpfHelperImpl(bpf_set_retval)),

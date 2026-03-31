@@ -301,6 +301,8 @@ mod tests {
 
         optlen: u64,
         optval_size: u64,
+        retval: i32,
+        get_retval: i32,
 
         sockaddr_family: u32,
         sockaddr_port: u32,
@@ -650,6 +652,12 @@ mod tests {
         let err = get_test_sock_opt(2).expect_err("getsockopt expected to fail");
         assert_eq!(err.raw_os_error(), Some(libc::ENOPROTOOPT));
 
+        // Verify that `bpf_sockopt.retval` is set correctly and
+        // `bpf_get_retval()` returns the same value.
+        let test_result = program.maps.get_test_result();
+        assert_eq!(test_result.retval, -libc::ENOPROTOOPT);
+        assert_eq!(test_result.get_retval, -libc::ENOPROTOOPT);
+
         // The original error is still returned if the program returns 0.
         let err = get_test_sock_opt(3).expect_err("getsockopt expected to fail");
         assert_eq!(err.raw_os_error(), Some(libc::ENOPROTOOPT));
@@ -680,6 +688,10 @@ mod tests {
 
         // If the program changes retval then it's returned to the userspace.
         let err = get_rcvbuf(58).expect_err("getsockopt expected to fail");
+        assert_eq!(err.raw_os_error(), Some(5));
+
+        // Retval set by `bpf_set_retval` should be returned to the caller.
+        let err = get_rcvbuf(59).expect_err("getsockopt expected to fail");
         assert_eq!(err.raw_os_error(), Some(5));
     }
 

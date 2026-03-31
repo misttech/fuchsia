@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use derivative::Derivative;
 use std::marker::PhantomData;
 use std::ops::RangeBounds;
 use zerocopy::{FromBytes, IntoBytes};
@@ -27,6 +28,8 @@ use riscv64 as arch;
 /// Pointer to a buffer that may be shared between eBPF programs. It allows to
 /// safely pass around pointers to the data stored in eBPF maps and access the
 /// data referenced by the pointer.
+#[derive(Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""))]
 pub struct EbpfPtr<'a, T> {
     ptr: *mut T,
     phantom: PhantomData<&'a T>,
@@ -37,12 +40,15 @@ unsafe impl<'a, T> Send for EbpfPtr<'a, T> {}
 #[allow(clippy::undocumented_unsafe_blocks, reason = "Force documented unsafe blocks in Starnix")]
 unsafe impl<'a, T> Sync for EbpfPtr<'a, T> {}
 
-impl<'a, T> EbpfPtr<'a, T> {
+impl<'a, T> EbpfPtr<'a, T>
+where
+    T: Sized,
+{
     /// Creates a new `EbpfPtr` from the specified pointer.
     ///
     /// # Safety
     /// Caller must ensure that the buffer referenced by `ptr` is valid for
-    /// lifetime `'a`.
+    /// lifetime `'a` and there are no other mutable references to the same memory.
     pub unsafe fn new(ptr: *mut T) -> Self {
         Self { ptr, phantom: PhantomData }
     }
@@ -65,57 +71,78 @@ impl<'a, T> EbpfPtr<'a, T> {
             &mut *self.ptr
         }
     }
+
+    pub fn get_field<F, const OFFSET: usize>(&self) -> EbpfPtr<'a, F> {
+        assert!(OFFSET + std::mem::size_of::<F>() <= std::mem::size_of::<T>());
+        // SAFETY: offset is guaranteed to be within the bounds of the struct,
+        // see the assert above.
+        let field_ptr = unsafe { self.ptr.byte_offset(OFFSET as isize) } as *mut F;
+        EbpfPtr::<'a, F> { ptr: field_ptr, phantom: PhantomData }
+    }
+
+    pub fn ptr(&self) -> *mut T {
+        self.ptr
+    }
+}
+
+impl<'a, T> From<&'a mut T> for EbpfPtr<'a, T>
+where
+    T: IntoBytes + FromBytes + Sized,
+{
+    fn from(value: &'a mut T) -> Self {
+        let ptr = value.as_mut_bytes().as_mut_ptr() as *mut T;
+        // SAFETY: We borrow a mutable reference to T for the lifetime 'a.
+        // This guarantees that the returned pointer is valid for the lifetime
+        // 'a and there are no other mutable references.
+        unsafe { Self::new(ptr) }
+    }
 }
 
 impl EbpfPtr<'_, u64> {
     /// Loads the value referenced by the pointer. Atomicity is guaranteed
     /// if and only if the pointer is 8-byte aligned.
     pub fn load_relaxed(&self) -> u64 {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            arch::load_u64(self.ptr)
-        }
+        // SAFETY: Atomic load of the value referenced by the pointer.
+        unsafe { arch::load_u64(self.ptr) }
     }
 
     /// Stores the `value` at the memory referenced by the pointer. Atomicity
     /// is guaranteed if and only if the pointer is 8-byte aligned.
     pub fn store_relaxed(&self, value: u64) {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            arch::store_u64(self.ptr, value)
-        }
+        // SAFETY: Atomic store of the value referenced by the pointer.
+        unsafe { arch::store_u64(self.ptr, value) }
     }
 }
 
 impl EbpfPtr<'_, u32> {
     /// Loads the value referenced by the pointer. Atomicity is guaranteed
-    /// if and only if the pointer is 8-byte aligned.
+    /// if and only if the pointer is 4-byte aligned.
     pub fn load_relaxed(&self) -> u32 {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            arch::load_u32(self.ptr)
-        }
+        // SAFETY: Atomic load of the value referenced by the pointer.
+        unsafe { arch::load_u32(self.ptr) }
     }
 
     /// Stores the `value` at the memory referenced by the pointer. Atomicity
-    /// is guaranteed if and only if the pointer is 8-byte aligned.
+    /// is guaranteed if and only if the pointer is 4-byte aligned.
     pub fn store_relaxed(&self, value: u32) {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            arch::store_u32(self.ptr, value)
-        }
+        // SAFETY: Atomic store of the value referenced by the pointer.
+        unsafe { arch::store_u32(self.ptr, value) }
+    }
+}
+
+impl EbpfPtr<'_, i32> {
+    /// Loads the value referenced by the pointer. Atomicity is guaranteed
+    /// if and only if the pointer is 4-byte aligned.
+    pub fn load_relaxed(&self) -> i32 {
+        // SAFETY: Atomic load of the value referenced by the pointer.
+        unsafe { arch::load_u32(self.ptr as *mut u32) as i32 }
+    }
+
+    /// Stores the `value` at the memory referenced by the pointer. Atomicity
+    /// is guaranteed if and only if the pointer is 4-byte aligned.
+    pub fn store_relaxed(&self, value: i32) {
+        // SAFETY: Atomic store of the value referenced by the pointer.
+        unsafe { arch::store_u32(self.ptr as *mut u32, value as u32) }
     }
 }
 

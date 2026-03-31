@@ -6,7 +6,7 @@ use crate::executor::execute;
 use crate::verifier::VerifiedEbpfProgram;
 use crate::{
     BPF_CALL, BPF_DW, BPF_JMP, BPF_LDDW, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE,
-    BPF_SIZE_MASK, CbpfConfig, DataWidth, EbpfError, EbpfInstruction, MapSchema, MemoryId,
+    BPF_SIZE_MASK, CbpfConfig, DataWidth, EbpfError, EbpfInstruction, EbpfPtr, MapSchema, MemoryId,
     StructAccess, Type,
 };
 use derivative::Derivative;
@@ -80,6 +80,25 @@ impl ProgramArgument for usize {
 
     fn get_value_type(&self) -> Type {
         Type::from(*self as u64)
+    }
+}
+
+/// Implements `ProgramArgument` for `EbpfPtr` when it's implemented for
+/// `&'a mut T`.
+impl<'a, T> ProgramArgument for EbpfPtr<'a, T>
+where
+    &'a mut T: ProgramArgument,
+{
+    fn get_type() -> &'static Type {
+        <&'a mut T as ProgramArgument>::get_type()
+    }
+
+    fn field_mappings() -> &'static [FieldMapping] {
+        <&'a mut T as ProgramArgument>::field_mappings()
+    }
+
+    fn struct_mapping() -> Option<StructMapping> {
+        <&'a mut T as ProgramArgument>::struct_mapping()
     }
 }
 
@@ -312,6 +331,13 @@ impl<T> From<&'_ mut T> for BpfValue {
         Self((v as *const T) as u64)
     }
 }
+
+impl<'a, T> From<EbpfPtr<'a, T>> for BpfValue {
+    fn from(value: EbpfPtr<'a, T>) -> Self {
+        value.ptr().into()
+    }
+}
+
 impl From<BpfValue> for u8 {
     fn from(v: BpfValue) -> u8 {
         v.0 as u8

@@ -23,6 +23,8 @@ static struct bpf_sock *(*const bpf_sk_fullsock)(struct bpf_sock *sock) = (void 
     BPF_FUNC_sk_fullsock;
 static __u64 (*const bpf_get_current_uid_gid)() = (void *)BPF_FUNC_get_current_uid_gid;
 static __u64 (*const bpf_get_current_pid_tgid)() = (void *)BPF_FUNC_get_current_pid_tgid;
+static int (*const bpf_set_retval)(int retval) = (void *)BPF_FUNC_set_retval;
+static int (*const bpf_get_retval)() = (void *)BPF_FUNC_get_retval;
 
 struct bpf_map_def {
   enum bpf_map_type type;

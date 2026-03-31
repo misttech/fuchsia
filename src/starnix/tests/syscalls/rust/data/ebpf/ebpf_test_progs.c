@@ -43,6 +43,8 @@ struct test_result {
 
   __u64 optlen;
   __u64 optval_size;
+  __u32 retval;
+  __u32 get_retval;
 
   __u32 sockaddr_family;
   __u32 sockaddr_port;
@@ -142,6 +144,7 @@ int setsockopt_prog(struct bpf_sockopt* sockopt) {
     struct test_result result = {
         .optlen = sockopt->optlen,
         .optval_size = buffer_size,
+        .get_retval = bpf_get_retval(),
     };
     int zero = 0;
     bpf_map_update_elem(&test_result, &zero, &result, 0);
@@ -193,6 +196,15 @@ int setsockopt_prog(struct bpf_sockopt* sockopt) {
 int getsockopt_prog(struct bpf_sockopt* sockopt) {
   __u64 buffer_size = sockopt->optval_end - sockopt->optval;
 
+  struct test_result result = {
+      .optlen = sockopt->optlen,
+      .optval_size = buffer_size,
+      .retval = sockopt->retval,
+      .get_retval = bpf_get_retval(),
+  };
+  int zero = 0;
+  bpf_map_update_elem(&test_result, &zero, &result, 0);
+
   if (sockopt->optname == TEST_SOCK_OPT) {
     switch (buffer_size) {
       case 2:
@@ -243,6 +255,11 @@ int getsockopt_prog(struct bpf_sockopt* sockopt) {
       case 58:
         // Try changing retval to an error.
         sockopt->retval = -5;
+        break;
+
+      case 59:
+        // Set return value by calling `bpf_set_retval`.
+        bpf_set_retval(-5);
         break;
     }
   }
