@@ -5,7 +5,10 @@
 #include "src/devices/usb/drivers/usb-bus/usb-device.h"
 
 #include <fidl/fuchsia.hardware.usb.device/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.hci/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/fit/function.h>
 
 #include <thread>
@@ -15,265 +18,51 @@
 #include <zxtest/zxtest.h>
 
 #include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/devices/usb/drivers/usb-bus/tests/common.h"
+#include "src/devices/usb/drivers/usb-bus/usb-bus.h"
 #include "src/lib/utf_conversion/utf_conversion.h"
 
 namespace usb_bus {
 
-template <typename T, size_t N>
-constexpr T MakeConstant(const char value[N]) {
-  T retval = 0;
-  for (T i = 0; i < N; i++) {
-    retval = static_cast<T>(retval | (static_cast<T>(value[i]) << (i * 8)));
-  }
-  static_assert(N <= sizeof(T));
-  return retval;
-}
-
-constexpr uint8_t kVendorId = 81;
-constexpr uint8_t kProductId = 35;
-constexpr uint8_t kDeviceClass = 2;
-constexpr uint8_t kDeviceSubclass = 6;
-constexpr uint8_t kDeviceProtocol = 250;
-constexpr uint32_t kDeviceId = 42;
-constexpr uint32_t kHubId = 32;
-constexpr uint32_t kMaxTransferSize = 9001;
-constexpr uint8_t kTransferSizeEndpoint = 5;
-constexpr uint64_t kCurrentFrame = MakeConstant<uint64_t, 7>("fuchsia");
-constexpr size_t kRequestSize = 272;
-const char16_t* kStringDescriptors[][2] = {{u"Fuchsia", u"Fucsia"}, {u"Device", u"Dispositivo"}};
-
-constexpr usb_speed_t kDeviceSpeed = MakeConstant<usb_speed_t, 4>("slow");
-
-class FakeHci : public ddk::UsbHciProtocol<FakeHci> {
- public:
-  FakeHci() {
-    proto_.ops = &usb_hci_protocol_ops_;
-    proto_.ctx = this;
-  }
-  uint64_t UsbHciGetCurrentFrame() { return kCurrentFrame; }
-
-  zx_status_t UsbHciConfigureHub(uint32_t device_id, usb_speed_t speed,
-                                 const usb_hub_descriptor_t* desc, bool multi_tt) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciHubDeviceAdded(uint32_t device_id, uint32_t port, usb_speed_t speed) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciHubDeviceRemoved(uint32_t device_id, uint32_t port) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciHubDeviceReset(uint32_t device_id, uint32_t port) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciResetEndpoint(uint32_t device_id, uint8_t ep_address) {
-    if (device_id == kDeviceId) {
-      reset_endpoint_ = ep_address;
-    }
-    return ZX_OK;
-  }
-
-  zx_status_t UsbHciResetDevice(uint32_t hub_address, uint32_t device_id) {
-    if (device_id == kDeviceId) {
-      device_reset_ = true;
-    }
-    return ZX_OK;
-  }
-
-  size_t UsbHciGetMaxTransferSize(uint32_t device_id, uint8_t ep_address) {
-    return ((device_id == kDeviceId) && (ep_address == kTransferSizeEndpoint)) ? kMaxTransferSize
-                                                                               : 0;
-  }
-
-  zx_status_t UsbHciCancelAll(uint32_t device_id, uint8_t ep_address) {
-    auto requests = pending_requests();
-    requests.CompleteAll(ZX_ERR_CANCELED, 0);
-    return ZX_OK;
-  }
-
-  void UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf) {}
-
-  size_t UsbHciGetMaxDeviceCount() { return 0; }
-
-  size_t UsbHciGetRequestSize() {
-    return usb::BorrowedRequest<void>::RequestSize(sizeof(usb_request_t));
-  }
-
-  void UsbHciRequestQueue(usb_request_t* usb_request_,
-                          const usb_request_complete_callback_t* complete_cb_) {
-    usb::BorrowedRequest<void> request(usb_request_, *complete_cb_, sizeof(usb_request_t));
-    if (should_return_empty_) {
-      request.Complete(ZX_OK, 0);
-      return;
-    }
-    if ((request.request()->header.ep_address == 0) && !custom_control_) {
-      if ((request.request()->setup.bm_request_type ==
-           (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) &&
-          (request.request()->setup.b_request == USB_REQ_GET_DESCRIPTOR)) {
-        uint8_t type = static_cast<uint8_t>(request.request()->setup.w_value >> 8);
-        uint8_t index = static_cast<uint8_t>(request.request()->setup.w_value);
-        switch (type) {
-          case USB_DT_DEVICE: {
-            usb_device_descriptor_t* descriptor;
-            request.Mmap(reinterpret_cast<void**>(&descriptor));
-            descriptor->b_num_configurations = 2;
-            descriptor->id_vendor = kVendorId;
-            descriptor->id_product = kProductId;
-            descriptor->b_device_class = kDeviceClass;
-            descriptor->b_device_sub_class = kDeviceSubclass;
-            descriptor->b_device_protocol = kDeviceProtocol;
-            request.Complete(ZX_OK, sizeof(*descriptor));
-          }
-            return;
-          case USB_DT_CONFIG: {
-            usb_configuration_descriptor_t* descriptor;
-            request.Mmap(reinterpret_cast<void**>(&descriptor));
-            descriptor->w_total_length = sizeof(*descriptor);
-            descriptor->b_configuration_value = static_cast<uint8_t>(index + 1);
-            request.Complete(ZX_OK, sizeof(*descriptor));
-          }
-            return;
-          case USB_DT_STRING: {
-            if (index == 0) {
-              // Fetch language table
-              usb_langid_desc_t* languages;
-              request.Mmap(reinterpret_cast<void**>(&languages));
-              languages->b_length = 2 + (2 * 2);
-              languages->w_lang_ids[0] = MakeConstant<uint16_t, 2>("EN");
-              languages->w_lang_ids[1] = MakeConstant<uint16_t, 2>("ES");
-              request.Complete(ZX_OK, languages->b_length);
-              return;
-            }
-            index--;
-            uint16_t lang = request.request()->setup.w_index;
-            switch (lang) {
-              case MakeConstant<uint16_t, 2>("EN"):
-                lang = 0;
-                break;
-              case MakeConstant<uint16_t, 2>("ES"):
-                lang = 1;
-                break;
-            }
-            if ((index < 2) && (lang < 2)) {
-              usb_string_desc_t* descriptor;
-              request.Mmap(reinterpret_cast<void**>(&descriptor));
-              descriptor->b_length = static_cast<uint8_t>(
-                  2 + (2 * std::char_traits<char16_t>::length(kStringDescriptors[index][lang])));
-              memcpy(descriptor->code_points, kStringDescriptors[index][lang],
-                     descriptor->b_length - 2);
-              request.Complete(ZX_OK, descriptor->b_length);
-              return;
-            }
-          }
-        }
-      }
-      if ((request.request()->setup.bm_request_type ==
-           (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) &&
-          (request.request()->setup.b_request == USB_REQ_SET_CONFIGURATION)) {
-        selected_configuration_ = static_cast<uint8_t>(request.request()->setup.w_value);
-        request.Complete(ZX_OK, 0);
-        return;
-      }
-      request.Complete(ZX_ERR_INVALID_ARGS, 0);
-      return;
-    }
-    pending_requests_.push(std::move(request));
-  }
-
-  zx_status_t UsbHciEnableEndpoint(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
-                                   const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable) {
-    if (!enable_endpoint_hook_) {
-      return ZX_ERR_BAD_STATE;
-    }
-    return enable_endpoint_hook_(device_id, ep_desc, ss_com_desc, enable);
-  }
-
-  void SetEmptyState(bool should_return_empty) { should_return_empty_ = should_return_empty; }
-
-  const usb_hci_protocol_t* proto() { return &proto_; }
-
-  uint8_t configuration() { return selected_configuration_; }
-
-  usb::BorrowedRequestQueue<void> pending_requests() { return std::move(pending_requests_); }
-
-  void set_custom_control_handling(bool enabled) { custom_control_ = enabled; }
-
-  void set_enable_endpoint_hook(
-      fit::function<zx_status_t(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
-                                const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable)>
-          hook) {
-    enable_endpoint_hook_ = std::move(hook);
-  }
-
-  uint8_t reset_endpoint() { return reset_endpoint_; }
-
-  bool device_reset() { return device_reset_; }
-
- private:
-  bool should_return_empty_ = false;
-  bool device_reset_ = false;
-  bool custom_control_ = false;
-  uint8_t selected_configuration_ = 0;
-  usb_hci_protocol_t proto_;
-  uint8_t reset_endpoint_ = 0;
-  fit::function<zx_status_t(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
-                            const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable)>
-      enable_endpoint_hook_;
-  usb::BorrowedRequestQueue<void> pending_requests_;
-};
-
-class FakeTimer : public UsbWaiterInterface {
- public:
-  zx_status_t Wait(sync_completion_t* completion, zx_duration_t duration) override {
-    return timeout_handler_(completion, duration);
-  }
-
-  void set_timeout_handler(fit::function<zx_status_t(sync_completion_t*, zx_duration_t)> handler) {
-    timeout_handler_ = std::move(handler);
-  }
-
- private:
-  fit::function<zx_status_t(sync_completion_t*, zx_duration_t)> timeout_handler_;
-};
-
 class DeviceTest : public zxtest::Test {
  public:
-  DeviceTest() {
-    timer_ = fbl::MakeRefCounted<FakeTimer>();
-    timer_->set_timeout_handler([=](sync_completion_t* completion, zx_duration_t duration) {
-      return sync_completion_wait(completion, duration);
-    });
-  }
-
   auto& get_fidl() { return fidl_; }
 
   auto& get_device() { return *device_; }
 
   void SetUp() override {
-    auto hci_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_hci::UsbHci>();
-    ASSERT_OK(hci_endpoints);
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
+    auto runtime = fdf_testing::DriverRuntime::GetInstance();
+    dispatcher_ =
+        std::make_unique<fdf::UnownedSynchronizedDispatcher>(runtime->StartBackgroundDispatcher());
+    hci_ = std::make_unique<FakeHci>((*dispatcher_)->async_dispatcher());
+
+    timer_ = fbl::MakeRefCounted<FakeTimer>();
+    timer_->set_timeout_handler([=](sync_completion_t* completion, zx_duration_t duration) {
+      return sync_completion_wait(completion, duration);
+    });
+
+    auto hci_endpoints = fidl::Endpoints<fuchsia_hardware_usb_hci::UsbHci>::Create();
+    auto result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&]() {
       auto device = fbl::MakeRefCounted<UsbDevice>(
-          root_.get(), ddk::UsbHciProtocolClient(hci_.proto()), std::move(hci_endpoints->client),
-          kDeviceId, kHubId, kDeviceSpeed, timer_, dispatcher_->async_dispatcher());
-      ASSERT_OK(device->Init(dispatcher_->async_dispatcher()));
+          root_.get(), ddk::UsbHciProtocolClient(hci_->proto()), std::move(hci_endpoints.client),
+          kDeviceId, kHubId, kDeviceSpeed, timer_, (*dispatcher_)->async_dispatcher());
+      ASSERT_OK(device->Init((*dispatcher_)->async_dispatcher()));
       device_ = device.get();
     });
     EXPECT_TRUE(result.is_ok());
     auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_device::Device>::Create();
-    fidl::BindServer(dispatcher_->async_dispatcher(), std::move(endpoints.server), device_);
+    fidl::BindServer((*dispatcher_)->async_dispatcher(), std::move(endpoints.server), device_);
     fidl_.Bind(std::move(endpoints.client));
   }
 
   void TearDown() override {
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
+    auto result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&]() {
       device_->DdkAsyncRemove();
       mock_ddk::ReleaseFlaggedDevices(root_.get());
     });
     EXPECT_TRUE(result.is_ok());
+    hci_.reset();
+    dispatcher_.reset();
   }
 
   void CancelAll() { ASSERT_OK(device_->UsbCancelAll(1)); }
@@ -296,39 +85,34 @@ class DeviceTest : public zxtest::Test {
     return ddk::UsbBusProtocolClient(&usb);
   }
 
-  void set_custom_control_handling(bool enabled) { hci_.set_custom_control_handling(enabled); }
-
-  usb::BorrowedRequestQueue<void> get_pending_requests() { return hci_.pending_requests(); }
-
-  uint8_t get_configuration() { return hci_.configuration(); }
+  void set_custom_control_handling(bool enabled) { hci_->set_custom_control_handling(enabled); }
+  usb::BorrowedRequestQueue<void> get_pending_requests() { return hci_->pending_requests(); }
+  uint8_t get_configuration() { return hci_->configuration(); }
 
   void set_enable_endpoint_hook(
       fit::function<zx_status_t(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
                                 const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable)>
           hook) {
-    hci_.set_enable_endpoint_hook(std::move(hook));
+    hci_->set_enable_endpoint_hook(std::move(hook));
   }
 
   void set_timeout_handler(fit::function<zx_status_t(sync_completion_t*, zx_duration_t)> handler) {
     timer_->set_timeout_handler(std::move(handler));
   }
 
-  bool get_device_reset() { return hci_.device_reset(); }
-
-  uint8_t get_reset_endpoint() { return hci_.reset_endpoint(); }
-
-  void SetEmptyState(bool should_return_empty) { hci_.SetEmptyState(should_return_empty); }
+  bool get_device_reset() { return hci_->device_reset(); }
+  uint8_t get_reset_endpoint() { return hci_->reset_endpoint(); }
+  void SetEmptyState(bool should_return_empty) { hci_->SetEmptyState(should_return_empty); }
 
  protected:
   std::shared_ptr<MockDevice> root_{MockDevice::FakeRootParent()};
+  fdf_testing::DriverRuntime* runtime() { return fdf_testing::DriverRuntime::GetInstance(); }
+  std::unique_ptr<fdf::UnownedSynchronizedDispatcher> dispatcher_;
 
  private:
-  fdf_testing::DriverRuntime* runtime() { return fdf_testing::DriverRuntime::GetInstance(); }
-
-  fdf::UnownedSynchronizedDispatcher dispatcher_{runtime()->StartBackgroundDispatcher()};
   fbl::RefPtr<FakeTimer> timer_;
   fidl::WireSyncClient<fuchsia_hardware_usb_device::Device> fidl_;
-  FakeHci hci_;
+  std::unique_ptr<FakeHci> hci_;
   // UsbDevice context pointer owned by us through MockDdk
   UsbDevice* device_;
 };
@@ -352,57 +136,59 @@ TEST_F(DeviceTest, CancelAllCancelsAllRequestsThenReturns) {
 
 TEST_F(DeviceTest, ControlOut) {
   auto usb = get_usb_protocol();
-  uint8_t data[5];
+  uint8_t const_data[5];
   for (size_t i = 0; i < 5; i++) {
-    data[i] = static_cast<uint8_t>(i);
+    const_data[i] = static_cast<uint8_t>(i);
   }
   set_custom_control_handling(true);
   set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) {
     EXPECT_EQ(duration, 9001);
     auto requests = get_pending_requests();
     auto request = requests.pop();
-    EXPECT_EQ(request->request()->header.length, sizeof(data));
+    EXPECT_EQ(request->request()->header.ep_address, 0);
+    EXPECT_EQ(request->request()->header.length, sizeof(const_data));
     void* mapped_data;
     request->Mmap(&mapped_data);
-    EXPECT_EQ(0, memcmp(data, data, sizeof(data)));
+    EXPECT_EQ(0, memcmp(mapped_data, const_data, sizeof(const_data)));
     EXPECT_EQ(request->request()->setup.bm_request_type, 5);
     EXPECT_EQ(request->request()->setup.b_request, 97);
     EXPECT_EQ(request->request()->setup.w_value, 8);
     EXPECT_EQ(request->request()->setup.w_index, 12);
 
-    request->Complete(ZX_OK, sizeof(data));
+    request->Complete(ZX_OK, sizeof(const_data));
     return sync_completion_wait(completion, ZX_TIME_INFINITE);
   });
-  ASSERT_OK(usb.ControlOut(5, 97, 8, 12, 9001, data, sizeof(data)));
+  ASSERT_OK(usb.ControlOut(5, 97, 8, 12, 9001, const_data, sizeof(const_data)));
 }
 
 TEST_F(DeviceTest, ControlIn) {
   auto usb = get_usb_protocol();
-  uint8_t data[5];
+  uint8_t const_data[5];
   for (size_t i = 0; i < 5; i++) {
-    data[i] = static_cast<uint8_t>(i);
+    const_data[i] = static_cast<uint8_t>(i);
   }
   set_custom_control_handling(true);
   set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) {
     EXPECT_EQ(duration, 9001);
     auto requests = get_pending_requests();
     auto request = requests.pop();
-    EXPECT_EQ(request->request()->header.length, sizeof(data));
+    EXPECT_EQ(request->request()->header.ep_address, 0);
+    EXPECT_EQ(request->request()->header.length, sizeof(const_data));
     void* mapped_data;
     request->Mmap(&mapped_data);
-    memcpy(mapped_data, data, sizeof(data));
+    memcpy(mapped_data, const_data, sizeof(const_data));
     EXPECT_EQ(request->request()->setup.bm_request_type, 5 | USB_DIR_IN);
     EXPECT_EQ(request->request()->setup.b_request, 97);
     EXPECT_EQ(request->request()->setup.w_value, 8);
     EXPECT_EQ(request->request()->setup.w_index, 12);
 
-    request->Complete(ZX_OK, sizeof(data));
+    request->Complete(ZX_OK, sizeof(const_data));
     return sync_completion_wait(completion, ZX_TIME_INFINITE);
   });
   uint8_t buffer[5];
   size_t actual;
   ASSERT_OK(usb.ControlIn(5 | USB_DIR_IN, 97, 8, 12, 9001, buffer, sizeof(buffer), &actual));
-  ASSERT_EQ(0, memcmp(buffer, data, sizeof(buffer)));
+  ASSERT_EQ(0, memcmp(buffer, const_data, sizeof(buffer)));
 }
 
 TEST_F(DeviceTest, RequestQueue) {
@@ -730,62 +516,20 @@ TEST_F(DeviceTest, FidlSetConfiguration) {
   ASSERT_EQ(get_configuration(), 2);
 }
 
-class EvilFakeHci : public ddk::UsbHciProtocol<EvilFakeHci> {
-  // A fake HCI that pretends to be a device that does dodgy things with
-  // configuration descriptors: namely, changing the size they claim to be
-  // depending on how many requests for config descriptors have been made
-  // previously.
+// A fake HCI that pretends to be a device that does dodgy things with
+// configuration descriptors: namely, changing the size they claim to be
+// depending on how many requests for config descriptors have been made
+// previously.
+class EvilFakeHci : public FakeHci {
  public:
-  EvilFakeHci(uint16_t initial_config_length, uint16_t subsequent_config_length) {
-    initial_config_length_ = initial_config_length;
-    subsequent_config_length_ = subsequent_config_length;
-    proto_.ops = &usb_hci_protocol_ops_;
-    proto_.ctx = this;
-  }
-  uint64_t UsbHciGetCurrentFrame() { return kCurrentFrame; }
-
-  zx_status_t UsbHciConfigureHub(uint32_t device_id, usb_speed_t speed,
-                                 const usb_hub_descriptor_t* desc, bool multi_tt) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciHubDeviceAdded(uint32_t device_id, uint32_t port, usb_speed_t speed) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciHubDeviceRemoved(uint32_t device_id, uint32_t port) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciHubDeviceReset(uint32_t device_id, uint32_t port) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx_status_t UsbHciResetEndpoint(uint32_t device_id, uint8_t ep_address) { return ZX_OK; }
-
-  zx_status_t UsbHciResetDevice(uint32_t hub_address, uint32_t device_id) { return ZX_OK; }
-
-  size_t UsbHciGetMaxTransferSize(uint32_t device_id, uint8_t ep_address) {
-    return ((device_id == kDeviceId) && (ep_address == kTransferSizeEndpoint)) ? kMaxTransferSize
-                                                                               : 0;
-  }
-
-  zx_status_t UsbHciCancelAll(uint32_t device_id, uint8_t ep_address) {
-    auto requests = pending_requests();
-    requests.CompleteAll(ZX_ERR_CANCELED, 0);
-    return ZX_OK;
-  }
-
-  void UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf) {}
-
-  size_t UsbHciGetMaxDeviceCount() { return 0; }
-
-  size_t UsbHciGetRequestSize() {
-    return usb::BorrowedRequest<void>::RequestSize(sizeof(usb_request_t));
-  }
+  EvilFakeHci(async_dispatcher_t* dispatcher, uint16_t initial_config_length,
+              uint16_t subsequent_config_length)
+      : FakeHci(dispatcher),
+        initial_config_length_(initial_config_length),
+        subsequent_config_length_(subsequent_config_length) {}
 
   void UsbHciRequestQueue(usb_request_t* usb_request_,
-                          const usb_request_complete_callback_t* complete_cb_) {
+                          const usb_request_complete_callback_t* complete_cb_) override {
     usb::BorrowedRequest<void> request(usb_request_, *complete_cb_, sizeof(usb_request_t));
     EXPECT_EQ(request.request()->header.ep_address, 0);
     EXPECT_EQ(request.request()->setup.bm_request_type,
@@ -835,51 +579,57 @@ class EvilFakeHci : public ddk::UsbHciProtocol<EvilFakeHci> {
     pending_requests_.push(std::move(request));
   }
 
-  zx_status_t UsbHciEnableEndpoint(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
-                                   const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  const usb_hci_protocol_t* proto() { return &proto_; }
-
-  usb::BorrowedRequestQueue<void> pending_requests() { return std::move(pending_requests_); }
-
  private:
   int config_descriptor_request_count_ = 0;
   uint16_t initial_config_length_;
   uint16_t subsequent_config_length_;
-  usb_hci_protocol_t proto_;
-  fit::function<zx_status_t(uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
-                            const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable)>
-      enable_endpoint_hook_;
   usb::BorrowedRequestQueue<void> pending_requests_;
 };
 
-TEST(EvilFakeHciDeviceTest, GetConfigurationDescriptorTooShortRejected) {
+class EvilDeviceTest : public zxtest::Test {
+ public:
+  EvilDeviceTest() : hci_(nullptr) {}
+
+  void SetUp() override {
+    auto runtime = fdf_testing::DriverRuntime::GetInstance();
+    dispatcher_ =
+        std::make_unique<fdf::UnownedSynchronizedDispatcher>(runtime->StartBackgroundDispatcher());
+  }
+
+  void TearDown() override { dispatcher_.reset(); }
+
+ protected:
+  std::shared_ptr<MockDevice> root_{MockDevice::FakeRootParent()};
+  fdf_testing::DriverRuntime* runtime() { return fdf_testing::DriverRuntime::GetInstance(); }
+  std::unique_ptr<fdf::UnownedSynchronizedDispatcher> dispatcher_;
+  std::unique_ptr<EvilFakeHci> hci_;
+};
+
+TEST_F(EvilDeviceTest, GetConfigurationDescriptorTooShortRejected) {
   // We expect this device to fail to initialize because wTotalLength is too
   // short -- 1 byte is shorter than the minimal config descriptor length, so
   // such a response is invalid.
-  EvilFakeHci hci(1, 1);
+  hci_ = std::make_unique<EvilFakeHci>((*dispatcher_)->async_dispatcher(), 1, 1);
   fbl::RefPtr<FakeTimer> timer = fbl::MakeRefCounted<FakeTimer>();
   timer->set_timeout_handler([=](sync_completion_t* completion, zx_duration_t duration) {
     return sync_completion_wait(completion, duration);
   });
 
   async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
-  std::shared_ptr<MockDevice> root = MockDevice::FakeRootParent();
   auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_hci::UsbHci>::Create();
-  auto device = fbl::MakeRefCounted<UsbDevice>(root.get(), ddk::UsbHciProtocolClient(hci.proto()),
-                                               std::move(endpoints.client), kDeviceId, kHubId,
-                                               kDeviceSpeed, timer, loop.dispatcher());
+  auto device = fbl::MakeRefCounted<UsbDevice>(
+      root_.get(), ddk::UsbHciProtocolClient(hci_->proto()), std::move(endpoints.client), kDeviceId,
+      kHubId, kDeviceSpeed, timer, loop.dispatcher());
   auto result = device->Init(loop.dispatcher());
   ASSERT_EQ(result, ZX_ERR_IO);
 }
 
-TEST(EvilFakeHciDeviceTest, GetConfigurationDescriptorDifferentSizesAreRejected) {
+TEST_F(EvilDeviceTest, GetConfigurationDescriptorDifferentSizesAreRejected) {
   // We expect this device to fail to initialize because when we request its
   // configuration descriptors, the wTotalSize value we get back changes between
   // the first (size-fetching) request and second (full descriptor-fetching) request.
-  EvilFakeHci hci(sizeof(usb_configuration_descriptor_t), 65535);
+  hci_ = std::make_unique<EvilFakeHci>((*dispatcher_)->async_dispatcher(),
+                                       sizeof(usb_configuration_descriptor_t), 65535);
   fbl::RefPtr<FakeTimer> timer = fbl::MakeRefCounted<FakeTimer>();
   timer->set_timeout_handler([=](sync_completion_t* completion, zx_duration_t duration) {
     return sync_completion_wait(completion, duration);
@@ -889,7 +639,7 @@ TEST(EvilFakeHciDeviceTest, GetConfigurationDescriptorDifferentSizesAreRejected)
   std::shared_ptr<MockDevice> root = MockDevice::FakeRootParent();
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_hci::UsbHci>();
   ASSERT_OK(endpoints);
-  auto device = fbl::MakeRefCounted<UsbDevice>(root.get(), ddk::UsbHciProtocolClient(hci.proto()),
+  auto device = fbl::MakeRefCounted<UsbDevice>(root.get(), ddk::UsbHciProtocolClient(hci_->proto()),
                                                std::move(endpoints->client), kDeviceId, kHubId,
                                                kDeviceSpeed, timer, loop.dispatcher());
   auto result = device->Init(loop.dispatcher());
