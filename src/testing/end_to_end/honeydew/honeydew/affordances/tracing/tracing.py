@@ -268,6 +268,7 @@ class Tracing(affordance.Affordance):
             TracingError: When the method fails to collect trace data.
         """
 
+    # LINT.IfChange
     @contextmanager
     def trace_session(
         self,
@@ -315,6 +316,8 @@ class Tracing(affordance.Affordance):
                 )
             else:
                 self.terminate()
+
+    # LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/affordances/tracing/tracing_using_fc.py)
 
     @abc.abstractmethod
     def as_async(self) -> AsyncTracing:

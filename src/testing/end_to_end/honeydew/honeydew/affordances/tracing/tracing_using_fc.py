@@ -450,6 +450,7 @@ class TracingUsingFc(tracing.Tracing):
             self._inner.terminate_and_download(directory, trace_file)
         )
 
+    # LINT.IfChange
     @contextmanager
     def trace_session(
         self,
@@ -482,6 +483,8 @@ class TracingUsingFc(tracing.Tracing):
                 )
             else:
                 self.terminate()
+
+    # LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/affordances/tracing/tracing.py)
 
     def _reset_state_sync(self) -> None:
         """Resets internal state. This is primarily for testing."""

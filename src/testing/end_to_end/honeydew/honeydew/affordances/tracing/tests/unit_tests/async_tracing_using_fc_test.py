@@ -418,6 +418,12 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
         [
             (
                 {
+                    "label": "without_session_initialized",
+                    "session_initialized": False,
+                },
+            ),
+            (
+                {
                     "label": "with_tracing_download_default_file_name",
                     "return_value": "samp_trace_data",
                     "session_initialized": True,
@@ -434,15 +440,13 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(fc, "Channel")
-    @mock.patch.object(fc, "Socket")
+    @mock.patch.object(fc, "Context")
     @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
     async def test_terminate_and_download(
         self,
         parameterized_dict: dict[str, Any],
         mock_async_socket_read_all: mock.AsyncMock,
-        mock_fc_socket: mock.Mock,
-        mock_fc_channel: mock.Mock,
+        mock_fc_context: mock.Mock,
     ) -> None:
         """Test for Tracing.terminate_and_download() method."""
         # Mock out the tracing Socket.
@@ -451,12 +455,12 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
             return_value, encoding="utf-8"
         )
 
-        mock_fc_socket.create.return_value = (
+        mock_fc_context.socket_create.return_value = (
             mock.MagicMock(),
             mock.MagicMock(),
         )
 
-        mock_fc_channel.create.return_value = (
+        mock_fc_context.channel_create.return_value = (
             mock.MagicMock(),
             mock.MagicMock(),
         )
@@ -517,15 +521,13 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    @mock.patch.object(fc, "Channel")
-    @mock.patch.object(fc, "Socket")
+    @mock.patch.object(fc, "Context")
     @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
     async def test_trace_session(
         self,
         parameterized_dict: dict[str, Any],
         mock_async_socket_read_all: mock.AsyncMock,
-        mock_fc_socket: mock.MagicMock,
-        mock_fc_channel: mock.MagicMock,
+        mock_fc_context: mock.Mock,
     ) -> None:
         """Test for Tracing.trace_session() method."""
         # Mock out the tracing Socket.
@@ -533,13 +535,11 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
         mock_async_socket_read_all.return_value = bytes(
             return_value, encoding="utf-8"
         )
-
-        mock_fc_socket.create.return_value = (
+        mock_fc_context.socket_create.return_value = (
             mock.MagicMock(),
             mock.MagicMock(),
         )
-
-        mock_fc_channel.create.return_value = (
+        mock_fc_context.channel_create.return_value = (
             mock.MagicMock(),
             mock.MagicMock(),
         )
