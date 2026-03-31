@@ -9,7 +9,7 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -17,7 +17,6 @@
 #include <zircon/listnode.h>
 
 #include <array>
-#include <mutex>
 
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/cdc.h>
@@ -45,7 +44,7 @@ class UsbCdcFunction : public fdf::DriverBase,
                        public fdf::WireServer<fnetdev::NetworkDeviceImpl>,
                        public fdf::WireServer<fnetdev::NetworkPort>,
                        public fdf::WireServer<fnetdev::MacAddr>,
-                       public ddk::UsbFunctionInterfaceProtocol<UsbCdcFunction> {
+                       public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr std::string_view kDriverName = "usb_cdc_function";
   static constexpr uint8_t kPortId = 1;
@@ -106,38 +105,66 @@ class UsbCdcFunction : public fdf::DriverBase,
                SetModeCompleter::Sync &completer) override;
 
   // UsbFunctionInterface methods.
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t *out_descriptors_buffer, size_t descriptors_size,
-                                          size_t *out_descriptors_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t *setup, const uint8_t *write_buffer,
-                                          size_t write_size, uint8_t *out_read_buffer,
-                                          size_t read_size, size_t *out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
+  void Control(ControlRequest &request, ControlCompleter::Sync &completer) override;
+  void SetConfigured(SetConfiguredRequest &request,
+                     SetConfiguredCompleter::Sync &completer) override;
+  void SetInterface(SetInterfaceRequest &request, SetInterfaceCompleter::Sync &completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync &completer) override;
 
   zx_status_t cdc_generate_mac_address();
   void CdcIntrComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   void cdc_send_notifications();
   void CdcRxComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void CdcTxComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
-  void ProcessRxCompletions(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions)
-      __TA_REQUIRES(rx_mutex_);
+  void ProcessRxCompletions(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
   // test helpers.
   bool HasPendingRxCompletions();
 
+  uint8_t BulkInAddress() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
+  uint8_t BulkOutAddress() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
+  uint8_t InterruptAddress() const { return descriptors_.intr_ep.b_endpoint_address; }
+
  private:
   zx_status_t AddNetworkDevice();
-  fuchsia_hardware_network::PortStatus ReadStatus() const __TA_REQUIRES(state_mutex_);
-  void UpdatePortStatus() __TA_REQUIRES(state_mutex_);
+  fuchsia_hardware_network::PortStatus ReadStatus() const;
+  void UpdatePortStatus();
+  void DisableAllEndpoints();
 
-  ddk::UsbFunctionProtocolClient function_;
+  struct EndpointInfo {
+    uint8_t address;
+    usb::EndpointClient<UsbCdcFunction> *client;
+    std::string_view name;
+  };
+  std::array<EndpointInfo, 3> GetEndpoints() {
+    return {{
+        {
+            .address = descriptors_.intr_ep.b_endpoint_address,
+            .client = &intr_ep_,
+            .name = "intr",
+        },
+        {
+            .address = descriptors_.bulk_out_ep.b_endpoint_address,
+            .client = &bulk_out_ep_,
+            .name = "bulk_out",
+        },
+        {
+            .address = descriptors_.bulk_in_ep.b_endpoint_address,
+            .client = &bulk_in_ep_,
+            .name = "bulk_in",
+        },
+    }};
+  }
+
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
+  std::string mac_addr_string_;
+  fdf::WireClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> netdevice_ifc_;
 
   compat::SyncInitializedDeviceServer child_;
 
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_controller_;
-
-  fdf::SynchronizedDispatcher dispatcher_;
 
   // In-direction (TX to host).
   usb::EndpointClient<UsbCdcFunction> intr_ep_{usb::EndpointType::INTERRUPT, this,
@@ -153,40 +180,26 @@ class UsbCdcFunction : public fdf::DriverBase,
 
   // Queue of buffer IDs that were sent to USB hardware and are awaiting
   // completion. This mirrors the order of requests submitted to bulk_in_ep_.
-  std::queue<uint32_t> tx_completion_queue_ __TA_GUARDED(tx_mutex_);
-  // Queue of requests that were not completed because there was no space buffer
-  // available.
-  std::vector<fuchsia_hardware_usb_endpoint::Completion> rx_completion_queue_
-      __TA_GUARDED(rx_mutex_);
-  void DiscardPendingTxBuffers(zx_status_t status) __TA_EXCLUDES(tx_mutex_);
-  void ReturnPendingRxSpace() __TA_EXCLUDES(rx_mutex_);
+  std::queue<uint32_t> tx_completion_queue_;
+  std::vector<fuchsia_hardware_usb_endpoint::Completion> rx_completion_queue_;
+  void DiscardPendingTxBuffers(zx_status_t status);
+  void ReturnPendingRxSpace();
   void ContinueStop();
 
   std::atomic_bool unbound_ = false;  // set to true when device is going away.
-  bool dispatcher_shutdown_ = false;
 
   // Device attributes
   std::array<uint8_t, ETH_MAC_SIZE> mac_addr_;
   // Lock for network device state and ifc_
-  mutable std::mutex state_mutex_ __TA_ACQUIRED_AFTER(tx_mutex_);
-  fdf::WireSharedClient<fnetdev::NetworkDeviceIfc> netdevice_ifc_;
-  bool online_ __TA_GUARDED(state_mutex_) = false;
+  bool online_ = false;
   bool configured_ = false;
-  usb_speed_t speed_ = 0;
-  // TX lock -- Must be acquired before state_mutex
-  // when both locks are held.
-  std::mutex &tx_mutex_ = bulk_in_ep_.mutex();
-  std::mutex &rx_mutex_ = bulk_out_ep_.mutex();
-  std::mutex &intr_mutex_ = intr_ep_.mutex();
-
-  uint8_t bulk_out_addr_ = 0;
-  uint8_t bulk_in_addr_ = 0;
-  uint8_t intr_addr_ = 0;
+  fuchsia_hardware_usb_descriptor::UsbSpeed speed_ =
+      fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined;
 
   using VmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint8_t>>;
-  VmoStore vmo_store_ __TA_GUARDED(state_mutex_);
+  VmoStore vmo_store_;
 
-  std::queue<fnetdev::wire::RxSpaceBuffer> rx_space_buffers_ __TA_GUARDED(rx_mutex_);
+  std::queue<fnetdev::wire::RxSpaceBuffer> rx_space_buffers_;
   std::optional<fdf::PrepareStopCompleter> stop_completer_;
 
   struct {

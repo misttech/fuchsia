@@ -336,6 +336,9 @@ class FakeUsbFidlProviderBase : public fidl::Server<ProtocolType> {
     completer.Reply(fit::ok());
   }
 
+ protected:
+  async_dispatcher_t* dispatcher() const { return dispatcher_; }
+
  private:
   async_dispatcher_t* dispatcher_;
 

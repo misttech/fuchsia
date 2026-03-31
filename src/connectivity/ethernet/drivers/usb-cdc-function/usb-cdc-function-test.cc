@@ -11,13 +11,11 @@
 #include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo-mock.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -27,34 +25,6 @@
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
-bool operator==(const usb_request_complete_callback_t& lhs,
-                const usb_request_complete_callback_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_ss_ep_comp_descriptor_t& lhs, const usb_ss_ep_comp_descriptor_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_endpoint_descriptor_t& lhs, const usb_endpoint_descriptor_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_request_t& lhs, const usb_request_t& rhs) {
-  // Only comparing endpoint address. Use ExpectCallWithMatcher for more specific
-  // comparisons.
-  return lhs.header.ep_address == rhs.header.ep_address;
-}
-
-bool operator==(const usb_function_interface_protocol_t& lhs,
-                const usb_function_interface_protocol_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
 namespace usb_cdc_function {
 namespace {
 
@@ -63,33 +33,6 @@ constexpr uint32_t kBulkInEp = 2;
 constexpr uint32_t kIntrEp = 3;
 constexpr uint8_t kCommInterface = 0;
 constexpr uint8_t kDataInterface = 1;
-
-class MockUsbFunction : public ddk::MockUsbFunction {
- public:
-  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
-    compat::DeviceServer::BanjoConfig config{.default_proto_id = ZX_PROTOCOL_USB_FUNCTION};
-    config.callbacks[ZX_PROTOCOL_USB_FUNCTION] = banjo_server_.callback();
-    return config;
-  }
-
-  zx_status_t UsbFunctionSetInterface(const usb_function_interface_protocol_t* interface) override {
-    interface_ = {interface};
-    return ddk::MockUsbFunction::UsbFunctionSetInterface(interface);
-  }
-
-  // Knock out of expectations because the driver calls this with a nullptr,
-  // which trips the generated mock.
-  zx_status_t UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                                  const usb_ss_ep_comp_descriptor_t* ss_comp_desc) override {
-    return ZX_OK;
-  }
-
-  ddk::UsbFunctionInterfaceProtocolClient& interface() { return interface_; }
-
- private:
-  compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_FUNCTION, this, GetProto()->ops};
-  ddk::UsbFunctionInterfaceProtocolClient interface_;
-};
 
 class FakeNetworkDeviceIfc : public fidl::testing::WireTestBase<fnetdev::NetworkDeviceIfc> {
  public:
@@ -169,12 +112,58 @@ class FakeNetworkDeviceIfc : public fidl::testing::WireTestBase<fnetdev::Network
   std::queue<fnetdev::RxBuffer> completed_rx_;
 };
 
+class FakeUsbFunction
+    : public fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction> {
+ public:
+  using Base = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction>;
+  using Base::Base;
+
+  void Configure(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb_function::UsbFunction::Configure>::Sync&
+          completer) override {
+    interface_ = std::move(request.iface());
+    completer.Reply(fit::ok());
+    if (on_configure_) {
+      on_configure_();
+    }
+  }
+
+  void AllocResources(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
+    fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
+    ASSERT_EQ(request.endpoints().size(), 3);
+    ASSERT_EQ(request.interface_count(), 2);
+    ASSERT_EQ(request.strings().size(), 1);
+    response.interface_nums() = {kCommInterface, kDataInterface};
+    response.endpoint_addrs() = {kIntrEp, kBulkInEp, kBulkOutEp};
+    response.string_indices() = {1};
+    for (size_t i = 0; i < 3; i++) {
+      fidl::ServerEnd ep = std::move(request.endpoints()[i].endpoint());
+      fake_endpoint(response.endpoint_addrs()[i]).Connect(dispatcher(), std::move(ep));
+    }
+    completer.Reply(fit::ok(std::move(response)));
+  }
+
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> TakeInterface() {
+    return std::move(interface_);
+  }
+
+  void set_on_configure(fit::callback<void()> callback) { on_configure_ = std::move(callback); }
+
+ private:
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> interface_;
+  fit::callback<void()> on_configure_;
+};
+
 class Environment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-    device_server_.Initialize("default", std::nullopt, mock_usb_.GetBanjoConfig());
+    device_server_.Initialize("default", std::nullopt);
     zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs);
     if (status != ZX_OK) {
       return zx::error(status);
@@ -201,13 +190,10 @@ class Environment : public fdf_testing::Environment {
     return zx::ok();
   }
 
-  using FakeUsbFidl =
-      fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
-                                             fake_usb_endpoint::FakeEndpoint>;
+  using FakeUsbFidl = FakeUsbFunction;
 
   compat::DeviceServer device_server_;
-  MockUsbFunction mock_usb_;
-  FakeUsbFidl fake_usb_fidl_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
+  FakeUsbFunction fake_usb_fidl_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> usb_function_bindings_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata> metadata_server_;
   FakeNetworkDeviceIfc fake_ifc_;
@@ -226,23 +212,16 @@ class UsbCdcTest : public zxtest::Test {
 
   void SetUp() override {
     auto endpoints = fdf::CreateEndpoints<fnetdev::NetworkDeviceIfc>();
-    sync_completion_t port_ready;
-    driver_test_.RunInEnvironmentTypeContext(
-        [server = std::move(endpoints->server), &port_ready](Environment& env) mutable {
-          EXPECT_OK(env.metadata_server_.SetMetadata({{.mac_address = {{{.octets = kTestMac}}}}}));
-          env.mock_usb_.ExpectAllocInterface(ZX_OK, kCommInterface);  // comm
-          env.mock_usb_.ExpectAllocInterface(ZX_OK, kDataInterface);  // data
-          env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_OUT, kBulkOutEp);
-          env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_IN, kBulkInEp);
-          env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_IN, kIntrEp);
-          env.mock_usb_.ExpectAllocStringDesc(ZX_OK, "000102030405", 1);
-          env.fake_usb_fidl_.ExpectConnectToEndpoint(kBulkOutEp);
-          env.fake_usb_fidl_.ExpectConnectToEndpoint(kBulkInEp);
-          env.fake_usb_fidl_.ExpectConnectToEndpoint(kIntrEp);
-          env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-          fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server), &env.fake_ifc_);
-          env.fake_ifc_.set_on_add_port([&port_ready]() { sync_completion_signal(&port_ready); });
-        });
+    libsync::Completion port_ready;
+    libsync::Completion function_configured;
+    driver_test_.RunInEnvironmentTypeContext([server = std::move(endpoints->server), &port_ready,
+                                              &function_configured](Environment& env) mutable {
+      EXPECT_OK(env.metadata_server_.SetMetadata({{.mac_address = {{{.octets = kTestMac}}}}}));
+      fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server), &env.fake_ifc_);
+      env.fake_ifc_.set_on_add_port([&port_ready]() { port_ready.Signal(); });
+      env.fake_usb_fidl_.set_on_configure(
+          [&function_configured]() { function_configured.Signal(); });
+    });
 
     ASSERT_OK(driver_test_.StartDriver().status_value());
 
@@ -256,26 +235,22 @@ class UsbCdcTest : public zxtest::Test {
     ASSERT_OK(init_result.status());
     ASSERT_OK(init_result->s);
 
-    sync_completion_wait(&port_ready, ZX_TIME_INFINITE);
+    port_ready.Wait();
+    function_configured.Wait();
 
     driver_test_.RunInEnvironmentTypeContext([this](Environment& env) {
       EXPECT_TRUE(env.fake_ifc_.HasPort());
       net_port_client_.Bind(env.fake_ifc_.TakePort());
+      function_client_.Bind(env.fake_usb_fidl_.TakeInterface());
+    });
+    driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {
+      EXPECT_EQ(driver.InterruptAddress(), kIntrEp);
+      EXPECT_EQ(driver.BulkInAddress(), kBulkInEp);
+      EXPECT_EQ(driver.BulkOutAddress(), kBulkOutEp);
     });
   }
 
-  void TearDown() override {
-    driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
-      env.mock_usb_.ExpectDisableEp(ZX_OK, kBulkOutEp);
-      env.mock_usb_.ExpectDisableEp(ZX_OK, kBulkInEp);
-      env.mock_usb_.ExpectDisableEp(ZX_OK, kIntrEp);
-      env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-    });
-
-    ASSERT_OK(driver_test_.StopDriver().status_value());
-    driver_test_.RunInEnvironmentTypeContext(
-        [](Environment& env) { env.mock_usb_.VerifyAndClear(); });
-  }
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver().status_value()); }
 
   void StartNetworkDevice() {
     fdf::Arena arena(kArenaTag);
@@ -285,20 +260,28 @@ class UsbCdcTest : public zxtest::Test {
   }
 
   void SetConfiguredAndEnable() {
-    driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
-      // Starting will cause 2 notifications in the interrupt ep.
-      env.fake_usb_fidl_.fake_endpoint(kIntrEp).RequestComplete(ZX_OK, 0);
-      env.fake_usb_fidl_.fake_endpoint(kIntrEp).RequestComplete(ZX_OK, 0);
-      ASSERT_TRUE(env.mock_usb_.interface().is_valid());
-      ASSERT_OK(env.mock_usb_.interface().SetConfigured(true, USB_SPEED_HIGH));
-      ASSERT_OK(env.mock_usb_.interface().SetInterface(kDataInterface, 1));
-    });
+    ASSERT_TRUE(function_client_.is_valid());
+    {
+      fidl::Result result = function_client_->SetConfigured({{
+          .configured = true,
+          .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+      }});
+      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+    }
+    {
+      fidl::Result result = function_client_->SetInterface({{
+          .interface = kDataInterface,
+          .alt_setting = 1,
+      }});
+      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+    }
   }
 
  protected:
   fdf_testing::BackgroundDriverTest<UsbCdcTestConfig> driver_test_;
   fdf::WireSyncClient<fnetdev::NetworkDeviceImpl> net_impl_client_;
   fdf::WireSyncClient<fnetdev::NetworkPort> net_port_client_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_client_;
 };
 
 TEST_F(UsbCdcTest, GetInfo) {
