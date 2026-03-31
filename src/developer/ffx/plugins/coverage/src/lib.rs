@@ -7,12 +7,17 @@ use ffx_coverage_args::CoverageCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use glob::glob;
+use rayon::prelude::*;
+#[cfg(test)]
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 #[cfg(test)]
 use std::sync::Mutex;
 use symbol_index::{SymbolIndex, global_symbol_index_path};
+use tempfile::tempdir;
 
 // The line found right above build ID in `llvm-profdata show --binary-ids` output.
 #[cfg(not(test))]
@@ -73,23 +78,36 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
     let profdata_runner = ProfdataRunner::new(llvm_profdata_bin, verbose_mode);
 
     let profraws = glob_profraws(&cmd.test_output_dir)?;
-    // TODO(https://fxbug.dev/42182448): find a better place to put merged.profdata.
-    let merged_profile = cmd.test_output_dir.join("merged.profdata");
-    profdata_runner
-        .merge_profraws(&profraws, &merged_profile)
-        .context("failed to merge profiles")?;
+    if profraws.is_empty() {
+        return Ok(());
+    }
 
     let symbol_index_path = match cmd.symbol_index_json {
         Some(p) => p.to_string_lossy().to_string(),
         None => global_symbol_index_path()?,
     };
-    let bin_files = profdata_runner
-        .find_binaries(&SymbolIndex::load_aggregate(&symbol_index_path)?, &profraws)?;
+    let symbol_index = SymbolIndex::load_aggregate(&symbol_index_path)?;
+    let bin_files = profdata_runner.find_binaries(&symbol_index, &profraws)?;
+
+    // TODO(https://fxbug.dev/42182448): find a better place to put merged.profdata.
+    let merged_profile = cmd.test_output_dir.join("merged.profdata");
+    profdata_runner
+        .merge_profraws(&profraws, &merged_profile, &bin_files)
+        .context("failed to merge profiles")?;
+
+    // Flatten the binaries for llvm-cov and ensure they are unique.
+    let mut unique_binaries = HashSet::new();
+    for bins in &bin_files {
+        for bin in bins {
+            unique_binaries.insert(bin.clone());
+        }
+    }
+    let unique_binaries_vec: Vec<PathBuf> = unique_binaries.into_iter().collect();
 
     let params = ExportParams {
         llvm_cov_bin,
         merged_profile,
-        bin_files_args: to_llvm_cov_args(&bin_files),
+        bin_files_args: to_llvm_cov_args(&unique_binaries_vec),
         src_files: cmd.src_files,
         extra_args: to_extra_export_args(&cmd.path_remappings, cmd.compilation_dir.as_ref()),
     };
@@ -118,14 +136,14 @@ struct ProfdataRunner {
     llvm_profdata_bin: PathBuf,
     verbose: VerboseMode,
     #[cfg(test)]
-    mock_binary_id_list: Mutex<Vec<String>>,
+    mock_binary_ids: Mutex<HashMap<PathBuf, Vec<String>>>,
 }
 
 impl ProfdataRunner {
     fn new(llvm_profdata_bin: PathBuf, verbose: VerboseMode) -> Self {
         #[cfg(test)]
         {
-            Self { llvm_profdata_bin, verbose, mock_binary_id_list: Mutex::new(Vec::new()) }
+            Self { llvm_profdata_bin, verbose, mock_binary_ids: Mutex::new(HashMap::new()) }
         }
         #[cfg(not(test))]
         {
@@ -134,41 +152,80 @@ impl ProfdataRunner {
     }
 
     #[cfg(test)]
-    fn add_mock_binary_ids(&self, binary_ids: &[&str]) {
-        self.mock_binary_id_list.lock().unwrap().extend(binary_ids.iter().map(|s| s.to_string()));
+    fn add_mock_binary_ids(&self, binary_ids: HashMap<PathBuf, Vec<String>>) {
+        self.mock_binary_ids.lock().unwrap().extend(binary_ids);
     }
 
     /// Merges input `profraws` using llvm-profdata and writes output to `output_path`.
-    fn merge_profraws(&self, profraws: &[PathBuf], output_path: &Path) -> Result<()> {
-        let merge_cmd = run_with_verbose(
-            Command::new(&self.llvm_profdata_bin)
-                .args(["merge", "--sparse", "--output"])
-                .arg(output_path)
-                .args(profraws),
-            self.verbose,
-        )
-        .context("failed to merge raw profiles")?;
-        match merge_cmd.status.code() {
+    fn merge_profraws(
+        &self,
+        profraws: &[PathBuf],
+        output_path: &Path,
+        bin_files: &[Vec<PathBuf>],
+    ) -> Result<()> {
+        let temp_dir = tempdir().context("failed to create temp directory for merging")?;
+
+        let individual_profdatas: Vec<PathBuf> = profraws
+            .par_iter()
+            .zip(bin_files.par_iter())
+            .enumerate()
+            .filter_map(|(i, (profraw, bins))| {
+                let temp_profdata = temp_dir.path().join(format!("{}.profdata", i));
+                let mut cmd = Command::new(&self.llvm_profdata_bin);
+                cmd.args(["merge", "--sparse", "--output"]).arg(&temp_profdata);
+                for bin in bins {
+                    cmd.arg("--binary-file").arg(bin);
+                }
+                cmd.arg(profraw);
+
+                match run_with_verbose(&mut cmd, self.verbose) {
+                    Ok(merge_cmd) if merge_cmd.status.success() => Some(temp_profdata),
+                    _ => {
+                        if self.verbose == VerboseMode::Verbose {
+                            eprintln!(
+                                "Warning: failed to merge {:?} with binaries {:?}",
+                                profraw, bins
+                            );
+                        }
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        if individual_profdatas.is_empty() {
+            return Err(anyhow!("no profiles could be merged"));
+        }
+
+        let mut final_cmd = Command::new(&self.llvm_profdata_bin);
+        final_cmd
+            .args(["merge", "--sparse", "--output"])
+            .arg(output_path)
+            .args(individual_profdatas);
+
+        let final_merge_cmd = run_with_verbose(&mut final_cmd, self.verbose)
+            .context("failed to perform final profile merge")?;
+
+        match final_merge_cmd.status.code() {
             Some(0) => Ok(()),
             Some(code) => Err(anyhow!(
                 "failed to merge raw profiles: status code {}, stderr: {}",
                 code,
-                String::from_utf8_lossy(&merge_cmd.stderr)
+                String::from_utf8_lossy(&final_merge_cmd.stderr)
             )),
             None => Err(anyhow!("profile merging terminated by signal unexpectedly")),
         }
     }
 
-    /// Calls `llvm-profdata show --binary-ids` to fetch binary ID from input raw profile.
-    fn show_binary_id(&self, profraw: &Path) -> Result<String> {
+    /// Calls `llvm-profdata show --binary-ids` to fetch binary IDs from input raw profile.
+    fn show_binary_ids(&self, profraw: &Path) -> Result<Vec<String>> {
         #[cfg(test)]
         {
-            let mut binary_ids = self.mock_binary_id_list.lock().unwrap();
-            let _ = profraw;
-            if binary_ids.is_empty() {
-                return Err(anyhow!("no mock binary IDs available"));
-            }
-            return Ok(binary_ids.remove(0));
+            let binary_ids_map = self.mock_binary_ids.lock().unwrap();
+            return binary_ids_map
+                .get(profraw)
+                .cloned()
+                .ok_or_else(|| anyhow!("no mock binary IDs available for profile {:?}", profraw));
         }
         #[cfg(not(test))]
         {
@@ -176,12 +233,16 @@ impl ProfdataRunner {
                 Command::new(&self.llvm_profdata_bin).args(["show", "--binary-ids"]).arg(profraw),
                 self.verbose,
             )
-            .context(format!("failed to show binary ID from {:?}", profraw))?;
+            .context(format!("failed to show binary IDs from {:?}", profraw))?;
             let stdout = String::from_utf8_lossy(&cmd.stdout);
             let tokens: Vec<&str> = stdout.split(BINARY_ID_LINE).collect();
             match tokens[..] {
-                [_, binary_id] => Ok(binary_id.trim().to_string()),
-                _ => Err(anyhow!("unexpected llvm-profdata show output")),
+                [_, binary_ids_str] => Ok(binary_ids_str
+                    .lines()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()),
+                _ => Err(anyhow!("unexpected llvm-profdata show output: {}", stdout)),
             }
         }
     }
@@ -191,13 +252,21 @@ impl ProfdataRunner {
         &self,
         symbol_index: &SymbolIndex,
         profraws: &[PathBuf],
-    ) -> Result<Vec<PathBuf>> {
+    ) -> Result<Vec<Vec<PathBuf>>> {
         profraws
-            .iter()
+            .par_iter()
             .map(|profraw| {
-                let binary_id = self.show_binary_id(profraw)?;
-                find_debug_file(symbol_index, &binary_id)
-                    .context(anyhow!("failed to find binary file for {:?}", profraw,))
+                let binary_ids = self.show_binary_ids(profraw)?;
+                binary_ids
+                    .iter()
+                    .map(|binary_id| {
+                        find_debug_file(symbol_index, binary_id).context(anyhow!(
+                            "failed to find binary file for ID {} in {:?}",
+                            binary_id,
+                            profraw,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()
             })
             .collect()
     }
@@ -522,8 +591,11 @@ mod tests {
         let debug_file = test_dir.path().join("fo").join("obar.debug");
         File::create(&debug_file).unwrap();
 
+        let profraw = PathBuf::from("test.profraw");
         let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
-        profdata_cmd.add_mock_binary_ids(&["foobar"]);
+        let mut mocks = HashMap::new();
+        mocks.insert(profraw.clone(), vec!["foobar".to_string()]);
+        profdata_cmd.add_mock_binary_ids(mocks);
 
         assert_eq!(
             profdata_cmd
@@ -538,10 +610,10 @@ mod tests {
                         gcs_flat: Vec::new(),
                         debuginfod: Vec::new(),
                     },
-                    &[PathBuf::new()], // profraws, actual values don't matter
+                    &[profraw],
                 )
                 .unwrap(),
-            vec![debug_file],
+            vec![vec![debug_file]],
         )
     }
 
@@ -557,40 +629,51 @@ mod tests {
         let debug_file2 = test_dir2.path().join("ba").join("rbaz.debug");
         File::create(&debug_file2).unwrap();
 
-        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
-        profdata_cmd.add_mock_binary_ids(&["foobar", "barbaz"]);
+        let profraw1 = PathBuf::from("test1.profraw");
+        let profraw2 = PathBuf::from("test2.profraw");
 
-        assert_eq!(
-            profdata_cmd
-                .find_binaries(
-                    &SymbolIndex {
-                        build_id_dirs: vec![
-                            BuildIdDir {
-                                path: test_dir1.path().to_str().unwrap().to_string(),
-                                build_dir: None,
-                            },
-                            BuildIdDir {
-                                path: test_dir2.path().to_str().unwrap().to_string(),
-                                build_dir: None,
-                            },
-                        ],
-                        includes: Vec::new(),
-                        ids_txts: Vec::new(),
-                        gcs_flat: Vec::new(),
-                        debuginfod: Vec::new(),
-                    },
-                    &[PathBuf::new(), PathBuf::new()], // profraws, actual values don't matter
-                )
-                .unwrap(),
-            vec![debug_file1, debug_file2],
-        )
+        let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
+        let mut mocks = HashMap::new();
+        mocks.insert(profraw1.clone(), vec!["foobar".to_string()]);
+        mocks.insert(profraw2.clone(), vec!["barbaz".to_string()]);
+        profdata_cmd.add_mock_binary_ids(mocks);
+
+        let results = profdata_cmd
+            .find_binaries(
+                &SymbolIndex {
+                    build_id_dirs: vec![
+                        BuildIdDir {
+                            path: test_dir1.path().to_str().unwrap().to_string(),
+                            build_dir: None,
+                        },
+                        BuildIdDir {
+                            path: test_dir2.path().to_str().unwrap().to_string(),
+                            build_dir: None,
+                        },
+                    ],
+                    includes: Vec::new(),
+                    ids_txts: Vec::new(),
+                    gcs_flat: Vec::new(),
+                    debuginfod: Vec::new(),
+                },
+                &[profraw1, profraw2],
+            )
+            .unwrap();
+
+        // Use Set for comparison since par_iter order is non-deterministic
+        let results_flat: HashSet<_> = results.into_iter().flatten().collect();
+        let expected_flat: HashSet<_> = vec![debug_file1, debug_file2].into_iter().collect();
+        assert_eq!(results_flat, expected_flat);
     }
 
     #[test]
     fn test_find_binaries_no_matches() {
         let test_dir = TempDir::new().unwrap();
+        let profraw = PathBuf::from("test.profraw");
         let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
-        profdata_cmd.add_mock_binary_ids(&["foobar"]);
+        let mut mocks = HashMap::new();
+        mocks.insert(profraw.clone(), vec!["foobar".to_string()]);
+        profdata_cmd.add_mock_binary_ids(mocks);
 
         assert!(
             profdata_cmd
@@ -605,7 +688,7 @@ mod tests {
                         gcs_flat: Vec::new(),
                         debuginfod: Vec::new(),
                     },
-                    &[PathBuf::new()], // profraws, actual values don't matter
+                    &[profraw],
                 )
                 .is_err()
         )
@@ -634,8 +717,11 @@ mod tests {
 
     #[test]
     fn test_find_binaries_id_too_short() {
+        let profraw = PathBuf::from("test.profraw");
         let profdata_cmd = ProfdataRunner::new(PathBuf::new(), VerboseMode::NotVerbose);
-        profdata_cmd.add_mock_binary_ids(&["a"]);
+        let mut mocks = HashMap::new();
+        mocks.insert(profraw.clone(), vec!["a".to_string()]);
+        profdata_cmd.add_mock_binary_ids(mocks);
 
         assert!(
             profdata_cmd
@@ -647,7 +733,7 @@ mod tests {
                         gcs_flat: Vec::new(),
                         debuginfod: Vec::new(),
                     },
-                    &[PathBuf::new()], // profraws, actual values don't matter
+                    &[profraw],
                 )
                 .is_err()
         )
