@@ -23,7 +23,12 @@ const DEFAULT_NETSTACK: NetstackVersion = NetstackVersion::Netstack3;
 
 /// The number of times a device is allowed to fail to migrate to Netstack3,
 /// before abandoning migration attempts during the `CURRENT_EPOCH`.
-const MAX_ROLLBACKS_PER_EPOCH: u8 = 3;
+///
+/// Based on the timing parameters in [rollback], a full rollback cycle takes
+/// about 2 days. Limiting the number of rollbacks to 180 should allow migration
+/// attempts for approximately 1 year. In a pragmatic sense, this effectively
+/// disables the "abandon migration" logic.
+const MAX_ROLLBACKS_PER_EPOCH: u8 = 180;
 
 /// The "epoch" is an arbitrary interval used to limit the number of attempts a
 /// device will make to migrate to Netstack3. Once the epoch increases, the
