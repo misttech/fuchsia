@@ -106,7 +106,7 @@ void RestrictedReader(zx_vaddr_t cs_addr, zx_vaddr_t stack_addr, zx_status_t* st
   }
 
   zx::vmo restricted;
-  *status = zx_restricted_bind_state(0, restricted.reset_and_get_address());
+  *status = zx_restricted_bind_state(0, restricted.reset_and_get_address(), nullptr);
   if (*status != ZX_OK) {
     return;
   }

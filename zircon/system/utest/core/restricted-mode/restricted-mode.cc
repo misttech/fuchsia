@@ -91,21 +91,23 @@ TEST_P(RestrictedMode, BindState) {
 
   // Bad options.
   zx::vmo v_invalid;
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx_restricted_bind_state(1, v_invalid.reset_and_get_address()));
-  ASSERT_FALSE(v_invalid.is_valid());
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, zx_restricted_bind_state(2, v_invalid.reset_and_get_address()));
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx_restricted_bind_state(1, v_invalid.reset_and_get_address(), nullptr));
   ASSERT_FALSE(v_invalid.is_valid());
   ASSERT_EQ(ZX_ERR_INVALID_ARGS,
-            zx_restricted_bind_state(0xffffffff, v_invalid.reset_and_get_address()));
+            zx_restricted_bind_state(2, v_invalid.reset_and_get_address(), nullptr));
+  ASSERT_FALSE(v_invalid.is_valid());
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            zx_restricted_bind_state(0xffffffff, v_invalid.reset_and_get_address(), nullptr));
   ASSERT_FALSE(v_invalid.is_valid());
 
   // Happy case.
   zx::vmo vmo;
-  ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address()));
+  ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address(), nullptr));
   auto cleanup = fit::defer([]() { EXPECT_OK(zx_restricted_unbind_state(0)); });
 
   // Binding again is fine and replaces any previously bound VMO.
-  ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address()));
+  ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address(), nullptr));
   ASSERT_TRUE(vmo.is_valid());
 
   // Map the vmo and verify the state follows.
@@ -131,6 +133,18 @@ TEST_P(RestrictedMode, BindState) {
 
   // Teardown the mapping.
   zx::vmar::root_self()->unmap(ptr, zx_system_get_page_size());
+}
+
+TEST_P(RestrictedMode, BindStateUnsupported) {
+  NEEDS_NEXT_SKIP(zx_restricted_bind_state);
+
+  zx::vmo vmo;
+  zx_exception_report_t report;
+
+  // TODO(https://fxbug.dev/489515410): Providing a non-null pointer for the exception report is
+  // currently unsupported.
+  ASSERT_EQ(ZX_ERR_NOT_SUPPORTED,
+            zx_restricted_bind_state(0, vmo.reset_and_get_address(), &report));
 }
 
 TEST_P(RestrictedMode, UnbindState) {

@@ -33,8 +33,10 @@ _ZX_SYSCALL_DECL(process_create_shared, zx_status_t, /* no attributes */, 6,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* proc_handle,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* restricted_vmar_handle))
 
-_ZX_SYSCALL_DECL(restricted_bind_state, zx_status_t, /* no attributes */, 2, (options, out),
-                 (uint32_t options, _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out))
+_ZX_SYSCALL_DECL(restricted_bind_state, zx_status_t, /* no attributes */, 3,
+                 (options, out, out_exception),
+                 (uint32_t options, _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out,
+                  zx_exception_report_t* out_exception))
 
 _ZX_SYSCALL_DECL(restricted_enter, zx_status_t, /* no attributes */, 3,
                  (options, vector_table_ptr, context),

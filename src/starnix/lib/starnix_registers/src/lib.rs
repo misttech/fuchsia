@@ -46,7 +46,7 @@ impl RestrictedState {
         let mut out_vmo_handle = 0;
         // SAFETY: `out_vmo_handle` is a valid pointer to a handle on the stack.
         let status = zx::Status::from_raw(unsafe {
-            zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle)
+            zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle, std::ptr::null_mut())
         });
         match { status } {
             zx::Status::OK => {

@@ -25,7 +25,7 @@ void RunRestrictedMode(zx_vaddr_t cs_addr, zx_vaddr_t stack_addr,
                        std::optional<zx_excp_type_t> expected_exception, zx_status_t* result) {
   // Set up the restricted state.
   zx::vmo restricted;
-  *result = zx_restricted_bind_state(0, restricted.reset_and_get_address());
+  *result = zx_restricted_bind_state(0, restricted.reset_and_get_address(), nullptr);
   if (*result != ZX_OK) {
     return;
   }

@@ -182,7 +182,7 @@ class RestrictedState {
   RestrictedState(uintptr_t pc) {
     // Create a VMO and bind it to the current thread.
     zx::vmo vmo;
-    ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address()));
+    ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address(), nullptr));
 
 #if defined(__x86_64__)
     state_.ip = pc;

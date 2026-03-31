@@ -68,7 +68,7 @@ bool Machine::Initialize(uint64_t reserved_stack_size) {
   }
 
   if (zx_restricted_bind_state == 0 ||
-      ZX_OK != zx_restricted_bind_state(0, state_vmo_.reset_and_get_address())) {
+      ZX_OK != zx_restricted_bind_state(0, state_vmo_.reset_and_get_address(), nullptr)) {
     RM_LOG(ERROR) << "Initialize: failed to reset restricted state";
     return false;
   }

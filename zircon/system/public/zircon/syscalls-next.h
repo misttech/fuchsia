@@ -65,9 +65,10 @@ typedef uint64_t zx_restricted_reason_t;
 // Reason codes provided to normal mode when a restricted process traps
 // back to normal mode.
 // clang-format off
-#define ZX_RESTRICTED_REASON_SYSCALL   ((zx_restricted_reason_t)0)
-#define ZX_RESTRICTED_REASON_EXCEPTION ((zx_restricted_reason_t)1)
-#define ZX_RESTRICTED_REASON_KICK      ((zx_restricted_reason_t)2)
+#define ZX_RESTRICTED_REASON_SYSCALL        ((zx_restricted_reason_t)0)
+#define ZX_RESTRICTED_REASON_EXCEPTION      ((zx_restricted_reason_t)1)
+#define ZX_RESTRICTED_REASON_KICK           ((zx_restricted_reason_t)2)
+#define ZX_RESTRICTED_REASON_EXCEPTION_LOST ((zx_restricted_reason_t)3)
 // clang-format on
 
 // Structure to read and write restricted mode state

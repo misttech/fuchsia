@@ -34,12 +34,18 @@ zx_status_t sys_restricted_enter(uint32_t options, uintptr_t vector_table_ptr, u
   return RestrictedEnter(vector_table_ptr, context);
 }
 
-zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out) {
+zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out,
+                                      user_out_ptr<zx_exception_report_t> out_exception) {
   LTRACEF("options 0x%x\n", options);
 
   // No options allowed.
   if (options != 0) {
     return ZX_ERR_INVALID_ARGS;
+  }
+
+  // TODO(https://fxbug.dev/489515410): We do not yet support writing out the exception report.
+  if (out_exception) {
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
   // Are we allowed to create a VMO?

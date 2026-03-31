@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 library zx;
 
+/// ExceptionReport is a stand-in for zx_exception_report_t.
+type ExceptionReport = struct {};
+
 @transport("Syscall")
 closed protocol Restricted {
     /// ## Summary
@@ -105,7 +108,9 @@ closed protocol Restricted {
     /// ```c
     /// #include <zircon/syscalls-next.h>
     ///
-    /// zx_status_t zx_restricted_bind_state(uint32_t options, zx_handle_t* out_vmo);
+    /// zx_status_t zx_restricted_bind_state(uint32_t options,
+    ///                                      zx_handle_t* out_vmo,
+    ///                                      zx_exception_report_t* out_exception);
     /// ```
     ///
     /// ## Description
@@ -140,13 +145,22 @@ closed protocol Restricted {
     /// will be loaded and execution will resume accordingly.  Upon leaving restricted
     /// mode, the thread's restricted state will be saved at offset 0 of VMO.
     ///
+    /// *out_exception* is an optional pointer to a `zx_exception_report_t`.
+    /// When `out_exception` is null, an exception return will result in
+    /// `ZX_RESTRICTED_REASON_EXCEPTION` and the mode state VMO will contain a
+    /// `zx_restricted_exception_t`. When `out_exception` is non-null, the return
+    /// code is the same, but the mode state will contain a `zx_restricted_state_t`
+    /// and the `zx_exception_report_t` will be copied to `out_exception`. If the
+    /// copy fails, the reason code will be `ZX_RESTRICTED_REASON_EXCEPTION_LOST` and
+    /// the exception report will be lost.
+    ///
     /// *options* must be zero.
     ///
     /// Note: If a handle to the newly created VMO cannot be returned because `out_vmo`
     /// is an invalid pointer, the VMO may still be bound to the thread even when the
     /// call returns `ZX_ERR_INVALID_ARGS`.  A caller can recover from this state by
     /// calling [`zx_restricted_unbind_state()`] or calling
-    /// [zx_restricted_bind_state()`] again with a valid `out_vmo`.
+    /// [`zx_restricted_bind_state()`] again with a valid `out_vmo`.
     ///
     /// ## Rights
     ///
@@ -168,6 +182,7 @@ closed protocol Restricted {
     /// - [`zx_restricted_unbind_state()`]
     ///
     /// [`zx_restricted_enter()`]: restricted_enter.md
+    /// [`zx_restricted_bind_state()`]: restricted_bind_state.md
     /// [`zx_restricted_unbind_state()`]: restricted_unbind_state.md
     /// [`zx_vmo_create()`]: vmo_create.md
     /// [`zx_vmo_read()`]: vmo_read.md
@@ -177,6 +192,7 @@ closed protocol Restricted {
         options uint32;
     }) -> (resource struct {
         out Handle:VMO;
+        out_exception ExceptionReport;
     }) error Status;
 
     /// ## Summary
