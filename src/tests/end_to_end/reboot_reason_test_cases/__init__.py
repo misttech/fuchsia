@@ -7,29 +7,29 @@ import pathlib
 from typing import Callable
 
 import fuchsia_base_test
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class RebootReasonTestCases(fuchsia_base_test.FuchsiaTestCases):
+class RebootReasonTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
     """Test cases for reboot reasons."""
 
-    dut: FuchsiaDevice
+    dut: AsyncFuchsiaDevice
 
-    def setup_test(
+    async def setup_test(
         self,
-        fuchsia_devices: list[FuchsiaDevice],
+        fuchsia_devices: list[AsyncFuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
-        super().setup_test(fuchsia_devices, output_file_path)
+        await super().setup_test(fuchsia_devices, output_file_path)
         self.fuchsia_devices = fuchsia_devices
         self.output_file_path = output_file_path
         self.dut = self.fuchsia_devices[0]
 
-    def test_reboot_reason(self) -> None:
+    async def test_reboot_reason(self) -> None:
         boot_id_before_reboot_file = self.output_file_path(
             "boot_id_before_reboot.txt"
         )
@@ -51,7 +51,7 @@ class RebootReasonTestCases(fuchsia_base_test.FuchsiaTestCases):
         # Under the hood, this makes a FIDL call over
         # fuchsia.hardware.power.statecontrol/Admin::Shutdown() with shutdown reason
         # DEVELOPER_REQUEST.
-        self.dut.reboot()
+        await self.dut.reboot()
         _LOGGER.info("[test_reboot_reason] Device has rebooted successfully")
 
         self.dut.ffx.run(
@@ -68,7 +68,7 @@ class RebootReasonTestCases(fuchsia_base_test.FuchsiaTestCases):
         # instances of true bugs where something goes wrong during shutdown. To help with
         # https://fxbug.dev/432864757, we want a different message on failure depending on what
         # the reason is to better inform whoemever is looking at the test failure.
-        last_reboot_reason = self.dut.last_reboot_reason
+        last_reboot_reason = await self.dut.last_reboot_reason()
         if last_reboot_reason == "ROOT_JOB_TERMINATION":
             asserts.assert_equal(
                 last_reboot_reason,
