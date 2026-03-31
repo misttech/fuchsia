@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.overnet/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/loop.h>
@@ -22,11 +22,8 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <array>
 #include <memory>
 #include <optional>
-#include <queue>
-#include <thread>
 #include <variant>
 
 #include <bind/fuchsia/google/platform/usb/cpp/bind.h>
@@ -36,8 +33,6 @@
 #include <usb/usb-request.h>
 #include <usb/usb.h>
 
-#include "fbl/auto_lock.h"
-
 namespace fdf {
 using namespace fuchsia_driver_framework;
 }
@@ -46,11 +41,11 @@ class OvernetUsb;
 
 class OvernetUsb : public fdf::DriverBase,
                    public fidl::WireServer<fuchsia_hardware_overnet::Usb>,
-                   public ddk::UsbFunctionInterfaceProtocol<OvernetUsb> {
+                   public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   explicit OvernetUsb(fdf::DriverStartArgs start_args,
                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("overnet-usb", std::move(start_args), std::move(driver_dispatcher)) {}
+      : fdf::DriverBase("overnet-usb", std::move(start_args), std::move(driver_dispatcher)) {}
 
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter Completer) override;
@@ -58,23 +53,28 @@ class OvernetUsb : public fdf::DriverBase,
   void SetCallback(fuchsia_hardware_overnet::wire::UsbSetCallbackRequest* request,
                    SetCallbackCompleter::Sync& completer) override;
 
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer, size_t descriptors_size,
-                                          size_t* out_descriptors_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                          size_t write_size, uint8_t* out_read_buffer,
-                                          size_t read_size, size_t* out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
+  // UsbFunctionInterface methods.
+  void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
+  void SetConfigured(SetConfiguredRequest& request,
+                     SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
+
+  // Endpoint address of our IN endpoint.
+  uint8_t BulkInAddress() const { return descriptors_.in_ep.b_endpoint_address; }
+  // Endpoint address of our OUT endpoint.
+  uint8_t BulkOutAddress() const { return descriptors_.out_ep.b_endpoint_address; }
 
  private:
   // Configures the device's endpoints and sets the device state to Running, if it's in the
   // Unconfigured state.
-  zx_status_t ConfigureEndpoints() __TA_EXCLUDES(lock_);
+  zx_status_t ConfigureEndpoints();
 
   // Disables the device's endpoints, cancels any outstanding requests, and moves the device
   // into the Unconfigured state if it's not already there.
-  zx_status_t UnconfigureEndpoints() __TA_EXCLUDES(lock_);
+  zx_status_t UnconfigureEndpoints();
 
   // Called whenever the socket from RCS is readable. Reads data out of the socket and places it
   // into bulk IN requests.
@@ -223,13 +223,13 @@ class OvernetUsb : public fdf::DriverBase,
   };
 
   // Whether we are in a state that is actively receiving data.
-  bool Online() const __TA_REQUIRES(lock_) {
+  bool Online() const {
     return !std::holds_alternative<Unconfigured>(state_) &&
            !std::holds_alternative<ShuttingDown>(state_);
   }
 
   // Transition from Running to Unconfigured, usually due to a connection error.
-  void ResetState() __TA_REQUIRES(lock_) {
+  void ResetState() {
     if (std::holds_alternative<Running>(state_)) {
       state_ = Unconfigured();
     }
@@ -239,18 +239,18 @@ class OvernetUsb : public fdf::DriverBase,
   bool HasPendingRequests() { return !bulk_in_ep_.RequestsFull() || !bulk_out_ep_.RequestsFull(); }
 
   // Get an IN request ready for use.
-  std::optional<usb::FidlRequest> PrepareTx() __TA_REQUIRES(lock_);
+  std::optional<usb::FidlRequest> PrepareTx();
 
   // Handle when RCS connects to us and is ready to receive a socket, or when we have a socket and
   // need to hand it to RCS.
-  void HandleSocketAvailable() __TA_REQUIRES(lock_);
+  void HandleSocketAvailable();
 
   // Transition to the ShuttingDown state and begin cleaning up driver resources (cancel and wait
   // for all pending transactions).
   void Shutdown(fit::function<void()> callback);
 
   // Finishes shutting down by calling the shutdown callback.
-  void ShutdownComplete() __TA_REQUIRES(lock_);
+  void ShutdownComplete();
 
   // Handle the completion of a single outstanding USB read request.
   void ReadComplete(fuchsia_hardware_usb_endpoint::Completion completion);
@@ -261,18 +261,12 @@ class OvernetUsb : public fdf::DriverBase,
   // Handle the completion of a batch of USB write requests.
   void WriteBatchComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
 
-  // Endpoint address of our IN endpoint.
-  uint8_t BulkInAddress() const { return descriptors_.in_ep.b_endpoint_address; }
-  // Endpoint address of our OUT endpoint.
-  uint8_t BulkOutAddress() const { return descriptors_.out_ep.b_endpoint_address; }
-
   // Start watching our RCS socket for readability and call HandleSocketReadable when it is
   // readable.
   void ProcessReadsFromSocket() {
-    async::PostTask(dispatcher_, [this]() {
-      fbl::AutoLock lock(&lock_);
+    async::PostTask(dispatcher(), [this]() {
       if (auto state = std::get_if<Running>(&state_)) {
-        auto status = state->read_waiter()->Begin(dispatcher_);
+        auto status = state->read_waiter()->Begin(dispatcher());
         if (status != ZX_OK && status != ZX_ERR_ALREADY_EXISTS) {
           FDF_SLOG(ERROR, "Failed to wait on socket", KV("status", zx_status_get_string(status)));
           ResetState();
@@ -284,10 +278,9 @@ class OvernetUsb : public fdf::DriverBase,
   // Start watching our RCS socket for writability and call HandleSocketReadable when it is
   // writable.
   void ProcessWritesToSocket() {
-    async::PostTask(dispatcher_, [this]() {
-      fbl::AutoLock lock(&lock_);
+    async::PostTask(dispatcher(), [this]() {
       if (auto state = std::get_if<Running>(&state_)) {
-        auto status = state->write_waiter()->Begin(dispatcher_);
+        auto status = state->write_waiter()->Begin(dispatcher());
         if (status != ZX_OK && status != ZX_ERR_ALREADY_EXISTS) {
           FDF_SLOG(ERROR, "Failed to wait on socket", KV("status", zx_status_get_string(status)));
           ResetState();
@@ -305,16 +298,15 @@ class OvernetUsb : public fdf::DriverBase,
   // USB max packet size for our interface descriptor.
   static constexpr uint16_t kMaxPacketSize = 512;
 
-  std::optional<Callback> callback_ __TA_GUARDED(lock_);
-  std::optional<zx::socket> peer_socket_ __TA_GUARDED(lock_);
+  std::optional<Callback> callback_;
+  std::optional<zx::socket> peer_socket_;
 
   fidl::SyncClient<fuchsia_driver_framework::NodeController> node_controller_;
   fidl::ServerBindingGroup<fuchsia_hardware_overnet::Usb> device_binding_group_;
 
-  ddk::UsbFunctionProtocolClient function_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
-  fbl::Mutex lock_;
-  State state_ __TA_GUARDED(lock_) = Unconfigured();
+  State state_ = Unconfigured();
 
   usb::EndpointClient<OvernetUsb> bulk_out_ep_{usb::EndpointType::BULK, this,
                                                std::mem_fn(&OvernetUsb::ReadBatchComplete)};

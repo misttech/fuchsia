@@ -26,7 +26,6 @@ source_set("overnet-usb-lib") {
   ]
   public_deps = [
     ":overnet_usb_bind",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.hardware.overnet:fuchsia.hardware.overnet_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
@@ -69,7 +68,6 @@ test("overnet-usb-test-bin") {
   sources = [ "overnet_usb_test.cc" ]
   deps = [
     ":overnet-usb-lib",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp_mock",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
