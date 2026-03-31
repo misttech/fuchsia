@@ -52,7 +52,9 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown",
     "//sdk/fidl/fuchsia.url:fuchsia.url",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211",
+    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl",
     "//zircon/vdso/zx:zx",
     # keep-sorted: end
 ]
@@ -60,6 +62,8 @@ _partner_idk_stable_fidl_libraries_targets_list = [
 _partner_idk_unstable_fidl_libraries_targets_list = [
     # keep-sorted: begin
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo",
+    "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac",
+    "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats",
     # keep-sorted: end
 ]
 
@@ -142,7 +146,9 @@ filegroup(
         "//sdk/fidl/fuchsia.ui.views:__pkg__",
         "//sdk/fidl/fuchsia.unknown:__pkg__",
         "//sdk/fidl/fuchsia.url:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.common:__pkg__",
         "//sdk/fidl/fuchsia.wlan.ieee80211:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.phyimpl:__pkg__",
         "//zircon/vdso/zx:__pkg__",
     ],
 )
@@ -152,6 +158,8 @@ filegroup(
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/fidl/fuchsia.hardware.spi.businfo:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.fullmac:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.stats:__pkg__",
     ],
 )
 
