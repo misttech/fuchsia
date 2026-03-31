@@ -295,6 +295,7 @@ func initializeDevice(
 		systemImage,
 		currentBootSlot,
 		c.checkABR,
+		"",
 	); err != nil {
 		return nil, fmt.Errorf("failed to validate during initialization: %w", err)
 	}
@@ -428,6 +429,7 @@ func otaToPackage(
 		systemImage,
 		currentBootSlot,
 		c.checkABR,
+		"SystemUpdate",
 	); err != nil {
 		return fmt.Errorf("failed to validate after OTA: %w", err)
 	}
