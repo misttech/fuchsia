@@ -21,6 +21,10 @@ void *calloc(size_t, size_t) __NOEXCEPT;
 
 void free(void *) __NOEXCEPT;
 
+void free_aligned_sized(void *, size_t, size_t) __NOEXCEPT;
+
+void free_sized(void *, size_t) __NOEXCEPT;
+
 void *malloc(size_t) __NOEXCEPT;
 
 size_t malloc_usable_size(void *) __NOEXCEPT;
