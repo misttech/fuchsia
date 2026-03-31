@@ -576,3 +576,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0278_restartable_sequences.md
   - title: "RFC-0279: Support for product-specific blob formats"
     path: /docs/contribute/governance/rfcs/0279_support_for_product-specific_blob_formats.md
+  - title: "RFC-0280: VMO reference and slice attribution"
+    path: /docs/contribute/governance/rfcs/0280_vmo_reference_and_slice_attribution.md

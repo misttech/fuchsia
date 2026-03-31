@@ -3678,3 +3678,15 @@
   ]
   submitted: '2026-02-02'
   reviewed: '2026-03-10'
+- name: 'RFC-0280'
+  title: 'VMO reference and slice attribution'
+  short_description: 'Proposes a change in memory attribution for reference and slice children of VMOs.'
+  authors: ['sagebarreda@google.com']
+  file: '0280_vmo_reference_and_slice_attribution.md'
+  area: ['Kernel']
+  issue: ['485996618']
+  gerrit_change_id: ['1511916']
+  status: 'Accepted'
+  reviewers: ['etiennej@google.com', 'rashaeqbal@google.com', 'jamesr@google.com']
+  submitted: '2026-03-31'
+  reviewed: '2026-03-31'
