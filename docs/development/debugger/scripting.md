@@ -71,6 +71,71 @@ If you don't care about the output of a command, you don't need to specify any
 matching lines. You can write the next `[zxdb]` command, and the previous
 command will be allowed to finish immediately.
 
+If the commands have any dependencies, this might lead to flaky results. For example:
+
+```zxdb
+[zxdb] b $main
+Created Breakpoint 1 @ $main
+[zxdb] run-component fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/async_rust_multithreaded.cm
+Launched Process 1 state=Running koid=?? name=async_rust_multithreaded.cm component=async_rust_multithreaded.cm
+🛑
+[zxdb] until foo
+# This might lead to flaky results
+[zxdb] thread
+```
+
+The result from `thread` could be either
+
+```zxdb
+ ▶ 7 #[fasync::run(2)]
+   8 async fn main() {
+   9     let _task_a = fasync::Task::spawn(async {});
+🛑 on bp 1 async_rust_multithreaded::main() • async_rust_multithreaded.rs:7
+[zxdb] until foo
+[zxdb] thread
+  # state               koid name
+▶ 1 Blocked (Futex) 24769196 initial-thread
+  2 Blocked (Port)  24769684 executor_worker
+  3 Blocked (Port)  24769691 executor_worker
+   19 }
+   20
+ ▶ 21 async fn foo(i: u64) {
+   22     fasync::Timer::new(std::time::Duration::from_secs(i)).await;
+   23 }
+```
+
+or
+
+```zxdb
+ ▶ 7 #[fasync::run(2)]
+   8 async fn main() {
+   9     let _task_a = fasync::Task::spawn(async {});
+🛑 on bp 1 async_rust_multithreaded::main() • async_rust_multithreaded.rs:7
+[zxdb] until foo
+   19 }
+   20
+ ▶ 21 async fn foo(i: u64) {
+   22     fasync::Timer::new(std::time::Duration::from_secs(i)).await;
+   23 }
+🛑 thread 2 async_rust_multithreaded::foo(u64) • async_rust_multithreaded.rs:21
+[zxdb] thread
+  # state                   koid name
+  1 Suspended           24775467 initial-thread
+▶ 2 Blocked (Exception) 24775973 executor_worker
+  3 Suspended           24775980 executor_worker
+```
+
+You can reproduce it by manually entering the commands very fast or use the script runner.
+
+It's because the `until` and `thread` commands are running concurrently.
+To avoid flakiness, it's recommended to use a pause symbol (🛑) as an expected output. For example:
+
+```zxdb
+[zxdb] until foo
+🛑
+[zxdb] thread
+```
+
 ### Wildcards
 
 If you only want to match parts of a line, or if a line contains unpredictable

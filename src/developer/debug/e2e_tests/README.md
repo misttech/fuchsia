@@ -71,4 +71,24 @@ example, to disable the `inline_frames.script` test, rename the file to
 `DISABLED_inline_frames.script` with `git mv`. This is often preferable to disabling the entire test
 suite to maintain maximal coverage while individual failures are resolved.
 
+
+## Pitfalls
+
+This section lists common pitfalls when writing an e2e test using the `.script` files
+For general scripting rules, see [scripting.md][scripting.md]
+
+### Don't use line number in your command
+Tip: Try breaking on a function instead.
+
+The following script works on a local machine, but fails in a CQ run:
+
+```zxdb
+[zxdb] until 9
+▶  9
+Source file ./../../src/developer/debug/e2e_tests/inferiors/async_rust_multithreaded.rs not found. You might want to adjust the source file remap setting. See "get source-map".
+```
+
+This is because the source file provider relies on the source file to display line-related information.
+
 [ffx-isolate]: /docs/development/tools/ffx/development/integration_testing.md
+[scripting.md]:/docs/development/debugger/scripting.md
