@@ -6,6 +6,16 @@ Tests for SAR settings.
 """
 import logging
 
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,7 +28,12 @@ from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
     AP_SSID_LENGTH_2G,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from core_testing import base_test
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
@@ -49,13 +64,32 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
             raise signals.TestAbortClass(
                 "No access point configured for this test."
             )
-        if isinstance(self.test_kit.access_point, AccessPoint):
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            self.test_kit.access_point.configure_wifi(
+                AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=DEFAULT_2G_CHANNEL,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    security=Security.NONE,
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_2G)
+        elif isinstance(self.test_kit.access_point, AccessPoint):
             setup_ap(
                 access_point=self.test_kit.access_point,
                 profile_name="whirlwind",
                 channel=AP_DEFAULT_CHANNEL_2G,
                 ssid=ssid,
-                security=Security(security_mode=SecurityMode.OPEN),
+                security=DeprecatedSecurity(
+                    security_mode=DeprecatedSecurityMode.OPEN
+                ),
             )
 
         device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
