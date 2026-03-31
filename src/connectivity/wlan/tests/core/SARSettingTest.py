@@ -13,7 +13,7 @@ import fidl_fuchsia_wlan_common_security as fidl_security
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fidl_fuchsia_wlan_internal as fidl_internal
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
     AP_SSID_LENGTH_2G,
@@ -45,13 +45,18 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
     ) -> None:
         # Setup AP
         ssid: str = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        setup_ap(
-            access_point=self.test_kit.access_point,
-            profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_2G,
-            ssid=ssid,
-            security=Security(security_mode=SecurityMode.OPEN),
-        )
+        if not self.test_kit.access_point:
+            raise signals.TestAbortClass(
+                "No access point configured for this test."
+            )
+        if isinstance(self.test_kit.access_point, AccessPoint):
+            setup_ap(
+                access_point=self.test_kit.access_point,
+                profile_name="whirlwind",
+                channel=AP_DEFAULT_CHANNEL_2G,
+                ssid=ssid,
+                security=Security(security_mode=SecurityMode.OPEN),
+            )
 
         device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
             self.fuchsia_device.fuchsia_controller.connect_device_proxy(

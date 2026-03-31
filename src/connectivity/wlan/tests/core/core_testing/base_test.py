@@ -23,6 +23,8 @@ from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
 from mobly.asserts import abort_class_if, assert_equal
 from mobly.records import TestResultRecord
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
 
 
 @dataclass(frozen=True)
@@ -130,14 +132,14 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
 
 @dataclass(frozen=True)
 class ClassTestKit:
-    access_point: AccessPoint
+    access_point: AccessPoint | OpenWrtAP
 
 
 @dataclass(frozen=True)
 class ConnectionTestKit(CoreTestKit):
-    access_point: AccessPoint
     iface_id: int
     client_sme: fw_sme.ClientSmeClient
+    access_point: AccessPoint | OpenWrtAP
 
 
 class ConnectionBaseTestClass(CoreBaseTestClass):
@@ -167,18 +169,34 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         )
 
         access_points = await self.register_controller(
-            controllers.access_point, min_number=1
+            controllers.access_point, required=False
+        )
+        openwrt_aps = await self.register_controller(
+            openwrt_access_point, required=False
         )
 
-        if access_points is None or len(access_points) == 0:
+        if openwrt_aps:
+            self.class_test_kit = ClassTestKit(access_point=openwrt_aps[0])
+        elif access_points:
+            self.class_test_kit = ClassTestKit(access_point=access_points[0])
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.class_test_kit = ClassTestKit(access_point=access_points[0])
-        self.class_test_kit.access_point.stop_all_aps()
+
+        if isinstance(self.class_test_kit.access_point, AccessPoint):
+            self.class_test_kit.access_point.stop_all_aps()
 
     async def setup_test(self) -> None:
         await super().setup_test()
 
-        self.class_test_kit.access_point.stop_all_aps()
+        if isinstance(self.class_test_kit.access_point, AccessPoint):
+            self.class_test_kit.access_point.stop_all_aps()
+
+        list_ifaces_response = (
+            await self._core_test_kit.device_monitor.list_ifaces()
+        )
+        logger.info(f"List ifaces response: {list_ifaces_response}")
+        for iface_id in list_ifaces_response.iface_list:
+            logger.info(f"We have iface: {iface_id}")
 
         create_iface_response = (
             (
@@ -216,8 +234,13 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
 
     async def teardown_test(self) -> None:
         # Maintain the invariant that every test starts with no access points.
-        self._connection_test_kit.access_point.download_ap_logs(self.log_path)
-        self._connection_test_kit.access_point.stop_all_aps()
+        if isinstance(self._connection_test_kit.access_point, AccessPoint):
+            self._connection_test_kit.access_point.download_ap_logs(
+                self.log_path
+            )
+            self._connection_test_kit.access_point.stop_all_aps()
+        elif isinstance(self._connection_test_kit.access_point, OpenWrtAP):
+            self._connection_test_kit.access_point.download_logs(self.log_path)
         (
             await self._connection_test_kit.client_sme.disconnect(
                 reason=fw_sme.UserDisconnectReason.UNKNOWN
@@ -229,7 +252,8 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         await super().on_fail(record)
 
         # Maintain the invariant that every test starts with no access points.
-        self.class_test_kit.access_point.stop_all_aps()
+        if isinstance(self.class_test_kit.access_point, AccessPoint):
+            self.class_test_kit.access_point.stop_all_aps()
 
     def ping(
         self,

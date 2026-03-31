@@ -16,7 +16,7 @@ import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
 import fidl_fuchsia_wlan_sme as fidl_sme
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_5G,
     AP_SSID_LENGTH_5G,
@@ -25,7 +25,7 @@ from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import read_ssid
-from mobly import test_runner
+from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 
 
@@ -42,14 +42,18 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
 
     async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
-
-        setup_ap(
-            access_point=self.test_kit.access_point,
-            profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_5G,
-            ssid=ssid,
-            security=Security(security_mode=SecurityMode.OPEN),
-        )
+        if not self.test_kit.access_point:
+            raise signals.TestAbortClass(
+                "No access point configured for this test."
+            )
+        if isinstance(self.test_kit.access_point, AccessPoint):
+            setup_ap(
+                access_point=self.test_kit.access_point,
+                profile_name="whirlwind",
+                channel=AP_DEFAULT_CHANNEL_5G,
+                ssid=ssid,
+                security=Security(security_mode=SecurityMode.OPEN),
+            )
 
         ps_resp = await self.test_kit.device_monitor.set_power_save_mode(
             req=fidl_device_svc.SetPowerSaveModeRequest(
@@ -142,16 +146,17 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         # This should take no more than 5 seconds, typically.
         await asyncio.sleep(10)
 
-        ap_test_interface = self.test_kit.access_point.wlan_5g
-        ap_address = utils.get_addr(
-            self.test_kit.access_point.ssh, ap_test_interface
-        )
-        try:
-            ping_result = self.ping(ap_address)
-            logger.info(f"Ping succeeded: {ping_result}")
-        except Exception as e:
-            logger.error(f"{e}")
-            fail(f"Ping failed.")
+        if isinstance(self.test_kit.access_point, AccessPoint):
+            ap_test_interface = self.test_kit.access_point.wlan_5g
+            ap_address = utils.get_addr(
+                self.test_kit.access_point.ssh, ap_test_interface
+            )
+            try:
+                ping_result = self.ping(ap_address)
+                logger.info(f"Ping succeeded: {ping_result}")
+            except Exception as e:
+                logger.error(f"{e}")
+                fail(f"Ping failed.")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ import fidl_fuchsia_wlan_common_security as fidl_security
 import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
 import fidl_fuchsia_wlan_sme as fidl_sme
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from core_testing import base_test
@@ -217,23 +217,28 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             security_2g = target_ap_security_config
             security_5g = origin_ap_security_config
 
+        if not self.test_kit.access_point:
+            raise signals.TestAbortClass(
+                "No access point configured for this test."
+            )
         # Setup 2.4GHz AP
-        setup_ap(
-            access_point=self.test_kit.access_point,
-            profile_name="whirlwind",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=ssid,
-            security=security_2g,
-        )
+        if isinstance(self.test_kit.access_point, AccessPoint):
+            setup_ap(
+                access_point=self.test_kit.access_point,
+                profile_name="whirlwind",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=ssid,
+                security=security_2g,
+            )
 
-        # Setup 5GHz AP
-        setup_ap(
-            access_point=self.test_kit.access_point,
-            profile_name="whirlwind",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=ssid,
-            security=security_5g,
-        )
+            # Setup 5GHz AP
+            setup_ap(
+                access_point=self.test_kit.access_point,
+                profile_name="whirlwind",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=ssid,
+                security=security_5g,
+            )
 
         return (ssid, origin_ap_security_config, target_ap_security_config)
 
@@ -241,6 +246,10 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
         self,
         test_params: TestParams,
     ) -> None:
+        if not self.test_kit.access_point:
+            raise signals.TestAbortClass(
+                "No access point configured for this test."
+            )
         # Setup APs using test params
         (
             ssid,
@@ -413,33 +422,41 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 )
 
             # Verify that DUT is actually associated (as seen from AP).
-            client_mac = await self._get_client_mac()
-            if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
-                origin_iface = self.test_kit.access_point.wlan_2g
-                target_iface = self.test_kit.access_point.wlan_5g
+            if isinstance(self.test_kit.access_point, AccessPoint):
+                client_mac = await self._get_client_mac()
+                if (
+                    test_params.origin_band
+                    == hostapd_constants.BandType.BAND_2G
+                ):
+                    origin_iface = self.test_kit.access_point.wlan_2g
+                    target_iface = self.test_kit.access_point.wlan_5g
+                else:
+                    origin_iface = self.test_kit.access_point.wlan_5g
+                    target_iface = self.test_kit.access_point.wlan_2g
+
+                if not self.test_kit.access_point.sta_authenticated(
+                    origin_iface, client_mac
+                ):
+                    raise signals.TestError(
+                        f"DUT is not authenticated on the {test_params.origin_band} band"
+                    )
+
+                if not self.test_kit.access_point.sta_associated(
+                    origin_iface, client_mac
+                ):
+                    raise signals.TestError(
+                        f"DUT is not associated on the {test_params.origin_band} band"
+                    )
+
+                if not self.test_kit.access_point.sta_authorized(
+                    origin_iface, client_mac
+                ):
+                    raise signals.TestError(
+                        f"DUT is not authorized on the {test_params.origin_band} band"
+                    )
             else:
-                origin_iface = self.test_kit.access_point.wlan_5g
-                target_iface = self.test_kit.access_point.wlan_2g
-
-            if not self.test_kit.access_point.sta_authenticated(
-                origin_iface, client_mac
-            ):
                 raise signals.TestError(
-                    f"DUT is not authenticated on the {test_params.origin_band} band"
-                )
-
-            if not self.test_kit.access_point.sta_associated(
-                origin_iface, client_mac
-            ):
-                raise signals.TestError(
-                    f"DUT is not associated on the {test_params.origin_band} band"
-                )
-
-            if not self.test_kit.access_point.sta_authorized(
-                origin_iface, client_mac
-            ):
-                raise signals.TestError(
-                    f"DUT is not authorized on the {test_params.origin_band} band"
+                    "No access point configured for this test."
                 )
 
             # Send a roam request for target BSS. From this point, failed assert calls are relevant
