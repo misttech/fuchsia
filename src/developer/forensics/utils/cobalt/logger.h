@@ -70,11 +70,12 @@ class Logger {
     LogEvent(Event(dimension, duration.to_usecs()));
   }
 
+  void LogEvent(Event event);
+
  private:
   void ConnectToLogger(
       ::fidl::InterfaceRequest<fuchsia::metrics::MetricEventLogger> logger_request);
   void RetryConnectingToLogger();
-  void LogEvent(Event event);
   void SendEvent(uint64_t event_id);
   void SendAllPendingEvents();
   uint64_t GetTimerDurationUSecs(uint64_t timer_id) const;

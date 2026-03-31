@@ -16,6 +16,7 @@
 #include "src/developer/forensics/crash_reports/report.h"
 #include "src/developer/forensics/crash_reports/snapshot.h"
 #include "src/developer/forensics/feedback/annotations/annotation_manager.h"
+#include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/timekeeper/clock.h"
 
@@ -43,7 +44,7 @@ class CrashServer {
   // code [200-203]) and the crash report id on the server, if the request was successful.
   //
   // Note: Only a single call to MakeRequest can be outstanding at a time.
-  virtual void MakeRequest(const Report& report, const Snapshot& snapshot,
+  virtual void MakeRequest(const Report& report, const Snapshot& snapshot, cobalt::Logger& cobalt,
                            ::fit::function<void(UploadStatus, std::string)> callback);
 
   // Combines the annotations from |report|, |snapshot|, and |annotation_manager| into annotations

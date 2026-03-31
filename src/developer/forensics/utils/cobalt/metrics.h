@@ -133,6 +133,39 @@ enum class SnapshotVersion {
   kV_03 = cobalt_registry::SnapshotSizeMigratedMetricDimensionVersion::V03,
 };
 
+enum class ReportUploadStatus : std::uint8_t {
+  kUnknown = cobalt_registry::ReportUploadDurationMetricDimensionUploadStatus::Unknown,
+  kSuccess = cobalt_registry::ReportUploadDurationMetricDimensionUploadStatus::Success,
+  kFailure = cobalt_registry::ReportUploadDurationMetricDimensionUploadStatus::Failure,
+  kThrottled = cobalt_registry::ReportUploadDurationMetricDimensionUploadStatus::Throttled,
+  kTimedOut = cobalt_registry::ReportUploadDurationMetricDimensionUploadStatus::TimedOut,
+};
+
+enum class ReportUploadSize : std::uint8_t {
+  kUnknown = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::Unknown,
+  kLessThan250 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan250,
+  kLessThan500 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan500,
+  kLessThan750 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan750,
+  kLessThan1000 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan1000,
+  kLessThan1250 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan1250,
+  kLessThan1500 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan1500,
+  kLessThan1750 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan1750,
+  kLessThan2000 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan2000,
+  kLessThan2250 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan2250,
+  kLessThan2500 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan2500,
+  kLessThan2750 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan2750,
+  kLessThan3000 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan3000,
+  kLessThan3250 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan3250,
+  kLessThan3500 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan3500,
+  kLessThan3750 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan3750,
+  kLessThan4000 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan4000,
+  kLessThan4250 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan4250,
+  kLessThan4500 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan4500,
+  kLessThan4750 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan4750,
+  kLessThan5000 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::LessThan5000,
+  kGreaterThan5000 = cobalt_registry::ReportUploadDurationMetricDimensionSizeKib::GreaterThan5000,
+};
+
 inline constexpr uint32_t MetricIDForEventCode(const SnapshotVersion version) {
   return cobalt_registry::kSnapshotSizeMigratedMetricId;
 }

@@ -49,10 +49,12 @@ class CrashServerTest : public UnitTestFixture {
  protected:
   CrashServerTest()
       : data_provider_server_(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>()),
-        tags_() {
+        tags_(),
+        cobalt_(dispatcher(), services(), &clock_) {
     annotation_manager_ = std::make_unique<feedback::AnnotationManager>(
         dispatcher(), std::set<std::string>({feedback::kSystemBootIdCurrentKey}),
         feedback::Annotations({{feedback::kSystemBootIdCurrentKey, ErrorOrString("some-value")}}));
+    SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
     RunLoopUntilIdle();
   }
 
@@ -65,6 +67,9 @@ class CrashServerTest : public UnitTestFixture {
   }
 
   CrashServer& crash_server() { return *crash_server_; }
+  cobalt::Logger& cobalt() { return cobalt_; }
+  timekeeper::TestClock& clock() { return clock_; }
+
   Snapshot GetSnapshot() {
     // The presence annotations below are returned in the Snapshot from SnapshotStore::GetSnapshot
     // whenever a snapshot is not persisted
@@ -86,6 +91,7 @@ class CrashServerTest : public UnitTestFixture {
   std::unique_ptr<stubs::DataProviderBase> data_provider_server_;
   LogTags tags_;
   timekeeper::TestClock clock_;
+  cobalt::Logger cobalt_;
   std::unique_ptr<CrashServer> crash_server_;
 };
 
@@ -97,7 +103,7 @@ TEST_F(CrashServerTest, UrlWithEncodedParameter) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
-      kReport, GetSnapshot(),
+      kReport, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -118,7 +124,7 @@ TEST_F(CrashServerTest, UrlWithEncodedParameter) {
                               /*minidump=*/std::nullopt};
 
   crash_server().MakeRequest(
-      another_report, GetSnapshot(),
+      another_report, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -132,7 +138,7 @@ TEST_F(CrashServerTest, Fails_OnError) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
-      kReport, GetSnapshot(),
+      kReport, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -145,7 +151,7 @@ TEST_F(CrashServerTest, Fails_OnTimeout) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
-      kReport, GetSnapshot(),
+      kReport, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -158,7 +164,7 @@ TEST_F(CrashServerTest, Fails_StatusCodeBelow200) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
-      kReport, GetSnapshot(),
+      kReport, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -171,7 +177,7 @@ TEST_F(CrashServerTest, Fails_StatusCodeAbove203) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
-      kReport, GetSnapshot(),
+      kReport, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -184,7 +190,7 @@ TEST_F(CrashServerTest, Fails_UploadThrottled) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   crash_server().MakeRequest(
-      kReport, GetSnapshot(),
+      kReport, GetSnapshot(), cobalt(),
       [&](CrashServer::UploadStatus status, std::string) { upload_status = status; });
   RunLoopUntilIdle();
 
@@ -202,7 +208,7 @@ TEST_F(CrashServerTest, ReadBodyOnSuccess) {
 
   std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
   std::optional<std::string> server_report_id;
-  crash_server().MakeRequest(kReport, GetSnapshot(),
+  crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),
                              [&](CrashServer::UploadStatus status, std::string response) {
                                upload_status = status;
                                server_report_id = response;
@@ -218,7 +224,7 @@ TEST_F(CrashServerTest, ReadBodyOnSuccess) {
   upload_status = std::nullopt;
   server_report_id = std::nullopt;
 
-  crash_server().MakeRequest(kReport, GetSnapshot(),
+  crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),
                              [&](CrashServer::UploadStatus status, std::string response) {
                                upload_status = status;
                                server_report_id = response;
@@ -234,7 +240,7 @@ TEST_F(CrashServerTest, ReadBodyOnSuccess) {
   upload_status = std::nullopt;
   server_report_id = std::nullopt;
 
-  crash_server().MakeRequest(kReport, GetSnapshot(),
+  crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),
                              [&](CrashServer::UploadStatus status, std::string response) {
                                upload_status = status;
                                server_report_id = response;
@@ -250,7 +256,7 @@ TEST_F(CrashServerTest, ReadBodyOnSuccess) {
   upload_status = std::nullopt;
   server_report_id = std::nullopt;
 
-  crash_server().MakeRequest(kReport, GetSnapshot(),
+  crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),
                              [&](CrashServer::UploadStatus status, std::string response) {
                                upload_status = status;
                                server_report_id = response;
@@ -326,6 +332,56 @@ TEST_F(CrashServerTest, PreparesAnnotationsNoCurrentBootId) {
                   Pair("key4", "value4"),
                   Pair(feedback::kDebugReportUploadUptime, "000d00h01m26s"),
               }));
+}
+
+TEST_F(CrashServerTest, LogsReportUploadDuration) {
+  SetUpLoader({stubs::LoaderResponse::WithBody(200, "body-200")});
+
+  std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
+  crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),
+                             [&](CrashServer::UploadStatus status,
+                                 const std::string& server_report_id) { upload_status = status; });
+
+  const zx::duration delta = zx::sec(5);
+  clock().SetBoot(clock().BootNow() + delta);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(upload_status.has_value());
+  EXPECT_EQ(*upload_status, CrashServer::UploadStatus::kSuccess);
+
+  EXPECT_THAT(
+      ReceivedCobaltEvents(),
+      UnorderedElementsAreArray({
+          cobalt::Event(cobalt::EventType::kInteger, cobalt_registry::kReportUploadDurationMetricId,
+                        {static_cast<uint32_t>(cobalt::ReportUploadStatus::kSuccess),
+                         static_cast<uint32_t>(cobalt::ReportUploadSize::kLessThan250)},
+                        delta.get()),
+      }));
+}
+
+TEST_F(CrashServerTest, LogsReportUploadDurationWithUploadStatus) {
+  SetUpLoader({stubs::LoaderResponse::WithError(fuchsia::net::http::Error::CONNECT)});
+
+  std::optional<CrashServer::UploadStatus> upload_status{std::nullopt};
+  crash_server().MakeRequest(kReport, GetSnapshot(), cobalt(),
+                             [&](CrashServer::UploadStatus status,
+                                 const std::string& server_report_id) { upload_status = status; });
+
+  const zx::duration delta = zx::sec(1);
+  clock().SetBoot(clock().BootNow() + delta);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(upload_status.has_value());
+  EXPECT_EQ(*upload_status, CrashServer::UploadStatus::kFailure);
+
+  EXPECT_THAT(
+      ReceivedCobaltEvents(),
+      UnorderedElementsAreArray({
+          cobalt::Event(cobalt::EventType::kInteger, cobalt_registry::kReportUploadDurationMetricId,
+                        {static_cast<uint32_t>(cobalt::ReportUploadStatus::kFailure),
+                         static_cast<uint32_t>(cobalt::ReportUploadSize::kLessThan250)},
+                        delta.get()),
+      }));
 }
 
 }  // namespace

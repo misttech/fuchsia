@@ -31,6 +31,7 @@ Queue::Queue(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirecto
              CrashServer* crash_server)
     : dispatcher_(dispatcher),
       services_(services),
+      info_context_(info_context),
       tags_(tags),
       report_store_(report_store),
       crash_server_(crash_server),
@@ -301,7 +302,7 @@ void Queue::Upload(const bool set_network_reachable_on_success) {
   }
 
   crash_server_->MakeRequest(
-      *active_report_->report, snapshot,
+      *active_report_->report, snapshot, info_context_->Cobalt(),
       [this, add_to_store, set_network_reachable_on_success](CrashServer::UploadStatus status,
                                                              std::string server_report_id) mutable {
         switch (status) {

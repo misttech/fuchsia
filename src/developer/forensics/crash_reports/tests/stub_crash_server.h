@@ -35,7 +35,7 @@ class StubCrashServer : public CrashServer {
 
   ~StubCrashServer();
 
-  void MakeRequest(const Report& report, const Snapshot& snapshot,
+  void MakeRequest(const Report& report, const Snapshot& snapshot, cobalt::Logger& cobalt,
                    ::fit::function<void(UploadStatus, std::string)> callback) override;
 
   bool HasPendingRequest() const override;

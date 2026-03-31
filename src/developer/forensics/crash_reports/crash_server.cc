@@ -18,6 +18,7 @@
 #include "src/developer/forensics/feedback/annotations/annotation_manager.h"
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
+#include "src/developer/forensics/utils/cobalt/metrics.h"
 #include "src/developer/forensics/utils/time.h"
 #include "src/lib/fsl/socket/blocking_drain.h"
 #include "src/lib/fsl/vmo/sized_vmo.h"
@@ -31,6 +32,85 @@
 namespace forensics {
 namespace crash_reports {
 namespace {
+
+cobalt::ReportUploadSize ToCobaltReportUploadSize(const uint64_t size_bytes) {
+  const uint64_t kib = size_bytes / 1024;
+  if (kib < 250) {
+    return cobalt::ReportUploadSize::kLessThan250;
+  }
+  if (kib < 500) {
+    return cobalt::ReportUploadSize::kLessThan500;
+  }
+  if (kib < 750) {
+    return cobalt::ReportUploadSize::kLessThan750;
+  }
+  if (kib < 1000) {
+    return cobalt::ReportUploadSize::kLessThan1000;
+  }
+  if (kib < 1250) {
+    return cobalt::ReportUploadSize::kLessThan1250;
+  }
+  if (kib < 1500) {
+    return cobalt::ReportUploadSize::kLessThan1500;
+  }
+  if (kib < 1750) {
+    return cobalt::ReportUploadSize::kLessThan1750;
+  }
+  if (kib < 2000) {
+    return cobalt::ReportUploadSize::kLessThan2000;
+  }
+  if (kib < 2250) {
+    return cobalt::ReportUploadSize::kLessThan2250;
+  }
+  if (kib < 2500) {
+    return cobalt::ReportUploadSize::kLessThan2500;
+  }
+  if (kib < 2750) {
+    return cobalt::ReportUploadSize::kLessThan2750;
+  }
+  if (kib < 3000) {
+    return cobalt::ReportUploadSize::kLessThan3000;
+  }
+  if (kib < 3250) {
+    return cobalt::ReportUploadSize::kLessThan3250;
+  }
+  if (kib < 3500) {
+    return cobalt::ReportUploadSize::kLessThan3500;
+  }
+  if (kib < 3750) {
+    return cobalt::ReportUploadSize::kLessThan3750;
+  }
+  if (kib < 4000) {
+    return cobalt::ReportUploadSize::kLessThan4000;
+  }
+  if (kib < 4250) {
+    return cobalt::ReportUploadSize::kLessThan4250;
+  }
+  if (kib < 4500) {
+    return cobalt::ReportUploadSize::kLessThan4500;
+  }
+  if (kib < 4750) {
+    return cobalt::ReportUploadSize::kLessThan4750;
+  }
+  if (kib < 5000) {
+    return cobalt::ReportUploadSize::kLessThan5000;
+  }
+
+  return cobalt::ReportUploadSize::kGreaterThan5000;
+}
+
+cobalt::ReportUploadStatus ToCobaltReportUploadStatus(const CrashServer::UploadStatus status) {
+  switch (status) {
+    case CrashServer::UploadStatus::kSuccess:
+      return cobalt::ReportUploadStatus::kSuccess;
+    case CrashServer::UploadStatus::kFailure:
+      return cobalt::ReportUploadStatus::kFailure;
+    case CrashServer::UploadStatus::kThrottled:
+      return cobalt::ReportUploadStatus::kThrottled;
+    case CrashServer::UploadStatus::kTimedOut:
+      return cobalt::ReportUploadStatus::kTimedOut;
+  }
+}
 
 // Builds a fuchsia::net::http::Request.
 std::optional<fuchsia::net::http::Request> BuildRequest(const std::string_view method,
@@ -104,6 +184,7 @@ CrashServer::CrashServer(async_dispatcher_t* dispatcher,
 }
 
 void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
+                              cobalt::Logger& cobalt,
                               ::fit::function<void(UploadStatus, std::string)> callback) {
   // Make sure a call to fuchsia.net.http.Loader/Fetch isn't outstanding.
   FX_CHECK(!pending_request_);
@@ -163,26 +244,56 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
   auto request =
       BuildRequest("POST", url, zx::min(1), headers, *http_multipart_builder.GetBodyStream());
 
+  auto complete = [&cobalt, callback = std::move(callback)](
+                      CrashServer::UploadStatus status, uint64_t upload_size,
+                      std::string server_report_id, zx::duration duration) mutable {
+    cobalt.LogEvent(cobalt::Event(cobalt::EventType::kInteger,
+                                  cobalt_registry::kReportUploadDurationMetricId,
+                                  {static_cast<uint32_t>(ToCobaltReportUploadStatus(status)),
+                                   static_cast<uint32_t>(ToCobaltReportUploadSize(upload_size))},
+                                  duration.get()));
+
+    callback(status, std::move(server_report_id));
+  };
+
   if (!request.has_value()) {
-    callback(CrashServer::UploadStatus::kFailure, "");
+    complete(CrashServer::UploadStatus::kFailure, /*upload_size=*/0,
+             /*server_report_id=*/"", zx::sec(0));
     return;
+  }
+
+  uint64_t upload_size = 0;
+  if (request->has_body() && request->body().is_buffer()) {
+    upload_size = request->body().buffer().size;
   }
 
   if (!loader_) {
     services_->Connect(loader_.NewRequest(dispatcher_));
   }
 
+  const zx::time_boot start_time = clock_->BootNow();
   const std::string tags = tags_->Get(report.Id());
-  loader_->Fetch(std::move(request.value()), [this, tags, callback = std::move(callback)](
+
+  loader_->Fetch(std::move(request.value()), [this, tags, upload_size, start_time,
+                                              complete = std::move(complete)](
                                                  fuchsia::net::http::Response response) mutable {
     pending_request_ = false;
+
+    auto complete_error = [&](CrashServer::UploadStatus status) {
+      complete(status, upload_size, /*server_report_id=*/"", clock_->BootNow() - start_time);
+    };
+
+    auto complete_ok = [&](std::string server_report_id) {
+      complete(CrashServer::UploadStatus::kSuccess, upload_size, std::move(server_report_id),
+               clock_->BootNow() - start_time);
+    };
 
     if (response.has_error()) {
       FX_LOGST(WARNING, tags.c_str()) << "Experienced network error: " << response.error();
       if (response.error() == fuchsia::net::http::Error::DEADLINE_EXCEEDED) {
-        callback(CrashServer::UploadStatus::kTimedOut, "");
+        complete_error(CrashServer::UploadStatus::kTimedOut);
       } else {
-        callback(CrashServer::UploadStatus::kFailure, "");
+        complete_error(CrashServer::UploadStatus::kFailure);
       }
       return;
     }
@@ -204,27 +315,27 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
 
     if (!response.has_status_code()) {
       FX_LOGST(ERROR, tags.c_str()) << "No status code received: " << response_body;
-      callback(CrashServer::UploadStatus::kFailure, "");
+      complete_error(CrashServer::UploadStatus::kFailure);
       return;
     }
 
     if (response.status_code() == 429) {
       FX_LOGST(WARNING, tags.c_str()) << "Upload throttled by server: " << response_body;
-      callback(CrashServer::UploadStatus::kThrottled, "");
+      complete_error(CrashServer::UploadStatus::kThrottled);
       return;
     }
 
     if (response.status_code() < 200 || response.status_code() >= 204) {
       FX_LOGST(WARNING, tags.c_str()) << "Failed to upload report, received HTTP status code "
                                       << response.status_code() << ": " << response_body;
-      callback(CrashServer::UploadStatus::kFailure, "");
+      complete_error(CrashServer::UploadStatus::kFailure);
       return;
     }
 
     if (response_body.empty()) {
-      callback(CrashServer::UploadStatus::kFailure, "");
+      complete_error(CrashServer::UploadStatus::kFailure);
     } else {
-      callback(CrashServer::UploadStatus::kSuccess, std::move(response_body));
+      complete_ok(std::move(response_body));
     }
   });
 

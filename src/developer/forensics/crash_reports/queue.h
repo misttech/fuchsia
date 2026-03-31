@@ -172,6 +172,7 @@ class Queue {
 
   async_dispatcher_t* dispatcher_;
   const std::shared_ptr<sys::ServiceDirectory> services_;
+  std::shared_ptr<InfoContext> info_context_;
   LogTags* tags_;
   ReportStore* report_store_;
   CrashServer* crash_server_;

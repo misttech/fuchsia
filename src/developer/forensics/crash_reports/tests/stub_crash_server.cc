@@ -27,6 +27,7 @@ StubCrashServer::~StubCrashServer() {
 bool StubCrashServer::HasPendingRequest() const { return has_pending_request_; }
 
 void StubCrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
+                                  cobalt::Logger& cobalt,
                                   ::fit::function<void(UploadStatus, std::string)> callback) {
   latest_annotations_ = report.Annotations();
   latest_attachment_keys_.clear();
