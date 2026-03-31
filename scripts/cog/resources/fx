@@ -26,10 +26,12 @@ if [[ "${base_commit_hash}" != "${base_commit_hash_in_cartfs}" ]]; then
   "${COG_FUCHSIA_DIR}/scripts/cog/setup_cog_workspace.py"
 fi
 
-diff_output=$("${GIT_CITC_PATH}" cli.diff "${base_commit_hash}" @)
+if ! diff_output=$("${GIT_CITC_PATH}" cli.diff --patch=false "${base_commit_hash}" @ 2>/dev/null); then
+  diff_output=$("${GIT_CITC_PATH}" cli.diff "${base_commit_hash}" @)
+fi
 
 # Copy over any added or modified files to the CartFS.
-added_or_modified_files=($(echo "${diff_output}" | grep '^\[[AM]\]' | awk '{print $2}'))
+added_or_modified_files=($(echo "${diff_output}" | grep -E '^\[[AM]\*?\]' | awk '{print $2}'))
 for file in "${added_or_modified_files[@]}"; do
   if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
     continue
