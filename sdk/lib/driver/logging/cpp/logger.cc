@@ -171,7 +171,8 @@ zx::result<std::unique_ptr<Logger>> Logger::MaybeCreate(
     return zx::error(status);
   }
 
-  fidl::WireClient<fuchsia_logger::LogSink> log_sink_client(std::move(*ns_result), dispatcher);
+  fidl::WireClient<fuchsia_logger::LogSink> log_sink_client(
+      fidl::ClientEnd<fuchsia_logger::LogSink>(std::move(log_sink)), dispatcher);
   auto sink_result = log_sink_client->ConnectStructured(std::move(server_end));
   if (!sink_result.ok()) {
     return zx::error(sink_result.status());
