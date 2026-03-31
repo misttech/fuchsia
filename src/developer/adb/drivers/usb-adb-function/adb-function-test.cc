@@ -5,126 +5,95 @@
 #include "adb-function.h"
 
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo-mock.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/sync/completion.h>
 
-#include <map>
 #include <vector>
 
 #include <usb/usb-request.h>
 #include <zxtest/zxtest.h>
 
-#include "lib/driver/compat/cpp/banjo_server.h"
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
-
-bool operator==(const usb_request_complete_callback_t& lhs,
-                const usb_request_complete_callback_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_ss_ep_comp_descriptor_t& lhs, const usb_ss_ep_comp_descriptor_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_endpoint_descriptor_t& lhs, const usb_endpoint_descriptor_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
-
-bool operator==(const usb_request_t& lhs, const usb_request_t& rhs) {
-  // Only comparing endpoint address. Use ExpectCallWithMatcher for more specific
-  // comparisons.
-  return lhs.header.ep_address == rhs.header.ep_address;
-}
-
-bool operator==(const usb_function_interface_protocol_t& lhs,
-                const usb_function_interface_protocol_t& rhs) {
-  // Comparison of these struct is not useful. Return true always.
-  return true;
-}
 
 namespace usb_adb_function {
 
 static constexpr uint32_t kBulkOutEp = 1;
 static constexpr uint32_t kBulkInEp = 2;
 
-typedef struct {
-  usb_request_t* usb_request;
-  const usb_request_complete_callback_t* complete_cb;
-} mock_usb_request_t;
-
-class MockUsbFunction : public ddk::MockUsbFunction {
+class AdbFakeUsb
+    : public fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
+                                                    fake_usb_endpoint::FakeEndpoint> {
  public:
-  zx_status_t UsbFunctionCancelAll(uint8_t ep_address) override {
-    while (!usb_request_queues[ep_address].empty()) {
-      const mock_usb_request_t r = usb_request_queues[ep_address].back();
-      r.complete_cb->callback(r.complete_cb->ctx, r.usb_request);
-      usb_request_queues[ep_address].pop_back();
+  using Base = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
+                                                      fake_usb_endpoint::FakeEndpoint>;
+  AdbFakeUsb(async_dispatcher_t* dispatcher) : Base(dispatcher), dispatcher_(dispatcher) {}
+
+  void AllocResources(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources>& request,
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
+    fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
+    EXPECT_EQ(request.endpoints().size(), 2);
+    EXPECT_EQ(request.interface_count(), 1u);
+    EXPECT_EQ(request.strings().size(), 0u);
+    response.interface_nums() = {0};
+    response.endpoint_addrs() = {kBulkOutEp, kBulkInEp};
+    response.string_indices() = {};
+
+    for (size_t i = 0; i < request.endpoints().size(); i++) {
+      uint8_t addr = response.endpoint_addrs()[i];
+      fake_endpoint(addr).Connect(dispatcher_, std::move(request.endpoints()[i].endpoint()));
     }
-    return ddk::MockUsbFunction::UsbFunctionCancelAll(ep_address);
+
+    completer.Reply(fit::ok(std::move(response)));
   }
 
-  zx_status_t UsbFunctionSetInterface(const usb_function_interface_protocol_t* interface) override {
-    // Overriding method to store the interface passed.
-    function = *interface;
-    if (!on_set_interface_.empty()) {
-      on_set_interface_.front()(*this);
-      on_set_interface_.pop();
+  void Configure(
+      fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure>& request,
+      fidl::internal::NaturalCompleter<fuchsia_hardware_usb_function::UsbFunction::Configure>::Sync&
+          completer) override {
+    iface_client_ = std::move(request.iface());
+    completer.Reply(fit::ok());
+    if (on_configured_) {
+      on_configured_();
     }
-    return ddk::MockUsbFunction::UsbFunctionSetInterface(interface);
   }
 
-  zx_status_t UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                                  const usb_ss_ep_comp_descriptor_t* ss_comp_desc) override {
-    // Overriding method to handle valid cases where nullptr is passed. The generated mock tries to
-    // dereference it without checking.
-    usb_endpoint_descriptor_t ep{};
-    usb_ss_ep_comp_descriptor_t ss{};
-    const usb_endpoint_descriptor_t* arg1 = ep_desc ? ep_desc : &ep;
-    const usb_ss_ep_comp_descriptor_t* arg2 = ss_comp_desc ? ss_comp_desc : &ss;
-    return ddk::MockUsbFunction::UsbFunctionConfigEp(arg1, arg2);
-  }
-
-  void UsbFunctionRequestQueue(usb_request_t* usb_request,
-                               const usb_request_complete_callback_t* complete_cb) override {
-    // Override to store requests.
-    const uint8_t ep = usb_request->header.ep_address;
-    auto queue = usb_request_queues.find(ep);
-    if (queue == usb_request_queues.end()) {
-      usb_request_queues[ep] = {};
+  void Deconfigure(
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::Deconfigure>::Sync& completer) override {
+    completer.Reply(fit::ok());
+    if (on_deconfigured_) {
+      on_deconfigured_();
     }
-    usb_request_queues[ep].push_back({usb_request, complete_cb});
-    mock_request_queue_.Call(*usb_request, *complete_cb);
   }
 
-  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
-    compat::DeviceServer::BanjoConfig config{.default_proto_id = ZX_PROTOCOL_USB_FUNCTION};
-    config.callbacks[ZX_PROTOCOL_USB_FUNCTION] = banjo_server.callback();
-    return config;
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> TakeIfaceClient() {
+    return std::move(iface_client_);
   }
 
-  compat::BanjoServer banjo_server{ZX_PROTOCOL_USB_FUNCTION, this, GetProto()->ops};
-  usb_function_interface_protocol_t function;
-  // Store request queues for each endpoint.
-  std::map<uint8_t, std::vector<mock_usb_request_t>> usb_request_queues;
+  void set_on_configured(fit::callback<void()> on_configured) {
+    on_configured_ = std::move(on_configured);
+  }
 
-  std::queue<fit::callback<void(MockUsbFunction&)>> on_set_interface_;
+  void set_on_deconfigured(fit::callback<void()> on_deconfigured) {
+    on_deconfigured_ = std::move(on_deconfigured);
+  }
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> iface_client_;
+  fit::callback<void()> on_configured_;
+  fit::callback<void()> on_deconfigured_;
 };
 
-using FakeUsb = fake_usb_endpoint::FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction,
-                                                       fake_usb_endpoint::FakeEndpoint>;
 class UsbAdbEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-    device_server_.Initialize("default", std::nullopt, mock_usb_.GetBanjoConfig());
-    EXPECT_EQ(ZX_OK, device_server_.Serve(dispatcher, &to_driver_vfs));
     fuchsia_hardware_usb_function::UsbFunctionService::InstanceHandler handler({
         .device = usb_function_bindings_.CreateHandler(&fake_dev_, dispatcher,
                                                        fidl::kIgnoreBindingClosure),
@@ -135,35 +104,13 @@ class UsbAdbEnvironment : public fdf_testing::Environment {
     return zx::ok();
   }
 
-  // Call set_configured of usb adb to bring the interface online.
-  void EnableUsb() {
-    mock_usb_.ExpectConfigEp(ZX_OK, {}, {});
-    mock_usb_.ExpectConfigEp(ZX_OK, {}, {});
-    mock_usb_.function.ops->set_configured(mock_usb_.function.ctx, true, USB_SPEED_FULL);
-  }
-
   void CancelAllUsbRxRequests() {
     for (size_t i = 0; i < kBulkRxCount; i++) {
       fake_dev_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_ERR_CANCELED, 0);
     }
   }
 
-  // Expect that the driver will call SetInterface, and when it does so, call
-  // CancelAllUsbRxRequests.
-  //
-  // We call CancelAllUsbRxRequests only _after_ the driver calls SetInterface
-  // in order to avoid a race condition where we cancel a request, only to have
-  // the driver process the cancellation and send it back out again before
-  // `StopAdb()` gets processed.
-  void ExpectSetInterfaceAndCancelAllRxRequests() {
-    mock_usb_.ExpectSetInterface(ZX_OK, {});
-    mock_usb_.on_set_interface_.push(
-        [this](MockUsbFunction& mock_usb) { CancelAllUsbRxRequests(); });
-  }
-
-  compat::DeviceServer device_server_;
-  MockUsbFunction mock_usb_;
-  FakeUsb fake_dev_ = FakeUsb(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  AdbFakeUsb fake_dev_ = AdbFakeUsb(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> usb_function_bindings_;
 };
 
@@ -178,38 +125,76 @@ class UsbAdbTest : public zxtest::Test {
   fidl::WireSyncClient<fadb::UsbAdbImpl> NormalStartAdb() {
     auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
     EXPECT_OK(client_->StartAdb(std::move(server_end)));
-
-    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) { env.EnableUsb(); });
+    WaitConfigured();
+    EnableUsb();
 
     return fidl::WireSyncClient<fadb::UsbAdbImpl>(std::move(client_end));
   }
 
   void NormalStopDriver() {
-    driver_test_.RunInEnvironmentTypeContext(
-        [](UsbAdbEnvironment& env) { env.ExpectSetInterfaceAndCancelAllRxRequests(); });
+    CancelAllUsbRxRequestsOnDeconfigure();
     EXPECT_OK(driver_test_.StopDriver());
   }
 
   void SetUp() override {
     // Expect calls from UsbAdbDevice initialization
-    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
-      env.mock_usb_.ExpectAllocInterface(ZX_OK, 1);
-      env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_OUT, kBulkOutEp);
-      env.mock_usb_.ExpectAllocEp(ZX_OK, USB_DIR_IN, kBulkInEp);
-      env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-      env.fake_dev_.ExpectConnectToEndpoint(kBulkOutEp);
-      env.fake_dev_.ExpectConnectToEndpoint(kBulkInEp);
+    libsync::Completion configured;
+    driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+      env.fake_dev_.set_on_configured([&]() { configured.Signal(); });
     });
 
     ASSERT_OK(driver_test_.StartDriver().status_value());
     auto device = driver_test_.Connect<fadb::Service::Adb>();
     EXPECT_OK(device.status_value());
     client_.Bind(std::move(device.value()));
+    configured.Wait();
+    driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+      iface_client_.Bind(env.fake_dev_.TakeIfaceClient());
+      env.fake_dev_.set_on_configured(nullptr);
+    });
+    driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+      EXPECT_EQ(dev.bulk_out_addr(), kBulkOutEp);
+      EXPECT_EQ(dev.bulk_in_addr(), kBulkInEp);
+    });
   }
 
-  void TearDown() override {
-    driver_test_.RunInEnvironmentTypeContext(
-        [](UsbAdbEnvironment& env) { env.mock_usb_.VerifyAndClear(); });
+  // Call SetConfigured of usb adb to bring the interface online.
+  void EnableUsb() {
+    ASSERT_TRUE(iface_client_.is_valid());
+    fidl::Result result = iface_client_->SetConfigured({{
+        .configured = true,
+        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kFull,
+    }});
+    EXPECT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+  }
+
+  zx_status_t WaitFunctionClosed() {
+    EXPECT_TRUE(iface_client_.is_valid());
+    fidl::ClientEnd client_end = iface_client_.TakeClientEnd();
+    return client_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), nullptr);
+  }
+
+  void WaitConfigured() {
+    if (iface_client_.is_valid()) {
+      return;
+    }
+    fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> iface_client;
+    libsync::Completion configured;
+    for (;;) {
+      driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+        iface_client = env.fake_dev_.TakeIfaceClient();
+        if (iface_client.is_valid()) {
+          env.fake_dev_.set_on_configured(nullptr);
+          return;
+        }
+        env.fake_dev_.set_on_configured([&]() { configured.Signal(); });
+      });
+      if (iface_client.is_valid()) {
+        iface_client_.Bind(std::move(iface_client));
+        return;
+      }
+      configured.Wait();
+    }
   }
 
   void SendTestData(fidl::WireSyncClient<fadb::UsbAdbImpl>& usb_impl, size_t size) {
@@ -242,8 +227,15 @@ class UsbAdbTest : public zxtest::Test {
     });
   }
 
+  void CancelAllUsbRxRequestsOnDeconfigure() {
+    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+      env.fake_dev_.set_on_deconfigured([&]() { env.CancelAllUsbRxRequests(); });
+    });
+  }
+
   fdf_testing::BackgroundDriverTest<UsbAdbTestConfig> driver_test_;
   fidl::WireSyncClient<fadb::Device> client_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> iface_client_;
 };
 
 class EventHandler : public fidl::WireSyncEventHandler<fadb::UsbAdbImpl> {
@@ -259,12 +251,7 @@ class EventHandler : public fidl::WireSyncEventHandler<fadb::UsbAdbImpl> {
   std::queue<fadb::StatusFlags> expected_statuses_;
 };
 
-TEST_F(UsbAdbTest, StopBeforeUsbStartsUp) {
-  // Expect disconnect.
-  driver_test_.RunInEnvironmentTypeContext(
-      [](UsbAdbEnvironment& env) { env.mock_usb_.ExpectSetInterface(ZX_OK, {}); });
-  EXPECT_OK(driver_test_.StopDriver());
-}
+TEST_F(UsbAdbTest, StopBeforeUsbStartsUp) { EXPECT_OK(driver_test_.StopDriver()); }
 
 TEST_F(UsbAdbTest, StartStop) {
   auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
@@ -280,7 +267,7 @@ TEST_F(UsbAdbTest, StartStop) {
   // EXPECT_EQ(usb_impl.HandleOneEvent(handler, zx::deadline_after(zx::msec(1))).status(),
   //           ZX_ERR_TIMED_OUT);
 
-  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   // Now we should get the event.
   handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
@@ -288,9 +275,7 @@ TEST_F(UsbAdbTest, StartStop) {
 
   libsync::Completion stop_requested;
   driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
-    env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-    env.mock_usb_.on_set_interface_.emplace(
-        [&stop_requested](MockUsbFunction& mock_usb) { stop_requested.Signal(); });
+    env.fake_dev_.set_on_deconfigured([&]() { stop_requested.Signal(); });
   });
 
   // Request a USB reset.
@@ -313,10 +298,9 @@ TEST_F(UsbAdbTest, StartStop) {
   // the driver process the cancellation and send it back out again before
   // `StopAdb()` gets processed.
   stop_requested.Wait();
-  driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
-    env.CancelAllUsbRxRequests();
-    env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-  });
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](UsbAdbEnvironment& env) { env.CancelAllUsbRxRequests(); });
+  ASSERT_OK(WaitFunctionClosed());
 
   handler.expected_statuses_.emplace(0);
   EXPECT_OK(usb_impl.HandleOneEvent(handler));
@@ -324,9 +308,6 @@ TEST_F(UsbAdbTest, StartStop) {
 
   stop_finished.Wait();
   t.join();
-
-  driver_test_.RunInEnvironmentTypeContext(
-      [](UsbAdbEnvironment& env) { env.mock_usb_.ExpectSetInterface(ZX_OK, {}); });
 
   EXPECT_OK(driver_test_.StopDriver());
 }
@@ -338,9 +319,7 @@ TEST_F(UsbAdbTest, StopDriverWhileConnected) {
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
   EXPECT_OK(usb_impl.HandleOneEvent(handler));
 
-  driver_test_.RunInEnvironmentTypeContext(
-      [&](UsbAdbEnvironment& env) { env.ExpectSetInterfaceAndCancelAllRxRequests(); });
-
+  CancelAllUsbRxRequestsOnDeconfigure();
   EXPECT_OK(driver_test_.StopDriver());
 
   handler.expected_statuses_.emplace(0);
@@ -354,21 +333,15 @@ TEST_F(UsbAdbTest, UsbStackRequestsStop) {
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
   EXPECT_OK(usb_impl.HandleOneEvent(handler));
 
-  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
-    // After we call SetConfigured(), the driver will request USB stop and then
-    // start.
-    env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-    env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-
-    env.mock_usb_.function.ops->set_configured(env.mock_usb_.function.ctx, false, 0);
-    env.CancelAllUsbRxRequests();
-  });
+  fidl::Result result = iface_client_->SetConfigured({{
+      .configured = false,
+  }});
+  ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { env.CancelAllUsbRxRequests(); });
 
   handler.expected_statuses_.emplace(0);
   EXPECT_OK(usb_impl.HandleOneEvent(handler));
-
-  driver_test_.RunInEnvironmentTypeContext(
-      [](UsbAdbEnvironment& env) { env.mock_usb_.ExpectSetInterface(ZX_OK, {}); });
   EXPECT_OK(driver_test_.StopDriver());
 }
 
@@ -379,15 +352,13 @@ TEST_F(UsbAdbTest, StartStopStartStop) {
     handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
     EXPECT_OK(usb_impl.HandleOneEvent(handler));
 
-    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
-      env.ExpectSetInterfaceAndCancelAllRxRequests();
-      env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-    });
+    CancelAllUsbRxRequestsOnDeconfigure();
     EXPECT_OK(client_->StopAdb());
 
     handler.expected_statuses_.emplace(0);
     EXPECT_OK(usb_impl.HandleOneEvent(handler));
     EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
+    ASSERT_OK(WaitFunctionClosed());
   }
 
   {
@@ -396,24 +367,20 @@ TEST_F(UsbAdbTest, StartStopStartStop) {
     handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
     EXPECT_OK(usb_impl.HandleOneEvent(handler));
 
-    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
-      env.ExpectSetInterfaceAndCancelAllRxRequests();
-      env.mock_usb_.ExpectSetInterface(ZX_OK, {});
-    });
+    CancelAllUsbRxRequestsOnDeconfigure();
     EXPECT_OK(client_->StopAdb());
 
     handler.expected_statuses_.emplace(0);
     EXPECT_OK(usb_impl.HandleOneEvent(handler));
     EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
+    ASSERT_OK(WaitFunctionClosed());
   }
 
-  driver_test_.RunInEnvironmentTypeContext(
-      [](UsbAdbEnvironment& env) { env.mock_usb_.ExpectSetInterface(ZX_OK, {}); });
   EXPECT_OK(driver_test_.StopDriver());
 }
 
 TEST_F(UsbAdbTest, StartAdbAfterUsbConnectionEstablished) {
-  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) { env.EnableUsb(); });
+  EnableUsb();
 
   auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
   EXPECT_OK(client_->StartAdb(std::move(server_end)));

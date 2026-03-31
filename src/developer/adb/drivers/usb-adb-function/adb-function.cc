@@ -10,7 +10,6 @@
 #include <zircon/assert.h>
 
 #include <cstdint>
-#include <mutex>
 #include <optional>
 
 #include <usb/peripheral.h>
@@ -35,8 +34,6 @@ void CompleteTxn(CompleterType& completer, zx_status_t status) {
 }  // namespace
 
 void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync& completer) {
-  std::lock_guard<async::sequence_checker> _(checker_);
-
   if (adb_binding_.has_value()) {
     zxlogf(WARNING, "ADB already connected");
     completer.ReplyError(ZX_ERR_ALREADY_BOUND);
@@ -63,7 +60,6 @@ void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync
 
   adb_binding_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                        std::move(request->interface), this, [this](fidl::UnbindInfo info) {
-                         std::lock_guard<async::sequence_checker> _(checker_);
                          zxlogf(INFO, "Device closed with reason '%s'",
                                 info.FormatDescription().c_str());
                          ResetOrStopUsb();
@@ -73,8 +69,6 @@ void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync
 
 void UsbAdbDevice::StopAdb(StopAdbCompleter::Sync& completer) {
   zxlogf(INFO, "ADB client requested disconnect.");
-
-  std::lock_guard<async::sequence_checker> _(checker_);
   stop_completers_.push_back(completer.ToAsync());
   ResetOrStopUsb();
 }
@@ -115,10 +109,15 @@ void UsbAdbDevice::ResetOrStopUsb() {
 
   // Disconnect USB.
   // TODO(b/417808660): Replace logs with Inspect once the bug is fixed.
-  zxlogf(INFO, "Disconnecting from USB with SetInterface(nullptr, nullptr)");
-  zx_status_t status = function_.SetInterface(nullptr, nullptr);
-  if (status != ZX_OK) {
-    ZX_PANIC("SetInterface failed: %s", zx_status_get_string(status));
+  zxlogf(INFO, "Disconnecting from USB by deconfiguring");
+  fidl::Result deconfigure = function_->Deconfigure();
+  if (deconfigure.is_error()) {
+    zxlogf(ERROR, "Failed to deconfigure: %s",
+           deconfigure.error_value().FormatDescription().c_str());
+  }
+  if (usb_function_binding_.has_value()) {
+    usb_function_binding_->Unbind();
+    usb_function_binding_.reset();
   }
 
   zxlogf(INFO, "state_ = State::kStoppingUsb");
@@ -240,7 +239,6 @@ bool UsbAdbDevice::ReceiveQueuedOnce() {
 }
 
 void UsbAdbDevice::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& completer) {
-  std::lock_guard<async::sequence_checker> _(checker_);
   size_t length = request.data().size();
   if (length == 0) {
     zxlogf(INFO, "Invalid argument - Length = 0");
@@ -262,7 +260,6 @@ void UsbAdbDevice::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& comp
 }
 
 void UsbAdbDevice::Receive(ReceiveCompleter::Sync& completer) {
-  std::lock_guard<async::sequence_checker> _(checker_);
   switch (state_) {
     case State::kStoppingUsb:
       // Return early during shutdown.
@@ -322,39 +319,10 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
   }
 }
 
-void UsbAdbDevice::RxCompleteCallback(std::vector<fendpoint::Completion> completion) {
-  async::PostTask(dispatcher(), [this, completion = std::move(completion)]() mutable {
-    std::lock_guard<async::sequence_checker> _(checker_);
-    RxComplete(std::move(completion));
-  });
+void UsbAdbDevice::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
+  completer.Reply(zx::ok(std::vector<uint8_t>{}));
 }
 
-void UsbAdbDevice::TxCompleteCallback(std::vector<fendpoint::Completion> completion) {
-  async::PostTask(dispatcher(), [this, completion = std::move(completion)]() mutable {
-    std::lock_guard<async::sequence_checker> _(checker_);
-    TxComplete(std::move(completion));
-  });
-}
-
-size_t UsbAdbDevice::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptors_); }
-
-void UsbAdbDevice::UsbFunctionInterfaceGetDescriptors(uint8_t* buffer, size_t buffer_size,
-                                                      size_t* out_actual) {
-  const size_t length = std::min(sizeof(descriptors_), buffer_size);
-  std::memcpy(buffer, &descriptors_, length);
-  *out_actual = length;
-}
-
-zx_status_t UsbAdbDevice::UsbFunctionInterfaceControl(const usb_setup_t* setup,
-                                                      const uint8_t* write_buffer,
-                                                      size_t write_size, uint8_t* out_read_buffer,
-                                                      size_t read_size, size_t* out_read_actual) {
-  if (out_read_actual != NULL) {
-    *out_read_actual = 0;
-  }
-
-  return ZX_OK;
-}
 void UsbAdbDevice::EnableEndpoints() {
   switch (state_) {
     case State::kOnline:
@@ -368,14 +336,34 @@ void UsbAdbDevice::EnableEndpoints() {
       break;
   }
 
-  zx_status_t status = function_.ConfigEp(&descriptors_.bulk_out_ep, nullptr);
-  if (status != ZX_OK) {
-    ZX_PANIC("Failed to Config BULK OUT ep - %d.", status);
+  fuchsia_hardware_usb_function::EndpointConfiguration ep_config_out;
+  {
+    fuchsia_hardware_usb_function::EndpointDescriptor desc;
+    desc.bm_attributes(descriptors_.bulk_out_ep.bm_attributes);
+    desc.w_max_packet_size(le16toh(descriptors_.bulk_out_ep.w_max_packet_size));
+    desc.b_interval(descriptors_.bulk_out_ep.b_interval);
+    ep_config_out.descriptor(std::move(desc));
+  }
+  fidl::Result result_out = function_->ConfigureEndpoint(
+      {descriptors_.bulk_out_ep.b_endpoint_address, std::move(ep_config_out)});
+  if (result_out.is_error()) {
+    ZX_PANIC("Failed to Config BULK OUT ep: %s",
+             result_out.error_value().FormatDescription().c_str());
   }
 
-  status = function_.ConfigEp(&descriptors_.bulk_in_ep, nullptr);
-  if (status != ZX_OK) {
-    ZX_PANIC("Failed to Config BULK IN ep - %d.", status);
+  fuchsia_hardware_usb_function::EndpointConfiguration ep_config_in;
+  {
+    fuchsia_hardware_usb_function::EndpointDescriptor desc;
+    desc.bm_attributes(descriptors_.bulk_in_ep.bm_attributes);
+    desc.w_max_packet_size(le16toh(descriptors_.bulk_in_ep.w_max_packet_size));
+    desc.b_interval(descriptors_.bulk_in_ep.b_interval);
+    ep_config_in.descriptor(std::move(desc));
+  }
+  fidl::Result result_in = function_->ConfigureEndpoint(
+      {descriptors_.bulk_in_ep.b_endpoint_address, std::move(ep_config_in)});
+  if (result_in.is_error()) {
+    ZX_PANIC("Failed to Config BULK IN ep: %s",
+             result_in.error_value().FormatDescription().c_str());
   }
 
   // queue RX requests
@@ -405,41 +393,40 @@ void UsbAdbDevice::EnableEndpoints() {
   state_ = State::kOnline;
 }
 
-zx_status_t UsbAdbDevice::UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed) {
-  zxlogf(INFO, "configured? - %d  speed - %d.", configured, speed);
-  async::PostTask(dispatcher(), [this, configured]() {
-    std::lock_guard<async::sequence_checker> _(checker_);
-    if (configured) {
-      EnableEndpoints();
-    } else {
-      switch (state_) {
-        case State::kAwaitingUsbConnection:
-          // It's normal to receive SetConfigured(false) while the connection is
-          // starting up - ignore it.
-          break;
-        case State::kOnline:
-          ResetOrStopUsb();
-          break;
-        case State::kStoppingUsb:
-          zxlogf(
-              WARNING,
-              "Received SetConfigured(false) while stopping. This is unexpected, but probably fine.");
-          break;
-      }
+void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
+                                 SetConfiguredCompleter::Sync& completer) {
+  zxlogf(INFO, "configured? - %d", request.configured());
+  if (request.configured()) {
+    EnableEndpoints();
+  } else {
+    switch (state_) {
+      case State::kAwaitingUsbConnection:
+        // It's normal to receive SetConfigured(false) while the connection is
+        // starting up - ignore it.
+        break;
+      case State::kOnline:
+        ResetOrStopUsb();
+        break;
+      case State::kStoppingUsb:
+        zxlogf(
+            WARNING,
+            "Received SetConfigured(false) while stopping. This is unexpected, but probably fine.");
+        break;
     }
-  });
-  return ZX_OK;
+  }
+  completer.Reply(zx::ok());
 }
 
-zx_status_t UsbAdbDevice::UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting) {
-  zxlogf(INFO, "interface - %d alt_setting - %d.", interface, alt_setting);
+void UsbAdbDevice::SetInterface(SetInterfaceRequest& request,
+                                SetInterfaceCompleter::Sync& completer) {
+  zxlogf(INFO, "SetInterface called");
+  completer.Reply(zx::ok());
+}
 
-  // We don't support any alt_settings - just validate that the main setting has
-  // been requested, and then don't do anything.
-  if (interface != descriptors_.adb_intf.b_interface_number || alt_setting > 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  return ZX_OK;
+void UsbAdbDevice::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  zxlogf(WARNING, "Unknown method %ld", metadata.method_ordinal);
 }
 
 void UsbAdbDevice::CheckUsbStopComplete() {
@@ -475,6 +462,8 @@ void UsbAdbDevice::CheckUsbStopComplete() {
 
   // Is this a proper shutdown, or a restart of USB?
   if (shutdown_callback_.has_value()) {
+    bulk_out_ep_.Close();
+    bulk_in_ep_.Close();
     zxlogf(INFO, "Shutting down driver.");
     shutdown_callback_.value()(zx::ok());
     shutdown_callback_.reset();
@@ -485,21 +474,14 @@ void UsbAdbDevice::CheckUsbStopComplete() {
 }
 
 void UsbAdbDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
-  std::lock_guard<async::sequence_checker> _(checker_);
   shutdown_callback_.emplace(std::move(completer));
   ResetOrStopUsb();
 }
 
 zx_status_t UsbAdbDevice::InitEndpoint(
-    fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunction>& client, uint8_t direction,
-    uint8_t* ep_addrs, usb::EndpointClient<UsbAdbDevice>& ep, uint32_t req_count) {
-  auto status = function_.AllocEp(direction, ep_addrs);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "usb_function_alloc_ep failed - %s.", zx_status_get_string(status));
-    return status;
-  }
-
-  status = ep.Init(*ep_addrs, client, usb_dispatcher_);
+    fidl::ClientEnd<fuchsia_hardware_usb_endpoint::Endpoint> endpoint_client,
+    usb::EndpointClient<UsbAdbDevice>& ep, uint32_t req_count) {
+  zx_status_t status = ep.Init(std::move(endpoint_client), dispatcher());
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to init UsbEndpoint %s", zx_status_get_string(status));
     return status;
@@ -516,36 +498,62 @@ zx_status_t UsbAdbDevice::InitEndpoint(
 }
 
 zx::result<> UsbAdbDevice::Start() {
-  std::lock_guard<async::sequence_checker> _(checker_);
-  zx::result<ddk::UsbFunctionProtocolClient> function =
-      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    FDF_SLOG(ERROR, "Failed to connect function", KV("status", function.status_string()));
-    return function.take_error();
-  }
-  function_ = *function;
-
   auto client = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
 
   if (client.is_error()) {
     zxlogf(ERROR, "Failed to connect fidl protocol");
     return client.take_error();
   }
+  function_.Bind(std::move(*client));
 
-  auto status = function_.AllocInterface(&descriptors_.adb_intf.b_interface_number);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "usb_function_alloc_interface failed - %s.", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result bulk_out_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_out_endpoints.is_error()) {
+    return bulk_out_endpoints.take_error();
+  }
+  zx::result bulk_in_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  if (bulk_in_endpoints.is_error()) {
+    return bulk_in_endpoints.take_error();
   }
 
-  status = InitEndpoint(*client, USB_DIR_OUT, &descriptors_.bulk_out_ep.b_endpoint_address,
-                        bulk_out_ep_, kBulkRxCount);
+  std::vector<fuchsia_hardware_usb_function::EndpointResource> resources;
+  {
+    fuchsia_hardware_usb_function::EndpointResource res;
+    res.direction(fuchsia_hardware_usb_function::EndpointDirection::kOut);
+    res.endpoint(std::move(bulk_out_endpoints->server));
+    resources.emplace_back(std::move(res));
+  }
+  {
+    fuchsia_hardware_usb_function::EndpointResource res;
+    res.direction(fuchsia_hardware_usb_function::EndpointDirection::kIn);
+    res.endpoint(std::move(bulk_in_endpoints->server));
+    resources.emplace_back(std::move(res));
+  }
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources> alloc_req;
+  alloc_req.interface_count(1);
+  alloc_req.endpoints(std::move(resources));
+
+  fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
+  if (alloc_result.is_error()) {
+    zxlogf(ERROR, "AllocResources failed: %s",
+           alloc_result.error_value().FormatDescription().c_str());
+    return zx::error(alloc_result.error_value().is_framework_error()
+                         ? alloc_result.error_value().framework_error().status()
+                         : alloc_result.error_value().domain_error());
+  }
+
+  auto& response = alloc_result.value();
+  descriptors_.adb_intf.b_interface_number = response.interface_nums()[0];
+  descriptors_.bulk_out_ep.b_endpoint_address = response.endpoint_addrs()[0];
+  descriptors_.bulk_in_ep.b_endpoint_address = response.endpoint_addrs()[1];
+
+  zx_status_t status =
+      InitEndpoint(std::move(bulk_out_endpoints->client), bulk_out_ep_, kBulkRxCount);
   if (status != ZX_OK) {
     zxlogf(ERROR, "InitEndpoint failed - %s.", zx_status_get_string(status));
     return zx::error(status);
   }
-  status = InitEndpoint(*client, USB_DIR_IN, &descriptors_.bulk_in_ep.b_endpoint_address,
-                        bulk_in_ep_, kBulkTxCount);
+  status = InitEndpoint(std::move(bulk_in_endpoints->client), bulk_in_ep_, kBulkTxCount);
   if (status != ZX_OK) {
     zxlogf(ERROR, "InitEndpoint failed - %s.", zx_status_get_string(status));
     return zx::error(status);
@@ -564,9 +572,23 @@ zx::result<> UsbAdbDevice::Start() {
 }
 
 void UsbAdbDevice::StartUsb() {
-  zx_status_t status = function_.SetInterface(this, &usb_function_interface_protocol_ops_);
-  if (status != ZX_OK) {
-    ZX_PANIC("SetInterface failed %s", zx_status_get_string(status));
+  zx::result iface_endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  if (iface_endpoints.is_error()) {
+    ZX_PANIC("CreateEndpoints failed %s", zx_status_get_string(iface_endpoints.error_value()));
+  }
+  usb_function_binding_ = fidl::BindServer(dispatcher(), std::move(iface_endpoints->server), this);
+
+  std::vector<uint8_t> descriptors_buffer(sizeof(descriptors_));
+  memcpy(descriptors_buffer.data(), &descriptors_, sizeof(descriptors_));
+
+  fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure> config_req;
+  config_req.configuration(std::move(descriptors_buffer));
+  config_req.iface(std::move(iface_endpoints->client));
+
+  fidl::Result config_res = function_->Configure(std::move(config_req));
+  if (config_res.is_error()) {
+    ZX_PANIC("Configure failed: %s", config_res.error_value().FormatDescription().c_str());
   }
 
   zxlogf(INFO, "state_ = State::kAwaitingUsbConnection");

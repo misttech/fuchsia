@@ -8,7 +8,6 @@
 #include <endian.h>
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
@@ -16,11 +15,11 @@
 #include <lib/sync/cpp/completion.h>
 #include <zircon/compiler.h>
 
-#include <mutex>
 #include <queue>
 
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/descriptors.h>
+#include <usb/usb.h>
 
 namespace usb_adb_function {
 
@@ -81,32 +80,26 @@ enum class State : uint8_t {
 
 // Implements the USB ADB function driver.
 class UsbAdbDevice : public fdf::DriverBase,
-                     public ddk::UsbFunctionInterfaceProtocol<UsbAdbDevice>,
+                     public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface>,
                      public fidl::WireServer<fadb::Device>,
                      public fidl::Server<fadb::UsbAdbImpl> {
  public:
   explicit UsbAdbDevice(fdf::DriverStartArgs start_args,
                         fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("usb_adb", std::move(start_args), std::move(driver_dispatcher)),
-        checker_(dispatcher()) {
-    // TODO(https://fxrev.dev/333883656): Use SynchronizedDispatcher with
-    // FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS instead.
-    usb_loop_.StartThread("usb-adb-loop");
-    usb_dispatcher_ = usb_loop_.dispatcher();
-  }
+      : fdf::DriverBase("usb_adb", std::move(start_args), std::move(driver_dispatcher)) {}
 
   // Driver lifecycle methods.
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
   // UsbFunctionInterface methods.
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t* buffer, size_t buffer_size, size_t* out_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                          size_t write_size, uint8_t* out_read_buffer,
-                                          size_t read_size, size_t* out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
+  void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
+  void SetConfigured(SetConfiguredRequest& request,
+                     SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // fadb::Device methods.
   void StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync& completer) override;
@@ -116,16 +109,17 @@ class UsbAdbDevice : public fdf::DriverBase,
   void QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& completer) override;
   void Receive(ReceiveCompleter::Sync& completer) override;
 
- private:
-  mutable async::sequence_checker checker_;
+  uint8_t bulk_out_addr() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
+  uint8_t bulk_in_addr() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
 
-  State state_ __TA_GUARDED(checker_) = State::kAwaitingUsbConnection;
+ private:
+  State state_ = State::kAwaitingUsbConnection;
 
   // State transition helpers.
-  void StartUsb() __TA_REQUIRES(checker_);
-  void EnableEndpoints() __TA_REQUIRES(checker_);
-  void ResetOrStopUsb() __TA_REQUIRES(checker_);
-  void CheckUsbStopComplete() __TA_REQUIRES(checker_);
+  void StartUsb();
+  void EnableEndpoints();
+  void ResetOrStopUsb();
+  void CheckUsbStopComplete();
 
   fidl::ServerBindingGroup<fadb::Device> device_bindings_;
 
@@ -137,39 +131,29 @@ class UsbAdbDevice : public fdf::DriverBase,
   };
 
   // Helper methods to get free request buffer and queue the request for transmitting.
-  void SendQueued() __TA_REQUIRES(checker_);
-  bool SendQueuedOnce() __TA_REQUIRES(checker_);
+  void SendQueued();
+  bool SendQueuedOnce();
 
   // Helper methods to get free request buffer and queue the request for receiving.
-  void ReceiveQueued() __TA_REQUIRES(checker_);
-  bool ReceiveQueuedOnce() __TA_REQUIRES(checker_);
+  void ReceiveQueued();
+  bool ReceiveQueuedOnce();
 
-  // USB request completion callback methods - these run on the driver
-  // dispatcher.
-  void TxComplete(std::vector<fendpoint::Completion> completion) __TA_REQUIRES(checker_);
-  void RxComplete(std::vector<fendpoint::Completion> completion) __TA_REQUIRES(checker_);
+  // USB request completion callback methods.
+  void TxComplete(std::vector<fendpoint::Completion> completion);
+  void RxComplete(std::vector<fendpoint::Completion> completion);
 
-  // USB request completion callback methods - these can run on any thread.
-  void TxCompleteCallback(std::vector<fendpoint::Completion> completion);
-  void RxCompleteCallback(std::vector<fendpoint::Completion> completion);
-
-  uint8_t bulk_out_addr() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
-  uint8_t bulk_in_addr() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
-
-  ddk::UsbFunctionProtocolClient function_;
-
-  // Loop and dispatcher used in the background by the USB endpoint clients.
-  async::Loop usb_loop_{&kAsyncLoopConfigNeverAttachToThread};
-  async_dispatcher_t* usb_dispatcher_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_function::UsbFunctionInterface>>
+      usb_function_binding_;
 
   // UsbAdbImpl service binding. ServerEnds passed into StartAdb() end up here.
-  std::optional<fidl::ServerBinding<fadb::UsbAdbImpl>> adb_binding_ __TA_GUARDED(checker_);
+  std::optional<fidl::ServerBinding<fadb::UsbAdbImpl>> adb_binding_;
 
   // Callbacks to call when the USB stack has been brought down and it's safe to
   // call AdbStart().
-  std::vector<StopAdbCompleter::Async> stop_completers_ __TA_GUARDED(checker_);
+  std::vector<StopAdbCompleter::Async> stop_completers_;
   // Holds Stop callback to be invoked once shutdown is complete.
-  std::optional<fdf::PrepareStopCompleter> shutdown_callback_ __TA_GUARDED(checker_);
+  std::optional<fdf::PrepareStopCompleter> shutdown_callback_;
 
   // USB ADB interface descriptor.
   struct {
@@ -209,25 +193,23 @@ class UsbAdbDevice : public fdf::DriverBase,
           },
   };
 
-  zx_status_t InitEndpoint(fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunction>& client,
-                           uint8_t direction, uint8_t* ep_addrs,
-                           usb::EndpointClient<UsbAdbDevice>& ep, uint32_t req_count)
-      __TA_REQUIRES(checker_);
+  zx_status_t InitEndpoint(fidl::ClientEnd<fuchsia_hardware_usb_endpoint::Endpoint> endpoint_client,
+                           usb::EndpointClient<UsbAdbDevice>& ep, uint32_t req_count);
 
   // Bulk OUT/RX endpoint
   usb::EndpointClient<UsbAdbDevice> bulk_out_ep_{usb::EndpointType::BULK, this,
-                                                 std::mem_fn(&UsbAdbDevice::RxCompleteCallback)};
+                                                 std::mem_fn(&UsbAdbDevice::RxComplete)};
   // Queue of pending Receive requests from client.
-  std::queue<ReceiveCompleter::Async> rx_requests_ __TA_GUARDED(checker_);
+  std::queue<ReceiveCompleter::Async> rx_requests_;
   // pending_replies_ only used for bulk_out_ep_
-  std::queue<fendpoint::Completion> pending_replies_ __TA_GUARDED(checker_);
+  std::queue<fendpoint::Completion> pending_replies_;
 
   // Bulk IN/TX endpoint
   usb::EndpointClient<UsbAdbDevice> bulk_in_ep_{usb::EndpointType::BULK, this,
-                                                std::mem_fn(&UsbAdbDevice::TxCompleteCallback)};
+                                                std::mem_fn(&UsbAdbDevice::TxComplete)};
   // Queue of pending transfer requests that need to be transmitted once the BULK IN request buffers
   // become available.
-  std::queue<txn_req_t> tx_pending_reqs_ __TA_GUARDED(checker_);
+  std::queue<txn_req_t> tx_pending_reqs_;
 };
 
 }  // namespace usb_adb_function
