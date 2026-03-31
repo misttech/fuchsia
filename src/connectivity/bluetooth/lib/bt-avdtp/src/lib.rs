@@ -17,6 +17,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zx::{self as zx, MonotonicDuration};
 
 #[cfg(test)]
@@ -56,7 +57,8 @@ impl Peer {
     pub fn new(signaling: Channel) -> Self {
         Self {
             inner: Arc::new(PeerInner {
-                signaling,
+                signaling: Mutex::new(signaling),
+                signaling_channel_closed: AtomicBool::new(false),
                 response_waiters: Mutex::new(Slab::<ResponseWaiter>::new()),
                 incoming_requests: Mutex::<RequestQueue>::default(),
             }),
@@ -924,7 +926,8 @@ impl Drop for CommandResponse {
 #[derive(Debug)]
 struct PeerInner {
     /// The signaling channel
-    signaling: Channel,
+    signaling: Mutex<Channel>,
+    signaling_channel_closed: AtomicBool,
 
     /// A map of transaction ids that have been sent but the response has not
     /// been received and/or processed yet.
@@ -1009,11 +1012,16 @@ impl PeerInner {
     /// Returns whether the channel was closed, or an Error::PeerRead or Error::PeerWrite
     /// if there was a problem communicating on the socket.
     fn recv_all(&self, cx: &mut Context<'_>) -> Result<bool> {
+        if self.signaling_channel_closed.load(Ordering::Relaxed) {
+            return Ok(true);
+        }
+
         loop {
             let mut next_packet = Vec::new();
-            let packet_size = match self.signaling.poll_datagram(cx, &mut next_packet) {
+            let packet_size = match self.signaling.lock().poll_datagram(cx, &mut next_packet) {
                 Poll::Ready(Err(zx::Status::PEER_CLOSED)) => {
                     trace!("Signaling peer closed");
+                    self.signaling_channel_closed.store(true, Ordering::Relaxed);
                     return Ok(true);
                 }
                 Poll::Ready(Err(e)) => return Err(Error::PeerRead(e)),
@@ -1130,7 +1138,7 @@ impl PeerInner {
     }
 
     fn send_signal(&self, data: &[u8]) -> Result<()> {
-        let _ = self.signaling.write(data).map_err(|x| Error::PeerWrite(x))?;
+        let _ = self.signaling.lock().write(data).map_err(|x| Error::PeerWrite(x))?;
         Ok(())
     }
 }

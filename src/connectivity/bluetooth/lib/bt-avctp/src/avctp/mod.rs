@@ -15,6 +15,7 @@ use std::collections::VecDeque;
 use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(test)]
 mod tests;
@@ -38,7 +39,9 @@ pub struct Peer {
 #[derive(Debug)]
 struct PeerInner {
     /// Channel to the remote device owned by this peer object.
-    channel: Channel,
+    channel: Mutex<Channel>,
+
+    channel_closed: AtomicBool,
 
     /// A map of transaction ids that have been sent but the response has not
     /// been received and/or processed yet.
@@ -71,7 +74,7 @@ impl Peer {
             }
         }
 
-        CommandStream { inner: self.inner.clone() }
+        CommandStream { inner: self.inner.clone(), terminated: false }
     }
 
     /// Send an outgoing command to the remote peer. Returns a CommandResponseStream to
@@ -90,7 +93,8 @@ impl Peer {
 impl PeerInner {
     fn new(channel: Channel) -> Self {
         Self {
-            channel,
+            channel: Mutex::new(channel),
+            channel_closed: AtomicBool::new(false),
             response_waiters: Mutex::new(Slab::<ResponseWaiter>::new()),
             incoming_requests: Mutex::<CommandQueue>::default(),
         }
@@ -170,11 +174,15 @@ impl PeerInner {
     /// Returns whether the channel was closed, or an Error::PeerRead or Error::PeerWrite
     /// if there was a problem communicating on the socket.
     fn recv_all(&self, cx: &mut Context<'_>) -> Result<bool> {
+        if self.channel_closed.load(Ordering::SeqCst) {
+            return Ok(true);
+        }
         let mut buf = Vec::<u8>::new();
         loop {
-            let packet_size = match self.channel.poll_datagram(cx, &mut buf) {
+            let packet_size = match self.channel.lock().poll_datagram(cx, &mut buf) {
                 Poll::Ready(Err(zx::Status::PEER_CLOSED)) => {
                     trace!("Peer closed");
+                    self.channel_closed.store(true, Ordering::SeqCst);
                     return Ok(true);
                 }
                 Poll::Ready(Err(e)) => return Err(Error::PeerRead(e)),
@@ -282,7 +290,7 @@ impl PeerInner {
         if body.len() > 0 {
             rbuf.extend_from_slice(body);
         }
-        let _ = self.channel.write(rbuf.as_slice()).map_err(|x| Error::PeerWrite(x))?;
+        let _ = self.channel.lock().write(rbuf.as_slice()).map_err(|x| Error::PeerWrite(x))?;
         Ok(())
     }
 }
@@ -291,21 +299,37 @@ impl PeerInner {
 #[derive(Debug)]
 pub struct CommandStream {
     inner: Arc<PeerInner>,
+    terminated: bool,
 }
 
 impl Unpin for CommandStream {}
 
+impl FusedStream for CommandStream {
+    fn is_terminated(&self) -> bool {
+        self.terminated
+    }
+}
+
 impl Stream for CommandStream {
     type Item = Result<Command>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Poll::Ready(match ready!(self.inner.poll_recv_request(cx)) {
-            Ok(Packet { header, body, .. }) => {
-                Some(Ok(Command { peer: self.inner.clone(), avctp_header: header, body }))
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.terminated {
+            return Poll::Ready(None);
+        }
+
+        match ready!(self.inner.poll_recv_request(cx)) {
+            Ok(Packet { header, body, .. }) => Poll::Ready(Some(Ok(Command {
+                peer: self.inner.clone(),
+                avctp_header: header,
+                body,
+            }))),
+            Err(e) if e == Error::PeerDisconnected => {
+                self.terminated = true;
+                Poll::Ready(None)
             }
-            Err(Error::PeerDisconnected) => None,
-            Err(e) => Some(Err(e)),
-        })
+            Err(e) => Poll::Ready(Some(Err(e))),
+        }
     }
 }
 
@@ -448,25 +472,28 @@ impl Stream for CommandResponseStream {
     type Item = Result<Packet>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = &mut *self;
-        if let Some(id) = &this.id {
-            Poll::Ready(match ready!(this.inner.poll_recv_response(id, cx)) {
-                Ok(packet) => {
-                    trace!("received response packet {:?}", packet);
-                    if packet.header().is_invalid_profile_id() {
-                        Some(Err(Error::InvalidProfileId))
-                    } else {
-                        Some(Ok(packet))
-                    }
-                }
-                Err(Error::PeerDisconnected) => {
-                    this.done = true;
-                    None
-                }
-                Err(e) => Some(Err(e)),
-            })
-        } else {
+        if this.is_terminated() {
+            return Poll::Ready(None);
+        }
+        let Some(id) = &this.id else {
             this.done = true;
             return Poll::Ready(None);
+        };
+
+        match ready!(this.inner.poll_recv_response(id, cx)) {
+            Ok(packet) => {
+                trace!("received response packet {:?}", packet);
+                if packet.header().is_invalid_profile_id() {
+                    Poll::Ready(Some(Err(Error::InvalidProfileId)))
+                } else {
+                    Poll::Ready(Some(Ok(packet)))
+                }
+            }
+            Err(e) if e == Error::PeerDisconnected => {
+                this.done = true;
+                Poll::Ready(None)
+            }
+            Err(e) => Poll::Ready(Some(Err(e))),
         }
     }
 }
