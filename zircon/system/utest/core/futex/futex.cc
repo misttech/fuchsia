@@ -31,32 +31,37 @@
 
 namespace futex {
 namespace {
-constexpr zx::duration kDefaultTimeout = zx::sec(30);
 constexpr zx::duration kDefaultPollInterval = zx::usec(100);
+constexpr zx::duration kDefaultReportInterval = zx::sec(10);
 
 constexpr uint32_t kThreadWakeAllCount = std::numeric_limits<uint32_t>::max();
 constexpr uint32_t kThreadRequeueAllCount = std::numeric_limits<uint32_t>::max();
 constexpr char kThreadName[] = "wakeup-test-thread";
 
-// Poll until the user provided Callable |should_stop| tells us to stop by
+// Poll until the user provided ShouldStopCallable |should_stop| tells us to stop by
 // returning true.
-template <typename Callable>
-zx_status_t WaitFor(const Callable& should_stop, zx::duration timeout = kDefaultTimeout,
-                    zx::duration poll_interval = kDefaultPollInterval) {
+template <typename ShouldStopCallable, typename ReportStatusCallable>
+void WaitFor(const ShouldStopCallable& should_stop,
+             const ReportStatusCallable& report_status,
+             zx::duration poll_interval = kDefaultPollInterval,
+             zx::duration report_interval = kDefaultReportInterval) {
   static_assert(std::is_same_v<decltype(should_stop()), bool>, "should_stop() must return a bool!");
+  zx::time report_deadline = zx::deadline_after(report_interval);
 
-  zx::time deadline = zx::deadline_after(timeout);
-  zx::time now;
+  while (true) {
+    const zx::time now = zx::clock::get_monotonic();
 
-  while ((now = zx::clock::get_monotonic()) < deadline) {
     if (should_stop()) {
-      return ZX_OK;
+      return;
+    }
+
+    if (now >= report_deadline) {
+      report_status();
+      report_deadline += report_interval;
     }
 
     zx::nanosleep(zx::deadline_after(poll_interval));
   }
-
-  return ZX_ERR_TIMED_OUT;
 }
 
 void GetThreadState(const zx::thread& thread, zx_thread_state_t* out_state) {
@@ -70,17 +75,21 @@ void GetThreadState(const zx::thread& thread, zx_thread_state_t* out_state) {
 
 void WaitForKernelState(const zx::thread& thread, zx_thread_state_t target_state,
                         zx::duration timeout = zx::duration::infinite()) {
-  zx_status_t wait_res = ZX_ERR_INTERNAL;
   zx_thread_state_t state = 0;
 
-  wait_res = WaitFor([&]() {
-    GetThreadState(thread, &state);
-    // Stop if we have hit the state we want, or we have an error attempting
-    // to fetch our kernel thread state.
-    return (state == target_state);
-  });
+  WaitFor(
+    [&]() {
+      GetThreadState(thread, &state);
+      // Stop if we have hit the state we want, or we have an error attempting
+      // to fetch our kernel thread state.
+      return (state == target_state);
+    },
+    [&]() {
+      printf("still waiting for thread to achieve state (%u).  Last observed state (%u)\n",
+             state, target_state);
+    }
+  );
 
-  EXPECT_OK(wait_res);
   // Verify that any of the helpers methods called has no assertion failures.
   ASSERT_NO_FATAL_FAILURE();
   ASSERT_EQ(state, target_state);
@@ -125,7 +134,11 @@ class TestThread {
     ASSERT_OK(zx::unowned_thread(thrd_get_zx_handle(thread_))
                   ->duplicate(ZX_RIGHT_SAME_RIGHTS, &thread_handle_));
 
-    EXPECT_OK(WaitFor([this]() { return state() != State::kWaitingToStart; }));
+    State last_state;
+    WaitFor(
+      [&]() { return (last_state = state()) != State::kWaitingToStart; },
+      [&]() { printf("waiting for thread to start (%u)\n", static_cast<uint32_t>(last_state)); }
+    );
 
     // Note that this could fail if futex_wait() gets a spurious wakeup.
     EXPECT_EQ(state(), State::kAboutToWait, "Wrong thread state.");
@@ -154,7 +167,12 @@ class TestThread {
   }
 
   void WaitUntilWoken() const {
-    ASSERT_OK(WaitFor([this]() { return state() == State::kWaitReturned; }));
+    State last_state;
+    WaitFor(
+      [&]() { return (last_state = state()) == State::kWaitReturned; },
+      [&]() { printf("waiting for thread to wake (%u)\n", static_cast<uint32_t>(last_state)); }
+    );
+
     ASSERT_EQ(state(), State::kWaitReturned, "Thread in wrong state");
   }
 
@@ -551,16 +569,20 @@ void WaitUntilThreadBlockedOnFutex(thrd_t thread) {
 
   zx_info_thread_t info;
   zx_status_t get_info_res = ZX_ERR_INTERNAL;
-  zx_status_t wait_res = ZX_ERR_INTERNAL;
 
-  wait_res = WaitFor([&]() {
-    get_info_res =
-        zx_object_get_info(thrd_handle, ZX_INFO_THREAD, &info, sizeof(info), nullptr, nullptr);
-    return (get_info_res != ZX_OK) || (info.state == ZX_THREAD_STATE_BLOCKED_FUTEX);
-  });
+  WaitFor(
+    [&]() {
+      get_info_res =
+          zx_object_get_info(thrd_handle, ZX_INFO_THREAD, &info, sizeof(info), nullptr, nullptr);
+      return (get_info_res != ZX_OK) || (info.state == ZX_THREAD_STATE_BLOCKED_FUTEX);
+    },
+    [&]() {
+      printf("Waiting for thread to block on futex (0x%x != 0x%x)",
+             info.state, ZX_THREAD_STATE_BLOCKED_FUTEX);
+    }
+  );
 
   EXPECT_OK(get_info_res);
-  EXPECT_OK(wait_res);
   EXPECT_EQ(info.state, ZX_THREAD_STATE_BLOCKED_FUTEX);
 }
 
