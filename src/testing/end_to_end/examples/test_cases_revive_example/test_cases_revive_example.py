@@ -1,46 +1,48 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Example test demonstrating FuchsiaTestCases and TestCaseRevive."""
+"""Example test demonstrating AsyncFuchsiaTestCases and AsyncTestCaseRevive."""
 
 import logging
 import pathlib
 from typing import Callable
 
-from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+import fuchsia_base_test
+import test_case_revive
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from mobly import test_runner
-from test_case_revive import test_case_revive
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class MyTestCases(fuchsia_base_test.FuchsiaTestCases):
+class MyTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
     """Example test cases."""
 
-    def setup_test(
+    async def setup_test(
         self,
-        fuchsia_devices: list[FuchsiaDevice],
+        fuchsia_devices: list[AsyncFuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
+        await super().setup_test(fuchsia_devices, output_file_path)
         _LOGGER.info("MyTestCases.setup_test() called")
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         _LOGGER.info("MyTestCases.teardown_test() called")
+        await super().teardown_test()
 
-    def test_case_one(self) -> None:
+    async def test_case_one(self) -> None:
         _LOGGER.info("Executing test_case_one")
 
     @test_case_revive.tag_test(
         fuchsia_device_operation=test_case_revive.FuchsiaDeviceOperation.SOFT_REBOOT,
         test_method_execution_frequency=test_case_revive.TestMethodExecutionFrequency.PRE_AND_POST,
     )
-    def test_revive_me(self) -> None:
+    async def test_revive_me(self) -> None:
         _LOGGER.info("Executing test_revive_me")
 
 
-class ExampleTest(test_case_revive.TestCaseRevive):
-    """Example test using FuchsiaTestCases with TestCaseRevive."""
+class ExampleTest(test_case_revive.AsyncTestCaseRevive):
+    """Example test using AsyncFuchsiaTestCases with AsyncTestCaseRevive."""
 
     TEST_CASES = [MyTestCases]
 
