@@ -7,13 +7,13 @@ import logging
 import pathlib
 from typing import Callable
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
 from honeydew import errors
 from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session_using_ffx
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import common
 
@@ -24,26 +24,26 @@ _TILE_URL = (
 )
 
 
-class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
+class SessionNoRestartTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
     """Test logic for Session affordance without restart."""
 
-    def setup_test(
+    async def setup_test(
         self,
-        fuchsia_devices: list[FuchsiaDevice],
+        fuchsia_devices: list[AsyncFuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
-        super().setup_test(fuchsia_devices, output_file_path)
+        await super().setup_test(fuchsia_devices, output_file_path)
         self.fuchsia_devices = fuchsia_devices
         self.output_file_path = output_file_path
         self.dut = self.fuchsia_devices[0]
 
-    def test_add_component(self) -> None:
+    async def test_add_component(self) -> None:
         """Test case for session.add_component()"""
 
         self.dut.session.ensure_started()
         self.dut.session.add_component(_TILE_URL)
 
-    def test_add_component_wrong_url(self) -> None:
+    async def test_add_component_wrong_url(self) -> None:
         """Test case for session.add_component() with wrong url."""
 
         self.dut.session.ensure_started()
@@ -53,7 +53,7 @@ class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
         with asserts.assert_raises(session_errors.SessionError):
             self.dut.session.add_component(wrong_url)
 
-    def test_add_component_twice(self) -> None:
+    async def test_add_component_twice(self) -> None:
         """Test case for session.add_component() called twice."""
         self.dut.session.ensure_started()
         self.dut.session.add_component(_TILE_URL)
@@ -72,7 +72,7 @@ class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
         ]
         return set(lines)
 
-    def test_cleanup(self) -> None:
+    async def test_cleanup(self) -> None:
         """Test case for session.cleanup()."""
 
         self.dut.session.ensure_started()
@@ -105,7 +105,7 @@ class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
             asserts.fail("The added element is not removed.")
 
 
-class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
+class SessionAffordanceNoRestartTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Session affordance tests without restart
 
     This test suite only contains tests that do not restart the session.
@@ -115,18 +115,18 @@ class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
 
     TEST_CASES = [SessionNoRestartTestCases]
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns `dut` variable with FuchsiaDevice object
         """
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         self.dut.session.cleanup()
-        super().teardown_test()
+        await super().teardown_test()
 
 
 if __name__ == "__main__":
