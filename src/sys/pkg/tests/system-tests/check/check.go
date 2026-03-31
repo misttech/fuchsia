@@ -135,7 +135,6 @@ func ValidateDevice(
 	expectedSystemImage *packages.SystemImagePackage,
 	expectedConfig *sl4f.Configuration,
 	checkABR bool,
-	expectedRebootReason string,
 ) error {
 	// At the this point the system should have been updated to the target
 	// system version. Confirm the update by fetching the device's current
@@ -158,16 +157,6 @@ func ValidateDevice(
 	if checkABR {
 		if err := checkABRConfig(ctx, ffxTool, device, expectedSystemImage.Repository(), expectedConfig); err != nil {
 			return fmt.Errorf("failed to validate device: %w", err)
-		}
-	}
-
-	if expectedRebootReason != "" {
-		reason, err := ffxTool.TargetGetLastRebootReason(ctx, device.Name())
-		if err != nil {
-			return fmt.Errorf("failed to get last reboot reason: %w", err)
-		}
-		if reason != expectedRebootReason {
-			return fmt.Errorf("expected reboot reason %q, got %q", expectedRebootReason, reason)
 		}
 	}
 

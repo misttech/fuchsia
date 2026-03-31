@@ -179,7 +179,6 @@ func doTestRecovery(
 		expectedSystemImage,
 		expectedConfig,
 		c.checkABR,
-		"",
 	); err != nil {
 		return err
 	}
@@ -275,7 +274,6 @@ func initializeDevice(
 		expectedSystemImage,
 		expectedConfig,
 		c.checkABR,
-		"",
 	); err != nil {
 		return err
 	}
