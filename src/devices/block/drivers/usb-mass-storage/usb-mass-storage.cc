@@ -104,6 +104,13 @@ void UsbMassStorageDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
   if (csw_req_) {
     usb_request_release(csw_req_);
   }
+  // block_devs_ will be cleared when the object is destroyed.
+  // We don't need to explicitly call scsi::BlockDevice::RemoveDevice() here as driver_manager
+  // will handle child removal when the parent (this) node is removed.
+  // We clear it here for efficiency reasons, to ensure memory is freed as soon as possible
+  // during the shutdown process.
+  block_devs_.clear();
+
   if (data_transfer_req_) {
     // release_frees is indirectly cleared by DataTransfer; set it again here so that
     // data_transfer_req_ is freed by usb_request_release.
@@ -549,56 +556,67 @@ zx_status_t UsbMassStorageDevice::DoTransaction(Transaction* txn, uint8_t flags,
 }
 
 zx_status_t UsbMassStorageDevice::CheckLunsReady() {
+  // If the device is marked as dead (e.g. disconnected or shutting down),
+  // stop checking and return an appropriate error.
   if (dead_) {
-    return ZX_OK;
+    return ZX_ERR_IO_NOT_PRESENT;
   }
   std::lock_guard<std::mutex> lock(luns_lock_);
 
-  zx_status_t status = ZX_OK;
-  for (uint8_t lun = 0; lun <= max_lun_ && status == ZX_OK; lun++) {
+  zx_status_t final_status = ZX_OK;
+  for (uint8_t lun = 0; lun <= max_lun_; lun++) {
     bool ready = false;
-
-    status = TestUnitReady(kPlaceholderTarget, lun);
+    zx_status_t status = TestUnitReady(kPlaceholderTarget, lun);
     if (status == ZX_OK) {
       ready = true;
-    }
-    if (status == ZX_ERR_BAD_STATE) {
-      ready = false;
+    } else if (status == ZX_ERR_BAD_STATE) {
       // command returned CSW_FAILED. device is there but media is not ready.
       uint8_t request_sense_data[UMS_REQUEST_SENSE_TRANSFER_LENGTH];
-      status = RequestSense(kPlaceholderTarget, lun,
-                            {request_sense_data, UMS_REQUEST_SENSE_TRANSFER_LENGTH});
+      zx_status_t sense_status = RequestSense(
+          kPlaceholderTarget, lun, {request_sense_data, UMS_REQUEST_SENSE_TRANSFER_LENGTH});
+      if (sense_status != ZX_OK) {
+        fdf::warn("RequestSense failed with status {}", zx_status_get_string(sense_status));
+        final_status = sense_status;
+        continue;
+      }
+    } else if (status == ZX_ERR_IO_NOT_PRESENT) {
+      dead_ = true;
+      return status;
+    } else {
+      // LUN check failed, record the error but continue to ensure any
+      // other healthy LUNs are initialized.
+      fdf::warn("TestUnitReady returned error - {}", zx_status_get_string(status));
+      final_status = status;
+      continue;
     }
-    if (status != ZX_OK) {
-      break;
-    }
+
     if (ready && !block_devs_[lun]) {
       scsi::DeviceOptions options(/*check_unmap_support*/ true, /*use_mode_sense_6*/ true,
                                   /*use_read_write_12*/ false);
-      zx::result block_device =
+      zx::result result =
           scsi::BlockDevice::Bind(this, kPlaceholderTarget, lun, max_transfer_bytes_, options);
-      if (block_device.is_ok() && block_device->block_size_bytes() != 0) {
-        block_devs_[lun] = std::move(block_device.value());
+      if (result.is_ok() && result.value()->block_size_bytes() != 0) {
+        block_devs_[lun] = std::move(result.value());
         scsi::BlockDevice* dev = block_devs_[lun].get();
         fdf::debug("UMS: block size is: {:#010x}", dev->block_size_bytes());
         fdf::debug("UMS: total blocks is: {}", dev->block_count());
         fdf::debug("UMS: total size is: {}", dev->block_count() * dev->block_size_bytes());
         fdf::debug("UMS: read-only: {} removable: {}", dev->write_protected(), dev->removable());
       } else {
-        zx_status_t error = block_device.status_value();
+        zx_status_t error = result.status_value();
         if (error == ZX_OK) {
           fdf::error("UMS zero block size");
           error = ZX_ERR_INVALID_ARGS;
         }
         fdf::error("UMS: device_add for block device failed: {}", zx_status_get_string(error));
+        final_status = error;
       }
     } else if (!ready && block_devs_[lun]) {
-      block_devs_[lun]->RemoveDevice();
-      block_devs_[lun] = nullptr;
+      block_devs_[lun].reset();
     }
   }
 
-  return status;
+  return final_status;
 }
 
 zx::result<> UsbMassStorageDevice::AllocatePages(zx::vmo& vmo, fzl::VmoMapper& mapper,
@@ -622,6 +640,7 @@ void UsbMassStorageDevice::WorkerLoop() {
   while (1) {
     if (wait) {
       waiter_->Wait(&txn_completion_, ZX_SEC(1));
+      sync_completion_reset(&txn_completion_);
       std::lock_guard<std::mutex> l(queue_lock_);
       if (list_is_empty(&queued_txns_) && !dead_) {
         async::PostTask(dispatcher(), [&] {
@@ -629,13 +648,13 @@ void UsbMassStorageDevice::WorkerLoop() {
           // fdf::DriverBase::outgoing().
           zx_status_t status = CheckLunsReady();
           if (status != ZX_OK) {
+            // keep going
             fdf::error("Failed to periodically check whether LUNs are ready: {}",
                        zx_status_get_string(status));
           }
         });
         continue;
       }
-      sync_completion_reset(&txn_completion_);
     }
     std::lock_guard<std::mutex> lock(luns_lock_);
     if (dead_) {
