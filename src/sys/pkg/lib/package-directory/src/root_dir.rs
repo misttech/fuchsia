@@ -452,7 +452,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn new_missing_meta_far_error() {
         let (_blobfs_fake, blobfs_client) = FakeBlobfs::new();
         assert_matches!(
@@ -461,7 +461,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn new_rejects_invalid_utf8() {
         let (blobfs_fake, blobfs_client) = FakeBlobfs::new();
         let mut meta_far = vec![];
@@ -483,7 +483,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn new_initializes_maps() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
@@ -519,7 +519,7 @@ mod tests {
         assert_eq!(root_dir.non_meta_files, non_meta_files);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn rejects_meta_file_collisions() {
         let pkg = PackageBuilder::new("base-package-0")
             .add_resource_at("meta/dir/file", "meta-contents0".as_bytes())
@@ -565,7 +565,7 @@ mod tests {
         };
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn read_file() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
@@ -577,7 +577,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn has_file() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
@@ -586,7 +586,7 @@ mod tests {
         assert_eq!(root_dir.has_file("missing"), false);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn external_file_hashes() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
@@ -601,7 +601,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn path() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
@@ -611,7 +611,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn subpackages_present() {
         let subpackages = fuchsia_pkg::MetaSubpackages::from_iter([(
             fuchsia_url::RelativePackageUrl::parse("subpackage-name").unwrap(),
@@ -624,14 +624,14 @@ mod tests {
         assert_eq!(root_dir.subpackages().await.unwrap(), subpackages);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn subpackages_absent() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
         assert_eq!(root_dir.subpackages().await.unwrap(), fuchsia_pkg::MetaSubpackages::default());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn subpackages_error() {
         let (_env, root_dir) = TestEnv::with_subpackages(Some(b"invalid-json")).await;
 
@@ -641,7 +641,7 @@ mod tests {
     /// Ensure connections to a [`RootDir`] cannot be created as mutable (i.e. with
     /// [`fio::PERM_WRITABLE`]). This ensures that the VFS will disallow any attempts to create a
     /// new file/directory, modify the attributes of any nodes, open any files as writable.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_cannot_be_served_as_mutable() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
         let proxy = vfs::directory::serve(root_dir, fio::PERM_WRITABLE);
@@ -651,7 +651,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_readdir() {
         let (_env, root_dir) = TestEnv::new().await;
         assert_eq!(
@@ -665,7 +665,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_get_attributes() {
         let (_env, root_dir) = TestEnv::new().await;
         let (mutable_attributes, immutable_attributes) =
@@ -683,7 +683,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_watch_not_supported() {
         let (_env, root_dir) = TestEnv::new().await;
         let (_client, server) = fidl::endpoints::create_endpoints();
@@ -692,7 +692,7 @@ mod tests {
         assert_eq!(status, zx::Status::NOT_SUPPORTED);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_non_meta_file() {
         let (_env, root_dir) = TestEnv::new().await;
         let proxy = fuchsia_fs::directory::open_file(&root_dir, "resource", fio::PERM_READABLE)
@@ -701,7 +701,7 @@ mod tests {
         assert_eq!(fuchsia_fs::file::read(&proxy).await.unwrap(), b"blob-contents".to_vec());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_meta_as_file() {
         let (env, root_dir) = TestEnv::new().await;
         let proxy =
@@ -719,7 +719,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_meta_as_dir() {
         let (_env, root_dir) = TestEnv::new().await;
         for path in ["meta", "meta/"] {
@@ -752,7 +752,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_meta_as_node() {
         let (_env, root_dir) = TestEnv::new().await;
         for path in ["meta", "meta/"] {
@@ -810,7 +810,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_meta_file() {
         let (_env, root_dir) = TestEnv::new().await;
         let proxy = fuchsia_fs::directory::open_file(&root_dir, "meta/file", fio::PERM_READABLE)
@@ -819,7 +819,7 @@ mod tests {
         assert_eq!(fuchsia_fs::file::read(&proxy).await.unwrap(), b"meta-contents0".to_vec());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_meta_subdir() {
         let (_env, root_dir) = TestEnv::new().await;
         for path in ["meta/dir", "meta/dir/"] {
@@ -833,7 +833,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn root_dir_open_non_meta_subdir() {
         let (_env, root_dir) = TestEnv::new().await;
         for path in ["dir", "dir/"] {

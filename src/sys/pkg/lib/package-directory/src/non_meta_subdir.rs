@@ -154,7 +154,7 @@ mod tests {
     /// Ensure connections to a [`NonMetaSubdir`] cannot be created as mutable (i.e. with
     /// [`fio::PERM_WRITABLE`]) This ensures that the VFS will disallow any attempts to create a new
     /// file/directory, modify the attributes of any nodes, or open any files as writable.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn non_meta_subdir_cannot_be_served_as_mutable() {
         let pkg = PackageBuilder::new("pkg")
             .add_resource_at("dir0/dir1/file", "bloblob".as_bytes())
@@ -176,7 +176,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn non_meta_subdir_readdir() {
         let (_env, sub_dir) = TestEnv::new().await;
         assert_eq!(
@@ -188,7 +188,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn non_meta_subdir_get_attributes() {
         let (_env, sub_dir) = TestEnv::new().await;
         let (mutable_attributes, immutable_attributes) =
@@ -206,7 +206,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn non_meta_subdir_watch_not_supported() {
         let (_env, sub_dir) = TestEnv::new().await;
         let (_client, server) = fidl::endpoints::create_endpoints();
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(status, zx::Status::NOT_SUPPORTED);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn non_meta_subdir_open_directory() {
         let (_env, sub_dir) = TestEnv::new().await;
         for path in ["dir1", "dir1/"] {
@@ -229,7 +229,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn non_meta_subdir_open_file() {
         let (_env, sub_dir) = TestEnv::new().await;
         let proxy = fuchsia_fs::directory::open_file(&sub_dir, "dir1/file", fio::PERM_READABLE)

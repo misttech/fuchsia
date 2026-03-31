@@ -156,7 +156,7 @@ mod tests {
     /// [`fio::PERM_WRITABLE`]) or executable ([`fio::PERM_EXECUTABLE`]). This ensures that the VFS
     /// will disallow any attempts to create a new file/directory, modify the attributes of any
     /// nodes, or open any files as writable/executable.
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn meta_as_dir_cannot_be_served_as_mutable() {
         let pkg = PackageBuilder::new("pkg")
             .add_resource_at("meta/dir/file", &b"contents"[..])
@@ -177,7 +177,7 @@ mod tests {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn meta_as_dir_readdir() {
         let (_env, meta_as_dir) = TestEnv::new().await;
         assert_eq!(
@@ -192,7 +192,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn meta_as_dir_get_attributes() {
         let (_env, meta_as_dir) = TestEnv::new().await;
         let (mutable_attributes, immutable_attributes) =
@@ -212,7 +212,7 @@ mod tests {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn meta_as_dir_watch_not_supported() {
         let (_env, meta_as_dir) = TestEnv::new().await;
         let (_client, server) = fidl::endpoints::create_endpoints();
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(status, zx::Status::NOT_SUPPORTED);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn meta_as_dir_open_file() {
         let (_env, meta_as_dir) = TestEnv::new().await;
         let proxy = fuchsia_fs::directory::open_file(&meta_as_dir, "dir/file", fio::PERM_READABLE)
@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(fuchsia_fs::file::read(&proxy).await.unwrap(), b"contents".to_vec());
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn meta_as_dir_open_directory() {
         let (_env, meta_as_dir) = TestEnv::new().await;
         for path in ["dir", "dir/"] {
