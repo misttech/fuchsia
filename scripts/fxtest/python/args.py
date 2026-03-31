@@ -110,6 +110,7 @@ class Flags:
     extra_args: typing.List[str]
     env: typing.List[str]
     allow_temporary_package_server: bool
+    allow_temporary_emulator: bool
 
     output: bool
     simple: bool
@@ -630,6 +631,13 @@ def parse_args(
         "--allow-temporary-package-server",
         action=argparse.BooleanOptionalAction,
         help="Allow this script to start a temporary package server if one is not already running. Default is True.",
+        default=True,
+    )
+
+    execution.add_argument(
+        "--allow-temporary-emulator",
+        action=argparse.BooleanOptionalAction,
+        help="Allow this script to start a temporary emulator if no active device is detected. Default is True.",
         default=True,
     )
 

@@ -179,6 +179,9 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+        self._mock_has_active_device(True)
+        self._mock_wait_for_repository_registration(True)
+
         # Provide hard-coded predictable test-list.json content rather than
         # actually running the generate_test_list program.
         self._mock_generate_test_list()
@@ -245,6 +248,20 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
     def _mock_has_package_server_connected_to_device(self, value: bool) -> None:
         m = mock.AsyncMock(return_value=value)
         patch = mock.patch("main.has_package_server_connected_to_device", m)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def _mock_has_active_device(self, value: bool) -> None:
+        m = mock.AsyncMock(return_value=value)
+        patch = mock.patch("main.AsyncMain._has_active_device", m)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def _mock_wait_for_repository_registration(self, value: bool) -> None:
+        m = mock.AsyncMock(return_value=value)
+        patch = mock.patch(
+            "main.AsyncMain._wait_for_repository_registration", m
+        )
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -790,6 +807,76 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(
                 ("fx", "--dir", self.out_dir, "serve"), call_prefixes
             )
+
+    async def test_missing_device_starts_emulator(self) -> None:
+        """Test that an emulator is started and stopped when no device is connected."""
+        emu_started = False
+        emu_stopped = False
+
+        async def handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> typing.Any:
+            if "target" in args and "list" in args:
+                return mock.MagicMock(return_code=0, stdout="", stderr="")
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+                return mock.MagicMock(
+                    return_code=0, stdout="Started emu", stderr=""
+                )
+            if "emu" in args and "stop" in args:
+                nonlocal emu_stopped
+                emu_stopped = True
+                return mock.MagicMock(
+                    return_code=0, stdout="Stopped emu", stderr=""
+                )
+            return mock.MagicMock(return_code=0, stdout="", stderr="")
+
+        self._mock_has_active_device(False)
+        self._mock_wait_for_repository_registration(True)
+        self._mock_run_command(0, async_handler=handler)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build"])
+        )
+        self.assertEqual(ret, 0)
+        self.assertTrue(emu_started)
+        self.assertTrue(emu_stopped)
+
+    async def test_no_allow_temporary_emulator_does_not_start_emulator(
+        self,
+    ) -> None:
+        """Test that an emulator is NOT started when --no-allow-temporary-emulator is passed."""
+        emu_started = False
+
+        async def handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> typing.Any:
+            if "target" in args and "list" in args:
+                return mock.MagicMock(return_code=0, stdout="", stderr="")
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+                return mock.MagicMock(
+                    return_code=0, stdout="Started emu", stderr=""
+                )
+            return mock.MagicMock(return_code=0, stdout="", stderr="")
+
+        self._mock_has_active_device(False)
+        self._mock_wait_for_repository_registration(True)
+        self._mock_run_command(0, async_handler=handler)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                ["--simple", "--no-build", "--no-allow-temporary-emulator"]
+            )
+        )
+        self.assertEqual(ret, 0)
+        self.assertFalse(emu_started)
 
     async def test_list_command_starts_and_terminates_package_server(
         self,

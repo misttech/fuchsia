@@ -690,22 +690,13 @@ class AsyncMain:
 
         # Check if we have a running package server. We do this here so that we
         # can fail early before running a full build.
+        need_emulator = False
+        emulator_started = False
+        if selections.has_device_test() and not await self._has_active_device():
+            need_emulator = True
+
         package_server_task: asyncio.Task[typing.Any] | None = None
         package_server_event: asyncio.Event | None = None
-        if not flags.list_runtime_deps:
-            package_server_behavior = (
-                await self._check_if_package_server_needed(selections, exec_env)
-            )
-            match package_server_behavior:
-                case self._PackageServerBehavior.FAIL:
-                    return 1
-                case self._PackageServerBehavior.PRESENT:
-                    pass
-                case self._PackageServerBehavior.START:
-                    (
-                        package_server_task,
-                        package_server_event,
-                    ) = self._start_package_server()
 
         async def end_execution(
             error: str | None = None, id: event.Id | None = None
@@ -716,6 +707,8 @@ class AsyncMain:
             ):
                 package_server_event.set()
                 await package_server_task
+            if emulator_started:
+                await self._stop_emulator()
             recorder.emit_end(error=error, id=id)
 
         # If enabled, try to build and update the selected tests.
@@ -754,6 +747,38 @@ class AsyncMain:
             if ota_result is None or ota_result.return_code != 0:
                 recorder.emit_warning_message(
                     "OTA failed, attempting to run tests anyway"
+                )
+
+        if need_emulator and flags.allow_temporary_emulator:
+            if not await self._start_emulator():
+                await end_execution("Failed to start emulator.")
+                return 1
+            emulator_started = True
+
+        if not flags.list_runtime_deps:
+            package_server_behavior = (
+                await self._check_if_package_server_needed(selections, exec_env)
+            )
+            match package_server_behavior:
+                case self._PackageServerBehavior.FAIL:
+                    return 1
+                case self._PackageServerBehavior.PRESENT:
+                    pass
+                case self._PackageServerBehavior.START:
+                    (
+                        package_server_task,
+                        package_server_event,
+                    ) = self._start_package_server()
+
+        if selections.has_device_test() and not flags.list_runtime_deps:
+            recorder.emit_info_message("Waiting for repository registration...")
+            if await self._wait_for_repository_registration():
+                recorder.emit_info_message(
+                    "Repository registered successfully!"
+                )
+            else:
+                recorder.emit_warning_message(
+                    "Timeout waiting for repository registration. Tests may fail to resolve package URLs."
                 )
 
         # Generate a new test-list.json file based on the built tests.
@@ -1941,6 +1966,107 @@ class AsyncMain:
             ),
             cancel_event,
         )
+
+    async def _has_active_device(self) -> bool:
+        """Check if any active devices are reachable.
+
+        Returns:
+            bool: True if an active device is found, False otherwise.
+        """
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+
+        output = await execution.run_command(
+            *exec_env.fx_cmd_line(
+                "ffx", "target", "list", "--format", "addresses"
+            ),
+            recorder=recorder,
+            quiet_mode=True,
+        )
+        return (
+            output is not None
+            and output.return_code == 0
+            and bool(output.stdout.strip())
+            and output.stdout.strip() != "No devices found."
+        )
+
+    async def _wait_for_repository_registration(self) -> bool:
+        """Wait for repository to be registered."""
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+        for _ in range(30):
+            try:
+                output = await execution.run_command(
+                    *exec_env.fx_cmd_line(
+                        "ffx", "target", "repository", "list"
+                    ),
+                    recorder=recorder,
+                    quiet_mode=True,
+                )
+                if (
+                    output is not None
+                    and output.return_code == 0
+                    and '"fuchsia.com"' in output.stdout
+                ):
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+        return False
+
+    async def _start_emulator(self) -> bool:
+        """Start a headless emulator.
+
+        Returns:
+            bool: True if the emulator starts successfully, False otherwise.
+        """
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+
+        recorder.emit_instruction_message(
+            "\nNo active device detected. Starting a headless emulator..."
+        )
+        output = await execution.run_command(
+            *exec_env.fx_cmd_line("ffx", "emu", "start", "--headless"),
+            recorder=recorder,
+        )
+        if output is None or output.return_code != 0:
+            recorder.emit_warning_message("Failed to start emulator.")
+            return False
+
+        # Wait for the emulator to be ready.
+        recorder.emit_instruction_message("Waiting for emulator to be ready...")
+        wait_output = await execution.run_command(
+            *exec_env.fx_cmd_line("ffx", "target", "wait"),
+            recorder=recorder,
+        )
+        if wait_output is None or wait_output.return_code != 0:
+            recorder.emit_warning_message(
+                "Emulator failed to become ready in time."
+            )
+            return False
+
+        return True
+
+    async def _stop_emulator(self) -> bool:
+        """Stop the headless emulator.
+
+        Returns:
+            bool: True if the emulator stops successfully, False otherwise.
+        """
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+
+        recorder.emit_instruction_message("\nStopping the headless emulator...")
+        output = await execution.run_command(
+            *exec_env.fx_cmd_line("ffx", "emu", "stop"),
+            recorder=recorder,
+        )
+        return output is not None and output.return_code == 0
 
 
 @functools.lru_cache

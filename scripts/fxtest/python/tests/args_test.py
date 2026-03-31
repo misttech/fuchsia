@@ -204,6 +204,20 @@ class TestArgs(unittest.TestCase):
                 flags.validate()
                 self.assertEqual(flags.simple, False)
 
+    def test_allow_temporary_emulator(self) -> None:
+        # Default should be True
+        flags = args.parse_args([])
+        flags.validate()
+        self.assertEqual(flags.allow_temporary_emulator, True)
+
+        flags = args.parse_args(["--allow-temporary-emulator"])
+        flags.validate()
+        self.assertEqual(flags.allow_temporary_emulator, True)
+
+        flags = args.parse_args(["--no-allow-temporary-emulator"])
+        flags.validate()
+        self.assertEqual(flags.allow_temporary_emulator, False)
+
     def test_json(self) -> None:
         flags = args.parse_args(["--json"])
         flags.validate()
