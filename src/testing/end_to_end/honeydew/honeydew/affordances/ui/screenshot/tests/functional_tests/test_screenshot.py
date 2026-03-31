@@ -3,16 +3,16 @@
 # found in the LICENSE file.
 """Mobly test for Screenshot affordance."""
 
+import asyncio
 import logging
 import os
 import pathlib
-import time
 from typing import Callable
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.typing import custom_types
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,28 +23,28 @@ EXAMPLE_URL = (
 )
 
 
-class ScreenshotTestCases(fuchsia_base_test.FuchsiaTestCases):
+class ScreenshotTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
     """Test logic for Screenshot affordance."""
 
-    def setup_test(
+    async def setup_test(
         self,
-        fuchsia_devices: list[FuchsiaDevice],
+        fuchsia_devices: list[AsyncFuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
-        super().setup_test(fuchsia_devices, output_file_path)
+        await super().setup_test(fuchsia_devices, output_file_path)
         self.fuchsia_devices = fuchsia_devices
         self.output_file_path = output_file_path
         self.dut = self.fuchsia_devices[0]
         self.test_case_path = str(self.output_file_path(""))
 
-    def test_take_screenshot(self) -> None:
+    async def test_take_screenshot(self) -> None:
         # We launch the test app that draws something on the screen.
         # EXAMPLE_URL(flatland-examples) will render colorful background instead
         # of blank screen. It is better for screenshot to verify
         # "It really take a screenshot" instead of "It just give an empty pic".
 
         _LOGGER.info("Launching %s", EXAMPLE_URL)
-        self.dut.log_message_to_device(
+        await self.dut.log_message_to_device(
             f"Launching test app {EXAMPLE_URL}...", custom_types.LEVEL.INFO
         )
         self.dut.session.add_component(EXAMPLE_URL)
@@ -53,10 +53,10 @@ class ScreenshotTestCases(fuchsia_base_test.FuchsiaTestCases):
         # TODO(b/320583170): Can be removed once we have APIs to check for component
         # actually running.
         _LOGGER.info("Waiting for test app to load...")
-        time.sleep(10)
+        await asyncio.sleep(10)
 
         _LOGGER.info("Taking screenshot...")
-        self.dut.log_message_to_device(
+        await self.dut.log_message_to_device(
             "Taking screenshot...", custom_types.LEVEL.INFO
         )
         image = self.dut.screenshot.take()
@@ -78,27 +78,27 @@ class ScreenshotTestCases(fuchsia_base_test.FuchsiaTestCases):
         asserts.assert_not_equal(image.data[0:4], [0x0, 0x0, 0x0, 0xFF])
 
 
-class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
+class ScreenshotAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     """Screenshot affordance tests"""
 
     TEST_CASES = [ScreenshotTestCases]
 
-    def setup_class(self) -> None:
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
             * Assigns `dut` variable with FuchsiaDevice object
         """
-        super().setup_class()
+        await super().setup_class()
         self.dut = self.fuchsia_devices[0]
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.dut.session.ensure_started()
 
-    def teardown_test(self) -> None:
+    async def teardown_test(self) -> None:
         self.dut.session.cleanup()
-        super().teardown_test()
+        await super().teardown_test()
 
 
 if __name__ == "__main__":
