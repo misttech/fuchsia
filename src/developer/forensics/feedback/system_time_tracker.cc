@@ -12,6 +12,7 @@
 
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 
 namespace forensics::feedback {
 namespace {
@@ -77,7 +78,8 @@ void SystemTimeTracker::WriteUptimeAndRuntime() {
   rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
   doc.Accept(writer);
 
-  if (!files::WriteFile(write_path_, buffer.GetString(), buffer.GetSize())) {
+  if (!files::WriteFileInTwoPhases(write_path_, buffer.GetString(),
+                                   files::GetDirectoryName(write_path_))) {
     FX_LOGS_FIRST_N(ERROR, 10) << "Failed to write system time to: " << write_path_;
   }
 }
