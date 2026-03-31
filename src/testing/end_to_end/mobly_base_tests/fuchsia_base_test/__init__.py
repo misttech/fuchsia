@@ -13,9 +13,6 @@ import pathlib
 import typing
 from typing import Any, Callable, Coroutine, Dict, ParamSpec, TypeVar, Union
 
-if typing.TYPE_CHECKING:
-    from .fuchsia_base_test import FuchsiaBaseTest
-
 import fuchsia_async_extension
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
@@ -36,12 +33,6 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 T = TypeVar("T")
-
-# TODO(https://fxbug.dev/488299605): Rather try to abstract commonalities of
-# AsyncFuchsiaBaseTest and FuchsiaBaseTest, chcl@ chose to duplicate the
-# implementations instead. FuchsiaBaseTest will soon be deleted in favor
-# of AsyncFuchsiaBaseTest.
-
 
 # LINT.IfChange
 HEALTH_CHECK_FAILURE_MESSAGE = (
@@ -92,62 +83,6 @@ class TracingOn(enum.StrEnum):
     NEVER = "never"
 
 
-# TODO(https://fxbug.dev/488299605): Rather try to abstract commonalities of
-# AsyncFuchsiaBaseTest and FuchsiaBaseTest, chcl@ chose to duplicate the
-# implementations instead. FuchsiaBaseTest will soon be deleted in favor
-# of AsyncFuchsiaBaseTest.
-
-
-# LINT.IfChange(sync_test_cases)
-class FuchsiaTestCases:
-    """Base class for modular test cases."""
-
-    def setup_test(
-        self,
-        fuchsia_devices: list[fuchsia_device.FuchsiaDevice],
-        output_file_path: Callable[[str], pathlib.Path],
-    ) -> None:
-        """Called before each test case."""
-
-    def teardown_test(self) -> None:
-        """Called after each test case."""
-
-    def inject_test_cases(
-        self, mobly_test: "Union[FuchsiaBaseTest, AsyncFuchsiaBaseTest]"
-    ) -> None:
-        for attr_name, method in inspect.getmembers(self, callable):
-            if attr_name.startswith("test_"):
-
-                @functools.wraps(method)
-                def wrapper(
-                    *args: Any, method: Any = method, **kwargs: Any
-                ) -> None:
-                    try:
-                        fuchsia_devices = [
-                            device.as_sync()
-                            if hasattr(device, "as_sync")
-                            else device
-                            for device in mobly_test.fuchsia_devices
-                        ]
-                        self.setup_test(
-                            fuchsia_devices,
-                            mobly_test.output_file_path,
-                        )
-                        method(*args, **kwargs)
-                    finally:
-                        self.teardown_test()
-
-                mobly_test.generate_tests(
-                    test_logic=wrapper,
-                    name_func=lambda *a, name=attr_name: name,
-                    arg_sets=[()],
-                )
-
-
-# LINT.ThenChange(:async_test_cases)
-
-
-# LINT.IfChange(async_test_cases)
 class AsyncFuchsiaTestCases:
     """Base class for modular test cases."""
 
@@ -187,9 +122,6 @@ class AsyncFuchsiaTestCases:
                     name_func=lambda *a, name=attr_name: name,
                     arg_sets=[()],
                 )
-
-
-# LINT.ThenChange(:sync_test_cases)
 
 
 class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):

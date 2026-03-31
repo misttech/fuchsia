@@ -96,22 +96,27 @@ Every Lacewing Mobly test follows the simple scaffolding below:
 ```py
 import logging
 
-from fuchsia_base_test import fuchsia_base_test
+import fuchsia_base_test
 from mobly import test_runner
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class MyFirstLacewingTest(fuchsia_base_test.FuchsiaBaseTest):
-    def setup_class(self) -> None:
+class MyFirstLacewingTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+    async def setup_class(self) -> None:
         """Initialize all DUT(s)"""
-        super().setup_class()
+        await super().setup_class()
         self.fuchsia_dut = self.fuchsia_devices[0]
 
-    def test_my_first_testcase(self) -> None:
+    async def test_an_async_testcase(self) -> None:
         _LOGGER.info("Running my first Lacewing test...")
         # Test logic goes here.
-        # e.g. self.fuchsia_dut.some_api(...)
+        # e.g. await self.fuchsia_dut.some_async_api(...)
+
+    def test_an_all_sync_testcase(self) -> None:
+        _LOGGER.info("Running my first Lacewing test...")
+        # Test logic goes here.
+        # e.g. self.fuchsia_dut.some_sync_api(...)
 
 if __name__ == '__main__':
     test_runner.main()
