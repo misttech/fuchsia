@@ -246,9 +246,11 @@ class UsbPeripheral : public fdf::DriverBase,
     bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
   }
 
-  // `UsbFunction` wrapped in `unique_ptr` because `UsbFunction` instance may be bound as a FIDL
-  // server which requires that the instance always be at the same memory address.
-  std::vector<std::unique_ptr<UsbFunction>> functions_;
+  // `UsbFunction` wrapped in `shared_ptr` because `UsbFunction` instance may be
+  // bound as a FIDL server which requires that the instance always be at the
+  // same memory address and so we can generate weak pointers for lambda
+  // captures for the function FIDL client.
+  std::vector<std::shared_ptr<UsbFunction>> functions_;
 
   // Our parent's DCI protocol.
   ddk::UsbDciProtocolClient dci_;

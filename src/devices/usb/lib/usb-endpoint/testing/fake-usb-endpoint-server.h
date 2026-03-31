@@ -425,6 +425,12 @@ class FakeUsbFidlProvider<fuchsia_hardware_usb_function::UsbFunction, FakeEndpoi
           fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>::Sync& completer) override {
     completer.Reply(fit::ok());
   }
+
+  void Deconfigure(
+      fidl::internal::NaturalCompleter<
+          fuchsia_hardware_usb_function::UsbFunction::Deconfigure>::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
 };
 
 }  // namespace fake_usb_endpoint

@@ -863,8 +863,8 @@ zx::result<size_t> UsbPeripheral::AddFunction(UsbConfiguration& config, Function
   }
 
   auto function_index = functions_.size();
-  auto function = std::make_unique<UsbFunction>(function_index, this, desc, config.index,
-                                                fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  auto function = std::shared_ptr<UsbFunction>(new UsbFunction(
+      function_index, this, desc, config.index, fdf::Dispatcher::GetCurrent()->async_dispatcher()));
   functions_.emplace_back(std::move(function));
 
   config.functions.push_back(function_index);

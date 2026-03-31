@@ -65,19 +65,23 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
     return result.take_error();
   }
 
-  bindings_.set_empty_set_handler([this]() {
-    if (!alloc_resources_over_fidl_) {
+  bindings_.set_empty_set_handler([weak_this = weak_from_this()]() {
+    std::shared_ptr self = weak_this.lock();
+    if (!self) {
+      return;
+    }
+    if (!self->alloc_resources_over_fidl_) {
       return;
     }
     // We need to release all allocated resources when our channel is closed.
     // Which also means that we need to close our connection with the function
     // interface to make sure that resources are not used after they've been
     // released.
-    if (function_intf_fidl_.is_valid()) {
-      function_intf_fidl_.AsyncTeardown();
-      function_intf_fidl_ = {};
+    if (self->function_intf_fidl_.is_valid()) {
+      self->function_intf_fidl_.AsyncTeardown();
+      self->function_intf_fidl_ = {};
     }
-    peripheral_->ReleaseResources(index_);
+    self->peripheral_->ReleaseResources(self->index_);
   });
 
   zx::result result = outgoing->AddService<fuchsia_hardware_usb_function::UsbFunctionService>(
@@ -387,7 +391,8 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
   num_interfaces_ = validate_result.value();
 
   descriptors_.reset(descriptors, length);
-  function_intf_fidl_.Bind(std::move(request.iface()), dispatcher_, this);
+  function_intf_fidl_.Bind(std::move(request.iface()), dispatcher_,
+                           std::make_unique<FunctionEventHandler>(this));
   zx_status_t status = peripheral_->FunctionRegistered();
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
@@ -400,25 +405,57 @@ void UsbFunction::Configure(ConfigureRequest& request, ConfigureCompleter::Sync&
   completer.Reply(fit::ok());
 }
 
-void UsbFunction::on_fidl_error(fidl::UnbindInfo info) {
+void UsbFunction::Deconfigure(DeconfigureCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+  ZX_ASSERT_MSG(!function_intf_.is_valid(), "mixed banjo and FIDL");
+  if (deconfigure_completer_.has_value()) {
+    completer.Reply(fit::as_error(ZX_ERR_UNAVAILABLE));
+    return;
+  }
+  if (!function_intf_fidl_.is_valid()) {
+    fdf::warn("Deconfigure called with no function interface bound");
+    completer.Reply(fit::ok());
+    return;
+  }
+  deconfigure_completer_.emplace(completer.ToAsync());
+  function_intf_fidl_.AsyncTeardown();
+}
+
+void UsbFunction::FunctionEventHandler::on_fidl_error(fidl::UnbindInfo info) {
   switch (info.status()) {
     case ZX_ERR_PEER_CLOSED:
     case ZX_OK:
     case ZX_ERR_CANCELED:
+      if (std::shared_ptr parent = parent_.lock()) {
+        parent->CloseFunctionInterface();
+      }
       break;
     default:
       fdf::error("Unexpected FIDL error on function interface: {}",
                  zx_status_get_string(info.status()));
       return;
   }
+}
+
+void UsbFunction::FunctionEventHandler::handle_unknown_event(
+    fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata) {
+  fdf::error("Unknown event on function interface: {}", metadata.event_ordinal);
+}
+
+UsbFunction::FunctionEventHandler::~FunctionEventHandler() {
+  if (std::shared_ptr parent = parent_.lock()) {
+    parent->CloseFunctionInterface();
+  }
+}
+
+void UsbFunction::CloseFunctionInterface() {
   function_intf_fidl_ = {};
   descriptors_.reset();
   peripheral_->DeviceStateChanged();
-}
-
-void UsbFunction::handle_unknown_event(
-    fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata) {
-  fdf::error("Unknown event on function interface: {}", metadata.event_ordinal);
+  if (deconfigure_completer_.has_value()) {
+    deconfigure_completer_->Reply(fit::ok());
+    deconfigure_completer_.reset();
+  }
 }
 
 void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,

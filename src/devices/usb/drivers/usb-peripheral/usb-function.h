@@ -25,10 +25,9 @@ class UsbPeripheral;
 
 // This class represents a USB function in the peripheral role configurations.
 // USB function drivers bind to this.
-class UsbFunction
-    : public ddk::UsbFunctionProtocol<UsbFunction>,
-      public fidl::Server<fuchsia_hardware_usb_function::UsbFunction>,
-      public fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface> {
+class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
+                    public fidl::Server<fuchsia_hardware_usb_function::UsbFunction>,
+                    public std::enable_shared_from_this<UsbFunction> {
  public:
   UsbFunction(size_t index, UsbPeripheral* peripheral,
               fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor desc, uint8_t configuration,
@@ -62,12 +61,6 @@ class UsbFunction
       cpp20::span<uint8_t> write_buffer);
   uint8_t configuration() const { return configuration_; }
 
-  // fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface>
-  void on_fidl_error(fidl::UnbindInfo info) override;
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata)
-      override;
-
   inline const usb_descriptor_header_t* GetDescriptors(size_t* out_length) const {
     *out_length = descriptors_.size();
     return reinterpret_cast<usb_descriptor_header_t*>(descriptors_.data());
@@ -96,6 +89,7 @@ class UsbFunction
                          ConfigureEndpointCompleter::Sync& completer) override;
   void DisableEndpoint(DisableEndpointRequest& request,
                        DisableEndpointCompleter::Sync& completer) override;
+  void Deconfigure(DeconfigureCompleter::Sync& completer) override;
 
   zx::result<> AddChild(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
                         const std::string& child_node_name,
@@ -110,6 +104,22 @@ class UsbFunction
       uint8_t ep_address,
       fuchsia_hardware_usb_function::EndpointConfiguration endpoint_configuration);
   zx_status_t CommonEndpointDisable(uint8_t ep_address);
+  void CloseFunctionInterface();
+
+  // fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface>
+  class FunctionEventHandler
+      : public fidl::WireAsyncEventHandler<fuchsia_hardware_usb_function::UsbFunctionInterface> {
+   public:
+    explicit FunctionEventHandler(UsbFunction* parent) : parent_(parent->weak_from_this()) {}
+    ~FunctionEventHandler();
+    void on_fidl_error(fidl::UnbindInfo info) override;
+    void handle_unknown_event(
+        fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata)
+        override;
+
+   private:
+    std::weak_ptr<UsbFunction> parent_;
+  };
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbFunction);
 
@@ -140,6 +150,7 @@ class UsbFunction
       mac_address_metadata_server_;
   std::optional<fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>>
       serial_number_metadata_server_;
+  std::optional<DeconfigureCompleter::Async> deconfigure_completer_;
 };
 
 }  // namespace usb_peripheral

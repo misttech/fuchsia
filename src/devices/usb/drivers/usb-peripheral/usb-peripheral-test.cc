@@ -267,13 +267,23 @@ class FakeUsbFunction
     call_completed_.Reset();
   }
 
+  void WaitUntilUnbound() {
+    unbound_completion_.Wait();
+    unbound_completion_.Reset();
+  }
+
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   void Bind(async_dispatcher_t* dispatcher,
             fidl::ServerEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> server_end) {
-    binding_.emplace(fidl::BindServer(dispatcher, std::move(server_end), shared_from_this()));
+    binding_.emplace(fidl::BindServer(
+        dispatcher, std::move(server_end), shared_from_this(),
+        [](FakeUsbFunction* impl, fidl::UnbindInfo info,
+           fidl::ServerEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> server_end) {
+          impl->unbound_completion_.Signal();
+        }));
   }
 
   void Unbind() { binding_->Unbind(); }
@@ -290,6 +300,7 @@ class FakeUsbFunction
 
  private:
   libsync::Completion call_completed_;
+  libsync::Completion unbound_completion_;
 
   bool control_called_ = false;
   uint8_t control_req_ = 0;
@@ -818,6 +829,94 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
 
   ASSERT_TRUE(second_configure_res.ok()) << second_configure_res.FormatDescription();
   EXPECT_STATUS(second_configure_res.value(), ZX_ERR_ALREADY_BOUND);
+}
+
+TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+      .i_interface = 0,
+  };
+
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  // First Configure
+  {
+    fidl::WireResult result = function_client->Configure(
+        fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+        std::move(fake_function_endpoint));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_OK(result.value());
+  }
+
+  // Deconfigure
+  {
+    fidl::WireResult result = function_client->Deconfigure();
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_OK(result.value());
+  }
+  fake_function->WaitUntilUnbound();
+
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { EXPECT_FALSE(env.dci().controller_started()); });
+
+  // Now Configure should succeed again with a new endpoint
+  fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [new_fake_function, new_fake_function_endpoint] = std::move(fake_function_result.value());
+
+  {
+    fidl::WireResult result = function_client->Configure(
+        fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+        std::move(new_fake_function_endpoint));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_OK(result.value());
+  }
+
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+
+  // Verify new fake function is called.
+  {
+    ASSERT_OK(dci()->SetConnected(true).status());
+    fdescriptor::wire::UsbSetup setup;
+    setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+    setup.b_request = USB_REQ_SET_CONFIGURATION;
+    setup.w_value = 1;  // Configuration 1
+    setup.w_index = interface_num;
+    setup.w_length = 0;
+    fidl::Arena arena;
+    std::vector<uint8_t> unused;
+    fidl::WireResult config_res =
+        dci()->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    EXPECT_TRUE(config_res.ok()) << config_res.FormatDescription();
+    ASSERT_OK(config_res.value());
+  }
+
+  new_fake_function->WaitUntilCalled();
+  EXPECT_TRUE(new_fake_function->set_configured_called());
+  EXPECT_TRUE(new_fake_function->configured());
 }
 
 TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {

@@ -42,6 +42,19 @@ closed protocol UsbFunction {
         iface client_end:UsbFunctionInterface;
     }) -> () error zx.Status;
 
+    /// Deconfigures the function.
+    ///
+    /// This is the opposite of `Configure`. The server drops its connection to
+    /// the function upon receiving the call, if it's bound.
+    ///
+    /// Returns after the function channel has been unbound from the server.
+    ///
+    /// Trivially succeeds if no function interface is bound.
+    ///
+    /// Returns `ZX_ERR_UNAVAILABLE` if a deconfiguration is already in
+    /// progress.
+    strict Deconfigure() -> () error zx.Status;
+
     /// Allocates resources for the function.
     ///
     /// This function is used to allocate resources for the function.
