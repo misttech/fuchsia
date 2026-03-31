@@ -7,9 +7,6 @@ source_set("channel-write-etc") {
   sources = [ "write_etc.cc" ]
   deps = [
     "//sdk/lib/fit",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/mini-process",
-    "//zircon/system/ulib/vdso-code-header",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
