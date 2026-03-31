@@ -44,9 +44,8 @@
             moniker: "/core/network/netcfg",
         },
         {
-            instance_id: "b63d06982a705d04fcfc5f401db2b2f9faa640fa973ff99adb4f62a39f23d24f",
+            instance_id: "18f6b0d52208bab5e5dd65ef6021b7e47d7a6b3d09f6668dcea18f93161e9b1d",
             moniker: "/core/wlancfg",
-            ignore_duplicate_id: true,
         },
         {
             instance_id: "83fc3d0a58182e0fc38f890a5b0965f51c1088b97f6e78c6b75f5f2fef060d8d",
