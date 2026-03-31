@@ -323,16 +323,12 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   ExtractZirconRebootInfo(zircon_reboot_log_path, &hw_reason, &zircon_reason, &zircon_reboot_log,
                           &last_boot_uptime, &last_boot_runtime, &critical_process);
 
-  if (!last_boot_uptime.has_value() || !last_boot_runtime.has_value()) {
+  if (!last_boot_uptime.has_value() && !last_boot_runtime.has_value()) {
     if (const std::optional<SystemTime> system_time =
             GetPreviousSystemTime(previous_system_time_path);
         system_time.has_value()) {
-      if (!last_boot_uptime.has_value()) {
-        last_boot_uptime = system_time->uptime;
-      }
-      if (!last_boot_runtime.has_value()) {
-        last_boot_runtime = system_time->runtime;
-      }
+      last_boot_uptime = system_time->uptime;
+      last_boot_runtime = system_time->runtime;
     }
   }
 

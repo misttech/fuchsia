@@ -690,6 +690,38 @@ TEST_F(RebootLogTest, NoPreviousSystemTimeFile) {
   EXPECT_FALSE(reboot_log.Runtime().has_value());
 }
 
+TEST_F(RebootLogTest, NoFallbackToSystemTimeTracker_MissingRuntime) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n");
+  WritePreviousSystemTimeContents(R"({"uptime_ms":9876,"runtime_ms":8765})");
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
+                                /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
+
+  ASSERT_TRUE(reboot_log.Uptime().has_value());
+  EXPECT_EQ(*reboot_log.Uptime(), zx::msec(1234));
+  ASSERT_FALSE(reboot_log.Runtime().has_value());
+}
+
+TEST_F(RebootLogTest, NoFallbackToSystemTimeTracker_MissingUptime) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (NO CRASH)\n\nDOWNTIME (ms)\n1234\nRUNTIME (ms)\n5678");
+  WritePreviousSystemTimeContents(R"({"uptime_ms":9876,"runtime_ms":8765})");
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
+                                /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
+
+  ASSERT_FALSE(reboot_log.Uptime().has_value());
+  ASSERT_TRUE(reboot_log.Runtime().has_value());
+  EXPECT_EQ(*reboot_log.Runtime(), zx::msec(5678));
+}
+
 class RebootLogCriticalProcessTest : public RebootLogTest,
                                      public testing::WithParamInterface<CriticalProcessTestParam> {
 };
