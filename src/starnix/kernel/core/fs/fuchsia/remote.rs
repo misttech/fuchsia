@@ -41,7 +41,7 @@ use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{
     __kernel_fsid_t, errno, error, from_status_like_fdio, fsverity_descriptor, mode, off_t, statfs,
@@ -88,14 +88,14 @@ pub fn new_remote_fs(
         .map_err(|_| errno!(EINVAL, "source path is not utf8"))?;
     let mut create_flags =
         fio::PERM_READABLE | fio::Flags::FLAG_MAYBE_CREATE | fio::Flags::PROTOCOL_DIRECTORY;
-    if !options.flags.contains(MountFlags::RDONLY) {
+    if !options.flags.contains(FileSystemFlags::RDONLY) {
         create_flags |= fio::PERM_WRITABLE;
     }
     let (root_proxy, subdir) = kernel.open_ns_dir(requested_path, create_flags)?;
 
     let subdir = if subdir.is_empty() { ".".to_string() } else { subdir };
     let mut open_rights = fio::PERM_READABLE;
-    if !options.flags.contains(MountFlags::RDONLY) {
+    if !options.flags.contains(FileSystemFlags::RDONLY) {
         open_rights |= fio::PERM_WRITABLE;
     }
     let mut subdir_options = options;
@@ -544,7 +544,7 @@ impl RemoteFs {
         let (remotefs, root_node, info, node_id) = RemoteFs::new(root, rights)?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
-            options.flags |= MountFlags::RDONLY;
+            options.flags |= FileSystemFlags::RDONLY;
         }
         let use_remote_ids = remotefs.use_remote_ids;
         let fs = FileSystem::new(
@@ -2399,6 +2399,7 @@ mod test {
     use starnix_uapi::errors::EINVAL;
     use starnix_uapi::file_mode::{AccessCheck, mode};
     use starnix_uapi::ino_t;
+    use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use std::sync::Barrier;
@@ -3593,14 +3594,14 @@ mod test {
                     client,
                     FileSystemOptions {
                         source: FlyByteStr::new(b"/"),
-                        flags: MountFlags::RELATIME,
+                        flags: FileSystemFlags::empty(),
                         ..Default::default()
                     },
                     fio::PERM_READABLE | fio::PERM_WRITABLE,
                 )
                 .expect("new_fs failed");
 
-                let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
+                let ns = Namespace::new_with_flags(fs, MountpointFlags::RELATIME);
                 let child = ns
                     .root()
                     .open_create_node(
@@ -3651,14 +3652,14 @@ mod test {
                 client2,
                 FileSystemOptions {
                     source: FlyByteStr::new(b"/"),
-                    flags: MountFlags::RELATIME,
+                    flags: FileSystemFlags::empty(),
                     ..Default::default()
                 },
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .expect("new_fs failed");
 
-            let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
+            let ns = Namespace::new_with_flags(fs, MountpointFlags::RELATIME);
             let child = ns
                 .root()
                 .lookup_child(

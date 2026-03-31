@@ -10,12 +10,12 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{FileSystemHandle, FileSystemOptions, FsString};
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::{MountFlags, MountpointFlags};
 
 pub struct MountAction {
     pub path: FsString,
     pub fs: FileSystemHandle,
-    pub flags: MountFlags,
+    pub flags: MountpointFlags,
 }
 
 impl MountAction {
@@ -91,15 +91,11 @@ impl MountSpec {
 
         Ok((
             MountSpec { fs_type: fs_type.into(), mount_point: mount_point.into(), flags },
-            FileSystemOptions {
-                source: fs_src.into(),
-                flags: flags & MountFlags::STORED_ON_FILESYSTEM,
-                params,
-            },
+            FileSystemOptions { source: fs_src.into(), flags: flags.file_system_flags(), params },
         ))
     }
 
     fn into_action(self, fs: FileSystemHandle) -> MountAction {
-        MountAction { path: self.mount_point.into(), fs, flags: self.flags }
+        MountAction { path: self.mount_point, fs, flags: self.flags.mountpoint_flags() }
     }
 }

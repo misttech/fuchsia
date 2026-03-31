@@ -466,7 +466,7 @@ mod test {
     use crate::vfs::{FdNumber, UnlinkKind};
     use starnix_uapi::errno;
     use starnix_uapi::file_mode::AccessCheck;
-    use starnix_uapi::mount_flags::MountFlags;
+    use starnix_uapi::mount_flags::FileSystemFlags;
     use starnix_uapi::vfs::ResolveFlags;
     use zerocopy::IntoBytes;
 
@@ -723,7 +723,7 @@ mod test {
                 &kernel,
                 FileSystemOptions {
                     source: Default::default(),
-                    flags: MountFlags::empty(),
+                    flags: FileSystemFlags::empty(),
                     params: MountParams::parse(b"mode=0123,uid=42,gid=84".into())
                         .expect("parsed correctly"),
                 },

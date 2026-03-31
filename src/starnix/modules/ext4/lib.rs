@@ -25,7 +25,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{EXT4_SUPER_MAGIC, errno, error, ino_t, off_t, statfs};
 use std::sync::Arc;
@@ -69,12 +69,9 @@ impl ExtFilesystem {
     ) -> Result<FileSystemHandle, Errno> {
         let mut open_flags = OpenFlags::RDWR;
         let mut prot_flags = ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC;
-        if options.flags.contains(MountFlags::RDONLY) {
+        if options.flags.contains(FileSystemFlags::RDONLY) {
             open_flags = OpenFlags::RDONLY;
             prot_flags ^= ProtectionFlags::WRITE;
-        }
-        if options.flags.contains(MountFlags::NOEXEC) {
-            prot_flags ^= ProtectionFlags::EXEC;
         }
 
         let source_device = current_task.open_file(locked, options.source.as_ref(), open_flags)?;

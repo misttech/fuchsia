@@ -6,10 +6,14 @@ use crate::{MountAction, run_component_features};
 use anyhow::{Context, Error, anyhow, bail};
 use fidl::AsyncChannel;
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner::{
     ComponentControllerMarker, ComponentControllerRequest, ComponentControllerRequestStream,
     ComponentStartInfo,
 };
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
@@ -34,7 +38,7 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errno;
 use starnix_uapi::errors::{EEXIST, ENOTDIR, Errno};
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::{MountFlags, MountpointFlags};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SIGINT, SIGKILL};
 use starnix_uapi::unmount_flags::UnmountFlags;
@@ -43,10 +47,6 @@ use std::ops::DerefMut;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess,
-    fuchsia_async as fasync,
-};
 
 /// Component controller epitaph value used as the base value to pass non-zero error
 /// codes to the calling component.
@@ -478,9 +478,9 @@ impl MountRecord {
         &mut self,
         mount_point: NamespaceNode,
         what: WhatToMount,
-        flags: MountFlags,
+        flags: MountpointFlags,
     ) -> Result<(), Errno> {
-        mount_point.mount(what, flags)?;
+        mount_point.mount(what, flags.into())?;
         self.mounts.push(mount_point);
         Ok(())
     }
@@ -559,7 +559,7 @@ impl MountRecord {
         // Fuchsia doesn't specify mount flags in the incoming namespace, so we need to make
         // up some flags.
         let flags = MountFlags::NOSUID | MountFlags::NODEV | MountFlags::RELATIME;
-        current_node.mount(WhatToMount::Fs(fs), flags).context("mounting fs")?;
+        current_node.mount(WhatToMount::Fs(fs), flags.mountpoint_flags()).context("mounting fs")?;
         self.mounts.push(current_node);
 
         Ok(())

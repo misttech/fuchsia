@@ -21,7 +21,7 @@ use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::{error, ino_t, statfs};
 use std::collections::HashSet;
 use std::ops::Range;
@@ -83,8 +83,8 @@ impl std::fmt::Debug for FileSystem {
 pub struct FileSystemOptions {
     /// The source string passed as the first argument to mount(), e.g. a block device.
     pub source: FlyByteStr,
-    /// Flags kept per-superblock, i.e. included in MountFlags::STORED_ON_FILESYSTEM.
-    pub flags: MountFlags,
+    /// Flags kept per-superblock.
+    pub flags: FileSystemFlags,
     /// Filesystem options passed as the last argument to mount().
     pub params: MountParams,
 }
@@ -150,7 +150,7 @@ impl FileSystem {
         if !ops.is_readonly() {
             // Preserve the old behaviour, that only the per-mount MS_RDONLY flag took effect, by
             // removing it from the `MountFlags` stored with the `FileSystem`.
-            options.flags &= !MountFlags::RDONLY;
+            options.flags &= !FileSystemFlags::RDONLY;
         }
 
         let file_system = Arc::new(FileSystem {

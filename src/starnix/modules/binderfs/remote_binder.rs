@@ -7,6 +7,9 @@ use anyhow::{Context, Error};
 use derivative::Derivative;
 use fidl::AsHandleRef;
 use fidl::endpoints::{ClientEnd, ControlHandle, RequestStream, ServerEnd};
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_starnix_binder as fbinder;
+use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use futures::future::FutureExt;
 use futures::task::Poll;
@@ -38,11 +41,7 @@ use starnix_uapi::{errno, errno_from_code, error, pid_t, uapi};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
-use zx::Peered;
-use {
-    fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder, fuchsia_async as fasync,
-    zx,
-};
+use zx::{self, Peered};
 
 const EXECUTOR_THREAD_ROLE: &str = "fuchsia.starnix.remote_binder.executor";
 
@@ -1099,7 +1098,7 @@ mod tests {
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::file_mode::mode;
-    use starnix_uapi::mount_flags::MountFlags;
+    use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_RANGE;
     use starnix_uapi::signals::SIGCHLD;
     use std::collections::BTreeMap;
@@ -1195,7 +1194,7 @@ mod tests {
                             BinderFs::new_fs(locked, &current_task, FileSystemOptions::default())
                                 .expect("new_fs"),
                         ),
-                        MountFlags::empty(),
+                        MountpointFlags::empty(),
                     )
                     .expect("mount");
 

@@ -42,7 +42,7 @@ use starnix_uapi::errors::{
 use starnix_uapi::file_lease::FileLeaseType;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::{FileSystemFlags, MountFlags};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -1975,6 +1975,7 @@ fn do_mount_remount(
     let data = current_task.read_path_if_non_null(data_addr)?;
     let mount_options =
         security::sb_eat_lsm_opts(current_task.kernel(), &mut MountParams::parse(data.as_ref())?)?;
+
     if !flags.contains(MountFlags::BIND) {
         security::sb_remount(current_task, &mount, mount_options)?;
 
@@ -1989,10 +1990,10 @@ fn do_mount_remount(
 
     let mut updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
     // TODO: https://fxbug.dev/322875215 - Support non-bind remount and remove this.
-    if target.entry.node.fs().options.flags.contains(MountFlags::RDONLY) {
+    if target.entry.node.fs().options.flags.contains(FileSystemFlags::RDONLY) {
         updated_flags |= MountFlags::RDONLY;
     }
-    mount.update_flags(updated_flags);
+    mount.update_flags(updated_flags.mountpoint_flags());
 
     Ok(())
 }
@@ -2012,7 +2013,7 @@ fn do_mount_bind(
         flags:?;
         "do_mount_bind",
     );
-    target.mount(WhatToMount::Bind(source), flags)
+    target.mount(WhatToMount::Bind(source), flags.mountpoint_flags())
 }
 
 fn do_mount_change_propagation_type(
@@ -2071,14 +2072,14 @@ fn do_mount_create(
 
     let options = FileSystemOptions {
         source: source.into(),
-        flags: flags & MountFlags::STORED_ON_FILESYSTEM,
+        flags: flags.file_system_flags(),
         params: MountParams::parse(data.as_ref())?,
     };
 
     let fs = current_task.create_filesystem(locked, fs_type.as_ref(), options)?;
 
     security::sb_kern_mount(current_task, &fs)?;
-    target.mount(WhatToMount::Fs(fs), flags)
+    target.mount(WhatToMount::Fs(fs), flags.mountpoint_flags())
 }
 
 pub fn sys_umount2(

@@ -32,7 +32,9 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
-use starnix_uapi::mount_flags::{AtomicMountFlags, MountFlags};
+use starnix_uapi::mount_flags::{
+    AtomicMountpointFlags, FileSystemFlags, MountFlags, MountpointFlags,
+};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::unmount_flags::UnmountFlags;
 use starnix_uapi::vfs::{FdEvents, ResolveFlags};
@@ -58,10 +60,10 @@ pub struct Namespace {
 
 impl Namespace {
     pub fn new(fs: FileSystemHandle) -> Arc<Namespace> {
-        Self::new_with_flags(fs, MountFlags::empty())
+        Self::new_with_flags(fs, MountpointFlags::empty())
     }
 
-    pub fn new_with_flags(fs: FileSystemHandle, flags: MountFlags) -> Arc<Namespace> {
+    pub fn new_with_flags(fs: FileSystemHandle, flags: MountpointFlags) -> Arc<Namespace> {
         let kernel = fs.kernel.upgrade().expect("can't create namespace without a kernel");
         let root_mount = Mount::new(WhatToMount::Fs(fs), flags);
         Arc::new(Self { root_mount, id: kernel.get_next_namespace_id() })
@@ -144,7 +146,7 @@ pub struct Mount {
     fs: FileSystemHandle,
 
     /// Holds the flags specific to this mount of the underlying filesystem.
-    flags: AtomicMountFlags,
+    flags: AtomicMountpointFlags,
 
     /// Lock used to serialize updates of `flags` to ensure consistency during remount operations.
     flags_lock: Mutex<()>,
@@ -282,28 +284,22 @@ pub enum WhatToMount {
 }
 
 impl Mount {
-    pub fn new(what: WhatToMount, flags: MountFlags) -> MountHandle {
+    pub fn new(what: WhatToMount, flags: MountpointFlags) -> MountHandle {
         match what {
             WhatToMount::Fs(fs) => Self::new_with_root(fs.root().clone(), flags),
             WhatToMount::Bind(node) => {
                 let mount = node.mount.as_ref().expect("can't bind mount from an anonymous node");
-                mount.clone_mount(&node.entry, flags)
+                mount.clone_mount(&node.entry, flags.into())
             }
         }
     }
 
-    fn new_with_root(root: DirEntryHandle, flags: MountFlags) -> MountHandle {
-        let known_flags = MountFlags::STORED_ON_MOUNT;
-        assert!(
-            !flags.intersects(!known_flags),
-            "mount created with extra flags {:?}",
-            flags - known_flags
-        );
+    fn new_with_root(root: DirEntryHandle, flags: MountpointFlags) -> MountHandle {
         let fs = root.node.fs();
         let kernel = fs.kernel.upgrade().expect("can't create mount without kernel");
         Arc::new(Self {
             id: kernel.get_next_mount_id(),
-            flags: flags.into(),
+            flags: (flags & MountpointFlags::STORED_ON_MOUNT).into(),
             flags_lock: Mutex::new(()),
             root,
             active_client_counter: Default::default(),
@@ -322,7 +318,7 @@ impl Mount {
         self: &MountHandle,
         dir: &DirEntryHandle,
         what: WhatToMount,
-        flags: MountFlags,
+        flags: MountpointFlags,
     ) {
         // TODO(tbodt): Making a copy here is necessary for lock ordering, because the peer group
         // lock nests inside all mount locks (it would be impractical to reverse this because you
@@ -455,25 +451,26 @@ impl Mount {
     fn flags(&self) -> MountFlags {
         // TODO: https://fxbug.dev/322875215 - All `FileSystem` flags should be included here, once
         // updating superblock mount flags via `MS_REMOUNT` is implemented.
-        self.mount_flags()
+        self.mount_flags().into()
     }
 
     /// Returns the mount flags stored unique to this `Mount`.
-    fn mount_flags(&self) -> MountFlags {
+    fn mount_flags(&self) -> MountpointFlags {
         self.flags.load(Ordering::Relaxed)
     }
 
     /// Returns the mount flags for the `FileSystem` of this `Mount`.
-    fn fs_flags(&self) -> MountFlags {
+    fn fs_flags(&self) -> FileSystemFlags {
         self.fs.options.flags
     }
 
-    pub fn update_flags(self: &MountHandle, mut flags: MountFlags) {
-        flags &= MountFlags::STORED_ON_MOUNT;
-        let atime_flags = MountFlags::NOATIME
-            | MountFlags::NODIRATIME
-            | MountFlags::RELATIME
-            | MountFlags::STRICTATIME;
+    /// Updates the `Mount` with the per-mount flags specified in `flags`, while preserving the
+    /// existing access-time flag if no access-time flag is set in `flags`.
+    pub fn update_flags(self: &MountHandle, mut flags: MountpointFlags) {
+        let atime_flags = MountpointFlags::NOATIME
+            | MountpointFlags::NODIRATIME
+            | MountpointFlags::RELATIME
+            | MountpointFlags::STRICTATIME;
         let _lock = self.flags_lock.lock();
         if !flags.intersects(atime_flags) {
             // Since Linux 3.17, if none of MS_NOATIME, MS_NODIRATIME,
@@ -482,9 +479,7 @@ impl Mount {
             // flags (rather than defaulting to MS_RELATIME).
             flags |= self.flags.load(Ordering::Relaxed) & atime_flags;
         }
-        // The "effect [of MS_STRICTATIME] is to clear the MS_NOATIME and MS_RELATIME flags."
-        flags &= !MountFlags::STRICTATIME;
-        self.flags.store(flags, Ordering::Relaxed);
+        self.flags.store(flags & MountpointFlags::STORED_ON_MOUNT, Ordering::Relaxed);
     }
 
     /// The number of active clients of this mount.
@@ -772,9 +767,9 @@ impl DynamicFileSource for ProcMountsFileSource {
                 mount.fs.name(),
                 // Report the union of the FileSystem and Mount flags, as well as any FileSystem-
                 // or LSM-specific options.
-                // TODO: https://fxbug.dev/322875215 - Remove the explicit fs_flags() & RDONLY
-                // inclusion once Mount::flags() is fixed to include the filesystem flags.
-                mount.flags() | (mount.fs_flags() & MountFlags::RDONLY),
+                // TODO: https://fxbug.dev/322875215 - Remove the explicit fs_flags() once
+                // Mount::flags() is fixed to include the filesystem flags.
+                mount.flags() | (mount.fs_flags() & FileSystemFlags::RDONLY).into(),
                 security::sb_show_options(&task.kernel(), &mount.fs)?,
             )?;
             writeln!(sink, " 0 0")?;
@@ -1584,8 +1579,7 @@ impl NamespaceNode {
         PathWithReachability::Reachable(absolute_path)
     }
 
-    pub fn mount(&self, what: WhatToMount, flags: MountFlags) -> Result<(), Errno> {
-        let flags = flags & (MountFlags::STORED_ON_MOUNT | MountFlags::REC);
+    pub fn mount(&self, what: WhatToMount, flags: MountpointFlags) -> Result<(), Errno> {
         let mountpoint = self.enter_mount();
         let mount = mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
         mount.create_submount(&mountpoint.entry, what, flags);
@@ -1932,7 +1926,7 @@ mod test {
         CallbackSymlinkNode, FsNodeInfo, LookupContext, MountInfo, Namespace, NamespaceNode,
         RenameFlags, SymlinkMode, SymlinkTarget, UnlinkKind, WhatToMount,
     };
-    use starnix_uapi::mount_flags::MountFlags;
+    use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::{errno, mode};
     use std::sync::Arc;
 
@@ -1957,7 +1951,7 @@ mod test {
                 .root()
                 .lookup_child(locked, &current_task, &mut context, "dev".into())
                 .expect("failed to lookup dev");
-            dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
+            dev.mount(WhatToMount::Fs(dev_fs), MountpointFlags::empty())
                 .expect("failed to mount dev root node");
 
             let mut context = LookupContext::default();
@@ -2001,7 +1995,7 @@ mod test {
                 .root()
                 .lookup_child(locked, &current_task, &mut context, "dev".into())
                 .expect("failed to lookup dev");
-            dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
+            dev.mount(WhatToMount::Fs(dev_fs), MountpointFlags::empty())
                 .expect("failed to mount dev root node");
             let mut context = LookupContext::default();
             let new_dev = ns
@@ -2042,7 +2036,7 @@ mod test {
                 .root()
                 .lookup_child(locked, &current_task, &mut context, "dev".into())
                 .expect("failed to lookup dev");
-            dev.mount(WhatToMount::Fs(dev_fs), MountFlags::empty())
+            dev.mount(WhatToMount::Fs(dev_fs), MountpointFlags::empty())
                 .expect("failed to mount dev root node");
 
             let mut context = LookupContext::default();
@@ -2074,7 +2068,7 @@ mod test {
                 ns.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
 
             let foofs1 = TmpFs::new_fs(locked, &kernel);
-            foo_dir.mount(WhatToMount::Fs(foofs1.clone()), MountFlags::empty()).unwrap();
+            foo_dir.mount(WhatToMount::Fs(foofs1.clone()), MountpointFlags::empty()).unwrap();
             let mut context = LookupContext::default();
             assert!(Arc::ptr_eq(
                 &ns.root()
@@ -2089,7 +2083,7 @@ mod test {
             let ns_clone = ns.clone_namespace();
 
             let foofs2 = TmpFs::new_fs(locked, &kernel);
-            foo_dir.mount(WhatToMount::Fs(foofs2.clone()), MountFlags::empty()).unwrap();
+            foo_dir.mount(WhatToMount::Fs(foofs2.clone()), MountpointFlags::empty()).unwrap();
             let mut context = LookupContext::default();
             assert!(Arc::ptr_eq(
                 &ns.root()
@@ -2129,7 +2123,7 @@ mod test {
                 ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
 
             let foofs = TmpFs::new_fs(locked, &kernel);
-            foo_dir.mount(WhatToMount::Fs(foofs), MountFlags::empty()).unwrap();
+            foo_dir.mount(WhatToMount::Fs(foofs), MountpointFlags::empty()).unwrap();
 
             // Trying to unlink from ns1 should fail.
             assert_eq!(
@@ -2170,7 +2164,7 @@ mod test {
                 ns1.root().lookup_child(locked, &current_task, &mut context, "foo".into()).unwrap();
 
             let foofs = TmpFs::new_fs(locked, &kernel);
-            foo_dir.mount(WhatToMount::Fs(foofs), MountFlags::empty()).unwrap();
+            foo_dir.mount(WhatToMount::Fs(foofs), MountpointFlags::empty()).unwrap();
 
             // Trying to rename over foo from ns1 should fail.
             let root = ns1.root();
@@ -2273,14 +2267,14 @@ mod test {
                 .lookup_child(locked, &current_task, &mut context, "first_subdir".into())
                 .expect("failed to lookup first_subdir");
             first_subdir
-                .mount(WhatToMount::Fs(first_subdir_fs), MountFlags::empty())
+                .mount(WhatToMount::Fs(first_subdir_fs), MountpointFlags::empty())
                 .expect("failed to mount first_subdir fs node");
             let second_subdir = ns
                 .root()
                 .lookup_child(locked, &current_task, &mut context, "second_subdir".into())
                 .expect("failed to lookup second_subdir");
             second_subdir
-                .mount(WhatToMount::Fs(second_subdir_fs), MountFlags::empty())
+                .mount(WhatToMount::Fs(second_subdir_fs), MountpointFlags::empty())
                 .expect("failed to mount second_subdir fs node");
 
             // Create the symlink structure. To trigger potential symlink traversal bugs, we're going

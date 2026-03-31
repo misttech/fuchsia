@@ -25,7 +25,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::{Errno, SourceContext};
 use starnix_uapi::file_mode::FileMode;
-use starnix_uapi::mount_flags::MountFlags;
+use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, off_t, statfs};
@@ -112,7 +112,7 @@ impl RemoteBundle {
         );
 
         if !rights.contains(fio::PERM_WRITABLE) {
-            options.flags |= MountFlags::RDONLY;
+            options.flags |= FileSystemFlags::RDONLY;
         }
 
         let fs = FileSystem::new(
