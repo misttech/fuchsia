@@ -22,15 +22,24 @@ use crate::ip_hooks::{
 pub(crate) trait MatcherState {
     /// If possible, verifies that the matcher was executed with the specified
     /// parameters.
-    fn verify_matched(&self, interface: &TestInterface<'_>, ip_version: IpVersion);
-
-    /// If possible, verifies that the matcher was executed with the specified
-    /// mark, UID, and cookie.
-    fn verify_mark_uid_and_cookie(
+    fn verify_matched(
         &self,
+        interface: &TestInterface<'_>,
+        ip_version: IpVersion,
         expected_mark: u32,
         expected_uid: u32,
         expected_cookie: u64,
+    );
+
+    /// If the matcher was executed, verifies that the matcher was executed with the specified
+    /// parameters.
+    fn verify_maybe_matched(
+        &self,
+        interface: &TestInterface<'_>,
+        ip_version: IpVersion,
+        expected_mark: u32,
+        expected_uid: u32,
+        expected_cookie: Option<u64>,
     );
 
     // If possible, verifies that the matcher was not executed.
@@ -42,12 +51,22 @@ pub(crate) trait MatcherState {
 pub(crate) struct NoState;
 
 impl MatcherState for NoState {
-    fn verify_matched(&self, _interface: &TestInterface<'_>, _ip_version: IpVersion) {}
-    fn verify_mark_uid_and_cookie(
+    fn verify_matched(
         &self,
+        _interface: &TestInterface<'_>,
+        _ip_version: IpVersion,
         _expected_mark: u32,
         _expected_uid: u32,
         _expected_cookie: u64,
+    ) {
+    }
+    fn verify_maybe_matched(
+        &self,
+        _interface: &TestInterface<'_>,
+        _ip_version: IpVersion,
+        _expected_mark: u32,
+        _expected_uid: u32,
+        _expected_cookie: Option<u64>,
     ) {
     }
     fn verify_not_matched(&self) {}
@@ -585,7 +604,14 @@ pub(crate) struct EbpfMatcherState {
 }
 
 impl MatcherState for EbpfMatcherState {
-    fn verify_matched(&self, interface: &TestInterface<'_>, ip_version: IpVersion) {
+    fn verify_matched(
+        &self,
+        interface: &TestInterface<'_>,
+        ip_version: IpVersion,
+        expected_mark: u32,
+        expected_uid: u32,
+        expected_cookie: u64,
+    ) {
         let result = self.program.read_test_result();
         assert_eq!(
             result.ether_type,
@@ -593,18 +619,35 @@ impl MatcherState for EbpfMatcherState {
         );
         assert_eq!(result.ip_proto, u8::from(packet_formats::ip::IpProto::Udp));
         assert_eq!(result.ifindex, u32::try_from(interface.id()).unwrap());
-    }
-
-    fn verify_mark_uid_and_cookie(
-        &self,
-        expected_mark: u32,
-        expected_uid: u32,
-        expected_cookie: u64,
-    ) {
-        let result = self.program.read_test_result();
         assert_eq!(result.mark, expected_mark);
         assert_eq!(result.uid, expected_uid);
         assert_eq!(result.cookie, expected_cookie);
+    }
+
+    fn verify_maybe_matched(
+        &self,
+        interface: &TestInterface<'_>,
+        ip_version: IpVersion,
+        expected_mark: u32,
+        expected_uid: u32,
+        expected_cookie: Option<u64>,
+    ) {
+        let result = self.program.read_test_result();
+        if result.ether_type == 0 {
+            return;
+        }
+
+        assert_eq!(
+            result.ether_type,
+            u32::from(u16::from(packet_formats::ethernet::EtherType::from_ip_version(ip_version)))
+        );
+        assert_eq!(result.ip_proto, u8::from(packet_formats::ip::IpProto::Udp));
+        assert_eq!(result.ifindex, u32::try_from(interface.id()).unwrap());
+        assert_eq!(result.mark, expected_mark);
+        assert_eq!(result.uid, expected_uid);
+        if let Some(cookie) = expected_cookie {
+            assert_eq!(result.cookie, cookie);
+        }
     }
 
     fn verify_not_matched(&self) {

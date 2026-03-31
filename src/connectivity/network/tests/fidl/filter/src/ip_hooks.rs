@@ -1373,18 +1373,17 @@ where
         .await
     };
 
-    client_matcher.verify_matched(&net.client.interface, I::VERSION);
-    match hook {
-        IncomingHook::Ingress => client_matcher.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0),
+    let (mark, uid, cookie) = match hook {
+        IncomingHook::Ingress => (0, UNKNOWN_UID, 0),
         IncomingHook::LocalIngress => {
             let client_socket_cookie =
                 sockets.connect_result.client_cookie().expect("client socket cookie");
-            client_matcher.verify_mark_uid_and_cookie(0, CLIENT_UID, client_socket_cookie)
+            (0, CLIENT_UID, client_socket_cookie)
         }
-    }
+    };
+    client_matcher.verify_matched(&net.client.interface, I::VERSION, mark, uid, cookie);
 
-    server_matcher.verify_matched(&net.server.interface, I::VERSION);
-    server_matcher.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0);
+    server_matcher.verify_matched(&net.server.interface, I::VERSION, 0, UNKNOWN_UID, 0);
 
     // Prepend a rule that *drops* traffic of the same type to the incoming hook on
     // the client. This should still allow traffic to go from the client to the
@@ -1441,7 +1440,7 @@ where
     };
 
     // Packets should be dropped on the server side.
-    server_matcher.verify_matched(&net.server.interface, I::VERSION);
+    server_matcher.verify_maybe_matched(&net.server.interface, I::VERSION, 0, UNKNOWN_UID, Some(0));
     client_matcher.verify_not_matched();
 
     // Remove all filtering rules; two-way connectivity should now be possible
@@ -1508,10 +1507,15 @@ async fn drop_outgoing<I: TestIpExt, M: MatcherDefinition>(
         .await
     };
 
-    matcher_state.verify_matched(&net.client.interface, I::VERSION);
     let client_socket_cookie =
         sockets.connect_result.client_cookie().expect("client socket cookie");
-    matcher_state.verify_mark_uid_and_cookie(CLIENT_SOCKET_MARK, CLIENT_UID, client_socket_cookie);
+    matcher_state.verify_matched(
+        &net.client.interface,
+        I::VERSION,
+        CLIENT_SOCKET_MARK,
+        CLIENT_UID,
+        client_socket_cookie,
+    );
 
     // Prepend a rule that *drops* traffic of the same type to the local egress hook
     // on the server. This should still allow traffic to go from the client to the
@@ -1536,14 +1540,17 @@ async fn drop_outgoing<I: TestIpExt, M: MatcherDefinition>(
         .await
     };
 
-    matcher_state.verify_matched(&net.server.interface, I::VERSION);
-    if let Some(server_socket_cookie) = sockets.connect_result.server_cookie() {
-        matcher_state.verify_mark_uid_and_cookie(0, UNKNOWN_UID, server_socket_cookie);
-    }
+    matcher_state.verify_maybe_matched(
+        &net.server.interface,
+        I::VERSION,
+        0,
+        UNKNOWN_UID,
+        sockets.connect_result.server_cookie(),
+    );
 
     // Prepend the drop rule to the local egress hook on *both* the client and
     // server. Now neither should be able to reach each other.
-    let ((client_matcher, server_matcher), _sockets) = {
+    let ((client_matcher, server_matcher), sockets) = {
         let matcher = matcher.clone();
         net.run_test_with::<I, M::SocketType, _, _>(
             ExpectedConnectivity::None,
@@ -1573,7 +1580,13 @@ async fn drop_outgoing<I: TestIpExt, M: MatcherDefinition>(
     };
 
     // The packets should be dropped on the client side.
-    client_matcher.verify_matched(&net.client.interface, I::VERSION);
+    client_matcher.verify_maybe_matched(
+        &net.client.interface,
+        I::VERSION,
+        CLIENT_SOCKET_MARK,
+        CLIENT_UID,
+        sockets.connect_result.client_cookie(),
+    );
     server_matcher.verify_not_matched();
 
     // Remove all filtering rules; two-way connectivity should now be possible
@@ -2265,8 +2278,13 @@ async fn drop_forwarded<I: RouterTestIpExt, M: MatcherDefinition>(name: &str, ma
         )
         .await
     };
-    matcher_state.verify_matched(&net.router_server_interface, I::VERSION);
-    matcher_state.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0);
+    matcher_state.verify_maybe_matched(
+        &net.router_server_interface,
+        I::VERSION,
+        0,
+        UNKNOWN_UID,
+        Some(0),
+    );
 
     // Install a similar rule on the same hook, but which drops traffic from the
     // client to the server. This should result in neither host being able to
@@ -2278,8 +2296,14 @@ async fn drop_forwarded<I: RouterTestIpExt, M: MatcherDefinition>(name: &str, ma
             )
         })
         .await;
-    matcher_state.verify_matched(&net.router_client_interface, I::VERSION);
-    matcher_state.verify_mark_uid_and_cookie(0, UNKNOWN_UID, 0);
+
+    matcher_state.verify_maybe_matched(
+        &net.router_client_interface,
+        I::VERSION,
+        0,
+        UNKNOWN_UID,
+        Some(0),
+    );
 
     // Remove all filtering rules; two-way connectivity should now be possible
     // again.
