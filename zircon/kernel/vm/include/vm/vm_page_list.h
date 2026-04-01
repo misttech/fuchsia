@@ -1027,6 +1027,34 @@ class VmPageList final {
     return {nullptr, false};
   }
 
+  // Helper object for performing repeated LookupOrAllocate operations that are likely to be close
+  // to each other. While using this object other (modifying) methods on this VmPageList must not be
+  // performed, if they are the |reset| method needs to be used before continuing.
+  class BatchInserter {
+   public:
+    // Construct a BatchInserter for the specified VmPageList. The list must be kept alive for the
+    // duration of this object.
+    explicit BatchInserter(VmPageList& list) : list_(list.list_) {}
+    ~BatchInserter() = default;
+
+    BatchInserter(const BatchInserter&) = delete;
+    BatchInserter& operator=(const BatchInserter&) = delete;
+
+    // Similar to VmPageList::LookupOrAllocate but is implicitly NoIntervals. If repeated offsets
+    // are 'near' each other (in the same node, or in following nodes) then this will be more
+    // efficient than the VmPageList::LookupOrAllocate. However, regardless of the |offset| pattern
+    // this will always return correct results.
+    VmPageOrMarker* LookupOrAllocate(uint64_t offset);
+
+    // Reset the batch inserter. This makes it safe to use again if other VmPageList operations had
+    // been performed.
+    void reset() { node_ = {}; }
+
+   private:
+    btree::BTree<VmPlnOwner>& list_;
+    btree::BTree<VmPlnOwner>::iterator node_;
+  };
+
   // Returns a slot that was empty after LookupOrAllocate, and that the caller did not end up
   // filling.
   // This ensures that if LookupOrAllocate allocated a new underlying list node, then that list node
@@ -1236,9 +1264,9 @@ class VmPageList final {
                                     VmPageOrMarker::IntervalDirtyState new_dirty_state);
 
  private:
-  uint64_t NodeOffset(uint64_t offset) const { return VmPageListNode::NodeOffset(offset); }
+  static uint64_t NodeOffset(uint64_t offset) { return VmPageListNode::NodeOffset(offset); }
 
-  uint64_t NodeIndex(uint64_t offset) const { return VmPageListNode::NodeIndex(offset); }
+  static uint64_t NodeIndex(uint64_t offset) { return VmPageListNode::NodeIndex(offset); }
 
   // Returns true if the specified offset falls in a sparse page interval.
   bool IsOffsetInInterval(uint64_t offset) const;

@@ -1641,6 +1641,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   if (tree_has_parent_content_markers()) {
     // How many parent content markers are in the new page list
     uint32_t temp_list_populated_slots_count = 0;
+    VmPageList::BatchInserter inserter(temp_list);
     zx_status_t status = page_list_.ForEveryPage([&](const VmPageOrMarker* p, uint64_t offset) {
       // If a tree is using parent content markers then, since we are a leaf node, we know that
       // there can be no markers and no intervals, hence this is either content, or a parent
@@ -1649,8 +1650,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
       // |temp_list|.
       DEBUG_ASSERT(node_has_parent_content_markers());
       DEBUG_ASSERT(p->IsParentContent() || p->IsPageOrRef());
-      auto [slot, _] =
-          temp_list.LookupOrAllocate(offset, VmPageList::IntervalHandling::NoIntervals);
+      auto slot = inserter.LookupOrAllocate(offset);
       if (!slot) {
         return ZX_ERR_NO_MEMORY;
       }
@@ -1952,13 +1952,13 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
     uint32_t page_list_populated_slots_count = 0;
     // Update any share counts for content the clone will be able to see, and populate a temporary
     // page list with any parent content markers if needed.
+    VmPageList::BatchInserter inserter(page_list);
     zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
         [&](const VmPageOrMarker* p, VmCowPages* owner, uint64_t cow_clone_offset,
             uint64_t owner_offset) {
           if (tree_has_parent_content_markers() && p->IsPageOrRef()) {
             const uint64_t off = cow_clone_offset - range.offset;
-            auto [slot, _] =
-                page_list.LookupOrAllocate(off, VmPageList::IntervalHandling::NoIntervals);
+            auto slot = inserter.LookupOrAllocate(off);
             if (!slot) {
               return ZX_ERR_NO_MEMORY;
             }

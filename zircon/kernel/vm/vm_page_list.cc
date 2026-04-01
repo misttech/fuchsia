@@ -110,6 +110,58 @@ VmPageOrMarker* VmPageList::LookupOrAllocateInternal(uint64_t offset) {
   return &p;
 }
 
+VmPageOrMarker* VmPageList::BatchInserter::LookupOrAllocate(uint64_t offset) {
+  const uint64_t target_offset = NodeOffset(offset);
+  // Assume we're going to need to search for a new iterator.
+  bool search = true;
+  // First check if the currently saved iterator is valid and for the correct node.
+  if (node_.IsValid()) {
+    auto [node_offset, node] = *node_;
+    if (node_offset == target_offset) {
+      return &node->Lookup(NodeIndex(offset));
+    }
+    // Under the assumption of contiguous insertion, check if incrementing the iterator would help.
+    if (node_offset < target_offset) {
+      node_++;
+      if (!node_.IsValid()) {
+        // If we hit the end then we know a new node is needed, so skip the search and go straight
+        // to new node creation.
+        search = false;
+      } else {
+        ktl::tie(node_offset, node) = *node_;
+        if (node_offset == target_offset) {
+          return &node->Lookup(NodeIndex(offset));
+        }
+      }
+    }
+  }
+
+  // Unless we know that the node we want isn't in the tree we must do a search for it to avoid
+  // duplicate insertion.
+  if (search) {
+    // Even if this is not our target node, we stash the result to use to optimize the insertion
+    // later.
+    node_ = list_.lower_bound(target_offset);
+    if (node_.IsValid()) {
+      auto [node_offset, node] = *node_;
+      if (node_offset == target_offset) {
+        return &node->Lookup(NodeIndex(offset));
+      }
+    }
+  }
+
+  VmPlnOwner pl = VmPageListNode::Create();
+  if (!pl) {
+    return nullptr;
+  }
+  VmPageOrMarker* ret = &pl->Lookup(NodeIndex(offset));
+  node_ = list_.insert(node_, target_offset, ktl::move(pl));
+  if (!node_) {
+    return nullptr;
+  }
+  return ret;
+}
+
 void VmPageList::ReturnEmptySlot(uint64_t offset) {
   uint64_t node_offset = NodeOffset(offset);
   size_t index = NodeIndex(offset);
