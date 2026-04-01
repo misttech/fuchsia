@@ -10,6 +10,9 @@
 #include <fuchsia/hardware/usb/hci/cpp/banjo.h>
 #include <lib/sync/cpp/completion.h>
 
+#include <map>
+#include <optional>
+
 #include <ddktl/device.h>
 #include <fbl/array.h>
 #include <fbl/ref_ptr.h>
@@ -75,6 +78,16 @@ class UsbBus : public UsbBusType,
   fbl::Array<fbl::RefPtr<UsbDevice>> devices_;
 
   async_dispatcher_t* dispatcher_;
+  std::map<uint32_t, RemoveDeviceCompleter::Async> remove_completers_;
+
+  struct PendingReinitialize {
+    uint32_t hub_id;
+    usb_speed_t speed;
+    std::optional<ReinitializeDeviceCompleter::Async> completer;
+  };
+  std::map<uint32_t, PendingReinitialize> pending_reinitializes_;
+
+  std::optional<ddk::UnbindTxn> unbind_txn_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_hci::UsbHciInterface> bindings_;
 };

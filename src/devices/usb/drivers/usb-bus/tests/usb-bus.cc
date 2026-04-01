@@ -235,8 +235,7 @@ TEST_F(BusTest, FidlResetPort) {
   completion.Wait();
 }
 
-// TODO(https://fxbug.dev/496789646):  Enable this test once the bug is fixed.
-TEST_F(BusTest, DISABLED_FidlReinitializeDevice) {
+TEST_F(BusTest, FidlReinitializeDevice) {
   AddDeviceFidl(4, 0, fuchsia_hardware_usb_descriptor::UsbSpeed::kFull);
 
   auto* bus_dev = parent_->GetLatestChild();
@@ -256,6 +255,10 @@ TEST_F(BusTest, DISABLED_FidlReinitializeDevice) {
   ASSERT_OK(result2);
 
   runtime()->RunUntilIdle();
+
+  // Wait for the device to be flagged for removal by ReinitializeDevice processing.
+  ASSERT_OK(usb_dev->WaitUntilAsyncRemoveCalled());
+
   auto result4 = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(),
                                           [&] { mock_ddk::ReleaseFlaggedDevices(bus_dev); });
   ASSERT_OK(result4);
@@ -268,6 +271,38 @@ TEST_F(BusTest, DISABLED_FidlReinitializeDevice) {
   auto* usb_dev_new = bus_dev->GetLatestChild();
   ASSERT_NOT_NULL(usb_dev_new);
   ASSERT_NE(usb_dev, usb_dev_new);
+}
+
+TEST_F(BusTest, BanjoRemoveDevice) {
+  // 1. Add a device via Banjo
+  auto result = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [this]() {
+    [[maybe_unused]] auto status = hci_->bus_intf().AddDevice(1, 0, USB_SPEED_FULL);
+  });
+  ASSERT_OK(result);
+
+  // Find the added bus device in mock-ddk
+  auto* bus_dev = parent_->GetLatestChild();
+  ASSERT_EQ(std::string(bus_dev->name()), "usb-bus");
+
+  // Find the added usb device (it's a child of usb-bus)
+  auto* usb_dev = bus_dev->GetLatestChild();
+  ASSERT_NOT_NULL(usb_dev);
+
+  // 2. Call RemoveDevice via Banjo.
+  // This notifies UsbBus which in turn calls device_async_remove on the usb-device.
+  auto result2 = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(), [&]() {
+    [[maybe_unused]] auto status = hci_->bus_intf().RemoveDevice(1);
+    ASSERT_OK(status);
+  });
+  ASSERT_OK(result2);
+
+  runtime()->RunUntilIdle();
+  auto result4 = fdf::RunOnDispatcherSync((*dispatcher_)->async_dispatcher(),
+                                          [&] { mock_ddk::ReleaseFlaggedDevices(bus_dev); });
+  ASSERT_OK(result4);
+
+  runtime()->RunUntilIdle();
+  ASSERT_EQ(bus_dev->child_count(), 0);
 }
 
 }  // namespace usb_bus
