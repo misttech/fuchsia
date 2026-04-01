@@ -295,6 +295,7 @@ func initializeDevice(
 		systemImage,
 		currentBootSlot,
 		c.checkABR,
+		"",
 	); err != nil {
 		return nil, fmt.Errorf("failed to validate during initialization: %w", err)
 	}
@@ -421,6 +422,11 @@ func otaToPackage(
 		}
 	}
 
+	expectedRebootReason := ""
+	if c.checkRebootReason {
+		expectedRebootReason = "SystemUpdate"
+	}
+
 	if err := check.ValidateDevice(
 		ctx,
 		nextFfxTool,
@@ -428,6 +434,7 @@ func otaToPackage(
 		systemImage,
 		currentBootSlot,
 		c.checkABR,
+		expectedRebootReason,
 	); err != nil {
 		return fmt.Errorf("failed to validate after OTA: %w", err)
 	}

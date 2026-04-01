@@ -181,6 +181,7 @@ func doTestReboot(
 		expectedSystemImage,
 		expectedConfig,
 		c.checkABR,
+		"",
 	); err != nil {
 		return err
 	}
@@ -196,6 +197,7 @@ func doTestReboot(
 		expectedSystemImage,
 		expectedConfig,
 		c.checkABR,
+		"",
 	); err != nil {
 		return fmt.Errorf("failed to validate device: %w", err)
 	}
@@ -291,6 +293,7 @@ func initializeDevice(
 		expectedSystemImage,
 		expectedConfig,
 		c.checkABR,
+		"",
 	); err != nil {
 		return err
 	}

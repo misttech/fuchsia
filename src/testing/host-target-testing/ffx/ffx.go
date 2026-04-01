@@ -407,3 +407,33 @@ func (f *FFXTool) RegisterPackageRepository(ctx context.Context, repo_url string
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
 }
+
+func (f *FFXTool) TargetGetLastRebootReason(ctx context.Context, target string) (string, error) {
+	args := []string{
+		"--direct",
+		"--target", target,
+		"--machine", "json",
+		"target", "show",
+	}
+
+	stdout, err := f.runFFXCmd(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("ffx target show failed: %w", err)
+	}
+
+	var showInfo struct {
+		Target struct {
+			LastRebootReason *string `json:"last_reboot_reason"`
+		} `json:"target"`
+	}
+
+	if err := json.Unmarshal(stdout, &showInfo); err != nil {
+		return "", fmt.Errorf("failed to unmarshal ffx target show output: %w", err)
+	}
+
+	if showInfo.Target.LastRebootReason != nil {
+		return *showInfo.Target.LastRebootReason, nil
+	}
+
+	return "", fmt.Errorf("no last reboot reason found in ffx target show output")
+}
