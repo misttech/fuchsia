@@ -28,9 +28,14 @@ use crate::vdso_vmo::get_next_vdso_vmo;
 use ::routing::policy::ScopedPolicyChecker;
 use chrono::DateTime;
 use fidl::endpoints::{ClientEnd, ServerEnd};
+use fidl_fuchsia_component as fcomp;
+use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_component_runner::{
     ComponentDiagnostics, ComponentTasks, Task as DiagnosticsTask,
 };
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_process as fproc;
 use fidl_fuchsia_process_lifecycle::{LifecycleMarker, LifecycleProxy};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_runtime::{HandleInfo, HandleType, UtcClock, duplicate_utc_clock_handle, job_default};
@@ -47,11 +52,6 @@ use std::path::Path;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
 use zx::HandleBased;
-use {
-    fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
-    fidl_fuchsia_process as fproc,
-};
 
 // Maximum time that the runner will wait for break_on_start eventpair to signal.
 // This is set to prevent debuggers from blocking us for too long, either intentionally
@@ -814,9 +814,6 @@ async fn start(
                 .map(|_: fidl::Signals| ()) // Discard.
                 .unwrap_or_else(|error| warn!(error:%; "error creating signal handler"));
             // Process exit code '0' is considered a clean return.
-            // TODO(https://fxbug.dev/42134825) If we create an epitaph that indicates
-            // intentional, non-zero exit, use that for all non-0 exit
-            // codes.
             let stop_info = match proc_copy.info() {
                 Ok(zx::ProcessInfo { return_code, .. }) => {
                     match return_code {
@@ -877,10 +874,15 @@ mod tests {
     use cm_config::{AllowlistEntryBuilder, JobPolicyAllowlists, SecurityPolicy};
     use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, create_endpoints, create_proxy};
     use fidl_connector::Connect;
+    use fidl_fuchsia_component as fcomp;
+    use fidl_fuchsia_component_runner as fcrunner;
     use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
+    use fidl_fuchsia_data as fdata;
+    use fidl_fuchsia_io as fio;
     use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequestStream};
     use fidl_fuchsia_process_lifecycle::LifecycleProxy;
     use fidl_test_util::spawn_stream_handler;
+    use fuchsia_async as fasync;
     use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
     use futures::channel::mpsc;
     use futures::lock::Mutex;
@@ -890,10 +892,6 @@ mod tests {
     use std::task::Poll;
     use test_case::test_case;
     use zx::{AsHandleRef, Task};
-    use {
-        fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
-        fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    };
 
     pub enum MockServiceRequest {
         LogSink(LogSinkRequestStream),
@@ -1540,9 +1538,6 @@ mod tests {
         }
     }
 
-    // TODO(https://fxbug.dev/42148789): Following function shares a lot of code with
-    // //src/sys/component_manager/src/model/namespace.rs tests. Shared
-    // functionality should be refactored into a common test util lib.
     #[fuchsia::test]
     async fn enable_stdout_and_stderr_logging() -> Result<(), Error> {
         let (mut dir, ns) = create_fs_with_mock_logsink()?;
