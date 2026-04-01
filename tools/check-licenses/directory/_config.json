@@ -4,6 +4,14 @@
         "skips": [
             {
                 "notes": [
+                    "Temporarily skip tcplp inner 3p directory in order to allow license to land"
+                ],
+                "paths": [
+                    "tools/check-licenses/assets/readmes/third_party/openthread/third_party/tcplp"
+                ]
+            },
+            {
+                "notes": [
                     "Skipping an OWNERS and a README file to better match the project layout"
                 ],
                 "paths": [
