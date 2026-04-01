@@ -117,12 +117,12 @@ HciEventHandler::HciEventHandler(fit::function<void(std::vector<uint8_t>&)> on_r
 
 void HciEventHandler::OnReceive(fhbt::wire::ReceivedPacket* packet) {
   if (!on_receive_callback_) {
-    FDF_LOG(ERROR, "No receive callback has been set.");
+    fdf::error("No receive callback has been set.");
     return;
   }
   // Ignore packets if they are not event packets during initialization.
   if (packet->Which() != fhbt::wire::ReceivedPacket::Tag::kEvent) {
-    FDF_LOG(ERROR, "Received non event packet: %d", packet->Which());
+    fdf::error("Received non event packet: {}", static_cast<int>(packet->Which()));
     return;
   }
   std::vector<uint8_t> buffer(packet->event().begin(), packet->event().end());
@@ -164,25 +164,25 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
   void AckReceive(AckReceiveCompleter::Sync& completer) override {
     auto result = upstream_client_->AckReceive();
     if (result.is_error()) {
-      FDF_LOG(WARNING, "Failed to ack to upstream");
+      fdf::warn("Failed to ack to upstream");
     }
   }
 
   void OnReceive(fidl::Event<fhbt::HciTransport::OnReceive>& event) override {
     activity_cb_(ActivityType::kReceivePacket);
     if (!binding_ref_.has_value()) {
-      FDF_LOG(WARNING, "OnReceive with no server?!?");
+      fdf::warn("OnReceive with no server?!?");
     }
     fit::result result = fidl::SendEvent(*binding_ref_)->OnReceive(event);
     if (result.is_error()) {
-      FDF_LOG(WARNING, "Failed to send OnReceive to client");
+      fdf::warn("Failed to send OnReceive to client");
     }
   }
 
   void ConfigureSco(ConfigureScoRequest& request, ConfigureScoCompleter::Sync& completer) override {
     auto result = upstream_client_->ConfigureSco(std::move(request));
     if (result.is_error()) {
-      FDF_LOG(WARNING, "ConfigureSco failed");
+      fdf::warn("ConfigureSco failed");
     }
   }
 
@@ -198,11 +198,11 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
 
   void OnUnbound(fidl::UnbindInfo info, fidl::ServerEnd<fhbt::HciTransport> server_end) {
     if (info.is_user_initiated()) {
-      FDF_LOG(INFO, "Shutting down HciTransport");
+      fdf::info("Shutting down HciTransport");
     } else if (info.is_peer_closed()) {
-      FDF_LOG(INFO, "HciTransport Client closed");
+      fdf::info("HciTransport Client closed");
     } else {
-      FDF_LOG(WARNING, "HciTransport Server error: %s", info.status_string());
+      fdf::warn("HciTransport Server error: {}", info.status_string());
     }
     // Upstream client end should be dropped when the server is deallocated.
   }
@@ -236,13 +236,13 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
   fdf::Arena arena('INFO');
   auto result = serial_client_.buffer(arena)->GetInfo();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Read failed FIDL error: %s", result.status_string());
+    fdf::error("Read failed FIDL error: {}", result.status_string());
     completer(zx::error(result.status()));
     return;
   }
 
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Read failed : %s", zx_status_get_string(result->error_value()));
+    fdf::error("Read failed : {}", zx_status_get_string(result->error_value()));
     completer(zx::error(result->error_value()));
     return;
   }
@@ -257,14 +257,14 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
     fdf::WireUnownedResult<fuchsia_hardware_serialimpl::Device::Config> result =
         serial_client_.buffer(config_arena)->Config(kDefaultBaudRate, flags);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Initial UART configuration failed, FIDL error: %s",
-              zx_status_get_string(result.status()));
+      fdf::error("Initial UART configuration failed, FIDL error: {}",
+                 zx_status_get_string(result.status()));
       completer(zx::error(result.status()));
       return;
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "Initial UART configuration failed, domain error: %s",
-              zx_status_get_string(result->error_value()));
+      fdf::error("Initial UART configuration failed, domain error: {}",
+                 zx_status_get_string(result->error_value()));
       completer(zx::error(result->error_value()));
       return;
     }
@@ -275,10 +275,9 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
   if (config.enable_suspend()) {
     zx::result<> power_init_result = InitPowerManagement();
     if (power_init_result.is_ok()) {
-      FDF_LOG(INFO, "Initialized power management");
+      fdf::info("Initialized power management");
     } else {
-      FDF_LOG(ERROR, "Failed to initialize power management: %s",
-              power_init_result.status_string());
+      fdf::error("Failed to initialize power management: {}", power_init_result);
       CompleteStart(power_init_result.error_value());
       return;
     }
@@ -347,8 +346,7 @@ void BtHciBroadcom::OpenHciTransport(OpenHciTransportCompleter::Sync& completer)
     zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end_result =
         incoming()->Connect<fhbt::HciService::HciTransport>();
     if (client_end_result.is_error()) {
-      FDF_LOG(ERROR, "Connect to fhbt::HciTransport protocol failed: %s",
-              client_end_result.status_string());
+      fdf::error("Connect to fhbt::HciTransport protocol failed: {}", client_end_result);
       completer.ReplyError(client_end_result.status_value());
       return;
     }
@@ -363,7 +361,7 @@ void BtHciBroadcom::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   zx::result<fidl::ClientEnd<fhbt::Snoop>> client_end =
       incoming()->Connect<fhbt::HciService::Snoop>();
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Connect to Snoop protocol failed: %s", client_end.status_string());
+    fdf::error("Connect to Snoop protocol failed: {}", client_end);
     completer.ReplyError(client_end.status_value());
     return;
   }
@@ -387,7 +385,7 @@ void BtHciBroadcom::GetCrashParameters(GetCrashParametersCompleter::Sync& comple
 
 void BtHciBroadcom::handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,
                                           fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown method in Vendor protocol, closing with ZX_ERR_NOT_SUPPORTED");
+  fdf::error("Unknown method in Vendor protocol, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -401,7 +399,7 @@ zx_status_t BtHciBroadcom::ConnectToHciTransportFidlProtocol() {
   zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end =
       incoming()->Connect<fhbt::HciService::HciTransport>();
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Connect to fhbt::HciTransport protocol failed: %s", client_end.status_string());
+    fdf::error("Connect to fhbt::HciTransport protocol failed: {}", client_end);
     return client_end.status_value();
   }
 
@@ -414,8 +412,7 @@ zx_status_t BtHciBroadcom::ConnectToSerialFidlProtocol() {
   zx::result<fdf::ClientEnd<fuchsia_hardware_serialimpl::Device>> client_end =
       incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Connect to fuchsia_hardware_serialimpl::Device protocol failed: %s",
-            client_end.status_string());
+    fdf::error("Connect to fuchsia_hardware_serialimpl::Device protocol failed: {}", client_end);
     return client_end.status_value();
   }
 
@@ -426,10 +423,9 @@ zx_status_t BtHciBroadcom::ConnectToSerialFidlProtocol() {
 void BtHciBroadcom::EncodeSetAclPriorityCommand(fhbt::wire::VendorSetAclPriorityParams params,
                                                 void* out_buffer) {
   if (!params.has_connection_handle() || !params.has_priority() || !params.has_direction()) {
-    FDF_LOG(ERROR,
-            "The command cannot be encoded because the following fields are missing: %s %s %s",
-            params.has_connection_handle() ? "" : "connection_handle",
-            params.has_priority() ? "" : "priority", params.has_direction() ? "" : "direction");
+    fdf::error("The command cannot be encoded because the following fields are missing: {} {} {}",
+               params.has_connection_handle() ? "" : "connection_handle",
+               params.has_priority() ? "" : "priority", params.has_direction() ? "" : "direction");
     return;
   }
   BcmSetAclPriorityCmd command = {
@@ -453,7 +449,7 @@ void BtHciBroadcom::OnReceivePacket(std::vector<uint8_t>& packet) {
   event_receive_buffer_ = packet;
   auto result = hci_transport_client_->AckReceive();
   if (result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to ack receive: %s", result.status_string());
+    fdf::error("Failed to ack receive: {}", result.status_string());
   }
 }
 
@@ -474,7 +470,7 @@ fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::SendCommand(
   auto result =
       hci_transport_client_->Send(fhbt::wire::SentPacket::WithCommand(arena, command_view));
   if (result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to send command: %s", result.status_string());
+    fdf::error("Failed to send command: {}", result.status_string());
     return fpromise::make_result_promise<std::vector<uint8_t>, zx_status_t>(
         fpromise::error(result.status()));
   }
@@ -485,7 +481,7 @@ fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::SendCommand(
 fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::ReadEvent() {
   zx::result<std::vector<uint8_t>> result = ReadEventSync();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to read event");
+    fdf::error("Failed to read event");
     return fpromise::make_result_promise<std::vector<uint8_t>, zx_status_t>(
         fpromise::error(result.status_value()));
   }
@@ -524,7 +520,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetBaudRate(uint32_t baud_ra
 fpromise::promise<void, zx_status_t> BtHciBroadcom::EnableLowPowerMode(
     zx::duration host_idle_threshold, zx::duration device_idle_threshold) {
   if (serial_pid_ != PDEV_PID_BCM4381A1) {
-    FDF_LOG(INFO, "skipping low power settings on non-4381");
+    fdf::info("skipping low power settings on non-4381");
     return fpromise::make_promise(
         []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
   }
@@ -537,20 +533,20 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::EnableLowPowerMode(
           HciCommandComplete event;
           std::memcpy(&event, cmd_complete.data(), sizeof(event));
           if (event.return_code == 0x00) {
-            FDF_LOG(INFO, "set low power mode settings");
+            fdf::info("set low power mode settings");
           } else {
-            FDF_LOG(WARNING, "failed to set low power mode: 0x%02x", event.return_code);
+            fdf::warn("failed to set low power mode: 0x{:02x}", event.return_code);
           }
         } else {
-          FDF_LOG(WARNING, "LowPowerMode CmdComplete is too small: %lu < %lu", cmd_complete.size(),
-                  sizeof(HciCommandComplete));
+          fdf::warn("LowPowerMode CmdComplete is too small: {} < {}", cmd_complete.size(),
+                    sizeof(HciCommandComplete));
         }
       });
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::DisableLowPowerMode() {
   if (serial_pid_ != PDEV_PID_BCM4381A1) {
-    FDF_LOG(INFO, "skipping low power settings on non-4381");
+    fdf::info("skipping low power settings on non-4381");
     return fpromise::make_promise(
         []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
   }
@@ -561,11 +557,11 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::DisableLowPowerMode() {
           HciCommandComplete event;
           std::memcpy(&event, cmd_complete.data(), sizeof(event));
           if (event.return_code != 0x00) {
-            FDF_LOG(WARNING, "failed to disable low power mode: 0x%02x", event.return_code);
+            fdf::warn("failed to disable low power mode: 0x{:02x}", event.return_code);
           }
         } else {
-          FDF_LOG(WARNING, "LowPowerMode CmdComplete is too small: %lu < %lu", cmd_complete.size(),
-                  sizeof(HciCommandComplete));
+          fdf::warn("LowPowerMode CmdComplete is too small: {} < {}", cmd_complete.size(),
+                    sizeof(HciCommandComplete));
         }
       });
 }
@@ -579,7 +575,7 @@ zx::result<> BtHciBroadcom::InitPowerManagement() {
   zx::result<fuchsia_hardware_power::ComponentPowerConfiguration> load_result =
       power_config::Load(std::move(open_result.value()));
   if (load_result.is_error()) {
-    FDF_LOG(ERROR, "Loading Power config failed: %s", load_result.status_string());
+    fdf::error("Loading Power config failed: {}", load_result);
     return load_result.take_error();
   }
 
@@ -588,7 +584,7 @@ zx::result<> BtHciBroadcom::InitPowerManagement() {
        load_result.value().power_elements()) {
     auto converted = fdf_power::PowerElementConfiguration::FromFidl(element_config);
     if (converted.is_error()) {
-      FDF_LOG(ERROR, "Converting power element config failed: %s", converted.status_string());
+      fdf::error("Converting power element config failed: {}", converted);
       return converted.take_error();
     }
     element_configs.push_back(converted.value());
@@ -609,12 +605,11 @@ zx::result<> BtHciBroadcom::InitPowerManagement() {
 
   fidl::WireResult lease = fidl::WireCall(element_lessor_client_)->Lease(PowerLevel::kBoot);
   if (!lease.ok()) {
-    FDF_LOG(ERROR, "Call to Lease failed: %s", lease.error().FormatDescription().c_str());
+    fdf::error("Call to Lease failed: {}", lease.error().FormatDescription());
     return zx::error(lease.error().status());
   }
   if (lease->is_error()) {
-    FDF_LOG(ERROR, "Failed to acquire lease: %s",
-            fdf_power::LeaseErrorToString(lease->error_value()));
+    fdf::error("Failed to acquire lease: {}", fdf_power::LeaseErrorToString(lease->error_value()));
     return fdf_power::LeaseErrorToZxError(lease->error_value());
   }
   level_lease_client_.emplace(std::move(lease->value()->lease_control), dispatcher());
@@ -627,8 +622,8 @@ zx::result<fdf_power::ElementDesc> BtHciBroadcom::ApplyPowerConfiguration(
   constexpr size_t kExpectedPowerElementConfigs = 1;
 
   if (element_configs.size() != kExpectedPowerElementConfigs) {
-    FDF_LOG(ERROR, "Unexpected number of power element configs: %zu != %zu", element_configs.size(),
-            kExpectedPowerElementConfigs);
+    fdf::error("Unexpected number of power element configs: {} != {}", element_configs.size(),
+               kExpectedPowerElementConfigs);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -636,21 +631,21 @@ zx::result<fdf_power::ElementDesc> BtHciBroadcom::ApplyPowerConfiguration(
       fdf_power::ApplyPowerConfiguration(*incoming(), element_configs,
                                          /*use_element_runner=*/true);
   if (result.is_error()) {
-    FDF_LOG(INFO, "Failed to apply power config: %s",
-            fdf_power::ErrorToString(result.error_value()));
+    fdf::info("Failed to apply power config: {}", fdf_power::ErrorToString(result.error_value()));
     return fdf_power::ErrorToZxError(result.error_value());
   }
   if (result->size() != 1) {
-    FDF_LOG(ERROR, "Unexpected element desc count %zu", result->size());
+    fdf::error("Unexpected element desc count {}", result->size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   fdf_power::ElementDesc& element_desc = result->at(0);
-  FDF_LOG(INFO, "Power element applied: \"%s\"", element_desc.element_config.element.name.c_str());
+  fdf::info("Power element applied: \"{}\"", element_desc.element_config.element.name);
 
   if (element_desc.element_config.element.levels.size() != PowerLevel::kPowerLevelCount) {
-    FDF_LOG(ERROR, "Got %zu power levels, expected %u",
-            element_desc.element_config.element.levels.size(), PowerLevel::kPowerLevelCount);
+    fdf::error("Got {} power levels, expected {}",
+               element_desc.element_config.element.levels.size(),
+               static_cast<uint32_t>(PowerLevel::kPowerLevelCount));
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -659,7 +654,8 @@ zx::result<fdf_power::ElementDesc> BtHciBroadcom::ApplyPowerConfiguration(
 
 void BtHciBroadcom::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLevelRequest* request,
                              SetLevelCompleter::Sync& completer) {
-  FDF_LOG(DEBUG, "SetLevel %u ?-> %u ", power_level_, request->level);
+  fdf::debug("SetLevel {} ?-> {} ", static_cast<uint32_t>(power_level_),
+             static_cast<uint32_t>(request->level));
 
   if (power_level_ == request->level) {
     completer.Reply();
@@ -668,13 +664,14 @@ void BtHciBroadcom::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLevelRe
 
   if (power_level_ == PowerLevel::kBoot) {
     if (request->level == PowerLevel::kOff) {
-      FDF_LOG(DEBUG, "Initial powerlevel off request (but we are trying to boot), ignoring..");
+      fdf::debug("Initial powerlevel off request (but we are trying to boot), ignoring..");
       completer.Reply();
       return;
     }
     // We don't expect another transition within Boot mode, until we drop the Boot lease at the end
     // of initialization.
-    FDF_LOG(WARNING, "Within boot mode, got unexpected SetLevel(%d) - ignoring..", request->level);
+    fdf::warn("Within boot mode, got unexpected SetLevel({}) - ignoring..",
+              static_cast<int>(request->level));
   }
 
   // The only two transitions we expect are from OFF -> ON, and ON -> OFF.
@@ -683,7 +680,8 @@ void BtHciBroadcom::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLevelRe
   // Log any other transitions.
   if ((power_level_ == PowerLevel::kOff && request->level != PowerLevel::kOn) ||
       (power_level_ == PowerLevel::kOn && request->level != PowerLevel::kOff)) {
-    FDF_LOG(WARNING, "Got unexpected SetLevel Transition: %d -> %d", power_level_, request->level);
+    fdf::warn("Got unexpected SetLevel Transition: {} -> {}", static_cast<int>(power_level_),
+              static_cast<int>(request->level));
   }
 
   completer.Reply();
@@ -692,7 +690,7 @@ void BtHciBroadcom::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLevelRe
 void BtHciBroadcom::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unexpected ElementRunner method ordinal 0x%016lx", metadata.method_ordinal);
+  fdf::error("Unexpected ElementRunner method ordinal {:#018x}", metadata.method_ordinal);
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::AssertLevel(PowerLevel requested_level) {
@@ -710,15 +708,15 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AssertLevel(PowerLevel reque
         // We are not asserting anymore, release any lease we have.
         auto result = level_lease_client_->UnbindMaybeGetEndpoint();
         if (result.is_error()) {
-          FDF_LOG(ERROR, "Tried to unbind when we have a pending call?!");
+          fdf::error("Tried to unbind when we have a pending call?!");
         }
         level_lease_client_.reset();
       } else {
-        FDF_LOG(WARNING, "Would have unbound, but we don't have a valid cilent");
+        fdf::warn("Would have unbound, but we don't have a valid cilent");
       }
       break;
     default:
-      FDF_LOG(ERROR, "Unexpected level %u", requested_level);
+      fdf::error("Unexpected level {}", static_cast<uint32_t>(requested_level));
       return fpromise::make_error_promise(ZX_ERR_INVALID_ARGS);
   }
 
@@ -729,19 +727,18 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AssertLevel(PowerLevel reque
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::AcquirePowerElementLease() {
   if (level_lease_client_) {
-    FDF_LOG(DEBUG, "Not acquiring a lease due to already having a lease");
+    fdf::debug("Not acquiring a lease due to already having a lease");
     return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
   }
 
   // Request dependent power nodes rise to kPowerLevelOn
   fidl::WireResult lease = fidl::WireCall(element_lessor_client_)->Lease(kOn);
   if (!lease.ok()) {
-    FDF_LOG(ERROR, "Call to Lease failed: %s", lease.error().FormatDescription().c_str());
+    fdf::error("Call to Lease failed: {}", lease.error().FormatDescription());
     return fpromise::make_result_promise<void, zx_status_t>(fpromise::error(ZX_ERR_IO));
   }
   if (lease->is_error()) {
-    FDF_LOG(ERROR, "Failed to acquire lease: %s",
-            fdf_power::LeaseErrorToString(lease->error_value()));
+    fdf::error("Failed to acquire lease: {}", fdf_power::LeaseErrorToString(lease->error_value()));
     return fpromise::make_result_promise<void, zx_status_t>(fpromise::error(ZX_ERR_IO));
   }
 
@@ -752,17 +749,17 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AcquirePowerElementLease() {
       ->WatchStatus(fuchsia_power_broker::wire::LeaseStatus::kPending)
       .Then([this, completer = std::move(bridge.completer)](auto& lease_satisfied_result) mutable {
         if (!lease_satisfied_result.ok()) {
-          FDF_LOG(ERROR, "Call to Lease WatchStatus failed: %s",
-                  lease_satisfied_result.error().FormatDescription().c_str());
+          fdf::error("Call to Lease WatchStatus failed: {}",
+                     lease_satisfied_result.error().FormatDescription());
           completer.complete_error(ZX_ERR_INTERNAL);
           return;
         }
         if (lease_satisfied_result->status != fuchsia_power_broker::LeaseStatus::kSatisfied) {
-          FDF_LOG(ERROR, "Call to Lease WatchStatus did not result in kSatisfied!?");
+          fdf::error("Call to Lease WatchStatus did not result in kSatisfied!?");
           completer.complete_error(ZX_ERR_BAD_STATE);
           return;
         }
-        FDF_LOG(DEBUG, "Lease is satisfied");
+        fdf::debug("Lease is satisfied");
         power_level_ = PowerLevel::kOn;
         completer.complete_ok();
         return;
@@ -801,9 +798,9 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
           HciCommandComplete event;
           std::memcpy(&event, cmd_complete.data(), sizeof(event));
           if (event.return_code == 0x00) {
-            FDF_LOG(INFO, "set default power caps");
+            fdf::info("set default power caps");
           } else {
-            FDF_LOG(WARNING, "failed to set default power caps: 0x%02x", event.return_code);
+            fdf::warn("failed to set default power caps: 0x{:02x}", event.return_code);
           }
         }
       });
@@ -832,7 +829,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
 
   auto client = incoming()->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
   if (client.is_error()) {
-    FDF_LOG(WARNING, "Open firmware file failed: %s", zx_status_get_string(client.error_value()));
+    fdf::warn("Open firmware file failed: {}", zx_status_get_string(client.error_value()));
     return fpromise::make_error_promise(client.error_value());
   }
 
@@ -840,31 +837,31 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
       fidl::WireCall(*client)->GetBackingMemory(fuchsia_io::wire::VmoFlags::kRead);
   if (!backing_memory_result.ok()) {
     if (backing_memory_result.is_peer_closed()) {
-      FDF_LOG(WARNING, "Failed to get backing memory: Peer closed");
+      fdf::warn("Failed to get backing memory: Peer closed");
       return fpromise::make_error_promise(ZX_ERR_NOT_FOUND);
     }
-    FDF_LOG(WARNING, "Failed to get backing memory: %s",
-            zx_status_get_string(backing_memory_result.status()));
+    fdf::warn("Failed to get backing memory: {}",
+              zx_status_get_string(backing_memory_result.status()));
     return fpromise::make_error_promise(backing_memory_result.status());
   }
 
   const auto* backing_memory = backing_memory_result.Unwrap();
   if (backing_memory->is_error()) {
-    FDF_LOG(WARNING, "Failed to get backing memory: %s",
-            zx_status_get_string(backing_memory->error_value()));
+    fdf::warn("Failed to get backing memory: {}",
+              zx_status_get_string(backing_memory->error_value()));
     return fpromise::make_error_promise(backing_memory->error_value());
   }
 
   zx::vmo& backing_vmo = backing_memory->value()->vmo;
   if (zx_status_t status = backing_vmo.get_prop_content_size(&fw_size); status != ZX_OK) {
-    FDF_LOG(WARNING, "Failed to get vmo size: %s", zx_status_get_string(status));
+    fdf::warn("Failed to get vmo size: {}", zx_status_get_string(status));
     return fpromise::make_error_promise(status);
   }
   fw_vmo.reset(backing_vmo.release());
 
   return SendCommand(&kStartFirmwareDownloadCmd, sizeof(kStartFirmwareDownloadCmd))
       .or_else([](zx_status_t& status) -> fpromise::result<std::vector<uint8_t>, zx_status_t> {
-        FDF_LOG(ERROR, "could not load firmware file");
+        fdf::error("could not load firmware file");
         return fpromise::error(status);
       })
       .and_then([this](std::vector<uint8_t>& /*event*/) mutable {
@@ -897,7 +894,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
         }
         return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
       })
-      .and_then([]() { FDF_LOG(INFO, "firmware loaded"); });
+      .and_then([]() { fdf::info("firmware loaded"); });
 }
 
 zx_status_t BtHciBroadcom::SendCommandSync(const void* command, size_t length) {
@@ -909,7 +906,7 @@ zx_status_t BtHciBroadcom::SendCommandSync(const void* command, size_t length) {
   auto result =
       hci_transport_client_->Send(fhbt::wire::SentPacket::WithCommand(arena, command_view));
   if (result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to send command: %s", result.status_string());
+    fdf::error("Failed to send command: {}", result.status_string());
     return result.status();
   }
 
@@ -919,7 +916,7 @@ zx_status_t BtHciBroadcom::SendCommandSync(const void* command, size_t length) {
 zx::result<std::vector<uint8_t>> BtHciBroadcom::ReadEventSync() {
   fidl::Status result = hci_transport_client_.HandleOneEvent(hci_event_handler_);
   if (result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to get event packet: %s", zx_status_get_string(result.status()));
+    fdf::error("Failed to get event packet: {}", zx_status_get_string(result.status()));
     return zx::error(result.status());
   }
 
@@ -929,8 +926,8 @@ zx::result<std::vector<uint8_t>> BtHciBroadcom::ReadEventSync() {
   event_receive_buffer_.clear();
 
   if (packet_bytes.size() < sizeof(HciCommandComplete)) {
-    FDF_LOG(ERROR, "command channel read too short: %zu < %lu", packet_bytes.size(),
-            sizeof(HciCommandComplete));
+    fdf::error("command channel read too short: {} < {}", packet_bytes.size(),
+               sizeof(HciCommandComplete));
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -938,12 +935,12 @@ zx::result<std::vector<uint8_t>> BtHciBroadcom::ReadEventSync() {
   std::memcpy(&event, packet_bytes.data(), sizeof(HciCommandComplete));
   if (event.header.event_code != kHciEvtCommandCompleteEventCode ||
       event.header.parameter_total_size < kMinEvtParamSize) {
-    FDF_LOG(ERROR, "did not receive command complete or params too small");
+    fdf::error("did not receive command complete or params too small");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (event.return_code != 0) {
-    FDF_LOG(ERROR, "got command complete error %u", event.return_code);
+    fdf::error("got command complete error {}", event.return_code);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -960,7 +957,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SendVmoAsCommands(zx::vmo vm
     size_t read_amount = (remaining > sizeof(buffer) ? sizeof(buffer) : remaining);
 
     if (read_amount < sizeof(HciCommandHeader)) {
-      FDF_LOG(ERROR, "short HCI command in firmware download");
+      fdf::error("short HCI command in firmware download");
       return fpromise::make_error_promise(ZX_ERR_INTERNAL);
     }
 
@@ -973,13 +970,13 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SendVmoAsCommands(zx::vmo vm
     std::memcpy(&header, buffer, sizeof(HciCommandHeader));
     size_t length = header.parameter_total_size + sizeof(header);
     if (read_amount < length) {
-      FDF_LOG(ERROR, "short HCI command in firmware download");
+      fdf::error("short HCI command in firmware download");
       return fpromise::make_error_promise(ZX_ERR_INTERNAL);
     }
 
     offset += length;
     if (zx_status_t status = SendCommandSync(buffer, length); status != ZX_OK) {
-      FDF_LOG(ERROR, "SendCommand failed in firmware download: %s", zx_status_get_string(status));
+      fdf::error("SendCommand failed in firmware download: {}", zx_status_get_string(status));
       return fpromise::make_error_promise(status);
     }
   }
@@ -988,40 +985,40 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SendVmoAsCommands(zx::vmo vm
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
-  FDF_LOG(DEBUG, "sending initial reset command");
+  fdf::debug("sending initial reset command");
   return SendCommand(&kResetCmd, sizeof(kResetCmd))
       .and_then([this](std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
         if (is_uart_) {
-          FDF_LOG(DEBUG, "setting baud rate to %u", kTargetBaudRate);
+          fdf::debug("setting baud rate to {}", kTargetBaudRate);
           // switch baud rate to TARGET_BAUD_RATE
           return SetBaudRate(kTargetBaudRate);
         }
         return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
       })
       .and_then([this]() {
-        FDF_LOG(DEBUG, "loading firmware");
+        fdf::debug("loading firmware");
         return LoadFirmware();
       })
       .and_then([this]() {
-        FDF_LOG(DEBUG, "sending reset command");
+        fdf::debug("sending reset command");
         return SendCommand(&kResetCmd, sizeof(kResetCmd));
       })
       .and_then([this](std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
-        FDF_LOG(DEBUG, "Getting mac address");
+        fdf::debug("Getting mac address");
         zx::result metadata =
             fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
         if (metadata.is_error()) {
-          FDF_LOG(ERROR, "Error reading metadata: %s", metadata.status_string());
+          fdf::error("Error reading metadata: {}", metadata.status_string());
           return fpromise::make_error_promise(ZX_ERR_INTERNAL);
         }
 
         if (!metadata.value().mac_address().has_value()) {
-          FDF_LOG(ERROR, "Mac address metadata missing mac address");
+          fdf::error("Mac address metadata missing mac address");
           return fpromise::make_error_promise(ZX_ERR_INTERNAL);
         }
         const auto& octets = metadata.value().mac_address().value().octets();
-        FDF_LOG(INFO, "Got mac address %02x:%02x:%02x:%02x:%02x:%02x", octets[0], octets[1],
-                octets[2], octets[3], octets[4], octets[5]);
+        fdf::info("Got mac address {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", octets[0], octets[1],
+                  octets[2], octets[3], octets[4], octets[5]);
 
         // send Set BDADDR command
         return SetBdaddr(octets);
@@ -1042,21 +1039,21 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::OnInitializeComplete(zx_stat
   hci_transport_client_end_ = hci_transport_client_.TakeClientEnd();
 
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "device initialization failed: %s", zx_status_get_string(status));
+    fdf::error("device initialization failed: {}", zx_status_get_string(status));
     return fpromise::make_error_promise(status);
   }
 
   // We are done booting, we can drop our boot power needs.
-  FDF_LOG(DEBUG, "dropping boot power lease");
+  fdf::debug("dropping boot power lease");
   executor_->schedule_task(AssertLevel(PowerLevel::kOff));
-  FDF_LOG(INFO, "initialization completed successfully.");
+  fdf::info("initialization completed successfully.");
   return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::AddNode() {
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "Failed to bind devfs connecter to dispatcher: %s", connector.status_string());
+    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector.status_string());
     return fpromise::make_error_promise(connector.error_value());
   }
 
@@ -1073,8 +1070,8 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AddNode() {
 
   auto controller_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR, "Create node controller end points failed: %s",
-            zx_status_get_string(controller_endpoints.error_value()));
+    fdf::error("Create node controller end points failed: {}",
+               zx_status_get_string(controller_endpoints.error_value()));
     return fpromise::make_error_promise(controller_endpoints.error_value());
   }
 
@@ -1082,8 +1079,8 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AddNode() {
   // the client end of it, because no driver will bind to the child node.
   auto child_node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
   if (child_node_endpoints.is_error()) {
-    FDF_LOG(ERROR, "Create child node end points failed: %s",
-            zx_status_get_string(child_node_endpoints.error_value()));
+    fdf::error("Create child node end points failed: {}",
+               zx_status_get_string(child_node_endpoints.error_value()));
     return fpromise::make_error_promise(child_node_endpoints.error_value());
   }
 
@@ -1098,15 +1095,15 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AddNode() {
                 fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>&
                     child_result) mutable {
         if (!child_result.ok()) {
-          FDF_LOG(ERROR, "Failed to add bt-hci-broadcom node, FIDL error: %s",
-                  child_result.status_string());
+          fdf::error("Failed to add bt-hci-broadcom node, FIDL error: {}",
+                     child_result.status_string());
           completer.complete_error(child_result.status());
           return;
         }
 
         if (child_result->is_error()) {
-          FDF_LOG(ERROR, "Failed to add bt-hci-broadcom node: %u",
-                  static_cast<uint32_t>(child_result->error_value()));
+          fdf::error("Failed to add bt-hci-broadcom node: {}",
+                     static_cast<uint32_t>(child_result->error_value()));
           completer.complete_error(ZX_ERR_INTERNAL);
           return;
         }
@@ -1124,7 +1121,7 @@ void BtHciBroadcom::CompleteStart(zx_status_t status) {
     start_completer_.value()(zx::make_result(status));
     start_completer_.reset();
   } else {
-    FDF_LOG(ERROR, "CompleteStart called without start_completer_.");
+    fdf::error("CompleteStart called without start_completer_.");
   }
 }
 

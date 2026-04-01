@@ -15,6 +15,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -824,7 +825,7 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, InitPowerManagement) {
   element_runner->SetLevel(BtHciBroadcom::kOff)
       .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
         if (result.is_error()) {
-          FDF_LOG(WARNING, "Result: %s", result.error_value().status_string());
+          fdf::warn("Result: {}", result.error_value().status_string());
         }
         EXPECT_TRUE(result.is_ok());
         driver_test().runtime().Quit();
@@ -841,13 +842,13 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
   ASSERT_TRUE(lease_power_level);
   EXPECT_EQ(*lease_power_level, BtHciBroadcom::kBoot);
 
-  FDF_LOG(INFO, "Checking that boot lease has been dropped");
+  fdf::info("Checking that boot lease has been dropped");
   // But after startup firmware load, the lease should be dropped already.
   driver_test().RunInEnvironmentTypeContext(
       [](TestEnvironment& env) { env.fake_power_broker().ExpectLeaseReleased(); });
 
   OpenHciTransportClient();
-  FDF_LOG(INFO, "Sending a packet through, should get a power lease");
+  fdf::info("Sending a packet through, should get a power lease");
 
   fidl::Arena arena;
   auto result = hci_transport_client()->Send(
@@ -855,7 +856,7 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
 
   ASSERT_EQ(result.status(), ZX_OK);
 
-  FDF_LOG(INFO, "waiting for power lease");
+  fdf::info("waiting for power lease");
   // Should acquire an On lease
   driver_test().runtime().RunUntil([&]() {
     lease_power_level = driver_test().RunInEnvironmentTypeContext(
@@ -865,7 +866,7 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
   });
 
   EXPECT_EQ(*lease_power_level, BtHciBroadcom::kOn);
-  FDF_LOG(INFO, "Lease at On, waiting for lease off");
+  fdf::info("Lease at On, waiting for lease off");
 
   // Lease should be dropped after a timeout.
   auto lease_control_server_end = driver_test().RunInEnvironmentTypeContext(
@@ -885,7 +886,7 @@ TEST_F(BtHciBroadcomInitializedWithPowerTest, ActivityAcquiresLease) {
       }
       EXPECT_EQ(result, ZX_OK);
       return (observed & ZX_CHANNEL_PEER_CLOSED) != 0;
-      FDF_LOG(INFO, "Lease dropped");
+      fdf::info("Lease dropped");
     });
   });
 }
