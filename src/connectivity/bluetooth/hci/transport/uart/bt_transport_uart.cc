@@ -164,8 +164,7 @@ zx::result<> BtTransportUart::Start() {
                   incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                       std::move(server));
               if (result.is_error()) {
-                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
-                        result.status_string());
+                fdf::warn("Failed to connect to power token service: {}", result);
               }
             },
     });
@@ -173,7 +172,7 @@ zx::result<> BtTransportUart::Start() {
     zx::result result = outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(
         std::move(handler), "default");
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      fdf::error("Failed to add power token service: {}", result);
       return result.take_error();
     }
 
@@ -586,7 +585,8 @@ void BtTransportUart::HciReadComplete(zx_status_t status, const uint8_t* buffer,
     HciHandleUartReadEvents(buffer, length);
     if (unacked_receive_packet_number_ >= kUnackedReceivePacketLimit) {
       fdf::warn(
-          "Too many unacked packets ({} > {}) sent to the host, stop fetching data from the bus temporarily", unacked_receive_packet_number_, kUnackedReceivePacketLimit);
+          "Too many unacked packets ({} > {}) sent to the host, stop fetching data from the bus temporarily",
+          unacked_receive_packet_number_, kUnackedReceivePacketLimit);
       // Stop reading data from the uart buffer if there are too many unacked packets sent to the
       // host.
       read_stopped_ = true;

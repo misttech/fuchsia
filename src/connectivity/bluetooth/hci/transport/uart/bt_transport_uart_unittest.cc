@@ -309,8 +309,7 @@ class BtTransportUartHciTransportProtocolTest
     // Acknowledge the snoop packet with |current_snoop_seq_|.
     fit::result<fidl::OneWayError> result = snoop_client_->AcknowledgePackets(current_snoop_seq_);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to acknowledge snoop packet: %s",
-              result.error_value().status_string());
+      fdf::error("Failed to acknowledge snoop packet: {}", result.error_value().status_string());
     }
   }
 
