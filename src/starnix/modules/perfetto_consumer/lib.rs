@@ -28,7 +28,7 @@ use starnix_core::task::tracing::TracePerformanceEventManager;
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask};
 use starnix_core::vfs::FsString;
 use starnix_logging::{
-    CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error, log_warn,
+    CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error, log_info, log_warn,
 };
 use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
 use starnix_sync::{Locked, Unlocked};
@@ -203,6 +203,7 @@ impl CallbackState {
                     // context if we bail for whatever reason below.
                     let _local_prolonged_context =
                         std::mem::replace(&mut self.prolonged_context, None);
+                    let start_time = std::time::Instant::now();
 
                     let connection = self.connection(locked, current_task)?;
                     let disable_request = connection.disable_tracing(
@@ -316,6 +317,10 @@ impl CallbackState {
                             current_task,
                             FreeBuffersRequest { buffer_ids: vec![0] },
                         )?;
+                    let elapsed = start_time.elapsed().as_millis();
+                    log_info!(
+                        "Perfetto frames copied, dropping prolonged trace context. Processing took {elapsed} ms"
+                    );
                 } else {
                     // If we receive a stop request and we don't think we're actually tracing, our
                     // local state likely desynced from the global trace state. Clean up our state

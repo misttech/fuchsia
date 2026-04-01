@@ -161,9 +161,10 @@ void TraceeV2::Stop(fit::closure cb) {
     }
     return;
   }
+  zx_time_t start_time = zx_clock_get_monotonic();
   connection_->provider->Stop().ThenExactlyOnce(
-      [weak = weak_ptr_factory_.GetWeakPtr(), cb = std::move(cb),
-       conn = this->connection_](fidl::Result<fuchsia_tracing_provider::ProviderV2::Stop>& e) {
+      [weak = weak_ptr_factory_.GetWeakPtr(), cb = std::move(cb), conn = this->connection_,
+       start_time](fidl::Result<fuchsia_tracing_provider::ProviderV2::Stop>& e) {
         if (e.is_error()) {
           FX_LOGS(ERROR) << std::format("{}: Failed to stop provider: {}", *conn,
                                         e.error_value().FormatDescription());
@@ -182,9 +183,16 @@ void TraceeV2::Stop(fit::closure cb) {
             FX_LOGS(WARNING) << std::format("{}: Received Stopped confirmation in state ", *conn)
                              << weak->state();
             break;
-          case Tracee::State::kStopping:
+          case Tracee::State::kStopping: {
             weak->TransitionToState(State::kStopped);
-            break;
+            zx_time_t end_time = zx_clock_get_monotonic();
+            double elapsed_ms = static_cast<double>(end_time - start_time) / 1000000.0;
+            if (elapsed_ms > 1000.0) {
+              FX_LOGS(INFO) << std::format("{}: Stop took {:.2f} ms", *conn, elapsed_ms);
+            } else {
+              FX_LOGS(DEBUG) << std::format("{}: Stop took {:.2f} ms", *conn, elapsed_ms);
+            }
+          } break;
           case Tracee::State::kTerminating:
             break;
         }
