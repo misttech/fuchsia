@@ -22,14 +22,25 @@
 // aarch64 processors provide only one mechanism for saving and restoring state.
 
 use criterion::Criterion;
-use extended_pstate::{ExtendedPstateState, restore_extended_pstate, save_extended_pstate};
+use extended_pstate::ExtendedPstateState;
 use fuchsia as _;
 use fuchsia_criterion::FuchsiaCriterion;
 use std::mem;
 use std::time::Duration;
 
 #[cfg(target_arch = "x86_64")]
-use extended_pstate::x86_64::{PREFERRED_STRATEGY, Strategy};
+use extended_pstate::{
+    restore_extended_pstate, save_extended_pstate,
+    x86_64::{PREFERRED_STRATEGY, Strategy},
+};
+
+#[cfg(target_arch = "aarch64")]
+unsafe extern "C" {
+    fn save_extended_pstate(state_addr: usize);
+    fn restore_extended_pstate(state_addr: usize);
+    fn save_extended_aarch32_pstate(state_addr: usize);
+    fn restore_extended_aarch32_pstate(state_addr: usize);
+}
 
 fn main() {
     let mut fc = FuchsiaCriterion::default();
@@ -86,10 +97,7 @@ fn main() {
             });
         });
         bench = bench.with_function("SaveAndRestore/Aarch32", |b| {
-            use extended_pstate::{
-                ExtendedAarch32PstateState, ExtendedPstatePointer, restore_extended_aarch32_pstate,
-                save_extended_aarch32_pstate,
-            };
+            use extended_pstate::{ExtendedAarch32PstateState, ExtendedPstatePointer};
             let mut state = ExtendedAarch32PstateState::default();
             let mut pstate_ptr = ExtendedPstatePointer { extended_aarch32_pstate: &raw mut state };
             let ptr_ptr = &raw mut pstate_ptr as usize;
