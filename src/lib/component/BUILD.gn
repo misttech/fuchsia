@@ -12,6 +12,14 @@ fidl("bindingstest") {
   testonly = true
   public_deps = [ "//zircon/vdso/zx" ]
   sources = [ "test.test.fidl" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [
+    "invalid-copyright-for-platform-source-library",
+    "wrong-prefix-for-platform-source-library",
+    "string-bounds-not-specified",
+    "event-names-must-start-with-on",
+  ]
 }
 
 go_library("component") {

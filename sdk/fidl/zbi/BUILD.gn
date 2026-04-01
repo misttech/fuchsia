@@ -27,6 +27,12 @@ fidl("zbi") {
   sources = zbi_sources
   enable_zither = true
 
+  # TODO(https://fxbug.dev/498348957): Fix lint warnings and remove.
+  excluded_checks = [
+    "explicit-flexible-modifier",
+    "invalid-case-for-constant",
+  ]
+
   # TODO(https://fxbug.dev/42061412): For string_array<N> and overlay.
   experimental_flags = [ "zx_c_types" ]
 

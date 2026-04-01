@@ -7,6 +7,12 @@ import("//build/fidl/fidl.gni")
 fidl("test.wlan.realm") {
   testonly = true
   sources = [ "realm_factory.test.fidl" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [
+    "string-bounds-not-specified",
+    "explicit-flexible-modifier",
+  ]
   public_deps = [
     "//sdk/fidl/fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.driver.test",

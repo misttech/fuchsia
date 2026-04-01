@@ -25,6 +25,9 @@ fidl("componentmanager.test") {
   testonly = true
   sources = [ "componentmanager.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "wrong-prefix-for-platform-source-library" ]
 }
 
 rustc_binary("maintainer_bin") {

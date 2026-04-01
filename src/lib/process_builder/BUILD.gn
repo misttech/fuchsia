@@ -49,6 +49,12 @@ fidl("test-util-fidl") {
   name = "test.processbuilder"
 
   sources = [ "test-utils/test_util.test.fidl" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [
+    "string-bounds-not-specified",
+    "vector-bounds-not-specified",
+  ]
 }
 
 rustc_binary("test_util") {

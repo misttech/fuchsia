@@ -47,6 +47,9 @@ fidl("triangle") {
   name = "test.triangle"
   sources = [ "src/triangle.test.fidl" ]
   public_deps = [ ":echo" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "string-bounds-not-specified" ]
 }
 
 fuchsia_unittest_package("overnet-integration-tests") {

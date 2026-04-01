@@ -33,6 +33,9 @@ fidl("test.policy") {
   name = "test.policy"
   sources = [ "policy.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "string-bounds-not-specified" ]
 }
 
 rustc_binary("policy_service_bin") {

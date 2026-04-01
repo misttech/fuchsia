@@ -15,6 +15,12 @@ fidl("fuchsia.component.internal") {
     "internal_capability.fidl",
     "sandbox.fidl",
   ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [
+    "invalid-case-for-decl-name",
+    "vector-bounds-not-specified",
+  ]
   public_deps = [
     "//sdk/fidl/fuchsia.component",
     "//sdk/fidl/fuchsia.component.decl",

@@ -405,43 +405,42 @@ template("fidl_library") {
     args = [ rebase_path(lint_stamp_file, root_build_dir) ]
 
     # Don't lint FIDL libraries used to test FIDL itself.
-    if (filter_include([ get_label_info(target_name, "dir") ],
-                       [
-                         "//sdk/lib/fidl/cpp/tests/*",
-                         "//sdk/testing/fidl/*",
-                         "//src/devices/tools/fidlgen_banjo/tests/fidl/*",
-                         "//src/lib/fidl/*",
-                         "//src/tests/benchmarks/fidl/benchmark_suite/*",
-                         "//src/tests/fidl/*",
-                         "//tools/fidl/fidlc/testdata/*",
-                       ]) != []) {
-      args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
-    } else if (!defined(invoker.excluded_checks) && filter_include(
-                                                        [ get_label_info(
-                                                            target_name,
-                                                            "dir") ],
-                                                        [
-                                                          # TODO(https://fxbug.dev/381096879): Fix lint warnings.
-                                                          "//examples/fidl/*",
-                                                          "//sdk/banjo/fuchsia.hardware.block.partition/*",
-                                                          "//sdk/fidl/fuchsia.bluetooth.snoop/*",
-                                                          "//sdk/fidl/fuchsia.component.internal/*",
-                                                          "//sdk/fidl/fuchsia.net.masquerade/*",
-                                                          "//sdk/fidl/zbi/*",
-                                                          "//src/connectivity/overnet/tests/integration/*",
-                                                          "//src/connectivity/wlan/tests/helpers/realm-factory/*",
-                                                          "//src/diagnostics/sampler/testing/fidl/*",
-                                                          "//src/lib/component/*",
-                                                          "//src/lib/diagnostics/inspect/contrib/self_profiles_report/tests/*",
-                                                          "//src/lib/fidl_table_validation/*",
-                                                          "//src/lib/process_builder/*",
-                                                          "//src/sys/component_manager/tests/security_policy/capability_allowlist/*",
-                                                          "//src/sys/component_manager/tests/utc-time/*",
-                                                          "//zircon/tools/zither/*",
+    if (filter_include(
+            [ get_label_info(":${target_name}", "label_no_toolchain") ],
+            [
+              "//sdk/lib/fidl/cpp/tests/*",
+              "//sdk/testing/fidl:*",
+              "//sdk/testing/fidl/protocols_tests:*",
+              "//sdk/testing/fidl/types_tests:*",
+              "//src/devices/tools/fidlgen_banjo/tests/fidl:*",
+              "//src/lib/fidl/c/coding_tables_tests:*",
+              "//src/lib/fidl/c/walker_tests:*",
+              "//src/lib/fidl/llcpp/tests/*",
+              "//src/lib/fidl/rust/external_tests:*",
+              "//src/tests/benchmarks/fidl/benchmark_suite:*",
+              "//src/tests/fidl/*",
+              "//tools/fidl/fidlc/testdata:*",
+              "//tools/fidl/fidlc/testdata/*",
 
-                                                          # TODO(https://fxbug.dev/381163466): Fix lint warnings.
-                                                          "//vendor/*",
-                                                        ]) != []) {
+              # The test targets are defined in the main BUILD.gn.
+              "//zircon/tools/zither:*",
+            ]) != []) {
+      args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
+    } else if (get_label_info(":${target_name}", "label_no_toolchain") ==
+               "//sdk/fidl/zbi:zbi_lint") {
+      # zbi fails linting with a "parse-error", which cannot be excluded.
+      # TODO(https://fxbug.dev/498348957): Fix the "parse-error" and remove.
+      args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
+
+      # Allow zbi to specify non-parse-error excluded checks.
+      not_needed(invoker, [ "excluded_checks" ])
+    } else if (!defined(invoker.excluded_checks) &&
+               filter_include(
+                   [ get_label_info(":${target_name}", "label_no_toolchain") ],
+                   [
+                     # TODO(https://fxbug.dev/381163466): Fix lint warnings.
+                     "//vendor/*",
+                   ]) != []) {
       args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
     } else {
       args += [ rebase_path(host_tool_path, root_build_dir) ]

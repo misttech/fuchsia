@@ -14,4 +14,7 @@ import("//build/fidl/fidl.gni")
 fidl("examples.keyvaluestore.usegenericvalues") {
   sources = [ "key_value_store.test.fidl" ]
   enable_rust_next = true
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "wrong-prefix-for-platform-source-library" ]
 }

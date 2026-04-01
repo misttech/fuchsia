@@ -157,36 +157,26 @@ def _is_exempt_from_linting(package):
     _fidl_test_packages = [
         "//sdk/lib/fidl/cpp/tests",
         "//sdk/testing/fidl",
+        "//sdk/testing/fidl/protocols_tests",
+        "//sdk/testing/fidl/types_tests",
         "//src/devices/tools/fidlgen_banjo/tests/fidl",
-        "//src/lib/fidl",
+        "//src/lib/fidl/c/coding_tables_tests",
+        "//src/lib/fidl/c/walker_tests",
+        "//src/lib/fidl/llcpp/tests",
+        "//src/lib/fidl/rust/external_tests",
         "//src/tests/benchmarks/fidl/benchmark_suite",
         "//src/tests/fidl",
         "//tools/fidl/fidlc/testdata",
     ]
-    _packages_with_known_warnings = [
-        # TODO(https://fxbug.dev/381096879): Fix lint warnings in the following packages.
-        "//examples/fidl",
-        "//sdk/banjo/fuchsia.hardware.block.partition",
-        "//sdk/fidl/fuchsia.bluetooth.snoop",
-        "//sdk/fidl/fuchsia.component.internal",
-        "//sdk/fidl/fuchsia.net.masquerade",
-        "//sdk/fidl/zbi",
-        "//src/connectivity/overnet/tests/integration",
-        "//src/connectivity/wlan/tests/helpers/realm-factory",
-        "//src/diagnostics/sampler/testing/fidl",
-        "//src/lib/component",
-        "//src/lib/diagnostics/inspect/contrib/self_profiles_report/tests",
-        "//src/lib/fidl_table_validation",
-        "//src/lib/process_builder",
-        "//src/sys/component_manager/tests/security_policy/capability_allowlist",
-        "//src/sys/component_manager/tests/utc-time",
-        "//zircon/tools/zither",
-    ]
 
     package_path = "//" + package
 
-    if package_path in _fidl_test_packages or \
-       package_path in _packages_with_known_warnings:
+    if package_path in _fidl_test_packages:
+        return True
+
+    # zbi fails linting with a "parse-error", which cannot be excluded.
+    # TODO(https://fxbug.dev/498348957): Fix the "parse-error" and remove.
+    if package_path == "//sdk/fidl/zbi":
         return True
 
     # TODO(https://fxbug.dev/381163466): Fix lint warnings in vendor repos.

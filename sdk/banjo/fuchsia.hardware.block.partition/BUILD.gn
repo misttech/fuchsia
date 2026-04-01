@@ -6,6 +6,9 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.hardware.block.partition") {
   sources = [ "partition.fidl" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "invalid-case-for-decl-name" ]
   public_deps = [ "//zircon/vdso/zx" ]
   enable_banjo = true
 }

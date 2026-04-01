@@ -9,6 +9,9 @@ import("//build/rust/rustc_test.gni")
 fidl("test.tablevalidation") {
   testonly = true
   sources = [ "table_validation.test.fidl" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "string-bounds-not-specified" ]
 }
 
 rustc_test("fidl_table_validation_tests_bin") {

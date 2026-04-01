@@ -6,5 +6,8 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.net.masquerade") {
   sources = [ "client.fidl" ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "explicit-flexible-modifier" ]
   public_deps = [ "//sdk/fidl/fuchsia.net" ]
 }

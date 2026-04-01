@@ -11,4 +11,7 @@ fidl("test.sampler") {
     "//sdk/fidl/fuchsia.testing.harness",
     "//zircon/vdso/zx",
   ]
+
+  # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+  excluded_checks = [ "string-bounds-not-specified" ]
 }
