@@ -1428,7 +1428,17 @@ fn regenerate_temporary_slaac_addr<BC: SlaacBindingsContext<CC::DeviceId>, CC: S
                 }
             }
 
-            found_entry.unwrap_or_else(|| panic!("couldn't find {:?} to regenerate", addr_subnet))
+            if let Some(entry) = found_entry {
+                entry
+            } else {
+                // The timer firing raced with address removal. This is unusual,
+                // but not cause for alarm.
+                log::warn!(
+                    "Could not find temporary SLAAC address {addr_subnet}. \
+                    Assuming timer raced with removal"
+                );
+                return Action::SkipRegen;
+            }
         };
 
         assert!(
