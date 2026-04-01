@@ -25,7 +25,7 @@ zx::result<> Device::Start() {
   zx::result<fidl::ClientEnd<fuchsia_wlan_fullmac::WlanFullmacImpl>> client_end =
       incoming()->Connect<fuchsia_wlan_fullmac::Service::WlanFullmacImpl>();
   if (client_end.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Connect to FullmacImpl failed: %s", client_end.status_string());
+    logger().log(fdf::ERROR, "Connect to FullmacImpl failed: {}", client_end.status_string());
     return client_end.take_error();
   }
 
@@ -39,7 +39,7 @@ zx::result<> Device::Start() {
       RustFullmacMlme(start_fullmac_mlme(client_end_handle, this, &Device::MlmeShutdownCallback),
                       delete_fullmac_mlme_handle);
   if (!rust_mlme_) {
-    FDF_LOGL(ERROR, logger(), "Rust MLME is not valid");
+    logger().log(fdf::ERROR, "Rust MLME is not valid");
     return zx::error(ZX_ERR_BAD_HANDLE);
   }
 
