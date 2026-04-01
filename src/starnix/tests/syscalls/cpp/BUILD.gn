@@ -13,6 +13,7 @@ import("//src/starnix/tests/build/starnix_linux_test_component.gni")
 import("//src/starnix/tests/environments.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
 import("//src/starnix/tests/syscalls/cpp/syscall_test.gni")
+import("//src/storage/ext4/testing/test_ext4_server.gni")
 
 syscall_tests_deps = [
   # go/keep-sorted start
@@ -669,8 +670,20 @@ fuchsia_test_package("starnix_syscalls_cpp_flaky_tests") {
   }
 }
 
+syscall_test("ext4_write_test") {
+  includes =
+      [ "//src/starnix/tests/syscalls/cpp/meta/ext4_write_test.shard.cml" ]
+}
+
+ext4_test_server("ext4_write_test_pkg") {
+  image = "data/simple_ext4.img"
+}
+
 fuchsia_test_package("starnix_syscalls_cpp_tests") {
-  test_components = [ ":crash_test" ]
+  test_components = [
+    ":crash_test",
+    ":ext4_write_test",
+  ]
   deps = []
   foreach(test_name, all_test_names) {
     test_components += [ ":${test_name}" ]
@@ -678,7 +691,10 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
   }
 
   subpackages = starnix_test_subpackages
-  subpackages += [ "//src/starnix/containers/debian:debian_package" ]
+  subpackages += [
+    "//src/starnix/containers/debian:debian_package",
+    ":ext4_write_test_pkg",
+  ]
 
   if (target_cpu == "x64") {
     # TODO(https://fxbug.dev/42059962): arm64 emulator does not have Vulkan support yet.

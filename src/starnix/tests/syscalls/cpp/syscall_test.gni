@@ -116,11 +116,17 @@ template("syscall_test") {
     if (defined(invoker.test_target_kernel)) {
       _program.test_target_kernel = invoker.test_target_kernel
     }
+
+    _includes = []
+    if (defined(invoker.includes)) {
+      _includes = invoker.includes
+    }
     contents = {
       include = [
         rebase_path(_container_config_shard, root_build_dir),
         "//src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml",
       ]
+      include += _includes
       program = _program
       children = [
         {

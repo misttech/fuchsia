@@ -46,7 +46,7 @@ pub fn construct_fs(
     construct_fs_internal(source, true, inspector)
 }
 
-fn construct_fs_internal(
+pub fn construct_fs_internal(
     source: FsSourceType,
     read_only: bool,
     inspector: &fuchsia_inspect::Inspector,
@@ -122,13 +122,15 @@ mod tests {
     use super::{FsSourceType, construct_fs, construct_fs_internal};
 
     use ext4_lib::structs::MIN_EXT4_SIZE;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, open_node, readdir};
     use fuchsia_fs::file::{WriteError, read_to_string, write};
     use std::fs;
     use std::sync::Arc;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
     use zx::{HandleBased, Status, Vmo};
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     fn image_too_small() {
