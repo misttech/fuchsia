@@ -93,7 +93,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "GainState")]
 pub struct GainStateDef {
@@ -114,7 +115,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "GainCapabilities")]
 pub struct GainCapabilitiesDef {
@@ -137,7 +139,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "PcmFormatSet")]
 pub struct PcmFormatSetDef {
@@ -187,7 +190,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "ChannelSet")]
 pub struct ChannelSetDef {
@@ -213,7 +217,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "ChannelAttributes")]
 pub struct ChannelAttributesDef {
@@ -239,7 +244,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "DaiFormatSet")]
 pub struct DaiFormatSetDef {
@@ -292,7 +298,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "PlugEvent")]
 pub struct PlugEventDef {
@@ -313,7 +320,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "Topology")]
 pub struct TopologyDef {
@@ -367,7 +375,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "Element")]
 pub struct ElementDef {
@@ -406,7 +415,8 @@ pub enum ElementTypeDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", remote = "TypeSpecificElement")]
 pub enum TypeSpecificElementDef {
@@ -451,13 +461,15 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "VendorSpecific")]
 pub struct VendorSpecificDef {}
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "Gain")]
 pub struct GainDef {
@@ -504,7 +516,8 @@ pub enum GainTypeDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "GainRange")]
 pub struct GainRangeDef {
@@ -514,7 +527,8 @@ pub struct GainRangeDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "Equalizer")]
 pub struct EqualizerDef {
@@ -561,7 +575,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "EqualizerBand")]
 pub struct EqualizerBandDef {
@@ -569,7 +584,8 @@ pub struct EqualizerBandDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "Dynamics")]
 pub struct DynamicsDef {
@@ -610,7 +626,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "DynamicsBand")]
 pub struct DynamicsBandDef {
@@ -629,7 +646,8 @@ pub enum PlugDetectCapabilitiesDef {
     },
 }
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "DaiInterconnect")]
 pub struct DaiInterconnectDef {
@@ -638,7 +656,8 @@ pub struct DaiInterconnectDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "ElementState")]
 pub struct ElementStateDef {
@@ -667,7 +686,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", remote = "TypeSpecificElementState")]
 pub enum TypeSpecificElementStateDef {
@@ -712,13 +732,15 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "VendorSpecificElementState")]
 pub struct VendorSpecificElementStateDef {}
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "GainElementState")]
 pub struct GainElementStateDef {
@@ -726,7 +748,8 @@ pub struct GainElementStateDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "EqualizerElementState")]
 pub struct EqualizerElementStateDef {
@@ -752,7 +775,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "EqualizerBandState")]
 pub struct EqualizerBandStateDef {
@@ -795,7 +819,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "DynamicsElementState")]
 pub struct DynamicsElementStateDef {
@@ -821,7 +846,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "DynamicsBandState")]
 pub struct DynamicsBandStateDef {
@@ -873,7 +899,8 @@ where
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "DaiInterconnectElementState")]
 pub struct DaiInterconnectElementStateDef {
@@ -883,7 +910,8 @@ pub struct DaiInterconnectElementStateDef {
 }
 
 // Mirror type for serialization.
-// This exists to avoid the fuchsia-audio library from depending on serde.
+// This exists so that fuchsia_audio (and fuchsia_audio_fdomain) need not take a
+// dependency on serde.
 #[derive(Serialize)]
 #[serde(remote = "fuchsia_audio_fdomain::sigproc::PlugState")]
 pub struct SigprocPlugStateDef {

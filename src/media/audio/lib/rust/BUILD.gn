@@ -73,7 +73,7 @@ template("fuchsia_audio_lib") {
   }
 }
 
-fuchsia_audio_lib("fuchsia-audio") {
+fuchsia_audio_lib("fuchsia_audio") {
   name = "fuchsia_audio"
   deps = [
     "//sdk/fidl/fuchsia.audio:fuchsia.audio_rust_flex",
@@ -89,7 +89,7 @@ fuchsia_audio_lib("fuchsia-audio") {
   test_deps = [ "//src/storage/lib/vfs/rust:vfs" ]
 }
 
-fuchsia_audio_lib("fuchsia-audio_fdomain") {
+fuchsia_audio_lib("fuchsia_audio_fdomain") {
   name = "fuchsia_audio_fdomain"
   deps = [
     "//sdk/fidl/fuchsia.audio:fuchsia.audio_rust_fdomain_flex",
@@ -110,15 +110,15 @@ fuchsia_audio_lib("fuchsia-audio_fdomain") {
 }
 
 fuchsia_unittest_package("fuchsia_audio_tests") {
-  deps = [ ":fuchsia-audio_test" ]
+  deps = [ ":fuchsia_audio_test" ]
 }
 
 fuchsia_unittest_package("fuchsia_audio_fdomain_tests") {
-  deps = [ ":fuchsia-audio_fdomain_test" ]
+  deps = [ ":fuchsia_audio_fdomain_test" ]
 }
 
 group("rust") {
-  public_deps = [ ":fuchsia-audio" ]
+  public_deps = [ ":fuchsia_audio" ]
 }
 
 group("tests") {

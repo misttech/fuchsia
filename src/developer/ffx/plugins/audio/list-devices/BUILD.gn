@@ -24,7 +24,7 @@ ffx_plugin("ffx_audio_listdevices") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/audio/device:ffx_audio_device",
     "//src/developer/ffx/plugins/audio/ffx_optional_moniker:ffx_optional_moniker_fdomain",
-    "//src/media/audio/lib/rust:fuchsia-audio_fdomain",
+    "//src/media/audio/lib/rust:fuchsia_audio_fdomain",
     "//third_party/rust_crates:async-trait",
   ]
 

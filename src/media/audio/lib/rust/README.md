@@ -1,6 +1,8 @@
-# `fuchsia-audio`
+# `fuchsia_audio`
 
-`fuchsia-audio` is a library for interacting with Fuchsia audio devices.
+`fuchsia_audio` (and `fuchsia_audio_fdomain`, which is equivalent and will soon
+be renamed to `fuchsia_audio` when the current `fuchsia_audio` is removed) is a
+library for interacting with Fuchsia audio devices.
 
 ## Building
 
@@ -8,15 +10,15 @@ This project should be automatically included in builds.
 
 ## Using
 
-`fuchsia-audio` can be used by depending on the
+`fuchsia_audio` can be used by depending on the
 `//src/media/audio/lib/rust` GN target and then using
 the `fuchsia_audio` crate in a Rust project.
 
-`fuchsia-audio` is not available in the SDK.
+`fuchsia_audio` is not available in the SDK.
 
 ## Testing
 
-Unit tests for `fuchsia-audio` are available in the
+Unit tests for `fuchsia_audio` are available in the
 `fuchsia_audio_tests` package:
 
 ```
