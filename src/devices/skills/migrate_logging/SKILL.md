@@ -65,6 +65,14 @@ When formatting a `zx::result` inside an `fdf::` macro, **do not** call `.status
 *New:* `fdf::error("Failed to send request: {}", init_result);`
 **IMPORTANT CAVEAT:** This specialized `std::formatter` is ONLY available for `zx::result` and `zx::status`. Result types from FIDL calls (such as `fidl::WireUnownedResult`) DO NOT have a specialized formatter. For FIDL results, you MUST continue to use `.status_string()` or `.FormatDescription()`.
 
+**E. Unused Lambda Captures (FDF_LOGL):**
+If you are migrating `FDF_LOGL` (which takes an explicit logger argument), replacing it with `fdf::info` (which uses an ambient logger) removes the usage of the logger object. If this logger was accessed via `this` inside a lambda, the `this` capture may become unused, causing compilation failures (`-Wunused-lambda-capture`). You MUST remove the unused `this` from the lambda capture list.
+
+**F. Using a Specific Logger Instance:**
+If the original code uses a specific logger instance (e.g., a variable named `logger` passed as an argument or a `logger()` method call), you SHOULD NOT use `fdf::info` etc., as those use the ambient logger. Instead, use the `log` method on the specific logger instance:
+*Old:* `FDF_LOGL(TRACE, logger, "Msg");`
+*New:* `logger.log(fdf::TRACE, "Msg");`
+
 ## 4. Update Build Dependencies
 
 You must also update the driver's build configuration files (`BUILD.gn` or `BUILD.bazel`) so they link successfully with the new logging library.
