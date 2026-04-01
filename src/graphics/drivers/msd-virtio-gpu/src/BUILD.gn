@@ -11,6 +11,7 @@ source_set("driver_entry") {
   deps = [
     ":msd_impl",
     "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/runtime:driver_runtime",
     "//src/devices/lib/driver:driver_runtime",
     "//src/graphics/magma/lib/magma/platform:bus_mapper",

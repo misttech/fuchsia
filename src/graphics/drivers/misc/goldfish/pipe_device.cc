@@ -79,24 +79,24 @@ PipeDevice::~PipeDevice() = default;
 zx::result<> PipeDevice::Initialize() {
   fidl::WireResult<fuchsia_hardware_acpi::Device::GetBti> bti_result = acpi_->GetBti(0);
   if (!bti_result.ok()) {
-    FDF_LOG(ERROR, "GetBti FIDL transport failed: %s", bti_result.status_string());
+    fdf::error("GetBti FIDL transport failed: {}", bti_result.status_string());
     return zx::error(bti_result.status());
   }
   if (bti_result->is_error()) {
     zx_status_t status = bti_result->error_value();
-    FDF_LOG(ERROR, "GetBti failed: %s", zx_status_get_string(status));
+    fdf::error("GetBti failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   bti_ = std::move(bti_result->value()->bti);
 
   fidl::WireResult<fuchsia_hardware_acpi::Device::GetMmio> mmio_result = acpi_->GetMmio(0);
   if (!mmio_result.ok()) {
-    FDF_LOG(ERROR, "GetMmio FIDL transport failed: %s", mmio_result.status_string());
+    fdf::error("GetMmio FIDL transport failed: {}", mmio_result.status_string());
     return zx::error(mmio_result.status());
   }
   if (mmio_result->is_error()) {
     zx_status_t status = mmio_result->error_value();
-    FDF_LOG(ERROR, "GetMmio failed: %s", zx_status_get_string(status));
+    fdf::error("GetMmio failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -105,7 +105,7 @@ zx::result<> PipeDevice::Initialize() {
   zx::result<fdf::MmioBuffer> result = fdf::MmioBuffer::Create(
       mmio.offset, mmio.size, std::move(mmio.vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "mmiobuffer create failed: %s", result.status_string());
+    fdf::error("mmiobuffer create failed: {}", result);
     return zx::error(result.status_value());
   }
   mmio_ = std::move(result.value());
@@ -114,19 +114,19 @@ zx::result<> PipeDevice::Initialize() {
   mmio_->Write32(PIPE_DRIVER_VERSION, PIPE_V2_REG_VERSION);
   uint32_t version = mmio_->Read32(PIPE_V2_REG_VERSION);
   if (version < PIPE_MIN_DEVICE_VERSION) {
-    FDF_LOG(ERROR, "insufficient device version: %d", version);
+    fdf::error("insufficient device version: {}", version);
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   fidl::WireResult<::fuchsia_hardware_acpi::Device::MapInterrupt> irq_result =
       acpi_->MapInterrupt(0);
   if (!irq_result.ok()) {
-    FDF_LOG(ERROR, "MapInterrupt FIDL call failed: %s", irq_result.status_string());
+    fdf::error("MapInterrupt FIDL call failed: {}", irq_result.status_string());
     return zx::error(irq_result.status());
   }
   if (irq_result->is_error()) {
     zx_status_t status = irq_result->error_value();
-    FDF_LOG(ERROR, "MapInterrupt failed: %s", zx_status_get_string(status));
+    fdf::error("MapInterrupt failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   irq_ = std::move(irq_result->value()->irq);
@@ -146,7 +146,7 @@ zx::result<> PipeDevice::Initialize() {
   zx_status_t status = buffer_factory->CreateContiguous(
       bti_, /*size=*/page_size, /*alignment_log2=*/0, /*enable_cache=*/true, &io_buffer_);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create contiguous IO buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed to create contiguous IO buffer: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -242,7 +242,7 @@ zx_status_t PipeDevice::SetEvent(int32_t id, zx::event pipe_event) {
     zx_status_t status =
         command_storages_[id]->pipe_event.wait_one(kSignals, zx::time::infinite_past(), &observed);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "failed to transfer observed signals: %d", status);
+      fdf::error("failed to transfer observed signals: {}", status);
       return status;
     }
   }
@@ -250,7 +250,7 @@ zx_status_t PipeDevice::SetEvent(int32_t id, zx::event pipe_event) {
   command_storages_[id]->pipe_event = std::move(pipe_event);
   zx_status_t status = command_storages_[id]->pipe_event.signal(kSignals, observed & kSignals);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to signal event: %d", status);
+    fdf::error("failed to signal event: {}", status);
     return status;
   }
   return ZX_OK;
@@ -343,7 +343,7 @@ int PipeDevice::IrqHandler() {
   while (true) {
     zx_status_t status = irq_.wait(nullptr);
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "irq.wait() got %d", status);
+      fdf::error("irq.wait() got {}", status);
       break;
     }
 
@@ -399,7 +399,7 @@ void PipeDevice::CommandStorage::SignalEvent(uint32_t flags) const {
 
   zx_status_t status = pipe_event.signal(/*clear_mask=*/0u, state_set);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "zx_signal_object failed: %d", status);
+    fdf::error("zx_signal_object failed: {}", status);
   }
 }
 

@@ -42,6 +42,7 @@ source_set("common") {
     "t931-gpu.h",
   ]
   deps = [
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//zircon/system/ulib/ddk-platform-defs",
   ]

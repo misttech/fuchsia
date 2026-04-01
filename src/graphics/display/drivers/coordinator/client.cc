@@ -759,7 +759,7 @@ void Client::CommitConfig(CommitConfigRequestView request, CommitConfigCompleter
   const display::ConfigStamp new_config_stamp(request->stamp().value);
 
   if (layers_.is_empty()) {
-    FDF_LOG(ERROR, "CommitConfig called before SetDisplayLayers");
+    fdf::error("CommitConfig called before SetDisplayLayers");
     completer.Close(ZX_ERR_BAD_STATE);
     return;
   }

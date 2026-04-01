@@ -10,6 +10,7 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
 
 #include <memory>
@@ -33,7 +34,7 @@ zx::result<> PipeDriver::Start() {
   zx::result<fidl::ClientEnd<fuchsia_hardware_acpi::Device>> acpi_client =
       incoming()->Connect<fuchsia_hardware_acpi::Service::Device>("acpi");
   if (acpi_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to ACPI service: %s", acpi_client.status_string());
+    fdf::error("Failed to connect to ACPI service: {}", acpi_client);
     return acpi_client.take_error();
   }
 
@@ -41,7 +42,7 @@ zx::result<> PipeDriver::Start() {
       std::make_unique<PipeDevice>(std::move(acpi_client).value(), driver_dispatcher()->borrow());
   zx::result<> init_result = pipe_device_->Initialize();
   if (init_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize pipe device: %s", init_result.status_string());
+    fdf::error("Failed to initialize pipe device: {}", init_result);
     return init_result.take_error();
   }
 
@@ -52,14 +53,14 @@ zx::result<> PipeDriver::Start() {
   zx::result<> add_service_result =
       outgoing()->AddService<fuchsia_hardware_goldfish_pipe::Service>(std::move(handler));
   if (add_service_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service: %s", add_service_result.status_string());
+    fdf::error("Failed to add service: {}", add_service_result);
     return add_service_result.take_error();
   }
 
   zx::result<fidl::ClientEnd<fuchsia_device_fs::Connector>> devfs_result =
       devfs_connector_.Bind(dispatcher());
   if (devfs_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to bind devfs connector: %s", devfs_result.status_string());
+    fdf::error("Failed to bind devfs connector: {}", devfs_result);
     return devfs_result.take_error();
   }
 
@@ -71,7 +72,7 @@ zx::result<> PipeDriver::Start() {
   }};
   zx::result<fdf::OwnedChildNode> add_devfs_node_result = AddOwnedChild("goldfish-pipe", devfs);
   if (add_devfs_node_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add devfs node: %s", add_devfs_node_result.status_string());
+    fdf::error("Failed to add devfs node: {}", add_devfs_node_result);
     return add_devfs_node_result.take_error();
   }
   devfs_child_node_ = std::move(*add_devfs_node_result);
@@ -89,7 +90,7 @@ zx::result<> PipeDriver::Start() {
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> add_control_child_result =
       AddChild("goldfish-pipe-control", kControlProperties, kServiceOffers);
   if (add_control_child_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add control child: %s", add_control_child_result.status_string());
+    fdf::error("Failed to add control child: {}", add_control_child_result);
     return add_control_child_result.take_error();
   }
   control_child_ = std::move(add_control_child_result).value();
@@ -105,7 +106,7 @@ zx::result<> PipeDriver::Start() {
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> add_sensor_child_result =
       AddChild("goldfish-pipe-sensor", kSensorProperties, kServiceOffers);
   if (add_sensor_child_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add sensor child: %s", add_sensor_child_result.status_string());
+    fdf::error("Failed to add sensor child: {}", add_sensor_child_result);
     return add_sensor_child_result.take_error();
   }
   sensor_child_ = std::move(add_sensor_child_result).value();
@@ -116,7 +117,7 @@ zx::result<> PipeDriver::Start() {
 void PipeDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
   zx::result<> result = pipe_device_->PrepareStop();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to prepare pipe device for stop: %s", result.status_string());
+    fdf::error("Failed to prepare pipe device for stop: {}", result);
   }
   completer(result);
 }

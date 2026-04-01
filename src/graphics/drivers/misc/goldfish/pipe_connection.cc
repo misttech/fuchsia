@@ -61,15 +61,15 @@ void PipeConnection::Init() {
   zx_status_t status = pipe_->GetBti(&bti_);
   if (status != ZX_OK) {
     FailAsync(status);
-    FDF_LOG(ERROR, "[%s] Pipe::Pipe() GetBti failed: %s", kTag, zx_status_get_string(status));
+    fdf::error("[{}] Pipe::Pipe() GetBti failed: {}", kTag, zx_status_get_string(status));
     return;
   }
 
   status = SetBufferSizeLocked(DEFAULT_BUFFER_SIZE);
   if (status != ZX_OK) {
     FailAsync(status);
-    FDF_LOG(ERROR, "[%s] Pipe::Pipe() failed to set initial buffer size: %s", kTag,
-            zx_status_get_string(status));
+    fdf::error("[{}] Pipe::Pipe() failed to set initial buffer size: {}", kTag,
+               zx_status_get_string(status));
     return;
   }
 
@@ -77,8 +77,7 @@ void PipeConnection::Init() {
   status = zx::event::create(0, &event);
   if (status != ZX_OK) {
     FailAsync(status);
-    FDF_LOG(ERROR, "[%s] Pipe::Pipe() failed to create event: %s", kTag,
-            zx_status_get_string(status));
+    fdf::error("[{}] Pipe::Pipe() failed to create event: {}", kTag, zx_status_get_string(status));
     return;
   }
   status = event.signal(0, SIGNALS);
@@ -88,14 +87,13 @@ void PipeConnection::Init() {
   status = pipe_->Create(&id_, &vmo);
   if (status != ZX_OK) {
     FailAsync(status);
-    FDF_LOG(ERROR, "[%s] Pipe::Pipe() failed to create pipe: %s", kTag,
-            zx_status_get_string(status));
+    fdf::error("[{}] Pipe::Pipe() failed to create pipe: {}", kTag, zx_status_get_string(status));
     return;
   }
 
   status = pipe_->SetEvent(id_, std::move(event));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "[%s] Pipe::Pipe() failed to set event: %s", kTag, zx_status_get_string(status));
+    fdf::error("[{}] Pipe::Pipe() failed to set event: {}", kTag, zx_status_get_string(status));
     return;
   }
 
@@ -103,7 +101,7 @@ void PipeConnection::Init() {
       cmd_buffer_.Map(std::move(vmo), /*offset=*/0, /*size=*/0, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE);
   if (status != ZX_OK) {
     FailAsync(status);
-    FDF_LOG(ERROR, "Failed to map the command buffer VMO: %s", zx_status_get_string(status));
+    fdf::error("Failed to map the command buffer VMO: {}", zx_status_get_string(status));
     return;
   }
 
@@ -115,7 +113,7 @@ void PipeConnection::Init() {
   pipe_->Open(id_);
   if (buffer->status) {
     FailAsync(ZX_ERR_INTERNAL);
-    FDF_LOG(ERROR, "[%s] Pipe::Pipe() failed to open pipe", kTag);
+    fdf::error("[{}] Pipe::Pipe() failed to open pipe", kTag);
     return;
   }
 }
@@ -125,9 +123,9 @@ void PipeConnection::Bind(fidl::ServerEnd<fuchsia_hardware_goldfish::Pipe> serve
   using PipeServer = fidl::WireServer<PipeProtocol>;
   auto on_unbound = [this](PipeServer*, fidl::UnbindInfo info, fidl::ServerEnd<PipeProtocol>) {
     if (info.is_peer_closed() || info.is_user_initiated()) {
-      FDF_LOG(DEBUG, "Pipe closed: %s", info.FormatDescription().c_str());
+      fdf::debug("Pipe closed: {}", info.FormatDescription());
     } else {
-      FDF_LOG(ERROR, "Pipe error: %s", info.FormatDescription().c_str());
+      fdf::error("Pipe error: {}", info.FormatDescription());
     }
     if (on_close_) {
       on_close_(this);
@@ -148,7 +146,7 @@ void PipeConnection::SetBufferSize(SetBufferSizeRequestView request,
 
   zx_status_t status = SetBufferSizeLocked(request->size);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "[%s] Pipe::SetBufferSize() failed to create buffer: %lu", kTag, request->size);
+    fdf::error("[{}] Pipe::SetBufferSize() failed to create buffer: {}", kTag, request->size);
   }
 
   if (status != ZX_OK && status != ZX_ERR_NO_MEMORY) {
@@ -162,7 +160,7 @@ void PipeConnection::SetEvent(SetEventRequestView request, SetEventCompleter::Sy
   TRACE_DURATION("gfx", "Pipe::SetEvent");
 
   if (!request->event.is_valid()) {
-    FDF_LOG(ERROR, "[%s] Pipe::SetEvent() invalid event", kTag);
+    fdf::error("[{}] Pipe::SetEvent() invalid event", kTag);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -171,7 +169,7 @@ void PipeConnection::SetEvent(SetEventRequestView request, SetEventCompleter::Sy
 
   zx_status_t status = pipe_->SetEvent(id_, std::move(request->event));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "[%s] SetEvent failed: %s", kTag, zx_status_get_string(status));
+    fdf::error("[{}] SetEvent failed: {}", kTag, zx_status_get_string(status));
     completer.Close(ZX_ERR_INTERNAL);
     return;
   }
@@ -185,8 +183,8 @@ void PipeConnection::GetBuffer(GetBufferCompleter::Sync& completer) {
   zx::vmo vmo;
   zx_status_t status = buffer_.vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "[%s] Pipe::GetBuffer() zx_vmo_duplicate failed: %s", kTag,
-            zx_status_get_string(status));
+    fdf::error("[{}] Pipe::GetBuffer() zx_vmo_duplicate failed: {}", kTag,
+               zx_status_get_string(status));
     completer.Close(status);
   } else {
     completer.Reply(ZX_OK, std::move(vmo));
@@ -306,7 +304,7 @@ zx_status_t PipeConnection::TransferLocked(int32_t cmd, int32_t wake_cmd, zx_sig
   *actual = 0;
   // Early out if error is not because of back-pressure.
   if (buffer->status != static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kAgain)) {
-    FDF_LOG(ERROR, "[%s] Pipe::Transfer() transfer failed: %d", kTag, buffer->status);
+    fdf::error("[{}] Pipe::Transfer() transfer failed: {}", kTag, buffer->status);
     return ZX_ERR_INTERNAL;
   }
 
@@ -315,7 +313,7 @@ zx_status_t PipeConnection::TransferLocked(int32_t cmd, int32_t wake_cmd, zx_sig
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
   pipe_->Exec(id_);
   if (buffer->status) {
-    FDF_LOG(ERROR, "[%s] Pipe::Transfer() failed to request interrupt: %d", kTag, buffer->status);
+    fdf::error("[{}] Pipe::Transfer() failed to request interrupt: {}", kTag, buffer->status);
     return ZX_ERR_INTERNAL;
   }
 
@@ -326,8 +324,8 @@ zx_status_t PipeConnection::SetBufferSizeLocked(size_t size) {
   zx::vmo vmo;
   zx_status_t status = zx::vmo::create_contiguous(bti_, size, 0, &vmo);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "[%s] Pipe::CreateBuffer() zx_vmo_create_contiguous failed %d size: %zu", kTag,
-            status, size);
+    fdf::error("[{}] Pipe::CreateBuffer() zx_vmo_create_contiguous failed {} size: {}", kTag,
+               status, size);
     return status;
   }
 
@@ -336,7 +334,7 @@ zx_status_t PipeConnection::SetBufferSizeLocked(size_t size) {
   // We leave pinned continuously, since buffer is expected to be used frequently.
   status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, vmo, 0, size, &phys, 1, &pmt);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "[%s] Pipe::CreateBuffer() zx_bti_pin failed %d size: %zu", kTag, status, size);
+    fdf::error("[{}] Pipe::CreateBuffer() zx_bti_pin failed {} size: {}", kTag, status, size);
     return status;
   }
 

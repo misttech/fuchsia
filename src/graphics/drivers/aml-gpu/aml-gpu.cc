@@ -10,6 +10,7 @@
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/trace/event.h>
@@ -44,8 +45,7 @@ void AmlGpu::SetClkFreqSource(int32_t clk_source) {
     return;
   }
 
-  FDF_LOG(INFO, "Setting clock source to %d: %d\n", clk_source,
-          gpu_block_->gpu_clk_freq[clk_source]);
+  fdf::info("Setting clock source to {}: {}", clk_source, gpu_block_->gpu_clk_freq[clk_source]);
   uint32_t current_clk_cntl = hiu_buffer_->Read32(4 * gpu_block_->hhi_clock_cntl_offset);
   uint32_t enabled_mux = current_clk_cntl & (1 << kFinalMuxBitShift);
   uint32_t new_mux = enabled_mux == 0;
@@ -78,8 +78,8 @@ void AmlGpu::SetInitialClkFreqSource(int32_t clk_source) {
   if (current_clk_cntl & (1 << (mux_shift + kClkEnabledBitShift))) {
     SetClkFreqSource(clk_source);
   } else {
-    FDF_LOG(INFO, "Setting initial clock source to %d: %d\n", clk_source,
-            gpu_block_->gpu_clk_freq[clk_source]);
+    fdf::info("Setting initial clock source to {}: {}", clk_source,
+              gpu_block_->gpu_clk_freq[clk_source]);
     // Switching the final dynamic mux from a disabled source to an enabled
     // source doesn't work. If the current clock source is disabled, then
     // enable it instead of switching.
@@ -110,7 +110,7 @@ void AmlGpu::UpdateClockProperties() {
 zx_status_t AmlGpu::Gp0Init() {
   auto clock_client = incoming()->Connect<fuchsia_hardware_clock::Service::Clock>("clock-gp0-pll");
   if (clock_client.is_error() || !clock_client.value().is_valid()) {
-    FDF_LOG(ERROR, "could not get clock fragment");
+    fdf::error("could not get clock fragment");
     return ZX_ERR_NO_RESOURCES;
   }
 
@@ -119,24 +119,24 @@ zx_status_t AmlGpu::Gp0Init() {
   // Errors setting the clock should be logged but ignored; initialization can continue either way.
   auto set_result = gp0_clock_->SetRate(846000000);
   if (set_result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Setting clock frequency failed, %s", set_result.FormatDescription().c_str());
+    fdf::error("Setting clock frequency failed, {}", set_result.FormatDescription());
     return ZX_OK;
   }
 
   if (set_result->is_error()) {
-    FDF_LOG(ERROR, "Setting clock frequency failed, %s",
-            zx_status_get_string(set_result->error_value()));
+    fdf::error("Setting clock frequency failed, {}",
+               zx_status_get_string(set_result->error_value()));
     return ZX_OK;
   }
 
   auto enable_result = gp0_clock_->Enable();
   if (enable_result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Enabling clock failed, %s", enable_result.FormatDescription().c_str());
+    fdf::error("Enabling clock failed, {}", enable_result.FormatDescription());
     return ZX_OK;
   }
 
   if (enable_result->is_error()) {
-    FDF_LOG(ERROR, "Enabling clock failed, %s", zx_status_get_string(enable_result->error_value()));
+    fdf::error("Enabling clock failed, {}", zx_status_get_string(enable_result->error_value()));
     return ZX_OK;
   }
 
@@ -150,7 +150,7 @@ void AmlGpu::InitClock() {
     auto result = reset_register_->WriteRegister32(gpu_block_->reset0_mask_offset,
                                                    aml_registers::MALI_RESET0_MASK, 0);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      FDF_LOG(ERROR, "Reset0 Mask Clear failed\n");
+      fdf::error("Reset0 Mask Clear failed");
     }
   }
 
@@ -158,7 +158,7 @@ void AmlGpu::InitClock() {
     auto result = reset_register_->WriteRegister32(gpu_block_->reset0_level_offset,
                                                    aml_registers::MALI_RESET0_MASK, 0);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      FDF_LOG(ERROR, "Reset0 Level Clear failed\n");
+      fdf::error("Reset0 Level Clear failed");
     }
   }
 
@@ -166,7 +166,7 @@ void AmlGpu::InitClock() {
     auto result = reset_register_->WriteRegister32(gpu_block_->reset2_mask_offset,
                                                    aml_registers::MALI_RESET2_MASK, 0);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      FDF_LOG(ERROR, "Reset2 Mask Clear failed\n");
+      fdf::error("Reset2 Mask Clear failed");
     }
   }
 
@@ -174,7 +174,7 @@ void AmlGpu::InitClock() {
     auto result = reset_register_->WriteRegister32(gpu_block_->reset2_level_offset,
                                                    aml_registers::MALI_RESET2_MASK, 0);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      FDF_LOG(ERROR, "Reset2 Level Clear failed\n");
+      fdf::error("Reset2 Level Clear failed");
     }
   }
 
@@ -190,7 +190,7 @@ void AmlGpu::InitClock() {
                                                    aml_registers::MALI_RESET0_MASK,
                                                    aml_registers::MALI_RESET0_MASK);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      FDF_LOG(ERROR, "Reset2 Level Set failed\n");
+      fdf::error("Reset2 Level Set failed");
     }
   }
 
@@ -199,7 +199,7 @@ void AmlGpu::InitClock() {
                                                    aml_registers::MALI_RESET2_MASK,
                                                    aml_registers::MALI_RESET2_MASK);
     if ((result.status() != ZX_OK) || result->is_error()) {
-      FDF_LOG(ERROR, "Reset2 Level Set failed\n");
+      fdf::error("Reset2 Level Set failed");
     }
   }
 
@@ -233,13 +233,13 @@ zx_status_t AmlGpu::SetProtected(uint32_t protection_mode) {
   params.arg2 = protection_mode;
   zx_status_t status = zx_smc_call(secure_monitor_.get(), &params, &result);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to set unit %ld protected status %ld code: %d", params.arg1, params.arg2,
-            status);
+    fdf::error("Failed to set unit {} protected status {} code: {}", params.arg1, params.arg2,
+               status);
     return status;
   }
   if (result.arg0 != 0) {
-    FDF_LOG(ERROR, "Failed to set unit %ld protected status %ld: %lx", params.arg1, params.arg2,
-            result.arg0);
+    fdf::error("Failed to set unit {} protected status {}: {:x}", params.arg1, params.arg2,
+               result.arg0);
     return ZX_ERR_INTERNAL;
   }
   current_protected_mode_property_.Set(protection_mode);
@@ -297,7 +297,7 @@ zx::result<> AmlGpu::Start() {
       "fuchsia.graphics.drivers.aml-gpu");
 
   if (!loop_dispatcher.is_ok()) {
-    FDF_LOG(ERROR, "Creating dispatcher failed, status=%s\n", loop_dispatcher.status_string());
+    fdf::error("Creating dispatcher failed, status={}", loop_dispatcher);
     return loop_dispatcher.take_error();
   }
   loop_dispatcher_ = *std::move(loop_dispatcher);
@@ -312,7 +312,7 @@ zx::result<> AmlGpu::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
   }
   fdf::PDev pdev(std::move(pdev_client_end.value()));
@@ -320,7 +320,7 @@ zx::result<> AmlGpu::Start() {
   zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_gpu_amlogic::Metadata>();
   if (metadata.is_error()) {
     if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
-      FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+      fdf::error("Failed to get metadata: {}", metadata);
       return metadata.take_error();
     }
   } else {
@@ -330,21 +330,21 @@ zx::result<> AmlGpu::Start() {
 
   zx::result gpu_buffer = pdev.MapMmio(kMmioGpuIndex);
   if (gpu_buffer.is_error()) {
-    FDF_LOG(ERROR, "Failed to map gpu buffer: %s", gpu_buffer.status_string());
+    fdf::error("Failed to map gpu buffer: {}", gpu_buffer);
     return gpu_buffer.take_error();
   }
   gpu_buffer_ = std::move(gpu_buffer.value());
 
   zx::result hiu_buffer = pdev.MapMmio(kMmioHiuIndex);
   if (hiu_buffer.is_error()) {
-    FDF_LOG(ERROR, "Failed to map hiu buffer: %s", hiu_buffer.status_string());
+    fdf::error("Failed to map hiu buffer: {}", hiu_buffer);
     return hiu_buffer.take_error();
   }
   hiu_buffer_ = std::move(hiu_buffer.value());
 
   zx::result info_result = pdev.GetDeviceInfo();
   if (info_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get device info: %s", info_result.status_string());
+    fdf::error("Failed to get device info: {}", info_result);
     return info_result.take_error();
   }
   fdf::PDev::DeviceInfo info = std::move(info_result.value());
@@ -354,7 +354,7 @@ zx::result<> AmlGpu::Start() {
     // TODO(https://fxbug.dev/318736574) : Remove and rely only on GetDeviceInfo.
     zx::result board_info_result = pdev.GetBoardInfo();
     if (board_info_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to get board info: %s", board_info_result.status_string());
+      fdf::error("Failed to get board info: {}", board_info_result);
       return board_info_result.take_error();
     }
     fdf::PDev::BoardInfo board_info = std::move(board_info_result.value());
@@ -364,11 +364,11 @@ zx::result<> AmlGpu::Start() {
           info.pid = PDEV_PID_AMLOGIC_A311D;
           break;
         default:
-          FDF_LOG(ERROR, "Unsupported PID 0x%x for VID 0x%x", board_info.pid, board_info.vid);
+          fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info.pid, board_info.vid);
           return zx::error(ZX_ERR_INVALID_ARGS);
       }
     } else {
-      FDF_LOG(ERROR, "Unsupported VID 0x%x", board_info.vid);
+      fdf::error("Unsupported VID 0x{:x}", board_info.vid);
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
   }
@@ -387,14 +387,14 @@ zx::result<> AmlGpu::Start() {
       gpu_block_ = &t931_gpu_blocks;
       break;
     default:
-      FDF_LOG(ERROR, "unsupported SOC PID %u\n", info.pid);
+      fdf::error("unsupported SOC PID {}", info.pid);
       return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto reset_register_client =
       incoming()->Connect<fuchsia_hardware_registers::Service::Device>("register-reset");
   if (reset_register_client.is_error() || !reset_register_client.value().is_valid()) {
-    FDF_LOG(ERROR, "could not get register-reset fragment");
+    fdf::error("could not get register-reset fragment");
     return zx::error(ZX_ERR_NO_RESOURCES);
   }
 
@@ -405,7 +405,7 @@ zx::result<> AmlGpu::Start() {
     static constexpr uint32_t kTrustedOsSmcIndex = 0;
     zx::result secure_monitor = pdev.GetSmc(kTrustedOsSmcIndex);
     if (secure_monitor.is_error()) {
-      FDF_LOG(ERROR, "Failed to retrieve secure monitor SMC: %s", secure_monitor.status_string());
+      fdf::error("Failed to retrieve secure monitor SMC: {}", secure_monitor);
       secure_monitor.take_error();
     }
     secure_monitor_ = std::move(secure_monitor.value());
@@ -415,7 +415,7 @@ zx::result<> AmlGpu::Start() {
   if (gpu_block_->enable_gp0) {
     zx_status_t status = Gp0Init();
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "aml_gp0_init failed: %d. Falling back to lower clock.\n", status);
+      fdf::error("aml_gp0_init failed: {}. Falling back to lower clock.", status);
       return zx::error(status);
     }
   }
@@ -432,8 +432,7 @@ zx::result<> AmlGpu::Start() {
   {
     auto status = outgoing()->AddService<fuchsia_hardware_gpu_mali::Service>(std::move(handler));
     if (status.is_error()) {
-      FDF_LOG(ERROR, "%s(): Failed to add service to outgoing directory: %s\n", __func__,
-              status.status_string());
+      fdf::error("{}: Failed to add service to outgoing directory: {}", __func__, status);
       return status.take_error();
     }
   }
@@ -443,7 +442,7 @@ zx::result<> AmlGpu::Start() {
   zx::result child =
       AddChild("aml-gpu", std::vector<fuchsia_driver_framework::NodeProperty2>{}, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+    fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
 

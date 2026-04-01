@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.gpu.virtio/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma_service/msd.h>
 #include <lib/magma_service/sys_driver/magma_driver_base.h>
@@ -18,11 +19,11 @@ class VirtioDriver : public msd::MagmaDriverBase, VirtioGpuControlFidl {
 
   zx::result<> MagmaStart() override;
 
-  void Stop() override { FDF_LOG(INFO, "VirtioDevice::Stop"); }
+  void Stop() override { fdf::info("VirtioDevice::Stop"); }
 };
 
 zx::result<> VirtioDriver::MagmaStart() {
-  FDF_LOG(INFO, "VirtioDevice::Start");
+  fdf::info("VirtioDevice::Start");
 
   zx::result info_resource = GetInfoResource();
   // Info resource may not be available on user builds.
@@ -32,7 +33,7 @@ zx::result<> VirtioDriver::MagmaStart() {
 
   auto result = VirtioGpuControlFidl::Init(incoming());
   if (result.is_error()) {
-    FDF_LOG(ERROR, "VirtioGpuControlFidl::Init failed: %s", result.status_string());
+    fdf::error("VirtioGpuControlFidl::Init failed: {}", result);
     return result.take_error();
   }
 
@@ -42,7 +43,7 @@ zx::result<> VirtioDriver::MagmaStart() {
     set_magma_driver(msd::Driver::MsdCreate());
 
     if (!magma_driver()) {
-      FDF_LOG(ERROR, "msd::Driver::Create failed");
+      fdf::error("msd::Driver::Create failed");
       return zx::error(ZX_ERR_INTERNAL);
     }
 
@@ -51,7 +52,7 @@ zx::result<> VirtioDriver::MagmaStart() {
     set_magma_system_device(msd::MagmaSystemDevice::Create(magma_driver(), std::move(msd_device)));
 
     if (!magma_system_device()) {
-      FDF_LOG(ERROR, "msd::MagmaSystemDevice::Create failed");
+      fdf::error("msd::MagmaSystemDevice::Create failed");
       return zx::error(ZX_ERR_INTERNAL);
     }
   }
