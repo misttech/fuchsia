@@ -551,18 +551,18 @@ func buildImpl(
 	}
 
 	if outputBreakpadSyms {
-		// TODO(https://fxbug.dev/480109290): Write symbols to a non-temporary
-		// directory.
-		symbolDir, err := os.MkdirTemp("", "")
+		symbolDir := filepath.Join(contextSpec.BuildDir, "debug_symbols")
+		if err := os.RemoveAll(symbolDir); err != nil {
+			return artifacts, err
+		}
+		if err := os.MkdirAll(symbolDir, 0o700); err != nil {
+			return artifacts, err
+		}
+		symbolsJSON, err := exportDebugSymbols(ctx, buildAPIClient, contextSpec, symbolDir)
 		if err != nil {
 			return artifacts, err
 		}
-		defer os.RemoveAll(symbolDir)
-		if symbolsJSON, err := exportDebugSymbols(ctx, buildAPIClient, contextSpec, symbolDir); err != nil {
-			// TODO(https://fxbug.dev/480109290): Propagate these errors after
-			// this step is confirmed to be stable.
-			artifacts.NonFatalFailures["debug_symbol_export"] = err.Error()
-		} else if symbolsJSON != "" {
+		if symbolsJSON != "" {
 			if err := saveLogs(contextSpec.ArtifactDir, artifacts, map[string]string{
 				"debug_symbols.json": symbolsJSON,
 			}); err != nil {
