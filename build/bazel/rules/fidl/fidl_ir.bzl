@@ -144,16 +144,20 @@ _fidlc = rule(
 
 # LINT.IfChange(lint)
 
-def _is_exempt_from_linting(package):
+def _is_exempt_from_linting(package, excluded_checks):
     """
     Returns True if the given FIDL library is exempt from linting.
+
+    Args:
+        package: Package path of the FIDL library.
+        excluded_checks: List of check IDs to exclude from linting.
     """
 
+    # Don't lint FIDL libraries used to test FIDL itself.
+    #
     # Unlike GN, where `/*` is used to include all subdirectories, this
     # implementation uses an exact match of the target's package path.
     # It's possible subdirectories of the packages below will need to be added.
-
-    # Don't lint FIDL libraries used to test FIDL itself.
     _fidl_test_packages = [
         "//sdk/lib/fidl/cpp/tests",
         "//sdk/testing/fidl",
@@ -171,7 +175,7 @@ def _is_exempt_from_linting(package):
 
     package_path = "//" + package
 
-    if package_path in _fidl_test_packages:
+    if not excluded_checks and package_path in _fidl_test_packages:
         return True
 
     # zbi fails linting with a "parse-error", which cannot be excluded.
@@ -180,7 +184,7 @@ def _is_exempt_from_linting(package):
         return True
 
     # TODO(https://fxbug.dev/381163466): Fix lint warnings in vendor repos.
-    if package_path.startswith("//vendor/"):
+    if not excluded_checks and package_path.startswith("//vendor/"):
         return True
 
     return False
@@ -200,7 +204,7 @@ def _fidl_lint_impl(ctx):
     # TODO(https://fxbug.dev/381096879): Implement NOOP logic based on the package name.
     # In GN, some directories skip linting by passing ":" as the tool which is a NOOP.
     # We should implement a similar check here using ctx.label.package.
-    if (_is_exempt_from_linting(ctx.label.package)):
+    if (_is_exempt_from_linting(ctx.label.package, ctx.attr.excluded_checks)):
         # NOOP - Nothing to lint. Skip running fidl-lint but touch the stamp
         # file, which will be added to `command` below.
         command = ""

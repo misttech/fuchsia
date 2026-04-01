@@ -405,7 +405,8 @@ template("fidl_library") {
     args = [ rebase_path(lint_stamp_file, root_build_dir) ]
 
     # Don't lint FIDL libraries used to test FIDL itself.
-    if (filter_include(
+    if (!defined(invoker.excluded_checks) &&
+        filter_include(
             [ get_label_info(":${target_name}", "label_no_toolchain") ],
             [
               "//sdk/lib/fidl/cpp/tests/*",
