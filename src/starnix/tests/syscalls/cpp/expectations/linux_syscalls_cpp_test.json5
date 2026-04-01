@@ -6,6 +6,9 @@
         {
             type: "skip",
             matchers: [
+                // TODO(https://fxbug.dev/498602006): Flaking.
+                "BpfTest.SoAttachFilter",
+
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "CgroupTest.ProcfsCgroup",
 
