@@ -950,6 +950,20 @@ class BazelLauncher(object):
         return self.run_bazel_command(query_cmd)
 
 
+class MockBazelLauncher(BazelLauncher):
+    """A mock BazelLauncher instance that can be used in tests."""
+
+    def __init__(self) -> None:
+        """Create new instance."""
+        self.command_runner = MockCommandRunner()
+        super().__init__(launcher_script="bazel", runner=self.command_runner)
+
+    def push_expected_outputs(self, outputs: list[str]) -> None:
+        """Push a sequence of expected command outputs to the mock  command runner."""
+        for output in outputs:
+            self.command_runner.push_result(0, output, "")
+
+
 class BazelQueryCache(object):
     def __init__(
         self,

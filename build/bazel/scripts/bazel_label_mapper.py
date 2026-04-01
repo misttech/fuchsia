@@ -236,9 +236,9 @@ class BazelLabelMapper(object):
         #
         #    //<package>:<target>
         #    @//<package>:<target>
-        #    @<name>//<package>:<target>
-        #    @@<name>//<package>:<target>
-        #    @@<name>.<version>//<package>:<target>
+        #    @@//<package>:<target>       (from using --consistent_labels in queries)
+        #    @<apparent_repo_name>//<package>:<target>
+        #    @@<canonical_repo_name>//<package>:<target>
         #
 
         # Check the lookup cache to see if we've already mapped this label with
@@ -251,7 +251,7 @@ class BazelLabelMapper(object):
 
         repository, sep, package_label = label.partition("//")
         assert sep == "//", f"Missing // in source label: {label}"
-        if repository == "" or repository == "@":
+        if repository == "" or repository == "@" or repository == "@@":
             # @// references the root project workspace, it should normally
             # not appear in queries, but handle it here just in case.
             #
@@ -263,28 +263,14 @@ class BazelLabelMapper(object):
         else:
             # A note on canonical repository directory names.
             #
-            # An external repository named 'foo' in the project's WORKSPACE.bazel
-            # file will be stored under `$OUTPUT_BASE/external/foo` when BzlMod
-            # is not enabled.
+            # Bazel stores external repositories under $OUTPUT_BASE/external/<canonical_repo_name>
+            # but queries may return either @<apparent_repo_name> or @@<canonical_repo_name>
+            # if --consistent_labels is not used.
             #
-            # However, it will be stored under `$OUTPUT_BASE/external/@foo.<version>`
-            # instead when BzlMod is enabled, where <version> is determined statically
-            # by Bazel at startup after resolving the dependencies expressed from
-            # the project's MODULE.bazel file.
+            # For now, it is not possible to convert between apparent and canonical repository
+            # names (may be implemented later using the 'bazel mod dump' command though), so
+            # instead use the hard-coded _APPARENT_REPO_NAME_TO_CANONICAL map.
             #
-            # It is not possible to guess <version> here but queries will always
-            # return labels for items in the repository that look like:
-            #
-            #   @@foo.<version>//...
-            #
-            # This is called a "canonical label", this allows the project to use
-            # @foo to reference the repository in its own BUILD.bazel files, while
-            # a dependency module would call it @com_acme_foo instead. All three
-            # labels will point to the same location.
-            #
-            # Queries always return canonical labels, so removing the initial @
-            # and the trailing // allows us to get the correct repository directory
-            # in all cases.
             assert repository.startswith(
                 "@"
             ), f"Invalid repository name in source label {label}"
