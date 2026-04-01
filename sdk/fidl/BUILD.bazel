@@ -47,14 +47,20 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.media.target:fuchsia.media.target",
     "//sdk/fidl/fuchsia.mediastreams:fuchsia.mediastreams",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem",
+    "//sdk/fidl/fuchsia.net:fuchsia.net",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown",
     "//sdk/fidl/fuchsia.url:fuchsia.url",
+    "//sdk/fidl/fuchsia.weave:fuchsia.weave",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211",
     "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy",
+    "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:fuchsia.wlan.product.deprecatedclient",
+    "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration",
+    "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac",
     "//zircon/vdso/zx:zx",
     # keep-sorted: end
 ]
@@ -69,6 +75,7 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
 
 _prebuilt_fidl_libraries_targets_list = [
     # keep-sorted: begin
+    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader",
     # keep-sorted: end
 ]
 
@@ -141,14 +148,20 @@ filegroup(
         "//sdk/fidl/fuchsia.media.target:__pkg__",
         "//sdk/fidl/fuchsia.mediastreams:__pkg__",
         "//sdk/fidl/fuchsia.mem:__pkg__",
+        "//sdk/fidl/fuchsia.net:__pkg__",
         "//sdk/fidl/fuchsia.sysmem:__pkg__",
         "//sdk/fidl/fuchsia.sysmem2:__pkg__",
         "//sdk/fidl/fuchsia.ui.views:__pkg__",
         "//sdk/fidl/fuchsia.unknown:__pkg__",
         "//sdk/fidl/fuchsia.url:__pkg__",
+        "//sdk/fidl/fuchsia.weave:__pkg__",
         "//sdk/fidl/fuchsia.wlan.common:__pkg__",
         "//sdk/fidl/fuchsia.wlan.ieee80211:__pkg__",
         "//sdk/fidl/fuchsia.wlan.phyimpl:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.policy:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:__pkg__",
+        "//sdk/fidl/fuchsia.wlan.softmac:__pkg__",
         "//zircon/vdso/zx:__pkg__",
     ],
 )
@@ -165,7 +178,9 @@ filegroup(
 
 filegroup(
     name = "prebuilt_fidl_library_allowlist",
-    visibility = [],
+    visibility = [
+        "//sdk/fidl/fuchsia.vulkan.loader:__pkg__",
+    ],
 )
 
 filegroup(
