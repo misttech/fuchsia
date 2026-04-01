@@ -160,7 +160,18 @@ func logRunningProcesses(ctx context.Context) {
 			cmdlinePath := fmt.Sprintf("/proc/%s/cmdline", file)
 			cmdline, err := os.ReadFile(cmdlinePath)
 			if err == nil {
-				logger.Warningf(ctx, "PID: %s, Command: %s", file, strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " ")))
+				ppid := "unknown"
+				statusPath := fmt.Sprintf("/proc/%s/status", file)
+				status, err := os.ReadFile(statusPath)
+				if err == nil {
+					for _, line := range strings.Split(string(status), "\n") {
+						if strings.HasPrefix(line, "PPid:") {
+							ppid = strings.TrimSpace(strings.TrimPrefix(line, "PPid:"))
+							break
+						}
+					}
+				}
+				logger.Warningf(ctx, "PID: %s, PPID: %s, Command: %s", file, ppid, strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " ")))
 			} else {
 				logger.Warningf(ctx, "failed to read cmdline for PID %s: %v", file, err)
 			}
