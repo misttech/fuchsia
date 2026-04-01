@@ -699,14 +699,14 @@ class VmPageListNode final {
 // retains iterators into the page list. It is, however, safe to insert new entries.
 // The cursor can be used to iterate over empty contiguous slots, however iteration will always
 // cease if entries are not contiguous.
-class VMPLCursor {
+class VMPLCursor : private btree::BTree<VmPlnOwner>::iterator {
  public:
   VMPLCursor() : index_(kPageFanOut) {}
 
   // See VMPLCursor::current.
   VmPageOrMarkerRef current_ref() const {
     if (valid()) {
-      auto [node_offset, node] = *node_;
+      auto [node_offset, node] = get();
       return VmPageOrMarkerRef(&node->pages_[index_]);
     }
     return VmPageOrMarkerRef(nullptr);
@@ -718,7 +718,7 @@ class VMPLCursor {
   // many |step|s it has done.
   const VmPageOrMarker* current() const {
     if (valid()) {
-      auto [node_offset, node] = *node_;
+      auto [node_offset, node] = get();
       return &node->pages_[index_];
     }
     return nullptr;
@@ -743,7 +743,7 @@ class VMPLCursor {
   template <typename F>
   zx_status_t ForEveryContiguous(F func) {
     while (valid()) {
-      auto [node_offset, node] = *node_;
+      auto [node_offset, node] = get();
       while (index_ < kPageFanOut) {
         const VmPageOrMarker* slot = &node->pages_[index_];
         zx_status_t status = func(slot);
@@ -763,23 +763,24 @@ class VMPLCursor {
   // |current| is returning a nullptr.
   uint64_t offset() const {
     DEBUG_ASSERT(valid());
-    auto [node_offset, node] = *node_;
+    auto [node_offset, node] = get();
     return node_offset + (static_cast<uint64_t>(index_) * kPageSize);
   }
 
  private:
   static constexpr size_t kPageFanOut = VmPageListNode::kPageFanOut;
 
-  VMPLCursor(btree::BTree<VmPlnOwner>::iterator node, uint index) : node_(node), index_(index) {}
+  VMPLCursor(btree::BTree<VmPlnOwner>::iterator node, uint index)
+      : btree::BTree<VmPlnOwner>::iterator(node), index_(index) {}
 
   // Helper to increment the underlying node_, testing for contiguity.
   bool inc_node() {
     // Should only be incrementing if index is at the end, as otherwise we're not being contiguous.
     DEBUG_ASSERT(index_ == kPageFanOut);
-    auto [prev_offset, _] = *node_;
-    node_++;
-    if (node_.IsValid()) {
-      auto [node_offset, node] = *node_;
+    auto [prev_offset, _] = get();
+    (*this)++;
+    if (IsValid()) {
+      auto [node_offset, node] = get();
       if (node_offset == prev_offset + kPageSize * kPageFanOut) {
         // node is valid and contiguous, reset the index_ to both remove the terminal sentinel, and
         // resume iteration from the beginning.
@@ -794,10 +795,6 @@ class VMPLCursor {
 
   // Helper to check if the node is valid or not by checking index for its sentinel value.
   bool valid() const { return index_ < kPageFanOut; }
-
-  // Current node_ in the underlying page list currently being iterated. If this is invalid then
-  // index_ will be kPageFanOut
-  btree::BTree<VmPlnOwner>::iterator node_;
 
   // The index into node_ that is currently being pointed at to be returned by |current|. The
   // sentinel value of kPageFanOut is used to indicate that node_ is no longer valid.
@@ -846,7 +843,8 @@ class VmPageList final {
       return ZX_OK;
     }
     return ForEveryPageInRangeInternal<const VmPageOrMarker*, NodeCheck::Skip>(
-        this, per_page_func, cursor.node_, start_offset, end_offset);
+        this, per_page_func, *static_cast<btree::BTree<VmPlnOwner>::iterator*>(&cursor),
+        start_offset, end_offset);
   }
 
   // similar to ForEveryPageInRange, but the per_page_func gets called with a VmPageOrMarkerRef
