@@ -35,7 +35,7 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
 
     def test_no_tests(self) -> None:
         self.write_json(self.tests_json_path, [])
-        result = affected_tests.create_test_artifacts_mapping(self.build_dir)
+        result = affected_tests.create_gn_test_artifacts_mapping(self.build_dir)
         self.assertDictEqual(result, {})
 
     HOST_TEST_LABEL = "//src/microfuchsia:pkvm-hello-world-test(//build/toolchain/fuchsia:arm64)"
@@ -130,13 +130,17 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
             self.HOST_TEST_RUNTIME_DEPS,
         )
 
-        mapping = affected_tests.create_test_artifacts_mapping(self.build_dir)
+        mapping = affected_tests.create_gn_test_artifacts_mapping(
+            self.build_dir
+        )
         self.assertEqual(len(mapping), 1)
 
-        label, (test_os, artifacts) = mapping.popitem()
+        label, test_info = mapping.popitem()
         self.assertEqual(label, self.HOST_TEST_LABEL)
-        self.assertEqual(test_os, "linux")
-        self.assertSetEqual(artifacts, self.HOST_TEST_EXPECTED_SET)
+        self.assertEqual(test_info.os_name, "linux")
+        self.assertSetEqual(
+            test_info.ninja_artifacts, self.HOST_TEST_EXPECTED_SET
+        )
 
     def test_single_device_test(self) -> None:
         self.write_json(self.tests_json_path, [self.DEVICE_TEST_ENTRY])
@@ -149,14 +153,18 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
             self.DEVICE_TEST_PACKAGE_MANIFEST_DEPS,
         )
 
-        mapping = affected_tests.create_test_artifacts_mapping(self.build_dir)
+        mapping = affected_tests.create_gn_test_artifacts_mapping(
+            self.build_dir
+        )
 
         self.assertEqual(len(mapping), 1)
 
-        target_label, (test_os, artifacts) = mapping.popitem()
+        target_label, test_info = mapping.popitem()
         self.assertEqual(target_label, self.DEVICE_TEST_LABEL)
-        self.assertEqual(test_os, "fuchsia")
-        self.assertSetEqual(artifacts, self.DEVICE_TEST_EXPECTED_SET)
+        self.assertEqual(test_info.os_name, "fuchsia")
+        self.assertSetEqual(
+            test_info.ninja_artifacts, self.DEVICE_TEST_EXPECTED_SET
+        )
 
     def test_multiple_tests(self) -> None:
         self.write_json(
@@ -175,19 +183,25 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
             self.DEVICE_TEST_PACKAGE_MANIFEST_DEPS,
         )
 
-        mapping = affected_tests.create_test_artifacts_mapping(self.build_dir)
+        mapping = affected_tests.create_gn_test_artifacts_mapping(
+            self.build_dir
+        )
 
         self.assertEqual(len(mapping), 2)
 
-        target_label, (test_os, artifacts) = mapping.popitem()
+        target_label, test_info = mapping.popitem()
         self.assertEqual(target_label, self.DEVICE_TEST_LABEL)
-        self.assertEqual(test_os, "fuchsia")
-        self.assertSetEqual(artifacts, self.DEVICE_TEST_EXPECTED_SET)
+        self.assertEqual(test_info.os_name, "fuchsia")
+        self.assertSetEqual(
+            test_info.ninja_artifacts, self.DEVICE_TEST_EXPECTED_SET
+        )
 
-        target_label, (test_os, artifacts) = mapping.popitem()
+        target_label, test_info = mapping.popitem()
         self.assertEqual(target_label, self.HOST_TEST_LABEL)
-        self.assertEqual(test_os, "linux")
-        self.assertSetEqual(artifacts, self.HOST_TEST_EXPECTED_SET)
+        self.assertEqual(test_info.os_name, "linux")
+        self.assertSetEqual(
+            test_info.ninja_artifacts, self.HOST_TEST_EXPECTED_SET
+        )
 
 
 class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
@@ -247,7 +261,8 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             ),
         )
         self.assertSetEqual(
-            targets, {affected_tests.TestTarget("//gn:target1", "fuchsia")}
+            targets,
+            {affected_tests.AffectedTestTarget("//gn:target1", "fuchsia")},
         )
 
         targets = affected_tests.find_tests_affected_by_changed_files(
@@ -264,7 +279,8 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             ),
         )
         self.assertSetEqual(
-            targets, {affected_tests.TestTarget("@//bazel:target2", "linux")}
+            targets,
+            {affected_tests.AffectedTestTarget("@//bazel:target2", "linux")},
         )
 
         targets = affected_tests.find_tests_affected_by_changed_files(
@@ -285,8 +301,8 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         self.assertSetEqual(
             targets,
             {
-                affected_tests.TestTarget("//gn:target1", "fuchsia"),
-                affected_tests.TestTarget("@//bazel:target2", "linux"),
+                affected_tests.AffectedTestTarget("//gn:target1", "fuchsia"),
+                affected_tests.AffectedTestTarget("@//bazel:target2", "linux"),
             },
         )
 
