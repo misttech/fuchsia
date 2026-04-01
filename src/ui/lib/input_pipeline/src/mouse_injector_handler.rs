@@ -13,6 +13,8 @@ use anyhow::{Context, Error, Result, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl_fuchsia_input_report::Range;
+use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
+use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
 use fuchsia_inspect::health::Reporter;
 use futures::SinkExt;
 use futures::channel::mpsc::Sender;
@@ -21,10 +23,6 @@ use metrics_registry::*;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
-    fidl_next_fuchsia_ui_pointerinjector as pointerinjector,
-};
 
 /// Each mm of physical movement by the mouse translates to the cursor moving
 /// on the display by 10 logical pixels.
@@ -371,13 +369,9 @@ impl MouseInjectorHandler {
             None,
             None,
         )];
-        // TODO(https://fxbug.dev/495480779): Once the returned future supports `send_immediately`
-        // replace the `await` with that. In practice the future for this one way call will
-        // internally delegate to a future that calls `send_immediately` when polled so there is no
-        // performance issue, but we need to call `await` for it to actually do anything.
         device_proxy
             .inject_events(events_to_send)
-            .await
+            .send_immediately()
             .context("Failed to ADD new MouseDevice.")?;
 
         Ok(())
@@ -487,12 +481,7 @@ impl MouseInjectorHandler {
 
             fuchsia_trace::flow_begin!("input", "dispatch_event_to_scenic", tracing_id.into());
 
-            // TODO(https://fxbug.dev/495480779): Once the returned future supports
-            // `send_immediately` replace the `await` with that. In practice the future for this
-            // one way call will internally delegate to a future that calls `send_immediately` when
-            // polled so there is no performance issue, but we need to call `await` for it to
-            // actually do anything.
-            _ = injector.inject_events(events_to_send).await;
+            _ = injector.inject_events(events_to_send).send_immediately();
 
             Ok(())
         } else {
@@ -643,16 +632,15 @@ mod tests {
         create_mouse_pointer_sample_event_with_wheel_physical_pixel, next_client_old_stream,
     };
     use assert_matches::assert_matches;
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+    use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
+    use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     use std::ops::Add;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_input_report as fidl_input_report,
-        fidl_fuchsia_ui_pointerinjector as pointerinjector,
-        fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next, fuchsia_async as fasync,
-    };
 
     const DISPLAY_WIDTH_IN_PHYSICAL_PX: f32 = 100.0;
     const DISPLAY_HEIGHT_IN_PHYSICAL_PX: f32 = 100.0;

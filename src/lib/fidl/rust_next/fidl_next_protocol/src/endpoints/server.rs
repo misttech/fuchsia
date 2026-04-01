@@ -20,7 +20,7 @@ use crate::concurrency::sync::Arc;
 use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
 use crate::wire::MessageHeader;
-use crate::{Body, Flexibility, ProtocolError, SendFuture, Transport};
+use crate::{Body, Flexibility, NonBlockingTransport, ProtocolError, SendFuture, Transport};
 
 struct ServerInner<T: Transport> {
     connection: Connection<T>,
@@ -73,10 +73,12 @@ impl<T: Transport> Server<T> {
     where
         W: Wire<Constraint = ()>,
     {
-        self.inner.connection.send_message(|buffer| {
+        let state = self.inner.connection.send_message_raw(|buffer| {
             buffer.encode_next(MessageHeader::new(0, ordinal, flexibility))?;
             buffer.encode_next(event)
-        })
+        })?;
+
+        Ok(SendFuture::from_raw_parts(&self.inner.connection, state))
     }
 }
 
@@ -350,5 +352,21 @@ impl<T: Transport> Future for RespondFuture<T> {
         let this = self.project();
 
         this.state.poll_send(cx, &this.server.inner.connection)
+    }
+}
+
+impl<T: NonBlockingTransport> RespondFuture<T> {
+    /// Completes the send operation synchronously and without blocking.
+    ///
+    /// Using this method prevents transports from applying backpressure. Prefer
+    /// awaiting when possible to allow for backpressure.
+    ///
+    /// Because failed sends return immediately, `send_immediately` may observe
+    /// transport closure prematurely. This can manifest as this method
+    /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
+    /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
+    /// correctness.
+    pub fn send_immediately(self) -> SendFutureOutput<T> {
+        self.state.send_immediately(&self.server.inner.connection)
     }
 }

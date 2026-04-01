@@ -14,6 +14,10 @@ use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::AsHandleRef;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
+use fidl_fuchsia_ui_policy as fidl_ui_policy;
+use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -21,12 +25,6 @@ use metrics_registry::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config,
-    fidl_fuchsia_ui_policy as fidl_ui_policy,
-    fidl_next_fuchsia_ui_pointerinjector as pointerinjector,
-};
 
 /// An input handler that parses touch events and forwards them to Scenic through the
 /// fidl_fuchsia_pointerinjector protocols.
@@ -465,12 +463,7 @@ impl TouchInjectorHandler {
         let injector =
             self.mutable_state.borrow().injectors.get(&touch_descriptor.device_id).cloned();
         if let Some(injector) = injector {
-            // TODO(https://fxbug.dev/495480779): Once the returned future supports
-            // `send_immediately` replace the `await` with that. In practice the future for this
-            // one way call will internally delegate to a future that calls `send_immediately` when
-            // polled so there is no performance issue, but we need to call `await` for it to
-            // actually do anything.
-            _ = injector.inject_events(events).await;
+            _ = injector.inject_events(events).send_immediately();
             Ok(())
         } else {
             Err(anyhow::format_err!(
@@ -587,14 +580,9 @@ impl TouchInjectorHandler {
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
                             ..Default::default()
                         }];
-                        // TODO(https://fxbug.dev/495480779): Once the returned future supports
-                        // `send_immediately` replace the `await` with that. In practice the future
-                        // for this one way call will internally delegate to a future that calls
-                        // `send_immediately` when polled so there is no performance issue, but we
-                        // need to call `await` for it to actually do anything.
                         injector
                             .inject_events(events)
-                            .await
+                            .send_immediately()
                             .expect("Failed to inject updated viewport.");
                     }
                 }
@@ -780,18 +768,18 @@ mod tests {
         get_touch_screen_device_descriptor, next_client_old_stream,
     };
     use assert_matches::assert_matches;
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fidl_fuchsia_ui_input as fidl_ui_input;
+    use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+    use fidl_fuchsia_ui_policy as fidl_ui_policy;
+    use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
+    use fuchsia_async as fasync;
     use futures::{FutureExt, TryStreamExt};
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     use std::convert::TryFrom as _;
     use std::ops::Add;
-    use {
-        fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-        fidl_fuchsia_ui_pointerinjector as pointerinjector,
-        fidl_fuchsia_ui_policy as fidl_ui_policy,
-        fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next, fuchsia_async as fasync,
-    };
 
     const TOUCH_ID: u32 = 1;
     const DISPLAY_WIDTH: f32 = 100.0;

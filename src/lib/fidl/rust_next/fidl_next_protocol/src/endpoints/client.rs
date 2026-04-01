@@ -5,7 +5,9 @@
 //! FIDL protocol clients.
 
 use core::future::Future;
+use core::mem::ManuallyDrop;
 use core::pin::Pin;
+use core::ptr;
 use core::task::{Context, Poll, ready};
 
 use fidl_constants::EPITAPH_ORDINAL;
@@ -13,10 +15,10 @@ use fidl_next_codec::{AsDecoder as _, DecoderExt as _, Encode, EncodeError, Enco
 use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
-use crate::endpoints::connection::Connection;
+use crate::endpoints::connection::{Connection, SendFutureState};
 use crate::endpoints::lockers::{LockerError, Lockers};
 use crate::wire::{Epitaph, MessageHeader};
-use crate::{Body, Flexibility, ProtocolError, SendFuture, Transport};
+use crate::{Body, Flexibility, NonBlockingTransport, ProtocolError, SendFuture, Transport};
 
 struct ClientInner<T: Transport> {
     connection: Connection<T>,
@@ -60,7 +62,10 @@ impl<T: Transport> Client<T> {
     where
         W: Wire<Constraint = ()>,
     {
-        self.send_message(0, ordinal, flexibility, request)
+        Ok(SendFuture::from_raw_parts(
+            &self.inner.connection,
+            self.send_message_raw(0, ordinal, flexibility, request)?,
+        ))
     }
 
     /// Send a request and await for a response.
@@ -76,10 +81,8 @@ impl<T: Transport> Client<T> {
         let index = self.inner.responses.lock().unwrap().alloc(ordinal);
 
         // Send with txid = index + 1 because indices start at 0.
-        match self.send_message(index + 1, ordinal, flexibility, request) {
-            Ok(send_future) => {
-                Ok(TwoWayRequestFuture { inner: &self.inner, index: Some(index), send_future })
-            }
+        match self.send_message_raw(index + 1, ordinal, flexibility, request) {
+            Ok(state) => Ok(TwoWayRequestFuture { inner: &self.inner, index: Some(index), state }),
             Err(e) => {
                 self.inner.responses.lock().unwrap().free(index);
                 Err(e)
@@ -87,17 +90,17 @@ impl<T: Transport> Client<T> {
         }
     }
 
-    fn send_message<W>(
+    fn send_message_raw<W>(
         &self,
         txid: u32,
         ordinal: u64,
         flexibility: Flexibility,
         message: impl Encode<W, T::SendBuffer>,
-    ) -> Result<SendFuture<'_, T>, EncodeError>
+    ) -> Result<SendFutureState<T>, EncodeError>
     where
         W: Wire<Constraint = ()>,
     {
-        self.inner.connection.send_message(|buffer| {
+        self.inner.connection.send_message_raw(|buffer| {
             buffer.encode_next(MessageHeader::new(txid, ordinal, flexibility))?;
             buffer.encode_next(message)
         })
@@ -158,7 +161,7 @@ pub struct TwoWayRequestFuture<'a, T: Transport> {
     inner: &'a ClientInner<T>,
     index: Option<u32>,
     #[pin]
-    send_future: SendFuture<'a, T>,
+    state: SendFutureState<T>,
 }
 
 #[pinned_drop]
@@ -184,7 +187,7 @@ impl<'a, T: Transport> Future for TwoWayRequestFuture<'a, T> {
             panic!("TwoWayRequestFuture polled after returning `Poll::Ready`");
         };
 
-        let result = ready!(this.send_future.poll(cx));
+        let result = ready!(this.state.poll_send(cx, &this.inner.connection));
         *this.index = None;
         if let Err(error) = result {
             // The send failed. Free the locker and return an error.
@@ -193,6 +196,30 @@ impl<'a, T: Transport> Future for TwoWayRequestFuture<'a, T> {
         } else {
             Poll::Ready(Ok(TwoWayResponseFuture { inner: this.inner, index: Some(index) }))
         }
+    }
+}
+
+impl<'a, T: NonBlockingTransport> TwoWayRequestFuture<'a, T> {
+    /// Completes the send operation synchronously and without blocking.
+    ///
+    /// Using this method prevents transports from applying backpressure. Prefer
+    /// awaiting when possible to allow for backpressure.
+    ///
+    /// Because failed sends return immediately, `send_immediately` may observe
+    /// transport closure prematurely. This can manifest as this method
+    /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
+    /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
+    /// correctness.
+    pub fn send_immediately(self) -> Result<TwoWayResponseFuture<'a, T>, ProtocolError<T::Error>> {
+        let inner = self.inner;
+        let index = self.index;
+        let state = unsafe { ptr::read(&ManuallyDrop::new(self).state) };
+        if let Err(e) = state.send_immediately(&inner.connection) {
+            inner.responses.lock().unwrap().free(index.unwrap());
+            return Err(e);
+        }
+
+        Ok(TwoWayResponseFuture { inner, index })
     }
 }
 

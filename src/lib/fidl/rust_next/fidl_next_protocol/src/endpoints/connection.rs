@@ -240,14 +240,6 @@ impl<T: Transport> Connection<T> {
         )
     }
 
-    /// Sends a message to the underlying transport.
-    pub fn send_message(
-        &self,
-        f: impl FnOnce(&mut T::SendBuffer) -> Result<(), EncodeError>,
-    ) -> Result<SendFuture<'_, T>, EncodeError> {
-        Ok(SendFuture { connection: self, state: self.send_message_raw(f)? })
-    }
-
     /// Sends an epitaph to the underlying transport.
     ///
     /// This send ignores the current state of the connection, and does not
@@ -491,6 +483,13 @@ pub struct SendFuture<'a, T: Transport> {
     connection: &'a Connection<T>,
     #[pin]
     state: SendFutureState<T>,
+}
+
+impl<'a, T: Transport> SendFuture<'a, T> {
+    /// Creates a `SendFuture` from its raw connection reference and state.
+    pub fn from_raw_parts(connection: &'a Connection<T>, state: SendFutureState<T>) -> Self {
+        Self { connection, state }
+    }
 }
 
 impl<T: NonBlockingTransport> SendFuture<'_, T> {

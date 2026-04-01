@@ -11,7 +11,7 @@ use fidl_next_codec::{
     AsDecoder, AsDecoderExt as _, Constrained, Decode, Decoded, EncodeError, FromWire, IntoNatural,
     Wire,
 };
-use fidl_next_protocol::{Body, Transport};
+use fidl_next_protocol::{Body, NonBlockingTransport, Transport};
 use pin_project::pin_project;
 
 use crate::{Error, TwoWayMethod};
@@ -346,6 +346,29 @@ impl<'a, M, T: Transport> TwoWayFuture<'a, M, T> {
                 Err(error) => TwoWayFutureState::EncodeError(error),
             },
             _method: PhantomData,
+        }
+    }
+}
+
+impl<'a, M, T: NonBlockingTransport> SendTwoWayFuture<'a, M, T> {
+    /// Completes the send operation synchronously and without blocking.
+    ///
+    /// Using this method prevents transports from applying backpressure. Prefer
+    /// awaiting when possible to allow for backpressure.
+    ///
+    /// Because failed sends return immediately, `send_immediately` may observe
+    /// transport closure prematurely. This can manifest as this method
+    /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
+    /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
+    /// correctness.
+    pub fn send_immediately(self) -> Result<SentTwoWayFuture<'a, M, T>, Error<T::Error>> {
+        match self.state {
+            TwoWayFutureState::EncodeError(e) => Err(Error::Encode(e)),
+            TwoWayFutureState::SendRequest(future) => Ok(SentTwoWayFuture {
+                state: TwoWayFutureState::ReceiveResponse(future.send_immediately()?),
+                _method: PhantomData,
+            }),
+            _ => unreachable!(),
         }
     }
 }

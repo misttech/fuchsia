@@ -7,7 +7,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
 use fidl_next_codec::EncodeError;
-use fidl_next_protocol::Transport;
+use fidl_next_protocol::{NonBlockingTransport, Transport};
 use pin_project::pin_project;
 
 use crate::Error;
@@ -48,6 +48,19 @@ macro_rules! define_send_future {
                     $proj::Finished => panic!("State polled after completing"),
                 }
             }
+
+            fn send_immediately(self) -> Result<(), Error<T::Error>>
+            where
+                T: NonBlockingTransport,
+            {
+                match self {
+                    Self::EncodeError(e) => return Err(e.into()),
+                    Self::Sending(future) => future.send_immediately()?,
+                    Self::Finished => unreachable!(),
+                }
+
+                Ok(())
+            }
         }
 
         $(#[$metas])*
@@ -82,6 +95,24 @@ macro_rules! define_send_future {
                         state => state,
                     },
                 })
+            }
+
+            /// Completes the send operation synchronously and without blocking.
+            ///
+            /// Using this method prevents transports from applying
+            /// backpressure. Prefer awaiting when possible to allow for
+            /// backpressure.
+            ///
+            /// Because failed sends return immediately, `send_immediately` may
+            /// observe transport closure prematurely. This can manifest as this
+            /// method returning `Err(PeerClosed)` or `Err(Stopped)` when it
+            /// should have returned `Err(PeerClosedWithEpitaph)`. Prefer
+            /// awaiting when possible for correctness.
+            pub fn send_immediately(self) -> Result<(), Error<T::Error>>
+            where
+                T: NonBlockingTransport,
+            {
+                self.state.send_immediately()
             }
         }
 
