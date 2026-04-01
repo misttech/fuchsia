@@ -67,15 +67,11 @@ impl CommandQueueWithWaitQueue {
     pub fn push_back(&mut self, command: Command) {
         let guard = command.begin_trace_flow();
         self.commands.push_back((command, guard));
-        self.waiters.notify_fd_events(FdEvents::POLLIN);
+        self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
     }
 
     pub fn has_waiters(&self) -> bool {
         !self.waiters.is_empty()
-    }
-
-    pub fn query_events(&self) -> FdEvents {
-        if self.is_empty() { FdEvents::POLLOUT } else { FdEvents::POLLIN | FdEvents::POLLOUT }
     }
 
     pub fn wait_async_simple(&self, waiter: &mut SimpleWaiter) {
@@ -90,21 +86,17 @@ impl CommandQueueWithWaitQueue {
     ) -> WaitCanceler {
         self.waiters.wait_async_fd_events(waiter, events, handler)
     }
-
-    pub fn notify_all(&self) {
-        self.waiters.notify_all();
-    }
 }
 
 /// transaction's `sender_thread`.
 pub(crate) fn generate_dead_replies(
-    commands: VecDeque<(Command, CommandTraceGuard)>,
+    commands: VecDeque<Command>,
     target_proc: u64,
     target_thread: Option<i32>,
 ) {
     // Notify all callers that had transactions scheduled for this process that the recipient is
     // dead.
-    for (command, _trace_guard) in commands {
+    for command in commands {
         if let Command::Transaction { sender, .. } = command {
             if let Some(sender_thread) = sender.thread.upgrade() {
                 let sender_thread = &mut sender_thread.lock();
@@ -185,14 +177,7 @@ impl BinderThread {
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
         let available_threads = binder_proc.base.available_threads.clone();
         let state = Mutex::new(inner_state);
-        #[cfg(any(test, debug_assertions))]
-        {
-            // The state must be acquired after the mutable state from the `BinderProcess` and before
-            // `command_queue`. `binder_proc` being a guard, the mutable state of `BinderProcess` is
-            // already locked.
-            let _l1 = state.lock();
-            let _l2 = binder_proc.base.command_queue.lock();
-        }
+
         OwnedRef::new_cyclic(|weak_self| Self {
             weak_self,
             tid,
@@ -381,7 +366,9 @@ impl Releasable for BinderThreadState {
         log_trace!("Dropping BinderThreadState id={}", self.tid);
         // If there are any transactions queued, we need to tell the caller that this thread is now
         // dead.
-        generate_dead_replies(self.command_queue.commands, self.process_identifier, Some(self.tid));
+        let command_queue: VecDeque<Command> =
+            self.command_queue.commands.into_iter().map(|(c, _)| c).collect();
+        generate_dead_replies(command_queue, self.process_identifier, Some(self.tid));
 
         // If there are any transactions that this thread was processing, we need to tell the caller
         // that this thread is now dead and to not expect a reply.

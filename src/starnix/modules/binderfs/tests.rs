@@ -20,7 +20,10 @@ pub mod tests {
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
     use fidl::endpoints::{RequestStream, ServerEnd, create_endpoints};
+    use fidl_fuchsia_posix as fposix;
+    use fidl_fuchsia_starnix_binder as fbinder;
     use fidl_fuchsia_starnix_binder::FileFlags;
+    use fuchsia_async as fasync;
     use fuchsia_async::LocalExecutor;
     use futures::TryStreamExt;
     use memoffset::offset_of;
@@ -64,10 +67,6 @@ pub mod tests {
     use std::ops::Deref;
     use std::sync::{Arc, Weak};
     use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
-    use {
-        fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder,
-        fuchsia_async as fasync,
-    };
 
     const BASE_ADDR: UserAddress = UserAddress::const_from(0x0000000000000100);
     const VMO_LENGTH: usize = 4096;
@@ -823,8 +822,8 @@ pub mod tests {
             actions.release(());
 
             assert_matches!(
-                &proc.proc.command_queue.lock().commands.front(),
-                Some((Command::ReleaseRef(LOCAL_BINDER_OBJECT), _))
+                &proc.proc.lock().command_queue.front(),
+                Some(Command::ReleaseRef(LOCAL_BINDER_OBJECT))
             );
         })
         .await;
@@ -1350,8 +1349,8 @@ pub mod tests {
             // Verify that a strong acquire command is sent to the sender process (on the same thread
             // that sent the transaction).
             assert_matches!(
-                &sender.thread.lock().command_queue.commands.front(),
-                Some((Command::AcquireRef(BINDER_OBJECT), _))
+                &sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::AcquireRef(BINDER_OBJECT))
             );
             transaction_state.release(());
         })
@@ -2090,8 +2089,8 @@ pub mod tests {
             // Get the data buffer out of the receiver's queue.
             let data_buffer = match receiver
                 .proc
-                .command_queue
                 .lock()
+                .command_queue
                 .pop_front()
                 .expect("the transaction should be queued on the process")
             {
@@ -2804,8 +2803,8 @@ pub mod tests {
 
             // The client process should have a notification waiting.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.front(),
-                Some((Command::DeadBinder(DEATH_NOTIFICATION_COOKIE), _))
+                receiver.proc.lock().command_queue.front(),
+                Some(Command::DeadBinder(DEATH_NOTIFICATION_COOKIE))
             );
         })
         .await;
@@ -2850,8 +2849,8 @@ pub mod tests {
             // to receive it, or else a deadlock may occur if the thread is in the middle of a
             // transaction. Since there is only one thread, check the process command queue.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.front(),
-                Some((Command::DeadBinder(DEATH_NOTIFICATION_COOKIE), _))
+                receiver.proc.lock().command_queue.front(),
+                Some(Command::DeadBinder(DEATH_NOTIFICATION_COOKIE))
             );
         })
         .await;
@@ -2897,12 +2896,12 @@ pub mod tests {
 
             // Check that the client received an acknowlgement
             {
-                let mut queue = client.proc.command_queue.lock();
-                assert_eq!(queue.commands.len(), 1);
-                assert_matches!(queue.commands[0], (Command::ClearDeathNotificationDone(_), _));
+                let queue = &mut client.proc.lock().command_queue;
+                assert_eq!(queue.len(), 1);
+                assert_matches!(queue[0], Command::ClearDeathNotificationDone(_));
 
                 // Clear the command queue.
-                queue.commands.clear();
+                queue.clear();
             }
 
             // Pretend the client thread is waiting for commands, so that it can be scheduled commands.
@@ -2920,7 +2919,7 @@ pub mod tests {
             assert!(client.thread.lock().command_queue.is_empty());
 
             // The client process should have no notification.
-            assert!(client.proc.command_queue.lock().commands.is_empty());
+            assert!(client.proc.lock().command_queue.is_empty());
         })
         .await;
     }
@@ -3198,10 +3197,10 @@ pub mod tests {
             // Verify that a strong acquire command is sent to the sender process (on the same thread
             // that sent the transaction).
             assert_matches!(
-                sender.thread.lock().command_queue.commands.front(),
-                Some((Command::AcquireRef(BINDER_OBJECT), _))
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::AcquireRef(BINDER_OBJECT))
             );
-            sender.thread.lock().command_queue.commands.pop_front().unwrap();
+            sender.thread.lock().command_queue.pop_front().unwrap();
 
             // Simulate a successful transaction by converting the transient state.
             let transaction_state = transaction_state.into_state();
@@ -3209,8 +3208,8 @@ pub mod tests {
 
             // Verify that a strong release command is sent to the sender process.
             assert_matches!(
-                &sender.proc.command_queue.lock().commands.front(),
-                Some((Command::ReleaseRef(BINDER_OBJECT), _))
+                &sender.proc.lock().command_queue.front(),
+                Some(Command::ReleaseRef(BINDER_OBJECT))
             );
         })
         .await;
@@ -3281,14 +3280,11 @@ pub mod tests {
 
             // The thread is ineligible to take the command (not sleeping) so check the process queue.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.front(),
-                Some((
-                    Command::OnewayTransaction(TransactionData {
-                        code: FIRST_TRANSACTION_CODE,
-                        ..
-                    }),
-                    _
-                ))
+                receiver.proc.lock().command_queue.front(),
+                Some(Command::OnewayTransaction(TransactionData {
+                    code: FIRST_TRANSACTION_CODE,
+                    ..
+                }))
             );
 
             // The object should not have the transaction queued on it, as it was immediately scheduled.
@@ -3324,8 +3320,8 @@ pub mod tests {
             // The process queue should be unchanged. Simulate dispatching the command.
             let buffer_addr = match receiver
                 .proc
-                .command_queue
                 .lock()
+                .command_queue
                 .pop_front()
                 .expect("the first oneway transaction should be queued on the process")
             {
@@ -3353,8 +3349,8 @@ pub mod tests {
             // The process queue should have a new transaction. Simulate dispatching the command.
             let buffer_addr = match receiver
                 .proc
-                .command_queue
                 .lock()
+                .command_queue
                 .pop_front()
                 .expect("the second oneway transaction should be queued on the process")
             {
@@ -3431,14 +3427,11 @@ pub mod tests {
             // The thread is ineligible to take the command (not sleeping) so check (and dequeue)
             // the process queue.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.pop_front(),
-                Some((
-                    Command::OnewayTransaction(TransactionData {
-                        code: ONEWAY_TRANSACTION_CODE,
-                        ..
-                    }),
-                    _
-                ))
+                receiver.proc.lock().command_queue.pop_front(),
+                Some(Command::OnewayTransaction(TransactionData {
+                    code: ONEWAY_TRANSACTION_CODE,
+                    ..
+                }))
             );
 
             // The object should also have the second transaction queued on it.
@@ -3479,14 +3472,11 @@ pub mod tests {
 
             // The process queue should now have the synchronous transaction queued.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.pop_front(),
-                Some((
-                    Command::Transaction {
-                        data: TransactionData { code: SYNC_TRANSACTION_CODE, .. },
-                        ..
-                    },
-                    _
-                ))
+                receiver.proc.lock().command_queue.pop_front(),
+                Some(Command::Transaction {
+                    data: TransactionData { code: SYNC_TRANSACTION_CODE, .. },
+                    ..
+                })
             );
         })
         .await;
@@ -3535,8 +3525,8 @@ pub mod tests {
 
             // Check that the receiving process has a transaction scheduled.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.front(),
-                Some((Command::Transaction { .. }, _))
+                receiver.proc.lock().command_queue.front(),
+                Some(Command::Transaction { .. })
             );
 
             // Drop the receiving process.
@@ -3544,8 +3534,8 @@ pub mod tests {
 
             // Check that there is a dead reply command for the sending thread.
             assert_matches!(
-                sender.thread.lock().command_queue.commands.front(),
-                Some((Command::DeadReply, _))
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::DeadReply)
             );
             // Check that the transaction has been popped.
             assert_matches!(sender.thread.lock().transactions.pop(), None);
@@ -3624,12 +3614,12 @@ pub mod tests {
 
             // Check that both receivers have a transaction scheduled.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.front(),
-                Some((Command::Transaction { .. }, _))
+                receiver.proc.lock().command_queue.front(),
+                Some(Command::Transaction { .. })
             );
             assert_matches!(
-                second_receiver.proc.command_queue.lock().commands.front(),
-                Some((Command::Transaction { .. }, _))
+                second_receiver.proc.lock().command_queue.front(),
+                Some(Command::Transaction { .. })
             );
 
             // Drop the receiving process for the bottom transaction.
@@ -3638,7 +3628,10 @@ pub mod tests {
             // Check that there are no dead replies waiting for the thread, and that no
             // transactions have been popped, since `receiver` was not the target of the top
             // transaction.
-            assert_matches!(sender.thread.lock().command_queue.commands.front(), None);
+            assert_matches!(
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                None
+            );
             assert_eq!(sender.thread.lock().transactions.len(), 2);
 
             // Drop the second receiver.
@@ -3646,8 +3639,8 @@ pub mod tests {
 
             // Check that there is one dead reply now, and that one transaction has been popped.
             assert_matches!(
-                sender.thread.lock().command_queue.commands.front(),
-                Some((Command::DeadReply, _))
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::DeadReply)
             );
             assert_eq!(sender.thread.lock().transactions.len(), 1);
 
@@ -3666,7 +3659,10 @@ pub mod tests {
             // Make sure that there is no command left to be processed, but that the next time the
             // thread handles a read, it detects that the top transaction is dead, generates a dead
             // reply, and pops the transaction.
-            assert_matches!(sender.thread.lock().command_queue.commands.front(), None);
+            assert_matches!(
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                None
+            );
             device
                 .handle_thread_read(
                     &sender.context(current_task),
@@ -3722,8 +3718,8 @@ pub mod tests {
 
             // Check that the receiving process has a transaction scheduled.
             assert_matches!(
-                receiver.proc.command_queue.lock().commands.front(),
-                Some((Command::Transaction { .. }, _))
+                receiver.proc.lock().command_queue.front(),
+                Some(Command::Transaction { .. })
             );
 
             // Drop the receiving process.
@@ -3731,8 +3727,8 @@ pub mod tests {
 
             // Check that there is a dead reply command for the sending thread.
             assert_matches!(
-                sender.thread.lock().command_queue.commands.front(),
-                Some((Command::DeadReply, _))
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::DeadReply)
             );
             assert_matches!(sender.thread.lock().transactions.pop(), None);
         })
@@ -3792,8 +3788,8 @@ pub mod tests {
             // Check that the receiving process has a transaction scheduled. Because the thread is
             // available, the command ends up directly on the thread's command queue.
             assert_matches!(
-                receiver.thread.lock().command_queue.commands.front(),
-                Some((Command::Transaction { .. }, _))
+                receiver.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::Transaction { .. })
             );
 
             // Have the thread dequeue the command.
@@ -3815,8 +3811,8 @@ pub mod tests {
 
             // Check that there is a dead reply command for the sending thread.
             assert_matches!(
-                sender.thread.lock().command_queue.commands.front(),
-                Some((Command::DeadReply, _))
+                sender.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::DeadReply)
             );
             assert_matches!(sender.thread.lock().transactions.pop(), None);
         })
@@ -3875,8 +3871,8 @@ pub mod tests {
 
             // Check that the receiving process' thread has a transaction scheduled.
             assert_matches!(
-                receiver.thread.lock().command_queue.commands.front(),
-                Some((Command::Transaction { .. }, _))
+                receiver.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::Transaction { .. })
             );
 
             // Have the thread dequeue the command.
@@ -4256,8 +4252,8 @@ pub mod tests {
 
             // Check that the receiving process has a transaction scheduled.
             assert_matches!(
-                receiver.thread.lock().command_queue.commands.front(),
-                Some((Command::Transaction { .. }, _))
+                receiver.thread.lock().command_queue.commands.front().map(|(c, _)| c),
+                Some(Command::Transaction { .. })
             );
 
             // Freeze the receiver process.
@@ -4406,16 +4402,16 @@ pub mod tests {
 
             // The client process should acknowledge the request.
             assert_matches!(
-                client.proc.command_queue.lock().commands.pop_front(),
-                Some((Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }), _))
+                client.proc.lock().command_queue.pop_front(),
+                Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
             );
 
             owner.proc.lock().freeze();
 
             // The client process should have a notification waiting.
             assert_matches!(
-                client.proc.command_queue.lock().commands.front(),
-                Some((Command::FrozenBinder(binder_frozen_state_info { is_frozen: 1, .. }), _))
+                client.proc.lock().command_queue.front(),
+                Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 1, .. }))
             );
         })
         .await;
@@ -4461,15 +4457,15 @@ pub mod tests {
 
             // Check that the client received two acknowledgements.
             {
-                let mut queue = client.proc.command_queue.lock();
-                assert_eq!(queue.commands.len(), 2);
+                let queue = &mut client.proc.lock().command_queue;
+                assert_eq!(queue.len(), 2);
                 assert!(matches!(
-                    queue.commands.pop_front(),
-                    Some((Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }), _))
+                    queue.pop_front(),
+                    Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
                 ));
                 assert!(matches!(
-                    queue.commands.pop_front(),
-                    Some((Command::ClearFreezeNotificationDone(FREEZE_NOTIFICATION_COOKIE), _))
+                    queue.pop_front(),
+                    Some(Command::ClearFreezeNotificationDone(FREEZE_NOTIFICATION_COOKIE))
                 ));
             }
 
@@ -4486,7 +4482,7 @@ pub mod tests {
             // The client thread should have no notification.
             assert!(client.thread.lock().command_queue.is_empty());
             // The client process should have no notification.
-            assert!(client.proc.command_queue.lock().commands.is_empty());
+            assert!(client.proc.lock().command_queue.is_empty());
         })
         .await;
     }

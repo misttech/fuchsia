@@ -1082,6 +1082,10 @@ impl WaitQueue {
         self.notify_events_count(WaitEvents::Fd(events), usize::MAX);
     }
 
+    pub fn notify_fd_events_count(&self, events: FdEvents, limit: usize) {
+        self.notify_events_count(WaitEvents::Fd(events), limit);
+    }
+
     pub fn notify_signal(&self, signal: &Signal) {
         let event = WaitEvents::SignalMask(SigSet::from(*signal));
         self.notify_events_count(event, usize::MAX);

@@ -12,9 +12,7 @@ use crate::resource_accessor::{
     RemoteMemoryAccessor, RemoteResourceAccessor, ResourceAccessor, get_resource_accessor,
 };
 use crate::shared_memory::SharedMemory;
-use crate::thread::{
-    BinderThread, Command, CommandQueueWithWaitQueue, RegistrationState, generate_dead_replies,
-};
+use crate::thread::{BinderThread, Command, RegistrationState, generate_dead_replies};
 use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
 use starnix_core::mm::memory::MemoryObject;
@@ -71,6 +69,8 @@ pub struct BinderProcessState {
     pub interrupted: bool,
     /// Status of the binder freeze.
     pub freeze_status: FreezeStatus,
+    /// Pending commands.
+    pub command_queue: std::collections::VecDeque<Command>,
 }
 
 impl BinderProcessState {
@@ -339,12 +339,9 @@ pub struct BinderProcess {
     /// The main mutable state of the `BinderProcess`.
     pub state: Mutex<BinderProcessState>,
 
-    /// A queue for commands that could not be scheduled on any existing binder threads. Binder
-    /// threads that exhaust their own queue will read from this one.
-    ///
-    /// When there are no commands in a thread's and the process' command queue, a binder thread can
-    /// register with this [`WaitQueue`] to be notified when commands are available.
-    pub command_queue: Mutex<CommandQueueWithWaitQueue>,
+    /// A WaitQueue used solely to notify process-level waiters (like `epoll` waiters) about
+    /// FD events when commands are available.
+    pub process_waiters: starnix_core::task::WaitQueue,
 
     /// A lock-free queue of threads that are available to handle commands.
     /// A thread adds itself to this queue when it transitions to being available.
@@ -381,14 +378,13 @@ impl BinderProcess {
             remote_resource_accessor,
             shared_memory: Default::default(),
             state: Default::default(),
-            command_queue: Default::default(),
+            process_waiters: Default::default(),
             available_threads: Arc::new(SegQueue::new()),
         });
         #[cfg(any(test, debug_assertions))]
         {
             let _l1 = result.shared_memory.lock();
             let _l2 = result.lock();
-            let _l3 = result.command_queue.lock();
         }
         result
     }
@@ -403,7 +399,7 @@ impl BinderProcess {
         if !state.closed {
             state.closed = true;
             state.thread_pool.notify_all();
-            self.command_queue.lock().notify_all();
+            self.process_waiters.notify_all();
         }
     }
 
@@ -413,7 +409,7 @@ impl BinderProcess {
         if !state.interrupted {
             state.interrupted = true;
             state.thread_pool.notify_all();
-            self.command_queue.lock().notify_all();
+            self.process_waiters.notify_all();
         }
     }
 
@@ -470,9 +466,45 @@ impl BinderProcess {
         // Handle oneway transactions explicitly. They should always target the process queue to
         // avoid accidentally handling them during an ongoing transaction.
         if matches!(command, Command::OnewayTransaction(_)) {
-            self.command_queue.lock().push_back(command);
-        } else if let Err(command) = self.try_enqueue_on_available_thread(command) {
-            self.command_queue.lock().push_back(command);
+            let mut state = self.lock();
+            state.command_queue.push_back(command);
+            self.process_waiters.notify_fd_events(starnix_uapi::vfs::FdEvents::POLLIN);
+            drop(state);
+
+            // Since OnewayTransactions are routed to the process queue, we must explicitly
+            // wake an available thread so it can grab the command, rather than letting it stall.
+            while let Some(weak_thread) = self.available_threads.pop() {
+                if let Some(thread) = weak_thread.upgrade() {
+                    let thread_guard = thread.lock();
+                    if thread_guard.is_available() {
+                        thread
+                            .command_queue_waiters
+                            .notify_fd_events_count(starnix_uapi::vfs::FdEvents::POLLIN, 1);
+                        break;
+                    }
+                }
+            }
+            return;
+        }
+
+        let mut command = command;
+        loop {
+            match self.try_enqueue_on_available_thread(command) {
+                Ok(_) => break,
+                Err(c) => {
+                    let mut state = self.lock();
+                    // We must not call try_enqueue_on_available_thread while holding
+                    // the state lock, because that function acquires thread locks,
+                    // which causes a lock inversion against thread_read.
+                    if !self.available_threads.is_empty() {
+                        command = c;
+                        continue;
+                    }
+                    state.command_queue.push_back(c);
+                    self.process_waiters.notify_fd_events(starnix_uapi::vfs::FdEvents::POLLIN);
+                    break;
+                }
+            }
         }
     }
 
@@ -870,7 +902,7 @@ impl Releasable for BinderProcess {
         // Generate dead replies for transactions currently in the command queue of this process.
         // Transactions that have been scheduled with a specific thread will generate dead replies
         // when the threads are released below.
-        generate_dead_replies(self.command_queue.into_inner().commands, self.identifier, None);
+        generate_dead_replies(state.command_queue, self.identifier, None);
 
         for transaction in state.active_transactions.into_values() {
             transaction.release(());

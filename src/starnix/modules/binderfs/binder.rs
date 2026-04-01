@@ -16,8 +16,8 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
 use crate::thread::{
-    BinderThread, BinderThreadState, Command, CommandQueueWithWaitQueue, RegistrationState,
-    SchedulerGuard, TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
+    BinderThread, BinderThreadState, Command, RegistrationState, SchedulerGuard, TransactionError,
+    TransactionRole, TransactionSender, WeakBinderPeer,
 };
 use crate::user_memory_cursor::UserMemoryCursor;
 use fidl::endpoints::ClientEnd;
@@ -85,8 +85,9 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::vec::Vec;
 
+use fidl_fuchsia_starnix_binder as fbinder;
 use zerocopy::IntoBytes;
-use {fidl_fuchsia_starnix_binder as fbinder, zx};
+use zx;
 
 /// The trace category used for binder command tracing.
 
@@ -187,13 +188,20 @@ impl FileOps for BinderConnection {
                     let binder_thread =
                         binder_process.lock().find_or_register_thread(current_task.get_tid());
                     release_after!(binder_thread, current_task.kernel(), {
-                        let mut thread_state = binder_thread.lock();
-                        let mut process_command_queue = binder_process.command_queue.lock();
-                        BinderDriver::get_active_queue(
-                            &mut thread_state,
-                            &mut process_command_queue,
-                        )
-                        .query_events()
+                        let thread_state = binder_thread.lock();
+                        if !thread_state.command_queue.is_empty() {
+                            return FdEvents::POLLIN | FdEvents::POLLOUT;
+                        } else if !thread_state.transactions.is_empty() {
+                            return FdEvents::POLLOUT;
+                        }
+                        drop(thread_state);
+
+                        let proc_state = binder_process.lock();
+                        if !proc_state.command_queue.is_empty() {
+                            FdEvents::POLLIN | FdEvents::POLLOUT
+                        } else {
+                            FdEvents::POLLOUT
+                        }
                     })
                 }
                 Err(_) => FdEvents::POLLERR,
@@ -1252,14 +1260,14 @@ impl BinderDriver {
 
     /// Select which command queue to read from, preferring the thread-local one.
     /// If a transaction is pending, deadlocks can happen if reading from the process queue.
-    fn get_active_queue<'a>(
-        thread_state: &'a mut BinderThreadState,
-        proc_command_queue: &'a mut CommandQueueWithWaitQueue,
-    ) -> &'a mut CommandQueueWithWaitQueue {
+    fn get_active_command(
+        thread_state: &mut BinderThreadState,
+        proc_state: &mut crate::process::BinderProcessState,
+    ) -> Option<Command> {
         if !thread_state.command_queue.is_empty() || !thread_state.transactions.is_empty() {
-            &mut thread_state.command_queue
+            thread_state.command_queue.pop_front()
         } else {
-            proc_command_queue
+            proc_state.command_queue.pop_front()
         }
     }
 
@@ -1282,32 +1290,30 @@ impl BinderDriver {
             }
 
             // THREADING: Always acquire the [`BinderThread::state`] lock before the
-            // [`BinderProcess::command_queue`] lock or else it may lead to deadlock.
+            // [`BinderProcess::state`] lock or else it may lead to deadlock.
             let mut thread_state = context.binder_thread.lock();
-            let mut proc_command_queue = context.binder_proc.command_queue.lock();
+            let mut proc_state = context.binder_proc.lock();
 
             if thread_state.request_kick {
                 thread_state.request_kick = false;
                 return Ok(0);
             }
 
-            // Select which command queue to read from, preferring the thread-local one.
-            // If a transaction is pending, deadlocks can happen if reading from the process queue.
-            let command_queue = Self::get_active_queue(&mut thread_state, &mut proc_command_queue);
-
-            let command = command_queue.pop_front().or_else(|| {
-                // If there is no pending command, but the current transaction is marked as dead,
-                // pop the transaction and dispatch a `DeadReply`.
-                match thread_state.transactions.last() {
-                    Some(TransactionRole::Sender(TransactionSender {
-                        is_alive: false, ..
-                    })) => {
-                        thread_state.transactions.pop();
-                        Some(Command::DeadReply)
+            let command =
+                Self::get_active_command(&mut thread_state, &mut proc_state).or_else(|| {
+                    // If there is no pending command, but the current transaction is marked as dead,
+                    // pop the transaction and dispatch a `DeadReply`.
+                    match thread_state.transactions.last() {
+                        Some(TransactionRole::Sender(TransactionSender {
+                            is_alive: false,
+                            ..
+                        })) => {
+                            thread_state.transactions.pop();
+                            Some(Command::DeadReply)
+                        }
+                        _ => None,
                     }
-                    _ => None,
-                }
-            });
+                });
 
             if let Some(command) = command {
                 // Attempt to write the command to the thread's buffer.
@@ -1384,24 +1390,26 @@ impl BinderDriver {
             // available.
             let event = InterruptibleEvent::new();
             let (mut waiter, guard) = SimpleWaiter::new(&event);
-            proc_command_queue.wait_async_simple(&mut waiter);
             thread_state.command_queue.wait_async_simple(&mut waiter);
-            drop(thread_state);
-            drop(proc_command_queue);
 
-            {
-                let mut proc_state = context.binder_proc.lock();
-                // Ensure the file descriptor has not been closed or interrupted, after registering
-                // for the waiters but before waiting.
-                if proc_state.closed {
-                    return error!(EBADF);
-                }
-
-                if proc_state.interrupted {
-                    proc_state.interrupted = false;
-                    return error!(EINTR);
-                }
+            // Ensure the file descriptor has not been closed or interrupted, after registering
+            // for the waiters but before waiting.
+            if proc_state.closed {
+                return error!(EBADF);
             }
+
+            if proc_state.interrupted {
+                proc_state.interrupted = false;
+                return error!(EINTR);
+            }
+
+            // Drop locks before sleeping. Order matters: thread_state first, then proc_state
+            // because dropping thread_state registers it in available_threads. If we drop
+            // proc_state first, Process could check available_threads while thread_state
+            // is still held and falsely assume there are no threads available, missing
+            // the queued command!
+            drop(thread_state);
+            drop(proc_state);
 
             // Put this thread to sleep.
             // TODO(https://fxbug.dev/401258133) pass a thread handle for priority inheritance
@@ -1883,7 +1891,6 @@ impl BinderDriver {
         // THREADING: Always acquire the [`BinderThread::state`] lock before the
         // [`BinderProcess::command_queue`] lock or else it may lead to deadlock.
         let thread_state = binder_thread.lock();
-        let proc_command_queue = binder_proc.command_queue.lock();
 
         let handler = match handler {
             EventHandler::None | EventHandler::HandleOnce(_) => handler,
@@ -1893,7 +1900,7 @@ impl BinderDriver {
         };
 
         let w1 = thread_state.command_queue.wait_async_fd_events(waiter, events, handler.clone());
-        let w2 = proc_command_queue.waiters.wait_async_fd_events(waiter, events, handler);
+        let w2 = binder_proc.process_waiters.wait_async_fd_events(waiter, events, handler);
         WaitCanceler::merge(w1, w2)
     }
 }
