@@ -276,6 +276,11 @@ Use `fx fetch-cl-diff --help` to see how to read the diff for a CL.
 
 Use `fx fetch-cl-comments --help` to see how to read the comments for a CL.
 
+### Fetching CQ failures
+
+Use `fx fetch-cq-failures --help` to see how to fetch CQ/Tryjob failures for a CL.
+It also supports fetching log and artifact links using the `--logs` flag (requires `bb auth-login`).
+
 # Code reviews
 
 ## Enhancing agent guidance
