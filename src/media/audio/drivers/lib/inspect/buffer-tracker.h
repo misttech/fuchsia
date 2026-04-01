@@ -26,31 +26,33 @@ class BufferTracker {
  private:
   inspect::Node node_;
 
+  // Total buffer counts
+  inspect::UintProperty total_buffers_processed_count_prop_;
+  uint64_t total_buffers_processed_count_ __TA_GUARDED(mutex_) = 0;
+  std::optional<inspect::LazyNode> total_buffers_processed_duration_node_;
+  std::optional<zx::duration> per_buffer_duration_;
+
+  // Outstanding buffer metrics.
+  inspect::LazyNode avg_outstanding_buffer_count_node_;
+  uint64_t cumulative_outstanding_buffer_count_ __TA_GUARDED(mutex_) = 0;
+
   // Processing time metrics.
-  inspect::LazyNode avg_processing_time_us_;
-  inspect::UintProperty max_processing_time_us_;
-  uint64_t total_processing_time_us_ __TA_GUARDED(mutex_) = 0;
-  zx::duration max_processing_time_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
+  inspect::LazyNode avg_processing_time_node_;
+  inspect::UintProperty max_processing_time_us_prop_;
+  uint64_t total_processing_duration_us_ __TA_GUARDED(mutex_) = 0;
+  zx::duration max_processing_duration_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
 
   // Empty buffer metrics.
-  inspect::UintProperty total_empty_buffer_duration_us_;
-  inspect::UintProperty empty_buffer_episode_count_;
-  inspect::UintProperty max_empty_buffer_duration_us_;
+  inspect::UintProperty total_empty_buffer_duration_us_prop_;
+  inspect::UintProperty empty_buffer_episode_count_prop_;
+  inspect::UintProperty max_empty_buffer_duration_us_prop_;
   zx::duration max_empty_buffer_duration_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
 
   // Full buffer metrics.
-  std::optional<inspect::UintProperty> total_full_buffer_duration_us_;
-  std::optional<inspect::UintProperty> full_buffer_episode_count_;
-  std::optional<inspect::UintProperty> max_full_buffer_duration_us_;
+  std::optional<inspect::UintProperty> total_full_buffer_duration_us_prop_;
+  std::optional<inspect::UintProperty> full_buffer_episode_count_prop_;
+  std::optional<inspect::UintProperty> max_full_buffer_duration_us_prop_;
   zx::duration max_full_buffer_duration_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
-
-  // Outstanding buffer metrics.
-  inspect::LazyNode avg_outstanding_buffer_count_;
-  inspect::UintProperty total_buffers_processed_count_;
-  uint64_t cumulative_outstanding_buffer_count_ __TA_GUARDED(mutex_) = 0;
-  uint64_t total_buffers_processed_ __TA_GUARDED(mutex_) = 0;
-  std::optional<inspect::LazyNode> total_buffers_processed_duration_us_;
-  std::optional<zx::duration> per_buffer_duration_;
 
   std::queue<zx::time> submission_times_ __TA_GUARDED(mutex_);
   zx::time empty_buffer_start_time_ __TA_GUARDED(mutex_) = zx::time(0);

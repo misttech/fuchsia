@@ -64,26 +64,25 @@ static constexpr std::string_view kStartToStartIntervalUsec = "start_to_start_us
 static constexpr std::string_view kEndToEndIntervalUsec = "end_to_end_us";
 static constexpr std::string_view kSchedulingDelayUsec = "scheduling_delay_us";
 
-static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstanding_buffers_avg";
+static constexpr std::string_view kCountTasks = "count_tasks";
+static constexpr std::string_view kCountDroppedTransfers = "count_dropped_transfers";
+static constexpr std::string_view kCountOverruns = "count_overruns";
+static constexpr std::string_view kCountUnderruns = "count_underruns";
+static constexpr std::string_view kWorstOverrunFrames = "worst_overrun_frames";
+static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames";
+
 static constexpr std::string_view kCountBuffersProcessed = "count_buffers_processed";
+static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstanding_buffers_avg";
+static constexpr std::string_view kEmptyBufferDurationMaxUsec = "empty_buffer_duration_max_us";
+static constexpr std::string_view kEmptyBufferDurationCumulativeUsec =
+    "empty_buffer_duration_sum_us";
+static constexpr std::string_view kEmptyBufferEpisodeCount = "empty_buffer_episodes_count";
+static constexpr std::string_view kFullBufferDurationMaxUsec = "full_buffer_duration_max_us";
+static constexpr std::string_view kFullBufferDurationCumulativeUsec = "full_buffer_duration_sum_us";
+static constexpr std::string_view kFullBufferEpisodeCount = "full_buffer_episodes_count";
 static constexpr std::string_view kProcessingTimeAvgUsec = "processing_time_avg_us";
 static constexpr std::string_view kProcessingTimeMaxUsec = "processing_time_max_us";
 static constexpr std::string_view kProcessingTimeCumulativeUsec = "processing_time_sum_us";
-
-static constexpr std::string_view kEmptyBufferCumulativeDurationUsec =
-    "empty_buffer_sum_duration_us";
-static constexpr std::string_view kEmptyBufferEpisodeCount = "empty_buffer_episodes_count";
-static constexpr std::string_view kEmptyBufferDurationMaxUsec = "empty_buffer_max_duration_us";
-static constexpr std::string_view kFullBufferCumulativeDurationUsec = "full_buffer_sum_duration_us";
-static constexpr std::string_view kFullBufferEpisodeCount = "full_buffer_episodes_count";
-static constexpr std::string_view kFullBufferMaxDurationUsec = "full_buffer_max_duration_us";
-
-static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames";
-static constexpr std::string_view kWorstOverrunFrames = "worst_overrun_frames";
-static constexpr std::string_view kCountTasks = "count_tasks";
-static constexpr std::string_view kCountUnderruns = "count_underruns";
-static constexpr std::string_view kCountOverruns = "count_overruns";
-static constexpr std::string_view kCountDroppedTransfers = "count_dropped_transfers";
 
 // Represents a single power transition.
 class PowerTransition {

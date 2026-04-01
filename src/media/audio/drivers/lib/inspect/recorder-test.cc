@@ -231,7 +231,7 @@ TEST_F(RecorderTest, BufferTracker) {
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
           UintIs(std::string(kProcessingTimeAvgUsec), testing::Ge(2000)),
           UintIs(std::string(kProcessingTimeMaxUsec), testing::Ge(3000)),
-          UintIs(std::string(kEmptyBufferCumulativeDurationUsec), testing::Ge(200 * 1000)),
+          UintIs(std::string(kEmptyBufferDurationCumulativeUsec), testing::Ge(200 * 1000)),
           UintIs(std::string(kEmptyBufferEpisodeCount), 1),
           UintIs(std::string(kEmptyBufferDurationMaxUsec), testing::Ge(200 * 1000)),
           UintIs(std::string(kFullBufferEpisodeCount), 0),
