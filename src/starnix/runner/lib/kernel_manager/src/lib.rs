@@ -7,7 +7,7 @@ pub mod pager;
 pub mod proxy;
 pub mod suspend;
 
-use crate::pager::run_pager;
+use crate::pager::{Pager, run_pager};
 use anyhow::{Error, anyhow};
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, ServerEnd};
 use fidl::{HandleBased, Peered};
@@ -187,6 +187,7 @@ pub async fn serve_starnix_manager(
     suspend_context: Arc<SuspendContext>,
     kernels: &Kernels,
     sender: &async_channel::Sender<(ChannelProxy, Arc<Mutex<WakeSources>>)>,
+    pager: Arc<Pager>,
 ) -> Result<(), Error> {
     while let Some(event) = stream.try_next().await? {
         match event {
@@ -272,7 +273,7 @@ pub async fn serve_starnix_manager(
                 suspend_context.wake_sources.lock().remove(&handle.koid().unwrap());
             }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
-                fasync::Task::spawn(run_pager(payload)).detach();
+                fasync::Task::spawn(run_pager(payload, pager.clone())).detach();
             }
             _ => {}
         }

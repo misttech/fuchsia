@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error};
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_settings as fsettings;
+use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
@@ -12,10 +15,7 @@ use kernel_manager::serve_starnix_manager;
 use kernel_manager::suspend::SuspendContext;
 use log::{error, info, warn};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_settings as fsettings,
-    fidl_fuchsia_starnix_runner as fstarnixrunner, zx,
-};
+use zx;
 
 enum Services {
     ComponentRunner(frunner::ComponentRunnerRequestStream),
@@ -58,6 +58,8 @@ async fn main() -> Result<(), Error> {
     fs.dir("svc").add_fidl_service(Services::StarnixManager);
     fs.take_and_serve_directory_handle()?;
     let suspend_context = Arc::new(SuspendContext::default());
+    let pager = Arc::new(kernel_manager::pager::Pager::new()?);
+    pager.start_threads();
     fs.for_each_concurrent(None, |request: Services| async {
         match request {
             Services::ComponentRunner(stream) => {
@@ -66,8 +68,14 @@ async fn main() -> Result<(), Error> {
                 }
             }
             Services::StarnixManager(stream) => {
-                if let Err(e) =
-                    serve_starnix_manager(stream, suspend_context.clone(), &kernels, &sender).await
+                if let Err(e) = serve_starnix_manager(
+                    stream,
+                    suspend_context.clone(),
+                    &kernels,
+                    &sender,
+                    pager.clone(),
+                )
+                .await
                 {
                     error!(e:%; "failed to serve starnix manager");
                 }

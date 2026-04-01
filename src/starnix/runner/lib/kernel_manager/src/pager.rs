@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use zx::sys::zx_page_request_command_t::{ZX_PAGER_VMO_COMPLETE, ZX_PAGER_VMO_READ};
 
 // N.B. At time of writing, no particular science has gone into picking these numbers; tweaking
@@ -29,7 +30,10 @@ const ZERO_VMO_SIZE: u64 = 1 * 1024 * 1024;
 /// Tracing category used to trace the pager.
 const CATEGORY_STARNIX_PAGER: &'static str = "starnix:pager";
 
-pub async fn run_pager(pager_request: fstarnixrunner::ManagerCreatePagerRequest) {
+pub async fn run_pager(
+    pager_request: fstarnixrunner::ManagerCreatePagerRequest,
+    pager: Arc<Pager>,
+) {
     let fstarnixrunner::ManagerCreatePagerRequest {
         backing_vmo: Some(backing_vmo),
         block_size: Some(block_size),
@@ -41,12 +45,15 @@ pub async fn run_pager(pager_request: fstarnixrunner::ManagerCreatePagerRequest)
         return;
     };
 
-    let Ok(pager) = Pager::new(backing_vmo, block_size) else {
-        log_error!("Failed to serve pager instance");
-        return;
-    };
-    let pager = Arc::new(pager);
-    pager.start_threads();
+    let filesystem = Arc::new(match Filesystem::new(pager.clone(), backing_vmo, block_size) {
+        Ok(filesystem) => filesystem,
+        Err(error) => {
+            log_error!("Unable to register filesystem {error}");
+            return;
+        }
+    });
+
+    pager.add_filesystem(filesystem.clone());
 
     let mut stream = pager_server.into_stream();
     'outer: while let Ok(Some(event)) = stream.try_next().await {
@@ -68,7 +75,7 @@ pub async fn run_pager(pager_request: fstarnixrunner::ManagerCreatePagerRequest)
                     "file_register",
                     fuchsia_trace::Scope::Thread
                 );
-                match pager.register(
+                match filesystem.register(
                     &name,
                     inode_num,
                     size,
@@ -108,38 +115,32 @@ pub async fn run_pager(pager_request: fstarnixrunner::ManagerCreatePagerRequest)
             _ => {}
         }
     }
+    pager.remove_filesystem(&*filesystem);
 }
 
-/// A simple pager implementation. One port per pager but a pager can service many files.
+/// A simple pager implementation. One pager can serve multiple filesystems.
 pub struct Pager {
-    backing_vmo: zx::Vmo,
-    block_size: u64,
     pager: zx::Pager,
     port: zx::Port,
-    files_by_inode: Mutex<HashMap<u32, Arc<PagedFile>>>,
     zero_vmo: zx::Vmo,
+    next_filesystem_id: AtomicU32,
+    filesystems: Mutex<HashMap<u32, Arc<Filesystem>>>,
 }
 
 impl Pager {
-    /// Returns a new pager.  `block_size` shouldn't be too big (which might cause overflows) and it
-    /// should be a power of 2.
-    pub fn new(backing_vmo: zx::Vmo, block_size: u64) -> Result<Self, Errno> {
-        if block_size > 1024 * 1024 || !block_size.is_power_of_two() {
-            return error!(EINVAL, "Bad block size {block_size}");
-        }
+    pub fn new() -> Result<Self, Errno> {
         Ok(Self {
-            backing_vmo,
-            block_size,
             pager: zx::Pager::create(zx::PagerOptions::empty()).map_err(|error| {
                 log_error!(error:?; "Pager::create failed");
                 errno!(EINVAL)
             })?,
             port: zx::Port::create(),
-            files_by_inode: Mutex::new(HashMap::new()),
             zero_vmo: with_zx_name(
                 zx::Vmo::create(ZERO_VMO_SIZE).map_err(|_| errno!(EINVAL))?,
                 b"starnix:ext4",
             ),
+            next_filesystem_id: AtomicU32::new(1),
+            filesystems: Mutex::new(HashMap::new()),
         })
     }
 
@@ -151,48 +152,6 @@ impl Pager {
                 this.run_pager_thread();
             });
         }
-    }
-
-    /// Registers the file with the pager.  Returns a child VMO.  `extents` should be sorted.
-    pub fn register(
-        &self,
-        name: &str,
-        inode_num: u32,
-        size: u64,
-        extents: Box<[PagerExtent]>,
-    ) -> Result<zx::Vmo, zx::Status> {
-        let (file, did_create) = {
-            match self.files_by_inode.lock().entry(inode_num) {
-                Entry::Occupied(o) => (o.get().clone(), false),
-                Entry::Vacant(v) => (
-                    v.insert(Arc::new(PagedFile {
-                        vmo: self.pager.create_vmo(
-                            zx::VmoOptions::RESIZABLE,
-                            &self.port,
-                            inode_num as u64,
-                            size,
-                        )?,
-                        extents,
-                    }))
-                    .clone(),
-                    true,
-                ),
-            }
-        };
-        let child_vmo = file.vmo.create_child(zx::VmoChildOptions::REFERENCE, 0, 0);
-        if did_create {
-            let set_up_vmo = |vmo| -> Result<(), zx::Status> {
-                self.watch_for_zero_children(vmo, inode_num)?;
-                vmo.set_name(&zx::Name::new_lossy(&format!("ext4!{}", name)))?;
-                Ok(())
-            };
-
-            if let Err(e) = set_up_vmo(&file.vmo) {
-                self.files_by_inode.lock().remove(&inode_num);
-                return Err(e);
-            }
-        }
-        child_vmo
     }
 
     /// Dedicated thread responsible for listening on port and supplying pages as needed.
@@ -218,6 +177,7 @@ impl Pager {
                     .unmap(transfer_vmo_addr, TRANSFER_VMO_SIZE as usize)
             };
         });
+        let split_key = |key: u64| -> (u32, u32) { ((key >> 32) as u32, key as u32) };
         loop {
             match self.port.wait(zx::MonotonicInstant::INFINITE) {
                 Ok(packet) => {
@@ -226,13 +186,17 @@ impl Pager {
                             if contents.command() == ZX_PAGER_VMO_READ =>
                         {
                             trace_duration!(CATEGORY_STARNIX_PAGER, "vmo_read");
-                            let inode_num = packet.key().try_into().expect("Unexpected packet key");
-                            self.receive_pager_packet(
-                                inode_num,
-                                contents,
-                                &transfer_vmo,
-                                transfer_vmo_addr,
-                            );
+                            let (filesystem_num, inode_num) = split_key(packet.key());
+                            self.filesystems
+                                .lock()
+                                .get(&filesystem_num)
+                                .expect("Unexpected packet key")
+                                .receive_pager_packet(
+                                    inode_num,
+                                    contents,
+                                    &transfer_vmo,
+                                    transfer_vmo_addr,
+                                );
                         }
                         zx::PacketContents::Pager(contents)
                             if contents.command() == ZX_PAGER_VMO_COMPLETE =>
@@ -245,31 +209,12 @@ impl Pager {
                             if signals.observed().contains(zx::Signals::VMO_ZERO_CHILDREN) =>
                         {
                             trace_duration!(CATEGORY_STARNIX_PAGER, "signal_zero_children");
-                            let inode_num = packet.key().try_into().expect("Unexpected packet key");
-                            let mut files = self.files_by_inode.lock();
-                            let file = files.entry(inode_num);
-                            if let Entry::Occupied(o) = file {
-                                let vmo = &o.get().vmo;
-                                match vmo.info() {
-                                    Ok(info) => {
-                                        if info.num_children == 0 {
-                                            // This is a true signal, so we can remove this entry.
-                                            o.remove();
-                                        } else {
-                                            // This shouldn't fail, and there's not much we can do
-                                            // if it does.
-                                            if let Err(error) =
-                                                self.watch_for_zero_children(vmo, inode_num)
-                                            {
-                                                log_error!(
-                                                    error:?;
-                                                    "watch_for_zero_children failed"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(error) => log_error!(error:?; "Vmo::info failed"),
-                                }
+                            let (filesystem_num, inode_num) = split_key(packet.key());
+                            // We may get VMO_ZERO_CHILDREN notifications for
+                            // files within a filesystem after it is unmounted,
+                            // ignore those.
+                            if let Some(filesystem) = self.filesystems.lock().get(&filesystem_num) {
+                                filesystem.on_zero_children(inode_num).expect("on_zero_children");
                             }
                         }
                         zx::PacketContents::User(_) => break,
@@ -282,6 +227,22 @@ impl Pager {
         log_debug!("Pager thread terminating");
     }
 
+    fn create_pager_vmo(&self, key: u64, size: u64) -> Result<zx::Vmo, zx::Status> {
+        self.pager.create_vmo(zx::VmoOptions::RESIZABLE, &self.port, key, size)
+    }
+
+    fn allocate_filesystem_id(&self) -> u32 {
+        self.next_filesystem_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn add_filesystem(&self, filesystem: Arc<Filesystem>) {
+        self.filesystems.lock().insert(filesystem.id(), filesystem);
+    }
+
+    fn remove_filesystem(&self, filesystem: &Filesystem) {
+        self.filesystems.lock().remove(&filesystem.id());
+    }
+
     /// Terminates (asynchronously) the pager threads.
     pub fn terminate(&self) {
         let up = zx::UserPacket::from_u8_array([0; 32]);
@@ -290,14 +251,65 @@ impl Pager {
             self.port.queue(&packet).unwrap();
         }
     }
+}
 
-    fn watch_for_zero_children(&self, vmo: &zx::Vmo, inode_num: u32) -> Result<(), zx::Status> {
-        vmo.wait_async(
-            &self.port,
-            inode_num as u64,
-            zx::Signals::VMO_ZERO_CHILDREN,
-            zx::WaitAsyncOpts::empty(),
-        )
+/// Filesystem registered with the pager.
+pub struct Filesystem {
+    pager: Arc<Pager>,
+    backing_vmo: zx::Vmo,
+    block_size: u64,
+    files_by_inode: Mutex<HashMap<u32, Arc<PagedFile>>>,
+    id: u32,
+}
+
+impl Filesystem {
+    /// Returns a new filesystem.  `block_size` shouldn't be too big (which might cause overflows) and it
+    /// should be a power of 2.
+    pub fn new(pager: Arc<Pager>, backing_vmo: zx::Vmo, block_size: u64) -> Result<Self, Errno> {
+        if block_size > 1024 * 1024 || !block_size.is_power_of_two() {
+            return error!(EINVAL, "Bad block size {block_size}");
+        }
+        let id = pager.allocate_filesystem_id();
+        Ok(Self { pager, backing_vmo, block_size, files_by_inode: Mutex::new(HashMap::new()), id })
+    }
+
+    /// Registers the file with the pager.  Returns a child VMO.  `extents` should be sorted.
+    pub fn register(
+        &self,
+        name: &str,
+        inode_num: u32,
+        size: u64,
+        extents: Box<[PagerExtent]>,
+    ) -> Result<zx::Vmo, zx::Status> {
+        let (file, did_create) = {
+            match self.files_by_inode.lock().entry(inode_num) {
+                Entry::Occupied(o) => (o.get().clone(), false),
+                Entry::Vacant(v) => (
+                    v.insert(Arc::new(PagedFile {
+                        vmo: self
+                            .pager
+                            .create_pager_vmo(self.port_key_for_inode(inode_num), size)?,
+                        extents,
+                    }))
+                    .clone(),
+                    true,
+                ),
+            }
+        };
+        let child_vmo = file.vmo.create_child(zx::VmoChildOptions::REFERENCE, 0, 0);
+        if did_create {
+            let set_up_vmo = |vmo| -> Result<(), zx::Status> {
+                self.watch_for_zero_children(vmo, inode_num)?;
+                vmo.set_name(&zx::Name::new_lossy(&format!("ext4!{}", name)))?;
+                Ok(())
+            };
+
+            if let Err(e) = set_up_vmo(&file.vmo) {
+                self.files_by_inode.lock().remove(&inode_num);
+                return Err(e);
+            }
+        }
+        child_vmo
     }
 
     fn receive_pager_packet(
@@ -328,7 +340,8 @@ impl Pager {
             std::slice::from_raw_parts_mut(transfer_vmo_addr as *mut u8, TRANSFER_VMO_SIZE as usize)
         };
 
-        let mut supply_helper = SupplyHelper::new(transfer_vmo, buf, &file.vmo, range.start, self);
+        let mut supply_helper =
+            SupplyHelper::new(transfer_vmo, buf, &file.vmo, range.start, &*self.pager);
 
         while ix < file.extents.len() && range.start < readahead_end {
             let extent = &file.extents[ix];
@@ -382,6 +395,50 @@ impl Pager {
         if let Err(e) = supply_helper.finish(range.end) {
             supply_helper.fail_to(range.end, e);
         }
+    }
+
+    fn watch_for_zero_children(&self, vmo: &zx::Vmo, inode_num: u32) -> Result<(), zx::Status> {
+        vmo.wait_async(
+            &self.pager.port,
+            self.port_key_for_inode(inode_num),
+            zx::Signals::VMO_ZERO_CHILDREN,
+            zx::WaitAsyncOpts::empty(),
+        )
+    }
+
+    fn on_zero_children(&self, inode_num: u32) -> Result<(), Errno> {
+        let mut files = self.files_by_inode.lock();
+        let file = files.entry(inode_num);
+        if let Entry::Occupied(o) = file {
+            let vmo = &o.get().vmo;
+            match vmo.info() {
+                Ok(info) => {
+                    if info.num_children == 0 {
+                        // This is a true signal, so we can remove this entry.
+                        o.remove();
+                    } else {
+                        // This shouldn't fail, and there's not much we can do
+                        // if it does.
+                        if let Err(error) = self.watch_for_zero_children(vmo, inode_num) {
+                            log_error!(
+                                error:?;
+                                "watch_for_zero_children failed"
+                            );
+                        }
+                    }
+                }
+                Err(error) => log_error!(error:?; "Vmo::info failed"),
+            }
+        }
+        Ok(())
+    }
+
+    fn port_key_for_inode(&self, inode_num: u32) -> u64 {
+        (self.id as u64) << 32 | inode_num as u64
+    }
+
+    fn id(&self) -> u32 {
+        self.id
     }
 }
 
@@ -519,7 +576,7 @@ impl<'a> SupplyHelper<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Pager, PagerExtent};
+    use super::{Filesystem, Pager, PagerExtent};
 
     use fidl::HandleBased;
     use std::sync::Arc;
@@ -531,13 +588,19 @@ mod tests {
         let backing_vmo_clone =
             backing_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("failed handle dup");
 
-        let pager = Arc::new(Pager::new(backing_vmo_clone, 1024).expect("Pager::new failed"));
+        let pager = Arc::new(Pager::new().expect("Pager::new failed"));
+        let filesystem = Arc::new(
+            Filesystem::new(pager.clone(), backing_vmo_clone, 1024)
+                .expect("Filesystem::new failed"),
+        );
+
+        pager.add_filesystem(filesystem.clone());
 
         {
             pager.start_threads();
 
             // With no extent, we expect it to return zeroed data.
-            let vmo = pager.register("a".into(), 1, 5, Box::new([])).expect("register failed");
+            let vmo = filesystem.register("a".into(), 1, 5, Box::new([])).expect("register failed");
 
             let mut buf = vec![1; 5];
             vmo.read(&mut buf, 0).expect("read failed");
@@ -545,7 +608,7 @@ mod tests {
             assert_eq!(&buf, &[0; 5]);
 
             // A single extent:
-            let vmo = pager
+            let vmo = filesystem
                 .register(
                     "b".into(),
                     2,
@@ -561,7 +624,7 @@ mod tests {
             // A file with sparse ranges: 6 sparse, 1 extent, 5 more sparse, 1 extent, 4 sparse + a
             // bit.
             let file_size = (6 + 1 + 5 + 4) * 1024 + 100;
-            let vmo = pager
+            let vmo = filesystem
                 .register(
                     "c".into(),
                     3,
@@ -582,7 +645,7 @@ mod tests {
             assert_eq!(&buf, &expected);
 
             // Use the same file, but initiate a read that starts after the first extent.
-            let vmo = pager
+            let vmo = filesystem
                 .register(
                     "d".into(),
                     4,
@@ -603,7 +666,7 @@ mod tests {
 
         // After dropping all VMOs, we expect the pager to clean up.
         loop {
-            if pager.files_by_inode.lock().is_empty() {
+            if filesystem.files_by_inode.lock().is_empty() {
                 break;
             }
             // The pager is running on different threads, hence:
