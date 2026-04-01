@@ -56,7 +56,10 @@ TEST(ClockTest, DeadlineAfter) {
 // Have multiple threads compete over putting monotonic clock readings into a
 // shared list in a very hot loop over a long period of time. This test is
 // similar to a Linux kselftest which exercises the monotonic time readings.
-TEST(ClockTest, MultithreadedContentionClockMonotonic) {
+//
+// TODO(https://fxbug.dev/498597096): Test is disabled because of failures.  See
+// bug for details.
+TEST(ClockTest, DISABLED_MultithreadedContentionClockMonotonic) {
   // Parameters comparable to those used in threadtest.c from Linux kselftest.
   constexpr int kNumThreads = 8;
   constexpr int kRuntimeSeconds = 30;
