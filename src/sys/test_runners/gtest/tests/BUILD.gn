@@ -64,10 +64,10 @@ fuchsia_test_package("gtest-runner-integration-test") {
     ":gtest_runner_integration_test",
     ":gtest_runner_stress_test",
   ]
-  subpackages = [ "//src/sys/test_manager:pkg" ]
-
-  # TODO(https://fxbug.dev/412436921): Use subpackages instead of package_deps.
-  package_deps = [ "../test_data:gtest-runner-example-tests" ]
+  subpackages = [
+    "//src/sys/test_manager:pkg",
+    "../test_data:gtest-runner-example-tests",
+  ]
 
   # https://fxbug.dev/42154358: This stress test fails on coverage bot.
   if (is_coverage) {
