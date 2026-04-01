@@ -4,6 +4,8 @@
 
 #include "src/media/audio/drivers/aml-g12-tdm/composite-server.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -182,7 +184,7 @@ zx_status_t AudioCompositeServer::ResetEngine(size_t index) {
   const fuchsia_hardware_audio::DaiFormat& dai_format =
       *current_dai_formats_[engines_[index].dai_index];
   if (dai_format.sample_format() != fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned) {
-    FDF_LOG(ERROR, "Sample format not supported");
+    fdf::error("Sample format not supported");
     return ZX_ERR_NOT_SUPPORTED;
   }
   auto& dai_type = engines_[index].config.dai.type;
@@ -202,13 +204,13 @@ zx_status_t AudioCompositeServer::ResetEngine(size_t index) {
       case StandardFormat::kStereoRight:
         [[fallthrough]];
       default:
-        FDF_LOG(ERROR, "Frame format not supported");
+        fdf::error("Frame format not supported");
         return ZX_ERR_NOT_SUPPORTED;
     }
   } else if (dai_format.frame_format().frame_format_custom().has_value()) {
     dai_type = DaiType::Custom;
     if (!dai_format.frame_format().frame_format_custom()->left_justified()) {
-      FDF_LOG(ERROR, "Non-left justified custom formats not supported");
+      fdf::error("Non-left justified custom formats not supported");
       return ZX_ERR_NOT_SUPPORTED;
     }
     engines_[index].config.dai.custom_sclk_on_raising =
@@ -218,7 +220,7 @@ zx_status_t AudioCompositeServer::ResetEngine(size_t index) {
         dai_format.frame_format().frame_format_custom()->frame_sync_sclks_offset();
     if (engines_[index].config.dai.custom_frame_sync_sclks_offset !=
         AmlTdmConfigDevice::GetSupportedCustomFrameSyncSclksOffset()) {
-      FDF_LOG(ERROR, "Sync sclks offset not supported");
+      fdf::error("Sync sclks offset not supported");
       return ZX_ERR_NOT_SUPPORTED;
     }
 
@@ -226,11 +228,11 @@ zx_status_t AudioCompositeServer::ResetEngine(size_t index) {
         dai_format.frame_format().frame_format_custom()->frame_sync_size();
     if (engines_[index].config.dai.custom_frame_sync_size !=
         AmlTdmConfigDevice::GetSupportedCustomFrameSyncSize()) {
-      FDF_LOG(ERROR, "Frame sync size not supported");
+      fdf::error("Frame sync size not supported");
       return ZX_ERR_NOT_SUPPORTED;
     }
   } else {
-    FDF_LOG(ERROR, "No standard or custom frame format");
+    fdf::error("No standard or custom frame format");
     return ZX_ERR_NOT_SUPPORTED;
   }
   engines_[index].config.dai.bits_per_sample = dai_format.bits_per_sample();
@@ -249,7 +251,7 @@ zx_status_t AudioCompositeServer::ResetEngine(size_t index) {
 
   zx_status_t status = AmlTdmConfigDevice::Normalize(engines_[index].config);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to normalize config: %s", zx_status_get_string(status));
+    fdf::error("Failed to normalize config: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -258,7 +260,7 @@ zx_status_t AudioCompositeServer::ResetEngine(size_t index) {
     status = engines_[index].device->InitHW(
         engines_[index].config, dai_format.channels_to_use_bitmask(), dai_format.frame_rate());
     if (status != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to init hardware: %s", zx_status_get_string(status));
+      fdf::error("Failed to init hardware: {}", zx_status_get_string(status));
     }
   }
   return status;
@@ -310,11 +312,11 @@ void AudioCompositeServer::SignalProcessingConnect(
 
 void AudioCompositeServer::OnSignalProcessingClosed(fidl::UnbindInfo info) {
   if (info.is_peer_closed()) {
-    FDF_LOG(INFO, "Client disconnected");
+    fdf::info("Client disconnected");
   } else if (!info.is_user_initiated()) {
     // Do not log canceled cases; these happen particularly frequently in certain test cases.
     if (info.status() != ZX_ERR_CANCELED) {
-      FDF_LOG(ERROR, "Client connection unbound: %s", info.status_string());
+      fdf::error("Client connection unbound: {}", info.status_string());
     }
   }
   if (signal_) {
@@ -327,8 +329,8 @@ void AudioCompositeServer::GetRingBufferFormats(GetRingBufferFormatsRequest& req
   auto ring_buffer =
       std::find(kRingBufferIds.begin(), kRingBufferIds.end(), request.processing_element_id());
   if (ring_buffer == kRingBufferIds.end()) {
-    FDF_LOG(ERROR, "Unknown Ring Buffer id (%lu) for format retrieval",
-            request.processing_element_id());
+    fdf::error("Unknown Ring Buffer id ({}) for format retrieval",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -345,7 +347,7 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
   auto ring_buffer =
       std::find(kRingBufferIds.begin(), kRingBufferIds.end(), request.processing_element_id());
   if (ring_buffer == kRingBufferIds.end()) {
-    FDF_LOG(ERROR, "Unknown Ring Buffer id (%lu) for creation", request.processing_element_id());
+    fdf::error("Unknown Ring Buffer id ({}) for creation", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -353,8 +355,8 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
   ZX_ASSERT(ring_buffer_index < kNumberOfTdmEngines);
   auto& supported = supported_ring_buffer_formats_[ring_buffer_index];
   if (request.format().Which() != fuchsia_hardware_audio::Format2::Tag::kPcmFormat) {
-    FDF_LOG(ERROR, "No PCM formats provided for Ring Buffer id (%lu)",
-            request.processing_element_id());
+    fdf::error("No PCM formats provided for Ring Buffer id ({})",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -376,36 +378,36 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
     }
   }
   if (!number_of_channels_found) {
-    FDF_LOG(ERROR, "Ring Buffer number of channels for Ring Buffer id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("Ring Buffer number of channels for Ring Buffer id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(*supported.sample_formats(), requested.sample_format())) {
-    FDF_LOG(ERROR, "Ring Buffer sample format for Ring Buffer id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("Ring Buffer sample format for Ring Buffer id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(*supported.bytes_per_sample(), requested.bytes_per_sample())) {
-    FDF_LOG(ERROR, "Ring Buffer bytes per sample for Ring Buffer id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("Ring Buffer bytes per sample for Ring Buffer id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(*supported.valid_bits_per_sample(), requested.valid_bits_per_sample())) {
-    FDF_LOG(ERROR, "Ring Buffer valid bits per sample for Ring Buffer id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("Ring Buffer valid bits per sample for Ring Buffer id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(*supported.frame_rates(), requested.frame_rate())) {
-    FDF_LOG(ERROR, "Ring Buffer frame rate for Ring Buffer id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("Ring Buffer frame rate for Ring Buffer id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -437,7 +439,7 @@ void AudioCompositeServer::GetDaiFormats(GetDaiFormatsRequest& request,
                                          GetDaiFormatsCompleter::Sync& completer) {
   auto dai = std::find(kDaiIds.begin(), kDaiIds.end(), request.processing_element_id());
   if (dai == kDaiIds.end()) {
-    FDF_LOG(ERROR, "Unknown DAI id (%lu) for GetDaiFormats", request.processing_element_id());
+    fdf::error("Unknown DAI id ({}) for GetDaiFormats", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -450,7 +452,7 @@ void AudioCompositeServer::SetDaiFormat(SetDaiFormatRequest& request,
                                         SetDaiFormatCompleter::Sync& completer) {
   auto dai = std::find(kDaiIds.begin(), kDaiIds.end(), request.processing_element_id());
   if (dai == kDaiIds.end()) {
-    FDF_LOG(ERROR, "Unknown DAI id (%lu) for SetDaiFormat", request.processing_element_id());
+    fdf::error("Unknown DAI id ({}) for SetDaiFormat", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -459,50 +461,50 @@ void AudioCompositeServer::SetDaiFormat(SetDaiFormatRequest& request,
   auto& supported = supported_dai_formats_[dai_index];
 
   if (!contains(supported.number_of_channels(), request.format().number_of_channels())) {
-    FDF_LOG(ERROR, "DAI format number of channels for DAI id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("DAI format number of channels for DAI id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (request.format().channels_to_use_bitmask() >= (1u << request.format().number_of_channels())) {
-    FDF_LOG(ERROR, "DAI format channels-to-use 0x%zx out of range, for DAI id (%lu)",
-            request.format().channels_to_use_bitmask(), request.processing_element_id());
+    fdf::error("DAI format channels-to-use 0x{:x} out of range, for DAI id ({})",
+               request.format().channels_to_use_bitmask(), request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(supported.sample_formats(), request.format().sample_format())) {
-    FDF_LOG(ERROR, "DAI format sample format for DAI id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("DAI format sample format for DAI id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(supported.frame_formats(), request.format().frame_format())) {
-    FDF_LOG(ERROR, "DAI format frame format for DAI id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("DAI format frame format for DAI id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(supported.frame_rates(), request.format().frame_rate())) {
-    FDF_LOG(ERROR, "DAI format frame rate for DAI id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("DAI format frame rate for DAI id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(supported.bits_per_slot(), request.format().bits_per_slot())) {
-    FDF_LOG(ERROR, "DAI format bits per slot for DAI id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("DAI format bits per slot for DAI id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
 
   if (!contains(supported.bits_per_sample(), request.format().bits_per_sample())) {
-    FDF_LOG(ERROR, "DAI format bits per sample for DAI id (%lu) not supported",
-            request.processing_element_id());
+    fdf::error("DAI format bits per sample for DAI id ({}) not supported",
+               request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
@@ -539,13 +541,13 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   if (soc_power_started_) {
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", ZX_OK, "reason", "Already started");
-    FDF_LOG(INFO, "SoC power already started");
+    fdf::info("SoC power already started");
     return ZX_OK;
   }
-  FDF_LOG(INFO, "Starting SoC power");
+  fdf::info("Starting SoC power");
   fidl::WireResult clock_gate_result = clock_gate_->Enable();
   if (!clock_gate_result.ok()) {
-    FDF_LOG(ERROR, "Failed to send request to enable clock gate: %s",
+    fdf::error("Failed to send request to enable clock gate: {}",
             clock_gate_result.status_string());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result.status(), "reason",
@@ -553,7 +555,7 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
     return clock_gate_result.status();
   }
   if (clock_gate_result->is_error()) {
-    FDF_LOG(ERROR, "Send request to enable clock gate error: %s",
+    fdf::error("Send request to enable clock gate error: {}",
             zx_status_get_string(clock_gate_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result->error_value(), "reason",
@@ -562,13 +564,13 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   }
   fidl::WireResult pll_result = pll_->Enable();
   if (!pll_result.ok()) {
-    FDF_LOG(ERROR, "Failed to send request to enable PLL: %s", pll_result.status_string());
+    fdf::error("Failed to send request to enable PLL: {}", pll_result.status_string());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", pll_result.status(), "reason", "Could not send request to enable PLL");
     return pll_result.status();
   }
   if (pll_result->is_error()) {
-    FDF_LOG(ERROR, "Send request to enable PLL error: %s",
+    fdf::error("Send request to enable PLL error: {}",
             zx_status_get_string(pll_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", pll_result->error_value(), "reason", "Could not enable PLL");
@@ -587,7 +589,7 @@ zx_status_t AudioCompositeServer::StartSocPower(bool wait_for_completion) {
   for (auto& sclk_client : sclk_clients_) {
     fidl::WireResult result = sclk_client.pin->Configure(sclk_function_config);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to send request to set GPIO function: %s", result.status_string());
+      fdf::error("Failed to send request to set GPIO function: {}", result.status_string());
       TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StartSocPower exit",
                     TRACE_SCOPE_PROCESS, "status", result.status(), "reason",
                     "Could not set GPIO function");
@@ -613,10 +615,10 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   if (!soc_power_started_) {
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", ZX_OK, "reason", "Already stopped");
-    FDF_LOG(INFO, "SoC power already stopped");
+    fdf::info("SoC power already stopped");
     return ZX_OK;
   }
-  FDF_LOG(INFO, "Stopping SoC power");
+  fdf::info("Stopping SoC power");
 
   constexpr uint32_t kGpioAltFunction = 0;
 
@@ -627,7 +629,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   for (auto& sclk_client : sclk_clients_) {
     fidl::WireResult alt_function_result = sclk_client.pin->Configure(gpio_function_config);
     if (!alt_function_result.ok()) {
-      FDF_LOG(ERROR, "Failed to send request to set GPIO function: %s",
+      fdf::error("Failed to send request to set GPIO function: {}",
               alt_function_result.status_string());
       TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit",
                     TRACE_SCOPE_PROCESS, "status", alt_function_result.status(), "reason",
@@ -637,7 +639,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
     fidl::WireResult config_out_result =
         sclk_client.gpio->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputLow);
     if (!config_out_result.ok()) {
-      FDF_LOG(ERROR, "Failed to send request to set GPIO output: %s",
+      fdf::error("Failed to send request to set GPIO output: {}",
               config_out_result.status_string());
       TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit",
                     TRACE_SCOPE_PROCESS, "status", config_out_result.status(), "reason",
@@ -649,7 +651,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   // MMIO access is still valid after clock gating the audio subsystem.
   fidl::WireResult clock_gate_result = clock_gate_->Disable();
   if (!clock_gate_result.ok()) {
-    FDF_LOG(ERROR, "Failed to send request to disable clock gate: %s",
+    fdf::error("Failed to send request to disable clock gate: {}",
             clock_gate_result.status_string());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result.status(), "reason",
@@ -657,7 +659,7 @@ zx_status_t AudioCompositeServer::StopSocPower() {
     return clock_gate_result.status();
   }
   if (clock_gate_result->is_error()) {
-    FDF_LOG(ERROR, "Send request to disable clock gate error: %s",
+    fdf::error("Send request to disable clock gate error: {}",
             zx_status_get_string(clock_gate_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", clock_gate_result->error_value(), "reason",
@@ -667,13 +669,13 @@ zx_status_t AudioCompositeServer::StopSocPower() {
   // MMIO access is still valid after disabling the PLL used.
   fidl::WireResult pll_result = pll_->Disable();
   if (!pll_result.ok()) {
-    FDF_LOG(ERROR, "Failed to send request to disable PLL: %s", pll_result.status_string());
+    fdf::error("Failed to send request to disable PLL: {}", pll_result.status_string());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", pll_result.status(), "reason", "Could not send request to disable PLL");
     return pll_result.status();
   }
   if (pll_result->is_error()) {
-    FDF_LOG(ERROR, "Send request to disable PLL error: %s",
+    fdf::error("Send request to disable PLL error: {}",
             zx_status_get_string(pll_result->error_value()));
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::StopSocPower exit", TRACE_SCOPE_PROCESS,
                   "status", pll_result->error_value(), "reason", "Could not disable PLL");
@@ -716,11 +718,11 @@ RingBufferServer::RingBufferServer(async_dispatcher_t* dispatcher, AudioComposit
 
 void RingBufferServer::OnRingBufferClosed(fidl::UnbindInfo info) {
   if (info.is_peer_closed()) {
-    FDF_LOG(INFO, "Client disconnected");
+    fdf::info("Client disconnected");
   } else if (!info.is_user_initiated()) {
     // Do not log canceled cases; these happen particularly frequently in certain test cases.
     if (info.status() != ZX_ERR_CANCELED) {
-      FDF_LOG(ERROR, "Client connection unbound: %s", info.status_string());
+      fdf::error("Client connection unbound: {}", info.status_string());
     }
   }
   ring_buffer_inspect().RecordDestructionTime(zx::clock::get_monotonic());
@@ -760,12 +762,12 @@ void RingBufferServer::GetVmo(
     GetVmoRequest& request,
     fidl::Server<fuchsia_hardware_audio::RingBuffer>::GetVmoCompleter::Sync& completer) {
   if (started_) {
-    FDF_LOG(ERROR, "GetVmo failed, ring buffer started");
+    fdf::error("GetVmo failed, ring buffer started");
     binding_.Close(ZX_ERR_BAD_STATE);
     return;
   }
   if (fetched_) {
-    FDF_LOG(ERROR, "GetVmo failed, VMO already retrieved");
+    fdf::error("GetVmo failed, VMO already retrieved");
     binding_.Close(ZX_ERR_BAD_STATE);
     return;
   }
@@ -776,13 +778,13 @@ void RingBufferServer::GetVmo(
       std::lcm(frame_size, engine_.device->GetBufferAlignment()));
   size_t out_frames = ring_buffer_size / frame_size;
   if (out_frames > std::numeric_limits<uint32_t>::max()) {
-    FDF_LOG(ERROR, "out frames too big: %zu", out_frames);
+    fdf::error("out frames too big: {}", out_frames);
     completer.Close(ZX_ERR_INTERNAL);
     return;
   }
   zx_status_t status = InitBuffer(ring_buffer_size);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to init buffer: %s", zx_status_get_string(status));
+    fdf::error("failed to init buffer: {}", zx_status_get_string(status));
     completer.Close(status);
     return;
   }
@@ -791,14 +793,14 @@ void RingBufferServer::GetVmo(
   zx::vmo buffer;
   status = ring_buffer_vmo_.duplicate(rights, &buffer);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "GetVmo failed, could not duplicate VMO: %s", zx_status_get_string(status));
+    fdf::error("GetVmo failed, could not duplicate VMO: {}", zx_status_get_string(status));
     completer.Close(status);
     return;
   }
 
   status = engine_.device->SetBuffer(pinned_ring_buffer_.region(0).phys_addr, ring_buffer_size);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to set buffer: %s", zx_status_get_string(status));
+    fdf::error("failed to set buffer: {}", zx_status_get_string(status));
     completer.Close(status);
     return;
   }
@@ -814,12 +816,12 @@ void RingBufferServer::GetVmo(
 void RingBufferServer::Start(StartCompleter::Sync& completer) {
   int64_t start_time = 0;
   if (started_) {
-    FDF_LOG(ERROR, "Could not start: already started");
+    fdf::error("Could not start: already started");
     binding_.Close(ZX_ERR_BAD_STATE);
     return;
   }
   if (!fetched_) {
-    FDF_LOG(ERROR, "Could not start: first, GetVmo must successfully complete");
+    fdf::error("Could not start: first, GetVmo must successfully complete");
     binding_.Close(ZX_ERR_BAD_STATE);
     return;
   }
@@ -851,12 +853,12 @@ void RingBufferServer::Start(StartCompleter::Sync& completer) {
 
 void RingBufferServer::Stop(StopCompleter::Sync& completer) {
   if (!fetched_) {
-    FDF_LOG(ERROR, "GetVmo must successfully complete before calling Start or Stop");
+    fdf::error("GetVmo must successfully complete before calling Start or Stop");
     completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
   if (!started_) {
-    FDF_LOG(DEBUG, "Stop called while stopped; this is allowed");
+    fdf::debug("Stop called while stopped; this is allowed");
   }
 
   notify_timer_.Cancel();
@@ -879,14 +881,14 @@ zx_status_t RingBufferServer::InitBuffer(size_t size) {
   zx_status_t status = zx_vmo_create_contiguous(owner_.bti().get(), vmo_size, 0,
                                                 ring_buffer_vmo_.reset_and_get_address());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to allocate ring buffer vmo: %s", zx_status_get_string(status));
+    fdf::error("failed to allocate ring buffer vmo: {}", zx_status_get_string(status));
     return status;
   }
 
   status =
       pinned_ring_buffer_.Pin(ring_buffer_vmo_, owner_.bti(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to pin ring buffer vmo: %s", zx_status_get_string(status));
+    fdf::error("failed to pin ring buffer vmo: {}", zx_status_get_string(status));
     return status;
   }
   return ZX_OK;
@@ -913,9 +915,9 @@ void RingBufferServer::WatchClockRecoveryPositionInfo(
   if (position_completer_) {
     // The client called WatchClockRecoveryPositionInfo when another hanging get was pending.
     // This is an error condition and hence we unbind the channel.
-    FDF_LOG(ERROR,
-            "WatchClockRecoveryPositionInfo was re-called while the previous call was still"
-            " pending");
+    fdf::error(
+        "WatchClockRecoveryPositionInfo was re-called while the previous call was still"
+        " pending");
     completer.Close(ZX_ERR_BAD_STATE);
   } else {
     // This completer is kept and responded in ProcessRingNotification.
@@ -934,7 +936,7 @@ void RingBufferServer::WatchDelayInfo(WatchDelayInfoCompleter::Sync& completer) 
   } else if (delay_completer_.completer) {
     // The client called WatchDelayInfo when another hanging get was pending.
     // This is an error condition and hence we unbind the channel.
-    FDF_LOG(ERROR, "WatchDelayInfo was re-called while the previous call was still pending");
+    fdf::error("WatchDelayInfo was re-called while the previous call was still pending");
     completer.Close(ZX_ERR_BAD_STATE);
   } else {
     // This completer is kept but never used since we are not updating the delay info.
@@ -951,9 +953,9 @@ void RingBufferServer::SetActiveChannels(
   // Check if bitmask activating channels go beyond the current number of channels.
   if (request.active_channels_bitmask() &
       ~((1 << engine_.ring_buffer_format.pcm_format().value().number_of_channels()) - 1)) {
-    FDF_LOG(ERROR, "Bitmask: 0x%lX activating channels beyond the current number of channels: %u",
-            request.active_channels_bitmask(),
-            engine_.ring_buffer_format.pcm_format().value().number_of_channels());
+    fdf::error("Bitmask: 0x{:X} activating channels beyond the current number of channels: {}",
+               request.active_channels_bitmask(),
+               engine_.ring_buffer_format.pcm_format().value().number_of_channels());
     TRACE_INSTANT("power-audio", "aml-g12-audio-composite::SetActiveChannels exit",
                   TRACE_SCOPE_PROCESS, "status", ZX_ERR_INVALID_ARGS, "reason",
                   "Bitmask out of range");
@@ -1001,8 +1003,8 @@ void RingBufferServer::SetActiveChannels(
 void RingBufferServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_audio::RingBuffer> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "RingBufferServer::handle_unknown_method (RingBuffer) ordinal %zu",
-          metadata.method_ordinal);
+  fdf::error("RingBufferServer::handle_unknown_method (RingBuffer) ordinal {}",
+             metadata.method_ordinal);
 }
 
 void AudioCompositeServer::GetElements(GetElementsCompleter::Sync& completer) {
@@ -1043,8 +1045,8 @@ void AudioCompositeServer::WatchElementState(WatchElementStateRequest& request,
                                              WatchElementStateCompleter::Sync& completer) {
   auto element_completer = element_completers_.find(request.processing_element_id());
   if (element_completer == element_completers_.end()) {
-    FDF_LOG(ERROR, "Unknown process element id (%lu) for WatchElementState",
-            request.processing_element_id());
+    fdf::error("Unknown process element id ({}) for WatchElementState",
+               request.processing_element_id());
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -1073,7 +1075,7 @@ void AudioCompositeServer::WatchElementState(WatchElementStateRequest& request,
   } else if (element.completer) {
     // The client called WatchElementState when another hanging-get was pending.
     // This is an error condition and hence we unbind the channel.
-    FDF_LOG(ERROR, "WatchElementState was re-called while the previous call was still pending");
+    fdf::error("WatchElementState was re-called while the previous call was still pending");
     completer.Close(ZX_ERR_BAD_STATE);
   } else {
     // This completer is kept but never used since all our ElementStates will never change.
@@ -1085,8 +1087,8 @@ void AudioCompositeServer::SetElementState(SetElementStateRequest& request,
                                            SetElementStateCompleter::Sync& completer) {
   auto element_completer = element_completers_.find(request.processing_element_id());
   if (element_completer == element_completers_.end()) {
-    FDF_LOG(ERROR, "Unknown process element id (%lu) for SetElementState",
-            request.processing_element_id());
+    fdf::error("Unknown process element id ({}) for SetElementState",
+               request.processing_element_id());
     // Return an error, but no need to close down the entire protocol channel.
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
@@ -1099,9 +1101,9 @@ void AudioCompositeServer::SetElementState(SetElementStateRequest& request,
   }
   // This driver does not expect or handle vendor_specific_data from clients.
   if (request.state().vendor_specific_data().has_value()) {
-    FDF_LOG(WARNING,
-            "SetElementState(%zu): ignoring %zu bytes of vendor_specific_data (unsupported)",
-            request.processing_element_id(), request.state().vendor_specific_data()->size());
+    fdf::warn(
+        "SetElementState({}): ignoring {} bytes of vendor_specific_data (unsupported)",
+        request.processing_element_id(), request.state().vendor_specific_data()->size());
   }
   // No field is acted upon, so if we get this far then we can declare success.
   completer.Reply(zx::ok());
@@ -1142,7 +1144,7 @@ void AudioCompositeServer::WatchTopology(WatchTopologyCompleter::Sync& completer
   } else if (topology_completer_.completer.has_value()) {
     // The client called WatchTopology when another hanging get was pending.
     // This is an error condition and hence we unbind the channel.
-    FDF_LOG(ERROR, "WatchTopology was re-called while the previous call was still pending");
+    fdf::error("WatchTopology was re-called while the previous call was still pending");
     completer.Close(ZX_ERR_BAD_STATE);
   } else {
     // This completer is kept but never used since we are not updating the topology.
@@ -1164,15 +1166,15 @@ void AudioCompositeServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<typename fuchsia_hardware_audio_signalprocessing::SignalProcessing>
         metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "AudioCompositeServer::handle_unknown_method (SignalProcessing) ordinal %zu",
-          metadata.method_ordinal);
+  fdf::error("AudioCompositeServer::handle_unknown_method (SignalProcessing) ordinal {}",
+             metadata.method_ordinal);
 }
 
 void AudioCompositeServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "AudioCompositeServer::handle_unknown_method (Composite) ordinal %zu",
-          metadata.method_ordinal);
+  fdf::error("AudioCompositeServer::handle_unknown_method (Composite) ordinal {}",
+             metadata.method_ordinal);
 }
 
 }  // namespace audio::aml_g12

@@ -61,8 +61,8 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
 void BufferTracker::RecordSubmission() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (submission_times_.size() >= max_buffer_count_.value_or(UINT_MAX)) {
-    FDF_LOG(ERROR, "Submission count (%lu) is more than or equal to max buffer count (%d).",
-            submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+    fdf::error("Submission count ({}) is more than or equal to max buffer count ({}).",
+               submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
     return;
   }
   auto submission_time = zx::clock::get_monotonic();
@@ -95,7 +95,7 @@ void BufferTracker::RecordCompletion() {
   std::lock_guard<std::mutex> lock(mutex_);
   auto completion_time = zx::clock::get_monotonic();
   if (submission_times_.empty()) {
-    FDF_LOG(ERROR, "No buffers submitted to this tracker yet.");
+    fdf::error("No buffers submitted to this tracker yet.");
     return;
   }
   if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
