@@ -13,11 +13,6 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/KhronosGroup/OpenCL-ICD-Loader
 	name = third_party/OpenCL-ICD-Loader
 	ignore = all
-[submodule "third_party/abseil-cpp"]
-	path = third_party/abseil-cpp
-	url = https://fuchsia.googlesource.com/third_party/abseil-cpp
-	name = third_party/abseil-cpp
-	ignore = all
 [submodule "third_party/android/device/generic/goldfish-opengl"]
 	path = third_party/android/device/generic/goldfish-opengl
 	url = https://fuchsia.googlesource.com/third_party/android/device/generic/goldfish-opengl
@@ -732,4 +727,9 @@
 	path = third_party/grpc/src
 	url = https://fuchsia.googlesource.com/third_party/grpc
 	name = third_party/grpc
+	ignore = all
+[submodule "third_party/abseil-cpp/src"]
+	path = third_party/abseil-cpp/src
+	url = https://fuchsia.googlesource.com/third_party/abseil-cpp
+	name = third_party/abseil-cpp
 	ignore = all
