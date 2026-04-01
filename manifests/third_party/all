@@ -17,7 +17,7 @@
              gerrithost="https://fuchsia-review.googlesource.com"
              revision="f19647824bd63c89ddbcad245f1b8635dbee7138"/>
     <project name="third_party/abseil-cpp"
-             path="third_party/abseil-cpp"
+             path="third_party/abseil-cpp/src"
              revision="4c2bfd70d75838de03952932b678645a81824c9a"
              remote="https://fuchsia.googlesource.com/third_party/abseil-cpp"/>
     <project name="third_party/acpica"
@@ -231,7 +231,7 @@
     <project name="third_party/grpc"
              path="third_party/grpc/src"
              remote="https://fuchsia.googlesource.com/third_party/grpc"
-             revision="238f990024610534849f5b461c1951807d470622"
+             revision="67b2cb6661bfd4cc69ed39dbfb5d40330bff723a"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/inih"
              path="third_party/inih"
@@ -442,7 +442,7 @@
     <project name="protobuf-gn"
              path="build/secondary/third_party/protobuf"
              remote="https://fuchsia.googlesource.com/protobuf-gn"
-             revision="56cf34aa4aac1d6e7556de7624ca721809c209a8"
+             revision="26d72c9e577dd3b0b915675df31fa07c30bb3744"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/github.com/wolever/parameterized"
              path="third_party/parameterized/src"

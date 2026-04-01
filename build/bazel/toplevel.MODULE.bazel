@@ -55,7 +55,7 @@ local_path_override(
 bazel_dep(name = "abseil-cpp", version = "head")
 local_path_override(
     module_name = "abseil-cpp",
-    path = "third_party/abseil-cpp",
+    path = "third_party/abseil-cpp/src",
 )
 
 bazel_dep(name = "emboss", version = "", repo_name = "com_google_emboss")

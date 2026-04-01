@@ -48,7 +48,7 @@ config("grpc_config") {
     "$source_root/third_party/upb",
     "$source_root/third_party/utf8_range",
     "$source_root/third_party/xxhash",
-    "//third_party/abseil-cpp",
+    "//third_party/abseil-cpp/src",
   ]
 
   defines = [

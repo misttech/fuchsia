@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_GPU_VP9_PICTURE_H_
-#define MEDIA_GPU_VP9_PICTURE_H_
+#ifndef SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_VP9_PICTURE_H_
+#define SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_VP9_PICTURE_H_
 
 #include <memory>
 #include <optional>  // Fuchsia change: include optional library
@@ -11,13 +11,11 @@
 #include "media/filters/vp9_parser.h"
 #include "media/gpu/codec_picture.h"
 // Fuchsia change: Remove libraries in favor of "chromium_utils.h"/"geometry.h"
-#include "media/video/video_encode_accelerator.h"
-//#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "chromium_utils.h"
 #include "geometry.h"
+#include "media/video/video_encode_accelerator.h"
 
 namespace media {
-
 
 class V4L2VP9Picture;
 class VaapiVP9Picture;
@@ -56,4 +54,4 @@ class MEDIA_GPU_EXPORT VP9Picture : public CodecPicture {
 
 }  // namespace media
 
-#endif  // MEDIA_GPU_VP9_PICTURE_H_
+#endif  // SRC_MEDIA_THIRD_PARTY_CHROMIUM_MEDIA_MEDIA_GPU_VP9_PICTURE_H_

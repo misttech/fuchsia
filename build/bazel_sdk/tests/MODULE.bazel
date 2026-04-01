@@ -30,7 +30,7 @@ local_path_override(
 bazel_dep(name = "abseil-cpp", version = "head")
 local_path_override(
     module_name = "abseil-cpp",
-    path = "{}/third_party/abseil-cpp".format(_FUCHSIA_SOURCE_ROOT),
+    path = "{}/third_party/abseil-cpp/src".format(_FUCHSIA_SOURCE_ROOT),
 )
 
 bazel_dep(name = "rules_fuchsia", version = "", repo_name = "rules_fuchsia")
