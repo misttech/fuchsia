@@ -534,6 +534,20 @@ pub enum ProvisioningType {
     Delegated,
 }
 
+impl ProvisioningType {
+    /// Whether the interface should be tracked in the network registry.
+    ///
+    /// Locally provisioned interfaces are tracked in the network registry because their
+    /// lifetime is managed by netcfg. Delegated interfaces are not tracked in the network
+    /// registry because their presence is communicated by the network-socket-proxy service.
+    pub fn track_in_network_registry(&self) -> bool {
+        match self {
+            ProvisioningType::Local => true,
+            ProvisioningType::Delegated => false,
+        }
+    }
+}
+
 /// Where the netstack managed routes should be stored.
 ///
 /// Mirrors [`fnet_interfaces_admin::NetstackManagedRoutesDesignation`].

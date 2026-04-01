@@ -34,22 +34,27 @@ use fuchsia_fs::directory as fvfs_watcher;
 
 use crate::network::PropertyUpdate;
 
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
-    fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
-    fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_masquerade as fnet_masquerade,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_name as fnet_name,
-    fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_resources as fnet_resources,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_stack as fnet_stack,
-    fidl_fuchsia_net_virtualization as fnet_virtualization, fuchsia_async as fasync,
-};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as fnet_dhcp;
+use fidl_fuchsia_net_dhcp_ext as fnet_dhcp_ext;
+use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_masquerade as fnet_masquerade;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_stack as fnet_stack;
+use fidl_fuchsia_net_virtualization as fnet_virtualization;
+use fuchsia_async as fasync;
 
 use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
@@ -588,6 +593,9 @@ impl InterfaceState {
             return Ok(());
         }
 
+        // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
+        // state with socket-proxy once the source-of-truth registry exists
+        // solely within netcfg.
         // When the socketproxy is enabled, communicate the presence of the
         // new network to the socketproxy.
         if let Some(state) = socket_proxy_state {
@@ -2125,6 +2133,9 @@ impl<'a> NetCfg<'a> {
                             .await?;
                         }
 
+                        // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
+                        // state with socket-proxy once the source-of-truth registry exists
+                        // solely within netcfg.
                         // When the socket proxy is present, communicate whether the
                         // interface has gained or lost candidacy.
                         if let Some(state) = socket_proxy_state {
@@ -2300,22 +2311,28 @@ impl<'a> NetCfg<'a> {
                     state: (),
                 },
             ) => {
-                let network_id = network::NetworkId::fuchsia(*id);
-                netpol_networks_service
-                    .update(network::PropertyUpdate::ChangeNetwork(
-                        network_id,
-                        network::NetworkUpdate::Remove,
-                    ))
-                    .await;
-                netpol_networks_service.remove_network(network_id).await;
                 match interface_states.remove(&(*id).into()) {
                     // An interface netcfg was not responsible for configuring was removed, do
                     // nothing.
                     None => Ok(()),
-                    Some(InterfaceState { config, control, .. }) => {
-                        // When the socket proxy is present, communicate the
-                        // removal of the Fuchsia network.
+                    Some(InterfaceState { config, control, provisioning, .. }) => {
+                        // TODO(https://fxbug.dev/498654191): Add Locally provisioned networks to
+                        // the networks service even when socket-proxy is absent.
                         if let Some(state) = socket_proxy_state {
+                            if provisioning.track_in_network_registry() {
+                                let network_id = network::NetworkId::fuchsia(*id);
+                                netpol_networks_service
+                                    .update(network::PropertyUpdate::ChangeNetwork(
+                                        network_id,
+                                        network::NetworkUpdate::Remove,
+                                    ))
+                                    .await;
+                                netpol_networks_service.remove_network(network_id).await;
+                            }
+
+                            // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
+                            // state with socket-proxy once the source-of-truth registry exists
+                            // solely within netcfg.
                             state.handle_interface_no_longer_candidate(InterfaceId(*id)).await;
                         }
                         match config {
@@ -2798,18 +2815,6 @@ impl<'a> NetCfg<'a> {
                     id
                 )));
             }
-            self.netpol_networks_service
-                .update(PropertyUpdate::ChangeNetwork(
-                    network::NetworkId::fuchsia(interface_id),
-                    network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
-                        added: true,
-                        marks: None,
-                        // TODO(https://fxbug.dev/487288886): Set the connectivity state for
-                        // Fuchsia networks.
-                        connectivity_state: None,
-                    }),
-                ))
-                .await;
             let InterfaceState { control, .. } = match self.interface_states.entry(interface_id) {
                 Entry::Occupied(entry) => {
                     panic!(
@@ -2860,18 +2865,6 @@ impl<'a> NetCfg<'a> {
                     );
                 }
                 Entry::Vacant(entry) => {
-                    self.netpol_networks_service
-                        .update(PropertyUpdate::ChangeNetwork(
-                            network::NetworkId::fuchsia(interface_id),
-                            network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
-                                added: true,
-                                marks: None,
-                                // TODO(https://fxbug.dev/487288886): Set the connectivity state for
-                                // Fuchsia networks.
-                                connectivity_state: None,
-                            }),
-                        ))
-                        .await;
                     let dhcpv6_pd_config = if !self
                         .allowed_upstream_device_classes
                         .contains(&device_info.device_class)
@@ -2931,9 +2924,25 @@ impl<'a> NetCfg<'a> {
                     .map_err(errors::Error::NonFatal)?;
             }
 
-            if self.socket_proxy_state.is_some()
-                && provisioning_type == interface::ProvisioningType::Local
-            {
+            // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
+            // state with socket-proxy once the source-of-truth registry exists
+            // solely within netcfg.
+            // TODO(https://fxbug.dev/498654191): Add Locally provisioned networks to
+            // the networks service even when socket-proxy is absent.
+            if self.socket_proxy_state.is_some() && provisioning_type.track_in_network_registry() {
+                self.netpol_networks_service
+                    .update(PropertyUpdate::ChangeNetwork(
+                        network::NetworkId::fuchsia(interface_id),
+                        network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
+                            added: true,
+                            marks: None,
+                            // TODO(https://fxbug.dev/487288886): Set the connectivity state for
+                            // Fuchsia networks.
+                            connectivity_state: None,
+                        }),
+                    ))
+                    .await;
+
                 if self.locally_provisioned_network_rule_set.is_none() {
                     self.locally_provisioned_network_rule_set = futures::try_join!(
                         install_locally_provisioned_network_rule_set::<Ipv4>(),
@@ -3950,12 +3959,11 @@ async fn install_locally_provisioned_network_rule_set<
 
 #[cfg(test)]
 mod tests {
+    use fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext;
     use fidl_fuchsia_net_ext::FromExt as _;
-    use {
-        fidl_fuchsia_net_dhcpv6_ext as fnet_dhcpv6_ext, fidl_fuchsia_net_routes as fnet_routes,
-        fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-        fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-    };
+    use fidl_fuchsia_net_routes as fnet_routes;
+    use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+    use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
     use assert_matches::assert_matches;
     use futures::future::{self, FutureExt as _};
