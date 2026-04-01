@@ -180,13 +180,6 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
         continue;
       }
 
-      if (!thread.restricted_state_addr.has_value()) {
-        if (zx::result<> res = RefreshMappings(target); res.is_error()) {
-          FX_PLOGS(WARNING, res.status_value()) << "Failed to refresh mappings for thread: " << tid;
-          return zx::ok();
-        }
-      }
-
       // Suspend thread
       zx::suspend_token suspend_token;
       status = thread.handle.suspend(&suspend_token);
@@ -195,13 +188,53 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
         continue;
       }
 
-      zx_signals_t signals = ZX_THREAD_SUSPENDED | ZX_THREAD_TERMINATED;
-      zx_signals_t observed = 0;
-      status = thread.handle.wait_one(signals, zx::deadline_after(zx::msec(100)), &observed);
-      if (status != ZX_OK || (observed & ZX_THREAD_TERMINATED)) {
+      // IPI Profiling Target States and Sampling Strategy:
+      //
+      // 1. Userspace: IPI executes immediately. (Action: SAMPLE)
+      // 2. Kernel (Interruptible): IPI executes immediately. (Action: SAMPLE)
+      // 3. Kernel (Uninterruptible): IPI execution delayed until interrupts are
+      //    re-enabled. Captured to reflect heavy kernel workloads. (Action: SAMPLE)
+      // 4. Context Switch / Blocking: Thread is yielding the CPU. We only sample
+      //    if we catch the exact state entering the block. Otherwise, we skip
+      //    to avoid capturing off-CPU behavior. (Action: CONDITIONAL SKIP)
+      //
+      // Poll until the thread handles the suspend request.
+      // We yield briefly if it is still running, and break immediately if it blocks.
+      // The timeout is kept short (2ms) to avoid blocking the dispatcher for too long.
+      zx::time max_loop_dur = zx::clock::get_monotonic() + zx::msec(2);
+      bool thread_suspended = false;
+
+      while (zx::clock::get_monotonic() < max_loop_dur) {
+        zx_info_thread_t info;
+        status = thread.handle.get_info(ZX_INFO_THREAD, &info, sizeof(info), nullptr, nullptr);
+        if (status != ZX_OK) {
+          break;
+        }
+        if (info.state == ZX_THREAD_STATE_SUSPENDED) {
+          thread_suspended = true;
+          break;
+        }
+        if (info.state == ZX_THREAD_STATE_RUNNING) {
+          // Wait for the thread to suspend, or time out after 100µs.
+          // This is edge-triggered, so it returns immediately if the signal is asserted.
+          zx_signals_t observed;
+          status = thread.handle.wait_one(ZX_THREAD_SUSPENDED, zx::deadline_after(zx::usec(100)),
+                                          &observed);
+          if (status == ZX_OK) {
+            thread_suspended = true;
+            break;
+          }
+        } else {
+          // Thread blocked before we could sample it, skip
+          break;
+        }
+      }
+
+      zx::ticks tick_suspended = zx::ticks::now();
+
+      if (!thread_suspended) {
         continue;
       }
-      zx::ticks tick_suspended = zx::ticks::now();
 
       // Get registers
       zx_thread_state_general_regs_t regs;
