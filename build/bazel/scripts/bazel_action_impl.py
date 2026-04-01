@@ -75,6 +75,30 @@ class BazelActionError(Exception):
     """A Bazel action error was encountered."""
 
 
+class BazelActionScriptError(BazelActionError):
+    """Errors detected by the Bazel action script, not Bazel itself."""
+
+
+class SourceFilesNotFoundError(BazelActionScriptError):
+    """No source files found for a target."""
+
+
+class FileOutputConfigError(BazelActionScriptError):
+    """Invalid configuration for file outputs."""
+
+
+class DirectoryOutputConfigError(BazelActionScriptError):
+    """Invalid configuration for directory outputs."""
+
+
+class MissingOutputDirectoryError(BazelActionScriptError):
+    """Missing output directory after build."""
+
+
+class MissingTrackedFileError(BazelActionScriptError):
+    """Missing tracked file inside output directory."""
+
+
 @dataclasses.dataclass
 class _InputFileGenQueryInfo(object):
     """Class for holding info about the genqueries generated for each target."""
@@ -628,7 +652,7 @@ class BazelActionRunner(object):
             + configured_args,
         )
         if bazel_source_files is None:
-            raise BazelActionError("No source files found.")
+            raise SourceFilesNotFoundError("No source files found.")
 
         if _DEBUG:
             debug("SOURCE FILES:\n%s\n" % "\n".join(bazel_source_files))
@@ -1159,7 +1183,7 @@ class _BazelOutputCopier(object):
             file_copies.append((src_path, dst_path))
 
         if unwanted_dirs:
-            raise BazelActionError(
+            raise FileOutputConfigError(
                 "\nDirectories are not allowed in --file-outputs Bazel paths, got directories:\n\n%s\n"
                 % "\n".join(str(d) for d in unwanted_dirs)
             )
@@ -1230,19 +1254,19 @@ class _BazelOutputCopier(object):
             )
 
         if missing_directories:
-            raise BazelActionError(
+            raise MissingOutputDirectoryError(
                 "\nError: Directory provided to --directory-outputs is missing, got:\n\n%s\n"
                 % "\n".join(str(d) for d in missing_directories)
             )
 
         if unwanted_files:
-            raise BazelActionError(
+            raise DirectoryOutputConfigError(
                 "\nError: Non-directories are not allowed in --directory-outputs Bazel path, got:\n\n%s\n"
                 % "\n".join(str(f) for f in unwanted_files)
             )
 
         if invalid_tracked_files:
-            raise BazelActionError(
+            raise MissingTrackedFileError(
                 "\nError: Missing or non-directory tracked files from --directory-outputs Bazel path:\n\n%s\n"
                 % "\n".join(str(f) for f in invalid_tracked_files)
             )

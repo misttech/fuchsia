@@ -468,6 +468,9 @@ def main() -> int:
             ),
             time_profile=time_profile,
         )
+    except bazel_action_impl.BazelActionScriptError as e:
+        print(e, file=sys.stderr)
+        return 1
     except bazel_action_impl.BazelActionError:
         return 1
 
@@ -581,6 +584,9 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         rc = main()
+    except bazel_action_impl.BazelActionScriptError as e:
+        print(e, file=sys.stderr)
+        rc = 1
     except bazel_action_impl.BazelActionError:
         # Convert these exceptions into an error rc instead of printing a stack trace.
         rc = 1
