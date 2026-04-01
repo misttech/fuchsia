@@ -21,7 +21,6 @@ source_set("virtual-bus-tester-function-common") {
     ":usb-virtual-bus-tester-function-bind",
     "..:fuchsia.hardware.usb.virtualbustest_cpp",
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/driver/compat/cpp",
@@ -34,7 +33,10 @@ fuchsia_cc_driver("virtual-bus-tester-function-banjo-driver") {
   testonly = true
   output_name = "virtual-bus-tester-function-banjo"
   sources = [ "peripheral-banjo.cc" ]
-  deps = [ ":virtual-bus-tester-function-common" ]
+  deps = [
+    ":virtual-bus-tester-function-common",
+    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
+  ]
 }
 
 fuchsia_driver_component("virtual-bus-tester-function-banjo") {

@@ -69,7 +69,6 @@ test("usb-cdc-function-test") {
   sources = [ "usb-cdc-function-test.cc" ]
   deps = [
     ":usb-cdc-function-common",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp_mock",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp_testing",
     "//sdk/fidl/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_cpp",
