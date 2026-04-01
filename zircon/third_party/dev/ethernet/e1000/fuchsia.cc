@@ -36,6 +36,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/defer.h>
@@ -121,7 +122,7 @@ class CompleteTxTransaction {
     tx_results_.set_size(count_);
     if (fidl::OneWayStatus status = adapter_.ifc.buffer(arena_)->CompleteTx(tx_results_);
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to complete TX: {}", status.FormatDescription());
     }
     count_ = 0;
   }
@@ -164,7 +165,7 @@ class CompleteRxTransaction {
     rx_buffers_.set_size(count_);
     if (fidl::OneWayStatus status = adapter_.ifc.buffer(arena_)->CompleteRx(rx_buffers_);
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to complete RX: {}", status.FormatDescription());
     }
     count_ = 0;
   }
@@ -184,7 +185,7 @@ zx::result<> IdentifyHardware(struct e1000_pci* pci, struct e1000_hw& hw) {
   /* Save off the information about this board */
   pci_device_info_t pci_info{};
   if (zx_status_t status = e1000_pci_get_device_info(pci, &pci_info); status != ZX_OK) {
-    FDF_LOG(ERROR, "Could not get PCI device info: %s", zx_status_get_string(status));
+    fdf::error("Could not get PCI device info: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -199,7 +200,7 @@ zx::result<> IdentifyHardware(struct e1000_pci* pci, struct e1000_hw& hw) {
 
   /* Do Shared Code Init and Setup */
   if (e1000_set_mac_type(&hw)) {
-    FDF_LOG(ERROR, "e1000_set_mac_type init failure");
+    fdf::error("e1000_set_mac_type init failure");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -216,7 +217,7 @@ adapter* Driver::Adapter() { return device_->Adapter(); }
 
 zx::result<> Driver::Start() {
   if (device_) {
-    FDF_LOG(ERROR, "Driver already started");
+    fdf::error("Driver already started");
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
   std::unique_ptr<adapter> adapter = std::make_unique<struct adapter>();
@@ -227,55 +228,55 @@ zx::result<> Driver::Start() {
 
   if (zx::result result = compat_server->Initialize(incoming(), outgoing(), node_name(), name());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize compatibility server: %s", result.status_string());
+    fdf::error("Failed to initialize compatibility server: {}", result);
     return result.take_error();
   }
 
   zx::result pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to PCI device: %s", pci_client_end.status_string());
+    fdf::error("Failed to connect to PCI device: {}", pci_client_end);
     return pci_client_end.take_error();
   }
 
   if (zx_status_t status = e1000_pci_create(std::move(pci_client_end.value()), &adapter->osdep.pci);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to create e1000 PCI struct: %s", zx_status_get_string(status));
+    fdf::error("Failed to create e1000 PCI struct: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   struct e1000_pci* pci = adapter->osdep.pci;
 
   if (zx_status_t status = e1000_pci_set_bus_mastering(pci, true); status != ZX_OK) {
-    FDF_LOG(ERROR, "cannot enable bus mastering %d", status);
+    fdf::error("cannot enable bus mastering {}", status);
     return zx::error(status);
   }
 
   if (zx_status_t status = e1000_pci_get_bti(pci, 0, adapter->bti.reset_and_get_address());
       status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to get BTI");
+    fdf::error("failed to get BTI");
     return zx::error(status);
   }
 
   // Request 1 interrupt of any mode.
   pci_interrupt_mode_t irq_mode = PCI_INTERRUPT_MODE_DISABLED;
   if (zx_status_t status = e1000_pci_configure_interrupt_mode(pci, 1, &irq_mode); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to configure irqs");
+    fdf::error("failed to configure irqs");
     return zx::error(status);
   }
   adapter->irq_mode = fuchsia_hardware_pci::InterruptMode(irq_mode);
   if (adapter->irq_mode.IsUnknown()) {
-    FDF_LOG(ERROR, "unknown interrupt mode: %u", irq_mode);
+    fdf::error("unknown interrupt mode: {}", irq_mode);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (zx_status_t status = e1000_pci_map_interrupt(pci, 0, adapter->irq.reset_and_get_address());
       status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to map irq");
+    fdf::error("failed to map irq");
     return zx::error(status);
   }
 
   if (zx::result<> result = IdentifyHardware(pci, adapter->hw); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to identify hardware: %s", result.status_string());
+    fdf::error("Failed to identify hardware: {}", result);
     return result;
   }
 
@@ -340,7 +341,7 @@ void Device<RxDescriptor>::HandleIrq(async_dispatcher_t* dispatcher, async::IrqB
                                      zx_status_t status, const zx_packet_interrupt_t* interrupt) {
   struct e1000_hw* hw = &adapter_->hw;
   if (status != ZX_OK) [[unlikely]] {
-    FDF_LOG(ERROR, "irq wait failed? %s", zx_status_get_string(status));
+    fdf::error("irq wait failed? {}", zx_status_get_string(status));
     return;
   }
 
@@ -348,7 +349,7 @@ void Device<RxDescriptor>::HandleIrq(async_dispatcher_t* dispatcher, async::IrqB
     adapter_->irq.ack();
     if (adapter_->irq_mode == fuchsia_hardware_pci::InterruptMode::kLegacy) {
       if (zx_status_t status = e1000_pci_ack_interrupt(adapter_->osdep.pci); status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to ack interrupt: %s", zx_status_get_string(status));
+        fdf::error("Failed to ack interrupt: {}", zx_status_get_string(status));
       }
     }
   });
@@ -506,12 +507,12 @@ void Device<RxDescriptor>::UpdateOnlineStatus(bool perform_reset) {
 
     online_ = true;
 
-    FDF_LOG(INFO, "Link is up %d Mbps %s", link_speed,
-            ((link_duplex == FULL_DUPLEX) ? "Full Duplex" : "Half Duplex"));
+    fdf::info("Link is up {} Mbps {}", link_speed,
+              ((link_duplex == FULL_DUPLEX) ? "Full Duplex" : "Half Duplex"));
 
     SendOnlineStatus(true);
   } else if (!link_check && online_) {
-    FDF_LOG(INFO, "Link is down");
+    fdf::info("Link is down");
     online_ = false;
     SendOnlineStatus(false);
     if (perform_reset) {
@@ -556,7 +557,7 @@ void Device<RxDescriptor>::SendOnlineStatus(bool online) {
   if (fidl::OneWayStatus status =
           adapter_->ifc.buffer(arena)->PortStatusChanged(kPortId, builder.Build());
       !status.ok()) {
-    FDF_LOG(ERROR, "Failed to update port status: %s", status.FormatDescription().c_str());
+    fdf::error("Failed to update port status: {}", status.FormatDescription());
     return;
   }
 }
@@ -566,7 +567,7 @@ zx::result<> Device<RxDescriptor>::AllocatePciResources() {
   if (zx_status_t status = e1000_pci_map_bar_buffer(
           adapter_->osdep.pci, 0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &adapter_->bar0_mmio);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "cannot map io %s", zx_status_get_string(status));
+    fdf::error("cannot map io {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -595,7 +596,7 @@ zx::result<> Device<RxDescriptor>::AllocatePciResources() {
     }
 
     if (!found_io_bar) {
-      FDF_LOG(ERROR, "Unable to locate IO BAR");
+      fdf::error("Unable to locate IO BAR");
       return zx::error(ZX_ERR_IO_NOT_PRESENT);
     }
   }
@@ -612,7 +613,7 @@ zx::result<> Device<RxDescriptor>::SetupDescriptors() {
   if (zx_status_t status = io_buffer_init(&adapter_->buffer, adapter_->bti.get(),
                                           descriptor_buffer_size, IO_BUFFER_RW | IO_BUFFER_CONTIG);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "cannot alloc io-buffer %d", status);
+    fdf::error("cannot alloc io-buffer {}", status);
     return zx::error(status);
   }
 
@@ -664,14 +665,14 @@ zx::result<> Device<RxDescriptor>::Start() {
     vmo_store_ = std::make_unique<VmoStore>(options);
 
     if (zx_status_t status = vmo_store_->Reserve(netdriver::wire::kMaxVmos); status != ZX_OK) {
-      FDF_LOG(ERROR, "failed to reserve the capacity of VmoStore to max VMOs (%u): %s",
-              netdriver::wire::kMaxVmos, zx_status_get_string(status));
+      fdf::error("failed to reserve the capacity of VmoStore to max VMOs ({}): {}",
+                 netdriver::wire::kMaxVmos, zx_status_get_string(status));
       return zx::error(status);
     }
   }
 
   if (zx::result<> result = AllocatePciResources(); result.is_error()) {
-    FDF_LOG(ERROR, "Allocation of PCI resources failed: %s", result.status_string());
+    fdf::error("Allocation of PCI resources failed: {}", result);
     return result;
   }
 
@@ -690,7 +691,7 @@ zx::result<> Device<RxDescriptor>::Start() {
             e1000_pci_map_bar_buffer(adapter_->osdep.pci, EM_BAR_TYPE_FLASH / 4,
                                      ZX_CACHE_POLICY_UNCACHED_DEVICE, &adapter_->flash_mmio);
         status != ZX_OK) {
-      FDF_LOG(ERROR, "Mapping of Flash failed");
+      fdf::error("Mapping of Flash failed");
       return zx::error(status);
     }
     /* This is used in the shared code */
@@ -709,7 +710,7 @@ zx::result<> Device<RxDescriptor>::Start() {
 
   s32 err = e1000_setup_init_funcs(hw, TRUE);
   if (err) {
-    FDF_LOG(ERROR, "Setup of Shared code failed, error %d", err);
+    fdf::error("Setup of Shared code failed, error {}", err);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -753,14 +754,14 @@ zx::result<> Device<RxDescriptor>::Start() {
     ** if it fails a second time its a real issue.
     */
     if (e1000_validate_nvm_checksum(hw) < 0) {
-      FDF_LOG(ERROR, "The EEPROM Checksum Is Not Valid");
+      fdf::error("The EEPROM Checksum Is Not Valid");
       return zx::error(ZX_ERR_BAD_STATE);
     }
   }
 
   /* Copy the permanent MAC address out of the EEPROM */
   if (e1000_read_mac_addr(hw) < 0) {
-    FDF_LOG(ERROR, "EEPROM read error while reading MAC address");
+    fdf::error("EEPROM read error while reading MAC address");
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -784,18 +785,18 @@ zx::result<> Device<RxDescriptor>::Start() {
   });
 
   if (zx::result result = SetupDescriptors(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to set up descriptors: %s", result.status_string());
+    fdf::error("Failed to set up descriptors: {}", result);
     return result.take_error();
   }
 
   if (zx::result<> result = AddNetworkDevice(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add network device: %s", result.status_string());
+    fdf::error("Failed to add network device: {}", result);
     return result.take_error();
   }
 
   irq_handler_.set_object(adapter_->irq.get());
   if (zx_status_t status = irq_handler_.Begin(dispatcher()); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to begin IRQ handling: %s", zx_status_get_string(status));
+    fdf::error("failed to begin IRQ handling: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -1093,7 +1094,7 @@ zx::result<> Device<RxDescriptor>::AddNetworkDevice() {
   auto netdev_dispatcher =
       fdf::UnsynchronizedDispatcher::Create({}, "e1000-netdev", [](fdf_dispatcher_t*) {});
   if (netdev_dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create netdev dispatcher: %s", netdev_dispatcher.status_string());
+    fdf::error("Failed to create netdev dispatcher: {}", netdev_dispatcher);
     return netdev_dispatcher.take_error();
   }
   netdev_dispatcher_ = std::move(netdev_dispatcher.value());
@@ -1105,8 +1106,7 @@ zx::result<> Device<RxDescriptor>::AddNetworkDevice() {
 
   if (zx::result result = outgoing()->template AddService<netdriver::Service>(std::move(handler));
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add network device service to outgoing directory: %s",
-            result.status_string());
+    fdf::error("Failed to add network device service to outgoing directory: {}", result);
     return result.take_error();
   }
 
@@ -1121,14 +1121,14 @@ zx::result<> Device<RxDescriptor>::AddNetworkDevice() {
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create node controller endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create node controller endpoints: {}", endpoints);
     return endpoints.take_error();
   }
 
   if (fidl::WireResult result =
           fidl::WireCall(node())->AddChild(args, std::move(endpoints->server), {});
       !result.ok()) {
-    FDF_LOG(ERROR, "Failed to add network device child: %s", result.FormatDescription().c_str());
+    fdf::error("Failed to add network device child: {}", result.FormatDescription());
     return zx::error(result.status());
   }
 
@@ -1144,7 +1144,7 @@ void Device<RxDescriptor>::Init(netdriver::wire::NetworkDeviceImplInitRequest* r
 
   auto endpoints = fdf::CreateEndpoints<netdriver::NetworkPort>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create network port endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create network port endpoints: {}", endpoints);
     completer.buffer(arena).Reply(endpoints.status_value());
     return;
   }
@@ -1156,7 +1156,7 @@ void Device<RxDescriptor>::Init(netdriver::wire::NetworkDeviceImplInitRequest* r
                 fdf::WireUnownedResult<netdriver::NetworkDeviceIfc::AddPort>& result) mutable {
         fdf::Arena arena(0u);
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to add port: %s", result.FormatDescription().c_str());
+          fdf::error("Failed to add port: {}", result.FormatDescription());
         }
         completer.buffer(arena).Reply(result.status());
       });
@@ -1305,7 +1305,7 @@ void Device<RxDescriptor>::PrepareVmo(netdriver::wire::NetworkDeviceImplPrepareV
   request->vmo.get_size(&size);
   if (zx_status_t status = vmo_store_->RegisterWithKey(request->id, std::move(request->vmo));
       status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to register VMO %u: %s", request->id, zx_status_get_string(status));
+    fdf::error("Failed to register VMO {}: {}", request->id, zx_status_get_string(status));
     completer.buffer(arena).Reply(status);
     return;
   }
@@ -1318,7 +1318,7 @@ void Device<RxDescriptor>::ReleaseVmo(netdriver::wire::NetworkDeviceImplReleaseV
   fbl::AutoLock vmo_lock(&vmo_lock_);
   zx::result<zx::vmo> status = vmo_store_->Unregister(request->id);
   if (status.status_value() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to unregister VMO %u: %s", request->id, status.status_string());
+    fdf::error("Failed to unregister VMO {}: {}", request->id, status);
   }
   completer.buffer(arena).Reply();
 }
@@ -1359,7 +1359,7 @@ template <typename RxDescriptor>
 void Device<RxDescriptor>::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
   zx::result endpoints = fdf::CreateEndpoints<netdriver::MacAddr>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create MacAddr endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create MacAddr endpoints: {}", endpoints);
     completer.Close(endpoints.error_value());
     return;
   }
