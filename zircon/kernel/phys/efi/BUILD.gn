@@ -88,9 +88,14 @@ if (current_toolchain == default_toolchain) {
       "-Wl,/entry:EfiMain",
 
       # There are no toolchain-provided libraries that can be used with EFI.
-      "-noprofilelib",
       "-Wl,/nodefaultlib",
     ]
+
+    # We need -noprofilelib in coverage builds to prevent the toolchain from
+    # linking profile runtimes that don't exist for EFI.
+    if (is_coverage) {
+      ldflags += [ "-noprofilelib" ]
+    }
 
     deps = [
       "//zircon/kernel/phys:ubsan-runtime",
@@ -192,6 +197,7 @@ if (is_efi) {
       "//sdk/lib/fit",
       "//zircon/kernel/lib/efi",
     ]
+
     if (is_kernel) {
       public_deps += [
         "//zircon/kernel/lib/ktl",
