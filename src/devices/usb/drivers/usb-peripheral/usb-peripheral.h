@@ -187,8 +187,32 @@ class UsbPeripheral : public fdf::DriverBase,
   zx_status_t DeviceStateChanged();
 
  private:
+  DISALLOW_COPY_ASSIGN_AND_MOVE(UsbPeripheral);
+
   // Considered part of the private impl.
   friend class UsbDciInterfaceServer;
+
+  // Wrapper for Callbacks that must be invoked without holding a specific lock to prevent
+  // deadlocks.
+  class UnlockedCallback {
+   public:
+    UnlockedCallback(fit::callback<void()> cb, fbl::Mutex& lock)
+        : cb_(std::move(cb)), lock_(&lock) {}
+    UnlockedCallback() = default;
+
+    // Call the callback ensuring the associated lock is not held.
+    void operator()() __TA_EXCLUDES(*lock_) {
+      if (cb_) {
+        cb_();
+      }
+    }
+
+    explicit operator bool() const { return !!cb_; }
+
+   private:
+    fit::callback<void()> cb_;
+    fbl::Mutex* lock_ = nullptr;
+  };
 
   // For the purposes of banjo->FIDL migration. Once banjo is ripped out of the driver, the logic
   // here can be folded into the FIDL endpoint implementation and calling code.
@@ -200,8 +224,6 @@ class UsbPeripheral : public fdf::DriverBase,
 
   zx_status_t StartController();
   zx_status_t StopController();
-
-  DISALLOW_COPY_ASSIGN_AND_MOVE(UsbPeripheral);
 
   // For mapping b_endpoint_address value to/from index in range 0 - 31.
   static inline uint8_t EpAddressToIndex(uint8_t addr) {
@@ -215,6 +237,8 @@ class UsbPeripheral : public fdf::DriverBase,
   zx::result<size_t> AddFunction(UsbConfiguration& config, FunctionDescriptor desc);
   // Begins the process of clearing the functions.
   void ClearFunctions();
+  void RequestFunctionsRemoval(const std::vector<UsbFunction*>& functions) __TA_EXCLUDES(lock_);
+
   zx::result<std::string> GetSerialNumber();
   zx_status_t DeviceStateChangedLocked() __TA_REQUIRES(lock_);
   zx_status_t AddFunctionDevices() __TA_REQUIRES(lock_);
@@ -278,6 +302,8 @@ class UsbPeripheral : public fdf::DriverBase,
   bool set_interface_in_init_ __TA_GUARDED(lock_) = false;
   // Number of functions left to clear.
   size_t num_functions_to_clear_ __TA_GUARDED(lock_) = 0;
+  // List of functions that are in the process of being removed.
+  std::vector<std::shared_ptr<UsbFunction>> tearing_down_functions_ __TA_GUARDED(lock_);
   // True if we are connected to a host,
   bool connected_ __TA_GUARDED(lock_) = false;
   // True if we are shutting down/clearing functions
@@ -307,9 +333,14 @@ class UsbPeripheral : public fdf::DriverBase,
   // If the queue is already empty, the callback is called immediately.
   void WaitForPendingRequests(fit::callback<void()> callback) __TA_EXCLUDES(pending_requests_lock_);
 
+  // Wait for all functions to be cleared. Call the callback when all functions are gone.
+  // If no functions are pending clearance, the callback is called immediately.
+  void WaitForFunctionsCleared(fit::callback<void()> callback) __TA_EXCLUDES(lock_);
+
   fbl::Mutex pending_requests_lock_;
   usb::BorrowedRequestList<void> pending_requests_ __TA_GUARDED(pending_requests_lock_);
-  fit::callback<void()> on_all_pending_requests_complete_ __TA_GUARDED(pending_requests_lock_);
+  UnlockedCallback on_all_pending_requests_complete_ __TA_GUARDED(pending_requests_lock_);
+  std::vector<UnlockedCallback> on_all_functions_cleared_ __TA_GUARDED(lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
 

@@ -25,6 +25,8 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
                                    const std::shared_ptr<fdf::Namespace>& incoming,
                                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing) {
   TRACE_DURATION("usb-peripheral", __func__);
+  outgoing_ = outgoing;
+  child_node_name_ = child_node_name;
   if (child_.is_valid()) {
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
@@ -121,8 +123,57 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
     fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
-  child_ = std::move(child.value());
+  child_.Bind(std::move(child.value()), dispatcher_,
+              std::make_unique<NodeControllerEventHandler>(this));
+
   return zx::ok();
+}
+
+UsbFunction::~UsbFunction() {
+  if (deconfigure_completer_.has_value()) {
+    deconfigure_completer_->Reply(fit::ok());
+    deconfigure_completer_.reset();
+  }
+
+  if (outgoing_ && !child_node_name_.empty()) {
+    // We explicitly remove the child node and its associated services here to ensure
+    // that they are scrubbed before the UsbFunction is destroyed. This prevents
+    // resource name collisions if the driver re-initializes new functions without
+    // a full driver restart (e.g. during a ClearFunctions/SetConfiguration cycle).
+    // This also ensures teardown synchronization in the parent, keeping the system
+    // clean by the time the parent's completion callbacks execute.
+    fdf::info("UsbFunction destructor: cleaning up child {}", child_node_name_);
+    if (zx::result result =
+            outgoing_->RemoveService<fuchsia_hardware_usb_function::UsbFunctionService>(
+                child_node_name_);
+        result.is_error()) {
+      fdf::warn("Failed to remove usb-function service for {}: {}", child_node_name_, result);
+    }
+    if (mac_address_metadata_server_) {
+      if (zx::result result = outgoing_->RemoveService(
+              fuchsia_boot_metadata::MacAddressMetadata::kSerializableName, child_node_name_);
+          result.is_error()) {
+        fdf::warn("Failed to remove mac address metadata service for {}: {}", child_node_name_,
+                  result);
+      }
+    }
+    if (serial_number_metadata_server_) {
+      if (zx::result result = outgoing_->RemoveService(
+              fuchsia_boot_metadata::SerialNumberMetadata::kSerializableName, child_node_name_);
+          result.is_error()) {
+        fdf::warn("Failed to remove serial number metadata service for {}: {}", child_node_name_,
+                  result);
+      }
+    }
+
+    if (child_.is_valid()) {
+      fidl::Status result = child_->Remove();
+      if (!result.ok()) {
+        fdf::error("Failed to send Remove request to child node {}: {}", child_node_name_,
+                   result.FormatDescription());
+      }
+    }
+  }
 }
 
 // UsbFunctionProtocol implementation.
@@ -456,6 +507,38 @@ void UsbFunction::CloseFunctionInterface() {
     deconfigure_completer_->Reply(fit::ok());
     deconfigure_completer_.reset();
   }
+}
+
+void UsbFunction::RequestRemoval() {
+  if (!child_.is_valid()) {
+    fdf::warn(
+        "UsbFunction: RequestRemoval called on function {} which has no valid child node "
+        "controller.",
+        child_node_name_);
+    // If there is no child, we're already effectively cleared.
+    peripheral_->FunctionCleared();
+    return;
+  }
+
+  fdf::debug("UsbFunction: Sending Remove() to node Controller for {}.", child_node_name_);
+  fidl::Status result = child_->Remove();
+  if (!result.ok()) {
+    fdf::error("Failed to send Remove request to child node {}: {}", child_node_name_,
+               result.FormatDescription());
+  }
+}
+
+void UsbFunction::OnNodeControllerUnbound(fidl::UnbindInfo info) {
+  fdf::debug("UsbFunction: OnNodeControllerUnbound called for {}.", child_node_name_);
+  if (info.is_peer_closed()) {
+    fdf::info("UsbFunction: Node for {} unbound (peer closed).", child_node_name_);
+  } else if (!info.is_user_initiated()) {
+    fdf::error("UsbFunction: Node for {} unbound with error: {}", child_node_name_,
+               info.FormatDescription());
+  } else {
+    fdf::info("UsbFunction: Node for {} unbound (user initiated).", child_node_name_);
+  }
+  peripheral_->FunctionCleared();
 }
 
 void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
