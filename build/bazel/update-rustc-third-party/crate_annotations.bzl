@@ -136,10 +136,14 @@ CRATE_ANNOTATIONS = {
     ],
     "thiserror": [
         crate.annotation(
-            version = "2.0.12",
-            # TODO(https://github.com/rust-lang/rust/pull/99301): Re-enable this build script,
-            # which adds `error_generic_member_access` that is currently unstable.
-            gen_build_script = False,
+            version = "2.0.18",
+            # TODO(https://github.com/rust-lang/rust/pull/99301): Making this exception for
+            # an unstable feature is currently the only viable way we get thiserror to build in
+            # the Fuchsia tree.
+            rustc_flags = [
+                "--cfg=error_generic_member_access",
+                "-Zallow-features=error_generic_member_access",
+            ],
         ),
         crate.annotation(
             version = "1.0.69",

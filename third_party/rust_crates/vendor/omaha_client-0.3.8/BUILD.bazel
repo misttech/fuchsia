@@ -97,7 +97,7 @@ rust_library(
         "//third_party/rust_crates/vendor/serde_json-1.0.145:serde_json",
         "//third_party/rust_crates/vendor/sha2-0.10.9:sha2",
         "//third_party/rust_crates/vendor/signature-1.6.4:signature",
-        "//third_party/rust_crates/vendor/thiserror-2.0.12:thiserror",
+        "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
         "//third_party/rust_crates/vendor/typed-builder-0.23.2:typed_builder",
         "//third_party/rust_crates/vendor/uuid-1.1.2:uuid",
     ],

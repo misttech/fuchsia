@@ -239,7 +239,7 @@ tempfile = "3.2"
 termion = "1.5.3"
 test-case = "3.3.1"
 textwrap = { version = "0.16.2", default-features = false }
-thiserror = "2.0.12"
+thiserror = "2.0.18"
 tokio-rustls = "0.24.1"
 toml = "0.9.11"
 toml_edit = "0.24.0"
@@ -1122,11 +1122,20 @@ visibility = [
   "//tools/lib/reference_doc/macro:*",
 ]
 
-[gn.package.thiserror."2.0.12"]
-# Has build script but no config needed.
+[gn.package.thiserror."2.0.18"]
+env_vars = [
+  "CARGO_PKG_VERSION_PATCH=18",
+  "OUT_DIR=../../../compat/thiserror",
+]
 
 [gn.package.thiserror."1.0.69"]
 # Has build script but no config needed.
+
+[gn.package.thiserror-impl."2.0.18"]
+env_vars = [
+  "CARGO_PKG_VERSION_PATCH=18",
+  "OUT_DIR=../../../compat/thiserror",
+]
 
 # Not actually used in the gn build at all, just for the rules_rust bazel rules.
 [gn.package.tinyjson."2.5.1"]

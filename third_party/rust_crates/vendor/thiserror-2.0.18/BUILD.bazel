@@ -8,6 +8,7 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 package(
@@ -20,9 +21,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "tuf",
-    package_url = "https://github.com/theupdateframework/rust-tuf",
-    package_version = "0.3.0-beta14",
+    package_name = "thiserror",
+    package_url = "https://github.com/dtolnay/thiserror",
+    package_version = "2.0.18",
 )
 
 license(
@@ -35,7 +36,7 @@ license(
 )
 
 rust_library(
-    name = "tuf",
+    name = "thiserror",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,16 +54,22 @@ rust_library(
         ],
     ),
     crate_features = [
-        "hyper",
+        "default",
+        "std",
     ],
     crate_root = "src/lib.rs",
     edition = "2021",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor/thiserror-impl-2.0.18:thiserror_impl",
+    ],
     rustc_flags = [
         "--cap-lints=allow",
+        "--cfg=error_generic_member_access",
+        "-Zallow-features=error_generic_member_access",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=tuf",
+        "crate-name=thiserror",
         "manual",
         "noclippy",
         "norustfmt",
@@ -75,23 +82,67 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.3.0-beta14",
+    version = "2.0.18",
     deps = [
-        "//third_party/rust_crates/forks/ring-0.17.8:ring",
-        "//third_party/rust_crates/vendor/chrono-0.4.44:chrono",
-        "//third_party/rust_crates/vendor/data-encoding-2.10.0:data_encoding",
-        "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
-        "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
-        "//third_party/rust_crates/vendor/http-0.2.4:http",
-        "//third_party/rust_crates/vendor/hyper-0.14.19:hyper",
-        "//third_party/rust_crates/vendor/itoa-1.0.17:itoa",
-        "//third_party/rust_crates/vendor/log-0.4.29:log",
-        "//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
-        "//third_party/rust_crates/vendor/serde_json-1.0.145:serde_json",
-        "//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile",
-        "//third_party/rust_crates/vendor/thiserror-2.0.18:thiserror",
-        "//third_party/rust_crates/vendor/untrusted-0.9.0:untrusted",
-        "//third_party/rust_crates/vendor/url-2.3.1:url",
+        "//third_party/rust_crates/vendor/thiserror-2.0.18:build_script_build",
     ],
+)
+
+cargo_build_script(
+    name = "_bs",
+    srcs = glob(
+        include = ["**/*.rs"],
+        allow_empty = False,
+    ),
+    compile_data = glob(
+        include = ["**"],
+        allow_empty = True,
+        exclude = [
+            "**/* *",
+            "**/*.rs",
+            ".tmp_git_root/**/*",
+            "BUILD",
+            "BUILD.bazel",
+            "WORKSPACE",
+            "WORKSPACE.bazel",
+        ],
+    ),
+    crate_features = [
+        "default",
+        "std",
+    ],
+    crate_name = "build_script_build",
+    crate_root = "build.rs",
+    data = glob(
+        include = ["**"],
+        allow_empty = True,
+        exclude = [
+            "**/* *",
+            ".tmp_git_root/**/*",
+            "BUILD",
+            "BUILD.bazel",
+            "WORKSPACE",
+            "WORKSPACE.bazel",
+        ],
+    ),
+    edition = "2021",
+    pkg_name = "thiserror",
+    rustc_flags = [
+        "--cap-lints=allow",
+    ],
+    tags = [
+        "cargo-bazel",
+        "crate-name=thiserror",
+        "manual",
+        "noclippy",
+        "norustfmt",
+    ],
+    version = "2.0.18",
+    visibility = ["//visibility:private"],
+)
+
+alias(
+    name = "build_script_build",
+    actual = ":_bs",
+    tags = ["manual"],
 )

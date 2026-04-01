@@ -2206,11 +2206,11 @@ group("textwrap-0.16.2") {
 }
 
 group("thiserror") {
-  public_deps = [ ":thiserror-v2_0_12" ]
+  public_deps = [ ":thiserror-v2_0_18" ]
 }
 
-group("thiserror-2.0.12") {
-  public_deps = [ ":thiserror-v2_0_12" ]
+group("thiserror-2.0.18") {
+  public_deps = [ ":thiserror-v2_0_18" ]
 }
 
 import("//third_party/rust_crates/private_visibility.gni")
@@ -4615,7 +4615,7 @@ rustc_library("bt-bass-v0_0_1") {
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
   rustenv = []
 
@@ -4656,7 +4656,7 @@ rustc_library("bt-broadcast-assistant-v0_0_1") {
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":num-v0_4_3" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
   rustenv = []
 
@@ -4691,7 +4691,7 @@ rustc_library("bt-common-v0_0_1") {
   deps = []
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":uuid-v1_1_2" ]
 
   rustenv = []
@@ -4726,7 +4726,7 @@ rustc_library("bt-gatt-v0_0_1") {
   deps += [ ":bt-common-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
   rustenv = []
 
@@ -4763,7 +4763,7 @@ rustc_library("bt-pacs-v0_0_1") {
   deps += [ ":bt-gatt-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":pin-project-v1_1_10" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
   rustenv = []
 
@@ -4797,7 +4797,7 @@ rustc_library("bt-vcs-v0_0_1") {
   deps += [ ":bt-gatt-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
   rustenv = []
 
@@ -5039,7 +5039,7 @@ rustc_library("cargo_metadata-v0_23_1") {
   deps += [ ":semver-v1_0_26" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
 
   rustenv = []
 
@@ -11951,7 +11951,7 @@ rustc_library("mock-omaha-server-v0_3_8") {
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
   deps += [ ":sha2-v0_10_9" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":url-v2_3_1" ]
   deps += [ "//src/lib/fuchsia-async" ]
   deps += [ "//src/lib/fuchsia-hyper" ]
@@ -13018,7 +13018,7 @@ rustc_library("omaha_client-v0_3_8") {
   deps += [ ":serde_repr-v0_1_7($host_toolchain)" ]
   deps += [ ":sha2-v0_10_9" ]
   deps += [ ":signature-v1_6_4" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":typed-builder-v0_23_2" ]
   deps += [ ":uuid-v1_1_2" ]
 
@@ -17374,7 +17374,7 @@ rustc_library("rustfix-v0_9_3") {
   deps = []
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":tracing-v0_1_41" ]
 
   rustenv = []
@@ -20252,39 +20252,42 @@ rustc_library("thiserror-v1_0_69") {
   applicable_licenses = [ ":thiserror-v1_0_69.license" ]
 }
 
-license("thiserror-v2_0_12.license") {
+license("thiserror-v2_0_18.license") {
   public_package_name = "thiserror"
   license_files = [
-    "//third_party/rust_crates/vendor/thiserror-2.0.12/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/thiserror-2.0.12/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/thiserror-2.0.18/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/thiserror-2.0.18/LICENSE-MIT",
   ]
 }
 
-rustc_library("thiserror-v2_0_12") {
+rustc_library("thiserror-v2_0_18") {
   crate_name = "thiserror"
-  source_root = "//third_party/rust_crates/vendor/thiserror-2.0.12/src/lib.rs"
-  output_name = "thiserror-931cf9c27eba340a"
+  source_root = "//third_party/rust_crates/vendor/thiserror-2.0.18/src/lib.rs"
+  output_name = "thiserror-9df770d165442e7e"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":thiserror-impl-v2_0_12($host_toolchain)" ]
+  deps += [ ":thiserror-impl-v2_0_18($host_toolchain)" ]
 
-  rustenv = []
+  rustenv = [
+    "CARGO_PKG_VERSION_PATCH=18",
+    "OUT_DIR=../../../compat/thiserror",
+  ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=931cf9c27eba340a",
-    "-Cextra-filename=-931cf9c27eba340a",
+    "-Cmetadata=9df770d165442e7e",
+    "-Cextra-filename=-9df770d165442e7e",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":thiserror-v2_0_12.license" ]
+  applicable_licenses = [ ":thiserror-v2_0_18.license" ]
 }
 
 license("thiserror-impl-v1_0_69.license") {
@@ -20323,19 +20326,19 @@ rustc_macro("thiserror-impl-v1_0_69") {
   applicable_licenses = [ ":thiserror-impl-v1_0_69.license" ]
 }
 
-license("thiserror-impl-v2_0_12.license") {
+license("thiserror-impl-v2_0_18.license") {
   public_package_name = "thiserror_impl"
   license_files = [
-    "//third_party/rust_crates/vendor/thiserror-impl-2.0.12/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/thiserror-impl-2.0.12/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/thiserror-impl-2.0.18/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/thiserror-impl-2.0.18/LICENSE-MIT",
   ]
 }
 
-rustc_macro("thiserror-impl-v2_0_12") {
+rustc_macro("thiserror-impl-v2_0_18") {
   crate_name = "thiserror_impl"
   source_root =
-      "//third_party/rust_crates/vendor/thiserror-impl-2.0.12/src/lib.rs"
-  output_name = "thiserror_impl-51ee74cdce8c37ad"
+      "//third_party/rust_crates/vendor/thiserror-impl-2.0.18/src/lib.rs"
+  output_name = "thiserror_impl-d0275364dca7cdf6"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20346,17 +20349,20 @@ rustc_macro("thiserror-impl-v2_0_12") {
   deps += [ ":quote-v1_0_45" ]
   deps += [ ":syn-v2_0_117" ]
 
-  rustenv = []
+  rustenv = [
+    "CARGO_PKG_VERSION_PATCH=18",
+    "OUT_DIR=../../../compat/thiserror",
+  ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=51ee74cdce8c37ad",
-    "-Cextra-filename=-51ee74cdce8c37ad",
+    "-Cmetadata=d0275364dca7cdf6",
+    "-Cextra-filename=-d0275364dca7cdf6",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":thiserror-impl-v2_0_12.license" ]
+  applicable_licenses = [ ":thiserror-impl-v2_0_18.license" ]
 }
 
 license("thread_local-v1_1_9.license") {
@@ -21360,7 +21366,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
   deps += [ ":tempfile-v3_2_0" ]
-  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":thiserror-v2_0_18" ]
   deps += [ ":untrusted-v0_9_0" ]
   deps += [ ":url-v2_3_1" ]
 
