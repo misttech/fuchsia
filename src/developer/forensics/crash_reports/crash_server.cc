@@ -242,7 +242,7 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
   http_multipart_builder.PopulateContentHeaders(&headers);
 
   auto request =
-      BuildRequest("POST", url, zx::min(1), headers, *http_multipart_builder.GetBodyStream());
+      BuildRequest("POST", url, zx::min(3), headers, *http_multipart_builder.GetBodyStream());
 
   auto complete = [&cobalt, callback = std::move(callback)](
                       CrashServer::UploadStatus status, uint64_t upload_size,
