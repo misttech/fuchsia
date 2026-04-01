@@ -5,11 +5,15 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use fdomain_client::AsHandleRef;
 use fdomain_client::fidl::{RequestStream as FRequestStream, ServerEnd as FServerEnd};
+use fdomain_fuchsia_io as fio_f;
+use fdomain_fuchsia_sys2 as fsys2_f;
 use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_component_decl::{
     Capability, Component, Dictionary, Expose, ExposeDictionary, ExposeProtocol, ParentRef,
     Protocol, Ref, SelfRef,
 };
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys2;
 use futures::{StreamExt, TryStreamExt};
 use moniker::Moniker;
 use std::collections::HashMap;
@@ -19,10 +23,6 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use zx_status::Status;
-use {
-    fdomain_fuchsia_io as fio_f, fdomain_fuchsia_sys2 as fsys2_f, fidl_fuchsia_io as fio,
-    fidl_fuchsia_sys2 as fsys2,
-};
 
 /// Builder struct for `RealmQueryResult`/
 /// This is an builder interface meant to simplify building of test fixtures.
@@ -330,8 +330,8 @@ impl MockRealmQuery {
                 } => {
                     let query_moniker = Moniker::from_str(moniker.as_str()).unwrap();
                     if let Some(res) = self.mapping.get(&query_moniker.to_string()) {
-                        if dir_type == fsys2_f::OpenDirType::OutgoingDir {
-                            // Serve the out dir, everything else doesn't get served.
+                        if dir_type == fsys2_f::OpenDirType::ExposedDir {
+                            // Serve the exposed dir, everything else doesn't get served.
                             res.serve_exposed_dir_f(object, "");
                         }
                         responder.send(Ok(())).unwrap();
@@ -407,7 +407,7 @@ impl MockRealmQuery {
                     let query_moniker = Moniker::from_str(moniker.as_str()).unwrap();
                     if let Some(res) = self.mapping.get(&query_moniker.to_string()) {
                         if dir_type == fsys2::OpenDirType::ExposedDir {
-                            // Serve the out dir, everything else doesn't get served.
+                            // Serve the exposed dir, everything else doesn't get served.
                             res.serve_exposed_dir(object, "");
                         }
                         responder.send(Ok(())).unwrap();
