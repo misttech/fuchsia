@@ -6,7 +6,7 @@ use fuchsia_async::{DurationExt, OnTimeout, TimeoutExt};
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
 use futures::future::{FusedFuture, MaybeDone};
-use futures::stream::{FusedStream, Stream};
+use futures::stream::{FusedStream, Stream, StreamExt};
 use futures::task::{Context, Poll, Waker};
 use futures::{Future, FutureExt, TryFutureExt, ready};
 use log::{info, trace, warn};
@@ -20,11 +20,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use zx::{self as zx, MonotonicDuration};
 
-#[cfg(test)]
-mod tests;
-
 mod rtp;
 mod stream_endpoint;
+#[cfg(test)]
+mod tests;
 mod types;
 
 use crate::types::{SignalIdentifier, SignalingHeader, SignalingMessageType, TxLabel};
@@ -1015,22 +1014,21 @@ impl PeerInner {
         if self.signaling_channel_closed.load(Ordering::Relaxed) {
             return Ok(true);
         }
-
         loop {
-            let mut next_packet = Vec::new();
-            let packet_size = match self.signaling.lock().poll_datagram(cx, &mut next_packet) {
-                Poll::Ready(Err(zx::Status::PEER_CLOSED)) => {
-                    trace!("Signaling peer closed");
-                    self.signaling_channel_closed.store(true, Ordering::Relaxed);
-                    return Ok(true);
+            let mut next_packet = {
+                let mut signaling = self.signaling.lock();
+                match signaling.poll_next_unpin(cx) {
+                    Poll::Ready(Some(Ok(packet))) => packet,
+                    Poll::Ready(Some(Err(zx::Status::PEER_CLOSED))) | Poll::Ready(None) => {
+                        trace!("Signaling peer closed");
+                        self.signaling_channel_closed.store(true, Ordering::Relaxed);
+                        return Ok(true);
+                    }
+                    Poll::Ready(Some(Err(e))) => return Err(Error::PeerRead(e)),
+                    Poll::Pending => return Ok(false),
                 }
-                Poll::Ready(Err(e)) => return Err(Error::PeerRead(e)),
-                Poll::Pending => return Ok(false),
-                Poll::Ready(Ok(size)) => size,
             };
-            if packet_size == 0 {
-                continue;
-            }
+
             // Detects General Reject condition and sends the response back.
             // On other headers with errors, sends BAD_HEADER to the peer
             // and attempts to continue.

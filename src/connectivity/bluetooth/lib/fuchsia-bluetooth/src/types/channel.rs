@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::{ClientEnd, Proxy};
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::stream::{FusedStream, Stream};
 use futures::{Future, TryFutureExt, io};
@@ -11,10 +14,6 @@ use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use {
-    fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
-    fuchsia_async as fasync,
-};
 
 use crate::error::Error;
 
@@ -222,14 +221,6 @@ impl Channel {
 
     pub fn is_closed<'a>(&'a self) -> bool {
         self.socket.is_closed()
-    }
-
-    pub fn poll_datagram(
-        &self,
-        cx: &mut Context<'_>,
-        out: &mut Vec<u8>,
-    ) -> Poll<Result<usize, zx::Status>> {
-        self.socket.poll_datagram(cx, out)
     }
 
     /// Write to the channel.  This will return zx::Status::SHOULD_WAIT if the

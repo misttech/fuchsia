@@ -6,7 +6,7 @@ use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
 
 use futures::ready;
-use futures::stream::{FusedStream, Stream};
+use futures::stream::{FusedStream, Stream, StreamExt};
 use futures::task::{Context, Poll, Waker};
 use log::{info, trace, warn};
 use packet_encoding::{Decodable, Encodable};
@@ -19,7 +19,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(test)]
 mod tests;
-
 mod types;
 
 use crate::{Error, Result};
@@ -177,22 +176,23 @@ impl PeerInner {
         if self.channel_closed.load(Ordering::SeqCst) {
             return Ok(true);
         }
-        let mut buf = Vec::<u8>::new();
         loop {
-            let packet_size = match self.channel.lock().poll_datagram(cx, &mut buf) {
-                Poll::Ready(Err(zx::Status::PEER_CLOSED)) => {
-                    trace!("Peer closed");
-                    self.channel_closed.store(true, Ordering::SeqCst);
-                    return Ok(true);
+            let mut buf = {
+                let mut channel = self.channel.lock();
+                match channel.poll_next_unpin(cx) {
+                    Poll::Ready(Some(Ok(packet))) => packet,
+                    Poll::Ready(Some(Err(zx::Status::PEER_CLOSED))) | Poll::Ready(None) => {
+                        trace!("Peer closed");
+                        self.channel_closed.store(true, Ordering::SeqCst);
+                        return Ok(true);
+                    }
+                    Poll::Ready(Some(Err(e))) => return Err(Error::PeerRead(e)),
+                    Poll::Pending => return Ok(false),
                 }
-                Poll::Ready(Err(e)) => return Err(Error::PeerRead(e)),
-                Poll::Pending => return Ok(false),
-                Poll::Ready(Ok(size)) => size,
             };
-            if packet_size == 0 {
-                continue;
-            }
+
             trace!("received packet {:?}", buf);
+            let packet_size = buf.len();
             // Detects General Reject condition and sends the response back.
             // On other headers with errors, sends BAD_HEADER to the peer
             // and attempts to continue.
@@ -201,7 +201,6 @@ impl PeerInner {
                     // Only possible error is OutOfRange
                     // Returned only when the packet is too small, can't make a meaningful reject.
                     info!("received unrejectable message");
-                    buf = buf.split_off(packet_size);
                     continue;
                 }
                 Ok(x) => x,
@@ -213,28 +212,24 @@ impl PeerInner {
                 info!("received packet not targeted at remote profile service class");
                 let resp_avct = avctp_header.create_invalid_profile_id_response();
                 self.send_packet(&resp_avct, &[])?;
-                buf = buf.split_off(packet_size);
                 continue;
             }
 
             if packet_size == avctp_header.encoded_len() {
                 // Only the avctp header was sent with no payload.
                 info!("received incomplete packet");
-                buf = buf.split_off(packet_size);
                 continue;
             }
 
-            let rest = buf.split_off(packet_size);
             let body = buf.split_off(avctp_header.encoded_len());
             // Commands from the remote get translated into requests.
             match avctp_header.message_type() {
                 MessageType::Command => {
                     let mut lock = self.incoming_requests.lock();
-                    lock.queue.push_back(Packet { header: avctp_header, body: body.to_vec() });
+                    lock.queue.push_back(Packet { header: avctp_header, body });
                     if let CommandListener::Some(ref waker) = lock.listener {
                         waker.wake_by_ref();
                     }
-                    buf = rest;
                 }
                 MessageType::Response => {
                     // Should be a response to a command we sent.
@@ -242,9 +237,7 @@ impl PeerInner {
                     let idx = usize::from(avctp_header.label());
 
                     if let Some(waiter) = waiters.get_mut(idx) {
-                        waiter
-                            .queue
-                            .push_back(Packet { header: avctp_header, body: body.to_vec() });
+                        waiter.queue.push_back(Packet { header: avctp_header, body });
                         let old_entry = mem::replace(&mut waiter.listener, ResponseListener::New);
                         if let ResponseListener::Some(waker) = old_entry {
                             waker.wake();
@@ -252,7 +245,6 @@ impl PeerInner {
                     } else {
                         trace!("response for {:?} we did not send, dropping", avctp_header.label());
                     };
-                    buf = rest;
                     // Note: we drop any TxLabel response we are not waiting for
                 }
             }

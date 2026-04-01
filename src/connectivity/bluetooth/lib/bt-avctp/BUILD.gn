@@ -21,7 +21,7 @@ rustc_library("bt-avctp") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  test_deps = []
+  test_deps = [ "//src/lib/async-utils" ]
 
   sources = [
     "src/avc/mod.rs",

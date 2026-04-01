@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use async_utils::PollExt;
 use fuchsia_async as fasync;
-use futures::executor::block_on;
 use futures::{FutureExt, StreamExt};
 use std::result;
 use std::task::Poll;
@@ -107,9 +107,9 @@ fn can_only_take_stream_once() {
 
 #[test]
 fn closed_peer_ends_request_stream() {
-    let (_exec, stream, _, _) = setup_stream_test();
-    let collected = block_on(stream.collect::<Vec<Result<Command>>>());
-    assert_eq!(0, collected.len());
+    let (mut exec, mut stream, _peer, remote) = setup_stream_test();
+    drop(remote);
+    assert!(exec.run_until_stalled(&mut stream.next()).expect("ready").is_none());
 }
 
 #[test]
