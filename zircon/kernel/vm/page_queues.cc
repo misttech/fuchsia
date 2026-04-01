@@ -141,16 +141,19 @@ class LruIsolate {
             backlink.page, backlink.offset, VmCowPages::EvictionAction::FollowHint, compressor);
         if (reclaimed.is_ok()) {
           uint64_t num_pages = reclaimed.value().num_pages;
-          if (num_pages > 0) {
+          uint64_t num_loaned_pages = reclaimed.value().num_loaned_pages;
+
+          if (num_pages > 0 || num_loaned_pages > 0) {
             switch (reclaimed.value().type) {
-              case VmCowReclaimSuccess::Type::EvictLoaned:
-              case VmCowReclaimSuccess::Type::EvictNonLoaned:
-                pq_lru_pages_evicted.Add(num_pages);
+              case VmCowReclaimSuccess::Type::Evict:
+                pq_lru_pages_evicted.Add(num_pages + num_loaned_pages);
                 break;
               case VmCowReclaimSuccess::Type::Discard:
+                DEBUG_ASSERT(num_loaned_pages == 0);
                 pq_lru_pages_discarded.Add(num_pages);
                 break;
               case VmCowReclaimSuccess::Type::Compress:
+                DEBUG_ASSERT(num_loaned_pages == 0);
                 pq_lru_pages_compressed.Add(num_pages);
                 break;
             }

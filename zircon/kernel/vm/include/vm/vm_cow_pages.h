@@ -106,12 +106,12 @@ struct VmCowRange {
 // Result of attempting to reclaim a single page. See VmCowPages::ReclaimPage for more details.
 struct VmCowReclaimSuccess {
   enum class Type : uint8_t {
-    EvictNonLoaned,
-    EvictLoaned,
+    Evict,
     Discard,
     Compress,
   } type;
   uint64_t num_pages = 0;
+  uint64_t num_loaned_pages = 0;
 };
 enum class VmCowReclaimFailure : uint8_t {
   EvictAccessed,

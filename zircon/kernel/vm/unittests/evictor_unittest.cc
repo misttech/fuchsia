@@ -64,7 +64,7 @@ class TestPmmNode {
     free_pages_++;
     total_evictions_++;
     return fit::ok(VmCowReclaimSuccess{
-        .type = VmCowReclaimSuccess::Type::EvictNonLoaned,
+        .type = VmCowReclaimSuccess::Type::Evict,
         .num_pages = 1,
     });
   }

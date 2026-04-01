@@ -86,8 +86,8 @@ struct ReclaimFailureStats {
   const vm_page_t* prev_evicted_page = nullptr;
   // VmCowReclaimResult doesn't have a default constructor. Initialize to an arbitrary value; this
   // will be overwritten anyway by the actual result of eviction when one happens.
-  VmCowReclaimResult prev_eviction_result = fit::ok(
-      VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::EvictNonLoaned, .num_pages = 0});
+  VmCowReclaimResult prev_eviction_result = fit::ok(VmCowReclaimSuccess{
+      .type = VmCowReclaimSuccess::Type::Evict, .num_pages = 0, .num_loaned_pages = 0});
   bool printed_same_page_log = false;
 
   struct FailureReasons {
@@ -141,9 +141,7 @@ struct ReclaimFailureStats {
         return "ok:compress";
       case VmCowReclaimSuccess::Type::Discard:
         return "ok:discard";
-      case VmCowReclaimSuccess::Type::EvictLoaned:
-        return "ok:loaned";
-      case VmCowReclaimSuccess::Type::EvictNonLoaned:
+      case VmCowReclaimSuccess::Type::Evict:
         return "ok:evict";
     }
     __UNREACHABLE;
@@ -536,17 +534,19 @@ Evictor::EvictedPageCounts Evictor::EvictPageQueues(uint64_t target_pages,
     VmCowReclaimResult reclaimed_result = reclaimed->first;
     if (reclaimed_result.is_ok()) {
       uint64_t num_pages = reclaimed_result.value().num_pages;
+      uint64_t num_loaned_pages = reclaimed_result.value().num_loaned_pages;
+
       switch (reclaimed_result.value().type) {
-        case VmCowReclaimSuccess::Type::EvictLoaned:
-          counts.pager_backed_loaned += num_pages;
-          break;
-        case VmCowReclaimSuccess::Type::EvictNonLoaned:
+        case VmCowReclaimSuccess::Type::Evict:
           counts.pager_backed += num_pages;
+          counts.pager_backed_loaned += num_loaned_pages;
           break;
         case VmCowReclaimSuccess::Type::Discard:
+          DEBUG_ASSERT(num_loaned_pages == 0);
           counts.discardable += num_pages;
           break;
         case VmCowReclaimSuccess::Type::Compress:
+          DEBUG_ASSERT(num_loaned_pages == 0);
           counts.compressed += num_pages;
           break;
       }

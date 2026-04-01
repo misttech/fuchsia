@@ -7178,9 +7178,9 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
   CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
-  return fit::ok(VmCowReclaimSuccess{.type = loaned ? VmCowReclaimSuccess::Type::EvictLoaned
-                                                    : VmCowReclaimSuccess::Type::EvictNonLoaned,
-                                     .num_pages = 1});
+  return fit::ok(VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::Evict,
+                                     .num_pages = loaned ? 0u : 1u,
+                                     .num_loaned_pages = loaned ? 1u : 0u});
 }
 
 VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64_t offset,
