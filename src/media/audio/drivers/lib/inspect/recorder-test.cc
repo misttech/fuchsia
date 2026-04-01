@@ -19,7 +19,6 @@ using ::inspect::testing::IntIs;
 using ::inspect::testing::NameMatches;
 using ::inspect::testing::NodeMatches;
 using ::inspect::testing::PropertyList;
-using ::inspect::testing::UintArrayIs;
 using ::inspect::testing::UintIs;
 using ::testing::AllOf;
 using ::testing::ElementsAre;
@@ -42,6 +41,9 @@ class RecorderTest : public gtest::RealLoopFixture {
     return std::move(result.value());
   }
 
+  std::unique_ptr<Recorder>& recorder() { return recorder_; }
+
+ private:
   std::unique_ptr<inspect::ComponentInspector> inspector_;
   std::unique_ptr<Recorder> recorder_;
 };
@@ -50,7 +52,7 @@ TEST_F(RecorderTest, PowerTransitions) {
   zx::time called_at = zx::time(100);
   zx::time completed_at = zx::time(200);
 
-  recorder_->RecordSocPowerUp(called_at, completed_at);
+  recorder()->RecordSocPowerUp(called_at, completed_at);
   ASSERT_THAT(
       GetHierarchy(),
       AllOf(NodeMatches(PropertyList(ElementsAre(BoolIs(std::string(kCurrentPowerState), true)))),
@@ -67,7 +69,7 @@ TEST_F(RecorderTest, PowerTransitions) {
 
   called_at = zx::time(300);
   completed_at = zx::time(400);
-  recorder_->RecordSocPowerDown(called_at, completed_at);
+  recorder()->RecordSocPowerDown(called_at, completed_at);
   ASSERT_THAT(
       GetHierarchy(),
       AllOf(NodeMatches(PropertyList(ElementsAre(BoolIs(std::string(kCurrentPowerState), false)))),
@@ -89,18 +91,20 @@ TEST_F(RecorderTest, PowerTransitions) {
 }
 
 TEST_F(RecorderTest, RingBufferAndDaiPopulation) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  recorder_->PopulateDai("output_dai", 2);
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  recorder()->PopulateDai("output_dai", 2);
 
   ASSERT_THAT(
       GetHierarchy(),
       ChildrenMatch(UnorderedElementsAre(
           AllOf(NodeMatches(NameMatches(std::string(kRingBuffers))),
-                ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
-                    NameMatches(std::string("test_ring_buffer")),
-                    PropertyList(IsSupersetOf({UintIs(std::string(kElementId), 1),
-                                               BoolIs(std::string(kSupportsActiveChannels), true),
-                                               BoolIs(std::string(kIsOutgoingStream), true)}))))))),
+                ChildrenMatch(UnorderedElementsAre(
+                    NodeMatches(AllOf(NameMatches(std::string("test_ring_buffer")),
+                                      PropertyList(IsSupersetOf({
+                                          UintIs(std::string(kElementId), 1),
+                                          BoolIs(std::string(kSupportsActiveChannels), true),
+                                          BoolIs(std::string(kIsOutgoingStream), true),
+                                      }))))))),
           AllOf(NodeMatches(NameMatches(std::string(kDAIs))),
                 ChildrenMatch(UnorderedElementsAre(NodeMatches(AllOf(
                     NameMatches(std::string("output_dai")),
@@ -108,10 +112,10 @@ TEST_F(RecorderTest, RingBufferAndDaiPopulation) {
 }
 
 TEST_F(RecorderTest, RingBufferInstance) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
 
   zx::time created_at = zx::time(100);
-  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, created_at);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, created_at);
   ASSERT_THAT(
       GetHierarchy(),
       ChildrenMatch(Contains(AllOf(
@@ -137,35 +141,41 @@ TEST_F(RecorderTest, RingBufferInstance) {
 }
 
 TEST_F(RecorderTest, StartAndStop) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
 
   zx::time started_at = zx::time(zx::usec(100).get());
   rb_recorder->RecordStartTime(started_at);
 
   auto hierarchy = GetHierarchy();
-  std::vector<std::string> running_interval_path = {std::string(kRingBuffers), "test_ring_buffer",
-                                                    "instance_0", std::string(kRunningIntervals),
-                                                    "0"};
+  std::vector<std::string> running_interval_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "0",
+  };
   auto running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
   ASSERT_TRUE(running_interval_hierarchy);
-  EXPECT_THAT(*running_interval_hierarchy,
-              NodeMatches(PropertyList(IsSupersetOf({IntIs(std::string(kStartedAtUs), 100)}))));
+  EXPECT_THAT(*running_interval_hierarchy, NodeMatches(PropertyList(IsSupersetOf({
+                                               IntIs(std::string(kStartedAtUs), 100),
+                                           }))));
 
   zx::time stopped_at = zx::time(zx::usec(200).get());
   rb_recorder->RecordStopTime(stopped_at);
   hierarchy = GetHierarchy();
   running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
   ASSERT_TRUE(running_interval_hierarchy);
-  EXPECT_THAT(*running_interval_hierarchy,
-              NodeMatches(PropertyList(IsSupersetOf({IntIs(std::string(kStartedAtUs), 100),
-                                                     IntIs(std::string(kStoppedAtUs), 200),
-                                                     IntIs(std::string(kAudioDuration), 100)}))));
+  EXPECT_THAT(*running_interval_hierarchy, NodeMatches(PropertyList(IsSupersetOf({
+                                               IntIs(std::string(kStartedAtUs), 100),
+                                               IntIs(std::string(kStoppedAtUs), 200),
+                                               IntIs(std::string(kAudioDuration), 100),
+                                           }))));
 }
 
 TEST_F(RecorderTest, ActiveChannels) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
 
   zx::time called_at = zx::time(100);
   zx::time completed_at = zx::time(200);
@@ -179,17 +189,18 @@ TEST_F(RecorderTest, ActiveChannels) {
                           NodeMatches(NameMatches(std::string("instance_0"))),
                           ChildrenMatch(Contains(AllOf(
                               NodeMatches(NameMatches(std::string(kSetActiveChannelsCalls))),
-                              ChildrenMatch(Contains(NodeMatches(AllOf(
-                                  NameMatches(std::string("0")),
-                                  PropertyList(IsSupersetOf(
-                                      {UintIs(std::string(kChannelBitmask), 0xff),
-                                       IntIs(std::string(kCalledAt), 100),
-                                       IntIs(std::string(kEffectiveAt), 200)})))))))))))))))))));
+                              ChildrenMatch(Contains(
+                                  NodeMatches(AllOf(NameMatches(std::string("0")),
+                                                    PropertyList(IsSupersetOf({
+                                                        UintIs(std::string(kChannelBitmask), 0xff),
+                                                        IntIs(std::string(kCalledAt), 100),
+                                                        IntIs(std::string(kEffectiveAt), 200),
+                                                    })))))))))))))))))));
 }
 
 TEST_F(RecorderTest, BufferTracker) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
 
   rb_recorder->SetupBufferTracker("test_buffer_tracker", 5, zx::msec(10));
 
@@ -225,23 +236,29 @@ TEST_F(RecorderTest, BufferTracker) {
           UintIs(std::string(kEmptyBufferDurationMaxUsec), testing::Ge(200 * 1000)),
           UintIs(std::string(kFullBufferEpisodeCount), 0),
           UintIs(std::string(kCountOutstandingBuffersAvg), 1),
-          UintIs(std::string(kProcessingTimeCumulativeUsec), 2 * 10 * 1000)})));
+          UintIs(std::string(kProcessingTimeCumulativeUsec), 2ul * 10 * 1000),
+      })));
 
   auto hierarchy = GetHierarchy();
-  std::vector<std::string> rb_buffer_tracker_path = {std::string(kRingBuffers), "test_ring_buffer",
-                                                     std::string(kDiagnosticsSummary),
-                                                     "test_buffer_tracker"};
+  std::vector<std::string> rb_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      std::string(kDiagnosticsSummary),
+      "test_buffer_tracker",
+  };
   const auto rb_buffer_tracker_hierarchy = hierarchy.GetByPath(rb_buffer_tracker_path);
   ASSERT_TRUE(rb_buffer_tracker_hierarchy);
   EXPECT_THAT(*rb_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
 
-  std::vector<std::string> running_instance_buffer_tracker_path = {std::string(kRingBuffers),
-                                                                   "test_ring_buffer",
-                                                                   "instance_0",
-                                                                   std::string(kRunningIntervals),
-                                                                   "0",
-                                                                   std::string(kDiagnostics),
-                                                                   "test_buffer_tracker"};
+  std::vector<std::string> running_instance_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "0",
+      std::string(kDiagnostics),
+      "test_buffer_tracker",
+  };
   const auto running_instance_buffer_tracker_hierarchy =
       hierarchy.GetByPath(running_instance_buffer_tracker_path);
   ASSERT_TRUE(running_instance_buffer_tracker_hierarchy);
@@ -249,8 +266,8 @@ TEST_F(RecorderTest, BufferTracker) {
 }
 
 TEST_F(RecorderTest, AvgTaskMetrics) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
 
   // Record first set of metrics.
   rb_recorder->RecordStartTime(zx::time(100));
@@ -276,20 +293,23 @@ TEST_F(RecorderTest, AvgTaskMetrics) {
   auto hierarchy = GetHierarchy();
   std::vector<std::string> rb_avg_metrics_path = {
       std::string(kRingBuffers), "test_ring_buffer", std::string(kDiagnosticsSummary),
-      std::string(kTaskRecords), std::string(kAvg),  std::string(kAvg)};
+      std::string(kTaskRecords), std::string(kAvg),  std::string(kAvg),
+  };
   const auto rb_avg_metrics_hierarchy = hierarchy.GetByPath(rb_avg_metrics_path);
   ASSERT_TRUE(rb_avg_metrics_hierarchy);
   EXPECT_THAT(*rb_avg_metrics_hierarchy, NodeMatches(expected_avg_metrics));
 
-  std::vector<std::string> running_instance_avg_metrics_path = {std::string(kRingBuffers),
-                                                                "test_ring_buffer",
-                                                                "instance_0",
-                                                                std::string(kRunningIntervals),
-                                                                "0",
-                                                                std::string(kDiagnostics),
-                                                                std::string(kTaskRecords),
-                                                                std::string(kAvg),
-                                                                std::string(kAvg)};
+  std::vector<std::string> running_instance_avg_metrics_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "0",
+      std::string(kDiagnostics),
+      std::string(kTaskRecords),
+      std::string(kAvg),
+      std::string(kAvg),
+  };
   const auto running_instance_avg_metrics_hierarchy =
       hierarchy.GetByPath(running_instance_avg_metrics_path);
   ASSERT_TRUE(running_instance_avg_metrics_hierarchy);
@@ -297,8 +317,8 @@ TEST_F(RecorderTest, AvgTaskMetrics) {
 }
 
 TEST_F(RecorderTest, SchedulingDelayMetrics) {
-  recorder_->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  auto* rb_recorder = &recorder_->CreateRingBufferInstance(1, zx::time(0));
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
 
   // Set the task schedule interval.
   rb_recorder->SetTaskScheduleInterval(zx::msec(1));
@@ -321,20 +341,23 @@ TEST_F(RecorderTest, SchedulingDelayMetrics) {
   auto hierarchy = GetHierarchy();
   std::vector<std::string> rb_min_metrics_path = {
       std::string(kRingBuffers), "test_ring_buffer", std::string(kDiagnosticsSummary),
-      std::string(kTaskRecords), std::string(kMin),  std::string(kMin)};
+      std::string(kTaskRecords), std::string(kMin),  std::string(kMin),
+  };
   const auto rb_min_metrics_hierarchy = hierarchy.GetByPath(rb_min_metrics_path);
   ASSERT_TRUE(rb_min_metrics_hierarchy);
   EXPECT_THAT(*rb_min_metrics_hierarchy, NodeMatches(expected_min_metrics));
 
-  std::vector<std::string> running_instance_min_metrics_path = {std::string(kRingBuffers),
-                                                                "test_ring_buffer",
-                                                                "instance_0",
-                                                                std::string(kRunningIntervals),
-                                                                "0",
-                                                                std::string(kDiagnostics),
-                                                                std::string(kTaskRecords),
-                                                                std::string(kMin),
-                                                                std::string(kMin)};
+  std::vector<std::string> running_instance_min_metrics_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "0",
+      std::string(kDiagnostics),
+      std::string(kTaskRecords),
+      std::string(kMin),
+      std::string(kMin),
+  };
   const auto running_instance_min_metrics_hierarchy =
       hierarchy.GetByPath(running_instance_min_metrics_path);
   ASSERT_TRUE(running_instance_min_metrics_hierarchy);
