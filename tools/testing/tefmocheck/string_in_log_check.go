@@ -559,6 +559,11 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type:        serialLogType,
 			AlwaysFlake: true,
 		},
+		// For https://fxbug.dev/438538574
+		&stringInLogCheck{
+			String: "Failed to reload the firmware",
+			Type:   syslogType,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
