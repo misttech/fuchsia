@@ -16,8 +16,8 @@ test("channel-fatal") {
   sources = [ "channel-fatal-test.cc" ]
   deps = [
     "//sdk/lib/fdio",
+    "//zircon/kernel/lib/userabi:vdso-code.h",
     "//zircon/system/ulib/test-utils",
-    "//zircon/system/ulib/vdso-code-header",
     "//zircon/system/ulib/zxtest",
   ]
 }

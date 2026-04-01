@@ -45,15 +45,13 @@ library_headers("headers") {
       "//zircon/kernel/object",
     ]
     if (!kernel_no_userabi) {
-      public_configs = [
-        ":sysret-offsets",
-        ":vdso-valid-sysret",
-      ]
+      public_configs = [ ":target_gen_dir.config" ]
+
+      # Dependents can use the generated header via $public_configs
+      # (above), and so need to depend on the generation action.
       public_deps += [
-        # Dependents can use the generated header via $public_configs
-        # (above), and so need to depend on the generation action.
-        ":gen-sysret-offsets",
-        ":gen-vdso-valid-sysret",
+        ":gen-sysret-offsets($default_toolchain)",
+        ":gen-vdso-valid-sysret($default_toolchain)",
       ]
     }
   } else {
@@ -69,95 +67,90 @@ config("userabi.user.config") {
   include_dirs = [ "//zircon/kernel/arch/$zircon_cpu/include" ]
 }
 
+# Where code is generated.
+config("target_gen_dir.config") {
+  visibility = [ ":*" ]
+  include_dirs =
+      [ get_label_info(":anything($default_toolchain)", "target_gen_dir") ]
+}
+
 # Embed an RODSO layout object and extract address constants from it.
 #
 # The userboot loadable_module() and the vdso (libzircon) shared_library()
 # both use the special RODSO layout (by default in lld or via rodso.ld in
 # gold).  The kernel needs to use address constants extracted from these
 # ELF files' headers and symbols.
-#
-# This generates three targets:
-#  * "$target_name-code.h" generates the eponymous header in $target_gen_dir
-#  * "$target_name.rsp" generates the eponymous link_output_rspfile()
-#
-# Parameters
-#
-#   name
-#     - Required: "VDSO", used in generated macro names
-#     - Type: string
-#
-#   deps
-#     - Required; Should reach the loadable_module() or library() target
-#     and no other linking targets; see link_output_rspfile().
-#     - Type: list(label)
-#
-template("rodso") {
-  rspfile_target = "$target_name.rsp"
-  rspfile = "$target_gen_dir/$rspfile_target"
 
-  link_output_rspfile(rspfile_target) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "testonly",
-                             "visibility",
-                           ])
-    outputs = [ rspfile ]
+if (current_toolchain == default_toolchain) {
+  vdso_rspfile = "$target_gen_dir/vdso.rsp"
+  link_output_rspfile("vdso.rsp") {
+    visibility = [ ":*" ]
+    outputs = [ vdso_rspfile ]
+    deps = [ "vdso" ]
 
     metadata = {
       distribution_entries_barrier = []
     }
   }
 
-  if (is_kernel) {
-    # This generated header file tells the kernel code where the segment
-    # boundaries and entry points are.
-    header_target = "$target_name-code.h"
-    header = "$target_gen_dir/$header_target"
+  # This generated header file tells the kernel code where the segment
+  # boundaries and entry points are.
+  vdso_header = "$target_gen_dir/vdso-code.h"
 
-    toolchain_utils_action(header_target) {
-      forward_variables_from(invoker,
-                             [
-                               "testonly",
-                               "visibility",
-                             ])
+  toolchain_utils_action("gen-vdso-code.h") {
+    visibility = [ ":*" ]
+    deps = [ ":vdso.rsp" ]
+    outputs = [ vdso_header ]
+    depfile = "$vdso_header.d"
 
-      deps = [ ":$rspfile_target" ]
-      outputs = [ header ]
-      depfile = "$header.d"
+    script = "gen-rodso-code.sh"
+    utils = [
+      "nm",
+      "readelf",
+    ]
+    sources = [ vdso_rspfile ]
+    args = [
+      "--depfile",
+      rebase_path(depfile, root_build_dir),
+      rebase_path(vdso_header, root_build_dir),
+    ]
+    args += [
+      "VDSO",
+      "@" + rebase_path(vdso_rspfile, root_build_dir),
+    ]
 
-      script = "gen-rodso-code.sh"
-      utils = [
-        "nm",
-        "readelf",
-      ]
-      sources = [ rspfile ]
-      args = [
-        "--depfile",
-        rebase_path(depfile, root_build_dir),
-        rebase_path(header, root_build_dir),
-      ]
-      args += [
-        invoker.name,
-        "@" + rebase_path(rspfile, root_build_dir),
-      ]
+    public_configs = [ ":target_gen_dir.config" ]
 
-      metadata = {
-        generated_sources = rebase_path(outputs, root_build_dir)
+    metadata = {
+      generated_sources = rebase_path(outputs, root_build_dir)
 
-        # Prevent deps from propagating up to code that uses this action.
-        distribution_entries_barrier = []
-      }
+      # Prevent deps from propagating up to code that uses this action.
+      distribution_entries_barrier = []
     }
-  } else {
-    not_needed(invoker, [ "name" ])
+  }
+
+  action("gen-vdso-valid-sysret") {
+    visibility = [ ":*" ]
+    script = "gen-vdso-valid-sysret.sh"
+    deps = [ ":gen-vdso-code.h" ]
+    sources = get_target_outputs(":gen-vdso-code.h")
+    outputs = [ "$target_gen_dir/vdso-valid-sysret.h" ]
+    args = rebase_path(sources + outputs, root_build_dir)
+  }
+
+  action("gen-sysret-offsets") {
+    visibility = [ ":*" ]
+    script = "gen-sysret-offsets.sh"
+    deps = [ ":gen-vdso-code.h" ]
+    sources = get_target_outputs(":gen-vdso-code.h")
+    outputs = [ "$target_gen_dir/sysret-offsets.h" ]
+    args = rebase_path(sources + outputs, root_build_dir)
   }
 }
 
-rodso("vdso") {
-  visibility = [ "./*" ]
-  name = "VDSO"
-  deps = [ "vdso" ]
+group("vdso-code.h") {
+  public_deps = [ ":gen-vdso-code.h($default_toolchain)" ]
+  public_configs = [ ":target_gen_dir.config" ]
 }
 
 if (is_kernel) {
@@ -181,44 +174,6 @@ if (is_kernel) {
     ]
   }
 
-  config("vdso-valid-sysret") {
-    visibility = [ ":*" ]
-    include_dirs = [ target_gen_dir ]
-  }
-
-  action("gen-vdso-valid-sysret") {
-    visibility = [ ":*" ]
-    script = "gen-vdso-valid-sysret.sh"
-    deps = [ ":vdso-code.h" ]
-    sources = get_target_outputs(":vdso-code.h")
-    outputs = [ "$target_gen_dir/vdso-valid-sysret.h" ]
-    args = rebase_path(sources + outputs, root_build_dir)
-  }
-
-  config("sysret-offsets") {
-    visibility = [ ":*" ]
-    include_dirs = [ target_gen_dir ]
-  }
-
-  action("gen-sysret-offsets") {
-    visibility = [ ":*" ]
-    script = "gen-sysret-offsets.sh"
-    deps = [ ":vdso-code.h" ]
-    sources = get_target_outputs(":vdso-code.h")
-    outputs = [ "$target_gen_dir/sysret-offsets.h" ]
-    args = rebase_path(sources + outputs, root_build_dir)
-  }
-
-  group("vdso-code-header") {
-    deps = [ ":vdso-code.h" ]
-    public_configs = [ ":vdso-code-header.config" ]
-  }
-
-  config("vdso-code-header.config") {
-    visibility = [ ":vdso-code-header" ]
-    include_dirs = [ target_gen_dir ]
-  }
-
   # Loading and launching userboot, which loads and launches "real" userland.
   source_set("userboot") {
     visibility = [ ":*" ]
@@ -228,7 +183,7 @@ if (is_kernel) {
       "resource.cc",
       "userboot.cc",
     ]
-    include_dirs = [ target_gen_dir ]
+
     deps = [
       ":headers",
       "//src/lib/elfldltl",

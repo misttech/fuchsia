@@ -11,8 +11,8 @@ source_set("channel") {
   deps = [
     "//sdk/lib/fit",
     "//zircon/kernel/lib/arch",
+    "//zircon/kernel/lib/userabi:vdso-code.h",
     "//zircon/system/ulib/mini-process",
-    "//zircon/system/ulib/vdso-code-header",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
