@@ -31,6 +31,16 @@ recorded by this tool.
 * Run your program as usual.
 * The `ffx profile stacktrack` tool, to dump the results, is not yet available.
 
+### Quickstart: Running the example
+
+```
+# Include stacktrack's example component in the build.
+fx set ... --with src/performance/memory/stacktrack/example
+
+# Build and run Fuchsia as usual, then start the example component.
+ffx component run /core/ffx-laboratory:example fuchsia-pkg://fuchsia.com/stacktrack-example#meta/stacktrack-example.cm
+```
+
 ## Design
 
 The Stacktrack library interposes calls to the Zircon VDSO and tracks the
