@@ -51,25 +51,34 @@ conditions.
   exceeds 100%, stochastic deadline misses are expected and the system will
   behave as though the periods of some or all task were multiplied by the
   overload factor.
+* **Critical Priority**: Deadline profiles can optionally be marked as
+  **critical**. A critical deadline task receives absolute priority over normal
+  deadline tasks during periods of CPU oversubscription, ensuring that essential
+  workloads are not degraded by runaway standard deadline threads. In a
+  correctly functioning system, total critical utilization should never exceed
+  the limits of the processor, otherwise a kernel oops is emitted.
 
 ## Run queues and selection
 
-Each CPU maintains two primary run queues, implemented as augmented WAVL trees
+Each CPU maintains three primary run queues, implemented as augmented WAVL trees
 to satisfy efficient O(log n) operations:
 
-1.  **Deadline Run Queue**: Contains runnable deadline tasks.
-2.  **Fair Run Queue**: Contains runnable fair tasks.
+1. **Critical Deadline Run Queue**: Contains runnable critical deadline tasks.
+2. **Deadline Run Queue**: Contains runnable non-critical deadline tasks.
+3. **Fair Run Queue**: Contains runnable fair tasks.
 
 ### Thread selection
 
 When choosing the next thread to run, the scheduler evaluates queues in the
 following order:
 
-1. **Deadline Task**: Picks the eligible deadline task with the earliest finish
+1. **Critical Deadline Task**: Picks the eligible critical deadline task with
+   the earliest finish time.
+2. **Deadline Task**: Picks the eligible deadline task with the earliest finish
    time.
-2. **Fair Task**: Picks the eligible fair task with the earliest virtual finish
+3. **Fair Task**: Picks the eligible fair task with the earliest virtual finish
    time.
-3. **Idle/Power Thread**: Runs when no other threads are eligible.
+4. **Idle/Power Thread**: Runs when no other threads are eligible.
 
 ### Preemption and timeslices
 
