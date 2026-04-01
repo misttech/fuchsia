@@ -41,7 +41,7 @@ zx::result<> NetdeviceMigration::Start() {
 
   zx::result ethernet = compat::ConnectBanjo<ddk::EthernetImplProtocolClient>(incoming());
   if (ethernet.is_error()) {
-    fdf::error("Failed to connect to Ethernet Impl protocol: {}", ethernet.status_string());
+    fdf::error("Failed to connect to Ethernet Impl protocol: {}", ethernet);
     return ethernet.take_error();
   }
   ethernet_ = ethernet.value();
@@ -141,7 +141,7 @@ zx::result<> NetdeviceMigration::Start() {
       {}, "netdev-dispatcher",
       [this](fdf_dispatcher_t*) { netdevice_dispatcher_shutdown_.Signal(); });
   if (netdev_dispatcher.is_error()) {
-    fdf::error("Failed to create netdevice dispatcher: {}", netdev_dispatcher.status_string());
+    fdf::error("Failed to create netdevice dispatcher: {}", netdev_dispatcher);
     return zx::error(netdev_dispatcher.status_value());
   }
   netdevice_dispatcher_ = std::move(netdev_dispatcher.value());
@@ -169,7 +169,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
   if (zx::result result =
           compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName);
       result.is_error()) {
-    fdf::error("Failed to initialize compat server: {}", result.status_string());
+    fdf::error("Failed to initialize compat server: {}", result);
     return result.status_value();
   }
 
@@ -183,7 +183,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
 
   auto status = outgoing()->AddService<netdev::Service>(std::move(handler));
   if (status.is_error()) {
-    fdf::error("Failed to add service to outgoing directory: {}", status.status_string());
+    fdf::error("Failed to add service to outgoing directory: {}", status);
     return status.error_value();
   }
 
@@ -195,7 +195,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
   zx::result netdev_child = AddChild("netdevice-migration-netdev", properties, offers);
 
   if (netdev_child.is_error()) {
-    fdf::error("Failed to add net device child node: {}", netdev_child.status_string());
+    fdf::error("Failed to add net device child node: {}", netdev_child);
     return netdev_child.status_value();
   }
   netdev_child_ = std::move(netdev_child.value());
@@ -652,7 +652,7 @@ void NetdeviceMigration::ReleaseVmo(netdev::wire::NetworkDeviceImplReleaseVmoReq
     // A failure here may be the result of a failed call to register the vmo, in which case the
     // driver is queued for removal from device manager. Accordingly, we must not panic lest we
     // disrupt the orderly shutdown of the driver: a log statement is the best we can do.
-    fdf::error("failed to release vmo id = {}: {}", request->id, status.status_string());
+    fdf::error("failed to release vmo id = {}: {}", request->id, status);
   }
   completer.buffer(arena).Reply();
 }
