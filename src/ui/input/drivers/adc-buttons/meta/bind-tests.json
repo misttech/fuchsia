@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -22,7 +22,7 @@
         ]
     },
     {
-        "node": "adc-0",
+        "parent": "adc-0",
         "tests": [
             {
                 "name": "Match",

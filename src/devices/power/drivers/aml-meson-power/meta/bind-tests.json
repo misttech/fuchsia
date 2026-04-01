@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match VID_GOOGLE",
@@ -34,7 +34,7 @@
         ]
     },
     {
-        "node": "pwm-primary",
+        "parent": "pwm-primary",
         "tests": [
             {
                 "name": "Match",
@@ -47,7 +47,7 @@
         ]
     },
     {
-        "node": "vreg-pwm-little",
+        "parent": "vreg-pwm-little",
         "tests": [
             {
                 "name": "Match",
@@ -60,7 +60,7 @@
         ]
     },
     {
-        "node": "vreg-pwm-big",
+        "parent": "vreg-pwm-big",
         "tests": [
             {
                 "name": "Match",

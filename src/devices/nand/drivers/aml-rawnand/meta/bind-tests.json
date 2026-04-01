@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "expected": "match",
@@ -14,7 +14,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "expected": "match",
@@ -26,7 +26,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -40,7 +40,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -54,7 +54,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {

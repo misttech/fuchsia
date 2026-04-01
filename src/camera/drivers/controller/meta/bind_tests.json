@@ -1,6 +1,6 @@
 [
     {
-        "node": "isp",
+        "parent": "isp",
         "tests": [
             {
                 "name": "Match",
@@ -12,7 +12,7 @@
         ]
     },
     {
-        "node": "gdc",
+        "parent": "gdc",
         "tests": [
             {
                 "name": "Match",
@@ -24,7 +24,7 @@
         ]
     },
     {
-        "node": "ge2d",
+        "parent": "ge2d",
         "tests": [
             {
                 "name": "Match",

@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -47,7 +47,7 @@
         ]
     },
     {
-        "node": "xhci-phy",
+        "parent": "xhci-phy",
         "tests": [
             {
                 "device": {
@@ -63,7 +63,7 @@
         ]
     },
     {
-        "node": "acpi",
+        "parent": "acpi",
         "tests": [
             {
                 "device": {

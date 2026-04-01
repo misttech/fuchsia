@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -15,7 +15,7 @@
         ]
     },
     {
-        "node": "gpio-amber-led",
+        "parent": "gpio-amber-led",
         "tests": [
             {
                 "name": "Match",
@@ -28,7 +28,7 @@
         ]
     },
     {
-        "node": "pwm-amber-led",
+        "parent": "pwm-amber-led",
         "tests": [
             {
                 "name": "Match",
@@ -41,7 +41,7 @@
         ]
     },
     {
-        "node": "gpio-green-led",
+        "parent": "gpio-green-led",
         "tests": [
             {
                 "name": "Match",
@@ -54,7 +54,7 @@
         ]
     },
     {
-        "node": "pwm-green-led",
+        "parent": "pwm-green-led",
         "tests": [
             {
                 "name": "Match",
@@ -67,7 +67,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

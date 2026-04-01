@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -71,7 +71,7 @@
         ]
     },
     {
-        "node": "dwc3-phy",
+        "parent": "dwc3-phy",
         "tests": [
             {
                 "device": {

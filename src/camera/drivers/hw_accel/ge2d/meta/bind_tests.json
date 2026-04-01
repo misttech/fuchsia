@@ -1,6 +1,6 @@
 [
     {
-        "node": "camera-sensor",
+        "parent": "camera-sensor",
         "tests": [
             {
                 "name": "Match",
@@ -12,7 +12,7 @@
         ]
     },
     {
-        "node": "canvas",
+        "parent": "canvas",
         "tests": [
             {
                 "name": "Match",
@@ -24,7 +24,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",

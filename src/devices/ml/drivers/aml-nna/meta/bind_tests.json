@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match T931",
@@ -53,7 +53,7 @@
         ]
     },
     {
-        "node": "register-reset",
+        "parent": "register-reset",
         "tests": [
             {
                 "name": "Match",

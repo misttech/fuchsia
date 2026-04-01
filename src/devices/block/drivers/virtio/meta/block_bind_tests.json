@@ -1,6 +1,6 @@
 [
     {
-        "node": "pci",
+        "parent": "pci",
         "tests": [
             {
                 "name": "Match",
@@ -23,7 +23,7 @@
         ]
     },
     {
-        "node": "acpi",
+        "parent": "acpi",
         "tests": [
             {
                 "name": "Match",

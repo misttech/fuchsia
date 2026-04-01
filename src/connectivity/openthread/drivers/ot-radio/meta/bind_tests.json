@@ -1,6 +1,6 @@
 [
     {
-        "node": "spi",
+        "parent": "spi",
         "tests": [
             {
                 "name": "Match",
@@ -14,7 +14,7 @@
         ]
     },
     {
-        "node": "gpio-int",
+        "parent": "gpio-int",
         "tests": [
             {
                 "name": "Match",
@@ -27,7 +27,7 @@
         ]
     },
     {
-        "node": "gpio-reset",
+        "parent": "gpio-reset",
         "tests": [
             {
                 "name": "Match",
@@ -40,7 +40,7 @@
         ]
     },
     {
-        "node": "gpio-bootloader",
+        "parent": "gpio-bootloader",
         "tests": [
             {
                 "name": "Match",
@@ -53,7 +53,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -68,7 +68,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

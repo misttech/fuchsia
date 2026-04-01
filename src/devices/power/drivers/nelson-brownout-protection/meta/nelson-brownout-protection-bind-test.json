@@ -1,6 +1,6 @@
 [
     {
-        "node": "codec",
+        "parent": "codec",
         "tests": [
             {
                 "name": "Match",
@@ -14,7 +14,7 @@
         ]
     },
     {
-        "node": "power-sensor",
+        "parent": "power-sensor",
         "tests": [
             {
                 "name": "Match",
@@ -27,7 +27,7 @@
         ]
     },
     {
-        "node": "alert-gpio",
+        "parent": "alert-gpio",
         "tests": [
             {
                 "name": "Match",
@@ -40,7 +40,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

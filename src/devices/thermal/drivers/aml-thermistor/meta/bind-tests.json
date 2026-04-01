@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -55,7 +55,7 @@
         ]
     },
     {
-        "node": "adc-0",
+        "parent": "adc-0",
         "tests": [
             {
                 "device": {

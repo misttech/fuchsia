@@ -1,6 +1,6 @@
 [
     {
-        "node": "thermal",
+        "parent": "thermal",
         "tests": [
             {
                 "name": "Match",
@@ -13,7 +13,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",

@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match devicetree",
@@ -12,7 +12,7 @@
         ]
     },
     {
-        "node": "phy",
+        "parent": "phy",
         "tests": [
             {
                 "name": "Match phy",

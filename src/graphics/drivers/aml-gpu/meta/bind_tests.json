@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -50,7 +50,7 @@
         ]
     },
     {
-        "node": "register-reset",
+        "parent": "register-reset",
         "tests": [
             {
                 "device": {

@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match T931",
@@ -44,7 +44,7 @@
         ]
     },
     {
-        "node": "canvas",
+        "parent": "canvas",
         "tests": [
             {
                 "name": "Match",
@@ -56,7 +56,7 @@
         ]
     },
     {
-        "node": "clock-dos-vdec",
+        "parent": "clock-dos-vdec",
         "tests": [
             {
                 "name": "Match",
@@ -69,7 +69,7 @@
         ]
     },
     {
-        "node": "clock-dos",
+        "parent": "clock-dos",
         "tests": [
             {
                 "name": "Match",
@@ -82,7 +82,7 @@
         ]
     },
     {
-        "node": "tee",
+        "parent": "tee",
         "tests": [
             {
                 "name": "Match",

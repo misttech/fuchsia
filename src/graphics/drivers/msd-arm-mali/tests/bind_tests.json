@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "device": {
@@ -33,7 +33,7 @@
         ]
     },
     {
-        "node": "mali",
+        "parent": "mali",
         "tests": [
             {
                 "device": {

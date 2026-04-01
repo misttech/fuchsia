@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "S905D2 (Astro)",
@@ -56,7 +56,7 @@
         ]
     },
     {
-        "node": "canvas",
+        "parent": "canvas",
         "tests": [
             {
                 "name": "Match",
@@ -68,7 +68,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

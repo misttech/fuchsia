@@ -1,6 +1,6 @@
 [
     {
-        "node": "power-01",
+        "parent": "power-01",
         "tests": [
             {
                 "name": "Match",
@@ -13,7 +13,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -35,7 +35,7 @@
         ]
     },
     {
-        "node": "clock-pll-div16-01",
+        "parent": "clock-pll-div16-01",
         "tests": [
             {
                 "name": "Match",
@@ -48,7 +48,7 @@
         ]
     },
     {
-        "node": "clock-cpu-div16-01",
+        "parent": "clock-cpu-div16-01",
         "tests": [
             {
                 "name": "Match",
@@ -61,7 +61,7 @@
         ]
     },
     {
-        "node": "clock-cpu-scaler-01",
+        "parent": "clock-cpu-scaler-01",
         "tests": [
             {
                 "name": "Match",
@@ -74,7 +74,7 @@
         ]
     },
     {
-        "node": "power-02",
+        "parent": "power-02",
         "tests": [
             {
                 "name": "Match",
@@ -87,7 +87,7 @@
         ]
     },
     {
-        "node": "clock-pll-div16-02",
+        "parent": "clock-pll-div16-02",
         "tests": [
             {
                 "name": "Match",
@@ -100,7 +100,7 @@
         ]
     },
     {
-        "node": "clock-cpu-div16-02",
+        "parent": "clock-cpu-div16-02",
         "tests": [
             {
                 "name": "Match",
@@ -113,7 +113,7 @@
         ]
     },
     {
-        "node": "clock-cpu-scaler-02",
+        "parent": "clock-cpu-scaler-02",
         "tests": [
             {
                 "name": "Match",
@@ -126,7 +126,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

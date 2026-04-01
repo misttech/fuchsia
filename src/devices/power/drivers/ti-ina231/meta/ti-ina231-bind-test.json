@@ -1,6 +1,6 @@
 [
     {
-        "node": "i2c",
+        "parent": "i2c",
         "tests": [
             {
                 "name": "Match mlb",
@@ -21,7 +21,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match mlb",

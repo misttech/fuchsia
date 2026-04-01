@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -15,7 +15,7 @@
         ]
     },
     {
-        "node": "gpio-enable",
+        "parent": "gpio-enable",
         "tests": [
             {
                 "name": "Match",
@@ -28,7 +28,7 @@
         ]
     },
     {
-        "node": "clock-gate",
+        "parent": "clock-gate",
         "tests": [
             {
                 "name": "Match",
@@ -41,7 +41,7 @@
         ]
     },
     {
-        "node": "clock-pll",
+        "parent": "clock-pll",
         "tests": [
             {
                 "name": "Match",
@@ -54,7 +54,7 @@
         ]
     },
     {
-        "node": "codec-01",
+        "parent": "codec-01",
         "tests": [
             {
                 "name": "Match",
@@ -67,7 +67,7 @@
         ]
     },
     {
-        "node": "codec-02",
+        "parent": "codec-02",
         "tests": [
             {
                 "name": "Match",
@@ -80,7 +80,7 @@
         ]
     },
     {
-        "node": "codec-03",
+        "parent": "codec-03",
         "tests": [
             {
                 "name": "Match",
@@ -93,7 +93,7 @@
         ]
     },
     {
-        "node": "clock-init",
+        "parent": "clock-init",
         "tests": [
             {
                 "name": "Match",

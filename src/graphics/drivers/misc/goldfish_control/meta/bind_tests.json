@@ -1,6 +1,6 @@
 [
     {
-        "node": "goldfish-pipe",
+        "parent": "goldfish-pipe",
         "tests": [
             {
                 "name": "Match",
@@ -15,7 +15,7 @@
         ]
     },
     {
-        "node": "goldfish-address-space",
+        "parent": "goldfish-address-space",
         "tests": [
             {
                 "name": "Match",
@@ -27,7 +27,7 @@
         ]
     },
     {
-        "node": "goldfish-sync",
+        "parent": "goldfish-sync",
         "tests": [
             {
                 "name": "Match",

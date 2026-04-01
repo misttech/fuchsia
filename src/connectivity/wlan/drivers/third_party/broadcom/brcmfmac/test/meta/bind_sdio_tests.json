@@ -1,6 +1,6 @@
 [
     {
-        "node": "sdio-function-1",
+        "parent": "sdio-function-1",
         "tests": [
             {
                 "name": "Match accept 0x4345",
@@ -13,7 +13,7 @@
         ]
     },
     {
-        "node": "sdio-function-2",
+        "parent": "sdio-function-2",
         "tests": [
             {
                 "name": "Match accept 0x4345",
@@ -26,7 +26,7 @@
         ]
     },
     {
-        "node": "gpio-oob",
+        "parent": "gpio-oob",
         "tests": [
             {
                 "name": "Match",
@@ -38,7 +38,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -61,7 +61,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

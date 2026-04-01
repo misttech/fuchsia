@@ -1,6 +1,6 @@
 [
     {
-        "node": "pbus",
+        "parent": "pbus",
         "tests": [
             {
                 "expected": "match",
@@ -24,7 +24,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

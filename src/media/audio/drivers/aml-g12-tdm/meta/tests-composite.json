@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -93,7 +93,7 @@
         ]
     },
     {
-        "node": "clock-init",
+        "parent": "clock-init",
         "tests": [
             {
                 "name": "Match",
@@ -105,7 +105,7 @@
         ]
     },
     {
-        "node": "clock-gate",
+        "parent": "clock-gate",
         "tests": [
             {
                 "name": "Match",
@@ -118,7 +118,7 @@
         ]
     },
     {
-        "node": "clock-pll",
+        "parent": "clock-pll",
         "tests": [
             {
                 "name": "Match",

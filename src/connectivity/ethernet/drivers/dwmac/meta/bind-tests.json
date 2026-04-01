@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -22,7 +22,7 @@
         ]
     },
     {
-        "node": "eth-board",
+        "parent": "eth-board",
         "tests": [
             {
                 "name": "Match",

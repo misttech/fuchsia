@@ -1,6 +1,6 @@
 [
     {
-        "node": "dwc2-phy",
+        "parent": "dwc2-phy",
         "tests": [
             {
                 "name": "Match",
@@ -15,7 +15,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",

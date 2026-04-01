@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match devicetree",
@@ -12,7 +12,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",
@@ -24,7 +24,7 @@
         ]
     },
     {
-        "node": "mic-privacy",
+        "parent": "mic-privacy",
         "tests": [
             {
                 "name": "MatchMicPrivacy",
@@ -45,7 +45,7 @@
         ]
     },
     {
-        "node": "volume-up",
+        "parent": "volume-up",
         "tests": [
             {
                 "name": "MatchVolUp",
@@ -66,7 +66,7 @@
         ]
     },
     {
-        "node": "volume-down",
+        "parent": "volume-down",
         "tests": [
             {
                 "name": "MatchVolDown",
@@ -87,7 +87,7 @@
         ]
     },
     {
-        "node": "volume-both",
+        "parent": "volume-both",
         "tests": [
             {
                 "name": "MatchVolBoth",

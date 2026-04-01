@@ -1,6 +1,6 @@
 [
     {
-        "node": "mipicsi",
+        "parent": "mipicsi",
         "tests": [
             {
                 "name": "Match",
@@ -12,7 +12,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -27,7 +27,7 @@
         ]
     },
     {
-        "node": "i2c",
+        "parent": "i2c",
         "tests": [
             {
                 "name": "Match",
@@ -39,7 +39,7 @@
         ]
     },
     {
-        "node": "gpio-reset",
+        "parent": "gpio-reset",
         "tests": [
             {
                 "name": "Match",
@@ -52,7 +52,7 @@
         ]
     },
     {
-        "node": "gpio-vana",
+        "parent": "gpio-vana",
         "tests": [
             {
                 "name": "Match",
@@ -65,7 +65,7 @@
         ]
     },
     {
-        "node": "gpio-vdig",
+        "parent": "gpio-vdig",
         "tests": [
             {
                 "name": "Match",
@@ -78,7 +78,7 @@
         ]
     },
     {
-        "node": "clock-sensor",
+        "parent": "clock-sensor",
         "tests": [
             {
                 "name": "Match",
@@ -91,7 +91,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

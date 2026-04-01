@@ -1,6 +1,6 @@
 [
     {
-        "node": "acpi",
+        "parent": "acpi",
         "tests": [
             {
                 "name": "Match HID",
@@ -21,7 +21,7 @@
         ]
     },
     {
-        "node": "irq000",
+        "parent": "irq000",
         "tests": [
             {
                 "name": "Match",

@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match T931",
@@ -27,7 +27,7 @@
         ]
     },
     {
-        "node": "pwm-a",
+        "parent": "pwm-a",
         "tests": [
             {
                 "name": "Match",
@@ -40,7 +40,7 @@
         ]
     },
     {
-        "node": "pwm-ao-d",
+        "parent": "pwm-ao-d",
         "tests": [
             {
                 "name": "Match",
@@ -53,7 +53,7 @@
         ]
     },
     {
-        "node": "clock-1",
+        "parent": "clock-1",
         "tests": [
             {
                 "name": "Match",
@@ -66,7 +66,7 @@
         ]
     },
     {
-        "node": "clock-2",
+        "parent": "clock-2",
         "tests": [
             {
                 "name": "Match",
@@ -79,7 +79,7 @@
         ]
     },
     {
-        "node": "clock-3",
+        "parent": "clock-3",
         "tests": [
             {
                 "name": "Match",
@@ -92,7 +92,7 @@
         ]
     },
     {
-        "node": "clock-4",
+        "parent": "clock-4",
         "tests": [
             {
                 "name": "Match",

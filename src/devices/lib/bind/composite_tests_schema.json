@@ -6,6 +6,9 @@
             "node": {
                 "type": "string"
             },
+            "parent": {
+                "type": "string"
+            },
             "tests": {
                 "items": {
                     "additionalProperties": false,
@@ -37,8 +40,19 @@
                 "type": "array"
             }
         },
+        "anyOf": [
+            {
+                "required": [
+                    "node"
+                ]
+            },
+            {
+                "required": [
+                    "parent"
+                ]
+            }
+        ],
         "required": [
-            "node",
             "tests"
         ],
         "type": "object"

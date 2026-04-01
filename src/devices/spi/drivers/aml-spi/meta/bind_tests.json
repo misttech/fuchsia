@@ -1,6 +1,6 @@
 [
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",
@@ -15,7 +15,7 @@
         ]
     },
     {
-        "node": "gpio-cs-0",
+        "parent": "gpio-cs-0",
         "tests": [
             {
                 "name": "Match",
@@ -28,7 +28,7 @@
         ]
     },
     {
-        "node": "reset",
+        "parent": "reset",
         "tests": [
             {
                 "name": "Match",
@@ -40,7 +40,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",

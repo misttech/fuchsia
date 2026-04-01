@@ -1,6 +1,6 @@
 [
     {
-        "node": "i2c",
+        "parent": "i2c",
         "tests": [
             {
                 "name": "Match",
@@ -15,7 +15,7 @@
         ]
     },
     {
-        "node": "gpio",
+        "parent": "gpio",
         "tests": [
             {
                 "name": "Match",
@@ -28,7 +28,7 @@
         ]
     },
     {
-        "node": "pdev",
+        "parent": "pdev",
         "tests": [
             {
                 "name": "Match",

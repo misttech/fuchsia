@@ -1,6 +1,6 @@
 [
     {
-        "node": "pwm",
+        "parent": "pwm",
         "tests": [
             {
                 "name": "Match",
@@ -12,7 +12,7 @@
         ]
     },
     {
-        "node": "gpio-init",
+        "parent": "gpio-init",
         "tests": [
             {
                 "name": "Match",
@@ -24,7 +24,7 @@
         ]
     },
     {
-        "node": "gpio-bt",
+        "parent": "gpio-bt",
         "tests": [
             {
                 "name": "Match",

@@ -1,6 +1,6 @@
 [
     {
-        "node": "pci",
+        "parent": "pci",
         "tests": [
             {
                 "name": "Sunrise_I2C0",
@@ -68,7 +68,7 @@
         ]
     },
     {
-        "node": "acpi",
+        "parent": "acpi",
         "tests": [
             {
                 "name": "Match",

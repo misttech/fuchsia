@@ -1,6 +1,6 @@
 [
     {
-        "node": "mcu",
+        "parent": "mcu",
         "tests": [
             {
                 "device": {
@@ -29,7 +29,7 @@
         ]
     },
     {
-        "node": "i2c",
+        "parent": "i2c",
         "tests": [
             {
                 "device": {
