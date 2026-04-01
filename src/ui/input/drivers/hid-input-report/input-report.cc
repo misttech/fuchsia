@@ -64,7 +64,7 @@ void InputReport::HandleReports(
   zx::time time = zx::clock::get_monotonic();
   for (const fuchsia_hardware_hidbus::wire::Report& report : result->value()->reports) {
     if (!report.has_buf()) {
-      FDF_LOG(ERROR, "Report does not have data!");
+      fdf::error("Report does not have data!");
       continue;
     }
     if (report.has_wake_lease()) {
@@ -214,13 +214,12 @@ void InputReport::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   {
     fidl::WireResult result = input_device_->Query();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "GetDescriptor: FIDL failed to Query: %s\n",
-              result.FormatDescription().c_str());
+      fdf::error("GetDescriptor: FIDL failed to Query: {}", result.FormatDescription());
       completer.Close(result.status());
       return;
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "GetDescriptor: Failed to Query: %d\n", result->error_value());
+      fdf::error("GetDescriptor: Failed to Query: {}", result->error_value());
       completer.Close(result->error_value());
       return;
     }
@@ -255,8 +254,7 @@ void InputReport::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   {
     fidl::Status result = completer.result_of_reply();
     if (result.status() != ZX_OK) {
-      FDF_LOG(ERROR, "GetDescriptor: Failed to send descriptor: %s\n",
-              result.FormatDescription().c_str());
+      fdf::error("GetDescriptor: Failed to send descriptor: {}", result.FormatDescription());
     }
   }
 }
@@ -304,13 +302,12 @@ void InputReport::GetFeatureReport(GetFeatureReportCompleter::Sync& completer) {
     fidl::WireResult feature_report_result =
         input_device_->GetReport(fhidbus::ReportType::kFeature, *device->FeatureReportId());
     if (!feature_report_result.ok()) {
-      FDF_LOG(ERROR, "FIDL GetReport failed %s", feature_report_result.FormatDescription().c_str());
+      fdf::error("FIDL GetReport failed {}", feature_report_result.FormatDescription());
       completer.ReplyError(feature_report_result.status());
       return;
     }
     if (feature_report_result->is_error()) {
-      FDF_LOG(ERROR, "GetReport failed %s",
-              zx_status_get_string(feature_report_result->error_value()));
+      fdf::error("GetReport failed {}", zx_status_get_string(feature_report_result->error_value()));
       completer.ReplyError(feature_report_result->error_value());
       return;
     }
@@ -320,7 +317,7 @@ void InputReport::GetFeatureReport(GetFeatureReportCompleter::Sync& completer) {
         device->ParseFeatureReport(feature_report.data(), feature_report.size(), allocator, report);
     if (result != hid_input_report::ParseResult::kOk &&
         result != hid_input_report::ParseResult::kNotImplemented) {
-      FDF_LOG(ERROR, "ParseFeatureReport failed with %u", static_cast<unsigned int>(result));
+      fdf::error("ParseFeatureReport failed with {}", static_cast<unsigned int>(result));
       completer.ReplyError(ZX_ERR_INTERNAL);
       return;
     }
@@ -329,7 +326,7 @@ void InputReport::GetFeatureReport(GetFeatureReportCompleter::Sync& completer) {
   completer.ReplySuccess(std::move(report));
   fidl::Status result = completer.result_of_reply();
   if (result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to get feature report: %s\n", result.FormatDescription().c_str());
+    fdf::error("Failed to get feature report: {}", result.FormatDescription());
   }
 }
 
@@ -349,7 +346,7 @@ void InputReport::SetFeatureReport(SetFeatureReportRequestView request,
       continue;
     }
     if (result != hid_input_report::ParseResult::kOk) {
-      FDF_LOG(ERROR, "SetFeatureReport failed with %u", static_cast<unsigned int>(result));
+      fdf::error("SetFeatureReport failed with {}", static_cast<unsigned int>(result));
       completer.ReplyError(ZX_ERR_INTERNAL);
       return;
     }
@@ -357,7 +354,7 @@ void InputReport::SetFeatureReport(SetFeatureReportRequestView request,
         input_device_->SetReport(fhidbus::ReportType::kFeature, *device->FeatureReportId(),
                                  fidl::VectorView<uint8_t>::FromExternal(hid_report, size));
     if (set_report_result.ok()) {
-      FDF_LOG(ERROR, "SetReport failed with %s", set_report_result.FormatDescription().c_str());
+      fdf::error("SetReport failed with {}", set_report_result.FormatDescription());
       completer.ReplyError(set_report_result.status());
       return;
     }
@@ -371,7 +368,7 @@ void InputReport::SetFeatureReport(SetFeatureReportRequestView request,
   completer.ReplySuccess();
   fidl::Status result = completer.result_of_reply();
   if (result.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to set feature report: %s\n", result.FormatDescription().c_str());
+    fdf::error("Failed to set feature report: {}", result.FormatDescription());
   }
 }
 
@@ -412,7 +409,7 @@ void InputReport::GetInputReport(GetInputReportRequestView request,
 
     if (device->ParseInputReport(result.value()->report.data(), result.value()->report.size(),
                                  allocator, report) != hid_input_report::ParseResult::kOk) {
-      FDF_LOG(ERROR, "GetInputReport: Device failed to parse report correctly");
+      fdf::error("GetInputReport: Device failed to parse report correctly");
       completer.ReplyError(ZX_ERR_INTERNAL);
       return;
     }
@@ -439,14 +436,15 @@ zx_status_t InputReport::Start() {
   hid::ParseResult parse_res =
       hid::ParseReportDescriptor(result->desc.data(), result->desc.size(), &dev_desc);
   if (parse_res != hid::ParseResult::kParseOk) {
-    FDF_LOG(ERROR, "hid-parser: parsing report descriptor failed with error %d", int(parse_res));
+    fdf::error("hid-parser: parsing report descriptor failed with error {}",
+               static_cast<int>(parse_res));
     return ZX_ERR_INTERNAL;
   }
   auto free_desc = fit::defer([dev_desc]() { hid::FreeDeviceDescriptor(dev_desc); });
 
   auto count = dev_desc->rep_count;
   if (count == 0) {
-    FDF_LOG(ERROR, "No report descriptors found ");
+    fdf::error("No report descriptors found");
     return ZX_ERR_INTERNAL;
   }
 
@@ -460,7 +458,7 @@ zx_status_t InputReport::Start() {
 
   // If we never parsed a single device correctly then fail.
   if (devices_.size() == 0) {
-    FDF_LOG(ERROR, "Can't process HID report descriptor for, all parsing attempts failed.");
+    fdf::error("Can't process HID report descriptor for, all parsing attempts failed.");
     return ZX_ERR_INTERNAL;
   }
 
@@ -469,8 +467,8 @@ zx_status_t InputReport::Start() {
   fidl::WireResult get_device_reports_reader_result =
       input_device_->GetDeviceReportsReader(std::move(server));
   if (!get_device_reports_reader_result.ok()) {
-    FDF_LOG(ERROR, "Failed to get device reports reader: %s",
-            get_device_reports_reader_result.FormatDescription().c_str());
+    fdf::error("Failed to get device reports reader: {}",
+               get_device_reports_reader_result.FormatDescription());
     return get_device_reports_reader_result.status();
   }
   dev_reader_.Bind(std::move(client), fdf::Dispatcher::GetCurrent()->async_dispatcher());

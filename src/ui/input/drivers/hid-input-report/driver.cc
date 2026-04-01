@@ -5,6 +5,7 @@
 #include "src/ui/input/drivers/hid-input-report/driver.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace hid_input_report_dev {
 
@@ -14,8 +15,7 @@ zx::result<> InputReportDriver::Start() {
   zx::result<fidl::ClientEnd<finput::Controller>> controller =
       incoming()->Connect<finput::Service::Controller>();
   if (controller.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to fuchsia_hardware_input service. %s",
-            controller.status_string());
+    fdf::error("Failed to connect to fuchsia_hardware_input service: {}", controller);
     return controller.take_error();
   }
 
@@ -35,7 +35,7 @@ zx::result<> InputReportDriver::Start() {
   // Start the inner DFv1 driver.
   auto status = input_report_->Start();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to start input report %d", status);
+    fdf::error("Failed to start input report {}", status);
     return zx::error(status);
   }
 
@@ -86,7 +86,7 @@ zx::result<> InputReportDriver::CreateDevfsNode() {
   fidl::WireResult result = fidl::WireCall(node())->AddChild(
       args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child: status %s", result.status_string());
+    fdf::error("Failed to add child: status {}", result.status_string());
     return zx::error(result.status());
   }
   controller_.Bind(std::move(controller_endpoints.client));

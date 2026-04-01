@@ -22,7 +22,7 @@ void hexdump(const cpp20::span<const uint8_t> data) {
       sprintf(&line[kCharsPerByte * j], "%02X ", data[i + j]);
     }
 
-    FDF_LOG(INFO, "hid-dump(%zu): %s", i, line);
+    fdf::info("hid-dump({}): {}", i, static_cast<const char*>(line));
   }
 }
 
@@ -60,7 +60,7 @@ void InputReportsReader::SendReportsToWaitingRead() {
                                                                               num_reports));
   fidl::Status result = waiting_read_->result_of_reply();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "SendReport: Failed to send reports: %s\n", result.FormatDescription().c_str());
+    fdf::error("SendReport: Failed to send reports: {}", result.FormatDescription());
   }
   waiting_read_.reset();
 
@@ -73,15 +73,15 @@ void InputReportsReader::ReceiveReport(cpp20::span<const uint8_t> raw_report, zx
   fuchsia_input_report::wire::InputReport report(report_allocator_);
 
   if (!device->InputReportId().has_value()) {
-    FDF_LOG(ERROR, "ReceiveReport: Device cannot receive input reports\n");
+    fdf::error("ReceiveReport: Device cannot receive input reports");
     return;
   }
 
   if (hid_input_report::ParseResult result =
           device->ParseInputReport(raw_report.data(), raw_report.size(), report_allocator_, report);
       result != hid_input_report::ParseResult::kOk) {
-    FDF_LOG(ERROR, "ReceiveReport: Device failed to parse report correctly %s (%d)",
-            ParseResultGetString(result), static_cast<int>(result));
+    fdf::error("ReceiveReport: Device failed to parse report correctly {} ({})",
+               ParseResultGetString(result), static_cast<int>(result));
     hexdump(raw_report);
     return;
   }
