@@ -9,6 +9,8 @@
 // When the compiler doesn't inline __builtin_popcount{,l}, it calls these.
 extern "C" int __popcountsi2(uint32_t val);
 extern "C" int __popcountdi2(uint64_t val);
+// If the compiler doesn't inline __builtin_popcount % 2 it calls this.
+extern "C" int __paritydi2(uint64_t val);
 
 extern "C" int __popcountsi2(uint32_t val) {
   // Implement a log2(bits) popcount, with a few tricks to save some
@@ -129,3 +131,5 @@ extern "C" int __popcountdi2(uint64_t val) {
   val = (val + (val >> 4)) & mask3;
   return static_cast<int>((val * mult1) >> 56);
 }
+
+extern "C" int __paritydi2(uint64_t val) { return __popcountdi2(val) % 2; }
