@@ -127,7 +127,11 @@ fuchsia_test_package("optee_smoke_test") {
   test_components = [ ":optee_smoke_test_cmp" ]
   deps = [ ":tee_manager_optee_smoke_test_cmp" ]
   test_specs = {
-    environments = [ astro_env ]
+    environments = [
+      astro_env,
+      sherlock_env,
+      nelson_env,
+    ]
   }
 }
 
