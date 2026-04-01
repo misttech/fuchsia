@@ -6,19 +6,16 @@ use anyhow::Result;
 use diagnostics_data::{
     DiagnosticsHierarchy, InspectData, InspectDataBuilder, InspectHandleName, Property, Timestamp,
 };
-use fidl::endpoints::{ServerEnd, create_proxy_and_stream};
-use fidl_fuchsia_developer_remotecontrol::{
-    RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
-};
-use fidl_fuchsia_diagnostics::{
+use errors as _;
+use fdomain_fuchsia_developer_remotecontrol::{RemoteControlProxy, RemoteControlRequest};
+use fdomain_fuchsia_diagnostics::{
     ClientSelectorConfiguration, DataType, Format, StreamMode, StreamParameters,
 };
-use fidl_fuchsia_diagnostics_host::{
-    ArchiveAccessorMarker, ArchiveAccessorProxy, ArchiveAccessorRequest,
-};
-use futures::{AsyncWriteExt, TryStreamExt};
+use fdomain_fuchsia_diagnostics_host::{ArchiveAccessorProxy, ArchiveAccessorRequest};
+use ffx_writer as _;
+use futures::AsyncWriteExt;
 use std::rc::Rc;
-use {errors as _, ffx_writer as _};
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct FakeArchiveIteratorResponse {
@@ -32,7 +29,7 @@ impl FakeArchiveIteratorResponse {
 }
 
 pub fn setup_fake_accessor_provider(
-    mut server_end: fuchsia_async::Socket,
+    mut server_end: fdomain_client::Socket,
     responses: Rc<Vec<FakeArchiveIteratorResponse>>,
 ) -> Result<()> {
     fuchsia_async::Task::local(async move {
@@ -60,36 +57,30 @@ impl FakeAccessorData {
     }
 }
 
-pub fn setup_fake_archive_accessor(expected_data: Vec<FakeAccessorData>) -> ArchiveAccessorProxy {
-    let (proxy, mut stream) = create_proxy_and_stream::<ArchiveAccessorMarker>();
-    fuchsia_async::Task::local(async move {
-        'req: while let Ok(Some(req)) = stream.try_next().await {
+pub fn setup_fake_archive_accessor(
+    client: Arc<fdomain_client::Client>,
+    expected_data: Vec<FakeAccessorData>,
+) -> ArchiveAccessorProxy {
+    let proxy =
+        target_holders::fdomain::fake_proxy::<ArchiveAccessorProxy>(client.clone(), move |req| {
             match req {
                 ArchiveAccessorRequest::StreamDiagnostics { parameters, stream, responder } => {
                     for data in expected_data.iter() {
                         if data.parameters == parameters {
-                            setup_fake_accessor_provider(
-                                fuchsia_async::Socket::from_socket(stream),
-                                data.responses.clone(),
-                            )
-                            .unwrap();
+                            setup_fake_accessor_provider(stream, data.responses.clone()).unwrap();
                             responder.send().expect("should send");
-                            continue 'req;
+                            return;
                         }
                     }
                     unreachable!(
                         "{:#?} did not match any expected parameters: {:#?}",
                         parameters,
-                        expected_data.into_iter().map(|d| d.parameters).collect::<Vec<_>>()
+                        expected_data.iter().map(|d| d.parameters.clone()).collect::<Vec<_>>()
                     );
                 }
-                ArchiveAccessorRequest::_UnknownMethod { .. } => {
-                    unreachable!("We don't expect any other call");
-                }
+                _ => unreachable!("We don't expect any other call"),
             }
-        }
-    })
-    .detach();
+        });
     proxy
 }
 
@@ -104,18 +95,20 @@ pub fn make_inspects_for_lifecycle() -> Vec<InspectData> {
 
 // `components` are component monikers that should report as existing in the resultant RealmQuery.
 // This will make them appear in fuzzy searches using RemoteControlProxy/RealmQuery
-pub fn setup_fake_rcs(components: Vec<&str>) -> RemoteControlProxy {
+pub fn setup_fake_rcs(
+    client: Arc<fdomain_client::Client>,
+    components: Vec<&str>,
+) -> RemoteControlProxy {
     let mut mock_realm_query_builder = iquery_test_support::MockRealmQueryBuilder::prefilled();
     for c in components {
         mock_realm_query_builder =
             mock_realm_query_builder.when(c).moniker(format!("{c}").as_ref()).add();
     }
 
-    let mock_realm_query = mock_realm_query_builder.build();
-    let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<RemoteControlMarker>();
-    fuchsia_async::Task::local(async move {
-        let querier = Rc::new(mock_realm_query);
-        while let Ok(Some(req)) = stream.try_next().await {
+    let mock_realm_query = Rc::new(mock_realm_query_builder.build());
+    let proxy =
+        target_holders::fdomain::fake_proxy::<RemoteControlProxy>(client.clone(), move |req| {
+            let querier = Rc::clone(&mock_realm_query);
             match req {
                 RemoteControlRequest::ConnectCapability {
                     moniker,
@@ -125,18 +118,18 @@ pub fn setup_fake_rcs(components: Vec<&str>) -> RemoteControlProxy {
                     responder,
                 } => {
                     assert_eq!(moniker, "toolbox");
-                    assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
+                    assert_eq!(capability_set, rcs_fdomain::OpenDirType::NamespaceDir);
                     assert_eq!(capability_name, "svc/fuchsia.sys2.RealmQuery.root");
                     let querier = Rc::clone(&querier);
-                    fuchsia_async::Task::local(querier.serve(ServerEnd::new(server_channel)))
-                        .detach();
+                    fuchsia_async::Task::local(
+                        querier.serve_f(fdomain_client::fidl::ServerEnd::new(server_channel)),
+                    )
+                    .detach();
                     responder.send(Ok(())).unwrap();
                 }
                 _ => unreachable!("Not implemented"),
             }
-        }
-    })
-    .detach();
+        });
     proxy
 }
 
@@ -175,7 +168,7 @@ pub fn inspect_accessor_data(
     client_selector_configuration: ClientSelectorConfiguration,
     inspects: Vec<InspectData>,
 ) -> FakeAccessorData {
-    let params = fidl_fuchsia_diagnostics::StreamParameters {
+    let params = fdomain_fuchsia_diagnostics::StreamParameters {
         stream_mode: Some(StreamMode::Snapshot),
         data_type: Some(DataType::Inspect),
         format: Some(Format::Json),

@@ -8,11 +8,11 @@ use crate::tests::utils::{
     setup_fake_archive_accessor, setup_fake_rcs,
 };
 use errors::ResultExt as _;
-use ffx_writer::{Format, MachineWriter, TestBuffers};
-use fidl_fuchsia_diagnostics::{
+use fdomain_fuchsia_diagnostics::{
     ClientSelectorConfiguration, DataType, SelectorArgument, StreamMode, StreamParameters,
 };
-use iquery::commands::SelectorsCommand;
+use ffx_writer::{Format, MachineWriter, TestBuffers};
+use iquery_fdomain::commands::SelectorsCommand;
 use std::rc::Rc;
 
 #[fuchsia::test]
@@ -27,20 +27,18 @@ async fn test_selectors_no_parameters() {
     let test_buffers = TestBuffers::default();
     let mut writer = MachineWriter::new_test(Some(Format::Json), &test_buffers);
     let cmd = SelectorsCommand { data: vec![], selectors: vec![], accessor: None };
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(
+        client,
+        vec![FakeAccessorData::new(params, expected_responses.clone())],
+    );
     assert!(
-        run_command(
-            setup_fake_rcs(vec![]),
-            setup_fake_archive_accessor(vec![FakeAccessorData::new(
-                params,
-                expected_responses.clone(),
-            )]),
-            SelectorsCommand::from(cmd),
-            &mut writer
-        )
-        .await
-        .unwrap_err()
-        .ffx_error()
-        .is_some()
+        run_command(rcs_proxy, accessor_proxy, SelectorsCommand::from(cmd), &mut writer)
+            .await
+            .unwrap_err()
+            .ffx_error()
+            .is_some()
     );
 }
 
@@ -49,7 +47,7 @@ async fn test_selectors_with_unknown_component_search() {
     let params = StreamParameters {
         stream_mode: Some(StreamMode::Snapshot),
         data_type: Some(DataType::Inspect),
-        format: Some(fidl_fuchsia_diagnostics::Format::Json),
+        format: Some(fdomain_fuchsia_diagnostics::Format::Json),
         client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(true)),
         ..Default::default()
     };
@@ -61,20 +59,18 @@ async fn test_selectors_with_unknown_component_search() {
         accessor: None,
         data: vec![],
     };
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(
+        client,
+        vec![FakeAccessorData::new(params, expected_responses.clone())],
+    );
     assert!(
-        run_command(
-            setup_fake_rcs(vec![]),
-            setup_fake_archive_accessor(vec![FakeAccessorData::new(
-                params,
-                expected_responses.clone(),
-            )]),
-            SelectorsCommand::from(cmd),
-            &mut writer
-        )
-        .await
-        .unwrap_err()
-        .ffx_error()
-        .is_some()
+        run_command(rcs_proxy, accessor_proxy, SelectorsCommand::from(cmd), &mut writer)
+            .await
+            .unwrap_err()
+            .ffx_error()
+            .is_some()
     );
 }
 
@@ -83,7 +79,7 @@ async fn test_selectors_with_unknown_manifest() {
     let params = StreamParameters {
         stream_mode: Some(StreamMode::Snapshot),
         data_type: Some(DataType::Inspect),
-        format: Some(fidl_fuchsia_diagnostics::Format::Json),
+        format: Some(fdomain_fuchsia_diagnostics::Format::Json),
         client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(true)),
         ..Default::default()
     };
@@ -95,20 +91,18 @@ async fn test_selectors_with_unknown_manifest() {
         accessor: None,
         data: vec![],
     };
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(
+        client,
+        vec![FakeAccessorData::new(params, expected_responses.clone())],
+    );
     assert!(
-        run_command(
-            setup_fake_rcs(vec![]),
-            setup_fake_archive_accessor(vec![FakeAccessorData::new(
-                params,
-                expected_responses.clone(),
-            )]),
-            SelectorsCommand::from(cmd),
-            &mut writer
-        )
-        .await
-        .unwrap_err()
-        .ffx_error()
-        .is_some()
+        run_command(rcs_proxy, accessor_proxy, SelectorsCommand::from(cmd), &mut writer)
+            .await
+            .unwrap_err()
+            .ffx_error()
+            .is_some()
     );
 }
 
@@ -133,14 +127,10 @@ async fn test_selectors_with_succesful_component_search() {
         )]),
         inspects,
     );
-    run_command(
-        setup_fake_rcs(vec!["test/moniker1"]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        SelectorsCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec!["test/moniker1"]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, SelectorsCommand::from(cmd), &mut writer).await.unwrap();
 
     let expected = serde_json::to_string(&vec![
         String::from(r#"test/moniker1:[name=fake-name]name:hello_1"#),
@@ -173,14 +163,10 @@ async fn test_selectors_with_manifest_that_exists() {
         )]),
         inspects,
     );
-    run_command(
-        setup_fake_rcs(vec!["test/moniker1"]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        SelectorsCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec!["test/moniker1"]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, SelectorsCommand::from(cmd), &mut writer).await.unwrap();
 
     let expected = serde_json::to_string(&vec![
         String::from(r#"test/moniker1:[name=fake-name]name:hello_1"#),
@@ -212,14 +198,10 @@ async fn test_selectors_with_selectors() {
         )]),
         inspects,
     );
-    run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        SelectorsCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, SelectorsCommand::from(cmd), &mut writer).await.unwrap();
 
     let expected =
         serde_json::to_string(&vec![String::from(r#"test/moniker1:[name=fake-name]name:hello_3"#)])

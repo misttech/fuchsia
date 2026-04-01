@@ -7,7 +7,7 @@ use anyhow::Result;
 use diagnostics_data::{ExtendedMoniker, InspectData};
 use diagnostics_hierarchy::{HierarchyMatcher, hierarchy};
 use difference::Difference::{Add, Rem, Same};
-use fidl_fuchsia_diagnostics::Selector;
+use fdomain_fuchsia_diagnostics::Selector;
 use selectors::{SelectorExt, VerboseError};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

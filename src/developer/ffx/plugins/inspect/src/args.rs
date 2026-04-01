@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use iquery::commands::{ListAccessorsCommand, ListCommand, SelectorsCommand, ShowCommand};
+use iquery_fdomain::commands::{ListAccessorsCommand, ListCommand, SelectorsCommand, ShowCommand};
 use std::path::PathBuf;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]

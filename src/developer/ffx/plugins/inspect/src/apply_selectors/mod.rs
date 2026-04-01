@@ -9,9 +9,9 @@ use crate::apply_selectors::terminal::{Terminal, Termion};
 use anyhow::{Context, Result, anyhow};
 use diagnostics_data::{ExtendedMoniker, Inspect, InspectData};
 use errors::ffx_error;
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_diagnostics_host::ArchiveAccessorProxy;
 use ffx_inspect_args::ApplySelectorsCommand;
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_diagnostics_host::ArchiveAccessorProxy;
 use std::fs::read_to_string;
 use std::io::{stdin, stdout};
 use std::path::Path;
@@ -41,9 +41,10 @@ pub async fn execute(
         )
         .context(format!("Unable to deserialize {}.", snapshot_file.display()))?
     } else {
-        let realm_query = rcs::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
-            .await
-            .map_err(|e| anyhow!(ffx_error!("Failed to connect to realm query: {e}")))?;
+        let realm_query =
+            rcs_fdomain::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
+                .await
+                .map_err(|e| anyhow!(ffx_error!("Failed to connect to realm query: {e}")))?;
         let provider = HostArchiveReader::new(diagnostics_proxy, realm_query);
         provider
             .snapshot_diagnostics_data::<Inspect>(cmd.accessor_path.as_deref(), std::iter::empty())

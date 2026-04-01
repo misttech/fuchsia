@@ -5,16 +5,18 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_diagnostics_host::ArchiveAccessorProxy;
 use ffx_inspect_args::{InspectCommand, InspectSubCommand};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_diagnostics_host::ArchiveAccessorProxy;
-use iquery::commands::{Command, ListAccessorsResult, ListResult, SelectorsResult, ShowResult};
+use iquery_fdomain::commands::{
+    Command, ListAccessorsResult, ListResult, SelectorsResult, ShowResult,
+};
 use serde::Serialize;
 use std::fmt;
 use std::io::Write;
-use target_holders::{RemoteControlProxyHolder, toolbox_or};
+use target_holders::fdomain::{RemoteControlProxyHolder, toolbox_or};
 
 mod accessor_provider;
 mod apply_selectors;
@@ -86,7 +88,7 @@ where
     C: Command<Result = O>,
     InspectOutput: From<O>,
 {
-    let realm_query = rcs::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
+    let realm_query = rcs_fdomain::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
         .await
         .map_err(|e| anyhow!(ffx_error!("Failed to connect to realm query: {e}")))?;
     let provider = HostArchiveReader::new(diagnostics_proxy, realm_query);

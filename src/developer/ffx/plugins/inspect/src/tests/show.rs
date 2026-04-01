@@ -8,9 +8,9 @@ use crate::tests::utils::{
     setup_fake_archive_accessor, setup_fake_rcs,
 };
 use errors::ResultExt as _;
+use fdomain_fuchsia_diagnostics::{ClientSelectorConfiguration, SelectorArgument};
 use ffx_writer::{Format, MachineWriter, TestBuffers};
-use fidl_fuchsia_diagnostics::{ClientSelectorConfiguration, SelectorArgument};
-use iquery::commands::ShowCommand;
+use iquery_fdomain::commands::ShowCommand;
 
 #[fuchsia::test]
 async fn test_show_no_parameters() {
@@ -20,14 +20,10 @@ async fn test_show_no_parameters() {
     let mut inspects = make_inspects();
     let inspect_data =
         inspect_accessor_data(ClientSelectorConfiguration::SelectAll(true), inspects.clone());
-    run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer).await.unwrap();
 
     inspects.sort_by(|a, b| a.moniker.cmp(&b.moniker));
     let expected = serde_json::to_string(&inspects).unwrap();
@@ -52,17 +48,15 @@ async fn test_show_unknown_component_search() {
     let inspects = make_inspects();
     let inspect_data =
         inspect_accessor_data(ClientSelectorConfiguration::SelectAll(true), inspects.clone());
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
     assert!(
-        run_command(
-            setup_fake_rcs(vec![]),
-            setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-            ShowCommand::from(cmd),
-            &mut writer
-        )
-        .await
-        .unwrap_err()
-        .ffx_error()
-        .is_some()
+        run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer)
+            .await
+            .unwrap_err()
+            .ffx_error()
+            .is_some()
     );
 }
 
@@ -83,17 +77,15 @@ async fn test_show_unknown_manifest() {
     let inspects = make_inspects();
     let inspect_data =
         inspect_accessor_data(ClientSelectorConfiguration::SelectAll(true), inspects.clone());
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
     assert!(
-        run_command(
-            setup_fake_rcs(vec![]),
-            setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-            ShowCommand::from(cmd),
-            &mut writer
-        )
-        .await
-        .unwrap_err()
-        .ffx_error()
-        .is_some()
+        run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer)
+            .await
+            .unwrap_err()
+            .ffx_error()
+            .is_some()
     );
 }
 
@@ -122,14 +114,10 @@ async fn test_show_with_component_search() {
         )]),
         inspects.clone(),
     );
-    run_command(
-        setup_fake_rcs(vec!["test/moniker1"]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec!["test/moniker1"]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer).await.unwrap();
 
     inspects.sort_by(|a, b| a.moniker.cmp(&b.moniker));
     let expected = serde_json::to_string(&inspects).unwrap();
@@ -162,14 +150,10 @@ async fn test_show_with_manifest_that_exists() {
         )]),
         inspects.clone(),
     );
-    run_command(
-        setup_fake_rcs(vec!["test/moniker1"]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec!["test/moniker1"]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer).await.unwrap();
 
     inspects.sort_by(|a, b| a.moniker.cmp(&b.moniker));
     let expected = serde_json::to_string(&inspects).unwrap();
@@ -197,14 +181,10 @@ async fn test_show_with_selectors_with_no_data() {
         )]),
         vec![],
     );
-    run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer).await.unwrap();
 
     let expected = String::from("[]");
     let output = test_buffers.into_stdout_str();
@@ -232,14 +212,10 @@ async fn test_show_with_selectors_with_data() {
         )]),
         inspects.clone(),
     );
-    run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![lifecycle_data, inspect_data]);
+    run_command(rcs_proxy, accessor_proxy, ShowCommand::from(cmd), &mut writer).await.unwrap();
 
     inspects.sort_by(|a, b| a.moniker.cmp(&b.moniker));
     let expected = serde_json::to_string(&inspects).unwrap();

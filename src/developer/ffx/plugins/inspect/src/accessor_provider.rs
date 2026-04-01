@@ -4,13 +4,14 @@
 
 use anyhow::anyhow;
 use diagnostics_data::{Data, Inspect};
-use fidl_fuchsia_diagnostics::ClientSelectorConfiguration::{SelectAll, Selectors};
-use fidl_fuchsia_diagnostics::{Format, Selector, SelectorArgument, StreamParameters};
-use fidl_fuchsia_diagnostics_host::{ArchiveAccessorMarker, ArchiveAccessorProxy};
-use fidl_fuchsia_sys2 as fsys2;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_diagnostics::ClientSelectorConfiguration::{SelectAll, Selectors};
+use fdomain_fuchsia_diagnostics::{Format, Selector, SelectorArgument, StreamParameters};
+use fdomain_fuchsia_diagnostics_host::{ArchiveAccessorMarker, ArchiveAccessorProxy};
+use fdomain_fuchsia_sys2 as fsys2;
 use futures::AsyncReadExt;
-use iquery::commands::{DiagnosticsProvider, connect_accessor, get_accessor_selectors};
-use iquery::types::Error;
+use iquery_fdomain::commands::{DiagnosticsProvider, connect_accessor, get_accessor_selectors};
+use iquery_fdomain::types::Error;
 use moniker::Moniker;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -77,14 +78,14 @@ impl HostArchiveReader {
         };
 
         let params = StreamParameters {
-            stream_mode: Some(fidl_fuchsia_diagnostics::StreamMode::Snapshot),
+            stream_mode: Some(fdomain_fuchsia_diagnostics::StreamMode::Snapshot),
             data_type: Some(D::DATA_TYPE),
             format: Some(Format::Json),
             client_selector_configuration: Some(selectors),
             ..Default::default()
         };
 
-        let (client, server) = fuchsia_async::emulated_handle::Socket::create_stream();
+        let (mut client, server) = self.query_proxy.domain().create_stream_socket();
 
         let _ = accessor.stream_diagnostics(&params, server).await.map_err(|s| {
             Error::IOError(
@@ -92,8 +93,6 @@ impl HostArchiveReader {
                 anyhow!("failure setting up diagnostics stream: {:?}", s),
             )
         })?;
-
-        let mut client = fuchsia_async::Socket::from_socket(client);
 
         let mut output = vec![];
         match client.read_to_end(&mut output).await {

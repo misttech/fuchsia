@@ -5,21 +5,19 @@
 use crate::run_command;
 use crate::tests::utils::{setup_fake_archive_accessor, setup_fake_rcs};
 use ffx_writer::{Format, MachineWriter, TestBuffers};
-use iquery::commands::ListAccessorsCommand;
+use iquery_fdomain::commands::ListAccessorsCommand;
 
 #[fuchsia::test]
 async fn test_list_accessors() {
     let test_buffers = TestBuffers::default();
     let mut writer = MachineWriter::new_test(Some(Format::Json), &test_buffers);
     let cmd = ListAccessorsCommand {};
-    run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![]),
-        ListAccessorsCommand::from(cmd),
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let client = fdomain_local::local_client_empty();
+    let rcs_proxy = setup_fake_rcs(client.clone(), vec![]);
+    let accessor_proxy = setup_fake_archive_accessor(client, vec![]);
+    run_command(rcs_proxy, accessor_proxy, ListAccessorsCommand::from(cmd), &mut writer)
+        .await
+        .unwrap();
 
     let expected = serde_json::to_string(&vec![
         String::from("example/component:fuchsia.diagnostics.ArchiveAccessor"),
