@@ -49,7 +49,7 @@ void Device::Start(fdf::StartCompleter completer) {
       compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming());
 
   if (usb_client.is_error()) {
-    errorf("Failed to connect usb client: %s", usb_client.status_string());
+    errorf("Failed to connect usb client: {}", usb_client);
     completer(zx::error(usb_client.status_value()));
     return;
   }
@@ -76,8 +76,8 @@ void Device::Start(fdf::StartCompleter completer) {
 
   auto dispatcher =
       fdf::SynchronizedDispatcher::Create({}, "", [](fdf_dispatcher_t* dispatcher) {});
-  if (!dispatcher.is_ok()) {
-    errorf("Failed to create dispatcher: %s", dispatcher.status_string());
+  if (dispatcher.is_error()) {
+    errorf("Failed to create dispatcher: {}", dispatcher);
     completer(zx::error(dispatcher.status_value()));
     return;
   }
@@ -86,7 +86,7 @@ void Device::Start(fdf::StartCompleter completer) {
   zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end =
       incoming()->Connect<fhbt::HciService::HciTransport>();
   if (client_end.is_error()) {
-    errorf("Connect to fhbt::HciTransport protocol failed: %s", client_end.status_string());
+    errorf("Connect to fhbt::HciTransport protocol failed: {}", client_end);
     completer(zx::error(client_end.status_value()));
     return;
   }
@@ -95,7 +95,7 @@ void Device::Start(fdf::StartCompleter completer) {
       *std::move(client_end), hci_client_dispatcher_.async_dispatcher(), &hci_event_handler_);
 
   if (zx_status_t status = Init(secure_); status != ZX_OK) {
-    errorf("Initialization failed: %s", zx_status_get_string(status));
+    errorf("Initialization failed: {}", zx_status_get_string(status));
     completer(zx::error(status));
     return;
   }
@@ -110,7 +110,7 @@ void Device::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok
 zx_status_t Device::AddNode() {
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    errorf("Failed to bind devfs connecter to dispatcher: %s", connector.status_string());
+    errorf("Failed to bind devfs connecter to dispatcher: {}", connector);
     return connector.error_value();
   }
 
@@ -121,7 +121,7 @@ zx_status_t Device::AddNode() {
 
   zx::result child = AddOwnedChild("bt-hci-intel", devfs_args);
   if (child.is_error()) {
-    errorf("Failed to add bt-hci-intel node, FIDL error: %s", child.status_string());
+    errorf("Failed to add bt-hci-intel node, FIDL error: {}", child);
     return child.status_value();
   }
 
@@ -131,7 +131,7 @@ zx_status_t Device::AddNode() {
 }
 
 zx_status_t Device::Init(bool secure) {
-  infof("Init(secure: %s, firmware_loading: %s)", (secure_ ? "yes" : "no"),
+  infof("Init(secure: {}, firmware_loading: {})", (secure_ ? "yes" : "no"),
         (legacy_firmware_loading_ ? "legacy" : "new"));
 
   // TODO(armansito): Track metrics for initialization failures.
@@ -153,7 +153,7 @@ zx_status_t Device::Init(bool secure) {
 }
 
 zx_status_t Device::InitFailed(zx_status_t status, const char* note) {
-  errorf("%s: %s", note, zx_status_get_string(status));
+  errorf("{}: {}", note, zx_status_get_string(status));
   return status;
 }
 
@@ -166,7 +166,7 @@ zx_handle_t Device::MapFirmware(const char* name, uintptr_t* fw_addr, size_t* fw
   fw_path.append(name);
   auto client = incoming()->Open<fuchsia_io::File>(fw_path.c_str(), kOpenFlags);
   if (client.is_error()) {
-    warnf("Open firmware file failed: %s", zx_status_get_string(client.error_value()));
+    warnf("Open firmware file failed: {}", zx_status_get_string(client.error_value()));
     return ZX_HANDLE_INVALID;
   }
 
@@ -177,26 +177,26 @@ zx_handle_t Device::MapFirmware(const char* name, uintptr_t* fw_addr, size_t* fw
       warnf("Failed to get backing memory: Peer closed");
       return ZX_HANDLE_INVALID;
     }
-    warnf("Failed to get backing memory: %s", zx_status_get_string(backing_memory_result.status()));
+    warnf("Failed to get backing memory: {}", zx_status_get_string(backing_memory_result.status()));
     return ZX_HANDLE_INVALID;
   }
 
   const auto* backing_memory = backing_memory_result.Unwrap();
   if (backing_memory->is_error()) {
-    warnf("Failed to get backing memory: %s", zx_status_get_string(backing_memory->error_value()));
+    warnf("Failed to get backing memory: {}", zx_status_get_string(backing_memory->error_value()));
     return ZX_HANDLE_INVALID;
   }
 
   zx::vmo& backing_vmo = backing_memory->value()->vmo;
   if (zx_status_t status = backing_vmo.get_prop_content_size(&size); status != ZX_OK) {
-    warnf("Failed to get vmo size: %s", zx_status_get_string(status));
+    warnf("Failed to get vmo size: {}", zx_status_get_string(status));
     return ZX_HANDLE_INVALID;
   }
   vmo = backing_vmo.release();
 
   zx_status_t status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ, 0, vmo, 0, size, fw_addr);
   if (status != ZX_OK) {
-    errorf("firmware map failed: %s", zx_status_get_string(status));
+    errorf("firmware map failed: {}", zx_status_get_string(status));
     return ZX_HANDLE_INVALID;
   }
   *fw_size = size;
@@ -214,7 +214,7 @@ void Device::EncodeCommand(EncodeCommandRequestView request,
 void Device::OpenHci(OpenHciCompleter::Sync& completer) {
   auto endpoints = fidl::CreateEndpoints<fhbt::Hci>();
   if (endpoints.is_error()) {
-    errorf("Failed to create endpoints: %s", zx_status_get_string(endpoints.error_value()));
+    errorf("Failed to create endpoints: {}", zx_status_get_string(endpoints.error_value()));
     completer.ReplyError(endpoints.error_value());
     return;
   }
@@ -226,7 +226,7 @@ void Device::OpenHciTransport(OpenHciTransportCompleter::Sync& completer) {
   zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end =
       incoming()->Connect<fhbt::HciService::HciTransport>();
   if (client_end.is_error()) {
-    errorf("Connect to fhbt::HciTransport protocol failed: %s", client_end.status_string());
+    errorf("Connect to fhbt::HciTransport protocol failed: {}", client_end);
     completer.ReplyError(client_end.status_value());
     return;
   }
@@ -238,7 +238,7 @@ void Device::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   zx::result<fidl::ClientEnd<fhbt::Snoop>> client_end =
       incoming()->Connect<fhbt::HciService::Snoop>();
   if (client_end.is_error()) {
-    errorf("Connect to fhbt::Snoop protocol failed: %s", client_end.status_string());
+    errorf("Connect to fhbt::Snoop protocol failed: {}", client_end);
     completer.ReplyError(client_end.status_value());
     return;
   }
@@ -275,7 +275,7 @@ zx_status_t Device::LoadSecureFirmware() {
   if (hci_status == pw::bluetooth::emboss::StatusCode::UNKNOWN_COMMAND) {
     infof("Ignoring \"Unknown Command\" error while in bootloader mode");
   } else if (hci_status != pw::bluetooth::emboss::StatusCode::SUCCESS) {
-    errorf("HCI_Reset failed (status: 0x%02hhx)", static_cast<unsigned char>(hci_status));
+    errorf("HCI_Reset failed (status: 0x{:02x})", static_cast<unsigned char>(hci_status));
     return ZX_ERR_BAD_STATE;
   }
 
@@ -293,14 +293,14 @@ zx_status_t Device::LoadSecureFirmware() {
 
     // If we're already in firmware mode, we're done.
     if (version_view.fw_variant().Read() == kFirmwareFirmwareVariant) {
-      infof("firmware loaded (variant %d, revision %d)", version_view.hw_variant().Read(),
+      infof("firmware loaded (variant {}, revision {})", version_view.hw_variant().Read(),
             version_view.hw_revision().Read());
       return ZX_OK;
     }
 
     // If we reached here then the controller must be in bootloader mode.
     if (version_view.fw_variant().Read() != kBootloaderFirmwareVariant) {
-      errorf("unsupported firmware variant (0x%x)", version_view.fw_variant().Read());
+      errorf("unsupported firmware variant ({:#x})", version_view.fw_variant().Read());
       return ZX_ERR_NOT_SUPPORTED;
     }
 
@@ -358,7 +358,7 @@ zx_status_t Device::LoadSecureFirmware() {
   // Switch the controller into firmware mode.
   hci.SendVendorReset(boot_addr);
 
-  infof("firmware loaded using %s", fw_filename.c_str());
+  infof("firmware loaded using {}", fw_filename.c_str());
   return ZX_OK;
 }
 
@@ -370,7 +370,7 @@ zx_status_t Device::LoadLegacyFirmware() {
   // Bring the controller to a well-defined default state.
   auto hci_status = hci.SendHciReset();
   if (hci_status != pw::bluetooth::emboss::StatusCode::SUCCESS) {
-    errorf("HCI_Reset failed (status: 0x%02hhx)", static_cast<unsigned char>(hci_status));
+    errorf("HCI_Reset failed (status: 0x{:02x})", static_cast<unsigned char>(hci_status));
     return ZX_ERR_BAD_STATE;
   }
 
@@ -426,7 +426,7 @@ zx_status_t Device::LoadLegacyFirmware() {
     return ZX_ERR_BAD_STATE;
   }
 
-  infof("controller patched using %s", fw_filename.c_str());
+  infof("controller patched using {}", fw_filename.c_str());
   return ZX_OK;
 }
 

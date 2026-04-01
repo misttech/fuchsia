@@ -27,7 +27,7 @@ void HciEventHandler::OnReceive(fuchsia_hardware_bluetooth::ReceivedPacket& pack
       break;
     }
     default:
-      errorf("Unknown packet type: %lu", packet.Which());
+      errorf("Unknown packet type: {}", static_cast<uint32_t>(packet.Which()));
   }
   // Assert the completion signal, it won't be de-assert until the queue is empty.
   event_in_queue_.Signal();
@@ -54,12 +54,12 @@ std::vector<uint8_t> HciEventHandler::WaitForPacket(zx::duration timeout) {
 }
 
 void HciEventHandler::on_fidl_error(fidl::UnbindInfo error) {
-  errorf("HciTransport protocol closed: %s", error.FormatDescription().c_str());
+  errorf("HciTransport protocol closed: {}", error.FormatDescription());
 }
 
 void HciEventHandler::handle_unknown_event(
     fidl::UnknownEventMetadata<fuchsia_hardware_bluetooth::HciTransport> metadata) {
-  warnf("Unknown event from Hci server: %lu", metadata.event_ordinal);
+  warnf("Unknown event from Hci server: {}", metadata.event_ordinal);
 }
 
 }  // namespace bt_hci_intel

@@ -7,14 +7,9 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 
-#define logf(level, args...)          \
-  do {                                \
-    FDF_LOG(level, "btintel: " args); \
-  } while (false)
-
-#define errorf(args...) logf(ERROR, args)
-#define warnf(args...) logf(WARNING, args)
-#define infof(args...) logf(INFO, args)
-#define tracef(args...) logf(TRACE, args)
+#define errorf(fmt, args...) fdf::error(fmt, ##args)
+#define warnf(fmt, args...) fdf::warn(fmt, ##args)
+#define infof(fmt, args...) fdf::info(fmt, ##args)
+#define tracef(fmt, args...) fdf::trace(fmt, ##args)
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_HCI_VENDOR_INTEL_LOGGING_H_

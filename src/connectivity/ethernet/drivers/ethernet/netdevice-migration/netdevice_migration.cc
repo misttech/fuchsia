@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/zircon-internal/align.h>
 #include <zircon/system/public/zircon/assert.h>
@@ -40,12 +41,12 @@ zx::result<> NetdeviceMigration::Start() {
 
   zx::result ethernet = compat::ConnectBanjo<ddk::EthernetImplProtocolClient>(incoming());
   if (ethernet.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to Ethernet Impl protocol: %s", ethernet.status_string());
+    fdf::error("Failed to connect to Ethernet Impl protocol: {}", ethernet.status_string());
     return ethernet.take_error();
   }
   ethernet_ = ethernet.value();
   if (!ethernet_.is_valid()) {
-    FDF_LOG(ERROR, "Received invalid ethernet impl client");
+    fdf::error("Received invalid ethernet impl client");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -58,14 +59,14 @@ zx::result<> NetdeviceMigration::Start() {
   };
   ethernet_info_t eth_info;
   if (zx_status_t status = ethernet_.Query(0, &eth_info); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to query parent: %s", zx_status_get_string(status));
+    fdf::error("failed to query parent: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   zx::bti eth_bti;
   if (eth_info.features & ETHERNET_FEATURE_DMA) {
     ethernet_.GetBti(&eth_bti);
     if (!eth_bti.is_valid()) {
-      FDF_LOG(ERROR, "failed to get valid bti handle");
+      fdf::error("failed to get valid bti handle");
       return zx::error(ZX_ERR_BAD_HANDLE);
     }
     opts.pin = vmo_store::PinOptions{
@@ -88,8 +89,7 @@ zx::result<> NetdeviceMigration::Start() {
   std::array<uint8_t, sizeof(eth_info.mac)> mac;
   std::copy_n(eth_info.mac, sizeof(eth_info.mac), mac.begin());
   if (eth_info.netbuf_size < sizeof(ethernet_netbuf_t)) {
-    FDF_LOG(ERROR, "invalid buffer size %ld < min %zu", eth_info.netbuf_size,
-            sizeof(ethernet_netbuf_t));
+    fdf::error("invalid buffer size {} < min {}", eth_info.netbuf_size, sizeof(ethernet_netbuf_t));
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   {
@@ -141,7 +141,7 @@ zx::result<> NetdeviceMigration::Start() {
       {}, "netdev-dispatcher",
       [this](fdf_dispatcher_t*) { netdevice_dispatcher_shutdown_.Signal(); });
   if (netdev_dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create netdevice dispatcher: %s", netdev_dispatcher.status_string());
+    fdf::error("Failed to create netdevice dispatcher: {}", netdev_dispatcher.status_string());
     return zx::error(netdev_dispatcher.status_value());
   }
   netdevice_dispatcher_ = std::move(netdev_dispatcher.value());
@@ -150,13 +150,13 @@ zx::result<> NetdeviceMigration::Start() {
     fbl::AutoLock vmo_lock(&vmo_lock_);
     vmo_store_ = std::make_unique<NetdeviceMigrationVmoStore>(opts);
     if (zx_status_t status = vmo_store_->Reserve(netdev::wire::kMaxVmos); status != ZX_OK) {
-      FDF_LOG(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
+      fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
 
   if (zx_status_t status = DeviceAdd(); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to add device: %s", zx_status_get_string(status));
+    fdf::error("Failed to add device: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -169,7 +169,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
   if (zx::result result =
           compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
+    fdf::error("Failed to initialize compat server: {}", result.status_string());
     return result.status_value();
   }
 
@@ -183,7 +183,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
 
   auto status = outgoing()->AddService<netdev::Service>(std::move(handler));
   if (status.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service to outgoing directory: %s\n", status.status_string());
+    fdf::error("Failed to add service to outgoing directory: {}", status.status_string());
     return status.error_value();
   }
 
@@ -195,7 +195,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
   zx::result netdev_child = AddChild("netdevice-migration-netdev", properties, offers);
 
   if (netdev_child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add net device child node: %s", netdev_child.status_string());
+    fdf::error("Failed to add net device child node: {}", netdev_child.status_string());
     return netdev_child.status_value();
   }
   netdev_child_ = std::move(netdev_child.value());
@@ -228,7 +228,7 @@ void NetdeviceMigration::EthernetIfcStatus(uint32_t status) __TA_EXCLUDES(status
   }
   if (fidl::OneWayStatus status = netdevice_.buffer(arena)->PortStatusChanged(kPortId, port_status);
       !status.ok()) {
-    FDF_LOG(ERROR, "Failed to send port status changed: %s", status.FormatDescription().c_str());
+    fdf::error("Failed to send port status changed: {}", status.FormatDescription());
     return;
   }
 }
@@ -276,7 +276,7 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
     if (fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
             fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(&buf, 1));
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to complete RX: {}", status.FormatDescription());
       // This is a critical error that we can only recover from by unbinding and rebinding.
       DeviceRemove();
       return status.status();
@@ -294,16 +294,15 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
       // Use post-increment to ensure we log on the first dropped packet.
       const size_t v = no_rx_space_++;
       if (v % N == 0) {
-        FDF_LOG(ERROR, "received ethernet frames without queued rx buffers; %zu frames dropped",
-                v + 1);
+        fdf::error("received ethernet frames without queued rx buffers; {} frames dropped", v + 1);
       }
     } break;
     case ZX_ERR_BUFFER_TOO_SMALL:
-      FDF_LOG(ERROR, "received ethernet frames larger than rx buffer length of %lu",
-              space.region.length);
+      fdf::error("received ethernet frames larger than rx buffer length of {}",
+                 space.region.length);
       break;
     case ZX_ERR_INVALID_ARGS:
-      FDF_LOG(ERROR, "queued frames with unknown VMO IDs");
+      fdf::error("queued frames with unknown VMO IDs");
       break;
     default:
       ZX_PANIC("unexpected status %s", zx_status_get_string(status));
@@ -328,12 +327,12 @@ void NetdeviceMigration::Init(netdev::wire::NetworkDeviceImplInitRequest* reques
                 fdf::WireUnownedResult<netdev::NetworkDeviceIfc::AddPort>& result) mutable {
         fdf::Arena arena(0u);
         if (!result.ok()) {
-          FDF_LOG(ERROR, "failed to add port: %s", result.FormatDescription().c_str());
+          fdf::error("failed to add port: {}", result.FormatDescription());
           completer.buffer(arena).Reply(result.status());
           return;
         }
         if (result->status != ZX_OK) {
-          FDF_LOG(ERROR, "failed to add port: %s", zx_status_get_string(result->status));
+          fdf::error("failed to add port: {}", zx_status_get_string(result->status));
           completer.buffer(arena).Reply(result->status);
           return;
         }
@@ -347,7 +346,7 @@ void NetdeviceMigration::Start(fdf::Arena& arena, StartCompleter::Sync& complete
     std::lock_guard rx_lock(rx_lock_);
     std::lock_guard tx_lock(tx_lock_);
     if (tx_started_ || rx_started_) {
-      FDF_LOG(WARNING, "device already started");
+      fdf::warn("device already started");
       completer.buffer(arena).Reply(ZX_ERR_ALREADY_BOUND);
       return;
     }
@@ -408,8 +407,7 @@ void NetdeviceMigration::Stop(fdf::Arena& arena, StopCompleter::Sync& completer)
     if (fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
             fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_buffers.data(), count));
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to return %zu RX buffers on Stop: %s", count,
-              status.FormatDescription().c_str());
+      fdf::error("Failed to return {} RX buffers on Stop: {}", count, status.FormatDescription());
       // This is a critical error that we can only recover from by unbinding and rebinding.
       DeviceRemove();
       completer.buffer(arena).Reply();
@@ -420,8 +418,7 @@ void NetdeviceMigration::Stop(fdf::Arena& arena, StopCompleter::Sync& completer)
     if (fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteTx(
             fidl::VectorView<netdev::wire::TxResult>::FromExternal(tx_return.data(), count));
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to return %zu TX buffers on Stop: %s", count,
-              status.FormatDescription().c_str());
+      fdf::error("Failed to return {} TX buffers on Stop: {}", count, status.FormatDescription());
       // This is a critical error that we can only recover from by unbinding and rebinding.
       DeviceRemove();
       completer.buffer(arena).Reply();
@@ -448,7 +445,7 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
     std::lock_guard tx_lock(tx_lock_);
     const fidl::VectorView<netdev::wire::TxBuffer>& buffers = request->buffers;
     if (!tx_started_) {
-      FDF_LOG(ERROR, "tx buffers queued before start call");
+      fdf::error("tx buffers queued before start call");
       static_assert(
           netdev::wire::kMaxTxBuffers <= netdev::wire::kMaxTxResults,
           "This code relies on being able to return all QueueTx buffers in one CompleteTx call");
@@ -460,8 +457,8 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
         };
       }
       if (fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteTx(results); !status.ok()) {
-        FDF_LOG(ERROR, "Failed to return %zu TX buffers: %s", buffers.size(),
-                status.FormatDescription().c_str());
+        fdf::error("Failed to return {} TX buffers: {}", buffers.size(),
+                   status.FormatDescription());
         // This is a critical error that we can only recover from by unbinding and rebinding.
         DeviceRemove();
       }
@@ -469,21 +466,21 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
     }
     for (const netdev::wire::TxBuffer& buffer : buffers) {
       if (buffer.data.size() != *info_.max_buffer_parts()) {
-        FDF_LOG(ERROR, "tx buffer queued with parts count %zu != max buffer parts %u",
-                buffer.data.size(), *info_.max_buffer_parts());
+        fdf::error("tx buffer queued with parts count {} != max buffer parts {}",
+                   buffer.data.size(), *info_.max_buffer_parts());
         DeviceRemove();
         return;
       }
       const netdev::wire::BufferRegion& region = buffer.data[0];
       if (region.length > *info_.max_buffer_length()) {
-        FDF_LOG(ERROR, "tx buffer queued with length %" PRIu64 " > max buffer length %u",
-                region.length, *info_.max_buffer_length());
+        fdf::error("tx buffer queued with length {} > max buffer length {}", region.length,
+                   *info_.max_buffer_length());
         DeviceRemove();
         return;
       }
       auto* vmo = vmo_store_->GetVmo(region.vmo);
       if (vmo == nullptr) {
-        FDF_LOG(ERROR, "tx buffer %du queued with unknown vmo id %du", buffer.id, region.vmo);
+        fdf::error("tx buffer {} queued with unknown vmo id {}", buffer.id, region.vmo);
         DeviceRemove();
         return;
       }
@@ -494,7 +491,7 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
         if (zx_status_t status = vmo->GetPinnedRegions(region.offset, region.length, &pinned_region,
                                                        1, &regions_needed);
             status != ZX_OK) {
-          FDF_LOG(ERROR, "failed to get pinned regions of vmo: %s", zx_status_get_string(status));
+          fdf::error("failed to get pinned regions of vmo: {}", zx_status_get_string(status));
           netdev::wire::TxResult result = {
               .id = buffer.id,
               .status = ZX_ERR_INTERNAL,
@@ -502,8 +499,8 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
           if (fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteTx(
                   fidl::VectorView<netdev::wire::TxResult>::FromExternal(&result, 1));
               !status.ok()) {
-            FDF_LOG(ERROR, "Failed to return TX buffer with invalid VMO: %s",
-                    status.FormatDescription().c_str());
+            fdf::error("Failed to return TX buffer with invalid VMO: {}",
+                       status.FormatDescription());
             // This is a critical error that we can only recover from by unbinding and rebinding.
             DeviceRemove();
             return;
@@ -516,7 +513,7 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
       vmo_view = vmo_view.subspan(region.offset, region.length);
       std::optional netbuf = netbuf_pool_.pop();
       if (!netbuf.has_value()) {
-        FDF_LOG(ERROR, "netbuf pool exhausted");
+        fdf::error("netbuf pool exhausted");
         DeviceRemove();
         return;
       }
@@ -571,7 +568,7 @@ void NetdeviceMigration::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* 
           if (fidl::OneWayStatus status = netdev->netdevice_.buffer(arena)->CompleteTx(
                   fidl::VectorView<netdev::wire::TxResult>::FromExternal(&result, 1));
               !status.ok()) {
-            FDF_LOG(ERROR, "Failed to complete TX buffer: %s", status.FormatDescription().c_str());
+            fdf::error("Failed to complete TX buffer: {}", status.FormatDescription());
             // This is a critical error that we can only recover from by unbinding and rebinding.
             netdev->DeviceRemove();
           }
@@ -590,14 +587,13 @@ void NetdeviceMigration::QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpac
         total_rx_buffers > *info_.rx_depth()) {
       // Client has violated API contract: "The total number of outstanding rx buffers given to a
       // device will never exceed the reported [`DeviceInfo.rx_depth`] value."
-      FDF_LOG(ERROR, "total received rx buffers %zu > rx_depth %u", total_rx_buffers,
-              *info_.rx_depth());
+      fdf::error("total received rx buffers {} > rx_depth {}", total_rx_buffers, *info_.rx_depth());
       DeviceRemove();
       return;
     }
     const fidl::VectorView<netdev::wire::RxSpaceBuffer>& buffers = request->buffers;
     if (!rx_started_) {
-      FDF_LOG(ERROR, "rx buffers queued before start call");
+      fdf::error("rx buffers queued before start call");
       for (const netdev::wire::RxSpaceBuffer& space : buffers) {
         netdev::wire::RxBufferPart part = {
             .id = space.id,
@@ -610,7 +606,7 @@ void NetdeviceMigration::QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpac
         if (fidl::OneWayStatus status = netdevice_.buffer(arena)->CompleteRx(
                 fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(&buf, 1));
             !status.ok()) {
-          FDF_LOG(ERROR, "Failed to complete RX buffer: %s", status.FormatDescription().c_str());
+          fdf::error("Failed to complete RX buffer: {}", status.FormatDescription());
           // This is a critical error that we can only recover from by unbinding and rebinding.
           DeviceRemove();
           return;
@@ -621,8 +617,8 @@ void NetdeviceMigration::QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpac
     for (const netdev::wire::RxSpaceBuffer& space : buffers) {
       if (space.region.length < *info_.min_rx_buffer_length() ||
           space.region.length > *info_.max_buffer_length()) {
-        FDF_LOG(ERROR, "rx buffer queued with length %ld, outside valid range [%du, %du]",
-                space.region.length, *info_.min_rx_buffer_length(), *info_.max_buffer_length());
+        fdf::error("rx buffer queued with length {}, outside valid range [{}, {}]",
+                   space.region.length, *info_.min_rx_buffer_length(), *info_.max_buffer_length());
         DeviceRemove();
         return;
       }
@@ -635,7 +631,7 @@ void NetdeviceMigration::QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpac
     // that a subsequent Start() or Stop() call will not occur until after this one has returned via
     // the callback.
     if (zx_status_t status = ethernet_.Start(this, &ethernet_ifc_protocol_ops_); status != ZX_OK) {
-      FDF_LOG(WARNING, "failed to start device: %s", zx_status_get_string(status));
+      fdf::warn("failed to start device: {}", zx_status_get_string(status));
     }
   }
 }
@@ -656,7 +652,7 @@ void NetdeviceMigration::ReleaseVmo(netdev::wire::NetworkDeviceImplReleaseVmoReq
     // A failure here may be the result of a failed call to register the vmo, in which case the
     // driver is queued for removal from device manager. Accordingly, we must not panic lest we
     // disrupt the orderly shutdown of the driver: a log statement is the best we can do.
-    FDF_LOG(ERROR, "failed to release vmo id = %d: %s", request->id, status.status_string());
+    fdf::error("failed to release vmo id = {}: {}", request->id, status.status_string());
   }
   completer.buffer(arena).Reply();
 }
@@ -690,7 +686,7 @@ void NetdeviceMigration::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& comple
 }
 
 void NetdeviceMigration::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {
-  FDF_LOG(INFO, "removed event for port %d", kPortId);
+  fdf::info("removed event for port {}", kPortId);
 }
 
 void NetdeviceMigration::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
@@ -712,8 +708,8 @@ void NetdeviceMigration::SetMode(
     fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request, fdf::Arena& arena,
     SetModeCompleter::Sync& completer) {
   if (request->multicast_macs.size() > kMulticastFilterMax) {
-    FDF_LOG(ERROR, "multicast macs count exceeds maximum: %zu > %u", request->multicast_macs.size(),
-            kMulticastFilterMax);
+    fdf::error("multicast macs count exceeds maximum: {} > {}", request->multicast_macs.size(),
+               kMulticastFilterMax);
     DeviceRemove();
     completer.buffer(arena).Reply();
     return;
@@ -733,8 +729,8 @@ void NetdeviceMigration::SetMode(
       SetMacParam(ETHERNET_SETPARAM_PROMISC, 1);
       break;
     default:
-      FDF_LOG(ERROR, "mac addr filtering mode set with unsupported mode %u",
-              static_cast<uint32_t>(request->mode));
+      fdf::error("mac addr filtering mode set with unsupported mode {}",
+                 static_cast<uint32_t>(request->mode));
       DeviceRemove();
       completer.buffer(arena).Reply();
       return;
@@ -758,12 +754,12 @@ void NetdeviceMigration::SetMacParam(uint32_t param, int32_t value,
     // this ends up generating quite a bit of noise in logs, log this case to
     // debug instead.
     case ZX_ERR_NOT_SUPPORTED:
-      FDF_LOG(DEBUG, "failed to set ethernet parameter %du to value %d: %s", param, value,
-              zx_status_get_string(status));
+      fdf::debug("failed to set ethernet parameter {} to value {}: {}", param, value,
+                 zx_status_get_string(status));
       break;
     default:
-      FDF_LOG(WARNING, "failed to set ethernet parameter %du to value %d: %s", param, value,
-              zx_status_get_string(status));
+      fdf::warn("failed to set ethernet parameter {} to value {}: {}", param, value,
+                zx_status_get_string(status));
       break;
   }
 }

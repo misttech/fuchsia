@@ -152,7 +152,7 @@ ReadVersionReturnParamsTlv parse_tlv_version_return_params(const uint8_t* p, siz
 
       case 0x2f:  // Secure boot engine type
         params.secure_boot_engine_type = fetch_tlv_value(&p[idx], 1);
-        infof("Secure boot engine type: 0x%02x", params.secure_boot_engine_type);
+        infof("Secure boot engine type: 0x{:02x}", params.secure_boot_engine_type);
         break;
 
       case 0x30:                             // Bluetooth device address
@@ -162,7 +162,7 @@ ReadVersionReturnParamsTlv parse_tlv_version_return_params(const uint8_t* p, siz
 
       default:
         // unknown tag. skip it.
-        warnf("Unknown firmware version TLV tag=0x%02x", p[idx]);
+        warnf("Unknown firmware version TLV tag=0x{:02x}", p[idx]);
         break;
     }
     idx += 2 + len_of_value;  // Skip the 'length' and 'value'.
@@ -292,26 +292,24 @@ bool VendorHci::SendSecureSend(uint8_t type, cpp20::span<const uint8_t> bytes) c
     if (event_view.event_code().Read() == pw::bluetooth::emboss::EventCode::COMMAND_COMPLETE) {
       auto view = MakeSecureSendCommandCompleteEventView(&event);
       if (!view.IsComplete()) {
-        errorf("VendorHci: SecureSend command complete event is too small (%zu, expected: %" PRIu64
-               ")",
-               event.size(),
-               static_cast<uint64_t>(SecureSendCommandCompleteEvent::IntrinsicSizeInBytes()));
+        errorf("VendorHci: SecureSend command complete event is too small ({} , expected: {})",
+               event.size(), SecureSendCommandCompleteEvent::IntrinsicSizeInBytes());
         return false;
       }
       if (view.command_complete().command_opcode_bits().ogf().Read() != kVendorOgf ||
           view.command_complete().command_opcode_bits().ocf().Read() != kSecureSendOcf) {
         errorf("VendorHci: Received command complete for something else!");
       } else if (view.param().Read() != 0x00) {
-        errorf("VendorHci: Received 0x%x instead of zero in command complete!",
+        errorf("VendorHci: Received 0x{:x} instead of zero in command complete!",
                view.param().Read());
         return false;
       }
     } else if (event_view.event_code().Read() == pw::bluetooth::emboss::EventCode::VENDOR_DEBUG) {
       auto view = MakeSecureSendEventView(&event);
-      infof("VendorHci: SecureSend result 0x%x, opcode: 0x%x, status: 0x%x", view.result().Read(),
-            view.opcode().Read(), view.status().Read());
+      infof("VendorHci: SecureSend result {:#x}, opcode: {:#x}, status: {:#x}",
+            view.result().Read(), view.opcode().Read(), view.status().Read());
       if (view.result().Read()) {
-        errorf("VendorHci: Result of %d indicates some error!", view.result().Read());
+        errorf("VendorHci: Result of {} indicates some error!", view.result().Read());
         return false;
       }
     }
@@ -395,7 +393,7 @@ void VendorHci::SendCommand(std::vector<uint8_t> command) const {
   hci_transport_client_->Send(fhbt::SentPacket::WithCommand(std::move(command)))
       .Then([](fidl::Result<fhbt::HciTransport::Send>& result) {
         if (!result.is_ok()) {
-          errorf("VendorHci: SendCommand failed: %s", result.error_value().status_string());
+          errorf("VendorHci: SendCommand failed: {}", result.error_value().status_string());
           return;
         }
       });
@@ -405,7 +403,7 @@ void VendorHci::SendAcl(std::vector<uint8_t> command) const {
   hci_transport_client_->Send(fhbt::SentPacket::WithAcl(std::move(command)))
       .Then([](fidl::Result<fhbt::HciTransport::Send>& result) {
         if (!result.is_ok()) {
-          errorf("VendorHci: SendAcl failed: %s", result.error_value().status_string());
+          errorf("VendorHci: SendAcl failed: {}", result.error_value().status_string());
           return;
         }
       });
@@ -421,12 +419,12 @@ std::vector<uint8_t> VendorHci::WaitForEventBuffer(
 
   const size_t read_size = buffer.size();
   if (read_size > fhbt::kEventMax) {
-    errorf("VendorHci: Packet too large, size: %zu", read_size);
+    errorf("VendorHci: Packet too large, size: {}", read_size);
     return {};
   }
 
   if (read_size < pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes()) {
-    errorf("VendorHci: Malformed event packet expected >%d bytes, got %lu",
+    errorf("VendorHci: Malformed event packet expected >{} bytes, got {}",
            pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes(), read_size);
     return {};
   }
@@ -438,14 +436,14 @@ std::vector<uint8_t> VendorHci::WaitForEventBuffer(
   const size_t size_from_header = view.parameter_total_size().Read();
   if (size_from_header != rx_payload_size) {
     errorf(
-        "VendorHci: Malformed event packet - header payload size (%zu) != "
-        "received (%zu)",
+        "VendorHci: Malformed event packet - header payload size ({}) != "
+        "received ({})",
         size_from_header, rx_payload_size);
     return {};
   }
 
   if (expected_event && *expected_event != view.event_code().Read()) {
-    tracef("VendorHci: keep waiting (expected: 0x%02x, got: 0x%02x)",
+    tracef("VendorHci: keep waiting (expected: 0x{:02x}, got: 0x{:02x})",
            static_cast<uint8_t>(*expected_event), static_cast<uint8_t>(view.event_code().Read()));
     return {};
   }

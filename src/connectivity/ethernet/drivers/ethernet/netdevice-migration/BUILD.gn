@@ -30,6 +30,7 @@ source_set("src") {
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/fit",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
     "//src/devices/lib/dev-operation:dev-operation-dfv2-compat-logging",
