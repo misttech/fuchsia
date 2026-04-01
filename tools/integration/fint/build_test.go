@@ -167,7 +167,7 @@ func TestBuild(t *testing.T) {
 			name:              "empty spec produces no ninja targets",
 			staticSpec:        &fintpb.Static{},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)?$`},
+			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --error_logging_output=[^ ]+ --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
 		},
 		{
 			name: "enable_jobserver flag support",
@@ -175,7 +175,7 @@ func TestBuild(t *testing.T) {
 				GnArgs: []string{"enable_jobserver = true"},
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)? --jobserver$`},
+			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --error_logging_output=[^ ]+ --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json --jobserver$`},
 		},
 		{
 			name: "use rs-sub-ninja when build_event_service_ninja is resultstore_infra",
@@ -188,7 +188,7 @@ func TestBuild(t *testing.T) {
 				}),
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`rs-sub-ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)?$`},
+			mustRun:           []string{`rs-sub-ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --error_logging_output=[^ ]+ --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
 		},
 		{
 			name:       "artifact dir set",
@@ -200,7 +200,7 @@ func TestBuild(t *testing.T) {
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
-			mustRun: []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json(?: --error_logging_output=\.ninja_errors\.json)?$`},
+			mustRun: []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --error_logging_output=[^ ]+ --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
 		},
 		{
 			name:       "affected tests",

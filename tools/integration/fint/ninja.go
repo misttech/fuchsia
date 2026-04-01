@@ -68,9 +68,6 @@ const (
 	// directory.
 	ninjaDepsPath = ".ninja_deps"
 
-	// ninjaErrorsPath is the path to the JSON file containing ninja failures
-	ninjaErrorsPath = ".ninja_errors.json"
-
 	// unrecognizedFailureMsg is the message we'll output if ninja fails but its
 	// output doesn't match any of the known failure modes.
 	unrecognizedFailureMsg = "Unrecognized failures, please check the original stdout instead."
@@ -93,7 +90,10 @@ type ninjaRunner struct {
 
 // run runs a ninja command as a subprocess, passing `args` in addition to the
 // common args configured on the ninjaRunner.
-func (r ninjaRunner) run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+//
+// Its first return value is a verbose failure message extracted from the ninja
+// failure log and stderr. If ninja exits successfully, this will be empty.
+func (r ninjaRunner) run(ctx context.Context, args []string, stdout, stderr io.Writer) (string, error) {
 	cmd := []string{r.ninjaPath, "-C", r.buildDir}
 	if r.jobCount > 0 {
 		cmd = append(cmd, "-j", fmt.Sprintf("%d", r.jobCount))
@@ -103,10 +103,34 @@ func (r ninjaRunner) run(ctx context.Context, args []string, stdout, stderr io.W
 	// that come from GN metadata on the actions.
 	cmd = append(cmd, ninjaEdgeWeightsArg)
 
+	// Write ninja errors to a temporary file so it doesn't get persisted
+	// between builds in infrastructure.
+	tmpDir, err := os.MkdirTemp("", "ninja_errors_*")
+	if err != nil {
+		return "", fmt.Errorf("creating temp dir for ninja errors: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	errorsFileName := filepath.Join(tmpDir, "ninja_errors.json")
+	cmd = append(cmd, fmt.Sprintf("--error_logging_output=%s", errorsFileName))
+
 	cmd = append(cmd, args...)
-	return r.runner.Run(ctx, cmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr, Env: []string{
+
+	var stderrBuf bytes.Buffer
+	multiStderr := io.MultiWriter(stderr, &stderrBuf)
+
+	runErr := r.runner.Run(ctx, cmd, subprocess.RunOptions{Stdout: stdout, Stderr: multiStderr, Env: []string{
 		fmt.Sprintf("NINJA_STATUS=%s", ninjaStatus),
 	}})
+
+	if runErr != nil {
+		failureMsg, err := ninjaFailureMessage(errorsFileName, stderrBuf.String())
+		if err != nil {
+			return "", err
+		}
+		return failureMsg, runErr
+	}
+
+	return "", nil
 }
 
 // ninjaExplainExtractor is a writer that removes all Ninja explain outputs
@@ -208,13 +232,9 @@ func runNinja(
 		targets = append(targets, "-d", "explain")
 	}
 
-	targets = append(targets, fmt.Sprintf("--error_logging_output=%s", ninjaErrorsPath))
-
-	var stderrBuf bytes.Buffer
-
 	stdout := newNinjaExplainExtractor(streams.Stdout(ctx), explainSink)
-	stderr := newNinjaExplainExtractor(io.MultiWriter(&stderrBuf, streams.Stderr(ctx)), explainSink)
-	err := r.run(
+	stderr := newNinjaExplainExtractor(streams.Stderr(ctx), explainSink)
+	failureMsg, err := r.run(
 		ctx,
 		append(ninjaArgs, targets...),
 		stdout,
@@ -242,10 +262,6 @@ func runNinja(
 	}
 
 	if err != nil {
-		failureMsg, msgErr := ninjaFailureMessage(r.buildDir, stderrBuf.String())
-		if msgErr != nil {
-			return "", nil, msgErr
-		}
 		return failureMsg, metrics, err
 	}
 
@@ -253,14 +269,13 @@ func runNinja(
 	return "", metrics, nil
 }
 
-func ninjaFailureMessage(buildDir string, ninjaStderr string) (string, error) {
+func ninjaFailureMessage(errorsFileName string, ninjaStderr string) (string, error) {
 	var failureLog ninjaFailureLog
-	err := jsonutil.ReadFromFile(filepath.Join(buildDir, ninjaErrorsPath), &failureLog)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("failed to read %s: %w", ninjaErrorsPath, err)
+	parseErr := jsonutil.ReadFromFile(errorsFileName, &failureLog)
+	if parseErr != nil && !errors.Is(parseErr, os.ErrNotExist) {
+		return "", fmt.Errorf("failed to read ninja errors file: %w", parseErr)
 	}
-
-	if err == nil && failureLog.Version != 1 {
+	if parseErr == nil && failureLog.Version != 1 {
 		return "", fmt.Errorf("unsupported ninja failure log version: %d", failureLog.Version)
 	}
 
@@ -313,7 +328,7 @@ func ninjaDryRun(ctx context.Context, r ninjaRunner, targets []string) (string, 
 	args = append(args, targets...)
 
 	var stdout, stderr bytes.Buffer
-	err := r.run(ctx, args, &stdout, &stderr)
+	_, err := r.run(ctx, args, &stdout, &stderr)
 	if err != nil {
 		// stdout and stderr are normally not emitted because they're very
 		// noisy, but if the dry run fails then they'll likely contain the

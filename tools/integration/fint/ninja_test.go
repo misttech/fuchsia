@@ -186,7 +186,16 @@ func TestRunNinja(t *testing.T) {
 						}
 					}
 					if tc.mockNinjaErrors != "" {
-						path := filepath.Join(r.buildDir, ninjaErrorsPath)
+						var path string
+						for _, arg := range cmd {
+							if after, ok := strings.CutPrefix(arg, "--error_logging_output="); ok {
+								path = after
+								break
+							}
+						}
+						if path == "" {
+							return errors.New("missing --error_logging_output flag")
+						}
 						if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 							return err
 						}

@@ -324,7 +324,7 @@ func buildImpl(
 		// stdout to get the failure message. So let Ninja print directly to
 		// stdout, so it will nicely buffer output when running in a terminal
 		// instead of printing each log on a new line.
-		ninjaErr = r.run(ctx, append(append(staticSpec.NinjaArgs, ninjaExtraArgs...), targets...), os.Stdout, os.Stderr)
+		_, ninjaErr = r.run(ctx, append(append(staticSpec.NinjaArgs, ninjaExtraArgs...), targets...), os.Stdout, os.Stderr)
 	} else {
 		var explainSink io.Writer
 		if staticSpec.Incremental {
