@@ -5,6 +5,7 @@
 #include "passthrough.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace bt::passthrough {
 
@@ -17,7 +18,7 @@ void PassthroughDevice::Start(fdf::StartCompleter completer) {
 
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR, "Failed to bind devfs connecter to dispatcher: %s", connector.status_string());
+    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
     completer(zx::error(ZX_ERR_INTERNAL));
     return;
   }
@@ -41,12 +42,12 @@ void PassthroughDevice::Start(fdf::StartCompleter completer) {
           [completer = std::move(completer)](
               fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>& result) mutable {
             if (!result.ok()) {
-              FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+              fdf::error("Failed to add child: {}", result.status_string());
               completer(zx::error(result.status()));
               return;
             }
 
-            FDF_LOG(INFO, "Started successfully");
+            fdf::info("Started successfully");
             completer(zx::ok());
           });
 }
@@ -54,7 +55,7 @@ void PassthroughDevice::Start(fdf::StartCompleter completer) {
 void PassthroughDevice::Stop() {
   auto status = child_node_controller_client_->Remove();
   if (!status.ok()) {
-    FDF_LOG(ERROR, "Could not remove child: %s", status.status_string());
+    fdf::error("Could not remove child: {}", status.status_string());
   }
 }
 
@@ -74,7 +75,7 @@ void PassthroughDevice::OpenHci(OpenHciCompleter::Sync& completer) {
 void PassthroughDevice::OpenHciTransport(OpenHciTransportCompleter::Sync& completer) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_bluetooth::HciTransport>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create endpoints: %s", zx_status_get_string(endpoints.error_value()));
+    fdf::error("Failed to create endpoints: {}", zx_status_get_string(endpoints.error_value()));
     completer.ReplyError(endpoints.error_value());
     return;
   }
@@ -89,7 +90,7 @@ void PassthroughDevice::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_bluetooth::Snoop>> client_end =
       incoming()->Connect<fuchsia_hardware_bluetooth::HciService::Snoop>();
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Connect to Snoop protocol failed: %s", client_end.status_string());
+    fdf::error("Connect to Snoop protocol failed: {}", client_end);
     completer.ReplyError(client_end.error_value());
     return;
   }
@@ -103,7 +104,7 @@ void PassthroughDevice::GetCrashParameters(GetCrashParametersCompleter::Sync& co
 void PassthroughDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Vendor> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown method in Vendor protocol, closing with ZX_ERR_NOT_SUPPORTED");
+  fdf::error("Unknown method in Vendor protocol, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -113,7 +114,7 @@ void PassthroughDevice::Send(::fuchsia_hardware_bluetooth::wire::SentPacket* req
       [completer = completer.ToAsync()](
           fidl::WireUnownedResult<fuchsia_hardware_bluetooth::HciTransport::Send>& result) mutable {
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Error forwarding HciTransport::Send: %s", result.status_string());
+          fdf::error("Error forwarding HciTransport::Send: {}", result.status_string());
           completer.Close(result.status());
           return;
         }
@@ -124,7 +125,7 @@ void PassthroughDevice::Send(::fuchsia_hardware_bluetooth::wire::SentPacket* req
 void PassthroughDevice::AckReceive(AckReceiveCompleter::Sync& completer) {
   fidl::OneWayStatus status = hci_transport_client_->AckReceive();
   if (!status.ok()) {
-    FDF_LOG(ERROR, "Error forwarding HciTransport::AckReceive: %s", status.status_string());
+    fdf::error("Error forwarding HciTransport::AckReceive: {}", status.status_string());
     completer.Close(status.status());
     return;
   }
@@ -135,7 +136,7 @@ void PassthroughDevice::ConfigureSco(
     ConfigureScoCompleter::Sync& completer) {
   fidl::OneWayStatus status = hci_transport_client_->ConfigureSco(*request);
   if (!status.ok()) {
-    FDF_LOG(ERROR, "Error forwarding HciTransport::ConfigureSco: %s", status.status_string());
+    fdf::error("Error forwarding HciTransport::ConfigureSco: {}", status.status_string());
     completer.Close(status.status());
     return;
   }
@@ -144,7 +145,7 @@ void PassthroughDevice::ConfigureSco(
 void PassthroughDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::HciTransport> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "Unknown method in HciTransport protocol, closing with ZX_ERR_NOT_SUPPORTED");
+  fdf::error("Unknown method in HciTransport protocol, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -154,18 +155,18 @@ void PassthroughDevice::OnReceive(
       [event](const fidl::ServerBinding<fuchsia_hardware_bluetooth::HciTransport>& binding) {
         fidl::Status status = fidl::WireSendEvent(binding)->OnReceive(*event);
         if (!status.ok()) {
-          FDF_LOG(ERROR, "Failed to send OnReceive event to bt-host: %s", status.status_string());
+          fdf::error("Failed to send OnReceive event to bt-host: {}", status.status_string());
         }
       });
 }
 
 void PassthroughDevice::on_fidl_error(::fidl::UnbindInfo error) {
-  FDF_LOG(WARNING, "HciTransport FIDL error: %s", error.status_string());
+  fdf::warn("HciTransport FIDL error: {}", error.status_string());
 }
 
 void PassthroughDevice::handle_unknown_event(
     fidl::UnknownEventMetadata<::fuchsia_hardware_bluetooth::HciTransport> metadata) {
-  FDF_LOG(WARNING, "Unknown event from HciTransport protocol");
+  fdf::warn("Unknown event from HciTransport protocol");
 }
 
 void PassthroughDevice::Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request) {
@@ -177,7 +178,7 @@ zx_status_t PassthroughDevice::ConnectToHciTransportFidlProtocol() {
   zx::result<fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport>> client_end =
       incoming()->Connect<fuchsia_hardware_bluetooth::HciService::HciTransport>();
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "Connect to HciTransport protocol failed: %s", client_end.status_string());
+    fdf::error("Connect to HciTransport protocol failed: {}", client_end);
     return client_end.status_value();
   }
 
