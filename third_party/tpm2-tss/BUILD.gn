@@ -10,6 +10,11 @@ config("common_public_configs") {
   # toolchains like efi, due to missing dependencies.
   defines = [ "MAXLOGLEVEL=LOGL_NONE" ]
   if (is_efi_toolchain) {
+    defines += [
+      "FAPI_SUPPRESS_POLL_WARNINGS",
+      "TSS2_TCTI_SUPPRESS_POLL_WARNINGS",
+    ]
+
     # efi tool chain has __WIN32 defined, which causes some source files and
     # headers to expect the windows.h header file.
     include_dirs += [ "efi_sysdeps" ]
