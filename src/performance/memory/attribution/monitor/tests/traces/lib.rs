@@ -121,8 +121,8 @@ impl StatsProxyInterface for FakeStatsProxy {
 async fn actual_main() {
     let stall_provider = FakeStallProvider {};
     let kernel_stats = FakeStatsProxy::new();
-    let page_refaults_traker = FakeRefaultTracker::default();
-    traces::kernel::serve_forever(kernel_stats, stall_provider, page_refaults_traker).await;
+    let page_refaults_tracker = FakeRefaultTracker::default();
+    traces::kernel::serve_forever_loop(kernel_stats, stall_provider, page_refaults_tracker).await;
 }
 
 static LOGGER_ONCE: Once = Once::new();

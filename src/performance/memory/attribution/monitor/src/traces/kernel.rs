@@ -13,10 +13,34 @@ use std::ffi::CStr;
 const CATEGORY_MEMORY_KERNEL: &'static CStr = c"memory:kernel";
 use futures::future::FutureExt;
 
-// Continuously monitors the 'memory:kernel' trace category.
+// Continuously monitors the 'memory:kernel' trace category on a dedicated thread.
 // Once enabled, it periodically records memory statistics until the category is disabled.
 // This function runs indefinitely
 pub async fn serve_forever(
+    kernel_stats: impl fidl_fuchsia_kernel::StatsProxyInterface + Send + 'static,
+    stall_provider: impl StallProvider + Send + 'static,
+    page_refault_tracker: impl RefaultProvider + Send + 'static,
+) {
+    let (tx, rx) = futures::channel::oneshot::channel::<()>();
+    std::thread::Builder::new()
+        .name("memory:tracing".to_string())
+        .spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutor::default();
+            executor.run_singlethreaded(serve_forever_loop(
+                kernel_stats,
+                stall_provider,
+                page_refault_tracker,
+            ));
+            // The task failed, send a message.
+            let _ = tx.send(());
+        })
+        .expect("failed to spawn memory:tracing thread");
+    let _ = rx.await;
+}
+
+// Internal loop, kept public for testing in
+// //src/performance/memory/attribution/monitor/tests/traces.
+pub async fn serve_forever_loop(
     kernel_stats: impl fidl_fuchsia_kernel::StatsProxyInterface,
     stall_provider: impl StallProvider,
     page_refault_tracker: impl RefaultProvider,
