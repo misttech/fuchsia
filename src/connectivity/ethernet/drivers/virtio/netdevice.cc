@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/virtio/ring.h>
 #include <lib/zircon-internal/align.h>
@@ -84,7 +85,7 @@ zx_status_t NetworkDevice::Init() {
       {}, "netdev-dispatcher",
       [this](fdf_dispatcher_t*) { netdevice_dispatcher_shutdown_.Signal(); });
   if (netdev_dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create netdevice dispatcher: %s", netdev_dispatcher.status_string());
+    fdf::error("Failed to create netdevice dispatcher: {}", netdev_dispatcher.status_string());
     return netdev_dispatcher.status_value();
   }
   netdevice_dispatcher_ = std::move(netdev_dispatcher.value());
@@ -102,7 +103,7 @@ zx_status_t NetworkDevice::Init() {
   if (zx_status_t status =
           AckFeatures(&is_status_supported_, &is_multiqueue_supported_, &virtio_hdr_len_);
       status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to ack features: %s", zx_status_get_string(status));
+    fdf::error("failed to ack features: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -111,22 +112,22 @@ zx_status_t NetworkDevice::Init() {
   CopyDeviceConfig(&config, sizeof(config));
 
   // We've checked that the config.mac field is valid (VIRTIO_NET_F_MAC) in AckFeatures().
-  FDF_LOG(DEBUG, "mac: %02x:%02x:%02x:%02x:%02x:%02x", config.mac[0], config.mac[1], config.mac[2],
-          config.mac[3], config.mac[4], config.mac[5]);
-  FDF_LOG(DEBUG, "link active: %u", IsLinkActive(config, is_status_supported_));
-  FDF_LOG(DEBUG, "max virtqueue pairs: %u", MaxVirtqueuePairs(config, is_multiqueue_supported_));
+  fdf::debug("mac: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", config.mac[0], config.mac[1],
+             config.mac[2], config.mac[3], config.mac[4], config.mac[5]);
+  fdf::debug("link active: {}", IsLinkActive(config, is_status_supported_));
+  fdf::debug("max virtqueue pairs: {}", MaxVirtqueuePairs(config, is_multiqueue_supported_));
 
   static_assert(sizeof(config.mac) == sizeof(mac_.octets));
   std::copy(std::begin(config.mac), std::end(config.mac), mac_.octets.begin());
 
   if (zx_status_t status = vmo_store_.Reserve(netdev::wire::kMaxVmos); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
+    fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
     return status;
   }
 
   // Initialize the zx_device and publish us.
   if (zx_status_t status = AddDevice(); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to add device: %s", zx_status_get_string(status));
+    fdf::error("failed to add device: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -144,7 +145,7 @@ zx_status_t NetworkDevice::AddDevice() {
   if (zx::result result = compat_server_.Initialize(driver_->incoming(), driver_->outgoing(),
                                                     driver_->node_name(), kChildNodeName);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
+    fdf::error("Failed to initialize compat server: {}", result.status_string());
     return result.status_value();
   }
 
@@ -158,7 +159,7 @@ zx_status_t NetworkDevice::AddDevice() {
 
   auto status = driver_->outgoing()->AddService<netdev::Service>(std::move(handler));
   if (status.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service to outgoing directory: %s\n", status.status_string());
+    fdf::error("Failed to add service to outgoing directory: {}", status.status_string());
     return status.error_value();
   }
 
@@ -169,7 +170,7 @@ zx_status_t NetworkDevice::AddDevice() {
   std::array<fuchsia_driver_framework::NodeProperty2, 0> properties{};
   zx::result netdev_child = driver_->AddChild("virtio-net-netdev", properties, offers);
   if (netdev_child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add net device child node: %s", netdev_child.status_string());
+    fdf::error("Failed to add net device child node: {}", netdev_child.status_string());
     return netdev_child.status_value();
   }
   netdev_child_ = std::move(netdev_child.value());
@@ -186,7 +187,7 @@ zx_status_t NetworkDevice::AckFeatures(bool* is_status_supported, bool* is_multi
   const uint64_t supported_features = DeviceFeaturesSupported();
 
   if (!(supported_features & VIRTIO_NET_F_MAC)) {
-    FDF_LOG(ERROR, "device does not have a given MAC address.");
+    fdf::error("device does not have a given MAC address.");
     return ZX_ERR_NOT_SUPPORTED;
   }
   uint64_t enable_features = VIRTIO_NET_F_MAC;
@@ -282,8 +283,7 @@ bool NetworkDevice::IrqRingUpdateInternal() {
     if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
             fidl::VectorView<netdev::wire::TxResult>::FromExternal(tx_results.data(), count));
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete %zu TX buffers: %s", count,
-              status.FormatDescription().c_str());
+      fdf::error("Failed to complete {} TX buffers: {}", count, status.FormatDescription());
       RemoveDevice();
       return false;
     }
@@ -314,7 +314,7 @@ bool NetworkDevice::IrqRingUpdateInternal() {
       ZX_ASSERT_MSG(used_elem->len >= virtio_hdr_len_,
                     "got buffer (%u) smaller than virtio header (%u)", used_elem->len,
                     virtio_hdr_len_);
-      FDF_LOG(TRACE, "Receiving %d bytes (hdrlen = %u):", len, virtio_hdr_len_);
+      fdf::trace("Receiving {} bytes (hdrlen = {}):", len, virtio_hdr_len_);
       if (driver_->logger().GetSeverity() <= FUCHSIA_LOG_TRACE) {
         virtio_dump_desc(&desc);
       }
@@ -339,8 +339,7 @@ bool NetworkDevice::IrqRingUpdateInternal() {
     if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteRx(
             fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_buffers.data(), count));
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete %zu TX buffers: %s", count,
-              status.FormatDescription().c_str());
+      fdf::error("Failed to complete {} TX buffers: {}", count, status.FormatDescription());
       RemoveDevice();
       return false;
     }
@@ -360,7 +359,7 @@ void NetworkDevice::IrqConfigChange() {
   if (fidl::OneWayStatus status =
           ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, port_status));
       !status.ok()) {
-    FDF_LOG(ERROR, "Failed to send port status changed: %s", status.FormatDescription().c_str());
+    fdf::error("Failed to send port status changed: {}", status.FormatDescription());
     RemoveDevice();
   }
 }
@@ -390,12 +389,12 @@ void NetworkDevice::Init(
                 fdf::WireUnownedResult<netdev::NetworkDeviceIfc::AddPort>& result) mutable {
         fdf::Arena arena(0u);
         if (!result.ok()) {
-          FDF_LOG(ERROR, "failed to add port: %s", result.FormatDescription().c_str());
+          fdf::error("failed to add port: {}", result.FormatDescription());
           completer.buffer(arena).Reply(result.status());
           return;
         }
         if (result->status != ZX_OK) {
-          FDF_LOG(ERROR, "failed to add port: %s", zx_status_get_string(result->status));
+          fdf::error("failed to add port: {}", zx_status_get_string(result->status));
           completer.buffer(arena).Reply(result->status);
           return;
         }
@@ -414,7 +413,7 @@ void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
     if (zx_status_t status =
             AckFeatures(&is_status_supported, &is_multiqueue_supported, &header_length);
         status != ZX_OK) {
-      FDF_LOG(ERROR, "failed to ack features: %s", zx_status_get_string(status));
+      fdf::error("failed to ack features: {}", zx_status_get_string(status));
       return status;
     }
     ZX_ASSERT_MSG(is_status_supported == is_status_supported_,
@@ -428,7 +427,7 @@ void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
                   header_length);
 
     if (zx_status_t status = DeviceStatusFeaturesOk(); status != ZX_OK) {
-      FDF_LOG(ERROR, "%s: Feature negotiation failed (%s)", tag(), zx_status_get_string(status));
+      fdf::error("{}: Feature negotiation failed ({})", tag(), zx_status_get_string(status));
       return status;
     }
 
@@ -438,13 +437,13 @@ void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
       std::lock_guard tx_lock(tx_lock_);
       Ring rx_queue(this);
       if (zx_status_t status = rx_queue.Init(kRxId, rx_depth_); status != ZX_OK) {
-        FDF_LOG(ERROR, "failed to allocate rx virtqueue: %s", zx_status_get_string(status));
+        fdf::error("failed to allocate rx virtqueue: {}", zx_status_get_string(status));
         return status;
       }
       rx_ = std::move(rx_queue);
       Ring tx_queue(this);
       if (zx_status_t status = tx_queue.Init(kTxId, tx_depth_); status != ZX_OK) {
-        FDF_LOG(ERROR, "failed to allocate tx virtqueue: %s", zx_status_get_string(status));
+        fdf::error("failed to allocate tx virtqueue: {}", zx_status_get_string(status));
         return status;
       }
       tx_ = std::move(tx_queue);
@@ -460,8 +459,7 @@ void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
         if (fidl::OneWayStatus status =
                 ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, port_status));
             !status.ok()) {
-          FDF_LOG(ERROR, "Failed to send port status changed: %s",
-                  status.FormatDescription().c_str());
+          fdf::error("Failed to send port status changed: {}", status.FormatDescription());
           completer.Close(status.status());
           RemoveDevice();
           return status.status();
@@ -490,7 +488,7 @@ void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
     if (fidl::OneWayStatus status =
             ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, port_status));
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to send port status changed: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to send port status changed: {}", status.FormatDescription());
       completer.Close(status.status());
       RemoveDevice();
       return;
@@ -528,8 +526,7 @@ void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
         if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
                 fidl::VectorView<netdev::wire::TxResult>::FromExternal(tx_return.data(), count));
             !status.ok()) {
-          FDF_LOG(ERROR, "Failed to complete %zu TX buffers: %s", count,
-                  status.FormatDescription().c_str());
+          fdf::error("Failed to complete {} TX buffers: {}", count, status.FormatDescription());
           completer.Close(status.status());
           RemoveDevice();
           return;
@@ -565,8 +562,7 @@ void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
         if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteRx(
                 fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_return.data(), count));
             !status.ok()) {
-          FDF_LOG(ERROR, "Failed to complete %zu RX buffers: %s", count,
-                  status.FormatDescription().c_str());
+          fdf::error("Failed to complete {} RX buffers: {}", count, status.FormatDescription());
           completer.Close(status.status());
           RemoveDevice();
           return;
@@ -670,7 +666,7 @@ void NetworkDevice::QueueTx(
     if (driver_->logger().GetSeverity() <= FUCHSIA_LOG_TRACE) {
       virtio_dump_desc(desc);
     }
-    FDF_LOG(TRACE, "Sending %zu bytes (hdrlen = %u):", data.length, virtio_hdr_len_);
+    fdf::trace("Sending {} bytes (hdrlen = {}):", data.length, virtio_hdr_len_);
     tx_.SubmitChain(id);
   }
   if (!tx_.NoNotify()) {
@@ -714,7 +710,7 @@ void NetworkDevice::QueueRxSpace(
     if (driver_->logger().GetSeverity() <= FUCHSIA_LOG_TRACE) {
       virtio_dump_desc(desc);
     }
-    FDF_LOG(TRACE, "Queueing rx space with %zu bytes:", data.length);
+    fdf::trace("Queueing rx space with {} bytes:", data.length);
     rx_.SubmitChain(id);
   }
   if (!rx_.NoNotify()) {
@@ -738,7 +734,7 @@ void NetworkDevice::ReleaseVmo(
   fbl::AutoLock vmo_lock(&state_lock_);
   if (zx::result<zx::vmo> status = vmo_store_.Unregister(request->id);
       status.status_value() != ZX_OK) {
-    FDF_LOG(ERROR, "failed to release vmo id = %d: %s", request->id, status.status_string());
+    fdf::error("failed to release vmo id = {}: {}", request->id, status);
   }
   completer.buffer(arena).Reply();
 }
