@@ -13,9 +13,12 @@
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::storage;
-use ::routing::capability_source::StorageBackingDirectorySource;
+use ::routing::capability_source::{
+    CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
+};
+use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RouteRequestErrorInfo;
-use anyhow::{Error, format_err};
+use anyhow::{Context, Error, format_err};
 use cm_rust::{CapabilityDecl, CapabilityTypeName, StorageDecl, StorageDirectorySource, UseDecl};
 use cm_types::RelativePath;
 use component_id_index::InstanceId;
@@ -29,8 +32,6 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
 use moniker::{ChildName, Moniker};
-use routing::capability_source::CapabilitySource;
-use routing::component_instance::ComponentInstanceInterface;
 use routing::{DictExt, WithPorcelain};
 use sandbox::{Capability, DirConnector, Router, RouterResponse};
 use std::path::PathBuf;
@@ -182,10 +183,10 @@ impl StorageAdmin {
             .subdir(cm_types::RelativePath::dot().into())
             .inherit_rights(false)
             .build();
-        storage_router
-            .route(None, debug, target.as_weak().into())
-            .await
-            .map_err(|_e| fcomponent::Error::Internal)
+        storage_router.route(None, debug, target.as_weak().into()).await.map_err(|e| {
+            log::error!("failed to route storage: {e:?}");
+            fcomponent::Error::Internal
+        })
     }
 
     async fn debug_route_storage_as(
@@ -218,10 +219,11 @@ impl StorageAdmin {
         }
     }
 
-    async fn connect_to_backing_directory(&self) -> Result<fio::DirectoryProxy, fcomponent::Error> {
+    async fn connect_to_backing_directory(
+        &self,
+        target: &Arc<ComponentInstance>,
+    ) -> Result<fio::DirectoryProxy, fcomponent::Error> {
         let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
-        let target =
-            self.weak_component.upgrade().map_err(|_| fcomponent::Error::InstanceNotFound)?;
         let backing_dir_router: Router<DirConnector> = self
             .backing_dir_router
             .clone()
@@ -251,10 +253,9 @@ impl StorageAdmin {
 
     async fn find_relative_component(
         &self,
+        component: &Arc<ComponentInstance>,
         relative_moniker: String,
     ) -> Result<Arc<ComponentInstance>, fcomponent::Error> {
-        let component =
-            self.weak_component.upgrade().map_err(|_| fcomponent::Error::InstanceNotFound)?;
         let moniker = Moniker::parse_str(&relative_moniker)
             .map_err(|_| fcomponent::Error::InvalidArguments)?;
         let absolute_moniker = component.moniker().concat(&moniker);
@@ -277,11 +278,27 @@ impl StorageAdmin {
         self: Arc<Self>,
         mut stream: fsys::StorageAdminRequestStream,
     ) -> Result<(), Error> {
+        let component = self.weak_component.upgrade().map_err(|e| {
+            format_err!(
+                "unable to serve storage admin protocol, model reference is no longer valid: {:?}",
+                e,
+            )
+        })?;
+
+        let source = CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Storage(self.storage_decl.clone()),
+            moniker: component.moniker.clone(),
+        });
+        let backing_dir_source_info = storage::route_backing_directory(&component, source)
+            .await
+            .context("could not serve storage protocol, routing backing directory failed")?;
+
         while let Some(request) = stream.try_next().await? {
             match request {
                 fsys::StorageAdminRequest::OpenStorage { relative_moniker, object, responder } => {
                     let fut = async {
-                        let target = self.find_relative_component(relative_moniker).await?;
+                        let target =
+                            self.find_relative_component(&component, relative_moniker).await?;
                         let dir_connector = self.open_storage_as(&target).await?;
                         let server_end = ServerEnd::new(object.into_channel());
                         dir_connector
@@ -301,16 +318,13 @@ impl StorageAdmin {
                     responder,
                 } => {
                     let fut = async {
-                        let component = self
-                            .weak_component
-                            .upgrade()
-                            .map_err(|_| fcomponent::Error::InstanceNotFound)?;
                         let source = self.debug_route_storage_as(&component).await?;
                         let CapabilitySource::StorageBackingDirectory(source) = source else {
                             return Err(fcomponent::Error::Internal);
                         };
 
-                        let target = self.find_relative_component(relative_moniker).await?;
+                        let target =
+                            self.find_relative_component(&component, relative_moniker).await?;
                         Ok((target, source))
                     };
                     match fut.await {
@@ -330,43 +344,33 @@ impl StorageAdmin {
                     }
                 }
                 fsys::StorageAdminRequest::OpenComponentStorageById { id, object, responder } => {
-                    let fut = async {
-                        let component = self
-                            .weak_component
-                            .upgrade()
-                            .map_err(|_| fcomponent::Error::InstanceNotFound)?;
-                        let instance_id_index = component.component_id_index();
-                        let Ok(instance_id) = id.parse::<InstanceId>() else {
-                            return Err(fcomponent::Error::InvalidArguments);
-                        };
-                        let Some(moniker) = instance_id_index.moniker_for_id(&instance_id) else {
-                            return Err(fcomponent::Error::ResourceNotFound);
-                        };
-                        let target = component
-                            .find_absolute(&moniker)
-                            .await
-                            .map_err(|_| fcomponent::Error::InstanceNotFound)?;
-                        let dir_connector = self.open_storage_as(&target).await?;
-                        let server_end = ServerEnd::new(object.into_channel());
-                        dir_connector
-                            .send(
-                                server_end,
-                                RelativePath::dot(),
-                                Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
-                            )
-                            .map_err(|_| fcomponent::Error::Internal)?;
-                        Ok(())
+                    let instance_id_index = component.component_id_index();
+                    let Ok(instance_id) = id.parse::<InstanceId>() else {
+                        responder.send(Err(fcomponent::Error::InvalidArguments))?;
+                        continue;
                     };
-                    responder.send(fut.await)?;
+                    if !instance_id_index.contains_id(&instance_id) {
+                        responder.send(Err(fcomponent::Error::ResourceNotFound))?;
+                        continue;
+                    }
+                    match storage::open_isolated_storage_by_id(
+                        &backing_dir_source_info,
+                        &instance_id,
+                    )
+                    .await
+                    {
+                        Ok(dir) => responder.send(
+                            dir.clone(object.into_channel().into())
+                                .map_err(|_| fcomponent::Error::Internal),
+                        )?,
+                        Err(_) => responder.send(Err(fcomponent::Error::Internal))?,
+                    }
                 }
                 fsys::StorageAdminRequest::DeleteComponentStorage {
                     relative_moniker: moniker_str,
                     responder,
                 } => {
                     let fut = async {
-                        let Ok(component) = self.weak_component.upgrade() else {
-                            return Err(fcomponent::Error::InstanceNotFound)?;
-                        };
                         let source = self.debug_route_storage_as(&component).await?;
                         let backing_dir_source_info =
                             storage::route_backing_directory(&component, source)
@@ -402,7 +406,7 @@ impl StorageAdmin {
                 fsys::StorageAdminRequest::GetStatus { responder } => {
                     let fut = async {
                         let backing_dir_proxy = self
-                            .connect_to_backing_directory()
+                            .connect_to_backing_directory(&component)
                             .await
                             .map_err(|_| StorageStatusError::QueryError)?;
                         Self::get_storage_status(&backing_dir_proxy).await
@@ -412,7 +416,7 @@ impl StorageAdmin {
                 fsys::StorageAdminRequest::DeleteAllStorageContents { responder } => {
                     let fut = async {
                         let backing_dir_proxy = self
-                            .connect_to_backing_directory()
+                            .connect_to_backing_directory(&component)
                             .await
                             .map_err(|_| fsys::DeletionError::Connection)?;
                         if let Err(e) =

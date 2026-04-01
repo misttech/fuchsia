@@ -204,7 +204,17 @@ pub async fn route_backing_directory(
         },
     );
     let source: CapabilitySource = match backing_dir_router
-        .route(None, false, storage_component.as_weak().into())
+        .route(
+            Some(sandbox::Request {
+                metadata: routing::bedrock::request_metadata::directory_metadata(
+                    cm_types::Availability::Transitional,
+                    Some(fio::RW_STAR_DIR.into()),
+                    None,
+                ),
+            }),
+            true,
+            storage_component.as_weak().into(),
+        )
         .await
         .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?
     {
@@ -288,6 +298,31 @@ pub async fn open_isolated_storage(
             storage_source_info.backing_directory_path.clone(),
             moniker.clone(),
             instance_id.cloned(),
+            e,
+        ))
+    })
+}
+
+/// Open the isolated storage sub-directory from the given storage capability source, creating it
+/// if necessary. The storage sub-directory is based on provided instance ID.
+pub async fn open_isolated_storage_by_id(
+    storage_source_info: &BackingDirectoryInfo,
+    instance_id: &InstanceId,
+) -> Result<fio::DirectoryProxy, ModelError> {
+    let root_dir = open_storage_root(storage_source_info).await?;
+    let storage_path = generate_instance_id_based_storage_path(instance_id);
+
+    fuchsia_fs::directory::create_directory_recursive(
+        &root_dir,
+        storage_path.to_str().expect("must be utf-8"),
+        FLAGS,
+    )
+    .await
+    .map_err(|e| {
+        ModelError::from(StorageError::open_by_id(
+            storage_source_info.storage_provider.as_ref().map(|r| r.moniker().clone()),
+            storage_source_info.backing_directory_path.clone(),
+            instance_id.clone(),
             e,
         ))
     })
