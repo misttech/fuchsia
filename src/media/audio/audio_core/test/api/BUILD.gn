@@ -253,6 +253,12 @@ audio_core_test_package("audio_core_api_tests") {
   ]
 
   # Tests that intentionally cause ERROR logs in audio_core have been moved to another test suite.
+  #
+  # AudioCore emits ERRORs upon output pipeline underflows. These are not audio issues, but they
+  # are system issues. Although no longer generally expected, we are not ready to treat them as
+  # incidents that warrant FAILURE in our automated test infrastructure.
+  #
+  # If this changes at some point in the future, change the below "ERROR" to "WARN".
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -297,6 +303,12 @@ audio_core_test_package("audio_core_api_pipeline_tests") {
   ]
 
   # Tests that intentionally cause ERROR logs in audio_core have been moved to another test suite.
+  #
+  # AudioCore emits ERRORs upon output pipeline underflows. These are not audio issues, but they
+  # are system issues. Although no longer generally expected, we are not ready to treat them as
+  # incidents that warrant FAILURE in our automated test infrastructure.
+  #
+  # If this changes at some point in the future, change the below "ERROR" to "WARN".
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -330,7 +342,11 @@ audio_core_test_package("audio_core_fidelity_tests") {
 
   test_components = [ ":audio-core-fidelity-test" ]
 
-  # Many of the above tests print ERROR logs in cases where the client makes an error.
+  # AudioCore emits ERRORs upon output pipeline underflows. These are not audio issues, but they
+  # are system issues. Although no longer generally expected, we are not ready to treat them as
+  # incidents that warrant FAILURE in our automated test infrastructure.
+  #
+  # If this changes at some point in the future, change the below "ERROR" to "WARN".
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
