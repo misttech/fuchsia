@@ -17,6 +17,7 @@
 #include <fidl/fuchsia.hardware.pci/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/status.h>
 
 #include <fbl/auto_lock.h>
@@ -95,7 +96,7 @@ void IgcDriver::Shutdown() {
 zx_status_t IgcDriver::ConfigurePci() {
   zx::result pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to PCI device: %s", pci_client_end.status_string());
+    fdf::error("Failed to connect to PCI device: {}", pci_client_end);
     return pci_client_end.status_value();
   }
 
@@ -103,31 +104,31 @@ zx_status_t IgcDriver::ConfigurePci() {
   auto& pci = adapter_->osdep.pci;
 
   if (!pci.is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect pci protocol.");
+    fdf::error("Failed to connect pci protocol.");
     return ZX_ERR_CONNECTION_REFUSED;
   }
 
   if (zx_status_t status = pci.SetBusMastering(true); status != ZX_OK) {
-    FDF_LOG(ERROR, "cannot enable bus master %d", status);
+    fdf::error("cannot enable bus master {}", status);
     return status;
   }
 
   zx::bti bti;
   if (zx_status_t status = pci.GetBti(0, &bti); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to get BTI");
+    fdf::error("failed to get BTI");
     return status;
   }
   adapter_->btih = bti.release();
 
   // Request 1 interrupt of any mode.
   if (zx_status_t status = pci.ConfigureInterruptMode(1, &adapter_->irq_mode); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to configure irqs");
+    fdf::error("failed to configure irqs");
     return status;
   }
 
   zx::interrupt interrupt;
   if (zx_status_t status = pci.MapInterrupt(0, &interrupt); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to map irq");
+    fdf::error("failed to map irq");
     return status;
   }
   adapter_->irqh = interrupt.release();
@@ -139,7 +140,7 @@ zx::result<> IgcDriver::Start() {
   auto netdev_dispatcher =
       fdf::UnsynchronizedDispatcher::Create({}, "igc-netdev", [](fdf_dispatcher_t*) {});
   if (netdev_dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create netdev dispatcher");
+    fdf::error("Failed to create netdev dispatcher");
     return netdev_dispatcher.take_error();
   }
   netdev_dispatcher_ = std::move(netdev_dispatcher.value());
@@ -157,7 +158,7 @@ zx_status_t IgcDriver::Initialize() {
 
   // Set up PCI.
   if (status = ConfigurePci(); status != ZX_OK) {
-    FDF_LOG(ERROR, "failed to configure PCI: %s", zx_status_get_string(status));
+    fdf::error("failed to configure PCI: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -181,15 +182,15 @@ zx_status_t IgcDriver::Initialize() {
     vmo_store_ = std::make_unique<VmoStore>(options);
 
     if (status = vmo_store_->Reserve(netdriver::wire::kMaxVmos); status != ZX_OK) {
-      FDF_LOG(ERROR, "failed to reserve the capacity of VmoStore to max VMOs (%u): %s",
-              netdriver::wire::kMaxVmos, zx_status_get_string(status));
+      fdf::error("failed to reserve the capacity of VmoStore to max VMOs ({}): {}",
+                 netdriver::wire::kMaxVmos, zx_status_get_string(status));
       return status;
     }
   }
 
   if (zx::result result = compat_server_.Initialize(incoming(), outgoing(), node_name(), name());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to initialize compatibility server: %s", result.status_string());
+    fdf::error("Failed to initialize compatibility server: {}", result);
     return result.error_value();
   }
 
@@ -221,9 +222,7 @@ zx_status_t IgcDriver::Initialize() {
 
   /* Check SOL/IDER usage */
   if (igc_check_reset_block(hw))
-    FDF_LOG(ERROR,
-            "PHY reset is blocked"
-            " due to SOL/IDER session.\n");
+    fdf::error("PHY reset is blocked due to SOL/IDER session.");
 
   /*
   ** Start from a known state, this is
@@ -240,7 +239,7 @@ zx_status_t IgcDriver::Initialize() {
     ** if it fails a second time its a real issue.
     */
     if (igc_validate_nvm_checksum(hw) < 0) {
-      FDF_LOG(ERROR, "The EEPROM Checksum Is Not Valid\n");
+      fdf::error("The EEPROM Checksum Is Not Valid");
       // TODO: Clean up states at these places.
       return ZX_ERR_INTERNAL;
     }
@@ -248,14 +247,12 @@ zx_status_t IgcDriver::Initialize() {
 
   /* Copy the permanent MAC address out of the EEPROM */
   if (igc_read_mac_addr(hw) < 0) {
-    FDF_LOG(ERROR,
-            "EEPROM read error while reading MAC"
-            " address\n");
+    fdf::error("EEPROM read error while reading MAC address");
     return ZX_ERR_INTERNAL;
   }
 
   if (!IsValidEthernetAddr(hw->mac.addr)) {
-    FDF_LOG(ERROR, "Invalid MAC address\n");
+    fdf::error("Invalid MAC address");
     return ZX_ERR_INTERNAL;
   }
 
@@ -263,7 +260,7 @@ zx_status_t IgcDriver::Initialize() {
   if ((status = io_buffer_init(&adapter_->desc_buffer, adapter_->btih,
                                kEthTxDescBufTotalSize + kEthRxDescBufTotalSize,
                                IO_BUFFER_RW | IO_BUFFER_CONTIG)) != ZX_OK) {
-    FDF_LOG(ERROR, "Failed initializing io_buffer: %s", zx_status_get_string(status));
+    fdf::error("Failed initializing io_buffer: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -293,14 +290,14 @@ zx_status_t IgcDriver::Initialize() {
 
   irq_handler_.set_object(adapter_->irqh);
   if (status = irq_handler_.Begin(dispatcher()); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to begin IRQ handling: %s", zx_status_get_string(status));
+    fdf::error("Failed to begin IRQ handling: {}", zx_status_get_string(status));
     return status;
   }
 
   OnlineStatusUpdate();
 
   if (status = AddNetworkDevice(); status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to add network device: %s", zx_status_get_string(status));
+    fdf::error("Failed to add network device: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -315,8 +312,7 @@ zx_status_t IgcDriver::AddNetworkDevice() {
 
   if (zx::result result = outgoing()->AddService<netdriver::Service>(std::move(handler));
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add network device service to outgoing directory: %s",
-            result.status_string());
+    fdf::error("Failed to add network device service to outgoing directory: {}", result);
     return result.error_value();
   }
 
@@ -331,14 +327,14 @@ zx_status_t IgcDriver::AddNetworkDevice() {
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create node controller endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create node controller endpoints: {}", endpoints);
     return endpoints.error_value();
   }
 
   if (fidl::WireResult result =
           fidl::WireCall(node())->AddChild(args, std::move(endpoints->server), {});
       !result.ok()) {
-    FDF_LOG(ERROR, "Failed to add network device child: %s", result.FormatDescription().c_str());
+    fdf::error("Failed to add network device child: {}", result.FormatDescription());
     return result.status();
   }
 
@@ -357,7 +353,7 @@ void IgcDriver::IdentifyHardware() {
   fuchsia_hardware_pci::wire::DeviceInfo pci_info;
   zx_status_t status = pci.GetDeviceInfo(&pci_info);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "pci_get_device_info failure");
+    fdf::error("pci_get_device_info failure");
     return;
   }
 
@@ -369,7 +365,7 @@ void IgcDriver::IdentifyHardware() {
 
   // Do shared code init and setup.
   if (igc_set_mac_type(hw)) {
-    FDF_LOG(ERROR, "igc_set_mac_type init failure");
+    fdf::error("igc_set_mac_type init failure");
     return;
   }
 }
@@ -381,7 +377,7 @@ zx_status_t IgcDriver::AllocatePCIResources() {
   zx_status_t status =
       pci.MapMmio(0u, ZX_CACHE_POLICY_UNCACHED_DEVICE, &adapter_->osdep.mmio_buffer);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "PCI cannot map io %d", status);
+    fdf::error("PCI cannot map io {}", status);
     return status;
   }
 
@@ -577,7 +573,7 @@ void IgcDriver::ReapTxBuffers() {
     fdf::Arena fdf_arena(0u);
     if (fidl::OneWayStatus status = adapter_->netdev_ifc.buffer(fdf_arena)->CompleteTx(results);
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to complete TX: {}", status.FormatDescription());
       return;
     }
   }
@@ -596,7 +592,7 @@ void IgcDriver::Init(netdriver::wire::NetworkDeviceImplInitRequest* request, fdf
 
   auto endpoints = fdf::CreateEndpoints<netdriver::NetworkPort>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create network port endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create network port endpoints: {}", endpoints);
     completer.buffer(arena).Reply(endpoints.status_value());
     return;
   }
@@ -607,7 +603,7 @@ void IgcDriver::Init(netdriver::wire::NetworkDeviceImplInitRequest* request, fdf
                 fdf::WireUnownedResult<netdriver::NetworkDeviceIfc::AddPort>& result) mutable {
         fdf::Arena arena(0u);
         if (!result.ok()) {
-          FDF_LOG(ERROR, "Failed to add port: %s", result.FormatDescription().c_str());
+          fdf::error("Failed to add port: {}", result.FormatDescription());
         }
         completer.buffer(arena).Reply(result.status());
       });
@@ -673,8 +669,7 @@ void IgcDriver::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
       buffers.set_size(buf_idx);
       if (fidl::OneWayStatus status = adapter_->netdev_ifc.buffer(arena)->CompleteRx(buffers);
           !status.ok()) {
-        FDF_LOG(ERROR, "Failed to complete RX buffers during stop: %s",
-                status.FormatDescription().c_str());
+        fdf::error("Failed to complete RX buffers during stop: {}", status.FormatDescription());
         // Attempt to complete the rest of the stop operation. We can't indicate an error anyway.
       }
     }
@@ -704,7 +699,7 @@ void IgcDriver::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
       results.set_size(res_idx);
       if (fidl::OneWayStatus status = adapter_->netdev_ifc.buffer(arena)->CompleteTx(results);
           !status.ok()) {
-        FDF_LOG(ERROR, "Failed to complete TX during stop: %s", status.FormatDescription().c_str());
+        fdf::error("Failed to complete TX during stop: {}", status.FormatDescription());
       }
     }
   }
@@ -753,7 +748,7 @@ void IgcDriver::QueueTx(netdriver::wire::NetworkDeviceImplQueueTxRequest* reques
     }
     if (fidl::OneWayStatus status = adapter_->netdev_ifc.buffer(arena)->CompleteTx(results);
         !status.ok()) {
-      FDF_LOG(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to complete TX: {}", status.FormatDescription());
     }
     return;
   }
@@ -843,8 +838,7 @@ void IgcDriver::PrepareVmo(netdriver::wire::NetworkDeviceImplPrepareVmoRequest* 
   fbl::AutoLock vmo_lock(&vmo_lock_);
   zx_status_t status = vmo_store_->RegisterWithKey(request->id, std::move(request->vmo));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to store VMO(with mapping and pinning): %s",
-            zx_status_get_string(status));
+    fdf::error("Failed to store VMO(with mapping and pinning): {}", zx_status_get_string(status));
     completer.buffer(arena).Reply(status);
     return;
   }
@@ -856,7 +850,7 @@ void IgcDriver::ReleaseVmo(netdriver::wire::NetworkDeviceImplReleaseVmoRequest* 
   fbl::AutoLock vmo_lock(&vmo_lock_);
   zx::result<zx::vmo> status = vmo_store_->Unregister(request->id);
   if (status.status_value() != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to release VMO: %s", status.status_string());
+    fdf::error("Failed to release VMO: {}", status);
   }
   completer.buffer(arena).Reply();
 }
@@ -893,7 +887,7 @@ void IgcDriver::SetActive(netdriver::wire::NetworkPortSetActiveRequest* request,
 void IgcDriver::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
   zx::result endpoints = fdf::CreateEndpoints<netdriver::MacAddr>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create MacAddr endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create MacAddr endpoints: {}", endpoints);
     completer.Close(endpoints.error_value());
     return;
   }
@@ -942,7 +936,7 @@ void IgcDriver::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq_ba
   if (status != ZX_OK) {
     if (status != ZX_ERR_CANCELED || state_ != State::ShuttingDown) {
       // Don't report ZX_ERR_CANCELED during shutdown, it's expected to happen.
-      FDF_LOG(ERROR, "IRQ handler failed: %s", zx_status_get_string(status));
+      fdf::error("IRQ handler failed: {}", zx_status_get_string(status));
     }
     return;
   }
@@ -988,7 +982,7 @@ void IgcDriver::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq_ba
         buffers.set_size(buf_idx);
         if (fidl::OneWayStatus status = adapter_->netdev_ifc.buffer(arena)->CompleteRx(buffers);
             !status.ok()) {
-          FDF_LOG(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+          fdf::error("Failed to complete RX: {}", status.FormatDescription());
           return;
         }
         buf_idx = 0;
@@ -998,7 +992,7 @@ void IgcDriver::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq_ba
       buffers.set_size(buf_idx);
       if (fidl::OneWayStatus status = adapter_->netdev_ifc.buffer(arena)->CompleteRx(buffers);
           !status.ok()) {
-        FDF_LOG(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+        fdf::error("Failed to complete RX: {}", status.FormatDescription());
         return;
       }
     }
@@ -1016,7 +1010,7 @@ void IgcDriver::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq_ba
       if (fidl::OneWayStatus status =
               adapter_->netdev_ifc.buffer(arena)->PortStatusChanged(kPortId, builder.Build());
           !status.ok()) {
-        FDF_LOG(ERROR, "Failed to update port status: %s", status.FormatDescription().c_str());
+        fdf::error("Failed to update port status: {}", status.FormatDescription());
         return;
       }
     }
