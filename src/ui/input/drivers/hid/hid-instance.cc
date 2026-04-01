@@ -4,6 +4,7 @@
 
 #include "hid-instance.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/hid/boot.h>
 #include <lib/trace/event.h>
 
@@ -52,7 +53,7 @@ zx_status_t HidInstance::ReadReportFromFifo(uint8_t* buf, size_t buf_size, zx_ti
 
   size_t xfer = base_->GetReportSizeById(rpt_id, fhidbus::ReportType::kInput);
   if (xfer == 0) {
-    FDF_LOG(ERROR, "error reading hid device: unknown report id (%u)!", rpt_id);
+    fdf::error("error reading hid device: unknown report id ({})!", rpt_id);
     return ZX_ERR_BAD_STATE;
   }
 
@@ -171,8 +172,8 @@ void HidInstance::GetReport(GetReportRequestView request, GetReportCompleter::Sy
     return;
   }
   if (needed > fhidbus::kMaxReportLen) {
-    FDF_LOG(ERROR, "hid: GetReport: Report size 0x%lx larger than max size 0x%x", needed,
-            fhidbus::kMaxReportLen);
+    fdf::error("hid: GetReport: Report size {:#x} larger than max size {:#x}", needed,
+               fhidbus::kMaxReportLen);
     completer.ReplyError(ZX_ERR_INTERNAL);
     return;
   }
@@ -180,13 +181,12 @@ void HidInstance::GetReport(GetReportRequestView request, GetReportCompleter::Sy
   auto& client = base_->GetHidbusProtocol();
   auto result = client.sync()->GetReport(request->type, request->id, needed);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "FIDL transport failed on GetReport(): %s",
-            result.error().FormatDescription().c_str());
+    fdf::error("FIDL transport failed on GetReport(): {}", result.error().FormatDescription());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "HID device failed to get report: %d", result->error_value());
+    fdf::error("HID device failed to get report: {}", result->error_value());
     completer.ReplyError(result->error_value());
     return;
   }
@@ -197,8 +197,8 @@ void HidInstance::GetReport(GetReportRequestView request, GetReportCompleter::Sy
 void HidInstance::SetReport(SetReportRequestView request, SetReportCompleter::Sync& completer) {
   size_t needed = base_->GetReportSizeById(request->id, request->type);
   if (needed != request->report.size()) {
-    FDF_LOG(ERROR, "Tried to set Report %d (size 0x%lx) with 0x%lx bytes\n", request->id, needed,
-            request->report.size());
+    fdf::error("Tried to set Report {} (size {:#x}) with {:#x} bytes", request->id, needed,
+               request->report.size());
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -206,13 +206,12 @@ void HidInstance::SetReport(SetReportRequestView request, SetReportCompleter::Sy
   auto& client = base_->GetHidbusProtocol();
   auto result = client.sync()->SetReport(request->type, request->id, request->report);
   if (!result.ok()) {
-    FDF_LOG(ERROR, "FIDL transport failed on SetReport(): %s",
-            result.error().FormatDescription().c_str());
+    fdf::error("FIDL transport failed on SetReport(): {}", result.error().FormatDescription());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "HID device failed to set report: %d", result->error_value());
+    fdf::error("HID device failed to set report: {}", result->error_value());
     completer.ReplyError(result->error_value());
     return;
   }
@@ -256,7 +255,7 @@ void HidInstance::WriteToFifo(const uint8_t* report, size_t report_len, zx_time_
   ssize_t wrote = zx_hid_fifo_write(&fifo_, report, report_len);
   if (wrote <= 0) {
     if (!(flags_ & kHidFlagsWriteFailed)) {
-      FDF_LOG(ERROR, "Could not write to hid fifo (ret=%zd)", wrote);
+      fdf::error("Could not write to hid fifo (ret={})", wrote);
       flags_ |= kHidFlagsWriteFailed;
     }
     return;

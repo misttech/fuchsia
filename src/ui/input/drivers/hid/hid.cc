@@ -6,6 +6,7 @@
 
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/hid/boot.h>
 
 #include <map>
@@ -200,7 +201,7 @@ void HidDevice::OnReportReceived(fidl::WireEvent<fhidbus::Hidbus::OnReportReceiv
       // the rest of this payload and hope that the next one gets us back
       // on track.
       if (!report_size) {
-        FDF_LOG(DEBUG, "Failed to find input report size (report id %u)", buf[0]);
+        fdf::debug("Failed to find input report size (report id {})", buf[0]);
         break;
       }
 
@@ -236,12 +237,12 @@ zx_status_t HidDevice::SetReportDescriptor() {
   {
     auto result = hidbus_.sync()->GetDescriptor(fhidbus::wire::HidDescriptorType::kReport);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "FIDL transport failed on GetDescriptor(): %s",
-              result.error().FormatDescription().c_str());
+      fdf::error("FIDL transport failed on GetDescriptor(): {}",
+                 result.error().FormatDescription());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "HID device failed to get descriptor: %d", result->error_value());
+      fdf::error("HID device failed to get descriptor: {}", result->error_value());
       return result->error_value();
     }
     hid_report_desc_ = std::vector<uint8_t>(
@@ -254,8 +255,7 @@ zx_status_t HidDevice::SetReportDescriptor() {
 
   auto result = hidbus_.sync()->GetProtocol();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "FIDL transport failed on GetProtocol(): %s",
-            result.error().FormatDescription().c_str());
+    fdf::error("FIDL transport failed on GetProtocol(): {}", result.error().FormatDescription());
     return result.status();
   }
   if (result->is_error()) {
@@ -284,10 +284,9 @@ zx_status_t HidDevice::SetReportDescriptor() {
         hidbus_.sync()->SetReport(fhidbus::ReportType::kOutput, 0,
                                   fidl::VectorView<uint8_t>::FromExternal(&zero, sizeof(zero)));
     if (!result.ok()) {
-      FDF_LOG(ERROR, "FIDL transport failed on SetReport(): %s",
-              result.error().FormatDescription().c_str());
+      fdf::error("FIDL transport failed on SetReport(): {}", result.error().FormatDescription());
     } else if (result->is_error()) {
-      FDF_LOG(ERROR, "HID device failed to set report: %d", result->error_value());
+      fdf::error("HID device failed to set report: {}", result->error_value());
     }
     // ignore failure for now
   }
@@ -309,31 +308,29 @@ void HidDevice::RemoveInstance(HidInstance& instance) { instance_list_.erase(ins
 zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init() {
   auto result = hidbus_.sync()->Query();
   if (!result.ok()) {
-    FDF_LOG(ERROR, "FIDL transport failed on Query(): %s",
-            result.error().FormatDescription().c_str());
+    fdf::error("FIDL transport failed on Query(): {}", result.error().FormatDescription());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "HID device failed to query: %d", result->error_value());
+    fdf::error("HID device failed to query: {}", result->error_value());
     return result->take_error();
   }
   info_ = fidl::ToNatural(result.value()->info);
 
   if (zx_status_t status = SetReportDescriptor(); status != ZX_OK) {
-    FDF_LOG(ERROR, "hid: could not retrieve HID report descriptor: %s",
-            zx_status_get_string(status));
+    fdf::error("hid: could not retrieve HID report descriptor: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   hid::ParseResult res = hid::ParseReportDescriptor(hid_report_desc_.data(),
                                                     hid_report_desc_.size(), &parsed_hid_desc_);
   if (res != hid::ParseResult::kParseOk) {
-    FDF_LOG(ERROR, "hid: could not parse hid report descriptor: %d", res);
+    fdf::error("hid: could not parse hid report descriptor: {}", static_cast<int>(res));
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (zx_status_t status = InitReassemblyBuffer(); status != ZX_OK) {
-    FDF_LOG(ERROR, "hid: failed to initialize reassembly buffer: %s", zx_status_get_string(status));
+    fdf::error("hid: failed to initialize reassembly buffer: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -341,12 +338,11 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init
   {
     auto result = hidbus_.sync()->Start();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "FIDL transport failed on Start(): %s",
-              result.error().FormatDescription().c_str());
+      fdf::error("FIDL transport failed on Start(): {}", result.error().FormatDescription());
       return zx::error(result.status());
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "HID device failed to start: %d", result->error_value());
+      fdf::error("HID device failed to start: {}", result->error_value());
       return result->take_error();
     }
   }
@@ -354,10 +350,9 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init
   {
     auto result = hidbus_.sync()->SetIdle(0, 0);
     if (!result.ok()) {
-      FDF_LOG(ERROR, "FIDL transport failed on SetIdle(): %s",
-              result.error().FormatDescription().c_str());
+      fdf::error("FIDL transport failed on SetIdle(): {}", result.error().FormatDescription());
     } else if (result->is_error()) {
-      FDF_LOG(ERROR, "HID device failed to set idle: %d", result->error_value());
+      fdf::error("HID device failed to set idle: {}", result->error_value());
     }
     // continue anyway
   }
@@ -374,8 +369,8 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init
       HidPageUsage prop{.page = collection->usage.page, .usage = collection->usage.usage};
       auto bind = FindProp(prop);
       if (bind.is_error()) {
-        FDF_LOG(DEBUG, "Page %x Usage %x not supported as a bind property yet. Skipping.",
-                prop.page, prop.usage);
+        fdf::debug("Page {:#x} Usage {:#x} not supported as a bind property yet. Skipping.",
+                   prop.page, prop.usage);
         continue;
       }
       properties.emplace_back(fdf::MakeProperty2(kBindPropKeyMap[*bind], true));
@@ -387,14 +382,14 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init
 zx::result<> HidDriver::Start() {
   auto hidbus = incoming()->Connect<fhidbus::Service::Device>();
   if (hidbus.is_error()) {
-    FDF_LOG(ERROR, "Failed to open hidbus service: %s", hidbus.status_string());
+    fdf::error("Failed to open hidbus service: {}", hidbus);
     return hidbus.take_error();
   }
   hiddev_ = std::make_unique<HidDevice>(std::move(*hidbus));
 
   auto properties = hiddev_->Init();
   if (properties.is_error()) {
-    FDF_LOG(ERROR, "Failed to init: %s", properties.status_string());
+    fdf::error("Failed to init: {}", properties);
     return properties.take_error();
   }
 
@@ -414,7 +409,7 @@ zx::result<> HidDriver::Start() {
                                               fidl::kIgnoreBindingClosure),
     }));
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add input service %s", result.status_string());
+      fdf::error("Failed to add input service: {}", result);
       return result.take_error();
     }
   }
@@ -433,7 +428,7 @@ zx::result<> HidDriver::Start() {
 
   zx::result result = AddChild(kDeviceName, devfs_args, *properties, offers);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child: {}", result);
     return result.take_error();
   }
   controller_.Bind(std::move(*result));
