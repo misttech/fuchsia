@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::outcome::ConnectionError;
-use fidl_fuchsia_test_manager::SuiteRunnerProxy;
+use flex_fuchsia_test_manager::SuiteRunnerProxy;
 use futures::lock::Mutex;
 
 /// Implementing this trait allows configuring the number of suites to

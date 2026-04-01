@@ -9,7 +9,7 @@ use crate::stream_util::StreamUtil;
 use crate::trace::duration;
 use crate::{artifacts, diagnostics};
 use diagnostics_data::Severity;
-use fidl_fuchsia_test_manager::{
+use flex_fuchsia_test_manager::{
     self as ftest_manager, LaunchError, SuiteArtifactGeneratedEventDetails,
     SuiteStoppedEventDetails, TestCaseArtifactGeneratedEventDetails, TestCaseFinishedEventDetails,
     TestCaseFoundEventDetails, TestCaseStartedEventDetails, TestCaseStoppedEventDetails,

@@ -12,9 +12,12 @@ use fuchsia_sync::Mutex;
 use log::error;
 use std::collections::HashMap;
 use std::io::{Error, Write};
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 use std::time::Duration;
+
+#[cfg(feature = "fdomain")]
+use test_diagnostics_fdomain as test_diagnostics;
 
 mod writer;
 pub use writer::ShellWriterView;
@@ -302,7 +305,10 @@ impl<W: 'static + Write + Send + Sync> Reporter for ShellReporter<W> {
                     writeln!(writer, "----------------xxxxx----------------")?;
                     writer.write_all(restricted_logs.lock().as_slice())?;
                     writeln!(writer, "\n----------------xxxxx----------------")?;
-                    writeln!(writer, "Failing this test. See: https://fuchsia.dev/fuchsia-src/development/diagnostics/test_and_logs#restricting_log_severity\n")?;
+                    writeln!(
+                        writer,
+                        "Failing this test. See: https://fuchsia.dev/fuchsia-src/development/diagnostics/test_and_logs#restricting_log_severity\n"
+                    )?;
                 }
                 match outcome {
                     ReportedOutcome::Cancelled => {

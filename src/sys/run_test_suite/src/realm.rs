@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 
 use cm_rust::{ExposeDeclCommon, NativeIntoFidl, OfferDeclCommon};
-use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker};
-use fidl_fuchsia_component_decl::Offer;
+use flex_client::ProxyHasDomain;
+use flex_client::fidl::{ClientEnd, DiscoverableProtocolMarker};
+use flex_fuchsia_component as fcomponent;
+use flex_fuchsia_component_decl::Offer;
+use flex_fuchsia_io as fio;
+use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
 use thiserror::Error;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
 const CAPABILITY_REQUESTED_EVENT: &str = "capability_requested";
 
 #[derive(Debug, Error)]
@@ -51,7 +54,7 @@ pub enum RealmError {
 
 pub struct Realm {
     exposed_dir: fio::DirectoryProxy,
-    offers: Vec<fidl_fuchsia_component_decl::Offer>,
+    offers: Vec<flex_fuchsia_component_decl::Offer>,
     realm_str: String,
     test_collection: String,
 }
@@ -71,7 +74,7 @@ impl PartialEq for Realm {
 impl Realm {
     pub fn get_realm_client(&self) -> Result<ClientEnd<fcomponent::RealmMarker>, fidl::Error> {
         let (realm_client, server_end) =
-            fidl::endpoints::create_endpoints::<fcomponent::RealmMarker>();
+            self.exposed_dir.domain().create_endpoints::<fcomponent::RealmMarker>();
         self.exposed_dir.open(
             fcomponent::RealmMarker::PROTOCOL_NAME,
             fio::Flags::PROTOCOL_SERVICE,
@@ -81,7 +84,7 @@ impl Realm {
         Ok(realm_client)
     }
 
-    pub fn offers(&self) -> Vec<fidl_fuchsia_component_decl::Offer> {
+    pub fn offers(&self) -> Vec<flex_fuchsia_component_decl::Offer> {
         self.offers.clone()
     }
 
@@ -184,7 +187,7 @@ pub async fn parse_provided_realm(
 
     let offers = validate_and_get_offers(manifest, test_collection)?;
 
-    let (exposed_dir, server_end) = fidl::endpoints::create_proxy();
+    let (exposed_dir, server_end) = realm_query.domain().create_proxy();
     realm_query
         .open_directory(moniker.as_ref(), fsys::OpenDirType::ExposedDir, server_end)
         .await?

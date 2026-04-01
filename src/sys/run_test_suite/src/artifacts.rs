@@ -5,23 +5,29 @@
 use crate::artifacts;
 use crate::cancel::NamedFutureExt;
 use crate::diagnostics::{self, LogCollectionOutcome};
-use crate::outcome::{RunTestSuiteError, UnexpectedEventError};
+use crate::outcome::{ConnectionError, RunTestSuiteError, UnexpectedEventError};
 use crate::output::{
     ArtifactType, DirectoryArtifactType, DynDirectoryArtifact, DynReporter, EntityReporter,
 };
 use crate::stream_util::StreamUtil;
-use anyhow::{anyhow, Context as _};
-use fidl::Peered;
-use futures::future::{join_all, BoxFuture, FutureExt, TryFutureExt};
-use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
+use anyhow::{Context as _, anyhow};
+use flex_client::Peered;
 use futures::AsyncReadExt;
+use futures::future::{BoxFuture, FutureExt, TryFutureExt, join_all};
+use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
 use log::{debug, warn};
 use std::borrow::Borrow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::PathBuf;
+
+#[cfg(feature = "fdomain")]
+use test_diagnostics_fdomain as test_diagnostics;
+
+use flex_fuchsia_io as fio;
+use flex_fuchsia_test_manager as ftest_manager;
+use fuchsia_async as fasync;
 use test_diagnostics::zstd_compress::Decoder;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_test_manager as ftest_manager, fuchsia_async as fasync};
 
 /// Given an |artifact| reported over fuchsia.test.manager, create the appropriate artifact in the
 /// reporter. Returns a Future, which when polled to completion, drains the results from |artifact|
@@ -53,7 +59,8 @@ where
         ftest_manager::Artifact::Log(syslog) => {
             let syslog_artifact = reporter.new_artifact(&ArtifactType::Syslog)?;
             Ok(diagnostics::collect_logs(
-                test_diagnostics::LogStream::from_syslog(syslog)?,
+                test_diagnostics::LogStream::from_syslog(syslog)
+                    .map_err(|e| RunTestSuiteError::Connection(ConnectionError(e.into())))?,
                 syslog_artifact,
                 log_opts,
             )
@@ -104,10 +111,10 @@ where
 
 /// Copy an artifact reported over a socket.
 async fn copy_socket_artifact<W: Write>(
-    socket: fidl::Socket,
+    socket: flex_client::Socket,
     mut artifact: W,
 ) -> Result<usize, anyhow::Error> {
-    let mut async_socket = fidl::AsyncSocket::from_socket(socket);
+    let mut async_socket = flex_client::socket_to_async(socket);
     let mut len = 0;
     loop {
         let done =
@@ -130,10 +137,10 @@ async fn copy_socket_artifact<W: Write>(
 /// Copy and decompress (zstd) the artifact reported over a socket.
 /// Returns (decompressed, compressed) sizes.
 async fn copy_socket_artifact_and_decompress<W: Write>(
-    socket: fidl::Socket,
+    socket: flex_client::Socket,
     mut artifact: W,
 ) -> Result<(usize, usize), anyhow::Error> {
-    let mut async_socket = fidl::AsyncSocket::from_socket(socket);
+    let mut async_socket = flex_client::socket_to_async(socket);
     let mut buf = vec![0u8; 1024 * 1024 * 2];
 
     let (mut decoder, mut receiver) = Decoder::new();
@@ -324,6 +331,8 @@ mod socket_tests {
 mod file_tests {
     use super::*;
     use crate::output::InMemoryDirectoryWriter;
+    use flex_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use futures::prelude::*;
     use maplit::hashmap;
     use std::collections::HashMap;
@@ -332,7 +341,6 @@ mod file_tests {
     use vfs::directory::immutable::Simple;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     async fn serve_content_over_socket(content: Vec<u8>, socket: zx::Socket) {
         let mut socket = fidl::AsyncSocket::from_socket(socket);

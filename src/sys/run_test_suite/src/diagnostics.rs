@@ -5,8 +5,8 @@
 use crate::trace::duration;
 use anyhow::Error;
 use diagnostics_data::{LogTextDisplayOptions, LogTextPresenter, LogsData, Severity};
-use fidl_fuchsia_diagnostics::LogInterestSelector;
-use fidl_fuchsia_test_manager::LogsIteratorType;
+use flex_fuchsia_diagnostics::LogInterestSelector;
+use flex_fuchsia_test_manager::LogsIteratorType;
 use futures::{Stream, TryStreamExt};
 use selectors::SelectorExt;
 use std::io::Write;

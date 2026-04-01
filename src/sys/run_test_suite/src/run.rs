@@ -10,7 +10,8 @@ use crate::output::{self, RunReporter, Timestamp};
 use crate::params::{RunParams, TestParams, TimeoutBehavior};
 use crate::running_suite::{RunningSuite, WaitForStartArgs, run_suite_and_collect_logs};
 use diagnostics_data::LogTextDisplayOptions;
-use fidl_fuchsia_test_manager::{self as ftest_manager, SuiteRunnerProxy};
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_test_manager::{self as ftest_manager, SuiteRunnerProxy};
 use futures::prelude::*;
 use log::warn;
 use std::io::Write;
@@ -105,7 +106,7 @@ async fn run_test_chunk<'a, F: 'a + Future<Output = ()> + Unpin>(
     let mut combined_log_interest = run_params.min_severity_logs.clone();
     combined_log_interest.extend(test_params.min_severity_logs.iter().cloned());
 
-    let mut run_options = fidl_fuchsia_test_manager::RunSuiteOptions {
+    let mut run_options = flex_fuchsia_test_manager::RunSuiteOptions {
         max_concurrent_test_case_runs: test_params.parallel,
         arguments: Some(test_params.test_args),
         timeout: timeout.map(|duration| duration.as_nanos() as i64),
@@ -122,7 +123,7 @@ async fn run_test_chunk<'a, F: 'a + Future<Output = ()> + Unpin>(
     let suite = run_reporter.new_suite(&test_params.test_url)?;
     suite.set_tags(test_params.tags);
     if let Some(realm) = test_params.realm.as_ref() {
-        run_options.realm_options = Some(fidl_fuchsia_test_manager::RealmOptions {
+        run_options.realm_options = Some(flex_fuchsia_test_manager::RealmOptions {
             realm: Some(realm.get_realm_client()?),
             offers: Some(realm.offers()),
             test_collection: Some(realm.collection().to_string()),
@@ -130,7 +131,7 @@ async fn run_test_chunk<'a, F: 'a + Future<Output = ()> + Unpin>(
         });
     }
     let (suite_controller, suite_server_end) =
-        fidl::endpoints::create_proxy::<ftest_manager::SuiteControllerMarker>();
+        runner_proxy.domain().create_proxy::<ftest_manager::SuiteControllerMarker>();
     let suite_start_fut = RunningSuite::wait_for_start(WaitForStartArgs {
         proxy: suite_controller,
         max_severity_logs: test_params.max_severity_logs,
@@ -306,14 +307,14 @@ mod test {
     use crate::output::{EntityId, InMemoryReporter};
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy_and_stream};
-    use fidl_fuchsia_test_manager as ftest_manager;
+    use flex_fuchsia_test_manager as ftest_manager;
     use futures::future::join;
     use futures::stream::futures_unordered::FuturesUnordered;
     use maplit::hashmap;
     use std::collections::HashMap;
     #[cfg(target_os = "fuchsia")]
     use {
-        fidl_fuchsia_io as fio, futures::future::join3, vfs::file::vmo::read_only,
+        flex_fuchsia_io as fio, futures::future::join3, vfs::file::vmo::read_only,
         vfs::pseudo_directory, zx,
     };
 

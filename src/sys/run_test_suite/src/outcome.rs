@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_test_manager as ftest_manager;
+use flex_fuchsia_test_manager as ftest_manager;
 use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
@@ -161,8 +161,10 @@ impl From<ftest_manager::LaunchError> for RunTestSuiteError {
 
 fn convert_launch_error_to_str(e: &ftest_manager::LaunchError) -> &'static str {
     match e {
-        ftest_manager::LaunchError::CaseEnumeration => "Cannot enumerate test. This may mean `fuchsia.test.Suite` was not configured correctly. Refer to: \
-        https://fuchsia.dev/go/components/test-errors",
+        ftest_manager::LaunchError::CaseEnumeration => {
+            "Cannot enumerate test. This may mean `fuchsia.test.Suite` was not configured correctly. Refer to: \
+        https://fuchsia.dev/go/components/test-errors"
+        }
         ftest_manager::LaunchError::ResourceUnavailable => "Resource unavailable",
         ftest_manager::LaunchError::InstanceCannotResolve => "Cannot resolve test.",
         ftest_manager::LaunchError::InvalidArgs => {
@@ -175,9 +177,10 @@ fn convert_launch_error_to_str(e: &ftest_manager::LaunchError) -> &'static str {
         }
         ftest_manager::LaunchError::InternalError => "Internal error, please file bug",
         ftest_manager::LaunchError::NoMatchingCases =>
-            // TODO(satsukiu): Ideally, we would expose these error enums up through the library
-            // and define the error messages in the main files for each tool. This would allow each
-            // tool (ffx/fx/run-test-suite) to give the correct flags.
+        // TODO(satsukiu): Ideally, we would expose these error enums up through the library
+        // and define the error messages in the main files for each tool. This would allow each
+        // tool (ffx/fx/run-test-suite) to give the correct flags.
+        {
             "No test cases matched the specified filters.\n\
             If you specified a test filter, verify the available test cases with \
             'ffx test list-cases <test suite url>'.\n\
@@ -185,8 +188,11 @@ fn convert_launch_error_to_str(e: &ftest_manager::LaunchError) -> &'static str {
             'legacy_test' or 'main', the suite likely uses either the legacy_test_runner or \
             elf_test_runner. In these cases, --test-filter will not work. Instead, \
             you can pass test arguments directly to the test instead. Refer to: \
-            https://fuchsia.dev/go/components/test-runners",
-        ftest_manager::LaunchError::InvalidManifest => "The test manifest is invalid or has invalid facets/arguments. Please check logs for detailed error.",
+            https://fuchsia.dev/go/components/test-runners"
+        }
+        ftest_manager::LaunchError::InvalidManifest => {
+            "The test manifest is invalid or has invalid facets/arguments. Please check logs for detailed error."
+        }
         ftest_manager::LaunchErrorUnknown!() => "Unrecognized launch error",
     }
 }

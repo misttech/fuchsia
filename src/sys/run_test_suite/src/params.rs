@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use diagnostics_data::Severity;
-use fidl_fuchsia_diagnostics::LogInterestSelector;
-use fidl_fuchsia_test_manager as ftest_manager;
+use flex_fuchsia_diagnostics::LogInterestSelector;
+use flex_fuchsia_test_manager as ftest_manager;
 use std::sync::Arc;
 use test_list::TestTag;
 

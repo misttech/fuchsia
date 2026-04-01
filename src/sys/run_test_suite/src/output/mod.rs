@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_test_manager as ftest_manager;
+use flex_fuchsia_test_manager as ftest_manager;
 use std::borrow::Borrow;
 use std::io::{Error, Write};
 use std::marker::PhantomData;
@@ -311,11 +311,7 @@ impl ZxTime {
 
     pub fn checked_sub(&self, rhs: Self) -> Option<std::time::Duration> {
         let nanos = self.0 - rhs.0;
-        if nanos < 0 {
-            None
-        } else {
-            Some(std::time::Duration::from_nanos(nanos as u64))
-        }
+        if nanos < 0 { None } else { Some(std::time::Duration::from_nanos(nanos as u64)) }
     }
 }
 
