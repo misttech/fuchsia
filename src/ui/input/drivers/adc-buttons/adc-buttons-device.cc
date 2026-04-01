@@ -4,7 +4,7 @@
 
 #include "adc-buttons-device.h"
 
-#include <lib/driver/logging/cpp/structured_logger.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/clock.h>
 
 namespace adc_buttons_device {
@@ -32,7 +32,7 @@ void AdcButtonsDevice::PollingTask(async_dispatcher_t* dispatcher, async::TaskBa
 
   auto report = GetInputReport();
   if (report.is_error()) {
-    FDF_LOG(ERROR, "Failed to get report %d", report.error_value());
+    fdf::error("Failed to get report {}", report);
     return;
   }
   if (rpt_.has_value() && rpt_->buttons == report->buttons) {
@@ -48,11 +48,11 @@ zx::result<AdcButtonsDevice::AdcButtonInputReport> AdcButtonsDevice::GetInputRep
   for (const auto& client : clients_) {
     auto result = client.adc_->GetSample();
     if (!result.ok()) {
-      FDF_LOG(ERROR, "%s: GetSample failed %s", __func__, result.FormatDescription().c_str());
+      fdf::error("{}: GetSample failed {}", __func__, result.FormatDescription());
       return zx::error(ZX_ERR_INTERNAL);
     }
     if (result->is_error()) {
-      FDF_LOG(ERROR, "%s: GetSample failed %d", __func__, result->error_value());
+      fdf::error("{}: GetSample failed {}", __func__, result->error_value());
       return zx::error(result->error_value());
     }
 
@@ -79,13 +79,13 @@ void AdcButtonsDevice::GetInputReportsReader(GetInputReportsReaderRequestView re
                                              GetInputReportsReaderCompleter::Sync& completer) {
   auto initial_report = GetInputReport();
   if (initial_report.is_error()) {
-    FDF_LOG(ERROR, "Failed to get initial report %d", initial_report.error_value());
+    fdf::error("Failed to get initial report {}", initial_report);
   }
   auto status = readers_.CreateReader(
       dispatcher_, std::move(request->reader),
       initial_report.is_ok() ? std::make_optional(initial_report.value()) : std::nullopt);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: CreateReader failed %d", __func__, status);
+    fdf::error("{}: CreateReader failed {}", __func__, status);
   }
 }
 

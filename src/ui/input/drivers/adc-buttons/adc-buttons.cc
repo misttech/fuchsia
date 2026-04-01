@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/driver/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
@@ -23,12 +24,12 @@ struct MetadataValues {
 
 zx::result<MetadataValues> ParseMetadata(const fuchsia_buttons::AdcButtonsMetadata& metadata) {
   if (!metadata.polling_rate_usec().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing `polling_rate_usec` field");
+    fdf::error("Metadata missing `polling_rate_usec` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (!metadata.buttons().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing `buttons` field");
+    fdf::error("Metadata missing `buttons` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -38,22 +39,21 @@ zx::result<MetadataValues> ParseMetadata(const fuchsia_buttons::AdcButtonsMetada
   for (size_t i = 0; i < buttons.size(); ++i) {
     const auto& button = buttons[i];
     if (button.button_config()->Which() != fuchsia_buttons::ButtonConfig::Tag::kAdc) {
-      FDF_LOG(WARNING, "Ignoring button %lu: Button config not of type adc", i);
+      fdf::warn("Ignoring button {}: Button config not of type adc", i);
       continue;
     }
     ret.buttons.insert(button.types()->begin(), button.types()->end());
     ret.configs[*button.button_config()->adc()->channel_idx()].emplace_back(std::move(button));
   }
   if (ret.buttons.size() >= fuchsia_input_report::kConsumerControlMaxNumButtons) {
-    FDF_LOG(
-        ERROR,
-        "%s: More buttons than expected (max = %d). Please increase kConsumerControlMaxNumButtons",
+    fdf::error(
+        "{}: More buttons than expected (max = {}). Please increase kConsumerControlMaxNumButtons",
         __func__, fuchsia_input_report::kConsumerControlMaxNumButtons);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   if (ret.configs.empty() || ret.buttons.empty()) {
-    FDF_LOG(ERROR, "%s: failed to get button configs in metadata.", __func__);
+    fdf::error("{}: failed to get button configs in metadata.", __func__);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -66,7 +66,7 @@ zx::result<> AdcButtons::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
@@ -74,12 +74,12 @@ zx::result<> AdcButtons::Start() {
   // Get metadata.
   zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::AdcButtonsMetadata>();
   if (metadata_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
+    fdf::error("Failed to get metadata: {}", metadata_result);
     return metadata_result.take_error();
   }
   zx::result values = ParseMetadata(metadata_result.value());
   if (values.is_error()) {
-    FDF_LOG(ERROR, "Failed to parse metadata: %s", values.status_string());
+    fdf::error("Failed to parse metadata: {}", values);
     return values.take_error();
   }
 
@@ -90,7 +90,7 @@ zx::result<> AdcButtons::Start() {
     sprintf(adc_name, "adc-%u", idx);
     zx::result result = incoming()->Connect<fuchsia_hardware_adc::Service::Device>(adc_name);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to open adc service: %s", result.status_string());
+      fdf::error("Failed to open adc service: {}", result);
       return result.take_error();
     }
     clients.emplace_back(std::move(result.value()), std::move(buttons));
@@ -105,12 +105,12 @@ zx::result<> AdcButtons::Start() {
                                            fidl::kIgnoreBindingClosure),
       kDeviceName);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add Device service %s", result.status_string());
+    fdf::error("Failed to add Device service: {}", result);
     return result.take_error();
   }
 
   if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to export to devfs %s", result.status_string());
+    fdf::error("Failed to export to devfs: {}", result);
     return result.take_error();
   }
 
@@ -130,7 +130,7 @@ zx::result<> AdcButtons::CreateDevfsNode() {
 
   zx::result child = AddOwnedChild(kDeviceName, devfs_args);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", child.status_string());
+    fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
   child_ = std::move(child.value());
