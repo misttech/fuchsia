@@ -554,10 +554,15 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     // Setup the buffer collection that will be used for the flatland rectangle's texture.
     auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator_);
 
-    auto result = display_compositor->ImportBufferCollection(
+    auto import_promise = display_compositor->ImportBufferCollection(
         collection_id, sysmem_allocator_, std::move(dup_token), BufferCollectionUsage::kClientImage,
         std::nullopt);
-    EXPECT_TRUE(result);
+
+    bool import_success = false;
+    executor_->schedule_task(import_promise.then(
+        [&import_success](const fpromise::result<>& res) { import_success = res.is_ok(); }));
+    RunLoopUntilIdle();
+    EXPECT_TRUE(import_success);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
     fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =

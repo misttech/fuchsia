@@ -6,7 +6,6 @@
 
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
-#include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
@@ -36,22 +35,22 @@ RegisterBufferCollectionUsages UsageToUsages(
 
 }  // namespace
 
-Allocator::Allocator(sys::ComponentContext* app_context,
+Allocator::Allocator(async_dispatcher_t* dispatcher, sys::ComponentContext* app_context,
                      const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                          default_buffer_collection_importers,
                      const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                          screenshot_buffer_collection_importers,
                      fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator,
                      inspect::Node inspect_node)
-    : dispatcher_(async_get_default_dispatcher()),
-      default_buffer_collection_importers_(default_buffer_collection_importers),
+    : default_buffer_collection_importers_(default_buffer_collection_importers),
       screenshot_buffer_collection_importers_(screenshot_buffer_collection_importers),
       sysmem_allocator_(std::move(sysmem_allocator)),
       inspect_node_(std::move(inspect_node)),
-      weak_factory_(this) {
+      weak_factory_(this),
+      executor_(dispatcher) {
   FX_DCHECK(app_context);
   app_context->outgoing()->AddProtocol<fuchsia_ui_composition::Allocator>(
-      bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure));
+      bindings_.CreateHandler(this, executor_.dispatcher(), fidl::kIgnoreBindingClosure));
 
   inspect_registered_buffer_collections_ =
       inspect_node_.CreateUint("Registered Buffer Collections", 0);
@@ -62,7 +61,7 @@ Allocator::Allocator(sys::ComponentContext* app_context,
 }
 
 Allocator::~Allocator() {
-  FX_DCHECK(dispatcher_ == async_get_default_dispatcher());
+  FX_DCHECK(executor_.dispatcher() == async_get_default_dispatcher());
 
   // Allocator outlives |*_buffer_collection_importers_| instances, because we hold shared_ptrs. It
   // is safe to release all remaining buffer collections because there should be no more usage.
@@ -157,8 +156,7 @@ void Allocator::RegisterBufferCollection(RegisterBufferCollectionRequest& reques
 void Allocator::RegisterBufferCollection(
     fuchsia_ui_composition::RegisterBufferCollectionArgs args,
     fit::function<void(fit::result<RegisterBufferCollectionError>)> completer) {
-  TRACE_DURATION_BEGIN("gfx", "allocation::Allocator::RegisterBufferCollection");
-  FX_DCHECK(dispatcher_ == async_get_default_dispatcher());
+  FX_DCHECK(executor_.dispatcher() == async_get_default_dispatcher());
 
   IncrementRegisteredBufferCollections();
 
@@ -169,6 +167,8 @@ void Allocator::RegisterBufferCollection(
     completer(fit::error(RegisterBufferCollectionError::kBadOperation));
     return;
   }
+  TRACE_DURATION("gfx", "allocation::Allocator::RegisterBufferCollection[begin]");
+  TRACE_FLOW_BEGIN("gfx", "allocation::Allocator::RegisterBufferCollection", parsed_args->koid);
 
   // Check if this export token has already been used.
   if (buffer_collections_.find(parsed_args->koid) != buffer_collections_.end()) {
@@ -216,10 +216,10 @@ Allocator::Importers Allocator::GetImporters(const RegisterBufferCollectionUsage
   return importers;
 }
 
-void Allocator::DuplicateBufferCollectionToken(
-    ParsedArgs parsed_args,
-    fit::function<void(fit::result<RegisterBufferCollectionError>)> completer) {
+void Allocator::DuplicateBufferCollectionToken(ParsedArgs parsed_args, Completer completer) {
   auto& [koid, buffer_collection_usages, export_token, buffer_collection_token] = parsed_args;
+  TRACE_DURATION("gfx", "allocation::Allocator::RegisterBufferCollection[duplicate]");
+  TRACE_FLOW_STEP("gfx", "allocation::Allocator::RegisterBufferCollection", koid);
   auto importers = GetImporters(buffer_collection_usages);
   FX_DCHECK(importers.size() > 0);
 
@@ -249,69 +249,95 @@ void Allocator::DuplicateBufferCollectionToken(
         tokens.reserve(importers.size());
         tokens.push_back(*token.UnbindMaybeGetEndpoint());
         std::ranges::move(result->tokens(), std::back_inserter(tokens));
-        RegisterValidatedBufferCollection(std::move(parsed_args), std::move(importers),
-                                          std::move(tokens), std::move(completer));
+        ImportBufferCollection(std::move(parsed_args), std::move(importers), std::move(tokens),
+                               std::move(completer));
       });
 }
 
-void Allocator::RegisterValidatedBufferCollection(
-    ParsedArgs parsed_args, Importers importers, BufferCollectionTokens tokens,
-    fit::function<void(fit::result<RegisterBufferCollectionError>)> completer) {
-  auto trace_end = fit::defer(
-      [] { TRACE_DURATION_END("gfx", "allocation::Allocator::RegisterBufferCollection"); });
+void Allocator::ImportBufferCollection(ParsedArgs parsed_args, Importers importers,
+                                       BufferCollectionTokens tokens, Completer completer) {
   auto& [koid, buffer_collection_usages, export_token, _] = parsed_args;
+  TRACE_DURATION("gfx", "allocation::Allocator::RegisterBufferCollection[import]");
+  TRACE_FLOW_STEP("gfx", "allocation::Allocator::RegisterBufferCollection", koid);
 
   // Loop over each of the importers and provide each of them with a token from the vector we
   // created above.
+  std::vector<fpromise::promise<>> promises;
+  promises.reserve(importers.size());
   for (uint32_t i = 0; i < importers.size(); i++) {
-    bool import_successful = false;
-    {
-      auto& [importer, usage] = importers.at(i);
-      import_successful = importer.ImportBufferCollection(
-          koid, sysmem_allocator_, std::move(tokens[i]), usage, std::nullopt);
-    }
-
-    if (!import_successful) {
-      // If any importers failed then clean up the ones that didn't before returning.
-      for (uint32_t j = 0; j < i; j++) {
-        auto& [importer, usage] = importers.at(j);
-        importer.ReleaseBufferCollection(koid, usage);
-      }
-      FX_LOGS(ERROR) << "Failed to import the buffer collection to the BufferCollectionimporter.";
-      IncrementFailedBufferCollections();
-      completer(fit::error(RegisterBufferCollectionError::kBadOperation));
-      return;
-    }
+    auto& [importer, usage] = importers.at(i);
+    auto promise = importer.ImportBufferCollection(koid, sysmem_allocator_, std::move(tokens[i]),
+                                                   usage, std::nullopt);
+    promises.push_back(std::move(promise));
   }
+  auto join_promise =
+      fpromise::join_promise_vector(std::move(promises))
+          .then([koid](fpromise::result<std::vector<fpromise::result<>>>& results)
+                    -> fpromise::result<void, std::vector<fpromise::result<>>> {
+            TRACE_DURATION_BEGIN("gfx", "allocation::Allocator::RegisterBufferCollection[end]");
+            TRACE_FLOW_END("gfx", "allocation::Allocator::RegisterBufferCollection", koid);
+            for (auto& result : results.value()) {
+              if (!result.is_ok()) {
+                return fpromise::error(results.take_value());
+              }
+            }
+            return fpromise::ok();
+          })
+          // This `and_then` handles the case where all importers succeeded, and performs final
+          // registration of the collection by adding it to the internal map.
+          .and_then([this, koid, buffer_collection_usages,
+                     export_token = std::move(export_token.value()),
+                     completer = completer.share()]() mutable {
+            buffer_collections_[koid] = buffer_collection_usages;
 
-  buffer_collections_[koid] = buffer_collection_usages;
-
-  // Use a self-referencing async::WaitOnce to deregister buffer collections when all
-  // BufferCollectionImportTokens are used, i.e. peers of eventpair are closed. Note that the
-  // ownership of |export_token| is also passed, so that GetRelatedKoid() calls return valid koid.
-  auto wait =
-      std::make_shared<async::WaitOnce>(export_token.value().get(), ZX_EVENTPAIR_PEER_CLOSED);
-  const zx_status_t status = wait->Begin(
-      dispatcher_, [keepalive_wait = wait, keepalive_export_token = std::move(export_token.value()),
-                    weak_this = weak_factory_.GetWeakPtr(),
-                    koid](async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
-                          const zx_packet_signal_t* /*signal*/) mutable {
-        FX_DCHECK(status == ZX_OK || status == ZX_ERR_CANCELED);
-        if (weak_this) {
-          // Because Flatland::CreateImage() holds an import token, this
-          // is guaranteed to be called after all images are created, so
-          // it is safe to release buffer collection.
-          weak_this->ReleaseBufferCollection(koid);
-        }
-      });
-  FX_DCHECK(status == ZX_OK);
-
-  completer(fit::ok());
+            // Use a self-referencing async::WaitOnce to deregister buffer collections when all
+            // BufferCollectionImportTokens are used, i.e. peers of eventpair are closed. Note that
+            // the ownership of |export_token| is also passed, so that GetRelatedKoid() calls return
+            // valid koid.
+            auto wait =
+                std::make_shared<async::WaitOnce>(export_token.get(), ZX_EVENTPAIR_PEER_CLOSED);
+            const zx_status_t status = wait->Begin(
+                executor_.dispatcher(),
+                [koid, keepalive_wait = wait, keepalive_export_token = std::move(export_token),
+                 weak_this = weak_factory_.GetWeakPtr()](
+                    async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
+                    const zx_packet_signal_t* /*signal*/) mutable {
+                  FX_DCHECK(status == ZX_OK || status == ZX_ERR_CANCELED);
+                  if (weak_this) {
+                    // Because Flatland::CreateImage() holds an import token, this
+                    // is guaranteed to be called after all images are created, so
+                    // it is safe to release buffer collection.
+                    weak_this->ReleaseBufferCollection(koid);
+                  }
+                });
+            FX_DCHECK(status == ZX_OK);
+            completer(fit::ok());
+          })
+          // This `or_else` handles the case where any importer failed. Some importers may have
+          // succeeded; these must be told to release the collection.
+          .or_else([this, koid, importers = std::move(importers), completer = std::move(completer)](
+                       const std::vector<fpromise::result<>>& results) {
+            // If any importers failed then clean up the ones that didn't before returning.
+            for (uint32_t i = 0; i < results.size(); i++) {
+              if (results[i].is_ok()) {
+                auto& [importer, usage] = importers.at(i);
+                importer.ReleaseBufferCollection(koid, usage);
+              }
+            }
+            FX_LOGS(ERROR)
+                << "Failed to import the buffer collection to the BufferCollectionimporter.";
+            IncrementFailedBufferCollections();
+            completer(fit::error(RegisterBufferCollectionError::kBadOperation));
+          })
+          .then([](const fpromise::result<>& result) {
+            TRACE_DURATION_END("gfx", "allocation::Allocator::RegisterBufferCollection[end]");
+          });
+  executor_.schedule_task(std::move(join_promise));
 }
 
 void Allocator::ReleaseBufferCollection(GlobalBufferCollectionId collection_id) {
   TRACE_DURATION("gfx", "allocation::Allocator::ReleaseBufferCollection");
-  FX_DCHECK(dispatcher_ == async_get_default_dispatcher());
+  FX_DCHECK(executor_.dispatcher() == async_get_default_dispatcher());
 
   const auto usages = buffer_collections_.at(collection_id);
   buffer_collections_.erase(collection_id);

@@ -11,7 +11,7 @@
 
 namespace flatland {
 
-bool NullRenderer::ImportBufferCollection(
+fpromise::promise<> NullRenderer::ImportBufferCollection(
     allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
@@ -23,7 +23,7 @@ bool NullRenderer::ImportBufferCollection(
   auto& map = GetBufferCollectionInfosFor(usage);
   if (map.find(collection_id) != map.end()) {
     FX_LOGS(ERROR) << "Duplicate GlobalBufferCollectionID: " << collection_id;
-    return false;
+    return fpromise::make_error_promise();
   }
   std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_constraints;
   if (size.has_value()) {
@@ -42,14 +42,14 @@ bool NullRenderer::ImportBufferCollection(
                                 std::move(sysmem_usage), usage);
   if (result.is_error()) {
     FX_LOGS(ERROR) << "Unable to register collection.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // Multiple threads may be attempting to read/write from |map| so we
   // lock this function here.
   // TODO(https://fxbug.dev/42120738): Convert this to a lock-free structure.
   map[collection_id] = std::move(result.value());
-  return true;
+  return fpromise::make_ok_promise();
 }
 
 void NullRenderer::ReleaseBufferCollection(allocation::GlobalBufferCollectionId collection_id,

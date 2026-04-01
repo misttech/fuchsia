@@ -5,6 +5,7 @@
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstddef>
@@ -18,6 +19,7 @@
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 namespace screen_capture::test {
 
@@ -43,9 +45,14 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
     auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
 
     // Import into ScreenCaptureBufferCollectionImporter.
-    bool success =
-        importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
-                                          BufferCollectionUsage::kRenderTarget, std::nullopt);
+    async::Executor executor(loop_.dispatcher());
+    bool success = false;
+    executor.schedule_task(
+        importer_
+            ->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
+                                     BufferCollectionUsage::kRenderTarget, std::nullopt)
+            .then([&success](const fpromise::result<>& result) { success = result.is_ok(); }));
+    loop_.RunUntilIdle();
     EXPECT_TRUE(success);
 
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
@@ -74,6 +81,11 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
   }
 
  protected:
+  bool RunPromise(fpromise::promise<> promise) {
+    return integration_tests::RunPromise(
+        loop_.dispatcher(), [this] { loop_.RunUntilIdle(); }, std::move(promise));
+  }
+
   async::TestLoop loop_;
   std::shared_ptr<flatland::VkRenderer> renderer_;
   std::shared_ptr<ScreenCaptureBufferCollectionImporter> importer_;
@@ -98,11 +110,9 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportAndReleaseBufferCollection) {
 
   // Import into ScreenCaptureBufferCollectionImporter.
   auto collection_id = allocation::GenerateUniqueBufferCollectionId();
-  bool result =
+  EXPECT_TRUE(RunPromise(
       importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
-                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-
-  EXPECT_TRUE(result);
+                                        BufferCollectionUsage::kRenderTarget, std::nullopt)));
 
   // Cleanup.
   importer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kRenderTarget);
@@ -175,11 +185,10 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportBufferCollection_ErrorCases) 
             .Build());
     EXPECT_TRUE(result.ok());
   }
-  bool result = importer_->ImportBufferCollection(
+  EXPECT_TRUE(RunPromise(importer_->ImportBufferCollection(
       collection_id, sysmem_allocator,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token1.Unbind().TakeChannel()),
-      BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+      BufferCollectionUsage::kRenderTarget, std::nullopt)));
 
   // Buffer collection id dup.
   {
@@ -191,11 +200,10 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportBufferCollection_ErrorCases) 
                 token2.NewRequest().TakeChannel()))
             .Build());
     EXPECT_TRUE(result.ok());
-    bool success = importer_->ImportBufferCollection(
+    EXPECT_FALSE(RunPromise(importer_->ImportBufferCollection(
         collection_id, sysmem_allocator,
         fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token2.Unbind().TakeChannel()),
-        BufferCollectionUsage::kRenderTarget, std::nullopt);
-    EXPECT_FALSE(success);
+        BufferCollectionUsage::kRenderTarget, std::nullopt)));
   }
 }
 
@@ -289,10 +297,9 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_Buffe
   // Create Sysmem tokens.
   auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
   // Import into ScreenCaptureBufferCollectionImporter.
-  bool success =
+  EXPECT_TRUE(RunPromise(
       importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
-                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(success);
+                                        BufferCollectionUsage::kRenderTarget, std::nullopt)));
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::Arena arena;

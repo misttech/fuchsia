@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>
 
@@ -23,7 +24,7 @@ namespace allocation {
 // used in multiple Flatland/Gfx sessions simultaneously.
 class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
  public:
-  Allocator(sys::ComponentContext* app_context,
+  Allocator(async_dispatcher_t* dispatcher, sys::ComponentContext* app_context,
             const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                 default_buffer_collection_importers,
             const std::vector<std::shared_ptr<BufferCollectionImporter>>&
@@ -51,6 +52,8 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
   using Importers = std::vector<std::pair<BufferCollectionImporter&, BufferCollectionUsage>>;
   using BufferCollectionTokens =
       std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>>;
+  using Completer =
+      fit::function<void(fit::result<fuchsia_ui_composition::RegisterBufferCollectionError>)>;
 
   // Parses the FIDL struct, validating the arguments. Logs an error and returns std::nullopt on
   // failure.
@@ -58,26 +61,18 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
       fuchsia_ui_composition::RegisterBufferCollectionArgs args);
   // Returns a list of references to all importers to be used for a buffer collection with |usages|.
   Importers GetImporters(fuchsia_ui_composition::RegisterBufferCollectionUsages usages) const;
-  void DuplicateBufferCollectionToken(
-      ParsedArgs parsed_args,
-      fit::function<void(fit::result<fuchsia_ui_composition::RegisterBufferCollectionError>)>
-          completer);
-  // Register a BufferCollection that has already been validated via
+  void DuplicateBufferCollectionToken(ParsedArgs parsed_args, Completer completer);
+  // Import a BufferCollection that has already been validated via
   // `fuchsia.sysmem2/Allocator.ValidateBufferCollectionToken()`. This is necessary because Scenic
   // cannot trust clients to provide valid sysmem tokens.
-  void RegisterValidatedBufferCollection(
-      ParsedArgs parsed_args, Importers importers, BufferCollectionTokens tokens,
-      fit::function<void(fit::result<fuchsia_ui_composition::RegisterBufferCollectionError>)>
-          completer);
+  void ImportBufferCollection(ParsedArgs parsed_args, Importers importers,
+                              BufferCollectionTokens tokens, Completer completer);
   void ReleaseBufferCollection(GlobalBufferCollectionId collection_id);
 
   // Update inspect values.
   void IncrementRegisteredBufferCollections();
   void IncrementReleasedBufferCollections();
   void IncrementFailedBufferCollections();
-
-  // Dispatcher where this class runs on. Currently points to scenic main thread's dispatcher.
-  async_dispatcher_t* dispatcher_;
 
   // The FIDL bindings for this Allocator instance, which reference |this| as the implementation and
   // run on |dispatcher_|.
@@ -106,6 +101,9 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
 
   // Should be last.
   fxl::WeakPtrFactory<Allocator> weak_factory_;
+
+  // Dispatcher where this class runs on. Currently points to scenic main thread's dispatcher.
+  async::Executor executor_;
 };
 
 }  // namespace allocation

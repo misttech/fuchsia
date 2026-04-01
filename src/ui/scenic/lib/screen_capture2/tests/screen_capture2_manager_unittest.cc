@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/screen_capture2/screen_capture2_manager.h"
 
 #include <fuchsia/ui/composition/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 

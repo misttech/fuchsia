@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/math/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/time.h>
@@ -23,6 +24,7 @@
 #include "src/ui/scenic/lib/flatland/engine/tests/mock_display_coordinator.h"
 #include "src/ui/scenic/lib/flatland/renderer/mock_renderer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 using ::testing::_;
 using ::testing::Eq;
@@ -227,6 +229,11 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
   }
 
  protected:
+  bool RunPromise(fpromise::promise<> promise) {
+    return integration_tests::RunPromise(
+        dispatcher(), [this] { RunLoopUntilIdle(); }, std::move(promise));
+  }
+
   static constexpr fuchsia_images2::PixelFormat kPixelFormat =
       fuchsia_images2::PixelFormat::kB8G8R8A8;
 
@@ -280,15 +287,15 @@ TEST_F(DisplayCompositorTest, ImportAndReleaseBufferCollectionTest) {
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
       .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
                              fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
+                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
                              BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
-        token_ref = std::move(token);
-        return true;
+        token_ref = std::move(renderer_token);
+        return fpromise::make_ok_promise();
       });
-  display_compositor_->ImportBufferCollection(
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
       kGlobalBufferCollectionId, sysmem_allocator_,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>{CreateToken()},
-      BufferCollectionUsage::kClientImage, std::nullopt);
+      BufferCollectionUsage::kClientImage, std::nullopt)));
 
   EXPECT_CALL(
       *mock_display_coordinator_,
@@ -402,22 +409,19 @@ TEST_F(DisplayCompositorTest,
 
   // Set renderer constraints.
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([this](allocation::GlobalBufferCollectionId,
-                       fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
-                       BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([this](auto id, auto& client, auto renderer_token, auto usage, auto size) {
         fuchsia::sysmem2::BufferCollectionConstraints constraints;
         constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE);
         constraints.set_min_buffer_count(1);
         constraints.set_max_buffer_count(2);
         SetConstraintsAndClose(sysmem_allocator_, std::move(renderer_token),
                                fidl::HLCPPToNatural(std::move(constraints)));
-        return true;
+        return fpromise::make_ok_promise();
       });
 
-  ASSERT_TRUE(display_compositor_->ImportBufferCollection(
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
       kGlobalBufferCollectionId, sysmem_allocator_, std::move(compositor_token),
-      BufferCollectionUsage::kClientImage, std::nullopt));
+      BufferCollectionUsage::kClientImage, std::nullopt)));
 
   {
     fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
@@ -526,22 +530,19 @@ TEST_F(DisplayCompositorTest,
 
   // Set renderer constraints.
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([this](allocation::GlobalBufferCollectionId,
-                       fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
-                       BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([this](auto id, auto& client, auto renderer_token, auto usage, auto size) {
         fuchsia::sysmem2::BufferCollectionConstraints constraints;
         constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE);
         constraints.set_min_buffer_count(2);
         constraints.set_max_buffer_count(2);
         SetConstraintsAndClose(sysmem_allocator_, std::move(renderer_token),
                                fidl::HLCPPToNatural(std::move(constraints)));
-        return true;
+        return fpromise::make_ok_promise();
       });
 
-  ASSERT_TRUE(display_compositor_->ImportBufferCollection(
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
       kGlobalBufferCollectionId, sysmem_allocator_, std::move(compositor_token),
-      BufferCollectionUsage::kClientImage, std::nullopt));
+      BufferCollectionUsage::kClientImage, std::nullopt)));
 
   {
     fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
@@ -601,23 +602,20 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
 
   // Set renderer constraints.
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([this](allocation::GlobalBufferCollectionId,
-                       fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
-                       BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([this](auto id, auto& client, auto renderer_token, auto usage, auto size) {
         fuchsia::sysmem2::BufferCollectionConstraints constraints;
         constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE);
         constraints.set_min_buffer_count(2);
         constraints.set_max_buffer_count(2);
         SetConstraintsAndClose(sysmem_allocator_, std::move(renderer_token),
                                fidl::HLCPPToNatural(std::move(constraints)));
-        return true;
+        return fpromise::make_ok_promise();
       });
 
   // Import BufferCollection and image to trigger constraint setting and handling of allocations.
-  ASSERT_TRUE(display_compositor_->ImportBufferCollection(
+  ASSERT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
       kGlobalBufferCollectionId, sysmem_allocator_, std::move(compositor_token),
-      BufferCollectionUsage::kClientImage, std::nullopt));
+      BufferCollectionUsage::kClientImage, std::nullopt)));
 
   {
     fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
@@ -680,9 +678,9 @@ TEST_F(DisplayCompositorTest, ClientDropSysmemToken) {
 
   EXPECT_CALL(*mock_display_coordinator_, ImportBufferCollection(_, _)).Times(0);
 
-  EXPECT_FALSE(display_compositor_->ImportBufferCollection(
+  EXPECT_FALSE(RunPromise(display_compositor_->ImportBufferCollection(
       kGlobalBufferCollectionId, sysmem_allocator_, std::move(dup_token),
-      BufferCollectionUsage::kClientImage, std::nullopt));
+      BufferCollectionUsage::kClientImage, std::nullopt)));
 }
 
 TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
@@ -715,16 +713,13 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
   // Save token to avoid early token failure.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
-                             fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-                             BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
         token_ref = std::move(token);
-        return true;
+        return fpromise::make_ok_promise();
       });
-  display_compositor_->ImportBufferCollection(kGlobalBufferCollectionId, sysmem_allocator_,
-                                              CreateToken(), BufferCollectionUsage::kClientImage,
-                                              std::nullopt);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   // Import image.
@@ -806,17 +801,14 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
   // Save token to avoid early token failure.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
-                             fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-                             BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
         token_ref = std::move(token);
-        return true;
+        return fpromise::make_ok_promise();
       });
 
-  display_compositor_->ImportBufferCollection(kGlobalBufferCollectionId, sysmem_allocator_,
-                                              CreateToken(), BufferCollectionUsage::kClientImage,
-                                              std::nullopt);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   ImageMetadata metadata = {
@@ -1080,16 +1072,13 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   // Save token to avoid early token failure.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
-                             fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-                             BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
         token_ref = std::move(token);
-        return true;
+        return fpromise::make_ok_promise();
       });
-  display_compositor_->ImportBufferCollection(kGlobalBufferCollectionId, sysmem_allocator_,
-                                              CreateToken(), BufferCollectionUsage::kClientImage,
-                                              std::nullopt);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   const display::WireImageId fidl_parent_image_id = parent_image_metadata.identifier.ToFidl();
@@ -1305,16 +1294,13 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   // Save token to avoid early token failure.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
-                             fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-                             BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
         token_ref = std::move(token);
-        return true;
+        return fpromise::make_ok_promise();
       });
-  display_compositor_->ImportBufferCollection(kGlobalBufferCollectionId, sysmem_allocator_,
-                                              CreateToken(), BufferCollectionUsage::kClientImage,
-                                              std::nullopt);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   const display::WireImageId fidl_parent_image_id = parent_image_metadata.identifier.ToFidl();
@@ -1599,16 +1585,13 @@ TEST_F(DisplayCompositorTest, RendererOnly_ImportAndReleaseBufferCollectionTest)
   // Save token to avoid early token failure.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_ref;
   EXPECT_CALL(*renderer_, ImportBufferCollection(kGlobalBufferCollectionId, _, _, _, _))
-      .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
-                             fidl::WireClient<fuchsia_sysmem2::Allocator>&,
-                             fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-                             BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+      .WillOnce([&token_ref](auto id, auto& client, auto token, auto usage, auto size) {
         token_ref = std::move(token);
-        return true;
+        return fpromise::make_ok_promise();
       });
-  display_compositor_->ImportBufferCollection(kGlobalBufferCollectionId, sysmem_allocator_,
-                                              CreateToken(), BufferCollectionUsage::kClientImage,
-                                              std::nullopt);
+  EXPECT_TRUE(RunPromise(display_compositor_->ImportBufferCollection(
+      kGlobalBufferCollectionId, sysmem_allocator_, CreateToken(),
+      BufferCollectionUsage::kClientImage, std::nullopt)));
 
   EXPECT_CALL(
       *mock_display_coordinator_,

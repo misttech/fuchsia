@@ -15,6 +15,7 @@ source_set("renderer") {
   ]
 
   public_deps = [
+    "//src/lib/fidl/contrib/fpromise",
     "//src/ui/lib/escher/geometry:escher_geometry",
     "//src/ui/scenic/lib/flatland:flatland_types",
     "//src/ui/scenic/lib/flatland:image_formats",

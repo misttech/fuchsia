@@ -14,7 +14,7 @@ namespace allocation {
 // Mock class of BufferCollectionImporter for API testing.
 class MockBufferCollectionImporter : public BufferCollectionImporter {
  public:
-  MOCK_METHOD(bool, ImportBufferCollection,
+  MOCK_METHOD(fpromise::promise<>, ImportBufferCollection,
               (GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>,
                allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU>),

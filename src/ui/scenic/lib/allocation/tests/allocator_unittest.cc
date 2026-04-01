@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
+#include <lib/fpromise/promise.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
@@ -18,7 +19,6 @@
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 using ::testing::_;
-using ::testing::Return;
 
 using allocation::BufferCollectionUsage;
 using fuchsia_ui_composition::BufferCollectionExportToken;
@@ -29,22 +29,23 @@ using fuchsia_ui_composition::RegisterBufferCollectionUsages;
 namespace allocation {
 namespace test {
 
-#define REGISTER_BUFFER_COLLECTION(allocator, export_token, token, usage, expect_success)      \
-  if (expect_success) {                                                                        \
-    EXPECT_CALL(*mock_buffer_collection_importer_,                                             \
-                ImportBufferCollection(fsl::GetKoid(export_token.value().get()), _, _, _, _))  \
-        .WillOnce(testing::Invoke(                                                             \
-            [](GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,        \
-               fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>, BufferCollectionUsage, \
-               std::optional<fuchsia::math::SizeU>) { return true; }));                        \
-  }                                                                                            \
-  bool processed_callback = false;                                                             \
-  allocator->RegisterBufferCollection(CreateArgs(std::move(export_token), token, usage),       \
-                                      [&processed_callback](auto result) {                     \
-                                        EXPECT_EQ(expect_success, result.is_ok());             \
-                                        processed_callback = true;                             \
-                                      });                                                      \
-  RunLoopUntil([&processed_callback] { return processed_callback; });                          \
+auto ReturnPromise(fpromise::result<> result) {
+  return [result](auto&&...) { return fpromise::make_result_promise(result); };
+}
+
+#define REGISTER_BUFFER_COLLECTION(allocator, export_token, token, usage, expect_success)     \
+  if (expect_success) {                                                                       \
+    EXPECT_CALL(*mock_buffer_collection_importer_,                                            \
+                ImportBufferCollection(fsl::GetKoid(export_token.value().get()), _, _, _, _)) \
+        .WillOnce(ReturnPromise(fpromise::ok()));                                             \
+  }                                                                                           \
+  bool processed_callback = false;                                                            \
+  allocator->RegisterBufferCollection(CreateArgs(std::move(export_token), token, usage),      \
+                                      [&processed_callback](auto result) {                    \
+                                        EXPECT_EQ(expect_success, result.is_ok());            \
+                                        processed_callback = true;                            \
+                                      });                                                     \
+  RunLoopUntil([&processed_callback] { return processed_callback; });                         \
   EXPECT_TRUE(processed_callback);
 
 RegisterBufferCollectionArgs CreateArgs(
@@ -89,7 +90,7 @@ class AllocatorTest : public gtest::RealLoopFixture {
       screenshot_importers.push_back(buffer_collection_importer_);
 
     return std::make_shared<Allocator>(
-        context_provider_.context(), default_importers, screenshot_importers,
+        dispatcher(), context_provider_.context(), default_importers, screenshot_importers,
         utils::CreateSysmemAllocatorClient(dispatcher(), "CreateAllocator"));
   }
 
@@ -163,7 +164,7 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionThroughAllocatorChann
   auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
   const auto koid = fsl::GetKoid(ref_pair.export_token.value().get());
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferCollection(koid, _, _, _, _))
-      .WillOnce(Return(true));
+      .WillOnce(ReturnPromise(fpromise::ok()));
   fuchsia_ui_composition::AllocatorRegisterBufferCollectionRequest register_request;
   register_request.args(CreateArgs(std::move(ref_pair.export_token), CreateToken(), usage));
   allocator_ptr->RegisterBufferCollection(std::move(register_request))
@@ -203,7 +204,7 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionThroughMultipleAlloca
     auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
     const auto koid = fsl::GetKoid(ref_pair.export_token.value().get());
     EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferCollection(koid, _, _, _, _))
-        .WillOnce(Return(true));
+        .WillOnce(ReturnPromise(fpromise::ok()));
     fuchsia_ui_composition::AllocatorRegisterBufferCollectionRequest register_request;
     register_request.args(CreateArgs(std::move(ref_pair.export_token), CreateToken(), usage));
     allocator_ptr->RegisterBufferCollection(std::move(register_request))
@@ -276,7 +277,7 @@ TEST_P(AllocatorTestParameterized, RegisterBufferCollectionErrorCases) {
   {
     // Mock the importer call to fail.
     EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferCollection(_, _, _, _, _))
-        .WillOnce(Return(false));
+        .WillOnce(ReturnPromise(fpromise::error()));
     auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
     REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), usage, false);
   }
@@ -308,7 +309,7 @@ TEST_P(AllocatorTestParameterized, BufferCollectionImportPassesAndFailsOnDiffere
   }
 
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
-      context_provider_.context(), default_importers, screenshot_importers,
+      dispatcher(), context_provider_.context(), default_importers, screenshot_importers,
       utils::CreateSysmemAllocatorClient(dispatcher(), "BCImportPassesFailsOnDiffImporters"));
 
   auto ref_pair = allocation::cpp::BufferCollectionImportExportTokens::New();
@@ -317,9 +318,9 @@ TEST_P(AllocatorTestParameterized, BufferCollectionImportPassesAndFailsOnDiffere
   // Return failure from the local importer.
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferCollection(koid, _, _, _, _))
       .Times(testing::AtLeast(0))
-      .WillRepeatedly(Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferCollection(koid, _, _, _, _))
-      .WillOnce(Return(false));
+      .WillOnce(ReturnPromise(fpromise::error()));
 
   // Expect buffer collection to be released from both instances.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(koid, _))
@@ -433,7 +434,7 @@ TEST_F(AllocatorTest, RegisterDefaultAndScreenshotBufferCollections) {
 
   // Create allocator.
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
-      context_provider_.context(), default_importers, screenshot_importers,
+      dispatcher(), context_provider_.context(), default_importers, screenshot_importers,
       utils::CreateSysmemAllocatorClient(dispatcher(), "RegisterDefaultAndScreenshotBCs"));
 
   // Register with the default importer.
@@ -441,7 +442,7 @@ TEST_F(AllocatorTest, RegisterDefaultAndScreenshotBufferCollections) {
   const auto koid = fsl::GetKoid(ref_pair.export_token.value().get());
 
   EXPECT_CALL(*default_mock_buffer_collection_importer, ImportBufferCollection(koid, _, _, _, _))
-      .WillOnce(Return(true));
+      .WillOnce(ReturnPromise(fpromise::ok()));
   bool processed_callback = false;
   allocator->RegisterBufferCollection(CreateArgs(std::move(ref_pair.export_token), CreateToken(),
                                                  RegisterBufferCollectionUsage::kDefault),
@@ -458,7 +459,7 @@ TEST_F(AllocatorTest, RegisterDefaultAndScreenshotBufferCollections) {
 
   EXPECT_CALL(*screenshot_mock_buffer_collection_importer,
               ImportBufferCollection(koid2, _, _, _, _))
-      .WillOnce(Return(true));
+      .WillOnce(ReturnPromise(fpromise::ok()));
   processed_callback = false;
   allocator->RegisterBufferCollection(CreateArgs(std::move(ref_pair2.export_token), CreateToken(),
                                                  RegisterBufferCollectionUsage::kScreenshot),
@@ -487,7 +488,7 @@ TEST_F(AllocatorTest, RegisterBufferCollectionCombined) {
 
   // Create allocator.
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
-      context_provider_.context(), default_importers, screenshot_importers,
+      dispatcher(), context_provider_.context(), default_importers, screenshot_importers,
       utils::CreateSysmemAllocatorClient(dispatcher(), "RegisterBufferCollectionCombined"));
 
   // Register with the default importer and the screenshot importer.
@@ -495,9 +496,9 @@ TEST_F(AllocatorTest, RegisterBufferCollectionCombined) {
   const auto koid = fsl::GetKoid(ref_pair.export_token.value().get());
 
   EXPECT_CALL(*default_mock_buffer_collection_importer, ImportBufferCollection(koid, _, _, _, _))
-      .WillOnce(Return(true));
+      .WillOnce(ReturnPromise(fpromise::ok()));
   EXPECT_CALL(*screenshot_mock_buffer_collection_importer, ImportBufferCollection(koid, _, _, _, _))
-      .WillOnce(Return(true));
+      .WillOnce(ReturnPromise(fpromise::ok()));
 
   RegisterBufferCollectionUsages usages;
   usages |= RegisterBufferCollectionUsages::kDefault;

@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
@@ -107,7 +108,7 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
       std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
       screenshot_importers.push_back(importer_);
       flatland_allocator_ = std::make_shared<allocation::Allocator>(
-          context_provider_.context(), extra_importers, screenshot_importers,
+          dispatcher(), context_provider_.context(), extra_importers, screenshot_importers,
           utils::CreateSysmemAllocatorClient(dispatcher(), "-allocator"));
     }
 
@@ -122,8 +123,6 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
   }
 
   void TearDown() override {}
-
-  std::unique_ptr<screenshot::FlatlandScreenshot> flatland_screenshotter_;
 
  protected:
   size_t NumCurrentServedScreenshots() {
@@ -147,6 +146,7 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
     return take_file_response;
   }
 
+  std::unique_ptr<screenshot::FlatlandScreenshot> flatland_screenshotter_;
   MockImageCompression mock_compressor_;
 
  private:

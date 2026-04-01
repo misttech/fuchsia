@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
 
@@ -23,6 +24,7 @@
 #include "gmock/gmock.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 #include "zircon/system/ulib/fbl/include/fbl/algorithm.h"
 
 #include <glm/glm.hpp>
@@ -525,6 +527,12 @@ void RenderAfterImageReleasedTest(Renderer* renderer,
   renderer->Render(render_target, {}, {}, {});
 }
 
+// Runs the given promise on a new executor and waits for it to complete.
+bool RunPromise(async::TestLoop& loop, fpromise::promise<> promise) {
+  return integration_tests::RunPromise(
+      loop.dispatcher(), [&loop] { loop.RunUntilIdle(); }, std::move(promise));
+}
+
 // Test to make sure we can call the functions import kRenderTarget and kClientImage collections
 // and ImportBufferImage() simultaneously from multiple threads and have it work.
 void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
@@ -544,10 +552,9 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
     auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
     auto bcid = allocation::GenerateUniqueBufferCollectionId();
     auto image_id = allocation::GenerateUniqueImageId();
-    bool result =
-        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(local_token),
-                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
-    EXPECT_TRUE(result);
+    ASSERT_TRUE(RunPromise(loop, renderer->ImportBufferCollection(
+                                     bcid, sysmem_allocator, std::move(local_token),
+                                     BufferCollectionUsage::kRenderTarget, std::nullopt)));
 
     std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
     if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -2619,10 +2626,9 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   // Setup the render target collection.
   allocation::GlobalBufferCollectionId target_id = allocation::GenerateUniqueBufferCollectionId();
   auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
-  bool success =
-      renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(dup_token),
-                                       BufferCollectionUsage::kRenderTarget, std::nullopt);
-  ASSERT_TRUE(success);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(dup_token),
+                                             BufferCollectionUsage::kRenderTarget, std::nullopt)));
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
@@ -2662,7 +2668,7 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
                                  .vmo_index = 0,
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
-  success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  bool success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(success);
   success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback);
   ASSERT_TRUE(success);
@@ -2732,10 +2738,10 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
   const uint32_t kTargetWidth = 1024;
   const uint32_t kTargetHeight = 600;
   const allocation::BufferCollectionUsage usage = GetParam();
-  bool success = renderer.ImportBufferCollection(
-      render_target_collection_id, sysmem_allocator, std::move(dup_token), usage,
-      std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
-  EXPECT_TRUE(success);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer.ImportBufferCollection(
+                render_target_collection_id, sysmem_allocator, std::move(dup_token), usage,
+                std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}))));
 
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.

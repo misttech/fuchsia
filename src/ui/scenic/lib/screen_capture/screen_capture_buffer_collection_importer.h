@@ -28,11 +28,11 @@ class ScreenCaptureBufferCollectionImporter : public allocation::BufferCollectio
   ~ScreenCaptureBufferCollectionImporter() override;
 
   // |BufferCollectionImporter|
-  bool ImportBufferCollection(allocation::GlobalBufferCollectionId collection_id,
-                              fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-                              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-                              allocation::BufferCollectionUsage usage,
-                              std::optional<fuchsia::math::SizeU> size) override;
+  fpromise::promise<> ImportBufferCollection(
+      allocation::GlobalBufferCollectionId collection_id,
+      fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
+      allocation::BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) override;
 
   // |BufferCollectionImporter|
   void ReleaseBufferCollection(allocation::GlobalBufferCollectionId collection_id,

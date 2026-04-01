@@ -31,7 +31,7 @@ std::shared_ptr<Allocator> CreateAllocator(
   std::vector<std::shared_ptr<BufferCollectionImporter>> extra_importers;
   std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
   screenshot_importers.push_back(importer);
-  return std::make_shared<Allocator>(app_context, extra_importers, screenshot_importers,
+  return std::make_shared<Allocator>(dispatcher, app_context, extra_importers, screenshot_importers,
                                      utils::CreateSysmemAllocatorClient(dispatcher, "-allocator"));
 }
 

@@ -129,7 +129,7 @@ ScreenCaptureBufferCollectionImporter::~ScreenCaptureBufferCollectionImporter() 
   buffer_collections_.clear();
 }
 
-bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
+fpromise::promise<> ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
     allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
@@ -140,13 +140,13 @@ bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
 
   if (!token.is_valid()) {
     FX_LOGS(WARNING) << "ImportBufferCollection called with invalid token";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (buffer_collections_.find(collection_id) != buffer_collections_.end()) {
     FX_LOGS(WARNING) << __func__ << " failed, called with pre-existing collection_id "
                      << collection_id << ".";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // We are looking for a buffer that either satisfies render target requirements or readback
@@ -160,20 +160,20 @@ bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
   // . . * out_tokens[1] / readback_token
   auto child_tokens = CreateChildTokens(token, 2);
   if (child_tokens.size() != 2) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   auto local_buffer_collection =
       CreateBufferCollectionSyncPtrAndSetEmptyConstraints(sysmem_allocator, std::move(token));
   if (!local_buffer_collection.has_value()) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator,
                                          std::move(child_tokens[0]),
                                          BufferCollectionUsage::kRenderTarget, std::nullopt)) {
     FX_LOGS(WARNING) << "Could not register render target token with VkRenderer";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator,
@@ -181,13 +181,13 @@ bool ScreenCaptureBufferCollectionImporter::ImportBufferCollection(
                                          BufferCollectionUsage::kReadback, std::nullopt)) {
     renderer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kRenderTarget);
     FX_LOGS(WARNING) << "Could not register readback token with VkRenderer";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   buffer_collection_sync_ptrs_[collection_id] = std::move(local_buffer_collection.value());
   buffer_collections_.insert(collection_id);
 
-  return true;
+  return fpromise::make_ok_promise();
 }
 
 void ScreenCaptureBufferCollectionImporter::ReleaseBufferCollection(

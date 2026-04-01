@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <lib/fpromise/promise.h>
 
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/allocation/image_metadata.h"
@@ -36,7 +37,7 @@ class BufferCollectionImporter {
   // |usage| determines the type of buffer collection to be imported.
   // |size| may be optionally set to indicate the intended size usage so that it may be specified
   // when setting constraints in |token|, i.e. for kRenderTarget allocations.
-  virtual bool ImportBufferCollection(
+  virtual fpromise::promise<> ImportBufferCollection(
       GlobalBufferCollectionId collection_id,
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,

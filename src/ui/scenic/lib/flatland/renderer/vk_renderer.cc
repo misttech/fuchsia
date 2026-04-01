@@ -412,7 +412,7 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
   return vk_collection;
 }
 
-bool VkRenderer::ImportBufferCollection(
+fpromise::promise<> VkRenderer::ImportBufferCollection(
     GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
@@ -425,13 +425,13 @@ bool VkRenderer::ImportBufferCollection(
   // TODO(https://fxbug.dev/42128380): See if this can become asynchronous.
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> vulkan_token = Duplicate(token);
   if (!vulkan_token.is_valid()) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection =
       CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, std::move(token));
   if (!buffer_collection) {
-    return false;
+    return fpromise::make_error_promise();
   }
   // Use a name with a priority that's greater than the vulkan implementation, but less than
   // what any client would use.
@@ -442,7 +442,7 @@ bool VkRenderer::ImportBufferCollection(
           .name(GetNextBufferCollectionIdString(GetImageName(usage).c_str()))
           .Build());
   if (!result.ok()) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   vk::BufferCollectionFUCHSIA vk_collection;
@@ -450,7 +450,7 @@ bool VkRenderer::ImportBufferCollection(
           SetConstraintsAndCreateVulkanBufferCollection(std::move(vulkan_token), usage, size)) {
     vk_collection = std::move(*collection);
   } else {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // TODO(https://fxbug.dev/42120738): Convert this to a lock-free structure.
@@ -467,10 +467,10 @@ bool VkRenderer::ImportBufferCollection(
     auto vk_device = escher_->vk_device();
     auto vk_loader = escher_->device()->dispatch_loader();
     vk_device.destroyBufferCollectionFUCHSIA(vk_collection, nullptr, vk_loader);
-    return false;
+    return fpromise::make_error_promise();
   }
 
-  return true;
+  return fpromise::make_ok_promise();
 }
 
 void VkRenderer::ReleaseBufferCollection(GlobalBufferCollectionId collection_id,

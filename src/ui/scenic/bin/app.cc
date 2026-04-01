@@ -494,7 +494,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     default_importers.push_back(flatland_compositor_);
 
     allocator_ = std::make_shared<allocation::Allocator>(
-        app_context_.get(), default_importers, screen_capture_importers,
+        async_get_default_dispatcher(), app_context_.get(), default_importers,
+        screen_capture_importers,
         utils::CreateSysmemAllocatorClientWithSvc(
             app_context_->svc().get(), async_get_default_dispatcher(), "ScenicAllocator"),
         inspect_node_.CreateChild("Allocator API"));

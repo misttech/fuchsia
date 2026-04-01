@@ -5,6 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_RENDERER_MOCK_RENDERER_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_RENDERER_MOCK_RENDERER_H_
 
+#include <lib/fpromise/promise.h>
+
 #include <gmock/gmock.h>
 
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
@@ -15,7 +17,7 @@ namespace flatland {
 // Mock class of the Flatland Renderer for API testing.
 class MockRenderer : public Renderer {
  public:
-  MOCK_METHOD(bool, ImportBufferCollection,
+  MOCK_METHOD(fpromise::promise<>, ImportBufferCollection,
               (allocation::GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>,
                allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU> size));

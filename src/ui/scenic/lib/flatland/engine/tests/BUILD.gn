@@ -34,6 +34,7 @@ cc_test_executable("unittests") {
     "//src/ui/scenic/lib/flatland/engine",
     "//src/ui/scenic/lib/scheduling:frame_scheduler",
     "//src/ui/scenic/lib/utils",
+    "//src/ui/scenic/tests:promise",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/sync:sync-cpp",
   ]

@@ -293,11 +293,11 @@ DisplayCompositor::~DisplayCompositor() {
   // collections and images.
 }
 
-bool DisplayCompositor::ImportBufferCollection(
-    const allocation::GlobalBufferCollectionId collection_id,
+fpromise::promise<> DisplayCompositor::ImportBufferCollection(
+    allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
-    const BufferCollectionUsage usage, const std::optional<fuchsia::math::SizeU> size) {
+    BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ImportBufferCollection");
   FX_DCHECK(usage == BufferCollectionUsage::kClientImage)
@@ -328,47 +328,58 @@ bool DisplayCompositor::ImportBufferCollection(
       FX_LOGS(ERROR) << "Could not close token: " << zx_status_get_string(status);
     }
   } else {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // Set renderer constraints.
-  if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(renderer_token),
-                                         usage, size)) {
-    FX_LOGS(ERROR) << "Renderer could not import buffer collection.";
-    return false;
-  }
+  // TODO(https://fxbug.dev/488038340): Parallelise setting the renderer and display constraints.
+  return renderer_
+      ->ImportBufferCollection(collection_id, sysmem_allocator, std::move(renderer_token), usage,
+                               size)
+      .or_else([] {
+        FX_LOGS(ERROR) << "Renderer could not import buffer collection";
+        return fpromise::error();
+      })
+      // This `and_then` handles the case where the renderer successfully imported the buffer
+      // collection. It attempts to import the buffer collection into the display coordinator.
+      .and_then([this, collection_id,
+                 display_token = std::move(display_token)]() mutable -> fpromise::result<> {
+        if (!config_.enable_direct_to_display) {
+          // Forced fallback to using the renderer; don't attempt direct-to-display.
+          // Close |display_token| without importing it to the display coordinator.
+          if (const auto status = display_token->Release(); status != ZX_OK) {
+            FX_LOGS(ERROR) << "Could not close token: " << zx_status_get_string(status);
+          }
+          return fpromise::ok();
+        }
 
-  if (!config_.enable_direct_to_display) {
-    // Forced fallback to using the renderer; don't attempt direct-to-display.
-    // Close |display_token| without importing it to the display coordinator.
-    if (const auto status = display_token->Release(); status != ZX_OK) {
-      FX_LOGS(ERROR) << "Could not close token: " << zx_status_get_string(status);
-    }
-    return true;
-  }
+        // Create a BufferCollectionPtr from a duplicate of |display_token| with which to later
+        // check if buffers allocated from the BufferCollection are display-compatible.
+        auto collection_ptr = CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
+            sysmem_allocator_, display_token);
+        if (!collection_ptr.has_value()) {
+          return fpromise::error();
+        }
 
-  // Create a BufferCollectionPtr from a duplicate of |display_token| with which to later check if
-  // buffers allocated from the BufferCollection are display-compatible.
-  auto collection_ptr =
-      CreateDuplicateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, display_token);
-  if (!collection_ptr.has_value()) {
-    return false;
-  }
+        std::scoped_lock lock(lock_);
+        {
+          const auto [_, success] =
+              display_buffer_collection_ptrs_.emplace(collection_id, std::move(*collection_ptr));
+          FX_DCHECK(success);
+        }
 
-  std::scoped_lock lock(lock_);
-  {
-    const auto [_, success] =
-        display_buffer_collection_ptrs_.emplace(collection_id, std::move(*collection_ptr));
-    FX_DCHECK(success);
-  }
-
-  // Import the buffer collection into the display coordinator, setting display constraints.
-  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> natural_display_token(
-      std::move(display_token).Unbind().TakeChannel());
-  return ImportBufferCollectionToDisplayCoordinator(
-      collection_id, std::move(natural_display_token),
-      fuchsia_hardware_display_types::wire::ImageBufferUsage{
-          .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
+        // Import the buffer collection into the display coordinator, setting display constraints.
+        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> natural_display_token(
+            std::move(display_token).Unbind().TakeChannel());
+        bool import_success = ImportBufferCollectionToDisplayCoordinator(
+            collection_id, std::move(natural_display_token),
+            fuchsia_hardware_display_types::wire::ImageBufferUsage{
+                .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
+            });
+        if (!import_success) {
+          return fpromise::error();
+        }
+        return fpromise::ok();
       });
 }
 

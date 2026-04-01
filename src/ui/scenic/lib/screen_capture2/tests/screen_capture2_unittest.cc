@@ -5,6 +5,8 @@
 #include "src/ui/scenic/lib/screen_capture2/screen_capture2.h"
 
 #include <fuchsia/ui/composition/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
+#include <lib/fpromise/promise.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 
@@ -79,9 +81,9 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
             auto result = flatland::BufferCollectionInfo::New(sysmem_allocator, std::move(token));
             if (result.is_error()) {
               FX_LOGS(WARNING) << "Unable to register collection.";
-              return false;
+              return fpromise::make_error_promise();
             }
-            return true;
+            return fpromise::make_ok_promise();
           });
 
       EXPECT_CALL(*mock_renderer_.get(), ImportBufferImage(_, _))
@@ -242,9 +244,9 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
         auto result = flatland::BufferCollectionInfo::New(sysmem_allocator, std::move(token));
         if (result.is_error()) {
           FX_LOGS(WARNING) << "Unable to register collection.";
-          return false;
-        };
-        return true;
+          return fpromise::make_error_promise();
+        }
+        return fpromise::make_ok_promise();
       });
 
   screen_capture2::ScreenCapture sc(importer_, nullptr,

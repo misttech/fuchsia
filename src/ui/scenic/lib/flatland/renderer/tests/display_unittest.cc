@@ -176,10 +176,14 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   auto image_id = allocation::GenerateUniqueImageId();
-  auto import_result = renderer.ImportBufferCollection(
+  auto import_promise = renderer.ImportBufferCollection(
       collection_id, sysmem_allocator_, std::move(dup_token),
       allocation::BufferCollectionUsage::kClientImage, std::nullopt);
-  EXPECT_TRUE(import_result);
+  bool import_success = false;
+  executor_->schedule_task(import_promise.then(
+      [&import_success](const fpromise::result<>& res) { import_success = res.is_ok(); }));
+  RunLoopUntilIdle();
+  EXPECT_TRUE(import_success);
 
   allocation::ImageMetadata metadata = {.collection_id = collection_id,
                                         .identifier = image_id,
@@ -188,9 +192,8 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
                                         .height = kHeight};
 
   // Importing an image should fail at this point because we've only set the renderer constraints.
-  import_result =
-      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(import_result);
+  EXPECT_FALSE(
+      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage));
 
   // Set the display constraints on the display coordinator.
   fuchsia_hardware_display_types::wire::ImageBufferUsage image_buffer_usage = {
@@ -209,9 +212,8 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   });
 
   // Importing should fail again, because we've only set 2 of the 3 constraints.
-  import_result =
-      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(import_result);
+  EXPECT_FALSE(
+      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage));
 
   // Create a client-side handle to the buffer collection and set the client constraints.
   auto client_collection = flatland::CreateBufferCollectionSyncPtrAndSetConstraints(
@@ -238,9 +240,8 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Now that the renderer, client, and the display have set their constraints, we import one last
   // time and this time it should return true.
-  import_result =
-      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
-  EXPECT_TRUE(import_result);
+  EXPECT_TRUE(
+      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage));
 
   // We should now be able to also import an image to the display coordinator, using the
   // display-specific buffer collection id. If it returns OK, then we know that the renderer

@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_TESTS_COMMON_H_
 
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <lib/async/dispatcher.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 #include <lib/zx/event.h>
 

@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/id.h>
 

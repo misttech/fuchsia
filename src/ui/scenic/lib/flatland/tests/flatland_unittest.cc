@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/async/default.h>
 #include <lib/async/time.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
@@ -181,11 +182,7 @@ struct GlobalIdPair {
   if (expect_success) {                                                                          \
     EXPECT_CALL(*mock_buffer_collection_importer_,                                               \
                 ImportBufferCollection(fsl::GetKoid(bc_export_token.value().get()), _, _, _, _)) \
-        .WillOnce(testing::Invoke([](allocation::GlobalBufferCollectionId,                       \
-                                     fidl::WireClient<fuchsia_sysmem2::Allocator>&,              \
-                                     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>,    \
-                                     allocation::BufferCollectionUsage,                          \
-                                     std::optional<fuchsia::math::SizeU>) { return true; }));    \
+        .WillOnce([](auto&&...) { return fpromise::make_ok_promise(); });                        \
   }                                                                                              \
   bool processed_callback = false;                                                               \
   fuchsia_ui_composition::RegisterBufferCollectionArgs args;                                     \
@@ -319,7 +316,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
     importers.push_back(buffer_collection_importer_);
     return std::make_shared<Allocator>(
-        context_provider_.context(), importers, screenshot_importers,
+        dispatcher(), context_provider_.context(), importers, screenshot_importers,
         utils::CreateSysmemAllocatorClient(dispatcher(), "FlatlandTest::CreateAllocator"));
   }
 
@@ -5542,10 +5539,10 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers(
       {buffer_collection_importer_, local_buffer_collection_importer});
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> screenshot_importers;
-  std::shared_ptr<Allocator> allocator =
-      std::make_shared<Allocator>(context_provider_.context(), importers, screenshot_importers,
-                                  utils::CreateSysmemAllocatorClient(
-                                      dispatcher(), "ImageImportPassesFailsOnDiffImportersTest"));
+  std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
+      dispatcher(), context_provider_.context(), importers, screenshot_importers,
+      utils::CreateSysmemAllocatorClient(dispatcher(),
+                                         "ImageImportPassesFailsOnDiffImportersTest"));
   auto session_id = scheduling::GetNextSessionId();
 
   auto [flatland_client_end, flatland_server_end] =
@@ -5561,7 +5558,7 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   RunLoopUntilIdle();
 
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferCollection(_, _, _, _, _))
-      .WillOnce(Return(true));
+      .WillOnce([](auto&&...) { return fpromise::make_ok_promise(); });
 
   auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
@@ -6023,7 +6020,7 @@ TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
   // Create flatland and allocator instances that has two BufferCollectionImporters.
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> no_importers;
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
-      context_provider_.context(), no_importers, no_importers,
+      dispatcher(), context_provider_.context(), no_importers, no_importers,
       utils::CreateSysmemAllocatorClient(dispatcher(), "NoDoubleDestroyRequest"));
 
   auto session_id = scheduling::GetNextSessionId();

@@ -66,6 +66,19 @@ group("ctf-tests") {
   ]
 }
 
+source_set("promise") {
+  testonly = true
+  sources = [
+    "utils/promise.cc",
+    "utils/promise.h",
+  ]
+  deps = [ "//sdk/lib/async:async-cpp" ]
+  public_deps = [
+    "//sdk/lib/async",
+    "//src/lib/fidl/contrib/fpromise",
+  ]
+}
+
 source_set("common-deps-zxtest") {
   testonly = true
   sources = [
