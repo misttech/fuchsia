@@ -10,6 +10,7 @@
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
 #include <cinttypes>
@@ -22,20 +23,20 @@ zx::result<> Buttons::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
   zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::GpioButtonsMetadata>();
   if (metadata_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
+    fdf::error("Failed to get metadata: {}", metadata_result);
     return metadata_result.take_error();
   }
   fuchsia_buttons::GpioButtonsMetadata& metadata = metadata_result.value();
 
   if (!metadata.gpios().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing gpios");
+    fdf::error("Metadata missing gpios");
     return zx::error(ZX_ERR_INTERNAL);
   }
   const std::span<const fuchsia_buttons::GpioConfig>& gpio_configs = metadata.gpios().value();
@@ -43,7 +44,7 @@ zx::result<> Buttons::Start() {
   gpios.reserve(gpio_configs.size());
 
   if (!metadata.buttons().has_value()) {
-    FDF_LOG(ERROR, "Metadata missing buttons");
+    fdf::error("Metadata missing buttons");
     return zx::error(ZX_ERR_INTERNAL);
   }
   std::vector<fuchsia_buttons::GpioButtonConfig> buttons = std::move(metadata.buttons().value());
@@ -52,7 +53,7 @@ zx::result<> Buttons::Start() {
     const char* name;
     const auto& button = buttons[i];
     if (!button.id().has_value()) {
-      FDF_LOG(ERROR, "Button %zu missing id", i);
+      fdf::error("Button {} missing id", i);
       return zx::error(ZX_ERR_INTERNAL);
     }
     const fuchsia_buttons::GpioButtonId& button_id = button.id().value();
@@ -89,12 +90,12 @@ zx::result<> Buttons::Start() {
         name = "function";
         break;
       default:
-        FDF_LOG(ERROR, "Button %zu has unknown id: %" PRIu32, i, static_cast<uint32_t>(button_id));
+        fdf::error("Button {} has unknown id: {}", i, static_cast<uint32_t>(button_id));
         return zx::error(ZX_ERR_NOT_SUPPORTED);
     };
     zx::result gpio_client = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(name);
     if (gpio_client.is_error() || !gpio_client->is_valid()) {
-      FDF_LOG(ERROR, "Connect to GPIO %s failed: %s", name, gpio_client.status_string());
+      fdf::error("Connect to GPIO {} failed: {}", name, gpio_client);
       return gpio_client.take_error();
     }
     gpios.emplace_back(ButtonsDevice::Gpio{
@@ -107,10 +108,9 @@ zx::result<> Buttons::Start() {
     if (sag_result.is_ok() && sag_result->is_valid()) {
       sag_client = std::move(sag_result.value());
     } else {
-      FDF_LOG(
-          ERROR,
-          "Failed to connect to fuchsia.power.system.ActivityGovernor: %s; system may incorrectly enter suspend.",
-          sag_result.status_string());
+      fdf::error(
+          "Failed to connect to fuchsia.power.system.ActivityGovernor: {}; system may incorrectly enter suspend.",
+          sag_result);
     }
   }
 
@@ -122,12 +122,12 @@ zx::result<> Buttons::Start() {
                                            fidl::kIgnoreBindingClosure),
       kDeviceName);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add input report service: %s", result.status_string());
+    fdf::error("Failed to add input report service: {}", result);
     return result.take_error();
   }
 
   if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    FDF_LOG(ERROR, "Failed to export to devfs: %s", result.status_string());
+    fdf::error("Failed to export to devfs: {}", result);
     return result.take_error();
   }
 
@@ -164,7 +164,7 @@ zx::result<> Buttons::CreateDevfsNode() {
   fidl::WireResult result = fidl::WireCall(node())->AddChild(
       args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to add child %s", result.status_string());
+    fdf::error("Failed to add child {}", result.status_string());
     return zx::error(result.status());
   }
   controller_.Bind(std::move(controller_endpoints.client));

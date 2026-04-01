@@ -82,6 +82,8 @@ source_set("common") {
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",
   ]
+
+  deps = [ "//sdk/lib/driver/logging/cpp" ]
 }
 
 test("buttons-test") {
@@ -91,6 +93,7 @@ test("buttons-test") {
   deps = [
     ":common",
     "//sdk/lib/driver/fake-platform-device/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/lib/fxl/test:gtest_main",

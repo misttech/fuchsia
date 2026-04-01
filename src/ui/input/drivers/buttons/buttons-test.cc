@@ -9,6 +9,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <set>
@@ -210,7 +211,7 @@ class FakeSystemActivityGovernor
   }
 
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    FDF_LOG(ERROR, "unexpected call to %s", name.c_str());
+    fdf::error("unexpected call to {}", name);
   }
 
   size_t HasWakeLeaseBeenTaken() const { return has_wake_lease_been_taken_; }
