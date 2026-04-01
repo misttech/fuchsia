@@ -21,27 +21,32 @@ const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 async fn try_get_target_info(
     spec: TargetInfoQuery,
     context: &EnvironmentContext,
-) -> Result<(info::RemoteControlState, Option<String>, Option<String>, Option<u64>), KnockError> {
+) -> Result<
+    (info::RemoteControlState, Option<String>, Option<String>, Option<u64>, Option<String>),
+    KnockError,
+> {
     // We want to make sure to provide an up-to-date list, so don't rely on the cache
     let resolution = resolve_target_address(&spec, false, context)
         .await
         .map_err(|e| KnockError::CriticalError(e.into()))?;
-    let (rcs_state, pc, bc, bi) = match resolution.identify(context).await {
+    let (rcs_state, pc, bc, bi, sn) = match resolution.identify(context).await {
         Ok(id_result) => (
             info::RemoteControlState::Up,
             id_result.product_config,
             id_result.board_config,
             id_result.boot_id,
+            id_result.serial_number,
         ),
-        _ => (info::RemoteControlState::Down, None, None, None),
+        _ => (info::RemoteControlState::Down, None, None, None, None),
     };
-    Ok((rcs_state, pc, bc, bi))
+    Ok((rcs_state, pc, bc, bi, sn))
 }
 
 async fn get_target_info(
     context: &EnvironmentContext,
     addrs: &[addr::TargetAddr],
-) -> Result<(info::RemoteControlState, Option<String>, Option<String>, Option<u64>)> {
+) -> Result<(info::RemoteControlState, Option<String>, Option<String>, Option<u64>, Option<String>)>
+{
     let ssh_timeout: u64 =
         context.get("target.host_pipe_ssh_timeout").unwrap_or(DEFAULT_SSH_TIMEOUT_MS);
     let ssh_timeout = Duration::from_millis(ssh_timeout);
@@ -68,11 +73,11 @@ async fn get_target_info(
             }
             e => {
                 log::debug!("Got error {e:?} when trying to connect to {addr:?}");
-                return Ok((info::RemoteControlState::Unknown, None, None, None));
+                return Ok((info::RemoteControlState::Unknown, None, None, None, None));
             }
         }
     }
-    Ok((info::RemoteControlState::Down, None, None, None))
+    Ok((info::RemoteControlState::Down, None, None, None, None))
 }
 
 // Convert the handle to a TargetInfo, filling in the information from the target if we are
@@ -83,20 +88,28 @@ async fn handle_to_info(
     connect_to_target: bool,
     query: TargetInfoQuery,
 ) -> Result<TargetInfo> {
-    let (rcs_state, product_config, board_config, boot_id) =
+    let (rcs_state, product_config, board_config, boot_id, serial_number) =
         if let discovery::TargetState::Product { ref addrs, .. } = handle.state {
             // A let-chain would be cleaner, but they are only available in Rust 2024
             if connect_to_target {
                 get_target_info(context, addrs).await?
             } else {
-                (info::RemoteControlState::Unknown, None, None, None)
+                (info::RemoteControlState::Unknown, None, None, None, None)
             }
         } else {
-            (info::RemoteControlState::Unknown, None, None, None)
+            (info::RemoteControlState::Unknown, None, None, None, None)
         };
     let info: TargetInfo = handle.into();
     let is_default = Some(info.match_query(&query));
-    Ok(TargetInfo { rcs_state, board_config, product_config, boot_id, is_default, ..info })
+    Ok(TargetInfo {
+        rcs_state,
+        board_config,
+        product_config,
+        boot_id,
+        is_default,
+        serial_number: serial_number.or_else(|| info.serial_number.clone()),
+        ..info
+    })
 }
 
 async fn handles_to_infos(
@@ -330,5 +343,21 @@ mod test {
         let info =
             handle_to_info(&env.context, non_matching_handle, false, query.clone()).await.unwrap();
         assert_eq!(info.is_default, Some(false));
+    }
+
+    #[fuchsia::test]
+    async fn test_handle_to_info_serial_number() {
+        let env = ffx_config::test_init().unwrap();
+        let handle = discovery::TargetHandle {
+            node_name: Some("test-node".to_string()),
+            state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                serial_number: "fastboot_serial".to_string(),
+                connection_state: discovery::FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+        let query = TargetInfoQuery::First;
+        let info = handle_to_info(&env.context, handle, false, query).await.unwrap();
+        assert_eq!(info.serial_number, Some("fastboot_serial".to_string()));
     }
 }

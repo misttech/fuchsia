@@ -1141,4 +1141,20 @@ mod test {
             FfxTargetError::OpenTargetError { err: ffx::OpenTargetError::QueryAmbiguous, .. }
         ));
     }
+
+    #[fuchsia::test]
+    async fn test_get_target_info_serial() {
+        let test_env = ffx_config::test_init().unwrap();
+        let sa: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr = TargetAddr::Net(sa.clone());
+        let resolution = Resolution::from_addr(sa);
+        let mut identify = IdentifyHostResponse::default();
+        identify.nodename = Some("test-node".to_string());
+        identify.serial_number = Some("test_serial_123".to_string());
+        *resolution.identify_host_response.lock().await = Some(identify);
+
+        let info = resolution.get_target_info(addr, &test_env.context).await.unwrap();
+
+        assert_eq!(info.serial_number, Some("test_serial_123".to_string()));
+    }
 }
