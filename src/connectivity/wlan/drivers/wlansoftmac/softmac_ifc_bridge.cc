@@ -45,9 +45,9 @@ zx::result<std::unique_ptr<SoftmacIfcBridge>> SoftmacIfcBridge::New(
             [node_client = std::move(node_client)](fidl::UnbindInfo info) mutable {
               WLAN_LAMBDA_TRACE_DURATION("WlanSoftmacIfc close_handler");
               if (info.is_user_initiated()) {
-                FDF_LOG(INFO, "WlanSoftmacIfc server closed.");
+                fdf::info("WlanSoftmacIfc server closed.");
               } else {
-                FDF_LOG(ERROR, "WlanSoftmacIfc unexpectedly closed: %s", info.lossy_description());
+                fdf::error("WlanSoftmacIfc unexpectedly closed: {}", info.lossy_description());
 
                 // Initiate asynchronous teardown of the fuchsia.driver.framework/Node proxy
                 // to cause the driver framework to stop this driver. Stopping this driver is
@@ -90,8 +90,8 @@ void SoftmacIfcBridge::Recv(RecvRequestView fdf_request, fdf::Arena& arena,
     wlan_rx_.transfer(wlan_rx_.ctx, fidl_request_persisted.value().data(),
                       fidl_request_persisted.value().size());
   } else {
-    FDF_LOG(ERROR, "Failed to persist WlanRx.Tranfer fidl_request (FIDL error %s)",
-            fidl_request_persisted.error_value().status_string());
+    fdf::error("Failed to persist WlanRx.Tranfer fidl_request (FIDL error {})",
+               fidl_request_persisted.error_value().status_string());
   }
 
   completer.buffer(reply_arena).Reply();
@@ -120,8 +120,8 @@ zx::result<> SoftmacIfcBridge::EthernetTx(std::unique_ptr<eth::BorrowedOperation
 
   auto fidl_request_persisted = ::fidl::Persist(request);
   if (!fidl_request_persisted.is_ok()) {
-    FDF_LOG(ERROR, "Failed to persist EthernetTx.Transfer request (FIDL error %s)",
-            fidl_request_persisted.error_value().status_string());
+    fdf::error("Failed to persist EthernetTx.Transfer request (FIDL error {})",
+               fidl_request_persisted.error_value().status_string());
   }
 
   auto result =
@@ -162,8 +162,8 @@ void SoftmacIfcBridge::StopBridgedDriver(fit::callback<void()> stop_completer) {
                 fidl::Result<fuchsia_wlan_softmac::WlanSoftmacIfcBridge::StopBridgedDriver>&
                     result) mutable {
         if (result.is_error()) {
-          FDF_LOG(ERROR, "FIDL error calling StopBridgeDriver: %s",
-                  result.error_value().status_string());
+          fdf::error("FIDL error calling StopBridgeDriver: {}",
+                     result.error_value().status_string());
         }
         stop_completer();
       });

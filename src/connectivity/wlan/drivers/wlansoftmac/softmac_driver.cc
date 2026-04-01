@@ -52,7 +52,7 @@ SoftmacDriver::SoftmacDriver(fdf::DriverStartArgs start_args,
       banjo_server_({ZX_PROTOCOL_ETHERNET_IMPL, this, &ethernet_impl_protocol_ops_}),
       ethernet_proxy_lock_(std::make_shared<std::mutex>()) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "Creating a new WLAN device.");
+  fdf::info("Creating a new WLAN device.");
 
   ethernet_impl_protocol_ops_ = {
       .query = [](void* ctx, uint32_t options, ethernet_info_t* info) -> zx_status_t {
@@ -89,19 +89,19 @@ SoftmacDriver::SoftmacDriver(fdf::DriverStartArgs start_args,
 
 void SoftmacDriver::Start(fdf::StartCompleter completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "Starting wlansoftmac driver.");
+  fdf::info("Starting wlansoftmac driver.");
 
   node_client_.Bind(std::move(node()), dispatcher());
 
   auto softmac_client = incoming()->Connect<fuchsia_wlan_softmac::Service::WlanSoftmac>();
   if (softmac_client.is_error()) {
-    FDF_LOG(ERROR, "Failed to create FDF endpoints: %s", softmac_client.status_string());
+    fdf::error("Failed to create FDF endpoints: {}", softmac_client.status_string());
     completer(softmac_client.take_error());
     return;
   }
 
   softmac_client_.Bind(*std::move(softmac_client), driver_dispatcher()->get());
-  FDF_LOG(INFO, "Connected to WlanSoftmac service.");
+  fdf::info("Connected to WlanSoftmac service.");
 
   compat::DeviceServer::BanjoConfig banjo_config;
   banjo_config.callbacks[ZX_PROTOCOL_ETHERNET_IMPL] = banjo_server_.callback();
@@ -110,8 +110,8 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
       incoming(), outgoing(), node_name(), "compat-server",
       [&, completer = std::move(completer)](zx::result<> compat_server_init_result) mutable {
         if (compat_server_init_result.is_error()) {
-          FDF_LOG(ERROR, "Compat Server initialization failed: %s",
-                  compat_server_init_result.status_string());
+          fdf::error("Compat Server initialization failed: {}",
+                     compat_server_init_result.status_string());
           completer(compat_server_init_result);
           return;
         }
@@ -133,8 +133,8 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
             .Then([&, completer = std::move(completer)](
                       fidl::Result<fuchsia_driver_framework::Node::AddChild> result) mutable {
               if (result.is_error()) {
-                FDF_LOG(ERROR, "Failed to add ethernet device child: %s",
-                        result.error_value().FormatDescription().c_str());
+                fdf::error("Failed to add ethernet device child: {}",
+                           result.error_value().FormatDescription());
               }
 
               if (result.is_error()) {
@@ -142,15 +142,15 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
                 return;
               }
 
-              FDF_LOG(INFO, "Successfully added ethernet device child.");
+              fdf::info("Successfully added ethernet device child.");
 
               auto start_completer = std::move(completer);
               fit::callback<void(zx_status_t)> shutdown_completer =
                   [node_client = node_client_.Clone()](zx_status_t status) mutable {
                     WLAN_LAMBDA_TRACE_DURATION("sta_shutdown_handler on Rust dispatcher");
                     if (status != ZX_OK) {
-                      FDF_LOG(ERROR, "Bridged wlansoftmac driver had an abnormal shutdown: %s",
-                              zx_status_get_string(status));
+                      fdf::error("Bridged wlansoftmac driver had an abnormal shutdown: {}",
+                                 zx_status_get_string(status));
 
                       // Initiate asynchronous teardown of the fuchsia.driver.framework/Node proxy
                       // to cause the driver framework to stop this driver. Stopping this driver is
@@ -159,7 +159,7 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
                       node_client.AsyncTeardown();
                       return;
                     }
-                    FDF_LOG(INFO, "Bridged wlansoftmac driver shutdown complete.");
+                    fdf::info("Bridged wlansoftmac driver shutdown complete.");
                   };
 
               {
@@ -169,8 +169,7 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
                     softmac_client_.Clone(), ethernet_proxy_lock_, &ethernet_proxy_,
                     &cached_ethernet_status_);
                 if (softmac_bridge.is_error()) {
-                  FDF_LOG(ERROR, "Failed to create SoftmacBridge: %s",
-                          softmac_bridge.status_string());
+                  fdf::error("Failed to create SoftmacBridge: {}", softmac_bridge.status_string());
                   return;
                 }
                 softmac_bridge_ = std::move(*softmac_bridge);
@@ -230,8 +229,7 @@ zx_status_t SoftmacDriver::EthernetImplQuery(uint32_t options, ethernet_info_t* 
          out_info](fdf::Result<fuchsia_wlan_softmac::WlanSoftmac::Query>& result) mutable {
           if (result.is_error()) {
             status = FidlErrorToStatus(result.error_value());
-            FDF_LOG(ERROR, "Failed getting query result (FIDL error %s)",
-                    zx_status_get_string(status));
+            fdf::error("Failed getting query result (FIDL error {})", zx_status_get_string(status));
           } else {
             common::MacAddr(result.value().sta_addr()->data()).CopyTo(out_info->mac);
           }
@@ -260,8 +258,8 @@ zx_status_t SoftmacDriver::EthernetImplQuery(uint32_t options, ethernet_info_t* 
                        result) mutable {
           if (result.is_error()) {
             status = FidlErrorToStatus(result.error_value());
-            FDF_LOG(ERROR, "Failed getting mac sublayer result (FIDL error %s)",
-                    zx_status_get_string(status));
+            fdf::error("Failed getting mac sublayer result (FIDL error {})",
+                       zx_status_get_string(status));
           } else {
             if (result.value().resp().device() &&
                 result.value().resp().device()->is_synthetic().value_or(false)) {
@@ -309,7 +307,7 @@ void SoftmacDriver::EthernetImplStop() {
   WLAN_TRACE_DURATION();
   std::lock_guard<std::mutex> lock(*ethernet_proxy_lock_);
   if (!ethernet_proxy_.is_valid()) {
-    FDF_LOG(WARNING, "EthernetImpl.Stop called when not started");
+    fdf::warn("EthernetImpl.Stop called when not started");
   }
   ethernet_proxy_.clear();
 }
@@ -345,7 +343,7 @@ zx_status_t SoftmacDriver::EthernetImplSetParam(uint32_t param, int32_t value,
     //               bridging.
     // TODO(https://fxbug.dev/42103829): To implement the real promiscuous mode.
     if (value == 1) {  // Only warn when enabling.
-      FDF_LOG(WARNING, "Promiscuous mode not supported. See https://fxbug.dev/42103829");
+      fdf::warn("Promiscuous mode not supported. See https://fxbug.dev/42103829");
     }
     return ZX_OK;
   }
@@ -354,7 +352,7 @@ zx_status_t SoftmacDriver::EthernetImplSetParam(uint32_t param, int32_t value,
 
 void SoftmacDriver::EthernetImplGetBti(zx::bti* out_bti2) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(ERROR, "wlansoftmac does not support ETHERNET_FEATURE_DMA");
+  fdf::error("wlansoftmac does not support ETHERNET_FEATURE_DMA");
 }
 
 }  // namespace wlan::drivers::wlansoftmac

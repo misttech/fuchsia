@@ -69,8 +69,8 @@ zx::result<std::unique_ptr<SoftmacBridge>> SoftmacBridge::New(
 
   auto softmac_bridge_endpoints = fidl::CreateEndpoints<fuchsia_wlan_softmac::WlanSoftmacBridge>();
   if (softmac_bridge_endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create WlanSoftmacBridge endpoints: %s",
-            softmac_bridge_endpoints.status_string());
+    fdf::error("Failed to create WlanSoftmacBridge endpoints: {}",
+               softmac_bridge_endpoints.status_string());
     start_completer(zx::error(softmac_bridge_endpoints.error_value()));
     return softmac_bridge_endpoints.take_error();
   }
@@ -84,10 +84,9 @@ zx::result<std::unique_ptr<SoftmacBridge>> SoftmacBridge::New(
             [node_client = softmac_bridge->node_client_.Clone()](fidl::UnbindInfo info) mutable {
               WLAN_LAMBDA_TRACE_DURATION("WlanSoftmacBridge close_handler");
               if (info.is_user_initiated()) {
-                FDF_LOG(INFO, "WlanSoftmacBridge server closed.");
+                fdf::info("WlanSoftmacBridge server closed.");
               } else {
-                FDF_LOG(ERROR, "WlanSoftmacBridge unexpectedly closed: %s",
-                        info.lossy_description());
+                fdf::error("WlanSoftmacBridge unexpectedly closed: {}", info.lossy_description());
 
                 // Initiate asynchronous teardown of the fuchsia.driver.framework/Node proxy
                 // to cause the driver framework to stop this driver. Stopping this driver is
@@ -110,7 +109,7 @@ zx::result<std::unique_ptr<SoftmacBridge>> SoftmacBridge::New(
         shutdown_completer(status);
       });
 
-  FDF_LOG(INFO, "Starting up Rust WlanSoftmac...");
+  fdf::info("Starting up Rust WlanSoftmac...");
 
   auto start_result = start_bridged_wlansoftmac(
       bridged_start_completer.release(),
@@ -202,7 +201,7 @@ void SoftmacBridge::Start(StartRequest& request, StartCompleter::Sync& completer
 
   auto endpoints = fdf::CreateEndpoints<fuchsia_wlan_softmac::WlanSoftmacIfc>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Creating end point error: %s", endpoints.status_string());
+    fdf::error("Creating end point error: {}", endpoints.status_string());
     completer.Reply(fit::error(endpoints.status_value()));
     return;
   }
@@ -223,7 +222,7 @@ void SoftmacBridge::Start(StartRequest& request, StartCompleter::Sync& completer
                                                   std::move(softmac_ifc_bridge_client_endpoint));
 
   if (softmac_ifc_bridge.is_error()) {
-    FDF_LOG(ERROR, "Failed to create SoftmacIfcBridge: %s", softmac_ifc_bridge.status_string());
+    fdf::error("Failed to create SoftmacIfcBridge: {}", softmac_ifc_bridge.status_string());
     completer.Reply(fit::error(softmac_ifc_bridge.status_value()));
     return;
   }
@@ -236,8 +235,7 @@ void SoftmacBridge::Start(StartRequest& request, StartCompleter::Sync& completer
                 fdf::Result<fuchsia_wlan_softmac::WlanSoftmac::Start>& result) mutable {
         if (result.is_error()) {
           auto status = FidlErrorToStatus(result.error_value());
-          FDF_LOG(ERROR, "Failed getting start result (FIDL error %s)",
-                  zx_status_get_string(status));
+          fdf::error("Failed getting start result (FIDL error {})", zx_status_get_string(status));
           completer.Reply(fit::error(status));
         } else {
           fuchsia_wlan_softmac::WlanSoftmacBridgeStartResponse fidl_response(
@@ -348,19 +346,19 @@ zx_status_t SoftmacBridge::WlanTx(void* ctx, const uint8_t* payload, size_t payl
   auto fidl_request = fidl::Unpersist<fuchsia_wlan_softmac::WlanTxTransferRequest>(
       cpp20::span(payload, payload_size));
   if (!fidl_request.is_ok()) {
-    FDF_LOG(ERROR, "Failed to unpersist WlanTx.Transfer request: %s",
-            fidl_request.error_value().status_string());
+    fdf::error("Failed to unpersist WlanTx.Transfer request: {}",
+               fidl_request.error_value().status_string());
     return ZX_ERR_INTERNAL;
   }
 
   if (!fidl_request->async_id()) {
-    FDF_LOG(ERROR, "QueueWlanTx request missing async_id field.");
+    fdf::error("QueueWlanTx request missing async_id field.");
     return ZX_ERR_INTERNAL;
   }
   auto async_id = fidl_request->async_id().value();
 
   if (!fidl_request->arena()) {
-    FDF_LOG(ERROR, "QueueWlanTx request missing arena field.");
+    fdf::error("QueueWlanTx request missing arena field.");
     auto status = ZX_ERR_INTERNAL;
     WLAN_TRACE_ASYNC_END_TX(async_id, status);
     return status;
@@ -371,7 +369,7 @@ zx_status_t SoftmacBridge::WlanTx(void* ctx, const uint8_t* payload, size_t payl
 
   if (!fidl_request->packet_address() || !fidl_request->packet_size() ||
       !fidl_request->packet_info()) {
-    FDF_LOG(ERROR, "QueueWlanTx request missing required field(s).");
+    fdf::error("QueueWlanTx request missing required field(s).");
     auto status = ZX_ERR_INTERNAL;
     WLAN_TRACE_ASYNC_END_TX(async_id, status);
     return status;
@@ -380,7 +378,7 @@ zx_status_t SoftmacBridge::WlanTx(void* ctx, const uint8_t* payload, size_t payl
   auto buffer = reinterpret_cast<uint8_t*>(  // NOLINT(performance-no-int-to-ptr)
       fidl_request->packet_address().value());
   if (buffer == nullptr) {
-    FDF_LOG(ERROR, "QueueWlanTx contains NULL packet address.");
+    fdf::error("QueueWlanTx contains NULL packet address.");
     auto status = ZX_ERR_INTERNAL;
     WLAN_TRACE_ASYNC_END_TX(async_id, status);
     return status;
@@ -410,8 +408,8 @@ zx_status_t SoftmacBridge::WlanTx(void* ctx, const uint8_t* payload, size_t payl
               fdf::WireUnownedResult<fuchsia_wlan_softmac::WlanSoftmac::QueueTx>& result) mutable {
             auto status = result.status();
             if (status != ZX_OK) {
-              FDF_LOG(ERROR, "Failed to queue frame in the vendor driver: %s",
-                      zx_status_get_string(status));
+              fdf::error("Failed to queue frame in the vendor driver: {}",
+                         zx_status_get_string(status));
               WLAN_TRACE_ASYNC_END_TX(async_id, status);
             } else {
               WLAN_TRACE_ASYNC_END_TX(async_id, ZX_OK);
@@ -428,19 +426,19 @@ zx_status_t SoftmacBridge::EthernetRx(void* ctx, const uint8_t* payload, size_t 
   auto fidl_request = fidl::Unpersist<fuchsia_wlan_softmac::EthernetRxTransferRequest>(
       cpp20::span(payload, payload_size));
   if (!fidl_request.is_ok()) {
-    FDF_LOG(ERROR, "Failed to unpersist EthernetRx.Transfer request: %s",
-            fidl_request.error_value().status_string());
+    fdf::error("Failed to unpersist EthernetRx.Transfer request: {}",
+               fidl_request.error_value().status_string());
     return ZX_ERR_INTERNAL;
   }
 
   if (!fidl_request->packet_address() || !fidl_request->packet_size()) {
-    FDF_LOG(ERROR, "EthernetRx.Transfer request missing required field(s).");
+    fdf::error("EthernetRx.Transfer request missing required field(s).");
     return ZX_ERR_INTERNAL;
   }
 
   if (fidl_request->packet_size().value() > ETH_FRAME_MAX_SIZE) {
-    FDF_LOG(ERROR, "Attempted to deliver an ethernet frame of invalid length: %zu",
-            fidl_request->packet_size().value());
+    fdf::error("Attempted to deliver an ethernet frame of invalid length: {}",
+               fidl_request->packet_size().value());
     return ZX_ERR_INVALID_ARGS;
   }
 
