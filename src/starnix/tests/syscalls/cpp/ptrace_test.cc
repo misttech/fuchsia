@@ -1891,7 +1891,7 @@ TEST(PtraceTest, PtraceEventStopWithMaskedSigtrap) {
   EXPECT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_FORK << 8))) << "status: " << std::hex << status;
 
   pid_t grandchild_pid = 0;
-  ASSERT_THAT(ptrace(PTRACE_GETEVENTMSG, child_pid, 0, &grandchild_pid), SyscallSucceeds());
+  ASSERT_THAT(get_event_msg<pid_t>(child_pid, &grandchild_pid), SyscallSucceeds());
   ASSERT_GT(grandchild_pid, 0);
 
   ASSERT_EQ(HANDLE_EINTR(waitpid(grandchild_pid, &status, 0)), grandchild_pid);
