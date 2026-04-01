@@ -216,7 +216,11 @@ void NaturalEncodeVectorBody(NaturalUseStdCopy<false>, NaturalEncoder* encoder,
   size_t stride = NaturalEncodingInlineSize<T, Constraint>(encoder);
   for (typename std::vector<T>::iterator in_it = in_begin; in_it != in_end;
        in_it++, out_offset += stride) {
-    NaturalCodingTraits<T, Constraint>::Encode(encoder, &*in_it, out_offset, recursion_depth);
+    if constexpr (std::is_same_v<T, bool>) {
+      NaturalCodingTraits<bool, Constraint>::Encode(encoder, in_it, out_offset, recursion_depth);
+    } else {
+      NaturalCodingTraits<T, Constraint>::Encode(encoder, &*in_it, out_offset, recursion_depth);
+    }
   }
 }
 
@@ -248,7 +252,14 @@ void NaturalDecodeVectorBody(NaturalUseStdCopy<false>, NaturalDecoder* decoder,
     } else {
       out->emplace_back(DefaultConstructPossiblyInvalidObject<T>::Make());
     }
-    NaturalCodingTraits<T, Constraint>::Decode(decoder, &(*out)[index], in_offset, recursion_depth);
+    if constexpr (std::is_same_v<T, bool>) {
+      bool b;
+      NaturalCodingTraits<bool, Constraint>::Decode(decoder, &b, in_offset, recursion_depth);
+      (*out)[index] = b;
+    } else {
+      NaturalCodingTraits<T, Constraint>::Decode(decoder, &(*out)[index], in_offset,
+                                                 recursion_depth);
+    }
   }
 }
 

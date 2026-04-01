@@ -204,7 +204,11 @@ void EncodeVectorBody(UseStdCopy<false>, EncoderImpl* encoder,
   size_t stride = EncodingInlineSize<T>(encoder);
   for (typename std::vector<T>::iterator in_it = in_begin; in_it != in_end;
        in_it++, out_offset += stride) {
-    CodingTraits<T>::Encode(encoder, &*in_it, out_offset, maybe_handle_info);
+    if constexpr (std::is_same_v<T, bool>) {
+      CodingTraits<bool>::Encode(encoder, in_it, out_offset, maybe_handle_info);
+    } else {
+      CodingTraits<T>::Encode(encoder, &*in_it, out_offset, maybe_handle_info);
+    }
   }
 }
 
@@ -224,7 +228,11 @@ void DecodeVectorBody(UseStdCopy<false>, DecoderImpl* decoder, size_t in_begin_o
   size_t in_offset = in_begin_offset;
   typename std::vector<T>::iterator out_it = out->begin();
   for (; in_offset < in_end_offset; in_offset += stride, out_it++) {
-    CodingTraits<T>::Decode(decoder, &*out_it, in_offset);
+    if constexpr (std::is_same_v<T, bool>) {
+      CodingTraits<bool>::Decode(decoder, out_it, in_offset);
+    } else {
+      CodingTraits<T>::Decode(decoder, &*out_it, in_offset);
+    }
   }
 }
 
