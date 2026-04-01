@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_device::{Handled, InputDeviceType, InputEvent, InputEventType};
+use crate::input_device::{Handled, InputDeviceEvent, InputDeviceType, InputEvent, InputEventType};
 use crate::input_handler::{Handler, InputHandler};
 use async_trait::async_trait;
 use fuchsia_inspect::health::Reporter;
@@ -44,6 +44,8 @@ struct EventCounters {
     _node: inspect::Node,
     /// The number of total events that this handler has seen so far.
     events_count: inspect::UintProperty,
+    /// The number of events with a wake lease seen so far.
+    events_with_wake_lease_count: inspect::UintProperty,
     /// The number of total handled events that this handler has seen so far.
     handled_events_count: inspect::UintProperty,
     /// The timestamp (in nanoseconds) when the last event was seen by this
@@ -62,12 +64,14 @@ impl EventCounters {
     ) {
         let node = root.create_child(format!("{}", event_type));
         let events_count = node.create_uint("events_count", 0);
+        let events_with_wake_lease_count = node.create_uint("events_with_wake_lease_count", 0);
         let handled_events_count = node.create_uint("handled_events_count", 0);
         let last_seen_timestamp_ns = node.create_int("last_seen_timestamp_ns", 0);
         let last_generated_timestamp_ns = node.create_int("last_generated_timestamp_ns", 0);
         let new_counters = EventCounters {
             _node: node,
             events_count,
+            events_with_wake_lease_count,
             handled_events_count,
             last_seen_timestamp_ns,
             last_generated_timestamp_ns,
@@ -80,8 +84,12 @@ impl EventCounters {
         time: zx::MonotonicInstant,
         event_time: zx::MonotonicInstant,
         handled: &Handled,
+        has_wake_lease: bool,
     ) {
         self.events_count.add(1);
+        if has_wake_lease {
+            self.events_with_wake_lease_count.add(1);
+        }
         if *handled == Handled::Yes {
             self.handled_events_count.add(1);
         }
@@ -154,6 +162,8 @@ pub struct InspectHandler<F> {
     node: inspect::Node,
     /// The number of total events that this handler has seen so far.
     events_count: inspect::UintProperty,
+    /// The number of events with a wake lease seen so far.
+    events_with_wake_lease_count: inspect::UintProperty,
     /// The timestamp (in nanoseconds) when the last event was seen by this
     /// handler (not when the event itself was generated). 0 if unset.
     last_seen_timestamp_ns: inspect::IntProperty,
@@ -177,6 +187,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> Debug for InspectHandler<F> {
         f.debug_struct("InspectHandler")
             .field("node", &self.node)
             .field("events_count", &self.events_count)
+            .field("events_with_wake_lease_count", &self.events_with_wake_lease_count)
             .field("last_seen_timestamp_ns", &self.last_seen_timestamp_ns)
             .field("last_generated_timestamp_ns", &self.last_generated_timestamp_ns)
             .field("events_by_type", &self.events_by_type)
@@ -223,13 +234,23 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
         let event_time = input_event.event_time;
         let now = (self.now.borrow_mut())();
         self.events_count.add(1);
+
+        let has_wake_lease = match &input_event.device_event {
+            InputDeviceEvent::ConsumerControls(e) => e.wake_lease.is_some(),
+            InputDeviceEvent::Mouse(e) => e.wake_lease.lock().is_some(),
+            InputDeviceEvent::TouchScreen(e) => e.wake_lease.is_some(),
+            _ => false,
+        };
+        if has_wake_lease {
+            self.events_with_wake_lease_count.add(1);
+        }
         self.last_seen_timestamp_ns.set(now.into_nanos());
         self.last_generated_timestamp_ns.set(event_time.into_nanos());
         let event_type = InputEventType::from(&input_event.device_event);
         self.events_by_type
             .get(&event_type)
             .unwrap_or_else(|| panic!("no event counters for {}", event_type))
-            .count_event(now, event_time, &input_event.handled);
+            .count_event(now, event_time, &input_event.handled, has_wake_lease);
         if let Some(recent_events_log) = &self.recent_events_log {
             recent_events_log.lock().await.push(input_event.clone());
         }
@@ -264,6 +285,7 @@ impl<F> InspectHandler<F> {
         displays_recent_events: bool,
     ) -> Rc<Self> {
         let event_count = node.create_uint("events_count", 0);
+        let events_with_wake_lease_count_node = node.create_uint("events_with_wake_lease_count", 0);
         let last_seen_timestamp_ns = node.create_int("last_seen_timestamp_ns", 0);
         let last_generated_timestamp_ns = node.create_int("last_generated_timestamp_ns", 0);
 
@@ -311,6 +333,7 @@ impl<F> InspectHandler<F> {
             now: RefCell::new(now),
             node,
             events_count: event_count,
+            events_with_wake_lease_count: events_with_wake_lease_count_node,
             last_seen_timestamp_ns,
             last_generated_timestamp_ns,
             events_by_type,
@@ -631,42 +654,49 @@ mod tests {
                 last_generated_timestamp_ns: 0i64,
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -685,42 +715,49 @@ mod tests {
                 last_generated_timestamp_ns: 43i64,
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 1u64,
+                     events_with_wake_lease_count: 0u64, // Fake event doesn't have wake lease in this test setup
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 43i64,
                      last_seen_timestamp_ns: 42i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -739,42 +776,49 @@ mod tests {
                 last_generated_timestamp_ns: 44i64,
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 2u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 44i64,
                      last_seen_timestamp_ns: 42i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -795,42 +839,49 @@ mod tests {
                 last_generated_timestamp_ns: 44i64,
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 3u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 1u64,
                      last_generated_timestamp_ns: 44i64,
                      last_seen_timestamp_ns: 42i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -866,42 +917,49 @@ mod tests {
                 recent_events_log: {},
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -925,42 +983,49 @@ mod tests {
                 },
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 1u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 43i64,
                      last_seen_timestamp_ns: 42i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -987,42 +1052,49 @@ mod tests {
                 },
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 2u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 44i64,
                      last_seen_timestamp_ns: 42i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
@@ -1054,42 +1126,49 @@ mod tests {
                 },
                 consumer_controls: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 fake: {
                      events_count: 3u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 1u64,
                      last_generated_timestamp_ns: 44i64,
                      last_seen_timestamp_ns: 42i64,
                 },
                 keyboard: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 light_sensor: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 mouse: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touch_screen: {
                      events_count: 0u64,
+                     events_with_wake_lease_count: 0u64,
                      handled_events_count: 0u64,
                      last_generated_timestamp_ns: 0i64,
                      last_seen_timestamp_ns: 0i64,
                 },
                 touchpad: {
                     events_count: 0u64,
+                    events_with_wake_lease_count: 0u64,
                     handled_events_count: 0u64,
                     last_generated_timestamp_ns: 0i64,
                     last_seen_timestamp_ns: 0i64,
