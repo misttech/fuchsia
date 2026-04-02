@@ -220,6 +220,16 @@ void AggregateRecords::RecordBufferCompletion() {
     buffer_tracker_->RecordCompletion();
   }
 }
+void AggregateRecords::StartMonitoringOutstandingBufferCount() {
+  if (buffer_tracker_) {
+    buffer_tracker_->StartMonitoringOutstandingBufferCount();
+  }
+}
+void AggregateRecords::StopMonitoringOutstandingBufferCount() {
+  if (buffer_tracker_) {
+    buffer_tracker_->StopMonitoringOutstandingBufferCount();
+  }
+}
 
 void AggregateRecords::SetTaskScheduleInterval(zx::duration interval) {
   task_schedule_interval_ = interval;
@@ -380,6 +390,18 @@ void RingBufferRecorder::RecordBufferCompletion() {
   ring_buffer_spec_->aggregate_records().RecordBufferCompletion();
   if (!running_intervals_.empty()) {
     running_intervals_.back()->diagnostics().RecordBufferCompletion();
+  }
+}
+void RingBufferRecorder::StartMonitoringOutstandingBufferCount() {
+  ring_buffer_spec_->aggregate_records().StartMonitoringOutstandingBufferCount();
+  if (!running_intervals_.empty()) {
+    running_intervals_.back()->diagnostics().StartMonitoringOutstandingBufferCount();
+  }
+}
+void RingBufferRecorder::StopMonitoringOutstandingBufferCount() {
+  ring_buffer_spec_->aggregate_records().StopMonitoringOutstandingBufferCount();
+  if (!running_intervals_.empty()) {
+    running_intervals_.back()->diagnostics().StopMonitoringOutstandingBufferCount();
   }
 }
 

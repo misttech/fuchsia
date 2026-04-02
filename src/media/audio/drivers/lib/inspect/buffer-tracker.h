@@ -22,9 +22,22 @@ class BufferTracker {
 
   void RecordSubmission();
   void RecordCompletion();
+  // Should be called once a pipeline is "primed" with initial data, before streaming begins.
+  void StartMonitoringOutstandingBufferCount() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    started_monitoring_min_max_buffers_ = true;
+    currently_monitoring_min_max_buffers_ = true;
+  }
+  // Should be called once a pipeline is no longer streaming, before it "drains".
+  void StopMonitoringOutstandingBufferCount() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    currently_monitoring_min_max_buffers_ = false;
+  }
 
  private:
   inspect::Node node_;
+  bool started_monitoring_min_max_buffers_ __TA_GUARDED(mutex_) = false;
+  bool currently_monitoring_min_max_buffers_ __TA_GUARDED(mutex_) = false;
 
   // Total buffer counts
   inspect::UintProperty total_buffers_processed_count_prop_;
@@ -35,6 +48,9 @@ class BufferTracker {
   // Outstanding buffer metrics.
   inspect::LazyNode avg_outstanding_buffer_count_node_;
   uint64_t cumulative_outstanding_buffer_count_ __TA_GUARDED(mutex_) = 0;
+  inspect::LazyNode minmax_outstanding_buffer_counts_;
+  uint64_t outstanding_buffers_count_min_ __TA_GUARDED(mutex_) = UINT64_MAX;
+  uint64_t outstanding_buffers_count_max_ __TA_GUARDED(mutex_) = 0;
 
   // Processing time metrics.
   inspect::LazyNode avg_processing_time_node_;

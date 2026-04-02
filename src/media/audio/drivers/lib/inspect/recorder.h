@@ -73,6 +73,8 @@ static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames"
 
 static constexpr std::string_view kCountBuffersProcessed = "count_buffers_processed";
 static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstanding_buffers_avg";
+static constexpr std::string_view kCountOutstandingBuffersMax = "count_outstanding_buffers_max";
+static constexpr std::string_view kCountOutstandingBuffersMin = "count_outstanding_buffers_min";
 static constexpr std::string_view kEmptyBufferDurationMaxUsec = "empty_buffer_duration_max_us";
 static constexpr std::string_view kEmptyBufferDurationCumulativeUsec =
     "empty_buffer_duration_sum_us";
@@ -200,6 +202,8 @@ class AggregateRecords {
   void SetupBufferTracker(const std::string& name,
                           std::optional<uint32_t> max_buffer_count = std::nullopt,
                           std::optional<zx::duration> per_buffer_duration = std::nullopt);
+  void StartMonitoringOutstandingBufferCount();
+  void StopMonitoringOutstandingBufferCount();
   void RecordBufferSubmission();
   void RecordBufferCompletion();
 
@@ -299,6 +303,10 @@ class RingBufferRecorder {
                           std::optional<zx::duration> per_buffer_duration = std::nullopt);
   void RecordBufferSubmission();
   void RecordBufferCompletion();
+  // Should be called once a pipeline is "primed" with initial data, before streaming begins.
+  void StartMonitoringOutstandingBufferCount();
+  // Should be called once a pipeline is no longer streaming, before it "drains".
+  void StopMonitoringOutstandingBufferCount();
 
   // Sets the expected interval between tasks. This is used to calculate
   // scheduling delay metrics.

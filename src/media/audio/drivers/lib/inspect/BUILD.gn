@@ -23,6 +23,7 @@ test("unittest-bin") {
   ]
   deps = [
     "//sdk/lib/driver/logging/cpp",
+    "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",

@@ -33,9 +33,23 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
         std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
         if (total_buffers_processed_count_ > 0) {
-          inspector.GetRoot().CreateUint(
+          inspector.GetRoot().CreateDouble(
               kCountOutstandingBuffersAvg,
-              cumulative_outstanding_buffer_count_ / total_buffers_processed_count_, &inspector);
+              static_cast<double>(cumulative_outstanding_buffer_count_) /
+                  static_cast<double>(total_buffers_processed_count_),
+              &inspector);
+        }
+        return fpromise::make_ok_promise(inspector);
+      });
+  minmax_outstanding_buffer_counts_ = node_.CreateLazyValues(
+      kCountOutstandingBuffersMax, [this]() -> fpromise::promise<inspect::Inspector> {
+        std::lock_guard<std::mutex> lock(mutex_);
+        inspect::Inspector inspector;
+        if (started_monitoring_min_max_buffers_) {
+          inspector.GetRoot().CreateUint(kCountOutstandingBuffersMin,
+                                         outstanding_buffers_count_min_, &inspector);
+          inspector.GetRoot().CreateUint(kCountOutstandingBuffersMax,
+                                         outstanding_buffers_count_max_, &inspector);
         }
         return fpromise::make_ok_promise(inspector);
       });
@@ -51,7 +65,8 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
           if (total_buffers_processed_count_ > 0) {
             inspector.GetRoot().CreateUint(
                 kProcessingTimeCumulativeUsec,
-                total_buffers_processed_count_ * per_buffer_duration_->to_usecs(), &inspector);
+                total_buffers_processed_count_ * per_buffer_duration_->to_nsecs() / 1000,
+                &inspector);
           }
           return fpromise::make_ok_promise(inspector);
         });
@@ -61,8 +76,8 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
 void BufferTracker::RecordSubmission() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (submission_times_.size() >= max_buffer_count_.value_or(UINT_MAX)) {
-    fdf::error("Submission count ({}) is more than or equal to max buffer count ({}).",
-               submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
+    fdf::warn("RecordSubmission: active count ({}) cannot equal/exceed max_buffer_count_ ({})",
+              submission_times_.size(), max_buffer_count_.value_or(UINT_MAX));
     return;
   }
   auto submission_time = zx::clock::get_monotonic();
@@ -84,6 +99,16 @@ void BufferTracker::RecordSubmission() {
     }
   }
   submission_times_.push(submission_time);
+  // Don't track min/max outstanding buffers when initially "priming" or "draining" the pipeline.
+  if (currently_monitoring_min_max_buffers_) {
+    outstanding_buffers_count_max_ =
+        std::max(outstanding_buffers_count_max_, submission_times_.size());
+    // Start... or StopMonitoringOutstandingBufferCount could be called at any time.
+    // For full accuracy, account for the outstanding buffer count immediately prior to submission.
+    outstanding_buffers_count_min_ =
+        std::min(outstanding_buffers_count_min_, submission_times_.size() - 1);
+  }
+
   if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
     if (full_buffer_start_time_.get() == 0) {
       full_buffer_start_time_ = submission_time;
@@ -95,7 +120,7 @@ void BufferTracker::RecordCompletion() {
   std::lock_guard<std::mutex> lock(mutex_);
   auto completion_time = zx::clock::get_monotonic();
   if (submission_times_.empty()) {
-    fdf::error("No buffers submitted to this tracker yet.");
+    fdf::warn("RecordCompletion: no active buffers to complete.");
     return;
   }
   if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
@@ -119,6 +144,17 @@ void BufferTracker::RecordCompletion() {
   cumulative_outstanding_buffer_count_ += submission_times_.size();
   zx::time submission_time = submission_times_.front();
   submission_times_.pop();
+
+  // Don't track min/max outstanding buffers when "draining" the pipeline.
+  if (currently_monitoring_min_max_buffers_) {
+    outstanding_buffers_count_min_ =
+        std::min(outstanding_buffers_count_min_, submission_times_.size());
+    // Start... or StopMonitoringOutstandingBufferCount could be called at any time.
+    // For full accuracy, account for the outstanding buffer count immediately prior to completion.
+    outstanding_buffers_count_max_ =
+        std::max(outstanding_buffers_count_max_, submission_times_.size() + 1);
+  }
+
   if (submission_times_.empty()) {
     if (empty_buffer_start_time_.get() == 0) {
       empty_buffer_start_time_ = completion_time;
