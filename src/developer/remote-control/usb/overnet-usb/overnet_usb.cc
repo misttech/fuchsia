@@ -265,6 +265,14 @@ zx_status_t OvernetUsb::UnconfigureEndpoints() {
 void OvernetUsb::SetConfigured(SetConfiguredRequest& request,
                                SetConfiguredCompleter::Sync& completer) {
   bool configured = request.configured();
+  if (std::holds_alternative<ShuttingDown>(state_)) {
+    // We're already shutting down, so we can't configure the endpoints, no-op
+    // succeed.
+    fdf::warn("Received configured = {}, but we're shutting down", configured);
+    completer.Reply(zx::ok());
+    return;
+  }
+
   fuchsia_hardware_usb_descriptor::UsbSpeed speed = request.speed();
   FDF_LOG(TRACE, "SetConfigured(%d, %d)", configured, static_cast<uint32_t>(speed));
   zx_status_t status = configured ? ConfigureEndpoints() : UnconfigureEndpoints();
