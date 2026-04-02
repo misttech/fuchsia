@@ -265,6 +265,7 @@ syscall_tests_migrated_to_machina = [
   "pressure_test",
   "process_mrelease_test",
   "procfs_mem_test",
+  "procfs_test",
   "ptrace_test",
   "read_write_test",
   "reboot_test",
