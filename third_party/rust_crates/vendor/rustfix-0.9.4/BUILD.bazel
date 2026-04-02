@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "rustfix",
     package_url = "https://github.com/rust-lang/cargo",
-    package_version = "0.9.3",
+    package_version = "0.9.4",
 )
 
 license(
@@ -72,7 +72,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.9.3",
+    version = "0.9.4",
     deps = [
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.145:serde_json",
