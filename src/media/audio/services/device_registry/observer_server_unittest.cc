@@ -33,21 +33,6 @@ namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 class ObserverServerTest : public AudioDeviceRegistryServerTestBase,
                            public fidl::AsyncEventHandler<fad::Observer> {
  protected:
-  std::optional<TokenId> WaitForAddedDeviceTokenId(fidl::Client<fad::Registry>& registry_client) {
-    std::optional<TokenId> added_device_id;
-    registry_client->WatchDevicesAdded().Then(
-        [&added_device_id](fidl::Result<fad::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok()) << result.error_value();
-          ASSERT_TRUE(result->devices());
-          ASSERT_EQ(result->devices()->size(), 1u);
-          ASSERT_TRUE(result->devices()->at(0).token_id());
-          added_device_id = *result->devices()->at(0).token_id();
-        });
-
-    RunLoopUntilIdle();
-    return added_device_id;
-  }
-
   std::optional<TokenId> WaitForRemovedDeviceTokenId(fidl::Client<fad::Registry>& registry_client) {
     std::optional<TokenId> removed_device_id;
     registry_client->WatchDeviceRemoved().Then(
@@ -93,6 +78,15 @@ class ObserverServerTest : public AudioDeviceRegistryServerTestBase,
     return std::make_pair(std::move(ring_buffer_client), std::move(ring_buffer_server_end));
   }
 
+  std::pair<fidl::Client<fad::PacketStream>, fidl::ServerEnd<fad::PacketStream>>
+  CreatePacketStreamClient() {
+    auto [packet_stream_client_end, packet_stream_server_end] =
+        CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+    auto packet_stream_client =
+        fidl::Client<fad::PacketStream>(std::move(packet_stream_client_end), dispatcher());
+    return std::make_pair(std::move(packet_stream_client), std::move(packet_stream_server_end));
+  }
+
   void handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) override {
     FAIL() << "ObserverServerTest: unknown event (Observer) ordinal " << metadata.event_ordinal;
   }
@@ -119,8 +113,12 @@ class ObserverServerCodecTest : public ObserverServerTest {
 class ObserverServerCompositeTest : public ObserverServerTest {
  protected:
   static inline const std::string kClassName = "ObserverServerCompositeTest";
-  std::shared_ptr<FakeComposite> CreateAndEnableDriverWithDefaults() {
+  std::shared_ptr<FakeComposite> CreateAndEnableDriverWithDefaults(
+      std::optional<TopologyId> topology_id = FakeComposite::kFullDuplexTopologyId) {
     auto fake_driver = CreateFakeComposite();
+    if (topology_id) {
+      fake_driver->InjectTopologyChange(*topology_id);
+    }
 
     adr_service()->AddDevice(Device::Create(
         adr_service(), dispatcher(), "Test composite name", fad::DeviceType::kComposite,
@@ -635,6 +633,90 @@ TEST_F(ObserverServerCompositeTest, ObserverDoesNotDropIfClientRingBufferDrops) 
   EXPECT_FALSE(observer_fidl_error_status().has_value()) << *observer_fidl_error_status();
 }
 
+// Verify that an Observer does not drop, if an observed device's driver PacketStream is dropped.
+TEST_F(ObserverServerCompositeTest, ObserverDoesNotDropIfDriverPacketStreamDrops) {
+  auto fake_driver =
+      CreateAndEnableDriverWithDefaults(FakeComposite::kPacketStreamOutputTopologyId);
+  auto registry = CreateTestRegistryServer();
+
+  auto added_device_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(added_device_id.has_value());
+  auto [status, device] = adr_service()->FindDeviceByTokenId(*added_device_id);
+  ASSERT_EQ(status, AudioDeviceRegistry::DevicePresence::Active);
+  auto control = CreateTestControlServer(device);
+  auto observer = CreateTestObserverServer(device);
+
+  auto packet_stream_id = FakeComposite::kSourcePsElementId;
+  auto format =
+      SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets()).front();
+  auto [packet_stream_client, packet_stream_server_end] = CreatePacketStreamClient();
+  bool received_callback = false;
+
+  fad::ControlCreatePacketStreamRequest request;
+  request.element_id(packet_stream_id);
+  request.options(fad::PacketStreamOptions{{.format = format}});
+  request.packet_stream_server(std::move(packet_stream_server_end));
+
+  control->client()
+      ->CreatePacketStream(std::move(request))
+      .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+        received_callback = true;
+        EXPECT_TRUE(result.is_ok()) << result.error_value();
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+
+  fake_driver->DropPacketStream(packet_stream_id);
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(ObserverServer::count(), 1u);
+  EXPECT_TRUE(observer->client().is_valid());
+  EXPECT_FALSE(observer_fidl_error_status().has_value()) << *observer_fidl_error_status();
+}
+
+// Verify that an Observer does not drop, if an observed device's PacketStream client is dropped.
+TEST_F(ObserverServerCompositeTest, ObserverDoesNotDropIfClientPacketStreamDrops) {
+  auto fake_driver =
+      CreateAndEnableDriverWithDefaults(FakeComposite::kPacketStreamOutputTopologyId);
+  auto registry = CreateTestRegistryServer();
+
+  auto added_device_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(added_device_id.has_value());
+  auto [status, device] = adr_service()->FindDeviceByTokenId(*added_device_id);
+  ASSERT_EQ(status, AudioDeviceRegistry::DevicePresence::Active);
+  auto control = CreateTestControlServer(device);
+  auto observer = CreateTestObserverServer(device);
+
+  auto packet_stream_id = FakeComposite::kSourcePsElementId;
+  auto format =
+      SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets()).front();
+  {
+    auto [packet_stream_client, packet_stream_server_end] = CreatePacketStreamClient();
+    bool received_callback = false;
+
+    fad::ControlCreatePacketStreamRequest request;
+    request.element_id(packet_stream_id);
+    request.options(fad::PacketStreamOptions{{.format = format}});
+    request.packet_stream_server(std::move(packet_stream_server_end));
+
+    control->client()
+        ->CreatePacketStream(std::move(request))
+        .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+          received_callback = true;
+          EXPECT_TRUE(result.is_ok()) << result.error_value();
+        });
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+  }
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(ObserverServer::count(), 1u);
+  EXPECT_TRUE(observer->client().is_valid());
+  EXPECT_FALSE(observer_fidl_error_status().has_value()) << *observer_fidl_error_status();
+}
+
 // Verify that an Observer does not drop, if the observed device's Control client is dropped.
 TEST_F(ObserverServerCompositeTest, ObserverDoesNotDropIfClientControlDrops) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
@@ -726,6 +808,77 @@ TEST_F(ObserverServerCompositeTest, GetElements) {
   EXPECT_TRUE(received_callback);
   EXPECT_EQ(initial_elements->size(), received_elements.size());
   EXPECT_THAT(received_elements, testing::ElementsAreArray(*initial_elements));
+}
+
+// Verify that an Observer receives topology changes when a Control changes the topology.
+TEST_F(ObserverServerCompositeTest, TopologyChangeViaControl) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  auto added_device_id = WaitForAddedDeviceTokenId(registry->client());
+  ASSERT_TRUE(added_device_id.has_value());
+  auto [status, device] = adr_service()->FindDeviceByTokenId(*added_device_id);
+  ASSERT_EQ(status, AudioDeviceRegistry::DevicePresence::Active);
+  if (device->topology_ids().size() <= 1) {
+    GTEST_SKIP() << "Fake driver does not expose multiple topologies";
+  }
+
+  auto observer = CreateTestObserverServer(device);
+  auto control = CreateTestControlServer(device);
+
+  auto received_callback = false;
+  std::optional<TopologyId> current_topology_id;
+
+  observer->client()->WatchTopology().Then([&received_callback, &current_topology_id](
+                                               fidl::Result<fad::Observer::WatchTopology>& result) {
+    received_callback = true;
+    ASSERT_TRUE(result.is_ok()) << result.error_value();
+    current_topology_id = result->topology_id();
+  });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(received_callback);
+  ASSERT_TRUE(current_topology_id.has_value());
+  ASSERT_TRUE(device->topology_ids().find(*current_topology_id) != device->topology_ids().end());
+
+  TopologyId topology_id_to_set = 0;
+  for (auto id : device->topology_ids()) {
+    if (id != *current_topology_id) {
+      topology_id_to_set = id;
+      break;
+    }
+  }
+
+  received_callback = false;
+  std::optional<TopologyId> new_topology_id;
+
+  observer->client()->WatchTopology().Then(
+      [&received_callback, &new_topology_id](fidl::Result<fad::Observer::WatchTopology>& result) {
+        received_callback = true;
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        new_topology_id = result->topology_id();
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_FALSE(received_callback);
+
+  auto received_callback2 = false;
+
+  control->client()
+      ->SetTopology(topology_id_to_set)
+      .Then([&received_callback2](fidl::Result<fad::Control::SetTopology>& result) {
+        received_callback2 = true;
+        EXPECT_TRUE(result.is_ok()) << result.error_value();
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback2);
+  EXPECT_TRUE(received_callback);
+  ASSERT_TRUE(new_topology_id.has_value());
+  EXPECT_EQ(*new_topology_id, topology_id_to_set);
+
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(observer_fidl_error_status().has_value()) << *observer_fidl_error_status();
 }
 
 // Verify that WatchTopology correctly returns the initial topology state.

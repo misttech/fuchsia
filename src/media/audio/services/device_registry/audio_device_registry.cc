@@ -20,6 +20,7 @@
 #include "src/media/audio/services/device_registry/device_detector.h"
 #include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/observer_server.h"
+#include "src/media/audio/services/device_registry/packet_stream_server.h"
 #include "src/media/audio/services/device_registry/provider_server.h"
 #include "src/media/audio/services/device_registry/registry_server.h"
 #include "src/media/audio/services/device_registry/ring_buffer_server.h"
@@ -345,6 +346,14 @@ std::shared_ptr<RingBufferServer> AudioDeviceRegistry::CreateRingBufferServer(
   ADR_LOG_METHOD(kLogAudioDeviceRegistryMethods || kLogRingBufferServerMethods);
   return RingBufferServer::Create(thread_, std::move(server_end), parent, device_to_control,
                                   element_id);
+}
+
+std::shared_ptr<PacketStreamServer> AudioDeviceRegistry::CreatePacketStreamServer(
+    fidl::ServerEnd<fad::PacketStream> server_end, const std::shared_ptr<ControlServer>& parent,
+    const std::shared_ptr<Device>& device_to_control, ElementId element_id) {
+  ADR_LOG_METHOD(kLogAudioDeviceRegistryMethods || kLogPacketStreamServerMethods);
+  return PacketStreamServer::Create(thread_, std::move(server_end), parent, device_to_control,
+                                    element_id);
 }
 
 }  // namespace media_audio

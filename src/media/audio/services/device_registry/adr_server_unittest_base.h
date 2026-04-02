@@ -125,6 +125,23 @@ class AudioDeviceRegistryServerTestBase : public gtest::TestLoopFixture {
   std::optional<zx_status_t>& provider_fidl_error_status() { return provider_fidl_error_status_; }
 
   // Registry support
+  std::optional<TokenId> WaitForAddedDeviceTokenId(
+      fidl::Client<fuchsia_audio_device::Registry>& reg_client) {
+    std::optional<TokenId> added_device_id;
+    reg_client->WatchDevicesAdded().Then(
+        [&added_device_id](
+            fidl::Result<fuchsia_audio_device::Registry::WatchDevicesAdded>& result) mutable {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          ASSERT_TRUE(result->devices());
+          ASSERT_EQ(result->devices()->size(), 1u);
+          ASSERT_TRUE(result->devices()->at(0).token_id());
+          added_device_id = *result->devices()->at(0).token_id();
+        });
+
+    RunLoopUntilIdle();
+    return added_device_id;
+  }
+
   std::unique_ptr<TestServerAndNaturalAsyncClient<RegistryServer>>
   CreateTestRegistryServerNoDeviceDiscovery() {
     auto [client_end, server_end] = CreateNaturalAsyncClientOrDie<fuchsia_audio_device::Registry>();
@@ -265,12 +282,40 @@ class AudioDeviceRegistryServerTestBase : public gtest::TestLoopFixture {
                        << metadata.event_ordinal;
     }
   };
+  std::optional<zx_status_t>& ring_buffer_fidl_error_status() {
+    return ring_buffer_fidl_error_status_;
+  }
   const std::unique_ptr<RingBufferFidlHandler>& ring_buffer_fidl_handler() {
     return ring_buffer_fidl_handler_;
   }
 
+  // PacketStream support
+  class PacketStreamFidlHandler final
+      : public fidl::AsyncEventHandler<fuchsia_audio_device::PacketStream>,
+        public FidlHandler {
+   public:
+    explicit PacketStreamFidlHandler(AudioDeviceRegistryServerTestBase* parent)
+        : FidlHandler(parent) {}
+    void on_fidl_error(fidl::UnbindInfo error) override {
+      LogFidlClientError(error, "PacketStream");
+      parent()->packet_stream_fidl_error_status_ = error.status();
+    }
+    void handle_unknown_event(
+        fidl::UnknownEventMetadata<fuchsia_audio_device::PacketStream> metadata) override {
+      FX_LOGS(WARNING) << "PacketStreamFidlHandler: unknown event (PacketStream) ordinal "
+                       << metadata.event_ordinal;
+    }
+  };
+  std::optional<zx_status_t>& packet_stream_fidl_error_status() {
+    return packet_stream_fidl_error_status_;
+  }
+  const std::unique_ptr<PacketStreamFidlHandler>& packet_stream_fidl_handler() {
+    return packet_stream_fidl_handler_;
+  }
+
   // General members
   std::shared_ptr<media_audio::AudioDeviceRegistry> adr_service() { return adr_service_; }
+  void ClearRegistry() { adr_service_ = std::make_shared<AudioDeviceRegistry>(server_thread_); }
 
  private:
   std::unique_ptr<ProviderFidlHandler> provider_fidl_handler_ =
@@ -298,6 +343,11 @@ class AudioDeviceRegistryServerTestBase : public gtest::TestLoopFixture {
       std::make_unique<RingBufferFidlHandler>(
           static_cast<AudioDeviceRegistryServerTestBase*>(this));
   std::optional<zx_status_t> ring_buffer_fidl_error_status_;
+
+  std::unique_ptr<PacketStreamFidlHandler> packet_stream_fidl_handler_ =
+      std::make_unique<PacketStreamFidlHandler>(
+          static_cast<AudioDeviceRegistryServerTestBase*>(this));
+  std::optional<zx_status_t> packet_stream_fidl_error_status_;
 
   std::shared_ptr<FidlThread> server_thread_ =
       FidlThread::CreateFromCurrentThread("test_server_thread", dispatcher());

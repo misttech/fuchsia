@@ -6,6 +6,7 @@
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_INSPECTOR_H_
 
 #include <fidl/fuchsia.audio.device/cpp/natural_types.h>
+#include <fidl/fuchsia.hardware.audio/cpp/natural_types.h>
 #include <lib/async/dispatcher.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -62,6 +63,9 @@ static constexpr std::string_view kMinFrequency = "min_frequency";
 static constexpr std::string_view kMaxFrequency = "max_frequency";
 
 static constexpr std::string_view kBufferProps = "buffer";
+static constexpr std::string_view kBufferType = "buffer_type";
+static constexpr std::string_view kVmoId = "vmo_id";
+static constexpr std::string_view kVmoInfos = "vmo_infos";
 static constexpr std::string_view kVmoBytes = "allocated_vmo_bytes";
 static constexpr std::string_view kRequestedBytes = "client_request_bytes";
 static constexpr std::string_view kConsumerFrames = "consumer_frames";
@@ -81,6 +85,7 @@ static constexpr std::string_view kObserverServerInstances = "ObserverServer_ins
 static constexpr std::string_view kControlCreatorServerInstances = "ControlCreatorServer_instances";
 static constexpr std::string_view kControlServerInstances = "ControlServer_instances";
 static constexpr std::string_view kRingBufferServerInstances = "RingBufferServer_instances";
+static constexpr std::string_view kPacketStreamServerInstances = "PacketStreamServer_instances";
 static constexpr std::string_view kProviderServerInstances = "ProviderServer_instances";
 static constexpr std::string_view kCreatedAt = "created_at";
 static constexpr std::string_view kDestroyedAt = "destroyed_at";
@@ -119,6 +124,9 @@ class RunningIntervalInspectInstance {
 
   inspect::Node running_interval_node_;
 };
+
+void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
+                     uint32_t channel_count, uint32_t frames_per_second);
 
 // This represents an active instance of the audio driver RingBuffer protocol.
 class RingBufferInspectInstance {
@@ -169,6 +177,10 @@ class PacketStreamInspectInstance {
 
   inspect::Node& inspect_node() { return packet_stream_instance_node_; }
 
+  void RecordBuffer(fuchsia_hardware_audio::BufferType buffer_type,
+                    const std::vector<fuchsia_hardware_audio::VmoInfo>& vmo_infos);
+  void RecordFormat(const fuchsia_audio_device::PacketStreamFormat& format);
+
  private:
   static constexpr std::string_view kClassName = "PacketStreamInspectInstance";
 
@@ -178,6 +190,8 @@ class PacketStreamInspectInstance {
   std::vector<std::shared_ptr<RunningIntervalInspectInstance>> running_intervals_;
 
   inspect::Node buffer_node_;
+  inspect::Node vmo_infos_node_;
+  std::vector<inspect::Node> vmo_nodes_;
   inspect::Node format_node_;
 };
 
@@ -256,6 +270,9 @@ class PacketStreamElement {
   inspect::Node& inspect_node() { return packet_stream_element_node_; }
   std::shared_ptr<PacketStreamInspectInstance> RecordPacketStreamInstance(
       const zx::time& created_at);
+
+  void RecordSupportedFormatSets(
+      const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets);
 
   ElementId element_id() const { return element_id_; }
 
@@ -337,6 +354,12 @@ class DeviceInspectInstance {
 
   std::shared_ptr<PacketStreamElement> RecordPacketStreamElement(
       ElementId element_id, const std::optional<std::string>& element_name);
+  void RecordPacketStreamSupportedFormatSets(
+      ElementId element_id,
+      const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets);
+  void RecordPacketStreamSupportedFormatSets(
+      ElementId element_id,
+      const std::vector<fuchsia_hardware_audio::SupportedEncodings>& format_sets);
   std::shared_ptr<PacketStreamInspectInstance> RecordPacketStreamInstance(
       ElementId element_id, const zx::time& created_at);
 
@@ -436,6 +459,7 @@ class Inspector {
       const zx::time& created_at);
   std::shared_ptr<FidlServerInspectInstance> RecordControlInstance(const zx::time& created_at);
   std::shared_ptr<FidlServerInspectInstance> RecordRingBufferInstance(const zx::time& created_at);
+  std::shared_ptr<FidlServerInspectInstance> RecordPacketStreamInstance(const zx::time& created_at);
 
   std::shared_ptr<ProviderInspectInstance> RecordProviderInspectInstance(
       const zx::time& created_at);
@@ -467,6 +491,7 @@ class Inspector {
   inspect::Node control_creator_servers_root_;
   inspect::Node control_servers_root_;
   inspect::Node ring_buffer_servers_root_;
+  inspect::Node packet_stream_servers_root_;
 
   inspect::Node provider_servers_root_;
 
@@ -478,6 +503,7 @@ class Inspector {
   std::vector<std::shared_ptr<FidlServerInspectInstance>> control_creator_server_instances_;
   std::vector<std::shared_ptr<FidlServerInspectInstance>> control_server_instances_;
   std::vector<std::shared_ptr<FidlServerInspectInstance>> ring_buffer_server_instances_;
+  std::vector<std::shared_ptr<FidlServerInspectInstance>> packet_stream_server_instances_;
 
   std::vector<std::shared_ptr<ProviderInspectInstance>> provider_server_instances_;
 };

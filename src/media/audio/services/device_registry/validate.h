@@ -36,8 +36,6 @@ constexpr zx_rights_t kRequiredOutgoingVmoRights = kRequiredIncomingVmoRights | 
 bool ClientIsValidForDeviceType(const fuchsia_audio_device::DeviceType& device_type,
                                 const fuchsia_audio_device::DriverClient& driver_client);
 
-std::vector<fuchsia_audio_device::PcmFormatSet> TranslateRingBufferFormatSets(
-    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& ring_buffer_format_sets);
 
 bool ValidatePlugState(const fuchsia_hardware_audio::PlugState& plug_state,
                        std::optional<fuchsia_hardware_audio::PlugDetectCapabilities>
@@ -131,9 +129,9 @@ bool ValidatePacketStreamProperties(
 bool ValidatePacketStreamFormat(const fuchsia_hardware_audio::Format2& format);
 bool ValidatePacketStreamFormatSets(
     const std::vector<fuchsia_hardware_audio::SupportedFormats2>& packet_stream_format_sets);
-bool ValidatePacketStreamVmo(const fuchsia_hardware_audio::VmoInfo& vmo_info,
-                             zx_rights_t required_rights,
-                             std::optional<uint64_t> min_size = std::nullopt);
+zx_status_t ValidatePacketStreamVmo(const fuchsia_hardware_audio::VmoInfo& vmo_info,
+                                    zx_rights_t required_rights,
+                                    std::optional<uint64_t> min_size = std::nullopt);
 
 bool ValidateDelayInfo(const fuchsia_hardware_audio::DelayInfo& delay_info);
 

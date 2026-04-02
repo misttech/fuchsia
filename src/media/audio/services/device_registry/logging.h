@@ -103,6 +103,9 @@ inline constexpr bool kLogRegistryServerResponses = false;
 inline constexpr bool kLogRingBufferServerMethods = false;
 inline constexpr bool kLogRingBufferServerResponses = false;
 
+inline constexpr bool kLogPacketStreamServerMethods = false;
+inline constexpr bool kLogPacketStreamServerResponses = false;
+
 std::string UidToString(std::optional<UniqueId> unique_instance_id);
 
 void LogPlugState(const fuchsia_hardware_audio::PlugState& plug_state);

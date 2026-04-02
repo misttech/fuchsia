@@ -25,20 +25,6 @@ namespace fad = fuchsia_audio_device;
 class ObserverServerWarningTest : public AudioDeviceRegistryServerTestBase,
                                   public fidl::AsyncEventHandler<fad::Observer> {
  protected:
-  std::optional<TokenId> WaitForAddedDeviceTokenId(fidl::Client<fad::Registry>& registry_client) {
-    std::optional<TokenId> added_device_id;
-    registry_client->WatchDevicesAdded().Then(
-        [&added_device_id](fidl::Result<fad::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok()) << result.error_value();
-          ASSERT_TRUE(result->devices());
-          ASSERT_EQ(result->devices()->size(), 1u);
-          ASSERT_TRUE(result->devices()->at(0).token_id());
-          added_device_id = *result->devices()->at(0).token_id();
-        });
-    RunLoopUntilIdle();
-    return added_device_id;
-  }
-
   void handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) override {
     FAIL() << "ObserverServerWarningTest: unknown event (Observer) ordinal "
            << metadata.event_ordinal;

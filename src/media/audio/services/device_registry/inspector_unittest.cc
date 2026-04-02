@@ -11,6 +11,7 @@
 #include <lib/inspect/testing/cpp/inspect.h>
 
 #include <algorithm>
+#include <set>
 
 #include <gtest/gtest.h>
 
@@ -71,7 +72,7 @@ TEST_F(InspectorTest, DefaultValues) {
   auto fidl_servers_node = GetChild(&hierarchy, kFidlServers);
   ASSERT_NE(fidl_servers_node, nullptr);
   ASSERT_TRUE(fidl_servers_node->node().properties().empty());
-  ASSERT_EQ(fidl_servers_node->children().size(), 6u);
+  ASSERT_EQ(fidl_servers_node->children().size(), 7u);
 
   auto registry_servers_node = GetChild(fidl_servers_node, kRegistryServerInstances);
   ASSERT_NE(registry_servers_node, nullptr);
@@ -97,6 +98,11 @@ TEST_F(InspectorTest, DefaultValues) {
   ASSERT_NE(ring_buffer_servers_node, nullptr);
   EXPECT_TRUE(ring_buffer_servers_node->node().properties().empty());
   EXPECT_TRUE(ring_buffer_servers_node->children().empty());
+
+  auto packet_stream_servers_node = GetChild(fidl_servers_node, kPacketStreamServerInstances);
+  ASSERT_NE(packet_stream_servers_node, nullptr);
+  EXPECT_TRUE(packet_stream_servers_node->node().properties().empty());
+  EXPECT_TRUE(packet_stream_servers_node->children().empty());
 
   auto provider_servers_node = GetChild(fidl_servers_node, kProviderServerInstances);
   ASSERT_NE(provider_servers_node, nullptr);
@@ -224,40 +230,28 @@ TEST_F(InspectorTest, DetectedDevice) {
   auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
   ASSERT_NE(ps_elements_node, nullptr);
   EXPECT_TRUE(ps_elements_node->node().properties().empty());
-  ASSERT_EQ(ps_elements_node->children().size(), 2u);
+  ASSERT_EQ(ps_elements_node->children().size(), 3u);
 
-  auto first_ps_element = &ps_elements_node->children().front();
-  auto last_ps_element = &ps_elements_node->children().back();
-
-  auto first_ps_id =
-      first_ps_element->node().get_property<UintPropertyValue>(std::string(kElementId))->value();
-  auto last_ps_id =
-      last_ps_element->node().get_property<UintPropertyValue>(std::string(kElementId))->value();
-
-  EXPECT_TRUE((first_ps_id == FakeComposite::kSourcePsElementId &&
-               last_ps_id == FakeComposite::kDestPsElementId) ||
-              (first_ps_id == FakeComposite::kDestPsElementId &&
-               last_ps_id == FakeComposite::kSourcePsElementId));
-
-  if (first_ps_id == FakeComposite::kSourcePsElementId) {
-    EXPECT_EQ(first_ps_element->node()
-                  .get_property<StringPropertyValue>(std::string(kDescription))
-                  ->value(),
-              FakeComposite::kSourcePsElementDescription);
-    EXPECT_EQ(last_ps_element->node()
-                  .get_property<StringPropertyValue>(std::string(kDescription))
-                  ->value(),
-              FakeComposite::kDestPsElementDescription);
-  } else {
-    EXPECT_EQ(first_ps_element->node()
-                  .get_property<StringPropertyValue>(std::string(kDescription))
-                  ->value(),
-              FakeComposite::kDestPsElementDescription);
-    EXPECT_EQ(last_ps_element->node()
-                  .get_property<StringPropertyValue>(std::string(kDescription))
-                  ->value(),
-              FakeComposite::kSourcePsElementDescription);
+  std::set<uint64_t> ps_ids;
+  for (const auto& child : ps_elements_node->children()) {
+    auto id = child.node().get_property<UintPropertyValue>(std::string(kElementId))->value();
+    auto description =
+        child.node().get_property<StringPropertyValue>(std::string(kDescription))->value();
+    if (id == FakeComposite::kSourcePsElementId) {
+      EXPECT_EQ(description, FakeComposite::kSourcePsElementDescription);
+    } else if (id == FakeComposite::kDestPsElementId) {
+      EXPECT_EQ(description, FakeComposite::kDestPsElementDescription);
+    } else if (id == FakeComposite::kSourceDualSupportPsElementId) {
+      EXPECT_EQ(description, FakeComposite::kSourceDualSupportPsElementDescription);
+    } else {
+      ADD_FAILURE() << "Unexpected ps element_id " << id;
+    }
+    ps_ids.insert(id);
   }
+  EXPECT_EQ(ps_ids.size(), 3u);
+  EXPECT_EQ(ps_ids.count(FakeComposite::kSourcePsElementId), 1u);
+  EXPECT_EQ(ps_ids.count(FakeComposite::kDestPsElementId), 1u);
+  EXPECT_EQ(ps_ids.count(FakeComposite::kSourceDualSupportPsElementId), 1u);
 }
 
 // Relevant field: `removed_at` -- found at // root/Devices/[device name]/
@@ -471,6 +465,52 @@ TEST_F(InspectorTest, CreateRingBufferServer) {
                 ->value(),
             before_create.get());
   EXPECT_TRUE(ring_buffer_server_node->children().empty());
+}
+
+// Test `created_at` at root/FIDL_servers/PacketStreamServer_instances/0/
+// We don't test kDestroyedAt because of unpredictable cleanup timing.
+TEST_F(InspectorTest, CreatePacketStreamServer) {
+  set_fake_driver(CreateFakeComposite());
+  auto element_id = FakeComposite::kMaxPacketStreamElementId;
+
+  CreateControlledDevice();
+
+  auto [packet_stream_client_end, packet_stream_server_end] =
+      CreateNaturalAsyncClientOrDie<fuchsia_audio_device::PacketStream>();
+  auto packet_stream_client = fidl::Client<fuchsia_audio_device::PacketStream>(
+      std::move(packet_stream_client_end), dispatcher(), packet_stream_fidl_handler().get());
+  auto before_create = zx::clock::get_monotonic();
+
+  auto packet_stream = adr_service()->CreatePacketStreamServer(std::move(packet_stream_server_end),
+                                                               control()->server_ptr(),
+                                                               device(),  // device_to_control,
+                                                               element_id);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(packet_stream_client.is_valid());
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto fidl_servers_node =
+      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kFidlServers; });
+  ASSERT_NE(fidl_servers_node, hierarchy.children().end());
+
+  auto packet_stream_servers_node = std::find_if(
+      fidl_servers_node->children().begin(), fidl_servers_node->children().end(),
+      [](const inspect::Hierarchy& h) { return h.name() == kPacketStreamServerInstances; });
+  ASSERT_NE(packet_stream_servers_node, fidl_servers_node->children().end());
+  ASSERT_TRUE(packet_stream_servers_node->node().properties().empty());
+  ASSERT_FALSE(packet_stream_servers_node->children().empty());
+
+  auto packet_stream_server_node = packet_stream_servers_node->children().cbegin();
+  EXPECT_EQ(packet_stream_server_node->name(), "0");
+  EXPECT_EQ(packet_stream_server_node->node().properties().size(), 1u);
+  EXPECT_GT(packet_stream_server_node->node()
+                .get_property<IntPropertyValue>(std::string(kCreatedAt))
+                ->value(),
+            before_create.get());
+  EXPECT_TRUE(packet_stream_server_node->children().empty());
 }
 
 // Relevant fields: `created_at`, `destroyed_at` -- at root/FIDL_servers/ProviderServer_instances/0/
@@ -867,7 +907,7 @@ TEST_F(InspectorTest, SupportedDaiFormats) {
 // Relevant fields: `started at` and `stopped at` -- found at
 // root/Devices/[device name]/RingBuffer_elements/0/instance_0/running_intervals/0/
 // We test multiple start/stop calls, to validate running intervals are tracked separately.
-TEST_F(InspectorTest, StartStop) {
+TEST_F(InspectorTest, RingBufferStartStop) {
   AddDeviceAndCreateRingBuffer();
 
   zx::time start_time0;
@@ -1086,7 +1126,7 @@ TEST_F(InspectorTest, SetActiveChannels) {
 
 // Relevant fields: `requested_bytes`, `client_frames`, `driver_frames`, `vmo_bytes` -- found at
 // root/Devices/[device name]/RingBuffer_elements/0/instance_0/.
-TEST_F(InspectorTest, BufferProperties) {
+TEST_F(InspectorTest, RbBufferProperties) {
   AddDeviceAndCreateRingBuffer();
 
   auto hierarchy = GetHierarchy();
@@ -1181,161 +1221,6 @@ TEST_F(InspectorTest, RingBufferFormat) {
       "INT_32");
 }
 
-TEST_F(InspectorTest, RecordSupportedPcmFormatSets) {
-  inspect::Inspector inspector;
-  auto root = inspector.GetRoot().CreateChild("test_root");
-  std::vector<SupportedPcmFormatsRecord> records;
-
-  fad::ChannelAttributes attr0;
-  attr0.min_frequency(20);
-  attr0.max_frequency(20000);
-
-  fad::ChannelAttributes attr1;
-  attr1.min_frequency(100);
-  attr1.max_frequency(15000);
-
-  fad::ChannelSet channel_set0;
-  std::vector<fad::ChannelAttributes> attrs0;
-  attrs0.push_back(std::move(attr0));
-  channel_set0.attributes(std::move(attrs0));
-
-  fad::ChannelSet channel_set1;
-  std::vector<fad::ChannelAttributes> attrs1;
-  attrs1.push_back(std::move(attr1));
-  channel_set1.attributes(std::move(attrs1));
-
-  fad::PcmFormatSet pcm_format_set;
-  std::vector<fuchsia_audio::SampleType> sample_types;
-  sample_types.push_back(fuchsia_audio::SampleType::kInt16);
-  sample_types.push_back(fuchsia_audio::SampleType::kInt32);
-  pcm_format_set.sample_types(std::move(sample_types));
-
-  std::vector<uint32_t> frame_rates;
-  frame_rates.push_back(44100);
-  frame_rates.push_back(48000);
-  pcm_format_set.frame_rates(std::move(frame_rates));
-
-  std::vector<fad::ChannelSet> channel_sets;
-  channel_sets.push_back(std::move(channel_set0));
-  channel_sets.push_back(std::move(channel_set1));
-  pcm_format_set.channel_sets(std::move(channel_sets));
-
-  std::vector<fad::PcmFormatSet> format_sets;
-  format_sets.push_back(std::move(pcm_format_set));
-
-  RecordSupportedPcmFormatSets(root, records, format_sets, "prefix_");
-
-  auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
-  auto* test_root = GetChild(&hierarchy, "test_root");
-  ASSERT_NE(test_root, nullptr);
-  ASSERT_EQ(test_root->children().size(), 1u);
-
-  auto* format_set_0 = GetChild(test_root, "prefix_0");
-  ASSERT_NE(format_set_0, nullptr);
-  EXPECT_EQ(format_set_0->node()
-                .get_property<inspect::StringArrayValue>(std::string(kSampleFormat))
-                ->value(),
-            std::vector<std::string>({"INT_16", "INT_32"}));
-  EXPECT_EQ(format_set_0->node()
-                .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
-                ->value(),
-            std::vector<uint64_t>({44100, 48000}));
-
-  auto* channel_count_node = GetChild(format_set_0, std::string(kChannelCount));
-  ASSERT_NE(channel_count_node, nullptr);
-  ASSERT_EQ(channel_count_node->children().size(), 2u);
-
-  auto* channel_set_0_node = GetChild(channel_count_node, "channel_set_0");
-  ASSERT_NE(channel_set_0_node, nullptr);
-  ASSERT_EQ(channel_set_0_node->children().size(), 1u);
-  auto* channel_0_node = GetChild(channel_set_0_node, "channel_0");
-  ASSERT_NE(channel_0_node, nullptr);
-  EXPECT_EQ(channel_0_node->node()
-                .get_property<inspect::UintPropertyValue>(std::string(kMinFrequency))
-                ->value(),
-            20u);
-  EXPECT_EQ(channel_0_node->node()
-                .get_property<inspect::UintPropertyValue>(std::string(kMaxFrequency))
-                ->value(),
-            20000u);
-}
-
-TEST_F(InspectorTest, RecordSupportedEncodingsSets) {
-  inspect::Inspector inspector;
-  auto root = inspector.GetRoot().CreateChild("test_root");
-  std::vector<SupportedEncodingsRecord> records;
-
-  fha::ChannelAttributes attr0;
-  attr0.min_frequency(30);
-  attr0.max_frequency(18000);
-
-  fha::ChannelSet channel_set0;
-  std::vector<fha::ChannelAttributes> attrs0;
-  attrs0.push_back(std::move(attr0));
-  channel_set0.attributes(std::move(attrs0));
-
-  fha::SupportedEncodings supported_encodings;
-  std::vector<fha::EncodingType> encoding_types;
-  encoding_types.push_back(fha::EncodingType::kAac);
-  supported_encodings.encoding_types(std::move(encoding_types));
-
-  std::vector<uint32_t> frame_rates;
-  frame_rates.push_back(48000);
-  supported_encodings.decoded_frame_rates(std::move(frame_rates));
-
-  supported_encodings.min_encoding_bitrate(64000);
-  supported_encodings.max_encoding_bitrate(128000);
-
-  std::vector<fha::ChannelSet> channel_sets;
-  channel_sets.push_back(std::move(channel_set0));
-  supported_encodings.decoded_channel_sets(std::move(channel_sets));
-
-  std::vector<fha::SupportedEncodings> encodings;
-  encodings.push_back(std::move(supported_encodings));
-
-  RecordSupportedEncodingSets(root, records, encodings, "enc_prefix_");
-
-  auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
-  auto* test_root = GetChild(&hierarchy, "test_root");
-  ASSERT_NE(test_root, nullptr);
-  ASSERT_EQ(test_root->children().size(), 1u);
-
-  auto* enc_set_0 = GetChild(test_root, "enc_prefix_0");
-  ASSERT_NE(enc_set_0, nullptr);
-  EXPECT_EQ(enc_set_0->node()
-                .get_property<inspect::StringArrayValue>(std::string(kEncodingType))
-                ->value(),
-            std::vector<std::string>({"AAC"}));
-  EXPECT_EQ(enc_set_0->node()
-                .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
-                ->value(),
-            std::vector<uint64_t>({48000}));
-  EXPECT_EQ(
-      enc_set_0->node().get_property<inspect::UintPropertyValue>(std::string(kMinBitrate))->value(),
-      64000u);
-  EXPECT_EQ(
-      enc_set_0->node().get_property<inspect::UintPropertyValue>(std::string(kMaxBitrate))->value(),
-      128000u);
-
-  auto* channel_count_node = GetChild(enc_set_0, std::string(kChannelCount));
-  ASSERT_NE(channel_count_node, nullptr);
-  ASSERT_EQ(channel_count_node->children().size(), 1u);
-
-  auto* channel_set_0_node = GetChild(channel_count_node, "channel_set_0");
-  ASSERT_NE(channel_set_0_node, nullptr);
-  ASSERT_EQ(channel_set_0_node->children().size(), 1u);
-  auto* channel_0_node = GetChild(channel_set_0_node, "channel_0");
-  ASSERT_NE(channel_0_node, nullptr);
-  EXPECT_EQ(channel_0_node->node()
-                .get_property<inspect::UintPropertyValue>(std::string(kMinFrequency))
-                ->value(),
-            30u);
-  EXPECT_EQ(channel_0_node->node()
-                .get_property<inspect::UintPropertyValue>(std::string(kMaxFrequency))
-                ->value(),
-            18000u);
-}
-
 TEST_F(InspectorTest, PacketStreamElementInstance) {
   auto before_instance = zx::clock::get_monotonic();
   auto fake_driver = CreateAndAddFakeComposite();
@@ -1348,10 +1233,11 @@ TEST_F(InspectorTest, PacketStreamElementInstance) {
   auto* device_node = devices_node->children().data();
   auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
   ASSERT_NE(ps_elements_node, nullptr);
-  ASSERT_EQ(ps_elements_node->children().size(), 2u);
+  ASSERT_EQ(ps_elements_node->children().size(), 3u);
 
   auto* ps_element_node = ps_elements_node->children().data();
-  ASSERT_EQ(ps_element_node->children().size(), 0u);
+  ASSERT_EQ(ps_element_node->children().size(), 1u);
+  EXPECT_EQ(ps_element_node->children().at(0).name(), kSupportedFormats);
 
   // Now record an instance.
   auto presence = adr_service()->FindDeviceByTokenId(0);
@@ -1377,9 +1263,10 @@ TEST_F(InspectorTest, PacketStreamElementInstance) {
     }
   }
   ASSERT_NE(target_ps_element_node, nullptr);
-  ASSERT_EQ(target_ps_element_node->children().size(), 1u);
-  auto* instance_node = target_ps_element_node->children().data();
-  EXPECT_EQ(instance_node->name(), "instance_0");
+  ASSERT_EQ(target_ps_element_node->children().size(), 2u);
+  EXPECT_EQ(GetChild(target_ps_element_node, kSupportedFormats)->name(), kSupportedFormats);
+  auto* instance_node = GetChild(target_ps_element_node, "instance_0");
+  ASSERT_NE(instance_node, nullptr);
   EXPECT_EQ(instance_node->node()
                 .get_property<inspect::IntPropertyValue>(std::string(kCreatedAt))
                 ->value(),
@@ -1484,5 +1371,367 @@ TEST_F(InspectorTest, SetDaiFormat) {
       format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat))->value(),
       sample_fmt_stream.str());
 }
+
+TEST_F(InspectorTest, SupportedPacketStreamFormats) {
+  // Boot up the device and validate that each PacketStream element has SupportedFormatSets.
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+  ASSERT_LE(devices_node->children().size(), fuchsia_audio_device::kMaxDeviceCount);
+
+  auto device_node = devices_node->children().data();
+  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ASSERT_NE(ps_elements_node, nullptr);
+  ASSERT_FALSE(ps_elements_node->children().empty());
+
+  // Check each different PacketStream element.
+  for (auto idx = 0u; idx < ps_elements_node->children().size(); ++idx) {
+    const auto& ps_element_node = ps_elements_node->children()[idx];
+
+    ASSERT_EQ(ps_element_node.name(), std::to_string(idx));
+    // We depend on this element_id, when checking the specific values below.
+    ASSERT_TRUE(ps_element_node.node().get_property<UintPropertyValue>(std::string(kElementId)));
+    ElementId ps_element_id =
+        ps_element_node.node().get_property<UintPropertyValue>(std::string(kElementId))->value();
+    ASSERT_TRUE(ps_element_id == FakeComposite::kDestPsElementId ||
+                ps_element_id == FakeComposite::kSourcePsElementId ||
+                ps_element_id == FakeComposite::kSourceDualSupportPsElementId);
+    ASSERT_FALSE(ps_element_node.children().empty());
+
+    auto ps_format_sets_node = GetChild(&ps_element_node, kSupportedFormats);
+    ASSERT_NE(ps_format_sets_node, nullptr);
+    ASSERT_EQ(ps_format_sets_node->name(), kSupportedFormats);
+    ASSERT_FALSE(ps_format_sets_node->children().empty());
+    EXPECT_TRUE(ps_format_sets_node->node().properties().empty());
+
+    if (ps_element_id == FakeComposite::kDestPsElementId) {
+      ASSERT_EQ(ps_format_sets_node->children().size(), 2u);
+      auto ps_format_set_node0 = GetChild(ps_format_sets_node, "ps_pcm_format_set_0");
+      ASSERT_NE(ps_format_set_node0, nullptr);
+      EXPECT_EQ(ps_format_set_node0->node().properties().size(), 2u);
+
+      const auto& rates0 = ps_format_set_node0->node()
+                               .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                               ->value();
+      EXPECT_EQ(rates0.at(0), FakeComposite::kDefaultRbFrameRate1);
+
+      const auto& sample_formats0 =
+          ps_format_set_node0->node()
+              .get_property<inspect::StringArrayValue>(std::string(kSampleFormat))
+              ->value();
+      EXPECT_EQ(sample_formats0.at(0), "INT_16");
+
+      auto ps_format_set_node1 = GetChild(ps_format_sets_node, "ps_pcm_format_set_1");
+      ASSERT_NE(ps_format_set_node1, nullptr);
+      EXPECT_EQ(ps_format_set_node1->node().properties().size(), 2u);
+
+      const auto& rates1 = ps_format_set_node1->node()
+                               .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                               ->value();
+      EXPECT_EQ(rates1.at(0), FakeComposite::kDefaultRbFrameRate2);
+
+      const auto& sample_formats1 =
+          ps_format_set_node1->node()
+              .get_property<inspect::StringArrayValue>(std::string(kSampleFormat))
+              ->value();
+      EXPECT_EQ(sample_formats1.at(0), "FLOAT_32");
+    } else if (ps_element_id == FakeComposite::kSourcePsElementId) {
+      auto ps_format_set_node = GetChild(ps_format_sets_node, "ps_encoding_set_0");
+      ASSERT_NE(ps_format_set_node, nullptr);
+      EXPECT_EQ(ps_format_set_node->node().properties().size(), 2u);
+
+      const auto& rates = ps_format_set_node->node()
+                              .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                              ->value();
+      EXPECT_EQ(rates.at(0), FakeComposite::kDefaultPsFrameRate2);
+
+      const auto& encoding_types =
+          ps_format_set_node->node()
+              .get_property<inspect::StringArrayValue>(std::string(kEncodingType))
+              ->value();
+      EXPECT_EQ(encoding_types.at(0), "AAC");
+    } else if (ps_element_id == FakeComposite::kSourceDualSupportPsElementId) {
+      ASSERT_EQ(ps_format_sets_node->children().size(), 2u);
+      auto ps_pcm_format_set_node = GetChild(ps_format_sets_node, "ps_pcm_format_set_0");
+      ASSERT_NE(ps_pcm_format_set_node, nullptr);
+      auto ps_encoding_set_node = GetChild(ps_format_sets_node, "ps_encoding_set_0");
+      ASSERT_NE(ps_encoding_set_node, nullptr);
+
+      // Verify PCM part
+      const auto& rates = ps_pcm_format_set_node->node()
+                              .get_property<inspect::UintArrayValue>(std::string(kFramesPerSecond))
+                              ->value();
+      EXPECT_EQ(rates.at(0), FakeComposite::kDefaultRbFrameRate1);
+
+      // Verify encoding part
+      const auto& encoding_types =
+          ps_encoding_set_node->node()
+              .get_property<inspect::StringArrayValue>(std::string(kEncodingType))
+              ->value();
+      EXPECT_EQ(encoding_types.at(0), "AAC");
+    } else {
+      ADD_FAILURE() << "Unexpected ps element_id " << ps_element_id;
+    }
+  }
+}
+
+TEST_F(InspectorTest, PacketStreamStartStop) {
+  AddDeviceAndCreatePacketStream(FakeComposite::kMaxPacketStreamElementId);
+
+  bool received_callback = false;
+  auto before_start0 = zx::clock::get_monotonic();
+  packet_stream_client()->Start({}).Then(
+      [&received_callback](fidl::Result<fad::PacketStream::Start>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_TRUE(fake_driver()->PacketStreamStarted(element_id()));
+  auto start_time0 = fake_driver()->PacketStreamMonoStartTime(element_id());
+  EXPECT_GT(start_time0.get(), before_start0.get());
+
+  auto before_stop0 = zx::clock::get_monotonic();
+  received_callback = false;
+  packet_stream_client()->Stop({}).Then(
+      [&received_callback](fidl::Result<fad::PacketStream::Stop>& result) {
+        EXPECT_TRUE(result.is_ok()) << result.error_value();
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_FALSE(fake_driver()->PacketStreamStarted(element_id()));
+  auto after_stop0 = zx::clock::get_monotonic();
+
+  // Now we do another start/stop, to validate multiple running intervals.
+  received_callback = false;
+  auto before_start1 = zx::clock::get_monotonic();
+  packet_stream_client()->Start({}).Then(
+      [&received_callback](fidl::Result<fad::PacketStream::Start>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_TRUE(fake_driver()->PacketStreamStarted(element_id()));
+  auto start_time1 = fake_driver()->PacketStreamMonoStartTime(element_id());
+  EXPECT_GT(start_time1.get(), before_start1.get());
+
+  auto before_stop1 = zx::clock::get_monotonic();
+  received_callback = false;
+  packet_stream_client()->Stop({}).Then(
+      [&received_callback](fidl::Result<fad::PacketStream::Stop>& result) {
+        EXPECT_TRUE(result.is_ok()) << result.error_value();
+        received_callback = true;
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_FALSE(fake_driver()->PacketStreamStarted(element_id()));
+  auto after_stop1 = zx::clock::get_monotonic();
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ASSERT_NE(ps_elements_node, nullptr);
+  ASSERT_FALSE(ps_elements_node->children().empty());
+
+  const inspect::Hierarchy* target_ps_element_node = nullptr;
+  for (const auto& child : ps_elements_node->children()) {
+    if (child.node().get_property<UintPropertyValue>(std::string(kElementId))->value() ==
+        element_id()) {
+      target_ps_element_node = &child;
+      break;
+    }
+  }
+  ASSERT_NE(target_ps_element_node, nullptr);
+  ASSERT_FALSE(target_ps_element_node->children().empty());
+
+  auto instance_node = GetChild(target_ps_element_node, "instance_0");
+  ASSERT_NE(instance_node, nullptr);
+  ASSERT_FALSE(instance_node->children().empty());
+
+  auto running_intervals = GetChild(instance_node, kRunningIntervals);
+  ASSERT_NE(running_intervals, nullptr);
+  EXPECT_TRUE(running_intervals->node().properties().empty());
+  ASSERT_EQ(running_intervals->children().size(), 2u);
+
+  auto& first_start_stop = running_intervals->children().cbegin()->node();
+  auto& last_start_stop = running_intervals->children().crbegin()->node();
+
+  EXPECT_EQ(first_start_stop.name(), "0");
+  EXPECT_EQ(first_start_stop.properties().size(), 2u);
+  EXPECT_GT(first_start_stop.get_property<IntPropertyValue>(std::string(kStartedAt))->value(),
+            before_start0.get());
+  EXPECT_LT(first_start_stop.get_property<IntPropertyValue>(std::string(kStartedAt))->value(),
+            before_stop0.get());
+  EXPECT_GT(first_start_stop.get_property<IntPropertyValue>(std::string(kStoppedAt))->value(),
+            before_stop0.get());
+  EXPECT_LT(first_start_stop.get_property<IntPropertyValue>(std::string(kStoppedAt))->value(),
+            after_stop0.get());
+  EXPECT_TRUE(running_intervals->children().cbegin()->children().empty());
+
+  EXPECT_EQ(last_start_stop.name(), "1");
+  EXPECT_EQ(last_start_stop.properties().size(), 2u);
+  EXPECT_GT(last_start_stop.get_property<IntPropertyValue>(std::string(kStartedAt))->value(),
+            before_start1.get());
+  EXPECT_LT(last_start_stop.get_property<IntPropertyValue>(std::string(kStartedAt))->value(),
+            before_stop1.get());
+  EXPECT_GT(last_start_stop.get_property<IntPropertyValue>(std::string(kStoppedAt))->value(),
+            before_stop1.get());
+  EXPECT_LT(last_start_stop.get_property<IntPropertyValue>(std::string(kStoppedAt))->value(),
+            after_stop1.get());
+  EXPECT_TRUE(running_intervals->children().crbegin()->children().empty());
+}
+
+TEST_F(InspectorTest, PsBufferProperties) {
+  AddDeviceAndCreatePacketStream(FakeComposite::kMaxPacketStreamElementId);
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ASSERT_NE(ps_elements_node, nullptr);
+  ASSERT_FALSE(ps_elements_node->children().empty());
+
+  const inspect::Hierarchy* target_ps_element_node = nullptr;
+  for (const auto& child : ps_elements_node->children()) {
+    if (child.node().get_property<UintPropertyValue>(std::string(kElementId))->value() ==
+        element_id()) {
+      target_ps_element_node = &child;
+      break;
+    }
+  }
+  ASSERT_NE(target_ps_element_node, nullptr);
+  ASSERT_FALSE(target_ps_element_node->children().empty());
+
+  auto instance_node = GetChild(target_ps_element_node, "instance_0");
+  ASSERT_NE(instance_node, nullptr);
+  ASSERT_FALSE(instance_node->children().empty());
+
+  auto buffer_node = GetChild(instance_node, kBufferProps);
+  ASSERT_NE(buffer_node, nullptr);
+  ASSERT_EQ(buffer_node->node().name(), kBufferProps);
+
+  EXPECT_FALSE(buffer_node->node().properties().empty());
+  EXPECT_EQ(buffer_node->node().properties().size(), 2u);
+  EXPECT_EQ(
+      buffer_node->node().get_property<StringPropertyValue>(std::string(kBufferType))->value(),
+      "CLIENT_OWNED");
+  EXPECT_EQ(buffer_node->node().get_property<UintPropertyValue>(std::string(kVmoBytes))->value(),
+            8192u);
+
+  auto vmo_infos_node = GetChild(buffer_node, kVmoInfos);
+  ASSERT_NE(vmo_infos_node, nullptr);
+  ASSERT_EQ(vmo_infos_node->children().size(), 1u);
+
+  auto vmo_node = &vmo_infos_node->children().front();
+  EXPECT_EQ(vmo_node->node().get_property<UintPropertyValue>(std::string(kVmoId))->value(), 0u);
+  EXPECT_EQ(vmo_node->node().get_property<UintPropertyValue>(std::string(kVmoBytes))->value(),
+            8192u);
+}
+
+struct ElementAndFormat {
+  ElementId element_id;
+  fuchsia_audio_device::PacketStreamFormat format;
+
+  // Define equality operator for runtime validation
+  bool operator==(const ElementAndFormat& other) const = default;
+};
+
+class InspectorPacketStreamFormatTest : public InspectorTest,
+                                        public ::testing::WithParamInterface<ElementAndFormat> {};
+
+TEST_P(InspectorPacketStreamFormatTest, PacketStreamFormat) {
+  auto param = GetParam();
+  auto element_id = param.element_id;
+  auto format = param.format;
+
+  AddDeviceAndCreatePacketStream(element_id, format);
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ASSERT_NE(ps_elements_node, nullptr);
+  ASSERT_FALSE(ps_elements_node->children().empty());
+
+  const inspect::Hierarchy* target_ps_element_node = nullptr;
+  for (const auto& child : ps_elements_node->children()) {
+    if (child.node().get_property<UintPropertyValue>(std::string(kElementId))->value() ==
+        element_id) {
+      target_ps_element_node = &child;
+      break;
+    }
+  }
+  ASSERT_NE(target_ps_element_node, nullptr);
+  ASSERT_FALSE(target_ps_element_node->children().empty());
+
+  auto instance_node = GetChild(target_ps_element_node, "instance_0");
+  ASSERT_NE(instance_node, nullptr);
+
+  auto format_node = GetChild(instance_node, kFormatProps);
+  ASSERT_NE(format_node, nullptr);
+
+  if (format.pcm_format().has_value()) {
+    EXPECT_EQ(
+        format_node->node().get_property<UintPropertyValue>(std::string(kFramesPerSecond))->value(),
+        *format.pcm_format()->frames_per_second());
+    EXPECT_EQ(
+        format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount))->value(),
+        *format.pcm_format()->channel_count());
+    std::ostringstream ss;
+    ss << *format.pcm_format()->sample_type();
+    EXPECT_EQ(
+        format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat))->value(),
+        ss.str());
+  } else if (format.encoding().has_value()) {
+    std::ostringstream ss;
+    ss << *format.encoding()->encoding_type();
+    EXPECT_EQ(
+        format_node->node().get_property<StringPropertyValue>(std::string(kEncodingType))->value(),
+        ss.str());
+    EXPECT_EQ(
+        format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount))->value(),
+        *format.encoding()->decoded_channel_count());
+    EXPECT_EQ(
+        format_node->node().get_property<UintPropertyValue>(std::string(kFramesPerSecond))->value(),
+        *format.encoding()->decoded_frame_rate());
+  } else {
+    ADD_FAILURE() << "Unknown PacketStreamFormat variant";
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    InspectorPacketStreamFormatTest, InspectorPacketStreamFormatTest,
+    ::testing::Values(
+        ElementAndFormat{FakeComposite::kDestPsElementId,
+                         fad::PacketStreamFormat::WithPcmFormat(FakeComposite::kDefaultPsFormat1)},
+        ElementAndFormat{FakeComposite::kDestPsElementId,
+                         fad::PacketStreamFormat::WithPcmFormat(FakeComposite::kDefaultPsFormat2)},
+        ElementAndFormat{FakeComposite::kSourcePsElementId,
+                         fad::PacketStreamFormat::WithEncoding(FakeComposite::kDefaultPsFormat3)},
+        ElementAndFormat{FakeComposite::kSourceDualSupportPsElementId,
+                         fad::PacketStreamFormat::WithPcmFormat(FakeComposite::kDefaultPsFormat1)},
+        ElementAndFormat{FakeComposite::kSourceDualSupportPsElementId,
+                         fad::PacketStreamFormat::WithEncoding(FakeComposite::kDefaultPsFormat3)}));
 
 }  // namespace media_audio

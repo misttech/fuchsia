@@ -25,6 +25,7 @@ namespace media_audio {
 class ControlCreatorServer;
 class ControlServer;
 class ObserverServer;
+class PacketStreamServer;
 class ProviderServer;
 class RegistryServer;
 class RingBufferServer;
@@ -92,6 +93,12 @@ class AudioDeviceRegistry : public std::enable_shared_from_this<AudioDeviceRegis
   // RingBuffer support
   std::shared_ptr<RingBufferServer> CreateRingBufferServer(
       fidl::ServerEnd<fuchsia_audio_device::RingBuffer> server_end,
+      const std::shared_ptr<ControlServer>& parent,
+      const std::shared_ptr<Device>& device_to_control, ElementId element_id);
+
+  // PacketStream support
+  std::shared_ptr<PacketStreamServer> CreatePacketStreamServer(
+      fidl::ServerEnd<fuchsia_audio_device::PacketStream> server_end,
       const std::shared_ptr<ControlServer>& parent,
       const std::shared_ptr<Device>& device_to_control, ElementId element_id);
 

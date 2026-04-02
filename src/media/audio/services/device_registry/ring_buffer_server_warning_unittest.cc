@@ -37,21 +37,6 @@ class RingBufferServerWarningTest : public AudioDeviceRegistryServerTestBase,
     }};
   }
 
-  std::optional<TokenId> WaitForAddedDeviceTokenId(fidl::Client<fad::Registry>& reg_client) {
-    std::optional<TokenId> added_device_id;
-    reg_client->WatchDevicesAdded().Then(
-        [&added_device_id](fidl::Result<fad::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok()) << result.error_value();
-          ASSERT_TRUE(result->devices());
-          ASSERT_EQ(result->devices()->size(), 1u);
-          ASSERT_TRUE(result->devices()->at(0).token_id());
-          added_device_id = *result->devices()->at(0).token_id();
-        });
-
-    RunLoopUntilIdle();
-    return added_device_id;
-  }
-
   std::pair<fidl::Client<fad::RingBuffer>, fidl::ServerEnd<fad::RingBuffer>>
   CreateRingBufferClient() {
     auto [ring_buffer_client_end, ring_buffer_server_end] =

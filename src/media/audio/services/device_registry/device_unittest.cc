@@ -758,6 +758,103 @@ TEST_F(CompositeTest, DeviceInfoRingBufferFormats) {
             FakeComposite::kDefaultChannelAttributes1MinFrequency);
 }
 
+// Verify that a fake composite is initialized to the expected default PacketStream format sets.
+TEST_F(CompositeTest, DeviceInfoPacketStreamFormats) {
+  auto fake_driver = MakeFakeComposite();
+  auto device = InitializeDeviceForFakeComposite(fake_driver);
+  ASSERT_TRUE(device->is_operational());
+  ASSERT_EQ(device_presence_watcher()->ready_devices().size(), 1u);
+  ASSERT_EQ(device_presence_watcher()->on_ready_count(), 1u);
+
+  ASSERT_TRUE(device->info().has_value());
+  auto info = *device->info();
+
+  // Validate packet stream format sets
+  ASSERT_TRUE(info.packet_stream_format_sets().has_value());
+  ASSERT_FALSE(info.packet_stream_format_sets()->empty());
+  ASSERT_EQ(info.packet_stream_format_sets()->size(), 3u);
+  ASSERT_TRUE(info.packet_stream_format_sets()->at(0).element_id().has_value());
+  ASSERT_TRUE(info.packet_stream_format_sets()->at(1).element_id().has_value());
+  ASSERT_TRUE(info.packet_stream_format_sets()->at(2).element_id().has_value());
+
+  std::optional<std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>>
+      source_ps_format_sets;
+  std::optional<std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>>
+      dest_ps_format_sets;
+  std::optional<std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>>
+      both_ps_format_sets;
+
+  for (const auto& format_set : *info.packet_stream_format_sets()) {
+    ASSERT_TRUE(format_set.element_id().has_value());
+    if (*format_set.element_id() == FakeComposite::kSourcePsElementId) {
+      source_ps_format_sets = format_set.format_sets();
+    } else if (*format_set.element_id() == FakeComposite::kDestPsElementId) {
+      dest_ps_format_sets = format_set.format_sets();
+    } else if (*format_set.element_id() == FakeComposite::kSourceDualSupportPsElementId) {
+      both_ps_format_sets = format_set.format_sets();
+    }
+  }
+
+  auto verify_pcm = [](const fad::PcmFormatSet& pcm_format,
+                       const std::vector<uint32_t>& expected_frame_rates) {
+    ASSERT_TRUE(pcm_format.frame_rates().has_value());
+    EXPECT_THAT(*pcm_format.frame_rates(), testing::ElementsAreArray(expected_frame_rates));
+  };
+
+  auto verify_encoding = [](const fha::SupportedEncodings& encodings,
+                            const fha::SupportedEncodings& expected_encodings) {
+    ASSERT_TRUE(encodings.encoding_types().has_value());
+    EXPECT_THAT(*encodings.encoding_types(),
+                testing::ElementsAreArray(*expected_encodings.encoding_types()));
+    ASSERT_TRUE(encodings.decoded_channel_sets().has_value());
+    EXPECT_EQ(encodings.decoded_channel_sets()->size(),
+              expected_encodings.decoded_channel_sets()->size());
+  };
+
+  ASSERT_TRUE(source_ps_format_sets.has_value());
+  ASSERT_FALSE(source_ps_format_sets->empty());
+  EXPECT_EQ(source_ps_format_sets->size(), 1u);
+  ASSERT_TRUE(source_ps_format_sets->at(0).supported_encodings().has_value());
+  verify_encoding(source_ps_format_sets->at(0).supported_encodings().value(),
+                  FakeComposite::kDefaultEncodingSet2);
+
+  ASSERT_TRUE(dest_ps_format_sets.has_value());
+  ASSERT_FALSE(dest_ps_format_sets->empty());
+  EXPECT_EQ(dest_ps_format_sets->size(), 2u);
+  bool dest_pcm1_found = false;
+  bool dest_pcm2_found = false;
+  for (const auto& format_set : *dest_ps_format_sets) {
+    ASSERT_TRUE(format_set.pcm_format().has_value());
+    if (format_set.pcm_format()->frame_rates() == FakeComposite::kDefaultRbFrameRates1) {
+      dest_pcm1_found = true;
+    } else if (format_set.pcm_format()->frame_rates() == FakeComposite::kDefaultRbFrameRates3) {
+      dest_pcm2_found = true;
+      EXPECT_THAT(*format_set.pcm_format()->sample_types(),
+                  testing::ElementsAre(fuchsia_audio::SampleType::kFloat32));
+    }
+  }
+  EXPECT_TRUE(dest_pcm1_found);
+  EXPECT_TRUE(dest_pcm2_found);
+
+  ASSERT_TRUE(both_ps_format_sets.has_value());
+  ASSERT_FALSE(both_ps_format_sets->empty());
+  EXPECT_EQ(both_ps_format_sets->size(), 2u);
+  bool pcm_found = false;
+  bool encoding_found = false;
+  for (const auto& format_set : *both_ps_format_sets) {
+    if (format_set.pcm_format().has_value()) {
+      verify_pcm(format_set.pcm_format().value(), FakeComposite::kDefaultPsFrameRates1);
+      pcm_found = true;
+    } else if (format_set.supported_encodings().has_value()) {
+      verify_encoding(format_set.supported_encodings().value(),
+                      FakeComposite::kDefaultEncodingSet2);
+      encoding_found = true;
+    }
+  }
+  EXPECT_TRUE(pcm_found);
+  EXPECT_TRUE(encoding_found);
+}
+
 // Verify that a fake composite is initialized to the expected default Dai format sets.
 TEST_F(CompositeTest, DeviceInfoDaiFormats) {
   auto fake_driver = MakeFakeComposite();
@@ -1185,14 +1282,32 @@ TEST_F(CompositeTest, Reset) {
         element_id, safe_format, requested_ring_buffer_bytes,
         [&callback_received](
             const fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo>& result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
+          callback_received = true;
         }));
 
     RunLoopUntilIdle();
     ASSERT_TRUE(callback_received);
   }
   EXPECT_EQ(FakeCompositeRingBuffer::count(), device->ring_buffer_ids().size());
+
+  // Create PacketStreams on every PacketStream element.
+  auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
+  ASSERT_EQ(device->packet_stream_ids().size(), packet_stream_format_sets_by_element.size());
+  for (auto element_id : device->packet_stream_ids()) {
+    for (auto safe_format :
+         SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
+      std::stringstream stream;
+      stream << "Validating CreatePacketStream on element_id " << element_id << " with format "
+             << (safe_format.pcm_format() ? "PCM" : "Encoding");
+      SCOPED_TRACE(stream.str());
+
+      TestCreatePacketStream(device, element_id, safe_format);
+      TestAllocatePacketStreamBuffers(device, element_id);
+    }
+  }
+  EXPECT_EQ(FakeCompositePacketStream::count(), device->packet_stream_ids().size());
+
   ASSERT_FALSE(notify()->device_is_reset());
 
   EXPECT_TRUE(device->Reset());
@@ -1209,6 +1324,9 @@ TEST_F(CompositeTest, Reset) {
 
   // Expect any RingBuffers to drop, eventually. Our Control should still be valid though.
   EXPECT_EQ(FakeCompositeRingBuffer::count(), 0u);
+
+  // Expect any PacketStreams to drop, eventually. Our Control should still be valid though.
+  EXPECT_EQ(FakeCompositePacketStream::count(), 0u);
 
   // Expect TopologyIsChanged if revert-to-default represents a topology change.
 
@@ -1235,9 +1353,9 @@ void CompositeTest::TestCreateRingBuffer(const std::shared_ptr<Device>& device,
       element_id, safe_format, requested_ring_buffer_bytes,
       [&callback_received,
        &rb_info](fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo> result) {
-        callback_received = true;
         ASSERT_TRUE(result.is_ok());
         rb_info = std::move(*result);
+        callback_received = true;
       }));
 
   RunLoopUntilIdle();
@@ -1331,8 +1449,8 @@ TEST_F(CompositeTest, DeviceDroppedRingBuffer) {
         element_id, safe_format, requested_ring_buffer_bytes,
         [&callback_received](
             const fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo>& result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
+          callback_received = true;
         }));
 
     RunLoopUntilIdle();
@@ -1373,8 +1491,8 @@ TEST_F(CompositeTest, RingBufferStartAndStop) {
         element_id, safe_format, requested_ring_buffer_bytes,
         [&callback_received](
             const fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo>& result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
+          callback_received = true;
         }));
 
     RunLoopUntilIdle();
@@ -1385,10 +1503,10 @@ TEST_F(CompositeTest, RingBufferStartAndStop) {
 
     device->StartRingBuffer(element_id,
                             [&callback_received, &start_time](zx::result<zx::time> result) {
-                              callback_received = true;
                               EXPECT_TRUE(result.is_ok());
                               start_time = *result;
                               EXPECT_LT(start_time.get(), zx::clock::get_monotonic().get());
+                              callback_received = true;
                             });
 
     RunLoopUntilIdle();
@@ -1397,8 +1515,8 @@ TEST_F(CompositeTest, RingBufferStartAndStop) {
     callback_received = false;
 
     device->StopRingBuffer(element_id, [&callback_received](zx_status_t status) {
-      callback_received = true;
       EXPECT_EQ(status, ZX_OK);
+      callback_received = true;
     });
 
     RunLoopUntilIdle();
@@ -1432,8 +1550,8 @@ TEST_F(CompositeTest, SetActiveChannelsSupported) {
         element_id, safe_format, requested_ring_buffer_bytes,
         [&callback_received](
             const fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo>& result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
+          callback_received = true;
         }));
 
     RunLoopUntilIdle();
@@ -1445,10 +1563,10 @@ TEST_F(CompositeTest, SetActiveChannelsSupported) {
 
     auto succeeded = device->SetActiveChannels(
         element_id, channel_bitmask, [&callback_received, &set_time](zx::result<zx::time> result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
           set_time = *result;
           EXPECT_LT(set_time.get(), zx::clock::get_monotonic().get());
+          callback_received = true;
         });
 
     RunLoopUntilIdle();
@@ -1462,9 +1580,9 @@ TEST_F(CompositeTest, SetActiveChannelsSupported) {
 
     succeeded = device->SetActiveChannels(
         element_id, channel_bitmask, [&callback_received, &set_time2](zx::result<zx::time> result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
           set_time2 = *result;
+          callback_received = true;
         });
 
     RunLoopUntilIdle();
@@ -1503,8 +1621,8 @@ TEST_F(CompositeTest, SetActiveChannelsUnsupported) {
         element_id, safe_format, requested_ring_buffer_bytes,
         [&callback_received](
             const fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo>& result) {
-          callback_received = true;
           EXPECT_TRUE(result.is_ok());
+          callback_received = true;
         }));
 
     RunLoopUntilIdle();
@@ -1531,8 +1649,8 @@ TEST_F(CompositeTest, SetActiveChannelsUnsupported) {
     // subsequent SetActiveChannels driver calls - returning false means it did NOT call the driver.
     succeeded = device->SetActiveChannels(
         element_id, channel_bitmask, [&callback_received](zx::result<zx::time> result) {
-          callback_received = true;
           FAIL() << "Unexpected response to unsupported SetActiveChannels";
+          callback_received = true;
         });
 
     RunLoopUntilIdle();
@@ -1663,16 +1781,16 @@ void CompositeTest::TestCreatePacketStream(const std::shared_ptr<Device>& device
 
   auto callback_received = false;
 
-  device->ConnectPacketStreamFidl(element_id, safe_format,
-                                  [&callback_received, &device, element_id](zx_status_t status) {
-                                    device->RetrievePacketStreamProperties(element_id);
-                                    callback_received = true;
-                                    ASSERT_EQ(status, ZX_OK);
-                                  });
+  ASSERT_TRUE(device->CreatePacketStream(
+      element_id, safe_format,
+      [&callback_received](const fit::result<fad::ControlCreatePacketStreamError,
+                                             Device::PacketStreamInfo>& result) {
+        ASSERT_TRUE(result.is_ok());
+        callback_received = true;
+      }));
 
   RunLoopUntilIdle();
   ASSERT_TRUE(callback_received);
-  WaitForPacketStreamReady(device, element_id);
   EXPECT_TRUE(PacketStreamIsStopped(device, element_id));
 }
 
@@ -1729,17 +1847,15 @@ void CompositeTest::TestAllocatePacketStreamBuffers(const std::shared_ptr<Device
   auto callback_received = false;
   device->SetPacketStreamBuffers(
       element_id,
-      // AllocateVmosConfig
-      fha::AllocateVmosConfig{{
+      fad::PacketStreamSetupVmoInfo::WithAllocateInfo(fha::AllocateVmosConfig{{
           .min_vmo_size = 8192,
           .vmo_count = 1,
-      }},
+      }}),
       [&callback_received](
-          zx_status_t status,
-          const std::optional<std::vector<fuchsia_hardware_audio::VmoInfo>>& vmo_infos) {
-        ASSERT_EQ(status, ZX_OK);
-        ASSERT_TRUE(vmo_infos.has_value());
-        EXPECT_FALSE(vmo_infos.value().empty());
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->vmo_infos().has_value());
+        EXPECT_FALSE(result->vmo_infos()->empty());
         callback_received = true;
       });
   RunLoopUntilIdle();
@@ -1758,15 +1874,14 @@ void CompositeTest::TestRegisterPacketStreamBuffers(const std::shared_ptr<Device
   auto callback_received = false;
   device->SetPacketStreamBuffers(
       element_id,
-      // RegisterVmosConfig
-      fha::RegisterVmosConfig{{
+      fad::PacketStreamSetupVmoInfo::WithRegisterInfo(fha::RegisterVmosConfig{{
           .vmo_infos = std::move(vmo_infos),
-      }},
+      }}),
       [&callback_received](
-          zx_status_t status,
-          const std::optional<std::vector<fuchsia_hardware_audio::VmoInfo>>& vmo_infos) {
-        ASSERT_EQ(status, ZX_OK);
-        EXPECT_FALSE(vmo_infos.has_value());
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->vmo_infos().has_value());
+        EXPECT_EQ(result->vmo_infos()->size(), 1u);
         callback_received = true;
       });
   RunLoopUntilIdle();
@@ -1782,10 +1897,11 @@ TEST_F(CompositeTest, PacketStreamAllocateBuffers) {
 
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   for (auto element_id : device->packet_stream_ids()) {
-    auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
-    TestCreatePacketStream(device, element_id, safe_format);
-    TestAllocatePacketStreamBuffers(device, element_id);
+    for (auto safe_format :
+         SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
+      TestCreatePacketStream(device, element_id, safe_format);
+      TestAllocatePacketStreamBuffers(device, element_id);
+    }
   }
 }
 
@@ -1798,10 +1914,11 @@ TEST_F(CompositeTest, PacketStreamRegisterBuffers) {
 
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   for (auto element_id : device->packet_stream_ids()) {
-    auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
-    TestCreatePacketStream(device, element_id, safe_format);
-    TestRegisterPacketStreamBuffers(device, element_id);
+    for (auto safe_format :
+         SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
+      TestCreatePacketStream(device, element_id, safe_format);
+      TestRegisterPacketStreamBuffers(device, element_id);
+    }
   }
 }
 
@@ -1815,10 +1932,11 @@ TEST_F(CompositeTest, CreatePacketStreams) {
   // Create PacketStreams on every PacketStream element.
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   for (auto element_id : device->packet_stream_ids()) {
-    auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
-    TestCreatePacketStream(device, element_id, safe_format);
-    TestAllocatePacketStreamBuffers(device, element_id);
+    for (auto safe_format :
+         SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
+      TestCreatePacketStream(device, element_id, safe_format);
+      TestAllocatePacketStreamBuffers(device, element_id);
+    }
   }
   EXPECT_EQ(FakeCompositePacketStream::count(), device->packet_stream_ids().size());
 }
@@ -1835,8 +1953,8 @@ TEST_F(CompositeTest, DeviceDroppedPacketStream) {
   auto element_id = *packet_stream_ids.begin();
 
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
-  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-      element_id, packet_stream_format_sets_by_element);
+  auto safe_format =
+      SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
   TestCreatePacketStream(device, element_id, safe_format);
 
   EXPECT_EQ(FakeCompositePacketStream::count(), 1u);
@@ -1862,30 +1980,31 @@ TEST_F(CompositeTest, PacketStreamStartAndStop) {
   ASSERT_EQ(device->packet_stream_ids().size(), packet_stream_format_sets_by_element.size());
 
   for (auto element_id : device->packet_stream_ids()) {
-    SCOPED_TRACE(std::string("Testing PacketStream Start/Stop: element_id ") +
-                 std::to_string(element_id));
-    auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
-    TestCreatePacketStream(device, element_id, safe_format);
-    TestAllocatePacketStreamBuffers(device, element_id);
+    for (auto safe_format :
+         SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
+      SCOPED_TRACE(std::string("Testing PacketStream Start/Stop: element_id ") +
+                   std::to_string(element_id));
+      TestCreatePacketStream(device, element_id, safe_format);
+      TestAllocatePacketStreamBuffers(device, element_id);
 
-    auto callback_received = false;
-    device->StartPacketStream(element_id, [&callback_received](zx::result<> result) {
-      callback_received = true;
-      EXPECT_TRUE(result.is_ok());
-    });
+      auto callback_received = false;
+      device->StartPacketStream(element_id, [&callback_received](zx::result<> result) {
+        EXPECT_TRUE(result.is_ok());
+        callback_received = true;
+      });
 
-    RunLoopUntilIdle();
-    ASSERT_TRUE(callback_received);
-    callback_received = false;
+      RunLoopUntilIdle();
+      ASSERT_TRUE(callback_received);
+      callback_received = false;
 
-    device->StopPacketStream(element_id, [&callback_received](zx_status_t status) {
-      callback_received = true;
-      EXPECT_EQ(status, ZX_OK);
-    });
+      device->StopPacketStream(element_id, [&callback_received](zx_status_t status) {
+        EXPECT_EQ(status, ZX_OK);
+        callback_received = true;
+      });
 
-    RunLoopUntilIdle();
-    EXPECT_TRUE(callback_received);
+      RunLoopUntilIdle();
+      EXPECT_TRUE(callback_received);
+    }
   }
 }
 
@@ -1951,24 +2070,31 @@ TEST_F(CompositeTest, GetElements) {
   EXPECT_FALSE(*elements->at(3).can_stop());
   EXPECT_EQ(*elements->at(3).description(), *FakeComposite::kSourcePsElement.description());
 
-  EXPECT_EQ(elements->at(4).id(), FakeComposite::kDestRbElementId);
-  EXPECT_EQ(elements->at(4).type(), fhasp::ElementType::kRingBuffer);
+  EXPECT_EQ(elements->at(4).id(), FakeComposite::kSourceDualSupportPsElementId);
+  EXPECT_EQ(elements->at(4).type(), fhasp::ElementType::kPacketStream);
   EXPECT_FALSE(*elements->at(4).can_bypass());
   EXPECT_FALSE(*elements->at(4).can_stop());
-  EXPECT_EQ(*elements->at(4).description(), *FakeComposite::kDestRbElement.description());
+  EXPECT_EQ(*elements->at(4).description(),
+            *FakeComposite::kSourceDualSupportPsElement.description());
 
-  EXPECT_EQ(elements->at(5).id(), FakeComposite::kDestPsElementId);
-  EXPECT_EQ(elements->at(5).type(), fhasp::ElementType::kPacketStream);
+  EXPECT_EQ(elements->at(5).id(), FakeComposite::kDestRbElementId);
+  EXPECT_EQ(elements->at(5).type(), fhasp::ElementType::kRingBuffer);
   EXPECT_FALSE(*elements->at(5).can_bypass());
   EXPECT_FALSE(*elements->at(5).can_stop());
-  EXPECT_EQ(*elements->at(5).description(), *FakeComposite::kDestPsElement.description());
+  EXPECT_EQ(*elements->at(5).description(), *FakeComposite::kDestRbElement.description());
 
-  EXPECT_EQ(elements->at(6).id(), FakeComposite::kMuteElementId);
-  EXPECT_EQ(elements->at(6).type(), fhasp::ElementType::kMute);
-  EXPECT_TRUE(*elements->at(6).can_bypass());
+  EXPECT_EQ(elements->at(6).id(), FakeComposite::kDestPsElementId);
+  EXPECT_EQ(elements->at(6).type(), fhasp::ElementType::kPacketStream);
+  EXPECT_FALSE(*elements->at(6).can_bypass());
   EXPECT_FALSE(*elements->at(6).can_stop());
-  EXPECT_EQ(*elements->at(6).description(), *FakeComposite::kMuteElement.description());
-  EXPECT_FALSE(elements->at(6).type_specific().has_value());
+  EXPECT_EQ(*elements->at(6).description(), *FakeComposite::kDestPsElement.description());
+
+  EXPECT_EQ(elements->at(7).id(), FakeComposite::kMuteElementId);
+  EXPECT_EQ(elements->at(7).type(), fhasp::ElementType::kMute);
+  EXPECT_TRUE(*elements->at(7).can_bypass());
+  EXPECT_FALSE(*elements->at(7).can_stop());
+  EXPECT_EQ(*elements->at(7).description(), *FakeComposite::kMuteElement.description());
+  EXPECT_FALSE(elements->at(7).type_specific().has_value());
 }
 
 // Ensure that we captured the full contents of FakeComposite signalprocessing functionality,

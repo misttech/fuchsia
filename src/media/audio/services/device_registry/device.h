@@ -132,6 +132,23 @@ class Device : public std::enable_shared_from_this<Device> {
       // TODO(https://fxbug.dev/42069015): Consider using media_audio::Format internally.
       const fuchsia_audio::Format& client_format);
 
+  // Determine the full fuchsia_hardware_audio::Format needed for ConnectPacketStreamFidl.
+  // This method expects that the required fields are present.
+  std::optional<fuchsia_hardware_audio::Format2> SupportedPacketStreamDriverFormatForClientFormat(
+      ElementId element_id, const fuchsia_audio_device::PacketStreamFormat& client_format);
+
+  // Matches a client's PCM format requirements against a driver's supported PCM formats.
+  // Returns the best matching PcmFormat (with optimal valid_bits_per_sample) if found.
+  std::optional<fuchsia_hardware_audio::PcmFormat> MatchPcmFormatSet(
+      const std::vector<fuchsia_hardware_audio::SupportedFormats2>& supported_formats,
+      const fuchsia_hardware_audio::PcmFormat& format_template);
+
+  // Checks if a driver's supported encodings match a client's requested encoding.
+  // Returns the matched Encoding if found.
+  std::optional<fuchsia_hardware_audio::Encoding> MatchEncodingSet(
+      const std::vector<fuchsia_hardware_audio::SupportedFormats2>& supported_formats,
+      const fuchsia_hardware_audio::Encoding& client_encoding);
+
   void SetDaiFormat(ElementId element_id, const fuchsia_hardware_audio::DaiFormat& dai_formats);
 
   bool Reset();
@@ -155,6 +172,15 @@ class Device : public std::enable_shared_from_this<Device> {
           fit::result<fuchsia_audio_device::ControlCreateRingBufferError, Device::RingBufferInfo>)>
           create_ring_buffer_callback);
 
+  struct PacketStreamInfo {
+    fuchsia_audio_device::PacketStreamProperties properties;
+  };
+  bool CreatePacketStream(
+      ElementId element_id, const fuchsia_hardware_audio::Format2& format,
+      fit::callback<void(fit::result<fuchsia_audio_device::ControlCreatePacketStreamError,
+                                     Device::PacketStreamInfo>)>
+          create_packet_stream_callback);
+
   // Change the channels that are currently active (powered-up).
   bool SetActiveChannels(ElementId element_id, uint64_t channel_bitmask,
                          fit::callback<void(zx::result<zx::time>)> set_active_channels_callback);
@@ -171,11 +197,9 @@ class Device : public std::enable_shared_from_this<Device> {
 
   // Set the packet stream buffers.
   void SetPacketStreamBuffers(
-      ElementId element_id,
-      std::variant<fuchsia_hardware_audio::AllocateVmosConfig,
-                   fuchsia_hardware_audio::RegisterVmosConfig>
-          setup_strategy,
-      fit::callback<void(zx_status_t, std::optional<std::vector<fuchsia_hardware_audio::VmoInfo>>)>
+      ElementId element_id, fuchsia_audio_device::PacketStreamSetupVmoInfo setup_vmo_info,
+      fit::callback<void(fit::result<fuchsia_audio_device::PacketStreamSetBufferError,
+                                     fuchsia_audio_device::PacketStreamBuffers>)>
           set_buffers_callback);
 
   // Simple accessors
@@ -201,6 +225,11 @@ class Device : public std::enable_shared_from_this<Device> {
   const std::vector<fuchsia_audio_device::ElementRingBufferFormatSet>& ring_buffer_format_sets()
       const {
     return element_ring_buffer_format_sets_;
+  }
+
+  const std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>& packet_stream_format_sets()
+      const {
+    return element_packet_stream_format_sets_;
   }
 
   // TODO(https://fxbug.dev/42069015): Consider using media_audio::Format internally.
@@ -461,8 +490,9 @@ class Device : public std::enable_shared_from_this<Device> {
 
   // Create the driver PacketStream FIDL connection.
   // `callback` is guaranteed to be called.
-  void ConnectPacketStreamFidl(ElementId element_id, fuchsia_hardware_audio::Format2 driver_format,
-                               fit::callback<void(zx_status_t status)> callback);
+  void ConnectPacketStreamFidl(
+      ElementId element_id, fuchsia_hardware_audio::Format2 driver_format,
+      fit::callback<void(fuchsia_audio_device::ControlCreatePacketStreamError status)> callback);
   // Retrieve the underlying PacketStreamProperties (turn_on_delay and needs_cache_...).
   void RetrievePacketStreamProperties(ElementId element_id);
   // Check whether the 3 prerequisites are in place, for creating a client PacketStream connection.
@@ -526,6 +556,8 @@ class Device : public std::enable_shared_from_this<Device> {
       element_driver_ring_buffer_format_sets_;
 
   bool packet_stream_format_sets_retrieved_ = false;
+  std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>
+      element_packet_stream_format_sets_;
   std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>
       element_driver_packet_stream_format_sets_;
 
@@ -599,6 +631,12 @@ class Device : public std::enable_shared_from_this<Device> {
     std::unique_ptr<PacketStreamFidlErrorHandler<fuchsia_hardware_audio::PacketStreamControl>>
         packet_stream_handler;
 
+    fit::callback<void(fit::result<fuchsia_audio_device::ControlCreatePacketStreamError,
+                                   Device::PacketStreamInfo>)>
+        create_packet_stream_callback;
+
+    fuchsia_audio_device::PacketStreamFormat configured_format =
+        fuchsia_audio_device::PacketStreamFormat::WithPcmFormat({});
     std::optional<fuchsia_hardware_audio::BufferType> configured_buffer_type;
 
     std::optional<fuchsia_hardware_audio::PacketStreamProperties> packet_stream_properties;

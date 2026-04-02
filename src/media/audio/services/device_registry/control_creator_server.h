@@ -56,6 +56,8 @@ class ControlCreatorServer : public std::enable_shared_from_this<ControlCreatorS
 
   std::shared_ptr<AudioDeviceRegistry> parent_;
 
+  std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
+
   std::shared_ptr<FidlServerInspectInstance> control_creator_inspect_instance_;
 };
 

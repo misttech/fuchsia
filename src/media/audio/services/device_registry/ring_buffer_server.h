@@ -85,6 +85,8 @@ class RingBufferServer
 
   bool device_dropped_ring_buffer_ = false;
 
+  std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
+
   std::shared_ptr<FidlServerInspectInstance> ring_buffer_inspect_instance_;
 };
 

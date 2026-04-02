@@ -102,35 +102,63 @@ class FakeComposite final
   static const fuchsia_hardware_audio::ChannelAttributes kDefaultChannelAttributes3;
   static const std::vector<fuchsia_hardware_audio::ChannelAttributes> kDefaultChannelAttributesSet1;
   static const std::vector<fuchsia_hardware_audio::ChannelAttributes> kDefaultChannelAttributesSet2;
+  static const std::vector<fuchsia_hardware_audio::ChannelAttributes> kDefaultChannelAttributesSet3;
   static const fuchsia_hardware_audio::ChannelSet kDefaultChannelSet1;
   static const fuchsia_hardware_audio::ChannelSet kDefaultChannelSet2;
+  static const fuchsia_hardware_audio::ChannelSet kDefaultChannelSet3;
   static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultChannelSets1;
   static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultChannelSets2;
+  static const std::vector<fuchsia_hardware_audio::ChannelSet> kDefaultChannelSets3;
 
   static constexpr fuchsia_hardware_audio::SampleFormat kDefaultRbSampleFormat1 =
       fuchsia_hardware_audio::SampleFormat::kPcmSigned;
   static constexpr fuchsia_hardware_audio::SampleFormat kDefaultRbSampleFormat2 =
       fuchsia_hardware_audio::SampleFormat::kPcmSigned;
+  static constexpr fuchsia_hardware_audio::SampleFormat kDefaultRbSampleFormat3 =
+      fuchsia_hardware_audio::SampleFormat::kPcmFloat;
   static const std::vector<fuchsia_hardware_audio::SampleFormat> kDefaultRbSampleFormats1;
   static const std::vector<fuchsia_hardware_audio::SampleFormat> kDefaultRbSampleFormats2;
+  static const std::vector<fuchsia_hardware_audio::SampleFormat> kDefaultRbSampleFormats3;
 
   static constexpr uint8_t kDefaultRbBytesPerSample1 = 2;
   static constexpr uint8_t kDefaultRbBytesPerSample2 = 4;
+  static constexpr uint8_t kDefaultRbBytesPerSample3 = 4;
   static const std::vector<uint8_t> kDefaultRbBytesPerSampleSet1;
   static const std::vector<uint8_t> kDefaultRbBytesPerSampleSet2;
+  static const std::vector<uint8_t> kDefaultRbBytesPerSampleSet3;
 
   static constexpr uint8_t kDefaultRbValidBitsPerSample1 = 16;
   static constexpr uint8_t kDefaultRbValidBitsPerSample2 = 20;
+  static constexpr uint8_t kDefaultRbValidBitsPerSample3 = 32;
   static const std::vector<uint8_t> kDefaultRbValidBitsPerSampleSet1;
   static const std::vector<uint8_t> kDefaultRbValidBitsPerSampleSet2;
+  static const std::vector<uint8_t> kDefaultRbValidBitsPerSampleSet3;
 
   static constexpr uint32_t kDefaultRbFrameRate1 = 48000;
   static constexpr uint32_t kDefaultRbFrameRate2 = 44100;
-  static constexpr uint32_t kDefaultPsFrameRate1 = 48000;
-  static constexpr uint32_t kDefaultPsFrameRate2 = 44100;
+  static constexpr uint32_t kDefaultRbFrameRate3 = 44100;
 
   static const std::vector<uint32_t> kDefaultRbFrameRates1;
   static const std::vector<uint32_t> kDefaultRbFrameRates2;
+  static const std::vector<uint32_t> kDefaultRbFrameRates3;
+
+  static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet1;
+  static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet2;
+  static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet3;
+
+  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultRbFormatSet1;
+  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultRbFormatSet2;
+
+  static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultRbFormatSets1;
+  static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultRbFormatSets2;
+
+  // PacketStreamFormats and format sets
+  //
+  // Note that for PacketStream elements supporting PCM formats, the default
+  // RingBuffer format parameters (SampleFormat, BytesPerSample, ValidBitsPerSample, etc.) are used.
+  static constexpr uint32_t kDefaultPsFrameRate1 = 48000;
+  static constexpr uint32_t kDefaultPsFrameRate2 = 44100;
+
   static const std::vector<uint32_t> kDefaultPsFrameRates1;
   static const std::vector<uint32_t> kDefaultPsFrameRates2;
 
@@ -145,20 +173,21 @@ class FakeComposite final
   static const std::vector<fuchsia_hardware_audio::EncodingType> kDefaultPsEncodingTypes1;
   static const std::vector<fuchsia_hardware_audio::EncodingType> kDefaultPsEncodingTypes2;
 
-  static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet1;
-  static const fuchsia_hardware_audio::PcmSupportedFormats kDefaultPcmRingBufferFormatSet2;
   static const fuchsia_hardware_audio::SupportedEncodings kDefaultEncodingSet1;
   static const fuchsia_hardware_audio::SupportedEncodings kDefaultEncodingSet2;
 
-  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultRbFormatSet1;
-  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultRbFormatSet2;
   static const fuchsia_hardware_audio::SupportedFormats2 kDefaultPsFormatSet1;
   static const fuchsia_hardware_audio::SupportedFormats2 kDefaultPsFormatSet2;
+  static const fuchsia_hardware_audio::SupportedFormats2 kDefaultPsFormatSet3;
 
-  static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultRbFormatSets1;
-  static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultRbFormatSets2;
   static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultPsFormatSets1;
   static const std::vector<fuchsia_hardware_audio::SupportedFormats2> kDefaultPsFormatSets2;
+  static const std::vector<fuchsia_hardware_audio::SupportedFormats2>
+      kSourceDualSupportPsFormatSets;
+
+  static const fuchsia_audio::Format kDefaultPsFormat1;
+  static const fuchsia_audio::Format kDefaultPsFormat2;
+  static const fuchsia_hardware_audio::Encoding kDefaultPsFormat3;
 
   static const std::unordered_map<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>
       kDefaultRbFormatsMap;
@@ -180,10 +209,11 @@ class FakeComposite final
 
   static constexpr ElementId kDestPsElementId = 4;
   static constexpr ElementId kSourcePsElementId = 5;
+  static constexpr ElementId kSourceDualSupportPsElementId = 6;
   static constexpr ElementId kMinPacketStreamElementId = kDestPsElementId;
-  static constexpr ElementId kMaxPacketStreamElementId = kSourcePsElementId;
+  static constexpr ElementId kMaxPacketStreamElementId = kSourceDualSupportPsElementId;
 
-  static constexpr ElementId kMuteElementId = 6;
+  static constexpr ElementId kMuteElementId = 7;
 
   static constexpr ElementId kMinElementId = kSourceDaiElementId;
   static constexpr ElementId kMaxElementId = kMuteElementId;
@@ -194,6 +224,7 @@ class FakeComposite final
   static const std::string kDestRbElementDescription;
   static const std::string kSourcePsElementDescription;
   static const std::string kDestPsElementDescription;
+  static const std::string kSourceDualSupportPsElementDescription;
   static const std::string kMuteElementDescription;
 
   static const fuchsia_hardware_audio_signalprocessing::Element kSourceDaiElement;
@@ -201,17 +232,21 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::Element kDestPsElement;
   static const fuchsia_hardware_audio_signalprocessing::Element kSourceRbElement;
   static const fuchsia_hardware_audio_signalprocessing::Element kSourcePsElement;
+  static const fuchsia_hardware_audio_signalprocessing::Element kSourceDualSupportPsElement;
   static const fuchsia_hardware_audio_signalprocessing::Element kDestDaiElement;
   static const fuchsia_hardware_audio_signalprocessing::Element kMuteElement;
   static const zx::duration kSourceDaiElementProcessingDelay;
   static const zx::duration kSourceRbElementProcessingDelay;
   static const zx::duration kSourcePsElementProcessingDelay;
+  static const zx::duration kSourceDualSupportPsElementProcessingDelay;
   static const zx::duration kDestDaiElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kSourceDaiElementInitState;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestRbElementInitState;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestPsElementInitState;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kSourceRbElementInitState;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kSourcePsElementInitState;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState
+      kSourceDualSupportPsElementInitState;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestDaiElementInitState;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kMuteElementInitState;
   static const std::vector<fuchsia_hardware_audio_signalprocessing::Element> kElements;
@@ -223,8 +258,9 @@ class FakeComposite final
   static constexpr TopologyId kOutputOnlyTopologyId = 13;
   static constexpr TopologyId kPacketStreamOutputTopologyId = 14;
   static constexpr TopologyId kOutputWithMuteTopologyId = 15;
+  static constexpr TopologyId kSourceDualSupportPsOutputTopologyId = 16;
   static constexpr TopologyId kMinTopologyId = kInputOnlyTopologyId;
-  static constexpr TopologyId kMaxTopologyId = kOutputWithMuteTopologyId;
+  static constexpr TopologyId kMaxTopologyId = kSourceDualSupportPsOutputTopologyId;
 
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyInputEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyPsCaptureEdgePair;
@@ -232,12 +268,15 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyPsOutputEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyRbToMuteEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyMuteToDaiEdgePair;
+  static const fuchsia_hardware_audio_signalprocessing::EdgePair
+      kTopologySourceDualSupportPsOutputEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::Topology kInputOnlyTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kPacketStreamCaptureTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kFullDuplexTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kOutputOnlyTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kPacketStreamOutputTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kOutputWithMuteTopology;
+  static const fuchsia_hardware_audio_signalprocessing::Topology kSourceDualSupportPsOutputTopology;
   static const std::vector<fuchsia_hardware_audio_signalprocessing::Topology> kTopologies;
 
   FakeComposite(zx::channel server_end, zx::channel client_end, async_dispatcher_t* dispatcher);
@@ -323,6 +362,9 @@ class FakeComposite final
   void InjectTopologyChange(std::optional<TopologyId> topology_id);
   void InjectElementStateChange(ElementId element_id,
                                 fuchsia_hardware_audio_signalprocessing::ElementState new_state);
+
+  bool PacketStreamStarted(ElementId element_id) const;
+  zx::time PacketStreamMonoStartTime(ElementId element_id) const;
 
  private:
   friend FakeCompositeRingBuffer;

@@ -77,6 +77,8 @@ class RegistryServer
   std::queue<TokenId> devices_removed_since_notify_;
   std::optional<WatchDeviceRemovedCompleter::Async> watch_device_removed_completer_;
 
+  std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
+
   std::shared_ptr<FidlServerInspectInstance> registry_inspect_instance_;
 };
 

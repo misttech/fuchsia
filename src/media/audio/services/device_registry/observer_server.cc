@@ -328,4 +328,15 @@ void ObserverServer::MaybeCompleteWatchElementState(ElementId element_id) {
   }
 }
 
+// We complain but don't close the connection, to accommodate older and newer clients.
+void ObserverServer::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_audio_device::Observer> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  ADR_WARN_METHOD() << "(Observer) ordinal " << metadata.method_ordinal;
+  if (metadata.unknown_method_type == fidl::UnknownMethodType::kTwoWay) {
+    // Pend the completer indefinitely.
+    unknown_method_completers_.emplace_back(completer.ToAsync());
+  }
+}
+
 }  // namespace media_audio

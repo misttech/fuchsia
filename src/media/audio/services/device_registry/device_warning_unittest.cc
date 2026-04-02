@@ -74,35 +74,41 @@ class CompositeWarningTest : public CompositeTest {
       return false;
     }
 
-    auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
+    auto safe_format =
+        SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
 
     bool callback_received = false;
-    DeviceTestBase::ConnectPacketStreamFidl(
-        device, element_id, safe_format,
-        [&callback_received, &device, element_id](zx_status_t status) {
-          EXPECT_EQ(status, ZX_OK);
-          DeviceTestBase::RetrievePacketStreamProperties(device, element_id);
-          callback_received = true;
-        });
+    if (!device->CreatePacketStream(
+            element_id, safe_format,
+            [&callback_received](const fit::result<fad::ControlCreatePacketStreamError,
+                                                   Device::PacketStreamInfo>& result) {
+              ASSERT_TRUE(result.is_ok());
+              callback_received = true;
+            })) {
+      return false;
+    }
 
     RunLoopUntilIdle();
     if (!callback_received) {
       return false;
     }
 
-    WaitForPacketStreamReady(device, element_id);
     return callback_received;
   }
 
   // Creating a PacketStream should fail with `expected_status`.
-  void ExpectCreatePacketStreamError(const std::shared_ptr<Device>& device, ElementId element_id,
-                                     zx_status_t expected_status, const fha::Format2& format) {
+  void ExpectCreatePacketStreamError(
+      const std::shared_ptr<Device>& device, ElementId element_id,
+      fuchsia_audio_device::ControlCreatePacketStreamError expected_status,
+      const fuchsia_hardware_audio::Format2& format) {
     auto response_received = false;
 
-    DeviceTestBase::ConnectPacketStreamFidl(
-        device, element_id, format, [&response_received, expected_status](zx_status_t status) {
-          EXPECT_EQ(status, expected_status);
+    device->CreatePacketStream(
+        element_id, format,
+        [&response_received, expected_status](const fit::result<fad::ControlCreatePacketStreamError,
+                                                                Device::PacketStreamInfo>& result) {
+          ASSERT_TRUE(result.is_error());
+          EXPECT_EQ(result.error_value(), expected_status);
           response_received = true;
         });
 
@@ -416,9 +422,9 @@ TEST_F(CodecWarningTest, CreateRingBufferWrongDeviceType) {
       0, format, min_bytes,
       [&callback_received, &received_error](
           fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo> result) {
-        callback_received = true;
         ASSERT_TRUE(result.is_error());
         received_error = result.error_value();
+        callback_received = true;
       }));
 
   RunLoopUntilIdle();
@@ -732,14 +738,16 @@ TEST_F(CompositeWarningTest, UnresponsiveCreatePacketStreamBecomesError) {
   ASSERT_EQ(device->packet_stream_ids().size(), packet_stream_format_sets_by_element.size());
 
   auto element_id = *device->packet_stream_ids().begin();
-  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-      element_id, packet_stream_format_sets_by_element);
+  auto safe_format =
+      SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
 
   fake_driver->set_unresponsive();
   bool callback_received = false;
-  DeviceTestBase::ConnectPacketStreamFidl(
-      device, element_id, safe_format, [&callback_received](zx_status_t status) {
-        FAIL() << "Unexpected ConnectPacketStreamFidl callback when unresponsive";
+  device->CreatePacketStream(
+      element_id, safe_format,
+      [&callback_received](const fit::result<fad::ControlCreatePacketStreamError,
+                                             Device::PacketStreamInfo>& result) {
+        FAIL() << "Unexpected CreatePacketStream callback when unresponsive";
         callback_received = true;
       });
 
@@ -834,8 +842,8 @@ TEST_F(CompositeWarningTest, UnresponsiveSetActiveChannelsBecomesError) {
   bool callback_received = false;
   fake_driver->set_unresponsive();
   device->SetActiveChannels(rb_element_id, 0x0, [&callback_received](zx::result<zx::time> result) {
-    callback_received = true;
     EXPECT_TRUE(result.is_error());
+    callback_received = true;
   });
 
   RunLoopFor(ShortCmdTimeout());
@@ -862,8 +870,8 @@ TEST_F(CompositeWarningTest, UnresponsiveStartRingBufferBecomesError) {
   bool callback_received = false;
   fake_driver->set_unresponsive();
   device->StartRingBuffer(rb_element_id, [&callback_received](zx::result<zx::time> result) {
-    callback_received = true;
     EXPECT_TRUE(result.is_error());
+    callback_received = true;
   });
 
   RunLoopFor(ShortCmdTimeout());
@@ -893,8 +901,8 @@ TEST_F(CompositeWarningTest, UnresponsiveStopRingBufferBecomesError) {
   bool callback_received = false;
   fake_driver->set_unresponsive();
   device->StopRingBuffer(rb_element_id, [&callback_received](zx_status_t status) {
-    callback_received = true;
     EXPECT_NE(status, ZX_OK);
+    callback_received = true;
   });
 
   RunLoopFor(ShortCmdTimeout());
@@ -915,18 +923,18 @@ TEST_F(CompositeWarningTest, UnresponsiveStopRingBufferBecomesError) {
 TEST_F(CompositeWarningTest, UnresponsiveStartPacketStreamBecomesError) {
   auto fake_driver = MakeFakeComposite();
   auto device = InitializeDeviceForFakeComposite(fake_driver);
-  auto ps_element_id = *device->packet_stream_ids().begin();
-  fake_driver->InjectPacketStreamBufferTypes(
-      ps_element_id, fuchsia_hardware_audio::BufferType::kClientOwned |
-                         fuchsia_hardware_audio::BufferType::kDriverOwned |
-                         fuchsia_hardware_audio::BufferType::kInline);
-  ASSERT_TRUE(CreatePacketStreamForTest(device, ps_element_id));
+  auto element_id = *device->packet_stream_ids().begin();
+  fake_driver->InjectPacketStreamBufferTypes(element_id,
+                                             fuchsia_hardware_audio::BufferType::kClientOwned |
+                                                 fuchsia_hardware_audio::BufferType::kDriverOwned |
+                                                 fuchsia_hardware_audio::BufferType::kInline);
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
 
   bool callback_received = false;
   fake_driver->set_unresponsive();
-  device->StartPacketStream(ps_element_id, [&callback_received](zx::result<> result) {
-    callback_received = true;
+  device->StartPacketStream(element_id, [&callback_received](zx::result<> result) {
     EXPECT_TRUE(result.is_error());
+    callback_received = true;
   });
 
   RunLoopFor(ShortCmdTimeout());
@@ -947,17 +955,17 @@ TEST_F(CompositeWarningTest, UnresponsiveStartPacketStreamBecomesError) {
 TEST_F(CompositeWarningTest, UnresponsiveStopPacketStreamBecomesError) {
   auto fake_driver = MakeFakeComposite();
   auto device = InitializeDeviceForFakeComposite(fake_driver);
-  auto ps_element_id = *device->packet_stream_ids().begin();
-  ASSERT_TRUE(CreatePacketStreamForTest(device, ps_element_id));
+  auto element_id = *device->packet_stream_ids().begin();
+  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
 
   ASSERT_EQ(device_presence_watcher()->ready_devices().size(), 1u);
   ASSERT_EQ(device_presence_watcher()->error_devices().size(), 0u);
 
   bool callback_received = false;
   fake_driver->set_unresponsive();
-  device->StopPacketStream(ps_element_id, [&callback_received](zx_status_t status) {
-    callback_received = true;
+  device->StopPacketStream(element_id, [&callback_received](zx_status_t status) {
     EXPECT_NE(status, ZX_OK);
+    callback_received = true;
   });
 
   RunLoopFor(ShortCmdTimeout());
@@ -987,8 +995,8 @@ TEST_F(CompositeWarningTest, WithoutControlFailsCallsThatRequireControl) {
   ASSERT_TRUE(notify()->codec_format_infos().empty());
   ASSERT_TRUE(notify()->dai_format_errors().empty());
 
-  // All three of the primary Control methods (Reset, SetDaiFormat, CreateRingBuffer) should fail,
-  // if the Device is not controlled.
+  // All three of the primary Control methods (Reset, SetDaiFormat, CreateRingBuffer,
+  // CreatePacketStream) should fail, if the Device is not controlled.
   EXPECT_FALSE(device->Reset());
 
   for (auto dai_id : device->dai_ids()) {
@@ -1010,14 +1018,52 @@ TEST_F(CompositeWarningTest, WithoutControlFailsCallsThatRequireControl) {
         requested_ring_buffer_bytes,
         [&callback_received, &received_error](
             fit::result<fad::ControlCreateRingBufferError, Device::RingBufferInfo> result) {
-          callback_received = true;
           ASSERT_TRUE(result.is_error());
           received_error = result.error_value();
+          callback_received = true;
         }));
 
     RunLoopUntilIdle();
     EXPECT_TRUE(callback_received);
     EXPECT_EQ(received_error, fad::ControlCreateRingBufferError::kOther);
+  }
+
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    auto callback_received = false;
+    auto received_error = fad::ControlCreatePacketStreamError(0);
+    EXPECT_FALSE(device->CreatePacketStream(
+        packet_stream_id,
+        SafeDriverPacketStreamFormats(packet_stream_id, ElementDriverPacketStreamFormatSets(device))
+            .front(),
+        [&callback_received, &received_error](
+            fit::result<fad::ControlCreatePacketStreamError, Device::PacketStreamInfo> result) {
+          ASSERT_TRUE(result.is_error());
+          received_error = result.error_value();
+          callback_received = true;
+        }));
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(callback_received);
+    EXPECT_EQ(received_error, fad::ControlCreatePacketStreamError::kOther);
+  }
+
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    auto callback_received = false;
+    auto received_error = fad::ControlCreatePacketStreamError(0);
+    EXPECT_FALSE(device->CreatePacketStream(
+        packet_stream_id,
+        SafeDriverPacketStreamFormats(packet_stream_id, ElementDriverPacketStreamFormatSets(device))
+            .front(),
+        [&callback_received, &received_error](
+            fit::result<fad::ControlCreatePacketStreamError, Device::PacketStreamInfo> result) {
+          ASSERT_TRUE(result.is_error());
+          received_error = result.error_value();
+          callback_received = true;
+        }));
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(callback_received);
+    EXPECT_EQ(received_error, fad::ControlCreatePacketStreamError::kOther);
   }
 }
 
@@ -1199,10 +1245,11 @@ TEST_F(CompositeWarningTest, CreatePacketStreamInvalidElementId) {
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
   auto element_id = *device->packet_stream_ids().begin();
-  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-      element_id, packet_stream_format_sets_by_element);
+  auto safe_format =
+      SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
 
-  ExpectCreatePacketStreamError(device, -1, ZX_ERR_INVALID_ARGS, safe_format);
+  ExpectCreatePacketStreamError(device, -1, fad::ControlCreatePacketStreamError::kInvalidElementId,
+                                safe_format);
 }
 
 TEST_F(CompositeWarningTest, CreatePacketStreamWrongElementType) {
@@ -1210,18 +1257,18 @@ TEST_F(CompositeWarningTest, CreatePacketStreamWrongElementType) {
   auto device = InitializeDeviceForFakeComposite(fake_driver);
   ASSERT_TRUE(device->is_operational());
   ASSERT_TRUE(SetControl(device));
-
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
-  ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
   auto element_id = *device->packet_stream_ids().begin();
-  auto safe_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-      element_id, packet_stream_format_sets_by_element);
+  auto safe_format =
+      SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
 
   for (auto rb_id : device->ring_buffer_ids()) {
-    ExpectCreatePacketStreamError(device, rb_id, ZX_ERR_WRONG_TYPE, safe_format);
+    ExpectCreatePacketStreamError(
+        device, rb_id, fad::ControlCreatePacketStreamError::kInvalidElementId, safe_format);
   }
   for (auto dai_id : device->dai_ids()) {
-    ExpectCreatePacketStreamError(device, dai_id, ZX_ERR_WRONG_TYPE, safe_format);
+    ExpectCreatePacketStreamError(
+        device, dai_id, fad::ControlCreatePacketStreamError::kInvalidElementId, safe_format);
   }
 }
 
@@ -1235,15 +1282,16 @@ TEST_F(CompositeWarningTest, CreatePacketStreamInvalidFormat) {
   ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
 
   for (auto element_id : device->packet_stream_ids()) {
-    auto invalid_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
+    auto invalid_format =
+        SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
     if (invalid_format.pcm_format()) {
       invalid_format.pcm_format()->number_of_channels(0);
     } else {
       invalid_format.encoding()->decoded_channel_count(0);
     }
 
-    ExpectCreatePacketStreamError(device, element_id, ZX_ERR_INVALID_ARGS, invalid_format);
+    ExpectCreatePacketStreamError(
+        device, element_id, fad::ControlCreatePacketStreamError::kInvalidFormat, invalid_format);
   }
 }
 
@@ -1257,8 +1305,8 @@ TEST_F(CompositeWarningTest, CreatePacketStreamUnsupportedFormat) {
   ASSERT_FALSE(packet_stream_format_sets_by_element.empty());
 
   for (auto element_id : device->packet_stream_ids()) {
-    auto unsupported_format = SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
-        element_id, packet_stream_format_sets_by_element);
+    auto unsupported_format =
+        SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element).front();
     if (unsupported_format.pcm_format()) {
       unsupported_format.pcm_format()->frame_rate(unsupported_format.pcm_format()->frame_rate() -
                                                   1);
@@ -1267,7 +1315,9 @@ TEST_F(CompositeWarningTest, CreatePacketStreamUnsupportedFormat) {
           *unsupported_format.encoding()->decoded_frame_rate() - 1);
     }
 
-    ExpectCreatePacketStreamError(device, element_id, ZX_ERR_NOT_SUPPORTED, unsupported_format);
+    ExpectCreatePacketStreamError(device, element_id,
+                                  fad::ControlCreatePacketStreamError::kFormatMismatch,
+                                  unsupported_format);
   }
 }
 
@@ -1288,11 +1338,12 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersUnsupportedBufferType) {
 
   bool callback_received = false;
   device->SetPacketStreamBuffers(
-      element_id, std::move(register_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+      element_id, fad::PacketStreamSetupVmoInfo::WithRegisterInfo(std::move(register_vmos_config)),
+      [&callback_received](
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(result.error_value(), fad::PacketStreamSetBufferError::kBadStrategy);
         callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_NOT_SUPPORTED);
       });
 
   RunLoopUntilIdle();
@@ -1317,11 +1368,12 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersUnsupportedInlineOnly) {
 
   bool callback_received = false;
   device->SetPacketStreamBuffers(
-      element_id, std::move(allocate_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+      element_id, fad::PacketStreamSetupVmoInfo::WithAllocateInfo(std::move(allocate_vmos_config)),
+      [&callback_received](
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(result.error_value(), fad::PacketStreamSetBufferError::kBadStrategy);
         callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_NOT_SUPPORTED);
       });
 
   RunLoopUntilIdle();
@@ -1341,9 +1393,9 @@ TEST_F(CompositeWarningTest, StartPacketStreamUnconfigured) {
 
   bool callback_received = false;
   device->StartPacketStream(element_id, [&callback_received](zx::result<> result) {
-    callback_received = true;
     ASSERT_TRUE(result.is_error());
     EXPECT_EQ(result.error_value(), ZX_ERR_BAD_STATE);
+    callback_received = true;
   });
 
   RunLoopUntilIdle();
@@ -1370,11 +1422,13 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosInvalidVmoHandle)
 
   bool callback_received = false;
   device->SetPacketStreamBuffers(
-      element_id, std::move(register_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+      element_id, fad::PacketStreamSetupVmoInfo::WithRegisterInfo(std::move(register_vmos_config)),
+
+      [&callback_received](
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(result.error_value(), fad::PacketStreamSetBufferError::kBadVmoConfig);
         callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
       });
 
   RunLoopUntilIdle();
@@ -1406,59 +1460,13 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosInsufficientRight
 
   bool callback_received = false;
   device->SetPacketStreamBuffers(
-      element_id, std::move(register_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+      element_id, fad::PacketStreamSetupVmoInfo::WithRegisterInfo(std::move(register_vmos_config)),
+
+      [&callback_received](
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(result.error_value(), fad::PacketStreamSetBufferError::kInsufficientRights);
         callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
-      });
-
-  RunLoopUntilIdle();
-  EXPECT_TRUE(callback_received);
-}
-
-TEST_F(CompositeWarningTest, SetPacketStreamBuffersAllocateVmosMissingFields) {
-  auto fake_driver = MakeFakeComposite();
-  auto device = InitializeDeviceForFakeComposite(fake_driver);
-  ASSERT_TRUE(device->is_operational());
-  ASSERT_TRUE(SetControl(device));
-
-  auto element_id = *device->packet_stream_ids().begin();
-  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
-
-  fha::AllocateVmosConfig allocate_vmos_config;
-
-  bool callback_received = false;
-  device->SetPacketStreamBuffers(
-      element_id, std::move(allocate_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
-        callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
-      });
-
-  RunLoopUntilIdle();
-  EXPECT_TRUE(callback_received);
-}
-
-TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosMissingFields) {
-  auto fake_driver = MakeFakeComposite();
-  auto device = InitializeDeviceForFakeComposite(fake_driver);
-  ASSERT_TRUE(device->is_operational());
-  ASSERT_TRUE(SetControl(device));
-
-  auto element_id = *device->packet_stream_ids().begin();
-  ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
-
-  fha::RegisterVmosConfig register_vmos_config;
-
-  bool callback_received = false;
-  device->SetPacketStreamBuffers(
-      element_id, std::move(register_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
-        callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
       });
 
   RunLoopUntilIdle();
@@ -1483,11 +1491,13 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersAllocateVmosDriverError) {
 
   bool callback_received = false;
   device->SetPacketStreamBuffers(
-      element_id, std::move(allocate_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+      element_id, fad::PacketStreamSetupVmoInfo::WithAllocateInfo(std::move(allocate_vmos_config)),
+
+      [&callback_received](
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(result.error_value(), fad::PacketStreamSetBufferError::kDeviceError);
         callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_INTERNAL);
       });
 
   RunLoopUntilIdle();
@@ -1517,11 +1527,13 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosDriverError) {
 
   bool callback_received = false;
   device->SetPacketStreamBuffers(
-      element_id, std::move(register_vmos_config),
-      [&callback_received](zx_status_t status,
-                           const std::optional<std::vector<fha::VmoInfo>>& vmo_infos) {
+      element_id, fad::PacketStreamSetupVmoInfo::WithRegisterInfo(std::move(register_vmos_config)),
+
+      [&callback_received](
+          fit::result<fad::PacketStreamSetBufferError, fad::PacketStreamBuffers> result) {
+        ASSERT_TRUE(result.is_error());
+        EXPECT_EQ(result.error_value(), fad::PacketStreamSetBufferError::kDeviceError);
         callback_received = true;
-        EXPECT_EQ(status, ZX_ERR_INTERNAL);
       });
 
   RunLoopUntilIdle();

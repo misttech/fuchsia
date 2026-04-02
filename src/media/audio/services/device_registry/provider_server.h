@@ -56,6 +56,8 @@ class ProviderServer
 
   std::shared_ptr<AudioDeviceRegistry> parent_;
 
+  std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
+
   std::shared_ptr<ProviderInspectInstance> provider_inspect_instance_;
 };
 

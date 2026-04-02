@@ -34,20 +34,6 @@ class ControlServerWarningTest : public AudioDeviceRegistryServerTestBase,
                                  public fidl::AsyncEventHandler<fad::Control>,
                                  public fidl::AsyncEventHandler<fad::RingBuffer> {
  protected:
-  std::optional<TokenId> WaitForAddedDeviceTokenId(fidl::Client<fad::Registry>& registry_client) {
-    std::optional<TokenId> added_device_id;
-    registry_client->WatchDevicesAdded().Then(
-        [&added_device_id](fidl::Result<fad::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok()) << result.error_value();
-          ASSERT_TRUE(result->devices());
-          ASSERT_EQ(result->devices()->size(), 1u);
-          ASSERT_TRUE(result->devices()->at(0).token_id());
-          added_device_id = *result->devices()->at(0).token_id();
-        });
-    RunLoopUntilIdle();
-    return added_device_id;
-  }
-
   // Obtain a control via ControlCreator/Create (not the synthetic CreateTestControlServer method).
   fidl::Client<fad::Control> ConnectToControl(
       fidl::Client<fad::ControlCreator>& control_creator_client, TokenId token_id) {
@@ -109,6 +95,46 @@ class ControlServerCompositeWarningTest : public ControlServerWarningTest {
         fad::DriverClient::WithComposite(fake_driver->Enable()), kClassName));
     RunLoopUntilIdle();
     return fake_driver;
+  }
+
+  void TestCreatePacketStreamBadOptions(std::optional<fad::PacketStreamOptions> bad_options,
+                                        fad::ControlCreatePacketStreamError expected_error) {
+    auto fake_driver = CreateAndEnableDriverWithDefaults();
+    auto registry = CreateTestRegistryServer();
+
+    auto added_id = WaitForAddedDeviceTokenId(registry->client());
+    auto control_creator = CreateTestControlCreatorServer();
+    auto control_client = ConnectToControl(control_creator->client(), *added_id);
+
+    RunLoopUntilIdle();
+    ASSERT_EQ(ControlServer::count(), 1u);
+    auto device = *adr_service()->devices().begin();
+
+    for (auto packet_stream_id : device->packet_stream_ids()) {
+      auto [packet_stream_client_end, packet_stream_server_end] =
+          CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+      bool received_callback = false;
+
+      fad::ControlCreatePacketStreamRequest request;
+      request.element_id(packet_stream_id);
+      request.options(std::move(bad_options));
+      request.packet_stream_server(std::move(packet_stream_server_end));
+
+      control_client->CreatePacketStream(std::move(request))
+          .Then([&received_callback,
+                 expected_error](fidl::Result<fad::Control::CreatePacketStream>& result) {
+            received_callback = true;
+            ASSERT_TRUE(result.is_error());
+            ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
+            EXPECT_EQ(result.error_value().domain_error(), expected_error) << result.error_value();
+          });
+
+      RunLoopUntilIdle();
+      EXPECT_TRUE(received_callback);
+      EXPECT_EQ(ControlServer::count(), 1u);
+    }
+    EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+    EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
   }
 
   void TestCreateRingBufferBadOptions(const std::optional<fad::RingBufferOptions>& bad_options,
@@ -515,6 +541,49 @@ TEST_F(ControlServerCodecWarningTest, CodecStopWhenStopped) {
         ASSERT_TRUE(result.is_error());
         ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
         EXPECT_EQ(result.error_value().domain_error(), fad::ControlCodecStopError::kAlreadyStopped)
+            << result.error_value();
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_EQ(ControlServer::count(), 1u);
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
+}
+
+TEST_F(ControlServerCodecWarningTest, CreatePacketStreamWrongDeviceType) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  (void)WaitForAddedDeviceTokenId(registry->client());
+  auto device = *adr_service()->devices().begin();
+  auto control = CreateTestControlServer(device);
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(RegistryServer::count(), 1u);
+  ASSERT_EQ(ControlServer::count(), 1u);
+  auto [packet_stream_client_end, packet_stream_server_end] =
+      CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+  auto received_callback = false;
+
+  fad::ControlCreatePacketStreamRequest request;
+  request.options(fad::PacketStreamOptions{{
+      .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+          .sample_type = fuchsia_audio::SampleType::kInt16,
+          .channel_count = 2,
+          .frames_per_second = 48000,
+      }}),
+  }});
+  request.packet_stream_server(std::move(packet_stream_server_end));
+
+  control->client()
+      ->CreatePacketStream(std::move(request))
+      .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+        received_callback = true;
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
+        EXPECT_EQ(result.error_value().domain_error(),
+                  fad::ControlCreatePacketStreamError::kWrongDeviceType)
             << result.error_value();
       });
 
@@ -1202,6 +1271,280 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferMissingRingBufferMinBy
                                  fad::ControlCreateRingBufferError::kInvalidMinBytes);
 }
 
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingOptions) {
+  TestCreatePacketStreamBadOptions(std::nullopt,  // entirely missing table
+                                   fad::ControlCreatePacketStreamError::kInvalidOptions);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamEmptyOptions) {
+  TestCreatePacketStreamBadOptions(fad::PacketStreamOptions(),  // entirely empty table
+                                   fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingFormat) {
+  TestCreatePacketStreamBadOptions(fad::PacketStreamOptions{{
+                                       .format = std::nullopt,  // missing
+                                   }},
+                                   fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamEmptyFormat) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{}),  // empty union
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingSampleType) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+              // missing sample_type
+              .channel_count = 2,
+              .frames_per_second = 48000,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadSampleType) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+              .sample_type = fuchsia_audio::SampleType::kFloat64,  // bad value
+              .channel_count = 2,
+              .frames_per_second = 48000,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingPcmChannelCount) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+              .sample_type = fuchsia_audio::SampleType::kInt16,
+              // missing channel_count
+              .frames_per_second = 48000,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadPcmChannelCount) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+              .sample_type = fuchsia_audio::SampleType::kInt16,
+              .channel_count = 7,  // bad value
+              .frames_per_second = 48000,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingFramesPerSecond) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+              .sample_type = fuchsia_audio::SampleType::kInt16,
+              .channel_count = 2,
+              // missing frames_per_second
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadFramesPerSecond) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+              .sample_type = fuchsia_audio::SampleType::kInt16,
+              .channel_count = 2,
+              .frames_per_second = 97531,  // bad value
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingNonPcmChannelCount) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(fha::Encoding{{
+              // missing decoded_channel_count
+              .decoded_frame_rate = 48000,
+              .average_encoding_bitrate = 128000,
+              .encoding_type = fha::EncodingType::kSbc,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadNonPcmChannelCount) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(fha::Encoding{{
+              .decoded_channel_count = 7,  // bad value
+              .decoded_frame_rate = 48000,
+              .average_encoding_bitrate = 128000,
+              .encoding_type = fha::EncodingType::kSbc,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamFormatMismatch) {
+  fha::Encoding encoding(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{});
+  encoding.decoded_channel_count(2);
+  encoding.decoded_frame_rate(48000);
+  encoding.average_encoding_bitrate(128000);
+  encoding.encoding_type(fha::EncodingType::kSbc);
+
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(std::move(encoding)),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingNonPcmFrameRate) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(fha::Encoding{{
+              .decoded_channel_count = 2,
+              // missing decoded_frame_rate
+              .average_encoding_bitrate = 128000,
+              .encoding_type = fha::EncodingType::kSbc,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadNonPcmFrameRate) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(fha::Encoding{{
+              .decoded_channel_count = 2,
+              .decoded_frame_rate = 97531,  // bad value
+              .average_encoding_bitrate = 128000,
+              .encoding_type = fha::EncodingType::kSbc,
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingEncodingType) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(fha::Encoding{{
+              .decoded_channel_count = 2,
+              .decoded_frame_rate = 48000,
+              .average_encoding_bitrate = 128000,
+              // missing encoding_type
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kInvalidFormat);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadEncodingType) {
+  TestCreatePacketStreamBadOptions(
+      fad::PacketStreamOptions{{
+          .format = fad::PacketStreamFormat::WithEncoding(fha::Encoding{{
+              .decoded_channel_count = 2,
+              .decoded_frame_rate = 48000,
+              .average_encoding_bitrate = 128000,
+              .encoding_type = fha::EncodingType(99999),  // bad value
+          }}),
+      }},
+      fad::ControlCreatePacketStreamError::kFormatMismatch);
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamMissingPacketStreamServerEnd) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto control_creator = CreateTestControlCreatorServer();
+  auto control_client = ConnectToControl(control_creator->client(), *added_id);
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(ControlServer::count(), 1u);
+  auto device = *adr_service()->devices().begin();
+  bool received_callback = false;
+
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    fad::ControlCreatePacketStreamRequest request;
+    request.element_id(packet_stream_id);
+    request.options(fad::PacketStreamOptions{{
+        .format =
+            SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets()).front(),
+    }});
+    // missing packet_stream_server
+
+    control_client->CreatePacketStream(std::move(request))
+        .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+          ASSERT_TRUE(result.is_error());
+          ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
+          EXPECT_EQ(result.error_value().domain_error(),
+                    fad::ControlCreatePacketStreamError::kInvalidPacketStream)
+              << result.error_value();
+          received_callback = true;
+        });
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+    EXPECT_EQ(ControlServer::count(), 1u);
+  }
+
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_creator_fidl_error_status().has_value())
+      << *control_creator_fidl_error_status();
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamBadPacketStreamServerEnd) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto control_creator = CreateTestControlCreatorServer();
+  auto device = *adr_service()->devices().begin();
+
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    auto control_client = ConnectToControl(control_creator->client(), *added_id);
+
+    RunLoopUntilIdle();
+    ASSERT_EQ(ControlServer::count(), 1u);
+    bool received_callback = false;
+
+    fad::ControlCreatePacketStreamRequest request;
+    request.element_id(packet_stream_id);
+    request.options(fad::PacketStreamOptions{{
+        .format =
+            SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets()).front(),
+    }});
+    request.packet_stream_server(fidl::ServerEnd<fad::PacketStream>());  // bad value
+
+    control_client->CreatePacketStream(std::move(request))
+        .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+          ASSERT_TRUE(result.is_error());
+          ASSERT_TRUE(result.error_value().is_framework_error()) << result.error_value();
+          EXPECT_EQ(result.error_value().framework_error().status(), ZX_ERR_INVALID_ARGS)
+              << result.error_value();
+          received_callback = true;
+        });
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+    EXPECT_EQ(ControlServer::count(), 0u);
+    ASSERT_TRUE(control_fidl_error_status().has_value());
+    EXPECT_EQ(*control_fidl_error_status(), ZX_ERR_INVALID_ARGS);
+  }
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_creator_fidl_error_status().has_value())
+      << *control_creator_fidl_error_status();
+}
+
 TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWhilePending) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
@@ -1264,6 +1607,102 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWhilePending) {
   EXPECT_FALSE(control_creator_fidl_error_status().has_value())
       << *control_creator_fidl_error_status();
   EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamWhilePending) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto control_creator = CreateTestControlCreatorServer();
+  auto control_client = ConnectToControl(control_creator->client(), *added_id);
+
+  RunLoopUntilIdle();
+  auto device = *adr_service()->devices().begin();
+  ASSERT_EQ(ControlServer::count(), 1u);
+
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    auto [packet_stream_client_end1, packet_stream_server_end1] =
+        CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+    auto [packet_stream_client_end2, packet_stream_server_end2] =
+        CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+    bool received_callback_1 = false, received_callback_2 = false;
+
+    fad::ControlCreatePacketStreamRequest request1;
+    request1.element_id(packet_stream_id);
+    request1.options(fad::PacketStreamOptions{{
+        .format =
+            SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets()).front(),
+    }});
+    request1.packet_stream_server(std::move(packet_stream_server_end1));
+    control_client->CreatePacketStream(std::move(request1))
+        .Then([&received_callback_1](fidl::Result<fad::Control::CreatePacketStream>& result) {
+          received_callback_1 = true;
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+        });
+
+    fad::ControlCreatePacketStreamRequest request2;
+    request2.element_id(packet_stream_id);
+    request2.options(fad::PacketStreamOptions{{
+        .format =
+            SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets()).front(),
+    }});
+    request2.packet_stream_server(std::move(packet_stream_server_end2));
+    control_client->CreatePacketStream(std::move(request2))
+        .Then([&received_callback_2](fidl::Result<fad::Control::CreatePacketStream>& result) {
+          received_callback_2 = true;
+          ASSERT_TRUE(result.is_error());
+          ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
+          EXPECT_EQ(result.error_value().domain_error(),
+                    fad::ControlCreatePacketStreamError::kAlreadyPending)
+              << result.error_value();
+        });
+
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback_1 && received_callback_2);
+  }
+
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
+}
+
+TEST_F(ControlServerCompositeWarningTest, CreatePacketStreamUnknownElementId) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  auto added_id = WaitForAddedDeviceTokenId(registry->client());
+  auto control_creator = CreateTestControlCreatorServer();
+  auto control_client = ConnectToControl(control_creator->client(), *added_id);
+
+  RunLoopUntilIdle();
+  auto device = *adr_service()->devices().begin();
+  ASSERT_EQ(ControlServer::count(), 1u);
+  auto [packet_stream_client_end, packet_stream_server_end] =
+      CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+  ElementId unknown_element_id = -1;
+  bool received_callback = false;
+
+  fad::ControlCreatePacketStreamRequest request;
+  request.element_id(unknown_element_id);
+  request.options(fad::PacketStreamOptions{{
+      .format = SafePacketStreamFormats(*device->packet_stream_ids().begin(),
+                                        device->packet_stream_format_sets())
+                    .front(),
+  }});
+  request.packet_stream_server(std::move(packet_stream_server_end));
+
+  control_client->CreatePacketStream(std::move(request))
+      .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+        received_callback = true;
+        ASSERT_TRUE(result.is_error());
+        ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
+        EXPECT_EQ(result.error_value().domain_error(),
+                  fad::ControlCreatePacketStreamError::kInvalidElementId)
+            << result.error_value();
+      });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
 }
 
 TEST_F(ControlServerCompositeWarningTest, CreateRingBufferUnknownElementId) {

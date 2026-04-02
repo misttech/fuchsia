@@ -16,6 +16,8 @@
 
 #include "src/media/audio/services/device_registry/adr_server_unittest_base.h"
 #include "src/media/audio/services/device_registry/common_unittest.h"
+#include "src/media/audio/services/device_registry/format_utils.h"
+#include "src/media/audio/services/device_registry/packet_stream_server.h"
 #include "src/media/audio/services/device_registry/ring_buffer_server.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_codec.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
@@ -28,20 +30,6 @@ namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 
 class ControlServerTest : public AudioDeviceRegistryServerTestBase {
  protected:
-  std::optional<TokenId> WaitForAddedDeviceTokenId(fidl::Client<fad::Registry>& registry_client) {
-    std::optional<TokenId> added_device_id;
-    registry_client->WatchDevicesAdded().Then(
-        [&added_device_id](fidl::Result<fad::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok()) << result.error_value();
-          ASSERT_TRUE(result->devices().has_value());
-          ASSERT_EQ(result->devices()->size(), 1u);
-          ASSERT_TRUE(result->devices()->at(0).token_id().has_value());
-          added_device_id = result->devices()->at(0).token_id();
-        });
-    RunLoopUntilIdle();
-    return added_device_id;
-  }
-
   // Obtain a control via ControlCreator/Create (not the synthetic CreateTestControlServer method).
   fidl::Client<fad::Control> ConnectToControl(
       fidl::Client<fad::ControlCreator>& control_creator_client, TokenId token_id) {
@@ -87,8 +75,12 @@ class ControlServerCodecTest : public ControlServerTest {
 class ControlServerCompositeTest : public ControlServerTest {
  protected:
   static inline const std::string kClassName = "ControlServerCompositeTest";
-  std::shared_ptr<FakeComposite> CreateAndEnableDriverWithDefaults() {
+  std::shared_ptr<FakeComposite> CreateAndEnableDriverWithDefaults(
+      std::optional<TopologyId> topology_id = FakeComposite::kFullDuplexTopologyId) {
     auto fake_driver = CreateFakeComposite();
+    if (topology_id) {
+      fake_driver->InjectTopologyChange(*topology_id);
+    }
 
     adr_service()->AddDevice(Device::Create(
         adr_service(), dispatcher(), "Test composite name", fad::DeviceType::kComposite,
@@ -178,7 +170,7 @@ TEST_F(ControlServerCodecTest, CodecDropCausesCleanControlServerShutdown) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
 
-  WaitForAddedDeviceTokenId(registry->client());
+  (void)WaitForAddedDeviceTokenId(registry->client());
   auto control = CreateTestControlServer(*adr_service()->devices().begin());
 
   RunLoopUntilIdle();
@@ -642,7 +634,7 @@ TEST_F(ControlServerCompositeTest, ControlCreatorServerShutdownDoesNotAffectCont
 TEST_F(ControlServerCompositeTest, CompositeDropCausesCleanControlServerShutdown) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
-  WaitForAddedDeviceTokenId(registry->client());
+  (void)WaitForAddedDeviceTokenId(registry->client());
   auto control = CreateTestControlServer(*adr_service()->devices().begin());
 
   RunLoopUntilIdle();
@@ -665,7 +657,7 @@ TEST_F(ControlServerCompositeTest, CreateRingBuffer) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
 
-  WaitForAddedDeviceTokenId(registry->client());
+  (void)WaitForAddedDeviceTokenId(registry->client());
   auto control = CreateTestControlServer(*adr_service()->devices().begin());
   auto device = *adr_service()->devices().begin();
 
@@ -737,26 +729,9 @@ TEST_F(ControlServerCompositeTest, CreateRingBuffer) {
           // validate properties - valid_bits_per_sample
           const auto sample_type = *requested_format.sample_type();
           ASSERT_TRUE(result->properties()->valid_bits_per_sample().has_value());
-          switch (sample_type) {
-            case fuchsia_audio::SampleType::kUint8:
-              EXPECT_LE(*result->properties()->valid_bits_per_sample(), 8u);
-              break;
-            case fuchsia_audio::SampleType::kInt16:
-              EXPECT_LE(*result->properties()->valid_bits_per_sample(), 16u);
-              break;
-            case fuchsia_audio::SampleType::kInt32:
-              EXPECT_LE(*result->properties()->valid_bits_per_sample(), 32u);
-              break;
-            case fuchsia_audio::SampleType::kFloat32:
-              EXPECT_LE(*result->properties()->valid_bits_per_sample(), 32u);
-              break;
-            case fuchsia_audio::SampleType::kFloat64:
-              EXPECT_LE(*result->properties()->valid_bits_per_sample(), 64u);
-              break;
-            default:
-              FAIL()
-                  << "Unknown sample_type returned from SafeRingBufferFormatFromElementRingBufferFormatSets";
-          }
+          auto driver_pcm = MapSampleTypeToDriverPcm(sample_type);
+          ASSERT_TRUE(driver_pcm.has_value());
+          EXPECT_LE(*result->properties()->valid_bits_per_sample(), driver_pcm->max_valid_bits);
         });
 
     RunLoopUntilIdle();
@@ -771,11 +746,201 @@ TEST_F(ControlServerCompositeTest, CreateRingBuffer) {
 }
 
 // Verify that the Control lives, even if the client drops its child RingBuffer.
+TEST_F(ControlServerCompositeTest, CreatePacketStream) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  (void)WaitForAddedDeviceTokenId(registry->client());
+  auto control = CreateTestControlServer(*adr_service()->devices().begin());
+  auto device = *adr_service()->devices().begin();
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(RegistryServer::count(), 1u);
+  ASSERT_EQ(ControlServer::count(), 1u);
+
+  // First set the topology to one that includes the output PacketStream.
+  control->client()
+      ->SetTopology(FakeComposite::kPacketStreamOutputTopologyId)
+      .Then([](auto& result) { ASSERT_TRUE(result.is_ok()); });
+  std::optional<TopologyId> current_topology;
+  while (current_topology != FakeComposite::kPacketStreamOutputTopologyId) {
+    bool received = false;
+    control->client()->WatchTopology().Then([&](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      current_topology = result->topology_id();
+      received = true;
+    });
+    RunLoopUntilIdle();
+    ASSERT_TRUE(received);
+  }
+
+  // Validate every PacketStream on this device, across all supported formats.
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    for (auto requested_format :
+         SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets())) {
+      auto [packet_stream_client_end, packet_stream_server_end] =
+          CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+      bool received_callback = false;
+
+      auto packet_stream_client = fidl::Client<fad::PacketStream>(
+          std::move(packet_stream_client_end), dispatcher(), packet_stream_fidl_handler().get());
+
+      fad::ControlCreatePacketStreamRequest request;
+      request.element_id(packet_stream_id);
+      request.options(fad::PacketStreamOptions{{.format = requested_format}});
+      request.packet_stream_server(std::move(packet_stream_server_end));
+
+      control->client()
+          ->CreatePacketStream(std::move(request))
+          .Then([&received_callback, requested_format,
+                 packet_stream_id](fidl::Result<fad::Control::CreatePacketStream>& result) {
+            received_callback = true;
+            ASSERT_TRUE(result.is_ok()) << result.error_value();
+
+            // validate properties
+            ASSERT_TRUE(result->properties());
+            if (packet_stream_id == FakeComposite::kSourcePsElementId) {
+              ASSERT_TRUE(result->properties()->data_sink());
+              EXPECT_TRUE(result->properties()->data_sink()->is_valid());
+            }
+
+            ASSERT_TRUE(result->properties()->format());
+            EXPECT_EQ(*result->properties()->format(), requested_format);
+
+            // validate properties - valid_bits_per_sample
+            if (requested_format.pcm_format().has_value()) {
+              const auto sample_type = *requested_format.pcm_format()->sample_type();
+              ASSERT_TRUE(result->properties()->valid_bits_per_sample().has_value());
+              auto driver_pcm = MapSampleTypeToDriverPcm(sample_type);
+              ASSERT_TRUE(driver_pcm.has_value());
+              EXPECT_LE(*result->properties()->valid_bits_per_sample(), driver_pcm->max_valid_bits);
+            }
+          });
+
+      RunLoopUntilIdle();
+      EXPECT_TRUE(received_callback);
+    }
+  }
+
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
+}
+
+// Verify that the Control lives, even if the client drops its child PacketStream.
+TEST_F(ControlServerCompositeTest, ClientPacketStreamDropDoesNotAffectControl) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  (void)WaitForAddedDeviceTokenId(registry->client());
+  auto control = CreateTestControlServer(*adr_service()->devices().begin());
+  auto device = *adr_service()->devices().begin();
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(RegistryServer::count(), 1u);
+  ASSERT_EQ(ControlServer::count(), 1u);
+
+  // Validate every PacketStream on this device.
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    for (auto requested_format :
+         SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets())) {
+      auto [packet_stream_client_end, packet_stream_server_end] =
+          CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+      bool received_callback = false;
+
+      auto packet_stream_client = fidl::Client<fad::PacketStream>(
+          std::move(packet_stream_client_end), dispatcher(), packet_stream_fidl_handler().get());
+
+      fad::ControlCreatePacketStreamRequest request;
+      request.element_id(packet_stream_id);
+      request.options(fad::PacketStreamOptions{{.format = requested_format}});
+      request.packet_stream_server(std::move(packet_stream_server_end));
+
+      control->client()
+          ->CreatePacketStream(std::move(request))
+          .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+            received_callback = true;
+            ASSERT_TRUE(result.is_ok()) << result.error_value();
+          });
+
+      RunLoopUntilIdle();
+      EXPECT_TRUE(received_callback);
+      // Let our PacketStream client connection drop.
+      (void)packet_stream_client.UnbindMaybeGetEndpoint();
+
+      // Wait for the PacketStreamServer to destruct.
+      while (PacketStreamServer::count() > 0u) {
+        RunLoopUntilIdle();
+      }
+    }
+  }
+
+  // Allow the ControlServer to destruct, if it (erroneously) wants to.
+  RunLoopUntilIdle();
+  EXPECT_EQ(ControlServer::count(), 1u);
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
+}
+
+// Verify that the Control lives, even if the driver drops its PacketStream connection.
+TEST_F(ControlServerCompositeTest, DriverPacketStreamDropDoesNotAffectControl) {
+  auto fake_driver = CreateAndEnableDriverWithDefaults();
+  auto registry = CreateTestRegistryServer();
+
+  (void)WaitForAddedDeviceTokenId(registry->client());
+  auto device = *adr_service()->devices().begin();
+  auto control = CreateTestControlServer(*adr_service()->devices().begin());
+
+  RunLoopUntilIdle();
+  ASSERT_EQ(RegistryServer::count(), 1u);
+  ASSERT_EQ(ControlServer::count(), 1u);
+
+  // Validate every PacketStream on this device.
+  for (auto packet_stream_id : device->packet_stream_ids()) {
+    for (auto requested_format :
+         SafePacketStreamFormats(packet_stream_id, device->packet_stream_format_sets())) {
+      auto [packet_stream_client_end, packet_stream_server_end] =
+          CreateNaturalAsyncClientOrDie<fad::PacketStream>();
+      bool received_callback = false;
+
+      fad::ControlCreatePacketStreamRequest request;
+      request.element_id(packet_stream_id);
+      request.options(fad::PacketStreamOptions{{.format = requested_format}});
+      request.packet_stream_server(std::move(packet_stream_server_end));
+
+      control->client()
+          ->CreatePacketStream(std::move(request))
+          .Then([&received_callback](fidl::Result<fad::Control::CreatePacketStream>& result) {
+            ASSERT_TRUE(result.is_ok()) << result.error_value();
+            received_callback = true;
+          });
+
+      RunLoopUntilIdle();
+      EXPECT_EQ(PacketStreamServer::count(), 1u);
+      EXPECT_TRUE(received_callback);
+
+      // Drop the driver PacketStream connection.
+      fake_driver->DropPacketStream(packet_stream_id);
+
+      // Wait for the PacketStreamServer to destruct.
+      while (PacketStreamServer::count() > 0u) {
+        RunLoopUntilIdle();
+      }
+    }
+  }
+
+  // Allow the ControlServer to destruct, if it (erroneously) wants to.
+  RunLoopUntilIdle();
+  EXPECT_EQ(ControlServer::count(), 1u);
+  EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
+  EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
+}
+
+// Verify that the Control lives, even if the client drops its child RingBuffer.
 TEST_F(ControlServerCompositeTest, ClientRingBufferDropDoesNotAffectControl) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
 
-  WaitForAddedDeviceTokenId(registry->client());
+  (void)WaitForAddedDeviceTokenId(registry->client());
   auto control = CreateTestControlServer(*adr_service()->devices().begin());
   auto device = *adr_service()->devices().begin();
 
@@ -831,7 +996,7 @@ TEST_F(ControlServerCompositeTest, DriverRingBufferDropDoesNotAffectControl) {
   auto fake_driver = CreateAndEnableDriverWithDefaults();
   auto registry = CreateTestRegistryServer();
 
-  WaitForAddedDeviceTokenId(registry->client());
+  (void)WaitForAddedDeviceTokenId(registry->client());
   auto device = *adr_service()->devices().begin();
   auto control = CreateTestControlServer(*adr_service()->devices().begin());
 

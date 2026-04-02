@@ -339,7 +339,10 @@ void RingBufferServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_audio_device::RingBuffer> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   ADR_WARN_METHOD() << "unknown method (RingBuffer) ordinal " << metadata.method_ordinal;
-  completer.Close(ZX_ERR_NOT_SUPPORTED);
+  if (metadata.unknown_method_type == fidl::UnknownMethodType::kTwoWay) {
+    // Pend the completer indefinitely.
+    unknown_method_completers_.emplace_back(completer.ToAsync());
+  }
 }
 
 }  // namespace media_audio

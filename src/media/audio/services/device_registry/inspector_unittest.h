@@ -21,6 +21,9 @@ namespace media_audio {
 
 // This provides unittest functions for Inspector and its child classes.
 class InspectorTest : public AudioDeviceRegistryServerTestBase {
+ public:
+  InspectorTest() : ps_format_(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{}) {}
+
  private:
   static inspect::Hierarchy InnerGetHierarchy() {
     auto& component_inspector = Inspector::Singleton()->component_inspector();
@@ -66,22 +69,6 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
     return fake_driver;
   }
 
-  std::optional<TokenId> WaitForAddedDeviceTokenId(
-      fidl::Client<fuchsia_audio_device::Registry>& registry_client) {
-    std::optional<TokenId> added_device_id;
-    registry_client->WatchDevicesAdded().Then(
-        [&added_device_id](
-            fidl::Result<fuchsia_audio_device::Registry::WatchDevicesAdded>& result) mutable {
-          ASSERT_TRUE(result.is_ok()) << result.error_value();
-          ASSERT_TRUE(result->devices().has_value());
-          ASSERT_EQ(result->devices()->size(), 1u);
-          ASSERT_TRUE(result->devices()->at(0).token_id().has_value());
-          added_device_id = result->devices()->at(0).token_id();
-        });
-    RunLoopUntilIdle();
-    return added_device_id;
-  }
-
   void CreateControlledDevice() {
     device_ = Device::Create(
         adr_service(), dispatcher(), "Test composite name",
@@ -99,6 +86,81 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
     control_ = CreateTestControlServer(device_);
     RunLoopUntilIdle();
     ASSERT_EQ(ControlServer::count(), 1u);
+  }
+
+  // PacketStream testcase setup, used in a number of PacketStream-related unittests
+  // Must be saved: fake_driver/device/control/packet_stream_client/packet_stream
+  void AddDeviceAndCreatePacketStream(
+      ElementId element_id,
+      std::optional<fuchsia_audio_device::PacketStreamFormat> format = std::nullopt) {
+    fake_driver_ = CreateFakeComposite();
+    element_id_ = element_id;
+    fake_driver()->InjectPacketStreamBufferTypes(element_id_,
+                                                 fuchsia_hardware_audio::BufferType::kClientOwned);
+
+    if (element_id == FakeComposite::kDestPsElementId) {
+      fake_driver()->InjectTopologyChange(FakeComposite::kPacketStreamCaptureTopologyId);
+    } else if (element_id == FakeComposite::kSourcePsElementId) {
+      fake_driver()->InjectTopologyChange(FakeComposite::kPacketStreamOutputTopologyId);
+    } else if (element_id == FakeComposite::kSourceDualSupportPsElementId) {
+      fake_driver()->InjectTopologyChange(FakeComposite::kSourceDualSupportPsOutputTopologyId);
+    }
+
+    CreateControlledDevice();
+
+    auto [packet_stream_client_end, packet_stream_server_end] =
+        CreateNaturalAsyncClientOrDie<fuchsia_audio_device::PacketStream>();
+
+    packet_stream_client_ = fidl::Client<fuchsia_audio_device::PacketStream>(
+        std::move(packet_stream_client_end), dispatcher(), packet_stream_fidl_handler().get());
+    bool received_callback = false;
+
+    if (format.has_value()) {
+      ps_format_ = std::move(*format);
+    } else {
+      ps_format_ =
+          SafePacketStreamFormats(element_id_, device()->packet_stream_format_sets()).front();
+    }
+    fuchsia_audio_device::ControlCreatePacketStreamRequest request;
+    request.element_id(element_id_);
+    request.options(fuchsia_audio_device::PacketStreamOptions{{
+        .format = ps_format_,
+    }});
+    request.packet_stream_server(std::move(packet_stream_server_end));
+
+    control()
+        ->client()
+        ->CreatePacketStream(std::move(request))
+        .Then([&received_callback](
+                  fidl::Result<fuchsia_audio_device::Control::CreatePacketStream>& result) {
+          EXPECT_TRUE(result.is_ok()) << result.error_value();
+          received_callback = true;
+        });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+    EXPECT_TRUE(packet_stream_client_.is_valid());
+
+    zx::vmo vmo;
+    ASSERT_EQ(zx::vmo::create(8192, 0, &vmo), ZX_OK);
+
+    std::vector<fuchsia_hardware_audio::VmoInfo> vmo_infos;
+    vmo_infos.push_back(fuchsia_hardware_audio::VmoInfo{{.id = 0, .vmo = std::move(vmo)}});
+    received_callback = false;
+
+    packet_stream_client()
+        ->SetBuffers(fuchsia_audio_device::PacketStreamSetBuffersRequest{{
+            .vmo_info = fuchsia_audio_device::PacketStreamSetupVmoInfo::WithRegisterInfo(
+                fuchsia_hardware_audio::RegisterVmosConfig{{
+                    .vmo_infos = std::move(vmo_infos),
+                }}),
+        }})
+        .Then([&received_callback](
+                  fidl::Result<fuchsia_audio_device::PacketStream::SetBuffers>& result) {
+          EXPECT_TRUE(result.is_ok()) << result.error_value();
+          received_callback = true;
+        });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
   }
 
   // RingBuffer testcase setup, used in a number of RingBuffer-related unittests
@@ -149,6 +211,12 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
   ElementId element_id() const { return element_id_; }
   std::unique_ptr<TestServerAndNaturalAsyncClient<ControlServer>>& control() { return control_; }
 
+  fuchsia_audio_device::PacketStreamFormat ps_format() const { return ps_format_; }
+
+  fidl::Client<fuchsia_audio_device::PacketStream>& packet_stream_client() {
+    return packet_stream_client_;
+  }
+
   fuchsia_audio::Format rb_format() const { return rb_format_; }
   uint32_t requested_ring_buffer_bytes() const { return requested_ring_buffer_bytes_; }
 
@@ -169,6 +237,9 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
 
   fidl::Client<fuchsia_audio_device::RingBuffer> ring_buffer_client_;
   std::optional<fuchsia_audio::RingBuffer> ring_buffer_;
+
+  fuchsia_audio_device::PacketStreamFormat ps_format_;
+  fidl::Client<fuchsia_audio_device::PacketStream> packet_stream_client_;
 
   std::shared_ptr<FidlThread> server_thread_;
 };

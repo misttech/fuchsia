@@ -33,6 +33,7 @@
 #include "src/media/audio/services/device_registry/basic_types.h"
 #include "src/media/audio/services/device_registry/common.h"
 #include "src/media/audio/services/device_registry/device_presence_watcher.h"
+#include "src/media/audio/services/device_registry/format_utils.h"
 #include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/observer_notify.h"
 #include "src/media/audio/services/device_registry/signal_processing_utils.h"
@@ -765,10 +766,12 @@ void Device::DropPacketStream(ElementId element_id) {
   //
   ps_record.start_time.reset();  // Pause, if we are started.
 
+  ps_record.create_packet_stream_callback = nullptr;
   ps_record.inspect_instance = nullptr;
 
   ps_record.driver_format.reset();  // ... making us re-call ConnectToPacketStreamFidl ...
   ps_record.configured_buffer_type = std::nullopt;
+  ps_record.configured_format = fuchsia_audio_device::PacketStreamFormat::WithPcmFormat({});
 
   ps_record.packet_stream_properties.reset();  // ... and GetProperties ...
 
@@ -1715,7 +1718,7 @@ void Device::RetrievePacketStreamFormatSets() {
 
   ADR_LOG_METHOD(kLogCompositeFidlCalls);
   packet_stream_ids_ = packet_streams(sig_proc_element_map_);
-
+  element_packet_stream_format_sets_.clear();
   auto remaining_packet_stream_ids =
       std::make_shared<std::unordered_set<ElementId>>(packet_stream_ids_);
 
@@ -1734,6 +1737,8 @@ void Device::RetrievePacketStreamFormatSets() {
           }
           AddPacketStreamFormatSet(id, remaining_packet_stream_ids,
                                    result->packet_stream_formats());
+          inspect()->RecordPacketStreamSupportedFormatSets(
+              id, TranslatePacketStreamFormatSets(result->packet_stream_formats()));
         });
   }
   if (remaining_packet_stream_ids->empty()) {
@@ -1748,17 +1753,26 @@ void Device::AddPacketStreamFormatSet(
   std::string context{"GetPacketStreamFormats (element "};
   context.append(std::to_string(id)).append(") response");
   if (has_error()) {
-    ADR_WARN_OBJECT() << "device already has error during " << context;
     return;
   }
   if (!ValidatePacketStreamFormatSets(format_set)) {
     OnError(ZX_ERR_INVALID_ARGS);
     return;
   }
-
+  auto translated_formats = TranslatePacketStreamFormatSets(format_set);
+  if (translated_formats.empty()) {
+    ADR_WARN_OBJECT() << "Failed to translate " << context;
+    OnError(ZX_ERR_INVALID_ARGS);
+    return;
+  }
   ADR_LOG_METHOD(kLogCompositeFidlResponses) << context;
 
+  fuchsia_audio_device::ElementPacketStreamFormatSet element_packet_stream_format_set;
+  element_packet_stream_format_set.element_id(id);
+  element_packet_stream_format_set.format_sets(translated_formats);
+
   element_driver_packet_stream_format_sets_.emplace_back(id, format_set);
+  element_packet_stream_format_sets_.push_back(std::move(element_packet_stream_format_set));
   remaining_packet_stream_ids->erase(id);
   if (remaining_packet_stream_ids->empty()) {
     ADR_LOG_OBJECT(kLogCompositeFidlResponses) << context << ": success";
@@ -1859,6 +1873,7 @@ fad::Info Device::CreateDeviceInfo() {
         .unique_instance_id(composite_properties_->unique_id())
         // Optional for Composite; absent for Codec:
         .ring_buffer_format_sets(element_ring_buffer_format_sets_)
+        .packet_stream_format_sets(element_packet_stream_format_sets_)
         // Required for Codec; optional for Composite:
         .dai_format_sets(element_dai_format_sets_)
         // Required for Composite; absent for Codec:
@@ -1918,42 +1933,14 @@ zx::result<zx::clock> Device::GetReadOnlyClock() const {
 // This method expects that the required fields are present.
 std::optional<fha::Format2> Device::SupportedRingBufferDriverFormatForClientFormat(
     ElementId element_id, const fuchsia_audio::Format& client_format) {
-  fha::SampleFormat driver_sample_format;
-  uint8_t bytes_per_sample, max_valid_bits;
-  auto client_sample_type = *client_format.sample_type();
-  auto channel_count = *client_format.channel_count();
-  auto frame_rate = *client_format.frames_per_second();
-
-  switch (client_sample_type) {
-    case fuchsia_audio::SampleType::kUint8:
-      driver_sample_format = fha::SampleFormat::kPcmUnsigned;
-      max_valid_bits = 8;
-      bytes_per_sample = 1;
-      break;
-    case fuchsia_audio::SampleType::kInt16:
-      driver_sample_format = fha::SampleFormat::kPcmSigned;
-      max_valid_bits = 16;
-      bytes_per_sample = 2;
-      break;
-    case fuchsia_audio::SampleType::kInt32:
-      driver_sample_format = fha::SampleFormat::kPcmSigned;
-      max_valid_bits = 32;
-      bytes_per_sample = 4;
-      break;
-    case fuchsia_audio::SampleType::kFloat32:
-      driver_sample_format = fha::SampleFormat::kPcmFloat;
-      max_valid_bits = 32;
-      bytes_per_sample = 4;
-      break;
-    case fuchsia_audio::SampleType::kFloat64:
-      driver_sample_format = fha::SampleFormat::kPcmFloat;
-      max_valid_bits = 64;
-      bytes_per_sample = 8;
-      break;
-    default:
-      FX_CHECK(false) << "Unhandled fuchsia_audio::SampleType: "
-                      << static_cast<uint32_t>(client_sample_type);
+  auto driver_pcm = MapSampleTypeToDriverPcm(*client_format.sample_type());
+  if (!driver_pcm) {
+    FX_CHECK(false) << "Unhandled fuchsia_audio::SampleType: "
+                    << static_cast<uint32_t>(*client_format.sample_type());
   }
+
+  uint32_t channel_count = *client_format.channel_count();
+  uint32_t frame_rate = *client_format.frames_per_second();
 
   std::vector<fha::SupportedFormats2> driver_ring_buffer_format_sets;
   for (const auto& element_entry_pair : element_driver_ring_buffer_format_sets_) {
@@ -1966,53 +1953,178 @@ std::optional<fha::Format2> Device::SupportedRingBufferDriverFormatForClientForm
     ADR_WARN_METHOD() << "no driver ring_buffer_format_set found for element_id " << element_id;
     return {};
   }
-  // If format/bytes/rate/channels all match, save the highest valid_bits within our limit.
-  uint8_t best_valid_bits = 0;
-  for (const auto& ring_buffer_format_set : driver_ring_buffer_format_sets) {
-    if (ring_buffer_format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
-      continue;
-    }
-    const auto pcm_format_set = ring_buffer_format_set.pcm_supported_formats().value();
-    if (std::count_if(
-            pcm_format_set.sample_formats()->begin(), pcm_format_set.sample_formats()->end(),
-            [driver_sample_format](const auto& f) { return f == driver_sample_format; }) &&
-        std::count_if(pcm_format_set.bytes_per_sample()->begin(),
-                      pcm_format_set.bytes_per_sample()->end(),
-                      [bytes_per_sample](const auto& bs) { return bs == bytes_per_sample; }) &&
-        std::count_if(pcm_format_set.frame_rates()->begin(), pcm_format_set.frame_rates()->end(),
-                      [frame_rate](const auto& fr) { return fr == frame_rate; }) &&
-        std::count_if(pcm_format_set.channel_sets()->begin(), pcm_format_set.channel_sets()->end(),
-                      [channel_count](const fha::ChannelSet& cs) {
-                        return cs.attributes()->size() == channel_count;
-                      })) {
-      std::for_each(pcm_format_set.valid_bits_per_sample()->begin(),
-                    pcm_format_set.valid_bits_per_sample()->end(),
-                    [max_valid_bits, &best_valid_bits](uint8_t v_bits) {
-                      if (v_bits <= max_valid_bits) {
-                        best_valid_bits = std::max(best_valid_bits, v_bits);
-                      }
-                    });
-    }
-  }
 
-  if (!best_valid_bits) {
+  fha::PcmFormat format_template{{
+      .number_of_channels = static_cast<uint8_t>(channel_count),
+      .sample_format = driver_pcm->sample_format,
+      .bytes_per_sample = driver_pcm->bytes_per_sample,
+      .valid_bits_per_sample = driver_pcm->max_valid_bits,
+      .frame_rate = frame_rate,
+  }};
+
+  auto best_pcm_format = MatchPcmFormatSet(driver_ring_buffer_format_sets, format_template);
+  if (!best_pcm_format) {
     ADR_WARN_METHOD() << "no intersection for client format: "
                       << static_cast<uint16_t>(channel_count) << "-chan " << frame_rate << "hz "
-                      << client_sample_type;
+                      << *client_format.sample_type();
     return {};
   }
 
   ADR_LOG_METHOD(kLogRingBufferMethods)
       << "successful match for client format: " << channel_count << "-chan " << frame_rate << "hz "
-      << client_sample_type << " (valid_bits " << static_cast<uint16_t>(best_valid_bits) << ")";
+      << *client_format.sample_type() << " (valid_bits "
+      << static_cast<uint16_t>(best_pcm_format->valid_bits_per_sample()) << ")";
 
-  return fha::Format2::WithPcmFormat(fha::PcmFormat{{
-      .number_of_channels = static_cast<uint8_t>(channel_count),
-      .sample_format = driver_sample_format,
-      .bytes_per_sample = bytes_per_sample,
-      .valid_bits_per_sample = best_valid_bits,
-      .frame_rate = frame_rate,
-  }});
+  return fha::Format2::WithPcmFormat(*best_pcm_format);
+}
+
+// Determine the full fuchsia_hardware_audio::Format2 needed for ConnectPacketStreamFidl.
+// This method expects that the required fields are present.
+std::optional<fha::Format2> Device::SupportedPacketStreamDriverFormatForClientFormat(
+    ElementId element_id, const fad::PacketStreamFormat& client_format) {
+  std::vector<fha::SupportedFormats2> driver_packet_stream_format_sets;
+  for (const auto& element_entry_pair : element_driver_packet_stream_format_sets_) {
+    if (element_entry_pair.first == element_id) {
+      driver_packet_stream_format_sets = element_entry_pair.second;
+      break;
+    }
+  }
+  if (driver_packet_stream_format_sets.empty()) {
+    ADR_WARN_METHOD() << "no driver packet_stream_format_set found for element_id " << element_id;
+    return {};
+  }
+
+  if (client_format.pcm_format()) {
+    const auto& pcm_format = client_format.pcm_format().value();
+    auto driver_pcm = MapSampleTypeToDriverPcm(*pcm_format.sample_type());
+    if (!driver_pcm) {
+      FX_CHECK(false) << "Unhandled fuchsia_audio::SampleType: "
+                      << static_cast<uint32_t>(*pcm_format.sample_type());
+    }
+    uint32_t channel_count = *pcm_format.channel_count();
+    uint32_t frame_rate = *pcm_format.frames_per_second();
+
+    fha::PcmFormat format_template{{
+        .number_of_channels = static_cast<uint8_t>(channel_count),
+        .sample_format = driver_pcm->sample_format,
+        .bytes_per_sample = driver_pcm->bytes_per_sample,
+        .valid_bits_per_sample = driver_pcm->max_valid_bits,
+        .frame_rate = frame_rate,
+    }};
+
+    auto best_pcm_format = MatchPcmFormatSet(driver_packet_stream_format_sets, format_template);
+    if (!best_pcm_format) {
+      ADR_WARN_METHOD() << "no supported driver format found for client format";
+      return {};
+    }
+
+    return fha::Format2::WithPcmFormat(*best_pcm_format);
+  } else {
+    if (!client_format.encoding()) {
+      ADR_WARN_METHOD() << "client format missing both pcm_format and encoding";
+      return {};
+    }
+    const auto& encoding = client_format.encoding().value();
+
+    auto matched_encoding = MatchEncodingSet(driver_packet_stream_format_sets, encoding);
+    if (matched_encoding) {
+      return fha::Format2::WithEncoding(*matched_encoding);
+    }
+    ADR_WARN_METHOD() << "no supported driver encoding found for client encoding";
+    return {};
+  }
+}
+
+std::optional<fha::PcmFormat> Device::MatchPcmFormatSet(
+    const std::vector<fha::SupportedFormats2>& supported_formats,
+    const fha::PcmFormat& format_template) {
+  std::optional<fha::PcmFormat> best_pcm_format;
+  for (const auto& supported_format : supported_formats) {
+    if (supported_format.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
+      continue;
+    }
+    const auto& pcm_formats = supported_format.pcm_supported_formats().value();
+    const auto& sample_formats = *pcm_formats.sample_formats();
+    const auto& bytes_samples = *pcm_formats.bytes_per_sample();
+    const auto& frame_rates = *pcm_formats.frame_rates();
+    const auto& channel_sets = *pcm_formats.channel_sets();
+
+    if (std::count(sample_formats.begin(), sample_formats.end(), format_template.sample_format()) &&
+        std::count(bytes_samples.begin(), bytes_samples.end(),
+                   format_template.bytes_per_sample()) &&
+        std::count(frame_rates.begin(), frame_rates.end(), format_template.frame_rate()) &&
+        std::count_if(
+            channel_sets.begin(), channel_sets.end(),
+            [channel_count = format_template.number_of_channels()](const fha::ChannelSet& cs) {
+              return cs.attributes()->size() == channel_count;
+            })) {
+      uint8_t best_valid_bits = 0;
+      for (auto v_bits : *pcm_formats.valid_bits_per_sample()) {
+        if (v_bits <= format_template.valid_bits_per_sample()) {
+          best_valid_bits = std::max(best_valid_bits, v_bits);
+        }
+      }
+      if (best_valid_bits > 0) {
+        if (!best_pcm_format || best_valid_bits > best_pcm_format->valid_bits_per_sample()) {
+          best_pcm_format = format_template;
+          best_pcm_format->valid_bits_per_sample(best_valid_bits);
+        }
+      }
+    }
+  }
+  return best_pcm_format;
+}
+
+std::optional<fha::Encoding> Device::MatchEncodingSet(
+    const std::vector<fha::SupportedFormats2>& supported_formats, const fha::Encoding& encoding) {
+  for (const auto& supported_format : supported_formats) {
+    if (supported_format.Which() != fha::SupportedFormats2::Tag::kSupportedEncodings) {
+      continue;
+    }
+    const auto& encodings = supported_format.supported_encodings().value();
+
+    bool match = false;
+    if (encodings.encoding_types()) {
+      for (auto enc_type : *encodings.encoding_types()) {
+        if (enc_type == encoding.encoding_type()) {
+          match = true;
+          break;
+        }
+      }
+    }
+    if (!match) {
+      continue;
+    }
+
+    match = false;
+    if (encodings.decoded_channel_sets()) {
+      for (const auto& channel_set : *encodings.decoded_channel_sets()) {
+        if (channel_set.attributes()->size() == encoding.decoded_channel_count()) {
+          match = true;
+          break;
+        }
+      }
+    }
+    if (!match) {
+      continue;
+    }
+
+    match = false;
+    if (encodings.decoded_frame_rates()) {
+      for (auto rate : *encodings.decoded_frame_rates()) {
+        if (rate == encoding.decoded_frame_rate()) {
+          match = true;
+          break;
+        }
+      }
+    }
+    if (!match) {
+      continue;
+    }
+
+    return encoding;
+  }
+  return std::nullopt;
 }
 
 // If the optional<weak_ptr> is set AND the weak_ptr can be locked to its shared_ptr, then the
@@ -2285,6 +2397,10 @@ bool Device::Reset() {
       // We shouldn't need to expressly change their state in any way, reset any hanging gets
       // or clear 'ring_buffer_map_'. Upon receiving the DeviceDroppedRingBuffer notifications,
       // we destroy the client RingBuffer connections, and they will re-create them.
+      //
+      // We expect the same for PacketStreams: DeviceDroppedPacketStream(element_id) should be
+      // received from the driver for all PacketStreams. Upon receiving these notifications, we
+      // destroy the client PacketStream connections, and they will re-create them.
 
       // For each DAI node with DaiFormat set, explicitly reset its state. ADR does this because the
       // driver has no way of conveying that a DaiFormat has changed (or is no longer set).
@@ -2426,6 +2542,8 @@ bool Device::CodecStop() {
   return true;
 }
 
+// Expects the caller to have already checked if the RingBuffer has already been created,
+// or if a Create request is already pending, and to have validated the format arguments.
 // This method guarantees to call create_ring_buffer_callback (immediately or asynchronously).
 // For certain unrecoverable errors, OnError is called as well.
 bool Device::CreateRingBuffer(
@@ -2508,6 +2626,86 @@ bool Device::CreateRingBuffer(
         RetrieveRingBufferProperties(element_id);
         RetrieveRingBufferDelayInfo(element_id);
       });
+
+  return true;
+}
+
+// Expects the caller to have already checked if the PacketStream has already been created,
+// or if a Create request is already pending, and to have validated the format arguments.
+// This method guarantees to call create_packet_stream_callback (immediately or asynchronously).
+// For certain unrecoverable errors, OnError is called as well.
+bool Device::CreatePacketStream(
+    ElementId element_id, const fha::Format2& format,
+    fit::callback<void(fit::result<fad::ControlCreatePacketStreamError, Device::PacketStreamInfo>)>
+        create_packet_stream_callback) {
+  if (!GetControlNotify()) {
+    ADR_WARN_METHOD() << "Device is not yet controlled: cannot CreatePacketStream";
+    create_packet_stream_callback(fit::error(fad::ControlCreatePacketStreamError::kOther));
+    return false;
+  }
+
+  if (!is_composite()) {
+    ADR_WARN_METHOD() << "Incorrect device_type " << device_type_ << ": cannot CreatePacketStream";
+    create_packet_stream_callback(
+        fit::error(fad::ControlCreatePacketStreamError::kWrongDeviceType));
+    return false;
+  }
+
+  if (has_error()) {
+    ADR_WARN_METHOD() << "device already has an error";
+    // We need not invoke create_packet_stream_callback: this device is in the process of being
+    // unwound. The client has already received a HasError notification for this device.
+    return false;
+  }
+  FX_CHECK(is_operational());
+  ADR_LOG_METHOD(kLogPacketStreamMethods);
+
+  if (!packet_stream_ids_.contains(element_id)) {
+    ADR_WARN_METHOD() << "No PacketStream element found for id " << element_id
+                      << ": cannot CreatePacketStream";
+    create_packet_stream_callback(
+        fit::error(fad::ControlCreatePacketStreamError::kInvalidElementId));
+    return false;
+  }
+
+  // Here, we detect all the error cases that we can, before calling into the driver.
+  if (!ValidatePacketStreamFormat(format)) {
+    create_packet_stream_callback(fit::error(fad::ControlCreatePacketStreamError::kInvalidFormat));
+    return false;
+  }
+
+  if (format.pcm_format().has_value()) {
+    auto bytes_per_sample = format.pcm_format()->bytes_per_sample();
+    auto sample_format = format.pcm_format()->sample_format();
+    if (!ValidateSampleFormatCompatibility(bytes_per_sample, sample_format)) {
+      create_packet_stream_callback(
+          fit::error(fad::ControlCreatePacketStreamError::kInvalidFormat));
+      return false;
+    }
+  }
+
+  if (!PacketStreamFormatIsSupported(element_id, element_packet_stream_format_sets_, format)) {
+    ADR_WARN_METHOD() << "PacketStream format not supported";
+    create_packet_stream_callback(fit::error(fad::ControlCreatePacketStreamError::kFormatMismatch));
+    return false;
+  }
+
+  packet_stream_map_.erase(element_id);
+
+  // This method creates the packet_stream map entry, upon success.
+  ConnectPacketStreamFidl(element_id, format,
+                          [this, element_id, cb = std::move(create_packet_stream_callback)](
+                              fuchsia_audio_device::ControlCreatePacketStreamError status) mutable {
+                            if (status != fad::ControlCreatePacketStreamError(0)) {
+                              cb(fit::error(status));
+                              return;
+                            }
+
+                            auto& packet_stream = packet_stream_map_.find(element_id)->second;
+                            packet_stream.create_packet_stream_callback = std::move(cb);
+
+                            RetrievePacketStreamProperties(element_id);
+                          });
 
   return true;
 }
@@ -2625,14 +2823,10 @@ void Device::ConnectRingBufferFidl(
       });
 }
 
-void Device::ConnectPacketStreamFidl(ElementId element_id, fha::Format2 driver_format,
-                                     fit::callback<void(zx_status_t status)> callback) {
+void Device::ConnectPacketStreamFidl(
+    ElementId element_id, fha::Format2 driver_format,
+    fit::callback<void(fad::ControlCreatePacketStreamError status)> callback) {
   ADR_LOG_METHOD(kLogPacketStreamMethods || kLogPacketStreamFidlCalls);
-
-  if (!ValidatePacketStreamFormat(driver_format)) {
-    callback(ZX_ERR_INVALID_ARGS);
-    return;
-  }
 
   // We use kDefaultLongCmdTimeout here, as we don't clear the timeout until CreatePacketStream,
   // GetProperties and GetPacketStreamSink (for outgoing streams) calls have all completed.
@@ -2650,55 +2844,95 @@ void Device::ConnectPacketStreamFidl(ElementId element_id, fha::Format2 driver_f
         if (result.is_error()) {
           ClearCommandTimeout();
 
-          zx_status_t status = ZX_OK;
+          fad::ControlCreatePacketStreamError error;
           bool is_device_error = false;
 
           // The `fuchsia.hardware.audio.DriverError` is mapped to
-          // `zx_status_t` here.
-          // TODO(puneetha): Map to fuchsia.audio.device specific errors when API is updated.
+          // `fuchsia.audio.device.ControlCreatePacketStreamError` here.
+          // `kFatalError` is mapped to `kDeviceError`, which is not retryable.
+          // All other errors are considered retryable.
           if (result.error_value().is_domain_error()) {
             switch (result.error_value().domain_error()) {
               case fha::DriverError::kInvalidArgs:
-                status = ZX_ERR_INVALID_ARGS;
+                error = fad::ControlCreatePacketStreamError::kBadPacketStreamOption;
                 break;
               case fha::DriverError::kNotSupported:
-                status = ZX_ERR_NOT_SUPPORTED;
+                error = fad::ControlCreatePacketStreamError::kFormatMismatch;
                 break;
               case fha::DriverError::kWrongType:
-                status = ZX_ERR_WRONG_TYPE;
+                error = fad::ControlCreatePacketStreamError::kWrongDeviceType;
                 break;
               case fha::DriverError::kFatalError:
                 is_device_error = SetDeviceErrorOnFidlError(result, context.c_str());
                 FX_CHECK(is_device_error)
                     << "Invalid error interpretation. Fatal error should be considered a device error.";
-                status = ZX_ERR_INTERNAL;
+                error = fad::ControlCreatePacketStreamError::kDeviceError;
                 break;
               case fha::DriverError::kShouldWait:
-                status = ZX_ERR_SHOULD_WAIT;
-                break;
+                [[fallthrough]];
               case fha::DriverError::kInternalError:
                 [[fallthrough]];
               default:
-                status = ZX_ERR_INTERNAL;
+                error = fad::ControlCreatePacketStreamError::kOther;
                 break;
             }
           } else {
             // For a framework error, let the generic handler deal with it.
             is_device_error = SetDeviceErrorOnFidlError(result, context.c_str());
-            status = ZX_ERR_INTERNAL;
+            if (is_device_error) {
+              error = fad::ControlCreatePacketStreamError::kDeviceError;
+            } else {
+              error = fad::ControlCreatePacketStreamError::kOther;
+            }
           }
 
           ADR_WARN_OBJECT() << "Failed to create packet stream: " << result.error_value();
-          callback(status);
+          callback(error);
           return;
         }
 
         // Success path
+        uint32_t channel_count;
+        uint32_t frames_per_second;
+        std::optional<fuchsia_audio::SampleType> client_sample_type;
+
+        if (driver_format.pcm_format().has_value()) {
+          client_sample_type =
+              MapDriverPcmToSampleType(driver_format.pcm_format()->sample_format(),
+                                       driver_format.pcm_format()->bytes_per_sample());
+          FX_CHECK(client_sample_type.has_value())
+              << "Invalid sample format was not detected in ConnectPacketStreamFidl.";
+
+          channel_count = driver_format.pcm_format()->number_of_channels();
+          frames_per_second = driver_format.pcm_format()->frame_rate();
+        } else {
+          FX_CHECK(driver_format.encoding().has_value());
+          const auto& encoding = driver_format.encoding().value();
+          channel_count = *encoding.decoded_channel_count();
+          frames_per_second = *encoding.decoded_frame_rate();
+        }
+
+        auto configured_format = [&]() -> fuchsia_audio_device::PacketStreamFormat {
+          if (client_sample_type.has_value()) {
+            return fuchsia_audio_device::PacketStreamFormat::WithPcmFormat({{
+                .sample_type = client_sample_type,
+                .channel_count = channel_count,
+                .frames_per_second = frames_per_second,
+                // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated from
+                // driver.
+            }});
+          } else {
+            return fuchsia_audio_device::PacketStreamFormat::WithEncoding(
+                driver_format.encoding().value());
+          }
+        }();
+
         PacketStreamRecord packet_stream_record{
             .packet_stream_state = PacketStreamState::NotCreated,
             .packet_stream_handler =
                 std::make_unique<PacketStreamFidlErrorHandler<fha::PacketStreamControl>>(
                     this, element_id, "PacketStream"),
+            .configured_format = std::move(configured_format),
             .driver_format = driver_format,
         };
 
@@ -2708,7 +2942,7 @@ void Device::ConnectPacketStreamFidl(ElementId element_id, fha::Format2 driver_f
         packet_stream_map_.insert_or_assign(element_id, std::move(packet_stream_record));
         SetPacketStreamState(element_id, PacketStreamState::Creating);
 
-        callback(ZX_OK);
+        callback(fad::ControlCreatePacketStreamError(0));
       });
 }
 
@@ -3003,15 +3237,34 @@ void Device::CheckForPacketStreamReady(ElementId element_id) {
 
   SetPacketStreamState(element_id, PacketStreamState::Stopped);
 
+  FX_CHECK(packet_stream.create_packet_stream_callback);
   // This clears the "meta-command" timeout set earlier in ConnectPacketStreamFidl, covering the
   // CreatePacketStream, GetProperties and (if applicable) GetPacketStreamSink calls.
   ClearCommandTimeout();
 
   auto now = zx::clock::get_monotonic();
-  FX_LOGS(INFO) << "PacketStream created successfully.";
+  fad::PacketStreamProperties properties;
+  properties.format(packet_stream.configured_format);
+  if (packet_stream.data_sink.has_value()) {
+    properties.data_sink(std::move(packet_stream.data_sink.value()));
+  }
+  if (packet_stream.driver_format && packet_stream.driver_format->pcm_format()) {
+    properties.valid_bits_per_sample(
+        packet_stream.driver_format->pcm_format()->valid_bits_per_sample());
+  }
+  properties.supported_buffer_types(
+      packet_stream.packet_stream_properties->supported_buffer_types());
+
   packet_stream.inspect_instance = inspect()->RecordPacketStreamInstance(element_id, now);
+  packet_stream.inspect_instance->RecordFormat(packet_stream.configured_format);
+
+  packet_stream.create_packet_stream_callback(fit::success(Device::PacketStreamInfo{
+      .properties = std::move(properties),
+  }));
+  packet_stream.create_packet_stream_callback = nullptr;
 }
 
+// Expects the caller to have already created the RingBuffer.
 // Returns TRUE if it actually calls out to the driver. We avoid doing so if we already know
 // that this RingBuffer does not support SetActiveChannels.
 bool Device::SetActiveChannels(
@@ -3109,6 +3362,8 @@ bool Device::SetActiveChannels(
   return true;
 }
 
+// Expects the caller to have already created the RingBuffer, and checked if it has already
+// started or if a Start request is already pending.
 void Device::StartRingBuffer(ElementId element_id,
                              fit::callback<void(zx::result<zx::time>)> start_callback) {
   if (!GetControlNotify()) {
@@ -3163,6 +3418,8 @@ void Device::StartRingBuffer(ElementId element_id,
       });
 }
 
+// Expects the caller to have already created the RingBuffer, and checked if it is already
+// stopped or if a Stop request is already pending.
 void Device::StopRingBuffer(ElementId element_id, fit::callback<void(zx_status_t)> stop_callback) {
   if (!GetControlNotify()) {
     ADR_WARN_METHOD() << "Device is not yet controlled: cannot StopRingBuffer";
@@ -3217,6 +3474,8 @@ void Device::StopRingBuffer(ElementId element_id, fit::callback<void(zx_status_t
       });
 }
 
+// Expects the caller to have already created the PacketStream, and checked if it has already
+// started or if a Start request is already pending.
 void Device::StartPacketStream(ElementId element_id,
                                fit::callback<void(zx::result<>)> start_callback) {
   if (!GetControlNotify()) {
@@ -3296,6 +3555,8 @@ void Device::StartPacketStream(ElementId element_id,
       });
 }
 
+// Expects the caller to have already created the PacketStream, and checked if it is already
+// stopped or if a Stop request is already pending.
 void Device::StopPacketStream(ElementId element_id,
                               fit::callback<void(zx_status_t)> stop_callback) {
   if (!GetControlNotify()) {
@@ -3335,7 +3596,6 @@ void Device::StopPacketStream(ElementId element_id,
           // We need not invoke the callback: this device is in the process of being unwound.
           return;
         }
-
         if (result.is_error()) {
           ADR_WARN_OBJECT() << "PacketStreamControl/Stop failed: " << result.error_value();
           if (result.error_value().is_domain_error()) {
@@ -3366,72 +3626,50 @@ void Device::StopPacketStream(ElementId element_id,
       });
 }
 
+// Expects the caller to have already created the PacketStream, checked if it is already
+// configured (or started), and validated the input `setup_vmo_info` arguments.
 void Device::SetPacketStreamBuffers(
-    ElementId element_id,
-    std::variant<fuchsia_hardware_audio::AllocateVmosConfig,
-                 fuchsia_hardware_audio::RegisterVmosConfig>
-        setup_strategy,
-    fit::callback<void(zx_status_t, std::optional<std::vector<fuchsia_hardware_audio::VmoInfo>>)>
+    ElementId element_id, fuchsia_audio_device::PacketStreamSetupVmoInfo setup_vmo_info,
+    fit::callback<void(fit::result<fuchsia_audio_device::PacketStreamSetBufferError,
+                                   fuchsia_audio_device::PacketStreamBuffers>)>
         set_buffers_callback) {
   ADR_LOG_METHOD(kLogPacketStreamFidlCalls);
 
-  fha::BufferType buffer_type;
-  std::optional<fha::AllocateVmosConfig> allocate_info;
-  std::optional<fha::RegisterVmosConfig> register_info;
+  if (setup_vmo_info.Which() != fad::PacketStreamSetupVmoInfo::Tag::kAllocateInfo &&
+      setup_vmo_info.Which() != fad::PacketStreamSetupVmoInfo::Tag::kRegisterInfo) {
+    ADR_WARN_METHOD() << "Unknown fad::PacketStreamSetupVmoInfo";
+    set_buffers_callback(fit::error(fad::PacketStreamSetBufferError::kBadVmoConfig));
+    return;
+  }
 
-  if (std::holds_alternative<fha::AllocateVmosConfig>(setup_strategy)) {
-    // fha INLINE mode can be either in-stream mixed with packets of other buffer types
-    // or just used standalone (both are not differentiated for now).
+  fha::BufferType buffer_type;
+  if (setup_vmo_info.Which() == fad::PacketStreamSetupVmoInfo::Tag::kAllocateInfo) {
     buffer_type = fha::BufferType::kDriverOwned;
-    allocate_info = std::get<fha::AllocateVmosConfig>(std::move(setup_strategy));
-  } else if (std::holds_alternative<fha::RegisterVmosConfig>(setup_strategy)) {
-    // fha INLINE mode can be either in-stream mixed with packets of other buffer types
-    // or just used standalone (both are not differentiated for now).
+  } else if (setup_vmo_info.Which() == fad::PacketStreamSetupVmoInfo::Tag::kRegisterInfo) {
     buffer_type = fha::BufferType::kClientOwned;
-    register_info = std::get<fha::RegisterVmosConfig>(std::move(setup_strategy));
   }
 
   if (has_error()) {
     ADR_WARN_METHOD() << "device has an error";
-    set_buffers_callback(ZX_ERR_BAD_STATE, std::nullopt);
+    set_buffers_callback(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
     return;
   }
-  if (!is_composite()) {
-    ADR_WARN_METHOD() << "Incorrect device_type " << device_type_
-                      << ": cannot SetPacketStreamBuffers";
-    set_buffers_callback(ZX_ERR_BAD_STATE, std::nullopt);
-    return;
-  }
+  FX_CHECK(is_composite());
 
   auto ps_iter = packet_stream_map_.find(element_id);
   if (ps_iter == packet_stream_map_.end()) {
     ADR_WARN_METHOD() << "PacketStream " << element_id << " not found";
-    set_buffers_callback(ZX_ERR_NOT_FOUND, std::nullopt);
+    set_buffers_callback(fit::error(fad::PacketStreamSetBufferError::kInvalidElementId));
     return;
   }
   auto& ps_record = ps_iter->second;
-
-  if (ps_record.packet_stream_state == PacketStreamState::Started) {
-    ADR_WARN_METHOD() << "PacketStream " << element_id << " is already started";
-    set_buffers_callback(ZX_ERR_BAD_STATE, std::nullopt);
-    return;
-  }
-  if (ps_record.configured_buffer_type.has_value()) {
-    ADR_WARN_METHOD() << "PacketStream " << element_id << " already configured";
-    set_buffers_callback(ZX_ERR_ALREADY_EXISTS, std::nullopt);
-    return;
-  }
 
   // Check supported buffer type.
   if (!ps_record.packet_stream_properties.has_value() ||
       !ps_record.packet_stream_properties->supported_buffer_types().has_value() ||
       !(*ps_record.packet_stream_properties->supported_buffer_types() & buffer_type)) {
-    ADR_WARN_METHOD() << "Buffer type 0x" << std::hex << static_cast<uint64_t>(buffer_type)
-                      << std::dec << " not supported (supported_buffer_types: 0x" << std::hex
-                      << static_cast<uint64_t>(
-                             *ps_record.packet_stream_properties->supported_buffer_types())
-                      << std::dec << ")";
-    set_buffers_callback(ZX_ERR_NOT_SUPPORTED, std::nullopt);
+    ADR_WARN_METHOD() << "Buffer type " << static_cast<uint64_t>(buffer_type) << " not supported";
+    set_buffers_callback(fit::error(fad::PacketStreamSetBufferError::kBadStrategy));
     return;
   }
 
@@ -3443,19 +3681,15 @@ void Device::SetPacketStreamBuffers(
   zx_rights_t required_rights =
       vmo_is_incoming ? kRequiredIncomingVmoRights : kRequiredOutgoingVmoRights;
 
-  if (allocate_info.has_value()) {
-    if (!allocate_info->vmo_count().has_value() || !allocate_info->min_vmo_size().has_value()) {
-      ADR_WARN_METHOD() << "AllocateVmos Config missing required fields:"
-                        << (!allocate_info->vmo_count().has_value() ? " vmo_count" : "")
-                        << (!allocate_info->min_vmo_size().has_value() ? " min_vmo_size" : "");
-      set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
-      return;
-    }
-    uint32_t expected_vmo_count = *allocate_info->vmo_count();
-    uint64_t min_vmo_size = *allocate_info->min_vmo_size();
+  if (setup_vmo_info.Which() == fad::PacketStreamSetupVmoInfo::Tag::kAllocateInfo) {
+    auto& allocate_info = setup_vmo_info.allocate_info().value();
+
+    uint32_t expected_vmo_count = *allocate_info.vmo_count();
+    uint64_t min_vmo_size = *allocate_info.min_vmo_size();
+
     SetCommandTimeout(kDefaultShortCmdTimeout, "AllocateVmos");
     (*ps_record.packet_stream_client)
-        ->AllocateVmos(std::move(*allocate_info))
+        ->AllocateVmos(std::move(allocate_info))
         .Then([this, element_id, cb = std::move(set_buffers_callback), buffer_type, required_rights,
                expected_vmo_count,
                min_vmo_size](fidl::Result<fha::PacketStreamControl::AllocateVmos>& result) mutable {
@@ -3465,95 +3699,132 @@ void Device::SetPacketStreamBuffers(
             return;
           }
           if (SetDeviceErrorOnFidlFrameworkError(result, "AllocateVmos response")) {
-            cb(ZX_ERR_INTERNAL, std::nullopt);
+            cb(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
             return;
           }
 
           if (result.is_error()) {
-            auto domain_error = result.error_value().domain_error();
-            ADR_WARN_OBJECT() << "AllocateVmos domain error: "
-                              << static_cast<uint32_t>(domain_error);
-            if (domain_error != ZX_ERR_INVALID_ARGS && domain_error != ZX_ERR_BAD_STATE) {
-              OnError(domain_error);
+            auto err = result.error_value();
+            ADR_WARN_OBJECT() << "AllocateVmos failed: " << err;
+            if (err.is_domain_error() && err.domain_error() == ZX_ERR_INVALID_ARGS) {
+              cb(fit::error(fad::PacketStreamSetBufferError::kBadVmoConfig));
+            } else if (err.is_domain_error() && err.domain_error() == ZX_ERR_BAD_STATE) {
+              cb(fit::error(fad::PacketStreamSetBufferError::kAlreadyConfigured));
+            } else {
+              OnError(err.domain_error());
+              cb(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
             }
-            cb(domain_error, std::nullopt);
             return;
           }
-          // Success
+
           if (result.value().vmos().size() != expected_vmo_count) {
             ADR_WARN_OBJECT() << "AllocateVmos returned " << result.value().vmos().size()
                               << " VMOs, expected " << expected_vmo_count;
+
             OnError(ZX_ERR_INTERNAL);
-            cb(ZX_ERR_INTERNAL, std::nullopt);
+            cb(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
             return;
           }
 
           for (uint32_t i = 0; i < result.value().vmos().size(); ++i) {
-            if (!ValidatePacketStreamVmo(result.value().vmos()[i], required_rights, min_vmo_size)) {
-              ADR_WARN_OBJECT() << "AllocateVmos returned invalid VMO at index " << i;
-              OnError(ZX_ERR_INTERNAL);
-              cb(ZX_ERR_INTERNAL, std::nullopt);
+            if (auto status = ValidatePacketStreamVmo(result.value().vmos()[i], required_rights,
+                                                      min_vmo_size);
+                status != ZX_OK) {
+              ADR_WARN_OBJECT() << "AllocateVmos returned invalid VMO at index " << i << ": "
+                                << status;
+              OnError(status);
+              cb(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
               return;
             }
           }
 
+          // Success
           auto& ps = packet_stream_map_[element_id];
           ps.configured_buffer_type = buffer_type;
 
-          cb(ZX_OK, std::move(result.value().vmos()));
+          if (ps.inspect_instance) {
+            ps.inspect_instance->RecordBuffer(buffer_type, result.value().vmos());
+          }
+
+          fad::PacketStreamBuffers buffers;
+          buffers.vmo_infos(std::move(result.value().vmos()));
+          cb(fit::success(std::move(buffers)));
         });
-  } else if (register_info.has_value()) {
-    if (!register_info->vmo_infos().has_value()) {
-      ADR_WARN_METHOD() << "RegisterVmos Config missing vmo_infos";
-      set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
-      return;
-    }
-    if (register_info->vmo_infos()->empty()) {
-      ADR_WARN_METHOD() << "RegisterVmos Config empty vmo_infos";
-      set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
-      return;
-    }
-    for (uint32_t i = 0; i < register_info->vmo_infos()->size(); ++i) {
-      if (!ValidatePacketStreamVmo((*register_info->vmo_infos())[i], required_rights)) {
-        ADR_WARN_METHOD() << "RegisterVmos Config contains invalid VMO at index " << i;
-        set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
+  }
+
+  if (setup_vmo_info.Which() == fad::PacketStreamSetupVmoInfo::Tag::kRegisterInfo) {
+    auto& register_info = setup_vmo_info.register_info().value();
+    for (uint32_t i = 0; i < register_info.vmo_infos()->size(); ++i) {
+      auto& vmo_info = (*register_info.vmo_infos())[i];
+      if (auto status = ValidatePacketStreamVmo(vmo_info, required_rights, 0); status != ZX_OK) {
+        ADR_WARN_METHOD() << "SetupVmoInfo::RegisterInfo Config contains invalid VMO at index "
+                          << i;
+        auto error = fad::PacketStreamSetBufferError::kBadVmoConfig;
+        if (status == ZX_ERR_ACCESS_DENIED) {
+          error = fad::PacketStreamSetBufferError::kInsufficientRights;
+        } else if (status == ZX_ERR_BUFFER_TOO_SMALL) {
+          error = fad::PacketStreamSetBufferError::kBufferTooSmall;
+        }
+        set_buffers_callback(fit::error(error));
         return;
       }
     }
+
+    auto vmo_infos_to_register = std::move(*register_info.vmo_infos());
+    fha::RegisterVmosConfig config{{.vmo_infos = std::move(vmo_infos_to_register)}};
+    // We need to capture the VMOs to record them in the callback.
+    // However, we just moved them into `config`. So we must duplicate them if we want to keep a
+    // copy.
+    std::vector<fha::VmoInfo> vmo_infos_copy;
+    for (const auto& vmo_info : *config.vmo_infos()) {
+      zx::vmo duplicated_vmo;
+      vmo_info.vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicated_vmo);
+      vmo_infos_copy.push_back(
+          fha::VmoInfo{{.id = vmo_info.id(), .vmo = std::move(duplicated_vmo)}});
+    }
+
     SetCommandTimeout(kDefaultShortCmdTimeout, "RegisterVmos");
     (*ps_record.packet_stream_client)
-        ->RegisterVmos(std::move(*register_info))
-        .Then([this, element_id, cb = std::move(set_buffers_callback),
-               buffer_type](fidl::Result<fha::PacketStreamControl::RegisterVmos>& result) mutable {
+        ->RegisterVmos(std::move(config))
+        .Then([this, element_id, cb = std::move(set_buffers_callback), buffer_type,
+               vmo_infos = std::move(vmo_infos_copy)](
+                  fidl::Result<fha::PacketStreamControl::RegisterVmos>& result) mutable {
           ClearCommandTimeout();
 
           if (has_error()) {
             return;
           }
           if (SetDeviceErrorOnFidlFrameworkError(result, "RegisterVmos response")) {
-            cb(ZX_ERR_INTERNAL, std::nullopt);
+            cb(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
             return;
           }
 
           if (result.is_error()) {
-            auto domain_error = result.error_value().domain_error();
-            ADR_WARN_OBJECT() << "RegisterVmos domain error: "
-                              << static_cast<uint32_t>(domain_error);
-            if (domain_error != ZX_ERR_INVALID_ARGS && domain_error != ZX_ERR_BAD_STATE) {
-              OnError(domain_error);
+            auto err = result.error_value();
+            ADR_WARN_OBJECT() << "RegisterVmos failed: " << err;
+            if (err.is_domain_error() && err.domain_error() == ZX_ERR_INVALID_ARGS) {
+              cb(fit::error(fad::PacketStreamSetBufferError::kBadVmoConfig));
+            } else if (err.is_domain_error() && err.domain_error() == ZX_ERR_BAD_STATE) {
+              cb(fit::error(fad::PacketStreamSetBufferError::kAlreadyConfigured));
+            } else {
+              OnError(err.domain_error());
+              cb(fit::error(fad::PacketStreamSetBufferError::kDeviceError));
             }
-            cb(domain_error, std::nullopt);
             return;
           }
+
           // Success
           auto& ps = packet_stream_map_[element_id];
           ps.configured_buffer_type = buffer_type;
 
-          cb(ZX_OK, std::nullopt);
+          if (ps.inspect_instance) {
+            ps.inspect_instance->RecordBuffer(buffer_type, vmo_infos);
+          }
+
+          fad::PacketStreamBuffers buffers;
+          buffers.vmo_infos(std::move(vmo_infos));
+          cb(fit::success(std::move(buffers)));
         });
-  } else {
-    ADR_WARN_METHOD() << "allocate_info or register_info missing but required";
-    set_buffers_callback(ZX_ERR_INVALID_ARGS, std::nullopt);
   }
 }
 

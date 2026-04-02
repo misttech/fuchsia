@@ -352,36 +352,186 @@ fha::Format2 SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
 // PacketStream-related functions
 //
 // From many SupportedFormats, get a Format.
-fha::Format2 SafeDriverPacketStreamFormatFromDriverPacketStreamFormatSets(
+fha::Format2 SafeDriverPcmPacketStream(
     const std::vector<fha::SupportedFormats2>& driver_packet_stream_format_sets) {
   for (const auto& format_set : driver_packet_stream_format_sets) {
-    if (format_set.pcm_supported_formats()) {
+    if (format_set.Which() == fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
       return fha::Format2::WithPcmFormat(
           SafePcmFormatFromSupportedFormats(driver_packet_stream_format_sets));
     }
-    if (format_set.supported_encodings()) {
+  }
+  ADD_FAILURE() << "SafeDriverPcmPacketStream: No valid format found";
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
+}
+
+fha::Format2 SafeDriverEncodedPacketStream(
+    const std::vector<fha::SupportedFormats2>& driver_packet_stream_format_sets) {
+  for (const auto& format_set : driver_packet_stream_format_sets) {
+    if (format_set.Which() == fha::SupportedFormats2::Tag::kSupportedEncodings) {
       return fha::Format2::WithEncoding(
           SafeEncodingFromSupportedFormats(driver_packet_stream_format_sets));
     }
   }
-  ADD_FAILURE() << "No valid format found in supported format sets";
+  ADD_FAILURE() << "SafeDriverEncodedPacketStream: No valid format found";
   return fha::Format2::WithPcmFormat(fha::PcmFormat());
 }
 
-// From a multi-element collection, each with many SupportedFormats, get a Format.
-fha::Format2 SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+fha::Format2 SafeDriverPcmPacketStream(
     ElementId element_id,
     const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats2>>>&
         element_driver_packet_stream_format_sets) {
   for (const auto& element_entry : element_driver_packet_stream_format_sets) {
     if (element_entry.first == element_id) {
-      return SafeDriverPacketStreamFormatFromDriverPacketStreamFormatSets(element_entry.second);
+      return SafeDriverPcmPacketStream(element_entry.second);
     }
   }
-  ADD_FAILURE()
-      << "SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets: No element_driver_packet_stream_format_sets entry found with specified element_id "
-      << element_id;
+  ADD_FAILURE() << "SafeDriverPcmPacketStream: No element entry found for element_id "
+                << element_id;
   return fha::Format2::WithPcmFormat(fha::PcmFormat());
 }
 
+fha::Format2 SafeDriverEncodedPacketStream(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats2>>>&
+        element_driver_packet_stream_format_sets) {
+  for (const auto& element_entry : element_driver_packet_stream_format_sets) {
+    if (element_entry.first == element_id) {
+      return SafeDriverEncodedPacketStream(element_entry.second);
+    }
+  }
+  ADD_FAILURE() << "SafeDriverEncodedPacketStream: No element entry found for element_id "
+                << element_id;
+  return fha::Format2::WithPcmFormat(fha::PcmFormat());
+}
+
+std::vector<fha::Format2> SafeDriverPacketStreamFormats(
+    const std::vector<fha::SupportedFormats2>& driver_packet_stream_format_sets) {
+  std::vector<fha::Format2> formats;
+  for (const auto& format_set : driver_packet_stream_format_sets) {
+    if (format_set.Which() == fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
+      formats.push_back(
+          fha::Format2::WithPcmFormat(SafePcmFormatFromSupportedFormats(std::vector{format_set})));
+    }
+    if (format_set.Which() == fha::SupportedFormats2::Tag::kSupportedEncodings) {
+      formats.push_back(
+          fha::Format2::WithEncoding(SafeEncodingFromSupportedFormats(std::vector{format_set})));
+    }
+  }
+  return formats;
+}
+
+std::vector<fha::Format2> SafeDriverPacketStreamFormats(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fha::SupportedFormats2>>>&
+        element_driver_packet_stream_format_sets) {
+  for (const auto& element_entry : element_driver_packet_stream_format_sets) {
+    if (element_entry.first == element_id) {
+      return SafeDriverPacketStreamFormats(element_entry.second);
+    }
+  }
+  ADD_FAILURE() << "SafeDriverPacketStreamFormats: No element entry found for element_id "
+                << element_id;
+  return {};
+}
+
+fad::PacketStreamFormat SafePcmPacketStreamFormat(
+    const std::vector<fad::PacketStreamSupportedFormats>& packet_stream_format_sets) {
+  for (const auto& format_set : packet_stream_format_sets) {
+    if (format_set.Which() == fad::PacketStreamSupportedFormats::Tag::kPcmFormat) {
+      auto& pcm_set = format_set.pcm_format().value();
+      return fad::PacketStreamFormat::WithPcmFormat(fuchsia_audio::Format{{
+          .sample_type = pcm_set.sample_types()->front(),
+          .channel_count = pcm_set.channel_sets()->front().attributes()->size(),
+          .frames_per_second = pcm_set.frame_rates()->front(),
+      }});
+    }
+  }
+  ADD_FAILURE() << "SafePcmPacketStreamFormat: No PCM format found";
+  return fad::PacketStreamFormat(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{});
+}
+
+fad::PacketStreamFormat SafeEncodedPacketStreamFormat(
+    const std::vector<fad::PacketStreamSupportedFormats>& packet_stream_format_sets) {
+  for (const auto& format_set : packet_stream_format_sets) {
+    if (format_set.Which() == fad::PacketStreamSupportedFormats::Tag::kSupportedEncodings) {
+      auto& encoding_set = format_set.supported_encodings().value();
+      return fad::PacketStreamFormat::WithEncoding(fuchsia_hardware_audio::Encoding{{
+          .decoded_channel_count =
+              encoding_set.decoded_channel_sets()->front().attributes()->size(),
+          .decoded_frame_rate = encoding_set.decoded_frame_rates()
+                                    ? encoding_set.decoded_frame_rates()->front()
+                                    : 48000,
+          .average_encoding_bitrate =
+              encoding_set.max_encoding_bitrate() ? *encoding_set.max_encoding_bitrate() : 128000,
+          .encoding_type = encoding_set.encoding_types()->front(),
+      }});
+    }
+  }
+  ADD_FAILURE() << "SafeEncodedPacketStreamFormat: No encoded format found";
+  return fad::PacketStreamFormat(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{});
+}
+
+fad::PacketStreamFormat SafePcmPacketStreamFormat(
+    ElementId element_id,
+    const std::vector<fad::ElementPacketStreamFormatSet>& element_packet_stream_format_sets) {
+  for (const auto& element_entry : element_packet_stream_format_sets) {
+    if (element_entry.element_id() && *element_entry.element_id() == element_id) {
+      return SafePcmPacketStreamFormat(*element_entry.format_sets());
+    }
+  }
+  ADD_FAILURE() << "SafePcmPacketStreamFormat: No element entry found for element_id "
+                << element_id;
+  return fad::PacketStreamFormat(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{});
+}
+
+fad::PacketStreamFormat SafeEncodedPacketStreamFormat(
+    ElementId element_id,
+    const std::vector<fad::ElementPacketStreamFormatSet>& element_packet_stream_format_sets) {
+  for (const auto& element_entry : element_packet_stream_format_sets) {
+    if (element_entry.element_id() && *element_entry.element_id() == element_id) {
+      return SafeEncodedPacketStreamFormat(*element_entry.format_sets());
+    }
+  }
+  ADD_FAILURE() << "SafeEncodedPacketStreamFormat: No element entry found for element_id "
+                << element_id;
+  return fad::PacketStreamFormat(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag{});
+}
+
+std::vector<fad::PacketStreamFormat> SafePacketStreamFormats(
+    const std::vector<fad::PacketStreamSupportedFormats>& packet_stream_format_sets) {
+  std::vector<fad::PacketStreamFormat> formats;
+  bool pcm_found = false;
+  bool encoded_found = false;
+  for (const auto& format_set : packet_stream_format_sets) {
+    if (format_set.Which() == fad::PacketStreamSupportedFormats::Tag::kPcmFormat && !pcm_found) {
+      auto format = SafePcmPacketStreamFormat(packet_stream_format_sets);
+      formats.push_back(std::move(format));
+      pcm_found = true;
+    }
+    if (format_set.Which() == fad::PacketStreamSupportedFormats::Tag::kSupportedEncodings &&
+        !encoded_found) {
+      auto format = SafeEncodedPacketStreamFormat(packet_stream_format_sets);
+      formats.push_back(std::move(format));
+      encoded_found = true;
+    }
+  }
+  if (formats.empty()) {
+    ADD_FAILURE() << "SafePacketStreamFormats: No supported formats found";
+  }
+  return formats;
+}
+
+std::vector<fad::PacketStreamFormat> SafePacketStreamFormats(
+    ElementId element_id,
+    const std::vector<fad::ElementPacketStreamFormatSet>& element_packet_stream_format_sets) {
+  for (const auto& element_entry : element_packet_stream_format_sets) {
+    if (element_entry.element_id() && *element_entry.element_id() == element_id) {
+      if (element_entry.format_sets()) {
+        return SafePacketStreamFormats(*element_entry.format_sets());
+      }
+    }
+  }
+  ADD_FAILURE() << "SafePacketStreamFormats: No element entry found for element_id " << element_id;
+  return {};
+}
 }  // namespace media_audio

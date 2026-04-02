@@ -24,6 +24,12 @@ bool RingBufferFormatIsSupported(
         element_ring_buffer_format_sets,
     const fuchsia_hardware_audio::Format2& format);
 
+bool PacketStreamFormatIsSupported(
+    ElementId element_id,
+    const std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>&
+        element_packet_stream_format_sets,
+    const fuchsia_hardware_audio::Format2& format);
+
 }  // namespace media_audio
 
 #endif  // SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_COMMON_H_

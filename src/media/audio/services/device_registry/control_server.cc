@@ -25,6 +25,7 @@
 #include "src/media/audio/services/device_registry/device.h"
 #include "src/media/audio/services/device_registry/inspector.h"
 #include "src/media/audio/services/device_registry/logging.h"
+#include "src/media/audio/services/device_registry/packet_stream_server.h"
 #include "src/media/audio/services/device_registry/ring_buffer_server.h"
 #include "src/media/audio/services/device_registry/validate.h"
 
@@ -76,6 +77,13 @@ void ControlServer::OnShutdown(fidl::UnbindInfo info) {
     }
   }
   ring_buffer_servers_.clear();
+
+  for (auto& [_, weak_packet_stream_server] : packet_stream_servers_) {
+    if (auto sh_packet_stream_server = weak_packet_stream_server.lock(); sh_packet_stream_server) {
+      sh_packet_stream_server->ClientDroppedControl();
+    }
+  }
+  packet_stream_servers_.clear();
 }
 
 // Called when Device drops its RingBuffer FIDL. Tell RingBufferServer and drop our reference.
@@ -94,7 +102,15 @@ void ControlServer::DeviceDroppedRingBuffer(ElementId element_id) {
 
 void ControlServer::DeviceDroppedPacketStream(ElementId element_id) {
   ADR_LOG_METHOD(kLogControlServerMethods || kLogNotifyMethods);
-  // TODO(puneetha): Implement this once packet stream is supported.
+
+  auto packet_stream_server_iter = packet_stream_servers_.find(element_id);
+  if (packet_stream_server_iter != packet_stream_servers_.end()) {
+    if (auto sh_packet_stream_server = packet_stream_server_iter->second.lock();
+        sh_packet_stream_server) {
+      sh_packet_stream_server->DeviceDroppedPacketStream();
+    }
+    packet_stream_servers_.erase(element_id);
+  }
 }
 
 void ControlServer::DeviceHasError() {
@@ -118,6 +134,13 @@ void ControlServer::DeviceIsRemoved() {
     }
   }
   ring_buffer_servers_.clear();
+
+  for (auto& [_, weak_packet_stream_server] : packet_stream_servers_) {
+    if (auto sh_packet_stream_server = weak_packet_stream_server.lock(); sh_packet_stream_server) {
+      sh_packet_stream_server->ClientDroppedControl();
+    }
+  }
+  packet_stream_servers_.clear();
 
   // We don't explicitly clear our shared_ptr<Device> reference, to ensure we destruct first.
 
@@ -162,14 +185,14 @@ void ControlServer::CreateRingBuffer(CreateRingBufferRequest& request,
   }
   ElementId element_id = *request.element_id();
   auto& rb_ids = device_->ring_buffer_ids();
-  if (rb_ids.find(element_id) == rb_ids.end()) {
+  if (!rb_ids.contains(element_id)) {
     ADR_WARN_METHOD() << "required field 'element_id' (" << element_id
                       << ") does not refer to an element of type RING_BUFFER";
     completer.Reply(fit::error(fad::ControlCreateRingBufferError::kInvalidElementId));
     return;
   }
 
-  if (create_ring_buffer_completers_.find(element_id) != create_ring_buffer_completers_.end()) {
+  if (create_ring_buffer_completers_.contains(element_id)) {
     ADR_WARN_METHOD() << "(element_id " << element_id
                       << ") previous `CreateRingBuffer` request has not completed";
     completer.Reply(fit::error(fad::ControlCreateRingBufferError::kAlreadyPending));
@@ -265,6 +288,162 @@ void ControlServer::CreateRingBuffer(CreateRingBufferRequest& request,
   }
 }
 
+std::shared_ptr<PacketStreamServer> ControlServer::TryGetPacketStreamServer(ElementId element_id) {
+  ADR_LOG_METHOD(kLogControlServerMethods);
+  auto packet_stream_server_iter = packet_stream_servers_.find(element_id);
+  if (packet_stream_server_iter != packet_stream_servers_.end()) {
+    if (auto sh_packet_stream_server = packet_stream_server_iter->second.lock();
+        sh_packet_stream_server) {
+      return sh_packet_stream_server;
+    }
+    packet_stream_servers_.erase(element_id);
+  }
+  return nullptr;
+}
+
+void ControlServer::CreatePacketStream(CreatePacketStreamRequest& request,
+                                       CreatePacketStreamCompleter::Sync& completer) {
+  ADR_LOG_METHOD(kLogControlServerMethods);
+
+  // Fail if device has error.
+  if (device_has_error_) {
+    ADR_WARN_METHOD() << "device has an error";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kDeviceError));
+    return;
+  }
+
+  if (!device_->is_composite()) {
+    ADR_WARN_METHOD() << "Unsupported method for device_type " << device_->device_type();
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kWrongDeviceType));
+    return;
+  }
+  // Fail on missing parameters.
+  if (!request.element_id()) {
+    ADR_WARN_METHOD() << "required field 'element_id' is missing";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidElementId));
+    return;
+  }
+  ElementId element_id = *request.element_id();
+  auto& ps_ids = device_->packet_stream_ids();
+  if (!ps_ids.contains(element_id)) {
+    ADR_WARN_METHOD() << "required field 'element_id' (" << element_id
+                      << ") does not refer to an element of type PACKET_STREAM";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidElementId));
+    return;
+  }
+
+  if (create_packet_stream_completers_.contains(element_id)) {
+    ADR_WARN_METHOD() << "(element_id " << element_id
+                      << ") previous `CreatePacketStream` request has not completed";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kAlreadyPending));
+    return;
+  }
+
+  if (!request.options().has_value()) {
+    ADR_WARN_METHOD() << "(element_id " << element_id << ") required field 'options' is missing";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidOptions));
+    return;
+  }
+
+  if (!request.options()->format().has_value() ||
+      (!request.options()->format()->pcm_format().has_value() &&
+       !request.options()->format()->encoding().has_value())) {
+    ADR_WARN_METHOD() << "(element_id " << element_id
+                      << ") required 'options.format' is missing or is an unknown union variant";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidFormat));
+    return;
+  }
+
+  if (request.options()->format()->pcm_format().has_value() &&
+      (!request.options()->format()->pcm_format()->sample_type().has_value() ||
+       !request.options()->format()->pcm_format()->channel_count().has_value() ||
+       !request.options()->format()->pcm_format()->frames_per_second().has_value())) {
+    ADR_WARN_METHOD() << "(element_id " << element_id
+                      << ") required 'options.format.pcm_format' members are missing";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidFormat));
+    return;
+  }
+
+  if (request.options()->format()->encoding().has_value() &&
+      (!request.options()->format()->encoding()->encoding_type().has_value() ||
+       !request.options()->format()->encoding()->decoded_channel_count().has_value() ||
+       !request.options()->format()->encoding()->decoded_frame_rate().has_value())) {
+    ADR_WARN_METHOD() << "(element_id " << element_id
+                      << ") required 'options.format.encoding' members are missing";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidFormat));
+    return;
+  }
+
+  if (!request.packet_stream_server().has_value()) {
+    ADR_WARN_METHOD() << "(element_id " << element_id
+                      << ") required field 'packet_stream_server' is missing";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidPacketStream));
+    return;
+  }
+  if (TryGetPacketStreamServer(element_id)) {
+    ADR_WARN_METHOD() << "(element_id " << element_id << ") device PacketStream already exists";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kAlreadyAllocated));
+    return;
+  }
+
+  auto driver_format = device_->SupportedPacketStreamDriverFormatForClientFormat(
+      element_id, *request.options()->format());
+  // Fail if device cannot satisfy the requested format.
+  if (!driver_format.has_value()) {
+    ADR_WARN_METHOD() << "(element_id " << element_id
+                      << ") device does not support the specified options";
+    completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kFormatMismatch));
+    return;
+  }
+
+  auto packet_stream_server = parent_->CreatePacketStreamServer(
+      std::move(*request.packet_stream_server()), shared_from_this(), device_, element_id);
+  AddChildServer(packet_stream_server);
+  packet_stream_servers_.insert_or_assign(element_id, packet_stream_server);
+
+  // The completer is captured so we can respond asynchronously.
+  create_packet_stream_completers_.insert_or_assign(element_id, completer.ToAsync());
+
+  // `Device::CreatePacketStream` returns false if it fails synchronously. In that case, it has
+  // already invoked the callback, which will have replied to the client. Note that
+  // `Device::CreatePacketStream` always invokes the callback irrespective of the return value.
+  bool created = device_->CreatePacketStream(
+      element_id, *driver_format,
+      [this, element_id](fit::result<fad::ControlCreatePacketStreamError, Device::PacketStreamInfo>
+                             result) mutable {
+        // If we have no async completer, maybe we're
+        // shutting down and it was cleared. Just exit.
+        auto completer_it = create_packet_stream_completers_.find(element_id);
+        if (completer_it == create_packet_stream_completers_.end()) {
+          ADR_WARN_OBJECT()
+              << "(element_id " << element_id
+              << ") create_packet_stream_completer_ gone by the time the CreatePacketStream callback ran";
+          if (result.is_ok()) {
+            device_->DropPacketStream(element_id);
+          }
+          return;
+        }
+
+        auto completer = std::move(completer_it->second);
+        create_packet_stream_completers_.erase(element_id);
+
+        if (result.is_error()) {
+          completer.Reply(fit::error(result.take_error()));
+          DeviceDroppedPacketStream(element_id);
+          return;
+        }
+
+        fad::ControlCreatePacketStreamResponse response;
+        response.properties(std::move(result.value().properties));
+        completer.Reply(fit::success(std::move(response)));
+      });
+
+  if (!created) {
+    // Synchronous failure. The callback was already called, which replied to the completer.
+    ADR_WARN_METHOD() << "device cannot create a packet stream with the specified options";
+  }
+}
+
 // This is only here because ControlNotify includes the methods from ObserverNotify. ControlServer
 // doesn't have a role to play in plug state changes, nor a client hanging-get to complete.
 void ControlServer::PlugStateIsChanged(const fad::PlugState& new_plug_state,
@@ -306,7 +485,7 @@ void ControlServer::SetDaiFormat(SetDaiFormatRequest& request,
     completer.Reply(fit::error(fad::ControlSetDaiFormatError::kWrongDeviceType));
     return;
   }
-  if (set_dai_format_completers_.find(element_id) != set_dai_format_completers_.end()) {
+  if (set_dai_format_completers_.contains(element_id)) {
     ADR_WARN_METHOD() << "previous `SetDaiFormat` request has not yet completed";
     completer.Reply(fit::error(fad::ControlSetDaiFormatError::kAlreadyPending));
     return;
@@ -373,7 +552,7 @@ void ControlServer::DaiFormatIsNotChanged(ElementId element_id, const fha::DaiFo
   }
 
   // SetDaiFormat was called, but now we don't have a completer.
-  if (set_dai_format_completers_.find(element_id) == set_dai_format_completers_.end()) {
+  if (!set_dai_format_completers_.contains(element_id)) {
     ADR_WARN_METHOD()
         << "SetDaiFormat was called, did not result in change, but completer is gone.";
     return;
@@ -837,8 +1016,8 @@ void ControlServer::ElementStateIsChanged(
 
 // If we have an outstanding hanging-get and a state-change, respond with the state change.
 void ControlServer::MaybeCompleteWatchElementState(ElementId element_id) {
-  if (watch_element_state_completers_.find(element_id) != watch_element_state_completers_.end() &&
-      element_states_to_notify_.find(element_id) != element_states_to_notify_.end()) {
+  if (watch_element_state_completers_.contains(element_id) &&
+      element_states_to_notify_.contains(element_id)) {
     ADR_LOG_METHOD(kLogControlServerMethods || kLogNotifyMethods) << element_id << ": completing";
     auto completer = std::move(watch_element_state_completers_.find(element_id)->second);
     watch_element_state_completers_.erase(element_id);
@@ -853,17 +1032,15 @@ void ControlServer::MaybeCompleteWatchElementState(ElementId element_id) {
   }
 }
 
-void ControlServer::CreatePacketStream(CreatePacketStreamRequest& request,
-                                       CreatePacketStreamCompleter::Sync& completer) {
-  ADR_WARN_METHOD() << "not yet supported by AudioDeviceRegistry";
-  completer.Reply(fit::error(fad::ControlCreatePacketStreamError::kInvalidElementId));
-}
-
 // We complain but don't close the connection, to accommodate older and newer clients.
 void ControlServer::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_audio_device::Control> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   ADR_WARN_METHOD() << "(Control) ordinal " << metadata.method_ordinal;
+  if (metadata.unknown_method_type == fidl::UnknownMethodType::kTwoWay) {
+    // Pend the completer indefinitely.
+    unknown_method_completers_.emplace_back(completer.ToAsync());
+  }
 }
 
 }  // namespace media_audio

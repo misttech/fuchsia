@@ -59,6 +59,7 @@ class FakeCompositePacketStream final
 
   // To be used during run-time
   bool started() const { return started_; }
+  zx::time mono_start_time() const { return mono_start_time_; }
 
   static uint64_t count() { return count_; }
   FakeComposite* parent() { return parent_; }
@@ -97,6 +98,7 @@ class FakeCompositePacketStream final
   std::vector<StartCompleter::Async> start_completers_;
   std::vector<StopCompleter::Async> stop_completers_;
   bool started_ = false;
+  zx::time mono_start_time_;
 
   std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
 

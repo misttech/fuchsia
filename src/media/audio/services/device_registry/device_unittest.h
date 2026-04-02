@@ -104,17 +104,6 @@ class DeviceTestBase : public gtest::TestLoopFixture {
     return (HasPacketStream(device, element_id) &&
             match->second.packet_stream_state == Device::PacketStreamState::Started);
   }
-  static bool PacketStreamIsReady(const std::shared_ptr<Device>& device, ElementId element_id) {
-    auto match = device->packet_stream_map_.find(element_id);
-    return (HasPacketStream(device, element_id) &&
-            match->second.packet_stream_state != Device::PacketStreamState::NotCreated &&
-            match->second.packet_stream_state != Device::PacketStreamState::Creating);
-  }
-  void WaitForPacketStreamReady(const std::shared_ptr<Device>& device, ElementId element_id) {
-    while (!PacketStreamIsReady(device, element_id)) {
-      RunLoopUntilIdle();
-    }
-  }
   static void GetDaiFormatSets(
       const std::shared_ptr<Device>& device, ElementId element_id,
       fit::callback<void(ElementId,
@@ -130,16 +119,6 @@ class DeviceTestBase : public gtest::TestLoopFixture {
   static const std::optional<fuchsia_hardware_audio::DelayInfo>& DeviceDelayInfo(
       const std::shared_ptr<Device>& device, ElementId element_id) {
     return device->ring_buffer_map_.find(element_id)->second.delay_info;
-  }
-
-  static void ConnectPacketStreamFidl(const std::shared_ptr<Device>& device, ElementId element_id,
-                                      fuchsia_hardware_audio::Format2 driver_format,
-                                      fit::callback<void(zx_status_t status)> callback) {
-    device->ConnectPacketStreamFidl(element_id, std::move(driver_format), std::move(callback));
-  }
-  static void RetrievePacketStreamProperties(const std::shared_ptr<Device>& device,
-                                             ElementId element_id) {
-    device->RetrievePacketStreamProperties(element_id);
   }
 
   class NotifyStub : public std::enable_shared_from_this<NotifyStub>, public ControlNotify {

@@ -6,6 +6,11 @@
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_COMMON_UNITTEST_H_
 
 #include <fidl/fuchsia.audio.device/cpp/natural_types.h>
+#include <fidl/fuchsia.audio/cpp/natural_types.h>
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/natural_types.h>
+#include <fidl/fuchsia.hardware.audio/cpp/natural_types.h>
+
+#include <vector>
 
 #include "src/media/audio/services/device_registry/basic_types.h"
 
@@ -59,25 +64,69 @@ fuchsia_hardware_audio::DaiFormat UnsupportedDaiFormatFromElementDaiFormatSets(
 fuchsia_hardware_audio::DaiFormat UnsupportedDaiFormatFromDaiFormatSets(
     const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& dai_format_sets);
 
+// RingBuffer-related functions
+fuchsia_audio::Format SafeRingBufferFormatFromRingBufferFormatSets(
+    const std::vector<fuchsia_audio_device::PcmFormatSet>& ring_buffer_format_sets);
+fuchsia_audio::Format SecondRingBufferFormatFromRingBufferFormatSets(
+    const std::vector<fuchsia_audio_device::PcmFormatSet>& ring_buffer_format_sets);
 fuchsia_audio::Format SafeRingBufferFormatFromElementRingBufferFormatSets(
     ElementId element_id, const std::vector<fuchsia_audio_device::ElementRingBufferFormatSet>&
                               element_ring_buffer_format_sets);
-fuchsia_audio::Format SafeRingBufferFormatFromRingBufferFormatSets(
-    const std::vector<fuchsia_audio_device::PcmFormatSet>& ring_buffer_format_sets);
+fuchsia_audio::Format SecondRingBufferFormatFromElementRingBufferFormatSets(
+    ElementId element_id, const std::vector<fuchsia_audio_device::ElementRingBufferFormatSet>&
+                              element_ring_buffer_format_sets);
 
 fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_ring_buffer_format_sets);
+fuchsia_hardware_audio::Format2 SecondDriverRingBufferFormatFromDriverRingBufferFormatSets(
     const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_ring_buffer_format_sets);
 fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
     ElementId element_id,
     const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
         element_driver_ring_buffer_format_sets);
+fuchsia_hardware_audio::Format2 SecondDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
+        element_driver_ring_buffer_format_sets);
 
-fuchsia_hardware_audio::Format2 SafeDriverPacketStreamFormatFromDriverPacketStreamFormatSets(
+// PacketStream-related functions
+fuchsia_hardware_audio::Format2 SafeDriverPcmPacketStream(
     const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_packet_stream_format_sets);
-fuchsia_hardware_audio::Format2 SafeDriverPacketStreamFormatFromElementDriverPacketStreamFormatSets(
+fuchsia_hardware_audio::Format2 SafeDriverEncodedPacketStream(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_packet_stream_format_sets);
+fuchsia_hardware_audio::Format2 SafeDriverPcmPacketStream(
     ElementId element_id,
     const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
         element_driver_packet_stream_format_sets);
+fuchsia_hardware_audio::Format2 SafeDriverEncodedPacketStream(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
+        element_driver_packet_stream_format_sets);
+std::vector<fuchsia_hardware_audio::Format2> SafeDriverPacketStreamFormats(
+    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_packet_stream_format_sets);
+std::vector<fuchsia_hardware_audio::Format2> SafeDriverPacketStreamFormats(
+    ElementId element_id,
+    const std::vector<std::pair<ElementId, std::vector<fuchsia_hardware_audio::SupportedFormats2>>>&
+        element_driver_packet_stream_format_sets);
+fuchsia_audio_device::PacketStreamFormat SafePcmPacketStreamFormat(
+    const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>&
+        packet_stream_format_sets);
+fuchsia_audio_device::PacketStreamFormat SafeEncodedPacketStreamFormat(
+    const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>&
+        packet_stream_format_sets);
+fuchsia_audio_device::PacketStreamFormat SafePcmPacketStreamFormat(
+    ElementId element_id, const std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>&
+                              element_packet_stream_format_sets);
+fuchsia_audio_device::PacketStreamFormat SafeEncodedPacketStreamFormat(
+    ElementId element_id, const std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>&
+                              element_packet_stream_format_sets);
+
+std::vector<fuchsia_audio_device::PacketStreamFormat> SafePacketStreamFormats(
+    const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>&
+        packet_stream_format_sets);
+std::vector<fuchsia_audio_device::PacketStreamFormat> SafePacketStreamFormats(
+    ElementId element_id, const std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>&
+                              element_packet_stream_format_sets);
 
 }  // namespace media_audio
 

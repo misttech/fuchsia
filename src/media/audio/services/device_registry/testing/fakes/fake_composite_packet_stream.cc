@@ -230,7 +230,7 @@ void FakeCompositePacketStream::GetProperties(GetPropertiesCompleter::Sync& comp
   fha::PacketStreamProperties props;
   props.needs_cache_flush_or_invalidate(needs_cache_flush_or_invalidate_);
   props.supported_buffer_types(supported_buffer_types_);
-  completer.Reply(props);
+  completer.Reply({{.properties = std::move(props)}});
 }
 
 void FakeCompositePacketStream::Start(StartCompleter::Sync& completer) {
@@ -253,6 +253,7 @@ void FakeCompositePacketStream::Start(StartCompleter::Sync& completer) {
   }
 
   started_ = true;
+  mono_start_time_ = zx::clock::get_monotonic();
   completer.Reply(zx::ok());
 }
 

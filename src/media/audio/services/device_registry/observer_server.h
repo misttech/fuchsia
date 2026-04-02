@@ -44,11 +44,8 @@ class ObserverServer
   // fuchsia.audio.device.Observer implementation
   void WatchPlugState(WatchPlugStateCompleter::Sync& completer) final;
   void GetReferenceClock(GetReferenceClockCompleter::Sync& completer) final;
-  // We complain but don't close the connection, to accommodate older and newer clients.
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_audio_device::Observer> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) final {
-    ADR_WARN_METHOD() << "(Observer) ordinal " << metadata.method_ordinal;
-  }
+                             fidl::UnknownMethodCompleter::Sync& completer) override;
 
   // fuchsia.hardware.audio.signal_processing.Reader implementation
   void GetElements(GetElementsCompleter::Sync& completer) final;
@@ -90,6 +87,8 @@ class ObserverServer
 
   bool device_has_error_ = false;
   std::shared_ptr<const Device> device_;
+
+  std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
 
   std::shared_ptr<FidlServerInspectInstance> observer_inspect_instance_;
 };

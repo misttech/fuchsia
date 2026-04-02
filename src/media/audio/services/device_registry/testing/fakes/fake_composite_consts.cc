@@ -26,9 +26,12 @@ const fha::DaiFrameFormat FakeComposite::kDefaultDaiFrameFormat2 =
     fha::DaiFrameFormat::WithFrameFormatStandard(fha::DaiFrameFormatStandard::kNone);
 
 const std::vector<uint32_t> FakeComposite::kDefaultDaiNumberOfChannelsSet{
-    kDefaultDaiNumberOfChannels, kDefaultDaiNumberOfChannels2};
+    kDefaultDaiNumberOfChannels,
+    kDefaultDaiNumberOfChannels2,
+};
 const std::vector<uint32_t> FakeComposite::kDefaultDaiNumberOfChannelsSet2{
-    kDefaultDaiNumberOfChannels2};
+    kDefaultDaiNumberOfChannels2,
+};
 const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet{
     kDefaultDaiSampleFormat};
 const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet2{
@@ -117,29 +120,42 @@ const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultChannelAttribut
 const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultChannelAttributesSet2{
     kDefaultChannelAttributes2,
 };
+const std::vector<fha::ChannelAttributes> FakeComposite::kDefaultChannelAttributesSet3{
+    kDefaultChannelAttributes3,
+};
 const fha::ChannelSet FakeComposite::kDefaultChannelSet1{{
     .attributes = kDefaultChannelAttributesSet1,
 }};
 const fha::ChannelSet FakeComposite::kDefaultChannelSet2{{
     .attributes = kDefaultChannelAttributesSet2,
 }};
+const fha::ChannelSet FakeComposite::kDefaultChannelSet3{{
+    .attributes = kDefaultChannelAttributesSet3,
+}};
 const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets1{
     kDefaultChannelSet1,
 };
 const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets2{kDefaultChannelSet2};
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets3{kDefaultChannelSet3};
 
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats1{
     kDefaultRbSampleFormat1};
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats2{
     kDefaultRbSampleFormat2};
+const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats3{
+    kDefaultRbSampleFormat3};
 const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet1{kDefaultRbBytesPerSample1};
 const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet2{kDefaultRbBytesPerSample2};
+const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet3{kDefaultRbBytesPerSample3};
 const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet1{
     kDefaultRbValidBitsPerSample1};
 const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet2{
     kDefaultRbValidBitsPerSample2};
+const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet3{
+    kDefaultRbValidBitsPerSample3};
 const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates1{kDefaultRbFrameRate1};
 const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates2{kDefaultRbFrameRate2};
+const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates3{kDefaultRbFrameRate3};
 const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates1{kDefaultPsFrameRate1};
 const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates2{kDefaultPsFrameRate2};
 
@@ -162,6 +178,13 @@ const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet2{{
     .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet2,
     .frame_rates = kDefaultRbFrameRates2,
 }};
+const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet3{{
+    .channel_sets = kDefaultChannelSets3,
+    .sample_formats = kDefaultRbSampleFormats3,
+    .bytes_per_sample = kDefaultRbBytesPerSampleSet3,
+    .valid_bits_per_sample = kDefaultRbValidBitsPerSampleSet3,
+    .frame_rates = kDefaultRbFrameRates3,
+}};
 const fha::SupportedEncodings FakeComposite::kDefaultEncodingSet1{{
     .decoded_channel_sets = kDefaultChannelSets1,
     .decoded_frame_rates = kDefaultPsFrameRates1,
@@ -181,6 +204,23 @@ const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet1 =
     fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet1);
 const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet2 =
     fha::SupportedFormats2::WithSupportedEncodings(kDefaultEncodingSet2);
+const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet3 =
+    fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet3);
+
+const fuchsia_audio::Format FakeComposite::kDefaultPsFormat1{
+    {.sample_type = fuchsia_audio::SampleType::kInt16,
+     .channel_count = 1,
+     .frames_per_second = 48000}};
+const fuchsia_audio::Format FakeComposite::kDefaultPsFormat2{
+    {.sample_type = fuchsia_audio::SampleType::kFloat32,
+     .channel_count = 1,
+     .frames_per_second = 44100}};
+const fha::Encoding FakeComposite::kDefaultPsFormat3{{
+    .decoded_channel_count = 1,
+    .decoded_frame_rate = 44100,
+    .average_encoding_bitrate = 128000,
+    .encoding_type = fha::EncodingType::kAac,
+}};
 
 // RingBuffer and PacketStream format sets that are returned by the driver.
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets1{
@@ -188,9 +228,11 @@ const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets1{
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets2{
     kDefaultRbFormatSet2};
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultPsFormatSets1{
-    kDefaultPsFormatSet1};
+    kDefaultPsFormatSet1, kDefaultPsFormatSet3};
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultPsFormatSets2{
     kDefaultPsFormatSet2};
+const std::vector<fha::SupportedFormats2> FakeComposite::kSourceDualSupportPsFormatSets{
+    kDefaultPsFormatSet1, kDefaultPsFormatSet2};
 
 // Map of RingBuffer format sets, by element. Used internally by the driver.
 const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
@@ -202,6 +244,7 @@ const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
     FakeComposite::kDefaultPsFormatsMap = {{
         {kDestPsElementId, kDefaultPsFormatSets1},
         {kSourcePsElementId, kDefaultPsFormatSets2},
+        {kSourceDualSupportPsElementId, kSourceDualSupportPsFormatSets},
     }};
 
 // signalprocessing elements and topologies
@@ -219,6 +262,8 @@ const std::string FakeComposite::kDestRbElementDescription =
     "RingBuffer destination element description";
 const std::string FakeComposite::kDestPsElementDescription =
     "PacketStream destination element description";
+const std::string FakeComposite::kSourceDualSupportPsElementDescription =
+    "PacketStream dual format-type source element description";
 const std::string FakeComposite::kMuteElementDescription = "Mute element description";
 
 const fhasp::Element FakeComposite::kSourceDaiElement{{
@@ -269,6 +314,13 @@ const fhasp::Element FakeComposite::kDestPsElement{{
     .can_stop = false,
     .can_bypass = false,
 }};
+const fhasp::Element FakeComposite::kSourceDualSupportPsElement{{
+    .id = kSourceDualSupportPsElementId,
+    .type = fhasp::ElementType::kPacketStream,
+    .description = kSourceDualSupportPsElementDescription,
+    .can_stop = false,
+    .can_bypass = false,
+}};
 const fhasp::Element FakeComposite::kMuteElement{{
     .id = kMuteElementId,
     .type = fhasp::ElementType::kMute,
@@ -282,6 +334,7 @@ const zx::duration FakeComposite::kSourceDaiElementProcessingDelay = zx::nsec(0)
 const zx::duration FakeComposite::kDestDaiElementProcessingDelay = zx::nsec(123);
 const zx::duration FakeComposite::kSourceRbElementProcessingDelay = zx::nsec(42);
 const zx::duration FakeComposite::kSourcePsElementProcessingDelay = zx::nsec(68);
+const zx::duration FakeComposite::kSourceDualSupportPsElementProcessingDelay = zx::nsec(75);
 const fhasp::ElementState FakeComposite::kSourceDaiElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect({{
         .plug_state = fhasp::PlugState{{
@@ -326,6 +379,10 @@ const fhasp::ElementState FakeComposite::kDestPsElementInitState{{
     .started = true,
     .bypassed = false,
 }};
+const fhasp::ElementState FakeComposite::kSourceDualSupportPsElementInitState{{
+    .started = true,
+    .bypassed = false,
+}};
 const fhasp::ElementState FakeComposite::kMuteElementInitState{{
     .started = true,
     .bypassed = true,
@@ -337,6 +394,7 @@ const std::vector<fhasp::Element> FakeComposite::kElements{{
     kDestDaiElement,
     kSourceRbElement,
     kSourcePsElement,
+    kSourceDualSupportPsElement,
     kDestRbElement,
     kDestPsElement,
     kMuteElement,
@@ -359,6 +417,10 @@ const fhasp::EdgePair FakeComposite::kTopologyOutputEdgePair{{
 }};
 const fhasp::EdgePair FakeComposite::kTopologyPsOutputEdgePair{{
     .processing_element_id_from = kSourcePsElementId,
+    .processing_element_id_to = kDestDaiElementId,
+}};
+const fhasp::EdgePair FakeComposite::kTopologySourceDualSupportPsOutputEdgePair{{
+    .processing_element_id_from = kSourceDualSupportPsElementId,
     .processing_element_id_to = kDestDaiElementId,
 }};
 const fhasp::EdgePair FakeComposite::kTopologyRbToMuteEdgePair{{
@@ -402,6 +464,12 @@ const fhasp::Topology FakeComposite::kPacketStreamOutputTopology{{
         kTopologyPsOutputEdgePair,
     }},
 }};
+const fhasp::Topology FakeComposite::kSourceDualSupportPsOutputTopology{{
+    .id = kSourceDualSupportPsOutputTopologyId,
+    .processing_elements_edge_pairs = {{
+        kTopologySourceDualSupportPsOutputEdgePair,
+    }},
+}};
 const fhasp::Topology FakeComposite::kOutputWithMuteTopology{{
     .id = kOutputWithMuteTopologyId,
     .processing_elements_edge_pairs = {{
@@ -418,6 +486,7 @@ const std::vector<fhasp::Topology> FakeComposite::kTopologies{{
     kOutputOnlyTopology,
     kPacketStreamOutputTopology,
     kOutputWithMuteTopology,
+    kSourceDualSupportPsOutputTopology,
 }};
 
 }  // namespace media_audio

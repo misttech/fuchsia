@@ -16,6 +16,8 @@
 
 namespace media_audio {
 
+namespace fha = fuchsia_hardware_audio;
+
 // static
 // This singleton handles Inspect for the entire service.
 std::unique_ptr<Inspector> Inspector::singleton_ = nullptr;
@@ -29,6 +31,16 @@ void Inspector::Initialize(async_dispatcher_t* dispatcher) {
   } else {
     FX_LOGS(ERROR) << "Inspector::Initialize should only be called once";
   }
+}
+
+void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
+                     uint32_t channel_count, uint32_t frames_per_second) {
+  node.RecordUint(kChannelCount, channel_count);
+  node.RecordUint(kFramesPerSecond, frames_per_second);
+
+  std::ostringstream ss;
+  ss << sample_type;
+  node.RecordString(kSampleFormat, ss.str());
 }
 
 ///////////////////////////////////////
@@ -132,29 +144,7 @@ void RingBufferInspectInstance::RecordFormat(uint32_t channel_count, uint32_t fr
                                              fuchsia_audio::SampleType sample_type) {
   ADR_LOG_METHOD(kTraceInspector);
   format_node_ = ring_buffer_instance_node_.CreateChild(kFormatProps);
-  format_node_.RecordUint(kChannelCount, channel_count);
-  format_node_.RecordUint(kFramesPerSecond, frames_per_second);
-
-  switch (sample_type) {
-    case fuchsia_audio::SampleType::kUint8:
-      format_node_.RecordString(kSampleFormat, "UINT_8");
-      return;
-    case fuchsia_audio::SampleType::kInt16:
-      format_node_.RecordString(kSampleFormat, "INT_16");
-      return;
-    case fuchsia_audio::SampleType::kInt32:
-      format_node_.RecordString(kSampleFormat, "INT_32");
-      return;
-    case fuchsia_audio::SampleType::kFloat32:
-      format_node_.RecordString(kSampleFormat, "FLOAT_32");
-      return;
-    case fuchsia_audio::SampleType::kFloat64:
-      format_node_.RecordString(kSampleFormat, "FLOAT_64");
-      return;
-    default:
-      format_node_.RecordString(kSampleFormat, "UNKNOWN");
-      return;
-  }
+  RecordPcmFormat(format_node_, sample_type, channel_count, frames_per_second);
 }
 
 void RecordSupportedPcmFormatSets(
@@ -314,6 +304,72 @@ void PacketStreamInspectInstance::RecordStopTime(const zx::time& stopped_at) {
   }
 }
 
+void PacketStreamInspectInstance::RecordBuffer(
+    fuchsia_hardware_audio::BufferType buffer_type,
+    const std::vector<fuchsia_hardware_audio::VmoInfo>& vmo_infos) {
+  ADR_LOG_METHOD(kTraceInspector);
+  buffer_node_ = packet_stream_instance_node_.CreateChild(kBufferProps);
+
+  std::stringstream ss;
+  if ((buffer_type & fha::BufferType::kClientOwned) == fha::BufferType::kClientOwned) {
+    ss << "|CLIENT_OWNED";
+  }
+  if ((buffer_type & fha::BufferType::kDriverOwned) == fha::BufferType::kDriverOwned) {
+    ss << "|DRIVER_OWNED";
+  }
+  if ((buffer_type & fha::BufferType::kInline) == fha::BufferType::kInline) {
+    ss << "|INLINE";
+  }
+  auto type_str = ss.str();
+  buffer_node_.RecordString(kBufferType, type_str.empty() ? "NONE" : type_str.substr(1));
+
+  if (!vmo_infos.empty()) {
+    vmo_infos_node_ = buffer_node_.CreateChild(kVmoInfos);
+    FX_DCHECK(vmo_nodes_.empty());
+    uint64_t total_vmo_size = 0;
+    for (auto i = 0u; i < vmo_infos.size(); ++i) {
+      auto vmo_node = vmo_infos_node_.CreateChild(std::to_string(i));
+      vmo_node.RecordUint(kVmoId, *vmo_infos[i].id());
+      size_t vmo_size = 0;
+      if (vmo_infos[i].vmo()->is_valid()) {
+        vmo_infos[i].vmo()->get_size(&vmo_size);
+      }
+      vmo_node.RecordUint(kVmoBytes, vmo_size);
+      total_vmo_size += vmo_size;
+      vmo_nodes_.push_back(std::move(vmo_node));
+    }
+    buffer_node_.RecordUint(kVmoBytes, total_vmo_size);
+  }
+}
+
+void PacketStreamInspectInstance::RecordFormat(
+    const fuchsia_audio_device::PacketStreamFormat& format) {
+  ADR_LOG_METHOD(kTraceInspector);
+  format_node_ = packet_stream_instance_node_.CreateChild(kFormatProps);
+
+  if (format.pcm_format()) {
+    const auto& pcm = format.pcm_format().value();
+    RecordPcmFormat(format_node_, pcm.sample_type().value_or(fuchsia_audio::SampleType::Unknown()),
+                    pcm.channel_count().value_or(0), pcm.frames_per_second().value_or(0));
+  } else if (format.encoding()) {
+    const auto& enc = format.encoding().value();
+    if (enc.decoded_channel_count()) {
+      format_node_.RecordUint(kChannelCount, *enc.decoded_channel_count());
+    }
+    if (enc.decoded_frame_rate()) {
+      format_node_.RecordUint(kFramesPerSecond, *enc.decoded_frame_rate());
+    }
+
+    if (enc.encoding_type()) {
+      std::stringstream ss;
+      ss << *enc.encoding_type();
+      format_node_.RecordString(kEncodingType, ss.str());
+    }
+  } else {
+    format_node_.RecordUint("unknown_union_tag", static_cast<uint32_t>(format.Which()));
+  }
+}
+
 ///////////////////////////////////////
 // RingBufferElement methods
 RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
@@ -372,6 +428,31 @@ PacketStreamElement::PacketStreamElement(inspect::Node packet_stream_element_nod
 
 PacketStreamElement::~PacketStreamElement() {
   ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+}
+
+void PacketStreamElement::RecordSupportedFormatSets(
+    const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  packet_stream_format_sets_header_node_ =
+      packet_stream_element_node_.CreateChild(kSupportedFormats);
+
+  std::vector<fuchsia_audio_device::PcmFormatSet> pcm_format_sets;
+  std::vector<fuchsia_hardware_audio::SupportedEncodings> encoding_sets;
+
+  for (const auto& format_set : format_sets) {
+    if (format_set.pcm_format().has_value()) {
+      pcm_format_sets.push_back(format_set.pcm_format().value());
+    }
+    if (format_set.supported_encodings().has_value()) {
+      encoding_sets.push_back(format_set.supported_encodings().value());
+    }
+  }
+
+  RecordSupportedPcmFormatSets(packet_stream_format_sets_header_node_, supported_pcm_formats_sets_,
+                               pcm_format_sets, "ps_pcm_format_set_");
+  RecordSupportedEncodingSets(packet_stream_format_sets_header_node_, supported_encodings_,
+                              encoding_sets, "ps_encoding_set_");
 }
 
 std::shared_ptr<PacketStreamInspectInstance> PacketStreamElement::RecordPacketStreamInstance(
@@ -605,6 +686,23 @@ void DeviceInspectInstance::RecordRingBufferSupportedFormatSets(
   }
 }
 
+void DeviceInspectInstance::RecordPacketStreamSupportedFormatSets(
+    ElementId element_id,
+    const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets) {
+  ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
+  auto found =
+      std::ranges::find_if(packet_stream_elements_.begin(), packet_stream_elements_.end(),
+                           [element_id](const std::shared_ptr<PacketStreamElement>& ps_element) {
+                             return (ps_element->element_id() == element_id);
+                           });
+  if (found == packet_stream_elements_.end()) {
+    ADR_WARN_OBJECT() << "Cannot record supported format sets: PS element_id " << element_id
+                      << " not found";
+  } else {
+    (*found)->RecordSupportedFormatSets(format_sets);
+  }
+}
+
 std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBufferInstance(
     ElementId element_id, const zx::time& created_at) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
@@ -716,6 +814,7 @@ Inspector::Inspector(async_dispatcher_t* dispatcher)
   control_creator_servers_root_ = fidl_servers_root_.CreateChild(kControlCreatorServerInstances);
   control_servers_root_ = fidl_servers_root_.CreateChild(kControlServerInstances);
   ring_buffer_servers_root_ = fidl_servers_root_.CreateChild(kRingBufferServerInstances);
+  packet_stream_servers_root_ = fidl_servers_root_.CreateChild(kPacketStreamServerInstances);
 
   provider_servers_root_ = fidl_servers_root_.CreateChild(kProviderServerInstances);
 
@@ -815,6 +914,17 @@ std::shared_ptr<FidlServerInspectInstance> Inspector::RecordRingBufferInstance(
   auto fidl_instance =
       std::make_shared<FidlServerInspectInstance>(std::move(instance_node), created_at);
   ring_buffer_server_instances_.push_back(fidl_instance);
+  return fidl_instance;
+}
+
+std::shared_ptr<FidlServerInspectInstance> Inspector::RecordPacketStreamInstance(
+    const zx::time& created_at) {
+  ADR_LOG_METHOD(kTraceInspector);
+  auto instance_node = packet_stream_servers_root_.CreateChild(
+      std::to_string(packet_stream_server_instances_.size()));
+  auto fidl_instance =
+      std::make_shared<FidlServerInspectInstance>(std::move(instance_node), created_at);
+  packet_stream_server_instances_.push_back(fidl_instance);
   return fidl_instance;
 }
 

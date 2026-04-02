@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <unordered_set>
 
+#include "src/media/audio/services/device_registry/format_utils.h"
 #include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/signal_processing_utils.h"
 
@@ -29,14 +30,6 @@ namespace {
 
 /////////////////////////////////////////////////////
 // Utility functions
-// In the enclosed vector<SampleFormat>, how many are 'format_to_match'?
-size_t CountFormatMatches(const std::vector<fha::SampleFormat>& sample_formats,
-                          fha::SampleFormat format_to_match) {
-  return std::count_if(sample_formats.begin(), sample_formats.end(),
-                       [format_to_match](const auto& rb_sample_format) {
-                         return rb_sample_format == format_to_match;
-                       });
-}
 
 // In the enclosed vector<ChannelSet>, how many num_channels equal 'channel_count_to_match'?
 size_t CountChannelMatches(const std::vector<fha::ChannelSet>& channel_sets,
@@ -47,11 +40,6 @@ size_t CountChannelMatches(const std::vector<fha::ChannelSet>& channel_sets,
                        });
 }
 
-// In the enclosed vector<uint8_t>, how many values equal 'uchar_to_match'?
-size_t CountUcharMatches(const std::vector<uint8_t>& uchars, size_t uchar_to_match) {
-  return std::count_if(uchars.begin(), uchars.end(),
-                       [uchar_to_match](const auto& uchar) { return uchar == uchar_to_match; });
-}
 
 }  // namespace
 
@@ -299,93 +287,6 @@ bool ValidateSupportedEncodings(const fha::SupportedEncodings& encoding_format_s
   return true;
 }
 
-// Translate from fuchsia_hardware_audio::SupportedFormats to fuchsia_audio_device::PcmFormatSet.
-std::vector<fad::PcmFormatSet> TranslateRingBufferFormatSets(
-    const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
-  // translated_ring_buffer_format_sets is more complex to copy, since fuchsia_audio_device defines
-  // its tables from scratch instead of reusing types from fuchsia_hardware_audio. We build from the
-  // inside-out: populating attributes then channel_sets then translated_ring_buffer_format_sets.
-  std::vector<fad::PcmFormatSet> translated_ring_buffer_format_sets;
-  for (auto& ring_buffer_format_set : ring_buffer_format_sets) {
-    if (ring_buffer_format_set.Which() != fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
-      FX_LOGS(WARNING) << "TranslateRingBufferFormatSets: ignored unsupported format set type "
-                       << static_cast<uint32_t>(ring_buffer_format_set.Which());
-      continue;
-    }
-    auto& pcm_formats = ring_buffer_format_set.pcm_supported_formats().value();
-
-    const uint32_t max_format_rate =
-        *std::max_element(pcm_formats.frame_rates()->begin(), pcm_formats.frame_rates()->end());
-
-    // Construct channel_sets
-    std::vector<fad::ChannelSet> channel_sets;
-    for (const auto& chan_set : *pcm_formats.channel_sets()) {
-      std::vector<fad::ChannelAttributes> attributes;
-      for (const auto& attribs : *chan_set.attributes()) {
-        std::optional<uint32_t> max_channel_frequency;
-        if (attribs.max_frequency().has_value()) {
-          max_channel_frequency = std::min(*attribs.max_frequency(), max_format_rate / 2);
-        }
-        attributes.push_back({{
-            .min_frequency = attribs.min_frequency(),
-            .max_frequency = max_channel_frequency,
-        }});
-      }
-      channel_sets.push_back({{.attributes = attributes}});
-    }
-    if (channel_sets.empty()) {
-      FX_LOGS(WARNING) << "Could not translate a format set - channel_sets was empty";
-      continue;
-    }
-
-    // Construct our sample_types by intersecting vectors received from the device.
-    // fuchsia_audio::SampleType defines a sparse set of types, so we populate the vector
-    // in a bespoke manner (first unsigned, then signed, then float).
-    std::vector<fuchsia_audio::SampleType> sample_types;
-    if (CountFormatMatches(*pcm_formats.sample_formats(), fha::SampleFormat::kPcmUnsigned) > 0 &&
-        CountUcharMatches(*pcm_formats.bytes_per_sample(), 1) > 0) {
-      sample_types.push_back(fuchsia_audio::SampleType::kUint8);
-    }
-    if (CountFormatMatches(*pcm_formats.sample_formats(), fha::SampleFormat::kPcmSigned) > 0) {
-      if (CountUcharMatches(*pcm_formats.bytes_per_sample(), 2) > 0) {
-        sample_types.push_back(fuchsia_audio::SampleType::kInt16);
-      }
-      if (CountUcharMatches(*pcm_formats.bytes_per_sample(), 4) > 0) {
-        sample_types.push_back(fuchsia_audio::SampleType::kInt32);
-      }
-    }
-    if (CountFormatMatches(*pcm_formats.sample_formats(), fha::SampleFormat::kPcmFloat) > 0 &&
-        CountUcharMatches(*pcm_formats.bytes_per_sample(), 4) > 0) {
-      if (CountUcharMatches(*pcm_formats.bytes_per_sample(), 4) > 0) {
-        sample_types.push_back(fuchsia_audio::SampleType::kFloat32);
-      }
-      if (CountUcharMatches(*pcm_formats.bytes_per_sample(), 8) > 0) {
-        sample_types.push_back(fuchsia_audio::SampleType::kFloat64);
-      }
-    }
-    if (sample_types.empty()) {
-      FX_LOGS(WARNING) << "Could not translate a format set - sample_types was empty";
-      continue;
-    }
-
-    if (pcm_formats.frame_rates()->empty()) {
-      FX_LOGS(WARNING) << "Could not translate a format set - frame_rates was empty";
-      continue;
-    }
-    // Make a copy of the frame_rates result, so we can sort it.
-    std::vector<uint32_t> frame_rates = *pcm_formats.frame_rates();
-    std::ranges::sort(frame_rates);
-
-    fad::PcmFormatSet pcm_format_set = {{
-        .channel_sets = channel_sets,
-        .sample_types = sample_types,
-        .frame_rates = frame_rates,
-    }};
-    translated_ring_buffer_format_sets.emplace_back(pcm_format_set);
-  }
-  return translated_ring_buffer_format_sets;
-}
-
 bool ValidateRingBufferFormatSets(
     const std::vector<fha::SupportedFormats2>& ring_buffer_format_sets) {
   LogRingBufferFormatSets(ring_buffer_format_sets);
@@ -424,7 +325,7 @@ bool ValidatePacketStreamFormatSets(const std::vector<fha::SupportedFormats2>& f
 
   for (auto i = 0u; i < format_sets.size(); ++i) {
     const auto& ps_format_set = format_sets[i];
-    if (ps_format_set.pcm_supported_formats()) {
+    if (ps_format_set.Which() == fha::SupportedFormats2::Tag::kPcmSupportedFormats) {
       bool valid = ValidatePcmSupportedFormats(ps_format_set.pcm_supported_formats().value(),
                                                /*is_packet_stream=*/true);
       if (!valid) {
@@ -432,7 +333,7 @@ bool ValidatePacketStreamFormatSets(const std::vector<fha::SupportedFormats2>& f
                          << " is invalid";
         return false;
       }
-    } else if (ps_format_set.supported_encodings()) {
+    } else if (ps_format_set.Which() == fha::SupportedFormats2::Tag::kSupportedEncodings) {
       bool valid = ValidateSupportedEncodings(ps_format_set.supported_encodings().value());
       if (!valid) {
         FX_LOGS(WARNING) << "ValidateSupportedEncodings: supported_encodings at index " << i
@@ -956,18 +857,18 @@ bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, const fha::F
   return true;
 }
 
-bool ValidatePacketStreamVmo(const fha::VmoInfo& vmo_info, zx_rights_t required_rights,
-                             std::optional<uint64_t> min_size) {
+zx_status_t ValidatePacketStreamVmo(const fha::VmoInfo& vmo_info, zx_rights_t required_rights,
+                                    std::optional<uint64_t> min_size) {
   ADR_LOG(kLogDeviceMethods);
   LogPacketStreamVmo(vmo_info);
 
   if (!vmo_info.id().has_value()) {
     FX_LOGS(WARNING) << "VmoInfo.id is missing";
-    return false;
+    return ZX_ERR_INVALID_ARGS;
   }
   if (!vmo_info.vmo().has_value() || !vmo_info.vmo()->is_valid()) {
     FX_LOGS(WARNING) << "VmoInfo.vmo is missing or invalid";
-    return false;
+    return ZX_ERR_INVALID_ARGS;
   }
 
   zx_info_handle_basic_t info;
@@ -975,27 +876,27 @@ bool ValidatePacketStreamVmo(const fha::VmoInfo& vmo_info, zx_rights_t required_
       vmo_info.vmo()->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
   if (status != ZX_OK) {
     FX_PLOGS(WARNING, status) << "vmo.get_info returned error";
-    return false;
+    return status;
   }
   if ((info.rights & required_rights) != required_rights) {
     FX_LOGS(WARNING) << "VmoInfo rights 0x" << std::hex << info.rights << " are insufficient (0x"
                      << required_rights << " are required)";
-    return false;
+    return ZX_ERR_ACCESS_DENIED;
   }
 
   uint64_t size;
   status = vmo_info.vmo()->get_size(&size);
   if (status != ZX_OK) {
     FX_LOGS(WARNING) << "get_size returned size " << size << " and error " << status;
-    return false;
+    return status;
   }
   if (min_size.has_value() && size < *min_size) {
     FX_LOGS(WARNING) << "VmoInfo.vmo size (" << size << " bytes) is less than required size ("
                      << *min_size << " bytes)";
-    return false;
+    return ZX_ERR_BUFFER_TOO_SMALL;
   }
 
-  return true;
+  return ZX_OK;
 }
 
 bool ValidateDelayInfo(const fha::DelayInfo& delay_info) {

@@ -370,6 +370,9 @@ void FakeComposite::SetupElementsMap() {
                                                           .state = kSourceRbElementInitState}});
   elements_.insert({kSourcePsElementId, FakeElementRecord{.element = kSourcePsElement,
                                                           .state = kSourcePsElementInitState}});
+  elements_.insert({kSourceDualSupportPsElementId,
+                    FakeElementRecord{.element = kSourceDualSupportPsElement,
+                                      .state = kSourceDualSupportPsElementInitState}});
   elements_.insert(
       {kMuteElementId, FakeElementRecord{.element = kMuteElement, .state = kMuteElementInitState}});
 
@@ -379,6 +382,7 @@ void FakeComposite::SetupElementsMap() {
   ASSERT_TRUE(elements_.at(kDestPsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kSourceRbElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kSourcePsElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kSourceDualSupportPsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kMuteElementId).state_has_changed);
 
   ASSERT_FALSE(elements_.at(kSourceDaiElementId).watch_completer.has_value());
@@ -387,6 +391,7 @@ void FakeComposite::SetupElementsMap() {
   ASSERT_FALSE(elements_.at(kDestPsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kSourceRbElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kSourcePsElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kSourceDualSupportPsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kMuteElementId).watch_completer.has_value());
 }
 
@@ -1115,13 +1120,34 @@ zx::time FakeComposite::RingBufferSetActiveChannelsCompletedAt(ElementId element
 }
 
 bool FakeComposite::RingBufferStarted(ElementId element_id) const {
-  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
-  return ring_buffers_.find(element_id)->second->started();
+  FX_CHECK(is_element_type(element_id,
+                           fuchsia_hardware_audio_signalprocessing::ElementType::kRingBuffer));
+  if (auto it = ring_buffers_.find(element_id); it != ring_buffers_.end()) {
+    return it->second->started();
+  }
+  return false;
+}
+
+bool FakeComposite::PacketStreamStarted(ElementId element_id) const {
+  FX_CHECK(is_element_type(element_id,
+                           fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream));
+  if (auto it = packet_streams_.find(element_id); it != packet_streams_.end()) {
+    return it->second->started();
+  }
+  return false;
 }
 
 zx::time FakeComposite::RingBufferMonoStartTime(ElementId element_id) const {
   FX_CHECK(is_element_type(element_id, fhasp::ElementType::kRingBuffer));
   return ring_buffers_.find(element_id)->second->mono_start_time();
+}
+
+zx::time FakeComposite::PacketStreamMonoStartTime(ElementId element_id) const {
+  FX_CHECK(is_element_type(element_id, fhasp::ElementType::kPacketStream));
+  if (auto it = packet_streams_.find(element_id); it != packet_streams_.end()) {
+    return it->second->mono_start_time();
+  }
+  return zx::time::infinite_past();
 }
 
 void FakeComposite::RingBufferInjectDelayUpdate(ElementId element_id,

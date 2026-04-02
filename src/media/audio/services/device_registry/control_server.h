@@ -24,6 +24,7 @@
 namespace media_audio {
 
 class RingBufferServer;
+class PacketStreamServer;
 
 // FIDL server for fuchsia_audio_device/Control. Claims a Device and makes "mutable" calls on it.
 class ControlServer
@@ -131,6 +132,8 @@ class ControlServer
   //
   std::unordered_map<ElementId, SetDaiFormatCompleter::Async> set_dai_format_completers_;
   std::unordered_map<ElementId, CreateRingBufferCompleter::Async> create_ring_buffer_completers_;
+  std::unordered_map<ElementId, CreatePacketStreamCompleter::Async>
+      create_packet_stream_completers_;
 
   std::optional<TopologyId> topology_id_to_notify_;
   std::optional<WatchTopologyCompleter::Async> watch_topology_completer_;
@@ -143,6 +146,11 @@ class ControlServer
   // Locks a weak_ptr ring_buffer_server_ to shared_ptr and returns it, or returns nullptr.
   std::shared_ptr<RingBufferServer> TryGetRingBufferServer(ElementId element_id);
   std::unordered_map<ElementId, std::weak_ptr<RingBufferServer>> ring_buffer_servers_;
+
+  std::shared_ptr<PacketStreamServer> TryGetPacketStreamServer(ElementId element_id);
+  std::unordered_map<ElementId, std::weak_ptr<PacketStreamServer>> packet_stream_servers_;
+
+  std::vector<fidl::UnknownMethodCompleter::Async> unknown_method_completers_;
 
   std::shared_ptr<FidlServerInspectInstance> control_inspect_instance_;
 };
