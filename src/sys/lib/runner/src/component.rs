@@ -7,6 +7,11 @@ use cm_types::NamespacePath;
 use fidl::endpoints::ServerEnd;
 use fidl::epitaph::ChannelEpitaphExt;
 use fidl::prelude::*;
+use fidl_fuchsia_component as fcomp;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fproc;
+use fuchsia_async as fasync;
 use fuchsia_runtime::{HandleInfo, HandleType, job_default};
 use futures::future::{BoxFuture, Either};
 use futures::prelude::*;
@@ -17,10 +22,6 @@ use namespace::Namespace;
 use std::sync::LazyLock;
 use thiserror::Error;
 use zx::{self as zx, HandleBased, Status};
-use {
-    fidl_fuchsia_component as fcomp, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc, fuchsia_async as fasync,
-};
 
 pub static PKG_PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/pkg".parse().unwrap());
 
@@ -434,14 +435,7 @@ pub async fn configure_launcher(
 
 /// Truncates `s` to be at most `max_len` bytes.
 fn truncate_str(s: &str, max_len: usize) -> &str {
-    if s.len() <= max_len {
-        return s;
-    }
-    // TODO(https://github.com/rust-lang/rust/issues/93743): Use floor_char_boundary when stable.
-    let mut index = max_len;
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
-    }
+    let index = s.floor_char_boundary(max_len);
     &s[..index]
 }
 
@@ -468,6 +462,9 @@ mod tests {
     use async_trait::async_trait;
     use fidl::endpoints::{ClientEnd, create_endpoints, create_proxy};
     use fidl_fuchsia_component_runner::{self as fcrunner, ComponentControllerProxy};
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_process as fproc;
+    use fuchsia_async as fasync;
     use fuchsia_runtime::{HandleInfo, HandleType};
     use futures::future::BoxFuture;
     use futures::poll;
@@ -475,7 +472,6 @@ mod tests {
     use std::pin::Pin;
     use std::task::Poll;
     use zx::{self as zx, HandleBased};
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
     #[test]
     fn test_truncate_str() {

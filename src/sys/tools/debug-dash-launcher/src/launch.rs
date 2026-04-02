@@ -6,9 +6,11 @@ use crate::{layout, trampoline};
 use fidl::HandleBased;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_dash::LauncherError;
+use fidl_fuchsia_hardware_pty as pty;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fproc;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_runtime::{HandleInfo as HandleId, HandleType};
-use {fidl_fuchsia_hardware_pty as pty, fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc};
 
 pub mod component;
 pub mod package;
@@ -205,13 +207,6 @@ async fn create_launch_info(
 
 /// Truncates `s` to be at most `max_len` bytes.
 fn truncate_str(s: &str, max_len: usize) -> &str {
-    if s.len() <= max_len {
-        return s;
-    }
-    // TODO(https://github.com/rust-lang/rust/issues/93743): Use floor_char_boundary when stable.
-    let mut index = max_len;
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
-    }
+    let index = s.floor_char_boundary(max_len);
     &s[..index]
 }

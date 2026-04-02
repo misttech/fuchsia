@@ -35,14 +35,7 @@ mod tests {
 
     /// Truncates `s` to be at most `max_len` bytes.
     fn truncate_str(s: &str, max_len: usize) -> &str {
-        if s.len() <= max_len {
-            return s;
-        }
-        // TODO(https://github.com/rust-lang/rust/issues/93743): Use floor_char_boundary when stable.
-        let mut index = max_len;
-        while index > 0 && !s.is_char_boundary(index) {
-            index -= 1;
-        }
+        let index = s.floor_char_boundary(max_len);
         &s[..index]
     }
 
