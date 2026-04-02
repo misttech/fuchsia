@@ -317,7 +317,7 @@ void arm64_instruction_abort_handler(iframe_t* iframe, uint exception_flags, uin
   }
   err = vmm_page_fault_handler(far, pf_flags);
   arch_disable_ints();
-  if (err >= 0) {
+  if (err == ZX_OK) {
     return;
   }
 
@@ -423,7 +423,7 @@ void arm64_data_abort_handler(iframe_t* iframe, uint exception_flags, uint32_t e
     arch_enable_ints();
     err = vmm_page_fault_handler(arch_detag_ptr(far), pf_flags);
     arch_disable_ints();
-    if (err >= 0) {
+    if (err == ZX_OK) {
       return;
     }
   }

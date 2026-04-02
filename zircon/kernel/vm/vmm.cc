@@ -35,6 +35,48 @@
 // This file mostly contains C wrappers around the underlying C++ objects, conforming to
 // the older api.
 
+namespace {
+
+// TODO(https://fxbug.dev/42084841): See https://fxbug.dev/42084841 for why we translate results.
+//
+// Helper function for translating PageFault status in the context of the vmm_page_fault_handler.
+//
+// Long-term, we should eliminate this helper function.
+zx_status_t TranslatePageFaultStatus(zx_status_t orig_status, uint flags) {
+  if (orig_status == ZX_ERR_INTERNAL_INTR_RETRY) {
+    // We were asked to suspend.
+    //
+    // Regardless of whether the fault occurred while in usermode or kernel mode, we lie to the
+    // caller.
+    //
+    // If the fault originated while the CPU was in usermode, the handler will unwind, call
+    // ProcessPendingSignals and suspend.  All good.
+    //
+    // If the fault occurred during a user-copy, while the CPU was in kernel mode, the user-copy
+    // will resume and the thread will re-fault if the fault has not already been resolved.  This is
+    // actually a problem because if we end up attempting to wait on the re-fault path, deep down in
+    // WaitQueue::BlockEtcPreamble, we'll see that the thread is still signaled and return without
+    // blocking.  We can end up in an expensive busy-loop, re-faulting over and over.
+    //
+    // TODO(https://fxbug.dev/443281947): Fix the busy-loop issue described above.  Once that's been
+    // fixed or we correctly support suspend during page faults we should DEBUG_ASSERT here that
+    // flags has VMM_PF_FLAG_USER.
+    return ZX_OK;
+  }
+
+  if (orig_status == ZX_ERR_INTERNAL_INTR_KILLED && (flags & VMM_PF_FLAG_USER)) {
+    // We were asked to terminate and the fault originated in usermode.
+    //
+    // Because it was usermode, we know we aren't in a usercopy.  Similar to above, lie to the
+    // caller.  The thread will unwind and terminate before returning back to usermode.
+    return ZX_OK;
+  }
+
+  return orig_status;
+}
+
+}  // namespace
+
 void vmm_context_switch(VmAspace* oldspace, VmAspace* newaspace) {
   DEBUG_ASSERT(arch_ints_disabled());
 
@@ -78,20 +120,8 @@ zx_status_t vmm_page_fault_handler(vaddr_t addr, uint flags) {
   }
 
   // page fault it
-  zx_status_t status = Thread::Current::PageFault(addr, flags);
-
-  // If we get this, then all checks passed but we were interrupted or killed while waiting for the
-  // request to be fulfilled. Pretend the fault was successful and let the thread re-fault after it
-  // is resumed (in case of suspension), or proceed with termination.
-  if (status == ZX_ERR_INTERNAL_INTR_RETRY ||
-      // If we are in kernel mode (which can only happen from a usercopy), surface the error code so
-      // that the page fault can fail immediately. Note that we don't need to do the same for a
-      // suspend because the PageFault() call will handle it internally; suspension cannot
-      // prematurely terminate page fault resolution in kernel mode. See https://fxbug.dev/42084841
-      // for details.
-      (status == ZX_ERR_INTERNAL_INTR_KILLED && flags & VMM_PF_FLAG_USER)) {
-    status = ZX_OK;
-  }
+  const zx_status_t status =
+      TranslatePageFaultStatus(Thread::Current::PageFault(addr, flags), flags);
 
   KTRACE_COMPLETE("kernel:vm", "page_fault", trace_start_time, ("vaddr", ktrace::Pointer{addr}),
                   ("flags", FlagsString{flags}));
