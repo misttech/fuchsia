@@ -1913,4 +1913,109 @@ TEST(PtraceTest, PtraceEventStopWithMaskedSigtrap) {
   ptrace(PTRACE_DETACH, child_pid, 0, 0);
 }
 
+TEST(PtraceTest, PtraceAttachesDuringPpoll) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  pid_t child_pid = helper.RunInForkedProcess([&] {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &mask, nullptr), SyscallSucceeds());
+
+    // Handle SIGUSR1.
+    static volatile sig_atomic_t sigusr1_received = 0;
+    struct sigaction sa = {};
+    sa.sa_handler = [](int) { sigusr1_received = 1; };
+    sigaction(SIGUSR1, &sa, nullptr);
+
+    // Block on ppoll.
+    sigset_t ppoll_mask;
+    sigemptyset(&ppoll_mask);
+    ASSERT_THAT(ppoll(nullptr, 0, nullptr, &ppoll_mask), SyscallFailsWithErrno(EINTR));
+
+    EXPECT_TRUE(sigusr1_received);
+  });
+  ASSERT_NE(child_pid, 0);
+
+  test_helper::WaitUntilBlocked(child_pid, true);
+
+  ASSERT_THAT(ptrace(PTRACE_ATTACH, child_pid, 0, 0), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status)) << "status: " << std::hex << status;
+  EXPECT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
+
+  // Check that child should go back to being blocked on ppoll.
+  ASSERT_EQ(0, waitpid(child_pid, &status, WNOHANG));
+
+  // Allow the child to return from ppoll and exit.
+  kill(child_pid, SIGUSR1);
+}
+
+TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  pid_t child_pid = helper.RunInForkedProcess([&] {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &mask, nullptr), SyscallSucceeds());
+
+    // Handle SIGUSR1.
+    static volatile sig_atomic_t sigusr1_received = 0;
+    struct sigaction sa = {};
+    sa.sa_handler = [](int) { sigusr1_received = 1; };
+    sigaction(SIGUSR1, &sa, nullptr);
+
+    // Block on ppoll.
+    sigset_t ppoll_mask;
+    sigemptyset(&ppoll_mask);
+    struct timespec timeout = {.tv_sec = 2, .tv_nsec = 0};
+
+    // While blocked on the first ppoll, the parent will ptrace-attach, and send a SIGUSR1 signal.
+    // The parent will intercept this signal and suppress it, so that the signal is not delivered.
+    // On Linux, this happens transparently and ppoll returns success after 2 seconds, but on
+    // Starnix it returns EINTR after the signal is suppressed.
+    // TODO(wintermelons): Fix this so that ppoll returns success.
+    ppoll(nullptr, 0, &timeout, &ppoll_mask);
+
+    // Block on ppoll again. By doing 2 ppolls in quick succession, this occasionally triggers a
+    // race condition where the signal mask is not updated correctly.
+    ASSERT_THAT(ppoll(nullptr, 0, &timeout, &ppoll_mask), SyscallSucceeds());
+
+    // Check if temporary signal mask leaked
+    sigset_t current_mask;
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, nullptr, &current_mask), SyscallSucceeds());
+    EXPECT_TRUE(sigismember(&current_mask, SIGUSR1));
+
+    EXPECT_FALSE(sigusr1_received);
+  });
+  ASSERT_NE(child_pid, 0);
+
+  test_helper::WaitUntilBlocked(child_pid, true);
+
+  ASSERT_THAT(ptrace(PTRACE_ATTACH, child_pid, 0, 0), SyscallSucceeds());
+  int status;
+  ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status)) << "status: " << std::hex << status;
+  EXPECT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  // Let child go back to blocking on ppoll.
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  test_helper::WaitUntilBlocked(child_pid, true);
+
+  // Now that child is in ppoll and is ptraced, send a signal and check that the child goes into
+  // signal-delivery-stop.
+  kill(child_pid, SIGUSR1);
+
+  ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status)) << "status: " << std::hex << status;
+  EXPECT_EQ(WSTOPSIG(status), SIGUSR1);
+
+  // Continue the child without delivering the captured signal.
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+}
+
 }  // namespace

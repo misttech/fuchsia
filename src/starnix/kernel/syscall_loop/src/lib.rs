@@ -426,7 +426,7 @@ pub fn process_completed_restricted_exit(
             // If ptrace_cont has sent a signal, process it immediately.  This
             // seems to match Linux behavior.
 
-            let task_state = current_task.read();
+            let mut task_state = current_task.write();
             if task_state
                 .ptrace
                 .as_ref()
@@ -437,6 +437,8 @@ pub fn process_completed_restricted_exit(
                 continue;
             }
             result = None;
+            // Always restore signal mask before returning to userspace.
+            task_state.restore_signal_mask();
             break;
         }
     }

@@ -146,6 +146,11 @@
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
 
+                // This test fails because signal handlers aren't executed when the signal is
+                // delivered while the thread is blocked in ppoll and the signal is allowed by
+                // the temporary signal mask.
+                "PtraceTest.PtraceAttachesDuringPpoll",
+
                 // TODO(https://fxbug.dev/491941184)
                 "SeccompTest.BpfJaWithSourceXRejected",
                 "SeccompTest.BpfLastInstNotRetRejected",
