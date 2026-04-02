@@ -8,7 +8,7 @@ def _make_overrides_target(label):
     target_lines = [
         "fuchsia_prebuilt_assembly_developer_overrides(",
         "    name = \"%s\"," % label.name,
-        "    overrides_path = \"@gn_targets//%s:%s\"," % (label.package, label.name),
+        "    overrides_path = \"@gn_targets%s\"," % str(label).remove_prefix("@@"),
         ")",
     ]
     return target_lines

@@ -494,8 +494,8 @@ def _idk_atom_impl(
 
     # The allowlist must be passed as a label attribute due to
     # https://fxbug.dev/446911800. Verify that the correct allowlist is passed.
-    allowlist_string = "//%s:%s" % (allowlist.package, allowlist.name)
-    expected_allowlist = get_allowlist_target(type, category, stable, prebuilt_library_format)
+    allowlist_string = str(allowlist)
+    expected_allowlist = "@@" + get_allowlist_target(type, category, stable, prebuilt_library_format)
     if allowlist_string != expected_allowlist:
         fail("`allowlist` must be `%s`, but was `%s`." % (expected_allowlist, allowlist_string))
 

@@ -362,7 +362,7 @@ def _idk_cc_prebuilt_library_impl(
             name = verify_public_symbols_target_name,
             prebuilt_library = underlying_library_info_target_name,
             reference = ifs_golden_file,
-            library_name = "//" + native.package_name() + ":" + name,
+            library_name = str(native.package_relative_label(name)),
             testonly = testonly,
             # Required for tests using `create_test_atom_info()`.
             visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
