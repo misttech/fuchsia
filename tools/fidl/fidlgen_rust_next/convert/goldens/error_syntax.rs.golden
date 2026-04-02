@@ -1,4 +1,2 @@
 use fidl_next_test_errorsyntax as _;
 use fidl_test_errorsyntax as _;
-
-// TODO: write conversions

@@ -21,7 +21,6 @@ if (is_host) {
       "src/templates/const.rs",
       "src/templates/constant.rs",
       "src/templates/context.rs",
-      "src/templates/denylist.rs",
       "src/templates/doc_string.rs",
       "src/templates/enum.rs",
       "src/templates/library.rs",

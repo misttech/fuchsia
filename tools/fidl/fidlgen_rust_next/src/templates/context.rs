@@ -7,12 +7,12 @@ use fidl_ir::{
     Attributes, CompoundIdent, CompoundIdentifier, Constant, IntType, Library, PrimSubtype,
     Protocol, Service, Struct, Table, Type, TypeAlias, Union,
 };
-use fidlgen::LibraryExt as _;
+use fidlgen::{Denylist, LibraryExt as _};
 use std::collections::{HashMap, hash_map};
 
 use crate::config::{Config, ResourceBindings};
 use crate::templates::{
-    CompoundIdentifierTemplate, ConstantTemplate, Denylist, DocStringTemplate, NaturalIntTemplate,
+    CompoundIdentifierTemplate, ConstantTemplate, DocStringTemplate, NaturalIntTemplate,
     NaturalPrimTemplate, NaturalTypeTemplate, WireIntTemplate, WirePrimTemplate, WireTypeTemplate,
     constraint_for,
 };
@@ -366,7 +366,7 @@ pub trait Contextual {
     }
 
     fn rust_next_denylist(&self, ident: &CompoundIdent) -> Denylist {
-        Denylist::for_ident(&self.context().library, ident, &["rust_next"])
+        self.context().library.denylist_for(ident, &["rust_next"])
     }
 
     fn constraint(&self, ty: &Type) -> String {

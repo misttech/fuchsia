@@ -1,4 +1,14 @@
 use fidl_next_test_placementofattributes as _;
 use fidl_test_placementofattributes as _;
 
-// TODO: write conversions
+pub fn example_bits_from_rust_next(
+    value: fidl_next_test_placementofattributes::ExampleBits,
+) -> fidl_test_placementofattributes::ExampleBits {
+    fidl_test_placementofattributes::ExampleBits::from_bits_retain(value.bits())
+}
+
+pub fn example_bits_into_rust_next(
+    value: fidl_test_placementofattributes::ExampleBits,
+) -> fidl_next_test_placementofattributes::ExampleBits {
+    fidl_next_test_placementofattributes::ExampleBits::from_bits_retain(value.bits())
+}

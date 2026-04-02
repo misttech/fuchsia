@@ -1,4 +1,26 @@
 use fidl_next_test_doccomments as _;
 use fidl_test_doccomments as _;
 
-// TODO: write conversions
+pub fn my_flexible_bits_from_rust_next(
+    value: fidl_next_test_doccomments::MyFlexibleBits,
+) -> fidl_test_doccomments::MyFlexibleBits {
+    fidl_test_doccomments::MyFlexibleBits::from_bits_retain(value.bits())
+}
+
+pub fn my_flexible_bits_into_rust_next(
+    value: fidl_test_doccomments::MyFlexibleBits,
+) -> fidl_next_test_doccomments::MyFlexibleBits {
+    fidl_next_test_doccomments::MyFlexibleBits::from_bits_retain(value.bits())
+}
+
+pub fn my_strict_bits_from_rust_next(
+    value: fidl_next_test_doccomments::MyStrictBits,
+) -> fidl_test_doccomments::MyStrictBits {
+    fidl_test_doccomments::MyStrictBits::from_bits_retain(value.bits())
+}
+
+pub fn my_strict_bits_into_rust_next(
+    value: fidl_test_doccomments::MyStrictBits,
+) -> fidl_next_test_doccomments::MyStrictBits {
+    fidl_next_test_doccomments::MyStrictBits::from_bits_retain(value.bits())
+}

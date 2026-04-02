@@ -1,4 +1,14 @@
 use fidl_next_test_typesinprotocols as _;
 use fidl_test_typesinprotocols as _;
 
-// TODO: write conversions
+pub fn bits_from_rust_next(
+    value: fidl_next_test_typesinprotocols::Bits,
+) -> fidl_test_typesinprotocols::Bits {
+    fidl_test_typesinprotocols::Bits::from_bits_retain(value.bits())
+}
+
+pub fn bits_into_rust_next(
+    value: fidl_test_typesinprotocols::Bits,
+) -> fidl_next_test_typesinprotocols::Bits {
+    fidl_next_test_typesinprotocols::Bits::from_bits_retain(value.bits())
+}

@@ -1,4 +1,14 @@
 use fidl_next_test_consts as _;
 use fidl_test_consts as _;
 
-// TODO: write conversions
+pub fn bits_type_from_rust_next(
+    value: fidl_next_test_consts::BitsType,
+) -> fidl_test_consts::BitsType {
+    fidl_test_consts::BitsType::from_bits_retain(value.bits())
+}
+
+pub fn bits_type_into_rust_next(
+    value: fidl_test_consts::BitsType,
+) -> fidl_next_test_consts::BitsType {
+    fidl_next_test_consts::BitsType::from_bits_retain(value.bits())
+}

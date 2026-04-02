@@ -1,4 +1,2 @@
 use fidl_next_test_structdefaultvalueenumlibraryreference as _;
 use fidl_test_structdefaultvalueenumlibraryreference as _;
-
-// TODO: write conversions

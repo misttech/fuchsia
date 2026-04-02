@@ -1,4 +1,2 @@
 use fidl_next_test_protocollayoutssamelibrary as _;
 use fidl_test_protocollayoutssamelibrary as _;
-
-// TODO: write conversions

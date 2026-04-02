@@ -6,7 +6,8 @@ use core::any::Any;
 use core::fmt;
 
 use fidl_ir::{Attributes, CompoundIdent, Library, Protocol};
-use fidlgen::{Decl, LibraryExt as _};
+
+use crate::{Decl, LibraryExt as _};
 
 pub enum Denylist {
     Allowed,

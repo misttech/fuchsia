@@ -1,4 +1,10 @@
 use fidl_next_test_versions as _;
 use fidl_test_versions as _;
 
-// TODO: write conversions
+pub fn bits_from_rust_next(value: fidl_next_test_versions::Bits) -> fidl_test_versions::Bits {
+    fidl_test_versions::Bits::from_bits_retain(value.bits())
+}
+
+pub fn bits_into_rust_next(value: fidl_test_versions::Bits) -> fidl_next_test_versions::Bits {
+    fidl_next_test_versions::Bits::from_bits_retain(value.bits())
+}

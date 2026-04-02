@@ -1,4 +1,22 @@
 use fidl_next_test_anonymous as _;
 use fidl_test_anonymous as _;
 
-// TODO: write conversions
+pub fn bits_member_from_rust_next(
+    value: fidl_next_test_anonymous::BitsMember,
+) -> fidl_test_anonymous::BitsMember {
+    fidl_test_anonymous::BitsMember::from_bits_retain(value.bits())
+}
+
+pub fn bits_member_into_rust_next(
+    value: fidl_test_anonymous::BitsMember,
+) -> fidl_next_test_anonymous::BitsMember {
+    fidl_next_test_anonymous::BitsMember::from_bits_retain(value.bits())
+}
+
+pub fn flags_from_rust_next(value: fidl_next_test_anonymous::Flags) -> fidl_test_anonymous::Flags {
+    fidl_test_anonymous::Flags::from_bits_retain(value.bits())
+}
+
+pub fn flags_into_rust_next(value: fidl_test_anonymous::Flags) -> fidl_next_test_anonymous::Flags {
+    fidl_next_test_anonymous::Flags::from_bits_retain(value.bits())
+}

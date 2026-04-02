@@ -5,9 +5,10 @@
 use askama::Template;
 
 use fidl_ir::{Bits, Const, DeclType, Enum, Protocol, Service, Struct, Table, TypeAlias, Union};
+use fidlgen::Denylist;
 
 use super::{
-    AliasTemplate, BitsTemplate, ConstTemplate, Context, Contextual, Denylist, EnumTemplate,
+    AliasTemplate, BitsTemplate, ConstTemplate, Context, Contextual, EnumTemplate,
     ProtocolTemplate, ServiceTemplate, StructTemplate, TableTemplate, UnionTemplate,
 };
 

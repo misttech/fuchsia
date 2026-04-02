@@ -15,6 +15,7 @@ if (is_host) {
     sources = [
       "src/context.rs",
       "src/main.rs",
+      "src/templates/bits.rs",
       "src/templates/mod.rs",
     ]
     deps = [
@@ -26,6 +27,7 @@ if (is_host) {
     ]
     inputs = [
       "askama.toml",
+      "templates/bits.askama",
       "templates/library.askama",
     ]
     rustenv = [ "CARGO_MANIFEST_DIR=${cargo_manifest_dir}" ]
