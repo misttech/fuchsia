@@ -114,11 +114,11 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
 bool ReportStoreMetadata::IsDirectoryUsable() const { return is_directory_usable_; }
 
 bool ReportStoreMetadata::Contains(const ReportId report_id) const {
-  return report_metadata_.find(report_id) != report_metadata_.end();
+  return report_metadata_.contains(report_id);
 }
 
 bool ReportStoreMetadata::Contains(const std::string& program) const {
-  return program_metadata_.find(program) != program_metadata_.end();
+  return program_metadata_.contains(program);
 }
 
 StorageSize ReportStoreMetadata::CurrentSize() const { return current_size_; }
@@ -176,7 +176,7 @@ std::vector<ReportId> ReportStoreMetadata::Reports() const {
 }
 
 const std::deque<ReportId>& ReportStoreMetadata::ProgramReports(const std::string& program) const {
-  FX_CHECK(program_metadata_.find(program) != program_metadata_.end());
+  FX_CHECK(program_metadata_.contains(program));
   return program_metadata_.at(program).report_ids;
 }
 
@@ -186,7 +186,7 @@ const std::string& ReportStoreMetadata::ReportProgram(const ReportId report_id) 
 }
 
 const std::string& ReportStoreMetadata::ProgramDirectory(const std::string& program) const {
-  FX_CHECK(program_metadata_.find(program) != program_metadata_.end());
+  FX_CHECK(program_metadata_.contains(program));
   return program_metadata_.at(program).dir;
 }
 

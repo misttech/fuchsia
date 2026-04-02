@@ -104,7 +104,7 @@ class StubCrashIntrospect : public fuchsia::sys2::CrashIntrospect {
   };
   void FindComponentByThreadKoid(uint64_t thread_koid, FindComponentByThreadKoidCallback callback) {
     using namespace fuchsia::sys2;
-    if (tids_to_component_infos_.find(thread_koid) == tids_to_component_infos_.end()) {
+    if (!tids_to_component_infos_.contains(thread_koid)) {
       fuchsia::component::Error err{fuchsia::component::Error::RESOURCE_NOT_FOUND};
       callback(CrashIntrospect_FindComponentByThreadKoid_Result::WithErr(std::move(err)));
     } else {

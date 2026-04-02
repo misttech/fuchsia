@@ -55,7 +55,7 @@ feedback::Annotations AllAnnotations(const std::set<std::string>& default_snapsh
   feedback::Annotations all_annotations = annotations;
 
   for (const auto& key : default_snapshot_annotations) {
-    if (all_annotations.find(key) == all_annotations.end()) {
+    if (!all_annotations.contains(key)) {
       // There is an annotation in the default list that was not produced by any provider.
       // Annotations that are excluded by a product should be marked as "not available in product,"
       // so this indicates a logical error on the Feedback-side.
@@ -88,7 +88,7 @@ feedback::Attachments AllAttachments(const feedback::AttachmentKeys& allowlist,
   }
 
   for (const auto& key : allowlist) {
-    if (all_attachments.find(key) == all_attachments.end()) {
+    if (!all_attachments.contains(key)) {
       all_attachments.insert({key, feedback::AttachmentValue(Error::kLogicError)});
     }
   }
@@ -118,13 +118,11 @@ void AddUtcBootDifferences(const std::optional<zx::duration> utc_boot_difference
   }
 
   for (auto& file : (*metadata_json)["files"].GetObject()) {
-    if (kUtcBootDifferenceAllowlist.find(file.name.GetString()) !=
-        kUtcBootDifferenceAllowlist.end()) {
+    if (kUtcBootDifferenceAllowlist.contains(file.name.GetString())) {
       AddUtcBootDifference(utc_boot_difference, &file.value, metadata_json->GetAllocator());
     }
 
-    if (kPreviousBootUtcBootDifferenceAllowlist.find(file.name.GetString()) !=
-        kPreviousBootUtcBootDifferenceAllowlist.end()) {
+    if (kPreviousBootUtcBootDifferenceAllowlist.contains(file.name.GetString())) {
       AddUtcBootDifference(previous_boot_utc_boot_difference, &file.value,
                            metadata_json->GetAllocator());
     }
@@ -173,7 +171,7 @@ void AddAnnotationsJson(const std::set<std::string>& default_snapshot_annotation
   size_t num_present_platform = 0u;
   size_t num_missing_platform = 0u;
   for (const auto& [k, v] : all_annotations) {
-    if (default_snapshot_annotations.find(k) == default_snapshot_annotations.end()) {
+    if (!default_snapshot_annotations.contains(k)) {
       continue;
     }
 

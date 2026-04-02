@@ -122,7 +122,7 @@ void Logger::SendEvent(uint64_t event_id) {
     return;
   }
 
-  if (pending_events_.find(event_id) == pending_events_.end()) {
+  if (!pending_events_.contains(event_id)) {
     return;
   }
   Event& event = pending_events_.at(event_id);
@@ -160,7 +160,7 @@ void Logger::SendAllPendingEvents() {
 }
 
 uint64_t Logger::GetTimerDurationUSecs(uint64_t timer_id) const {
-  FX_CHECK(timer_starts_usecs_.find(timer_id) != timer_starts_usecs_.end());
+  FX_CHECK(timer_starts_usecs_.contains(timer_id));
 
   return CurrentTimeUSecs(clock_) - timer_starts_usecs_.at(timer_id);
 }

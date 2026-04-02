@@ -122,7 +122,7 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const std
                            GetMissingSnapshotAnnotations(kGarbageCollectedSnapshotUuid));
         }
 
-        if (report_results_.find(report_id) != report_results_.end()) {
+        if (report_results_.contains(report_id)) {
           return GetReport(/*actual_uuid=*/uuid, /*request_uuid=*/uuid,
                            *report_results_[report_id].annotations);
         }

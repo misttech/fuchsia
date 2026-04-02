@@ -32,7 +32,7 @@ using fxl::SplitStringCopy;
 using inspect::Node;
 
 bool InspectNodeManager::ManagedNodeBase::HasChild(const std::string& child) const {
-  return children_.find(child) != children_.end();
+  return children_.contains(child);
 }
 
 InspectNodeManager::ManagedNode& InspectNodeManager::ManagedNodeBase::GetChild(

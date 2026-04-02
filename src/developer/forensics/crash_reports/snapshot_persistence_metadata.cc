@@ -27,7 +27,7 @@ SnapshotPersistenceMetadata::SnapshotPersistenceMetadata(std::string snapshot_st
 }
 
 bool SnapshotPersistenceMetadata::Contains(const std::string& uuid) const {
-  return snapshot_metadata_.find(uuid) != snapshot_metadata_.end();
+  return snapshot_metadata_.contains(uuid);
 }
 
 bool SnapshotPersistenceMetadata::RecreateFromFilesystem() {
@@ -50,7 +50,7 @@ bool SnapshotPersistenceMetadata::RecreateFromFilesystem() {
         continue;
       }
 
-      if (snapshot_metadata_.find(uuid) != snapshot_metadata_.end()) {
+      if (snapshot_metadata_.contains(uuid)) {
         FX_LOGS(ERROR) << "Found more than 1 file stored in snapshot directory '" << snapshot_dir
                        << "'";
         continue;

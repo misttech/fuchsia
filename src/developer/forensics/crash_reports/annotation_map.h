@@ -109,7 +109,7 @@ class AnnotationMap {
     return *this;
   }
 
-  bool Contains(const std::string& key) const { return data_.find(key) != data_.end(); }
+  bool Contains(const std::string& key) const { return data_.contains(key); }
 
   const std::string& Get(const std::string& key) const {
     FX_CHECK(Contains(key));

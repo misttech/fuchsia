@@ -391,7 +391,7 @@ TEST_F(DataProviderTest, GetSnapshotUnfilteredAnnotations_DoesNotFilterMissingAn
 
   auto [annotations, archive] = GetSnapshotInternal();
   EXPECT_EQ(annotations.size(), 1u);
-  EXPECT_TRUE(annotations.find("annotation1") != annotations.end());
+  EXPECT_TRUE(annotations.contains("annotation1"));
 }
 
 TEST_F(DataProviderTest, GetSnapshotUnfilteredAnnotations_ReturnsFilledArchive) {

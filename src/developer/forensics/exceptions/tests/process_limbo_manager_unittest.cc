@@ -552,7 +552,7 @@ TEST(ProcessLimboManagerTest, Filters) {
   // It should've added the exception.
   auto& limbo = limbo_manager.limbo();
   ASSERT_EQ(limbo.size(), 1u);
-  ASSERT_TRUE(limbo.find(kProcessKoid1) != limbo.end());
+  ASSERT_TRUE(limbo.contains(kProcessKoid1));
 
   // Adding a filter should filter out.
   limbo_manager.AppendFiltersForTesting({"filter"});
@@ -562,8 +562,8 @@ TEST(ProcessLimboManagerTest, Filters) {
 
   // No match, so the process should've been added.
   ASSERT_EQ(limbo.size(), 2u);
-  EXPECT_TRUE(limbo.find(kProcessKoid1) != limbo.end());
-  EXPECT_TRUE(limbo.find(kProcessKoid2) != limbo.end());
+  EXPECT_TRUE(limbo.contains(kProcessKoid1));
+  EXPECT_TRUE(limbo.contains(kProcessKoid2));
 
   // Adding a match should not append the process.
   name_to_return = "some-filtered-process";
@@ -571,8 +571,8 @@ TEST(ProcessLimboManagerTest, Filters) {
   limbo_manager.AddToLimbo(GetFakeException(kProcessKoid3));
 
   ASSERT_EQ(limbo.size(), 2u);
-  EXPECT_TRUE(limbo.find(kProcessKoid1) != limbo.end());
-  EXPECT_TRUE(limbo.find(kProcessKoid2) != limbo.end());
+  EXPECT_TRUE(limbo.contains(kProcessKoid1));
+  EXPECT_TRUE(limbo.contains(kProcessKoid2));
 }
 
 TEST(ProcessLimboManagerTest, FiltersGetSet) {

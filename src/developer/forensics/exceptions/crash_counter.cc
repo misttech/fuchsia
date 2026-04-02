@@ -10,7 +10,7 @@ CrashCounter::CrashCounter(inspect::Node* root_node)
     : crash_counts_node_(root_node->CreateChild("crash_counts")) {}
 
 void CrashCounter::Increment(const std::string& moniker) {
-  if (crash_counts_.find(moniker) == crash_counts_.end()) {
+  if (!crash_counts_.contains(moniker)) {
     crash_counts_.emplace(moniker, crash_counts_node_.CreateUint(moniker, 0));
   }
 

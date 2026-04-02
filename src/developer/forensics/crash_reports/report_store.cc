@@ -173,7 +173,7 @@ std::optional<ItemLocation> ReportStore::Add(Report report,
   }
 
   for (const auto& key : kReservedAttachmentNames) {
-    if (report.Attachments().find(key) != report.Attachments().end()) {
+    if (report.Attachments().contains(key)) {
       FX_LOGST(ERROR, tags_->Get(report.Id())) << "Attachment is using reserved key: " << key;
       return std::nullopt;
     }

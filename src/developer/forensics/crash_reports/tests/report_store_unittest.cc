@@ -194,7 +194,7 @@ class ReportStoreTest : public UnitTestFixture {
 
     // Take the snapshot uuid from the set of attachments, if one is present.
     const std::string snapshot_uuid_filename = "snapshot_uuid.txt";
-    if (attachments.find(snapshot_uuid_filename) != attachments.end()) {
+    if (attachments.contains(snapshot_uuid_filename)) {
       *snapshot_uuid_out = attachments.at(snapshot_uuid_filename);
       attachments.erase(snapshot_uuid_filename);
     } else {
@@ -202,7 +202,7 @@ class ReportStoreTest : public UnitTestFixture {
     }
 
     const std::string minidump_filename = "minidump.dmp";
-    if (attachments.find(minidump_filename) != attachments.end()) {
+    if (attachments.contains(minidump_filename)) {
       *minidump_out = attachments.at(minidump_filename);
       attachments.erase(minidump_filename);
     } else {

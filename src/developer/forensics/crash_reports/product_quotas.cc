@@ -91,7 +91,7 @@ bool ProductQuotas::HasQuotaRemaining(const Product& product) {
   ResetIfPastDeadline();
 
   const auto key = Key(product);
-  if (remaining_quotas_.find(key) == remaining_quotas_.end()) {
+  if (!remaining_quotas_.contains(key)) {
     remaining_quotas_[key] = quota_.value();
     UpdateJson(key, quota_.value());
   }
@@ -106,7 +106,7 @@ void ProductQuotas::DecrementRemainingQuota(const Product& product) {
   }
 
   const auto key = Key(product);
-  FX_CHECK(remaining_quotas_.find(key) != remaining_quotas_.end());
+  FX_CHECK(remaining_quotas_.contains(key));
   FX_CHECK(remaining_quotas_[key] > 0);
 
   --(remaining_quotas_[key]);

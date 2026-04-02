@@ -412,9 +412,7 @@ bool Queue::DeleteSnapshotIfNoClients(const std::string& uuid) {
 }
 
 size_t Queue::NumReportsUsingSnapshot(const std::string& uuid) {
-  return (snapshot_clients_.find(uuid) != snapshot_clients_.end())
-             ? snapshot_clients_.at(uuid).size()
-             : 0;
+  return snapshot_clients_.contains(uuid) ? snapshot_clients_.at(uuid).size() : 0;
 }
 
 void Queue::PreventStrandedSnapshot(const std::string& uuid) {

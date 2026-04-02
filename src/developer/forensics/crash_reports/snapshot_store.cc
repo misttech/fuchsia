@@ -87,7 +87,7 @@ Snapshot SnapshotStore::GetSnapshot(const std::string& uuid) {
   auto* data = FindSnapshotData(uuid);
 
   if (!data) {
-    if (garbage_collected_snapshots_.find(uuid) != garbage_collected_snapshots_.end()) {
+    if (garbage_collected_snapshots_.contains(uuid)) {
       return BuildMissing(garbage_collected_snapshot_);
     }
 
@@ -235,7 +235,7 @@ std::optional<ItemLocation> SnapshotStore::SnapshotLocation(const std::string& u
 size_t SnapshotStore::Size() const { return data_.size(); }
 
 bool SnapshotStore::IsGarbageCollected(const std::string& uuid) const {
-  return garbage_collected_snapshots_.find(uuid) != garbage_collected_snapshots_.end();
+  return garbage_collected_snapshots_.contains(uuid);
 }
 
 bool SnapshotStore::SizeLimitsExceeded() const {
@@ -250,7 +250,7 @@ void SnapshotStore::DropArchive(SnapshotData* data) {
 }
 
 void SnapshotStore::RecordAsGarbageCollected(const std::string& uuid) {
-  if (garbage_collected_snapshots_.find(uuid) != garbage_collected_snapshots_.end()) {
+  if (garbage_collected_snapshots_.contains(uuid)) {
     return;
   }
 
@@ -263,7 +263,7 @@ void SnapshotStore::RecordAsGarbageCollected(const std::string& uuid) {
 }
 
 SnapshotStore::SnapshotData* SnapshotStore::FindSnapshotData(const std::string& uuid) {
-  return (data_.find(uuid) == data_.end()) ? nullptr : &(data_.at(uuid));
+  return data_.contains(uuid) ? &(data_.at(uuid)) : nullptr;
 }
 
 }  // namespace forensics::crash_reports
