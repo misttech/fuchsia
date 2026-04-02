@@ -39,6 +39,13 @@ pub struct Controller<TestFn, PrintFn> {
     pub step_count: usize,
 }
 
+const COLOR_GRAY: &str = "\x1b[90m";
+const COLOR_RESET: &str = "\x1b[0m";
+const SYMBOL_CULPRIT: &str = "\x1b[31;1m*\x1b[0m";
+const SYMBOL_CURRENT: &str = "\x1b[32;5mO\x1b[0m";
+const SYMBOL_GOOD: &str = "\x1b[32m✓\x1b[0m";
+const SYMBOL_BAD: &str = "\x1b[31m✗\x1b[0m";
+
 impl<TestFn, TestFut, PrintFn> Controller<TestFn, PrintFn>
 where
     TestFn: FnMut(Vec<MOSIdentifier>) -> TestFut,
@@ -87,29 +94,18 @@ where
     /// Runs the bisection loop, yielding to the async `test_fn` for each combination
     /// and persisting state after each step. Returns the final StrategyState.
     pub async fn run(&mut self) -> Result<StrategyState> {
-        (self.print_fn)("Starting Multi-dimensional bisection...\n\n");
-        self.print_status();
+        (self.print_fn)("Starting Multi-dimensional bisection...\n");
 
         while let Some(indices) = self.strategy.next_combination(&self.space) {
             self.step_count += 1;
 
-            let mut combination_strings = Vec::new();
+            self.print_status();
+
             let combination: Vec<MOSIdentifier> = indices
                 .iter()
                 .enumerate()
-                .map(|(i, &idx)| {
-                    let dim = &self.space.dimensions[i];
-                    combination_strings.push(format!("\"{}\"", dim.versions[idx]));
-                    dim.get_mos_identifier(idx, self.slot)
-                })
+                .map(|(i, &idx)| self.space.dimensions[i].get_mos_identifier(idx, self.slot))
                 .collect();
-
-            let message = format!(
-                "\nStep {}: Testing combination: [{}]",
-                self.step_count,
-                combination_strings.join(", ")
-            );
-            (self.print_fn)(&message);
 
             // Yield to the caller-provided async testing function
             let pass = (self.test_fn)(combination)
@@ -121,13 +117,13 @@ where
             // Update the state machine based on the result
             self.strategy.apply_result(&mut self.space, pass);
             self.save_plan().context("Failed to save bisection plan after step")?;
-            self.print_status();
 
             // Check if we reached a terminal state
             if matches!(
                 self.strategy.state,
                 StrategyState::Resolved { .. } | StrategyState::Unresolved
             ) {
+                self.print_status();
                 break;
             }
         }
@@ -158,33 +154,131 @@ where
     /// Formats and prints the current status of the bisection state machine.
     pub fn print_status(&mut self) {
         let mut message = String::new();
-        message.push_str("Current Search Space Status:\n");
-        for dim in &self.space.dimensions {
-            let status = if dim.high == dim.low {
-                format!("Pinned to [{}]", dim.versions[dim.low])
-            } else if dim.high == dim.low + 1 {
-                format!(
-                    "Narrowed -> Good: [{}], Bad: [{}]",
-                    dim.versions[dim.low], dim.versions[dim.high]
-                )
-            } else {
-                format!(
-                    "Active search between [{}] and [{}] ({} versions)",
-                    dim.versions[dim.low],
-                    dim.versions[dim.high],
-                    dim.high - dim.low + 1
-                )
-            };
-            message.push_str(&format!("  {:<10}: {}\n", dim.name, status));
-        }
 
+        // 1. Determine the overall status and current phase of the strategy
         let phase_str = match &self.strategy.state {
             StrategyState::Phase1Bisection => "Phase 1 (Multi-Axis Bisection)",
             StrategyState::Phase2Isolation { .. } => "Phase 2 (Isolating Root Cause)",
             StrategyState::Resolved { .. } => "Finished (Resolved)",
             StrategyState::Unresolved => "Finished (Unresolved)",
         };
-        message.push_str(&format!("  Strategy Mode: {}\n", phase_str));
+        message.push_str(&format!("Step {}: {}\n", self.step_count, phase_str));
+        message.push_str("Bisection Search Space:\n");
+
+        // 2. Compute display dimensions so that text columns align nicely
+        let names: Vec<String> = self
+            .space
+            .dimensions
+            .iter()
+            .map(|d| format!("{}/{}", d.artifact_type, d.name))
+            .collect();
+        let max_name_len = names.iter().map(|n| n.len()).max().unwrap_or(0);
+        let max_artifacts_len =
+            self.space.dimensions.iter().map(|d| d.versions.len()).max().unwrap_or(0);
+
+        // 3. Pre-fetch the exact combination we are testing on this step
+        // so we can highlight it
+        let current_combination = self.strategy.next_combination(&self.space);
+
+        // 4. Pre-fetch culprit information if we have finished successfully
+        let culprit_info =
+            if let StrategyState::Resolved { dim_idx, high_idx, .. } = self.strategy.state {
+                Some((dim_idx, high_idx))
+            } else {
+                None
+            };
+
+        // 5. Render each dimension line by line
+        for (dimension_idx, dim) in self.space.dimensions.iter().enumerate() {
+            if dim.versions.is_empty() {
+                continue;
+            }
+            let name = &names[dimension_idx];
+            let padded_name = format!("{:<width$}", name, width = max_name_len);
+
+            // A dimension is considered "pinned" if we have narrowed it down
+            // to 1 remaining version naturally, or if we are actively
+            // isolating a DIFFERENT dimension in Phase 2.
+            let is_pinned = match self.strategy.state {
+                StrategyState::Phase2Isolation { current_dim_idx } => {
+                    dimension_idx != current_dim_idx
+                }
+                _ => dim.high == dim.low,
+            };
+
+            // A dimension is considered "cleared" if it has been isolated
+            // in Phase 2 and proved not to be the single root cause.
+            let is_cleared = match self.strategy.state {
+                StrategyState::Phase2Isolation { current_dim_idx } => {
+                    dimension_idx < current_dim_idx
+                }
+                StrategyState::Unresolved => true,
+                _ => false,
+            };
+
+            // Dim the entire line with gray text if this dimension is pinned
+            let line_color = if is_pinned { COLOR_GRAY } else { "" };
+            let line_reset = if is_pinned { COLOR_RESET } else { "" };
+
+            let mut visual = String::from("[");
+
+            // Build the visual representation of the array (e.g. `[✓✓O?✗]`)
+            for version_idx in 0..dim.versions.len() {
+                let is_culprit = culprit_info
+                    .map_or(false, |(c_dim, c_idx)| c_dim == dimension_idx && c_idx == version_idx);
+                let is_current = current_combination
+                    .as_ref()
+                    .map_or(false, |comb| comb[dimension_idx] == version_idx);
+
+                if is_culprit {
+                    // Mark the final root cause culprit version
+                    visual.push_str(SYMBOL_CULPRIT);
+                    visual.push_str(line_color);
+                } else if is_current && culprit_info.is_none() {
+                    // Highlight the version currently being tested on this
+                    // step in bright green, blinking
+                    visual.push_str(&format!("{}{}", SYMBOL_CURRENT, line_color));
+                } else if version_idx <= dim.low {
+                    // Version is older than or equal to the last known good, so it is assumed good
+                    visual.push_str(SYMBOL_GOOD);
+                    visual.push_str(line_color);
+                } else if version_idx >= dim.high {
+                    if is_cleared && version_idx == dim.high {
+                        // The 'high' version was isolated and proved innocent
+                        visual.push_str(SYMBOL_GOOD);
+                    } else {
+                        // Version is newer than or equal to the first known bad, so it is assumed bad
+                        visual.push_str(SYMBOL_BAD);
+                    }
+                    visual.push_str(line_color);
+                } else {
+                    // Version is within the active search window, meaning we don't know yet
+                    visual.push_str("?");
+                }
+            }
+            visual.push(']');
+
+            // Pad the end of the brackets so the status text lines up
+            // for all dimensions
+            let padding_len = max_artifacts_len.saturating_sub(dim.versions.len());
+            visual.push_str(&" ".repeat(padding_len));
+
+            // Status string appended to the right side of the visual string
+            let status_text = if is_pinned {
+                "(Pinned)".to_string()
+            } else {
+                format!("({} remaining)", dim.high.saturating_sub(dim.low) + 1)
+            };
+
+            message.push_str(&format!(
+                "{line_color}  {}: {} {}{line_reset}\n",
+                padded_name,
+                visual,
+                status_text,
+                line_color = line_color,
+                line_reset = line_reset
+            ));
+        }
 
         (self.print_fn)(&message);
     }
@@ -218,7 +312,71 @@ mod tests {
     use super::*;
     use crate::dimension::Dimension;
     use assembly_artifact_cache::ArtifactType;
+    use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
+
+    #[test]
+    fn test_print_status_formatting() {
+        let dir = tempdir().unwrap();
+        let plan = Utf8PathBuf::from_path_buf(dir.path().join("plan.json")).unwrap();
+
+        let dimensions = vec![
+            Dimension::new(
+                "Platform",
+                ArtifactType::Platform,
+                "fuchsia",
+                vec!["1".into(), "2".into(), "3".into(), "4".into()],
+            ),
+            Dimension::new(
+                "Product",
+                ArtifactType::Product,
+                "fuchsia",
+                vec!["1".into(), "2".into(), "3".into()],
+            ),
+        ];
+
+        let space = SearchSpace::new(dimensions);
+
+        let output = Arc::new(Mutex::new(String::new()));
+        let output_clone = output.clone();
+
+        // Custom print function that captures the output
+        let print_fn = move |s: &str| {
+            let mut out = output_clone.lock().unwrap();
+            out.clear(); // Clear previous output
+            out.push_str(s);
+        };
+
+        let test_fn = |_| async move { Ok(true) };
+        let mut controller = Controller::new(space, plan, Slot::A, test_fn, print_fn).unwrap();
+
+        // 1. Test Initial Phase 1 State
+        controller.print_status();
+        let out = output.lock().unwrap().clone();
+        assert!(out.contains("Step 0: Phase 1 (Multi-Axis Bisection)"));
+        assert!(out.contains("Platform"));
+        assert!(out.contains("Product"));
+        // Current combination should be highlighted with 'O'
+        assert!(out.contains(SYMBOL_CURRENT));
+        assert!(out.contains("?")); // Unresolved versions
+
+        // 2. Test Phase 2 Isolation State
+        controller.strategy.state = StrategyState::Phase2Isolation { current_dim_idx: 1 };
+        controller.print_status();
+        let out = output.lock().unwrap().clone();
+        assert!(out.contains("Phase 2 (Isolating Root Cause)"));
+        // Dimension 0 (Platform) should be pinned (gray)
+        assert!(out.contains("(Pinned)"));
+        assert!(out.contains(COLOR_GRAY));
+
+        // 3. Test Resolved State
+        controller.strategy.state = StrategyState::Resolved { dim_idx: 1, low_idx: 1, high_idx: 2 };
+        controller.print_status();
+        let out = output.lock().unwrap().clone();
+        assert!(out.contains("Finished (Resolved)"));
+        // The culprit version should be marked with a red star
+        assert!(out.contains(SYMBOL_CULPRIT));
+    }
 
     #[test]
     fn test_controller_run_and_save_restore() {
