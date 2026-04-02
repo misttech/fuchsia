@@ -61,6 +61,12 @@ struct ChargeTimeEstimator {
     // If false, use design capacity to calculate time to full.
     use_actual_capacity: bool,
     actual_capacity_uah: Option<i32>,
+
+    // Average current tracking
+    current_tier: Option<usize>,
+    tier_accumulated_current_ua_ms: i64,
+    tier_accumulated_time_ms: i64,
+    last_update_timestamp_ns: Option<i64>,
 }
 
 impl ChargeTimeEstimator {
@@ -142,11 +148,72 @@ impl ChargeTimeEstimator {
             baseline_duration_lookup: table,
             use_actual_capacity,
             actual_capacity_uah: None,
+            current_tier: None,
+            tier_accumulated_current_ua_ms: 0,
+            tier_accumulated_time_ms: 0,
+            last_update_timestamp_ns: None,
         }
     }
 
     fn set_actual_capacity(&mut self, actual_capacity_uah: Option<i32>) {
         self.actual_capacity_uah = actual_capacity_uah;
+    }
+
+    fn get_tier_index(level_percent: f32) -> usize {
+        Self::TTF_TIER_THRESHOLDS[1..].partition_point(|&threshold| threshold <= level_percent)
+    }
+
+    fn update_average_current(
+        &mut self,
+        level: f32,
+        actual_current_ua: Option<i32>,
+        timestamp_ns: Option<i64>,
+        charge_status: Option<fpower::ChargeStatus>,
+    ) -> Option<i32> {
+        let timestamp_ns = timestamp_ns?;
+        let tier_idx = Self::get_tier_index(level);
+
+        if self.current_tier != Some(tier_idx) {
+            self.current_tier = Some(tier_idx);
+            self.tier_accumulated_current_ua_ms = 0;
+            self.tier_accumulated_time_ms = 0;
+        }
+
+        if charge_status == Some(fpower::ChargeStatus::Charging) {
+            if let Some(last_ts) = self.last_update_timestamp_ns {
+                let dt_ns = timestamp_ns - last_ts;
+                if dt_ns > 0 {
+                    if let Some(current) = actual_current_ua {
+                        let dt_ms =
+                            std::time::Duration::from_nanos(dt_ns as u64).as_millis() as i64;
+                        self.tier_accumulated_time_ms += dt_ms;
+                        let ms_current = current as i64 * dt_ms;
+                        self.tier_accumulated_current_ua_ms += ms_current;
+                    }
+                }
+            }
+            self.last_update_timestamp_ns = Some(timestamp_ns);
+        } else {
+            self.last_update_timestamp_ns = None;
+        }
+
+        let sixty_secs_ms = std::time::Duration::from_secs(60).as_millis() as i64;
+        if self.tier_accumulated_time_ms >= sixty_secs_ms {
+            let time_ms = self.tier_accumulated_time_ms;
+            if time_ms > 0 {
+                let avg = (self.tier_accumulated_current_ua_ms / time_ms) as i32;
+                return Some(avg);
+            }
+        }
+
+        None
+    }
+
+    fn reset_average_current(&mut self) {
+        self.current_tier = None;
+        self.tier_accumulated_current_ua_ms = 0;
+        self.tier_accumulated_time_ms = 0;
+        self.last_update_timestamp_ns = None;
     }
 
     // Calculate the implied reference current (uA) for a given SOC level.
@@ -573,16 +640,50 @@ impl Polisher {
             return;
         };
 
-        let actual_current = info.average_charging_current_ua.or(info.present_charging_current_ua);
-        if info.charge_status != Some(fpower::ChargeStatus::Charging) {
-            info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+        let is_plugged_in = match info.charge_source {
+            Some(fpower::ChargeSource::None) | Some(fpower::ChargeSource::Unknown) | None => false,
+            _ => true,
+        };
+
+        if !is_plugged_in {
+            self.estimator.reset_average_current();
+            if info.charge_status == Some(fpower::ChargeStatus::Full) {
+                info.time_remaining = Some(fpower::TimeRemaining::FullCharge(0));
+            } else {
+                info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+            }
             return;
         }
+
+        let actual_current = info.average_charging_current_ua.or(info.present_charging_current_ua);
+
+        let avg_current = self.estimator.update_average_current(
+            level,
+            actual_current,
+            info.timestamp,
+            info.charge_status,
+        );
+
+        if info.charge_status != Some(fpower::ChargeStatus::Charging) {
+            if info.charge_status == Some(fpower::ChargeStatus::Full) {
+                info.time_remaining = Some(fpower::TimeRemaining::FullCharge(0));
+            } else {
+                info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+            }
+            return;
+        }
+
+        debug!(
+            "tier_accumulated_current_ua_ms: {:?}, average_current: {:?}",
+            self.estimator.tier_accumulated_current_ua_ms, avg_current
+        );
+
+        let current_to_use = avg_current.or(actual_current);
 
         self.estimator.set_actual_capacity(info.full_capacity_uah);
 
         let time_to_full_estimate =
-            match self.estimator.time_to_full(level, 100.0, actual_current, info.temperature_mc) {
+            match self.estimator.time_to_full(level, 100.0, current_to_use, info.temperature_mc) {
                 Ok(duration) => duration.into_nanos(),
                 Err(e) => {
                     warn!("Failed to estimate time to full: {:?}", e);
@@ -711,6 +812,7 @@ mod tests {
         fpower::BatteryInfo {
             level_percent: Some(level),
             charge_status: Some(status),
+            charge_source: Some(fpower::ChargeSource::Usb),
             ..Default::default()
         }
     }
@@ -1148,6 +1250,7 @@ mod tests {
         // Test None
         let mut info = fpower::BatteryInfo {
             charge_status: Some(fpower::ChargeStatus::Charging),
+            charge_source: Some(fpower::ChargeSource::Usb),
             ..Default::default()
         };
         polisher.calculate_time_to_full(&mut info);
@@ -1394,6 +1497,7 @@ mod tests {
         let mut info = fpower::BatteryInfo {
             level_percent: Some(InitialScaler::SHUTDOWN_OFFSET),
             charge_status: Some(fpower::ChargeStatus::Discharging),
+            charge_source: Some(fpower::ChargeSource::Usb),
             ..Default::default()
         };
         info = polisher.polish_info(info);
@@ -1440,7 +1544,7 @@ mod tests {
         assert_eq!(
             info.time_remaining,
             Some(fpower::TimeRemaining::FullCharge(0)),
-            "When level is None, time_remaining must be set to Indeterminate(0)."
+            "When level is 100%, time_remaining must be set to FullCharge(0)."
         );
     }
 
@@ -1531,5 +1635,95 @@ mod tests {
         // It should match smoothly with the discharging level
         assert_eq!(ui_level_charging, ui_level_discharging);
         info!("UI level charging: {}, discharging: {}", ui_level_charging, ui_level_discharging);
+    }
+
+    #[fuchsia::test]
+    fn test_average_current_smoothing_reduces_ttf_swings() {
+        let mut polisher = Polisher::new();
+
+        let mut info = fpower::BatteryInfo {
+            level_percent: Some(50.0),
+            charge_status: Some(fpower::ChargeStatus::Charging),
+            charge_source: Some(fpower::ChargeSource::AcAdapter),
+            average_charging_current_ua: Some(500_000),
+            timestamp: Some(0),
+            ..Default::default()
+        };
+
+        // At t = 0s
+        polisher.polish_info(info.clone());
+
+        // At t = 60s, stable current
+        info.timestamp = Some(60 * NANOS_PER_SEC);
+        polisher.polish_info(info.clone());
+
+        // At t = 120s, stable current
+        info.timestamp = Some(120 * NANOS_PER_SEC);
+        let info3 = polisher.polish_info(info.clone());
+
+        // At t = 180s, current suddenly drops to near zero
+        info.timestamp = Some(180 * NANOS_PER_SEC);
+        info.average_charging_current_ua = Some(100);
+        let info4 = polisher.polish_info(info.clone());
+
+        // Extract TTF estimates or fail the test if the enum is wrong
+        let ttf3 = match info3.time_remaining {
+            Some(fpower::TimeRemaining::FullCharge(t)) => t,
+            _ => panic!("Expected FullCharge for info3, got {:?}", info3.time_remaining),
+        };
+
+        let ttf4 = match info4.time_remaining {
+            Some(fpower::TimeRemaining::FullCharge(t)) => t,
+            _ => panic!("Expected FullCharge for info4, got {:?}", info4.time_remaining),
+        };
+
+        assert!(ttf3 > 0, "TTF should be positive");
+        assert!(ttf4 > 0, "TTF should be positive");
+
+        // Without smoothing, dipping from 500,000uA to 100uA would make TTF spike by 5000x.
+        // With 3 minutes of smoothing, the localized drop only increases the average slightly.
+        // So the new TTF should be less than double the previous stable TTF.
+        assert!(
+            ttf4 < ttf3 * 2,
+            "TTF spiked drastically despite smoothing! ttf3: {}, ttf4: {}",
+            ttf3,
+            ttf4
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_state_transition_resumption_spike() {
+        let mut polisher = Polisher::new();
+
+        let mut info = fpower::BatteryInfo {
+            level_percent: Some(50.0),
+            charge_status: Some(fpower::ChargeStatus::NotCharging),
+            charge_source: Some(fpower::ChargeSource::AcAdapter),
+            average_charging_current_ua: Some(0),
+            timestamp: Some(0),
+            ..Default::default()
+        };
+
+        // At t = 0s, plugged in but NotCharging
+        polisher.polish_info(info.clone());
+
+        // Device sits idle for 1 hour (3600s)
+        info.timestamp = Some(3600 * NANOS_PER_SEC);
+        polisher.polish_info(info.clone());
+
+        // After 1 hour, suddenly starts Charging
+        // To test if the previous 3600s period of NotCharging is accumulated or dropped.
+        info.timestamp = Some(3605 * NANOS_PER_SEC);
+        info.charge_status = Some(fpower::ChargeStatus::Charging);
+        info.average_charging_current_ua = Some(500_000);
+        polisher.polish_info(info.clone());
+
+        // Assert that the accumulator discarded the 3600s gap and only accumulated the time since
+        // the transition. Since only 0 elapsed time has been legally accumulated (it just started),
+        // the average time should be far below 60s, NO calculated average is available yet.
+        assert!(
+            polisher.estimator.tier_accumulated_time_ms < 60000, // 60s
+            "Accumulator erroneously included the idle duration across the state transition!"
+        );
     }
 }
