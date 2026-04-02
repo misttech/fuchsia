@@ -17,13 +17,13 @@ class ToyDriver : public fdf::DriverBase, public fidl::WireServer<fuchsia_testin
       : DriverBase("toy_driver", std::move(start_args), std::move(driver_dispatcher)) {}
 
   zx::result<> Start() override {
-    FDF_LOG(INFO, "ToyDriver::Start()");
+    fdf::info("ToyDriver::Start()");
 
     // Connect to the volume service.
     zx::result connect_result =
         incoming()->Connect<fuchsia_hardware_block_volume::Service::Volume>();
     if (connect_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to connect to Volume service: %s", connect_result.status_string());
+      fdf::error("Failed to connect to Volume service: {}", connect_result);
       return connect_result.take_error();
     }
     block_client_.Bind(std::move(connect_result.value()));
@@ -31,20 +31,19 @@ class ToyDriver : public fdf::DriverBase, public fidl::WireServer<fuchsia_testin
     // Verify the partition label, which also verifies basic interaction with the block device.
     fidl::Result result = block_client_->GetMetadata();
     if (result.is_error()) {
-      FDF_LOG(ERROR, "GetMetadata failed: %s", result.error_value().FormatDescription().c_str());
+      fdf::error("GetMetadata failed: {}", result.error_value().FormatDescription());
       return zx::error(ZX_ERR_IO);
     }
     const auto& metadata = result.value();
     if (!metadata.name().has_value()) {
-      FDF_LOG(ERROR, "Partition has no name");
+      fdf::error("Partition has no name");
       return zx::error(ZX_ERR_BAD_PATH);
     }
     if (metadata.name().value() != "my-part") {
-      FDF_LOG(ERROR, "Partition name mismatch: expected 'my-part', got '%s'",
-              metadata.name().value().c_str());
+      fdf::error("Partition name mismatch: expected 'my-part', got '{}'", metadata.name().value());
       return zx::error(ZX_ERR_BAD_PATH);
     }
-    FDF_LOG(INFO, "ToyDriver::Start() OK");
+    fdf::info("ToyDriver::Start() OK");
 
     return outgoing()->AddService<fuchsia_testing_simple::Service>(
         fuchsia_testing_simple::Service::InstanceHandler({

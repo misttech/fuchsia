@@ -132,8 +132,8 @@ void DriverInterface::StartThread(Thread thread) {
       fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
                                           "Block Server", OnDispatcherShutdown());
   if (new_dispatcher.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher for block server thread: %s",
-             new_dispatcher.status_string());
+    logger().log(fdf::LogSeverity::ERROR, "Failed to create dispatcher for block server thread: {}",
+                 new_dispatcher);
     return;
   }
 
@@ -154,8 +154,8 @@ void DriverInterface::StartThread(Thread thread) {
 
   // Make sure we destroy the dispatcher if we fail to post the task.
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to post task to run block server thread: %s",
-             zx_status_get_string(status));
+    logger().log(fdf::LogSeverity::ERROR, "Failed to post task to run block server thread: {}",
+                 zx_status_get_string(status));
     fdf_dispatcher_shutdown_async(dispatcher);
   }
 }
@@ -166,8 +166,8 @@ void DriverInterface::OnNewSession(Session session) {
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server", OnDispatcherShutdown(),
       SessionSchedulerRole());
   if (new_dispatcher.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher for block server session: %s",
-             new_dispatcher.status_string());
+    logger().log(fdf::LogSeverity::ERROR,
+                 "Failed to create dispatcher for block server session: {}", new_dispatcher);
     return;
   }
 
@@ -188,8 +188,8 @@ void DriverInterface::OnNewSession(Session session) {
 
   // Make sure we destroy the dispatcher if we fail to post the task.
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to post task to run block server session: %s",
-             zx_status_get_string(status));
+    logger().log(fdf::LogSeverity::ERROR, "Failed to post task to run block server session: {}",
+                 zx_status_get_string(status));
     fdf_dispatcher_shutdown_async(dispatcher);
   }
 }

@@ -122,9 +122,7 @@ class DriverInterface : public Interface {
  private:
   void StartThread(Thread thread) final;
   void OnNewSession(Session session) final;
-  void Log(std::string_view msg) const final {
-    FDF_LOGL(INFO, logger(), "%.*s", static_cast<int>(msg.size()), msg.data());
-  }
+  void Log(std::string_view msg) const final { logger().log(fdf::LogSeverity::INFO, "{}", msg); }
 };
 
 class BlockServer {
