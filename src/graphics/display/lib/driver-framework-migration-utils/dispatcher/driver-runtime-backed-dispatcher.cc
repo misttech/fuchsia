@@ -25,8 +25,7 @@ zx::result<std::unique_ptr<Dispatcher>> DriverRuntimeBackedDispatcher::Create(
           fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, name, [](fdf_dispatcher_t*) {},
           scheduler_role);
   if (create_dispatcher_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to create a synchronized dispatcher: %s",
-            create_dispatcher_result.status_string());
+    fdf::error("Failed to create a synchronized dispatcher: {}", create_dispatcher_result);
     return create_dispatcher_result.take_error();
   }
 

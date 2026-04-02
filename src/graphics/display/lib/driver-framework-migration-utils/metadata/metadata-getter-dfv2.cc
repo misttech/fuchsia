@@ -24,7 +24,7 @@ zx::result<std::unique_ptr<MetadataGetter>> MetadataGetterDfv2::Create(
   auto namespace_dfv2 =
       fbl::make_unique_checked<MetadataGetterDfv2>(&alloc_checker, std::move(fdf_namespace));
   if (!alloc_checker.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for MetadataGetterDfv2.");
+    fdf::error("Failed to allocate memory for MetadataGetterDfv2.");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 

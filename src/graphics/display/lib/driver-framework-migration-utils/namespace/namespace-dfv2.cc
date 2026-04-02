@@ -23,7 +23,7 @@ zx::result<std::unique_ptr<Namespace>> NamespaceDfv2::Create(fdf::Namespace* fdf
   fbl::AllocChecker alloc_checker;
   auto namespace_dfv2 = fbl::make_unique_checked<NamespaceDfv2>(&alloc_checker, fdf_namespace);
   if (!alloc_checker.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for NamespaceDfv2.");
+    fdf::error("Failed to allocate memory for NamespaceDfv2.");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 

@@ -24,7 +24,7 @@ DriverRuntimeBackedDispatcherFactory::Create() {
   fbl::AllocChecker alloc_checker;
   auto factory = fbl::make_unique_checked<DriverRuntimeBackedDispatcherFactory>(&alloc_checker);
   if (!alloc_checker.check()) {
-    FDF_LOG(ERROR, "Failed to allocate memory for DriverRuntimeBackedDispatcherFactory");
+    fdf::error("Failed to allocate memory for DriverRuntimeBackedDispatcherFactory");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
   return zx::ok(std::move(factory));
