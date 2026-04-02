@@ -28,14 +28,15 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
             Config::new(ConfigValueType::Uint8, visual_debugging_level.into()),
         )?;
 
+        if !ui_config.enabled {
+            return Ok(());
+        }
+
         if ui_config.enable_experimental_dso {
             // Supports ui_*_dso bundles below
             builder.platform_bundle("dso_runner")?;
         }
 
-        if !ui_config.enabled {
-            return Ok(());
-        }
         match context.build_type {
             BuildType::Eng => {
                 builder.platform_bundle("ui")?;

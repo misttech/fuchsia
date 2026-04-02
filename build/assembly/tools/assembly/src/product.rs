@@ -54,7 +54,7 @@ Resulting product is not supported and may misbehave!
     let mut product_config =
         ProductConfig::from_dir(&product).context("Reading product configuration")?;
 
-    #[cfg(feature = "experimental_dso_enabled")]
+    #[cfg(feature = "experimental_dso")]
     {
         product_config.platform.ui.enable_experimental_dso = true;
     }
