@@ -56,7 +56,8 @@ zx::result<std::pair<uint32_t, uint32_t>> ParseAddressAndInterruptCells(
 bool InterruptControllerIsArmGicV3(fdf_devicetree::Node& interrupt_parent_node) {
   auto compatible_list = interrupt_parent_node.GetProperty<std::vector<std::string>>("compatible");
   if (compatible_list.is_error()) {
-    FDF_LOG(ERROR, "Could not find compatible node on interrupt parent");
+    fdf::error("Could not find compatible node on interrupt parent");
+
     return false;
   }
   return std::ranges::any_of(*compatible_list,
@@ -85,7 +86,8 @@ class InterruptParentMap {
   zx::result<InterruptParentInfo> FindInterruptParentImpl(fdf_devicetree::Phandle phandle) {
     auto ref_node = node_.GetReferenceNode(phandle);
     if (ref_node.is_error()) {
-      FDF_LOG(ERROR, "Could not find interrupt parent with phandle value %u", phandle);
+      fdf::error("Could not find interrupt parent with phandle value {}", phandle);
+
       return ref_node.take_error();
     }
     auto& interrupt_controller_node = *ref_node->GetNode();
@@ -172,7 +174,8 @@ zx::result<InterruptMapElementParseResult> ParseInterruptMapElement(
 
   // Check that we understand the interrupt controller.
   if (!interrupt_parent_info->is_arm_gicv3) {
-    FDF_LOG(ERROR, "Unsupported interrupt controller type, see https://fxbug.dev/394179809");
+    fdf::error("Unsupported interrupt controller type, see https://fxbug.dev/394179809");
+
     // Just skip this node and return the remaining bytes so we can attempt to parse further nodes.
     return zx::ok(
         InterruptMapElementParseResult{.interrupt = std::nullopt, .remaining_bytes = bytes});
@@ -182,7 +185,8 @@ zx::result<InterruptMapElementParseResult> ParseInterruptMapElement(
   std::optional<BusAddress> child_unit_address(
       devicetree::PropertyValue(child_address_view->subspan(0, sizeof(uint32_t))).AsUint32());
   if (!child_unit_address.has_value()) {
-    FDF_LOG(ERROR, "Invalid child unit address");
+    fdf::error("Invalid child unit address");
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -236,22 +240,26 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
   auto [reg_property, ranges_property, interrupt_map_property] =
       decoder.FindProperties(kReg, kRanges, kInterruptMap);
   if (!reg_property.has_value()) {
-    FDF_LOG(ERROR, "Failed to find property\"%s\".", std::string(kReg).c_str());
+    fdf::error("Failed to find property \"{}\".", kReg);
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
   auto reg = reg_property->AsReg(decoder);
   if (!reg.has_value()) {
-    FDF_LOG(ERROR, "Property is not a reg array");
+    fdf::error("Property is not a reg array");
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
   if (reg->size() != 1u) {
-    FDF_LOG(ERROR, "Property \"reg\" expected to have one entry, entries: %zu", reg->size());
+    fdf::error("Property \"reg\" expected to have one entry, entries: {}", reg->size());
+
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   reg_ = (*reg)[0u];
 
   if (!ranges_property.has_value()) {
-    FDF_LOG(ERROR, "Failed to find property\"%s\".", std::string(kRanges).c_str());
+    fdf::error("Failed to find property \"{}\".", kRanges);
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
   // We can't view this as a RangesProperty because that type assumes that addresses
@@ -260,8 +268,9 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
   // byte of the bus address and decode the rest as a regular 2-address-cell range.
   uint32_t num_address_cells = *decoder.num_address_cells();
   if (num_address_cells != 3) {
-    FDF_LOG(ERROR, "Expected #address-cells to be 3 in PCI ranges property, found %u",
-            num_address_cells);
+    fdf::error("Expected #address-cells to be 3 in PCI ranges property, found {}",
+               num_address_cells);
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
   uint32_t num_size_cells = *decoder.num_size_cells();
@@ -275,7 +284,8 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
     auto range_bytes = ranges_property_bytes.subspan(range_start, range_property_length_bytes);
     auto range = ParsePciRange(range_bytes, num_size_cells, num_parent_address_cells);
     if (!range.is_ok()) {
-      FDF_LOG(ERROR, "Could not parse range %lu", i);
+      fdf::error("Could not parse range {}", i);
+
       return range.take_error();
     }
     ranges_.push_back(*range);
@@ -283,13 +293,15 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   // interrupt-map
   if (!interrupt_map_property.has_value()) {
-    FDF_LOG(ERROR, "Failed to find property\"%s\".", std::string(kInterruptMap).c_str());
+    fdf::error("Failed to find property \"{}\".", kInterruptMap);
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   auto interrupt_map = ParseInterruptMap(interrupt_map_property->AsBytes(), node, decoder);
   if (interrupt_map.is_error()) {
-    FDF_LOG(ERROR, "Failed to parse interrupt map");
+    fdf::error("Failed to parse interrupt map");
+
     return interrupt_map.take_error();
   }
 
@@ -297,7 +309,8 @@ zx::result<> PciVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   auto compatible = node.GetProperty<std::string>("compatible");
   if (compatible.is_error()) {
-    FDF_LOG(ERROR, "Failed to find 'compatible' property");
+    fdf::error("Failed to find 'compatible' property");
+
     return compatible.take_error();
   }
   is_extended_ = *compatible == "pci-host-ecam-generic";

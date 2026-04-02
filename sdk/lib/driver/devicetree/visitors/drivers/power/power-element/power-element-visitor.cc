@@ -75,8 +75,9 @@ zx::result<> PowerElementVisitor::Visit(fdf_devicetree::Node& node,
     if (element_config.is_error()) {
       return element_config.take_error();
     }
-    FDF_LOG(DEBUG, "Added power element '%s' to node '%s'.",
-            element_config->element()->name()->c_str(), node.name().c_str());
+    fdf::debug("Added power element '{}' to node '{}'.", *element_config->element()->name(),
+               node.name());
+
     node.AddPowerConfig(*element_config);
   }
 
@@ -90,16 +91,17 @@ zx::result<PowerElementConfiguration> PowerElementVisitor::ParsePowerElement(
   element_config.element()->name() = GetElementName(node.name());
 
   if (!element_config.element()->name()) {
-    FDF_LOG(ERROR, "Power element has invalid node name '%s'.", node.name().c_str());
+    fdf::error("Power element has invalid node name '{}'.", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto children = node.children();
   if (children.size() != 1u || children[0].name() != "power-levels") {
-    FDF_LOG(
-        ERROR,
-        "Power element has invalid child nodes '%s'. Expecting a single child node named 'power-levels'.",
-        node.name().c_str());
+    fdf::error(
+        "Power element has invalid child nodes '{}'. Expecting a single child node named 'power-levels'.",
+        node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -132,8 +134,9 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
   if (!level_in_parent.parent() /*power-levels node*/ ||
       !level_in_parent.parent().parent() /*power element x*/ ||
       !level_in_parent.parent().parent().parent() /*power-elements node*/) {
-    FDF_LOG(ERROR, "Power level reference node '%s' should be under a power-element node.",
-            level_in_parent.name().c_str());
+    fdf::error("Power level reference node '{}' should be under a power-element node.",
+               level_in_parent.name());
+
     return std::nullopt;
   }
 
@@ -151,8 +154,9 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
     if (power_element.name() == "application-activity-element") {
       return ParentElement::WithSag(SagElement::kApplicationActivity);
     }
-    FDF_LOG(ERROR, "Power level reference node '%s' is an invalid SAG element '%s'.",
-            level_in_parent.name().c_str(), power_element.name().c_str());
+    fdf::error("Power level reference node '{}' is an invalid SAG element '{}'.",
+               level_in_parent.name(), power_element.name());
+
     return std::nullopt;
   }
 
@@ -164,8 +168,9 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
 
   auto parent_name = GetElementName(power_element.name());
   if (!parent_name) {
-    FDF_LOG(ERROR, "Power level reference node '%s' has an invalid element name '%s'.",
-            level_in_parent.name().c_str(), power_element.name().c_str());
+    fdf::error("Power level reference node '{}' has an invalid element name '{}'.",
+               level_in_parent.name(), power_element.name());
+
     return std::nullopt;
   }
 
@@ -200,14 +205,15 @@ zx::result<> PowerElementVisitor::ParseLevel(fdf_devicetree::Node& node,
   level.name() = GetLevelName(node.name());
 
   if (!level.name()) {
-    FDF_LOG(ERROR, "Power element has invalid node name '%s'.", node.name().c_str());
+    fdf::error("Power element has invalid node name '{}'.", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   zx::result parser_output = level_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Power level parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Power level parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -230,8 +236,9 @@ zx::result<> PowerElementVisitor::ParseLevel(fdf_devicetree::Node& node,
 
       auto parent_level = parent_level_ref.GetProperty<uint32_t>(kLevel);
       if (parent_level.is_error()) {
-        FDF_LOG(ERROR, "Power level reference node '%s' has no level property: %s",
-                parent_level_ref.name().c_str(), parent_level.status_string());
+        fdf::error("Power level reference node '{}' has no level property: {}",
+                   parent_level_ref.name(), parent_level);
+
         return parent_level.take_error();
       }
       level_tuple.parent_level() = *parent_level;
@@ -243,10 +250,10 @@ zx::result<> PowerElementVisitor::ParseLevel(fdf_devicetree::Node& node,
   // Parse transition table if exists.
   if (!node.children().empty()) {
     if (node.children().size() != 1u || node.children()[0].name() != "level-transition-table") {
-      FDF_LOG(
-          ERROR,
-          "Power level has invalid child nodes '%s'. Expecting a single child node named 'level-transition-table'.",
-          node.name().c_str());
+      fdf::error(
+          "Power level has invalid child nodes '{}'. Expecting a single child node named 'level-transition-table'.",
+          node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
@@ -266,7 +273,8 @@ zx::result<> PowerElementVisitor::ParseTransitionTable(fdf_devicetree::Node& nod
   for (auto& child : node.children()) {
     auto parser_output = transition_parser_->Parse(*child.GetNode());
     if (parser_output.is_error()) {
-      FDF_LOG(ERROR, "Failed to parse transition entry '%s'", child.name().c_str());
+      fdf::error("Failed to parse transition entry '{}'", child.name());
+
       return parser_output.take_error();
     }
     Transition transition;

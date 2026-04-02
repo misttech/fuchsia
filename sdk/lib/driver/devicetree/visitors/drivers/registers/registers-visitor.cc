@@ -62,7 +62,8 @@ class RegisterCells {
         break;
     }
 
-    FDF_LOG(ERROR, "Invalid mask size %u", mask_size);
+    fdf::error("Invalid mask size {}", mask_size);
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -155,10 +156,10 @@ zx::result<> RegistersVisitor::ParseRegisterChild(fdf_devicetree::Node& child,
   if (!controller.overlap_check_on) {
     auto overlap_property = parent.properties().find("overlap_check_on");
     if (overlap_property == parent.properties().end()) {
-      FDF_LOG(DEBUG,
-              "Registers parent '%s' does not have a overlap_check_on property."
-              "Assuming default false.",
-              parent.name().c_str());
+      fdf::debug(
+          "Registers parent '{}' does not have a overlap_check_on property. Assuming default false.",
+          parent.name());
+
       controller.overlap_check_on = false;
     } else {
       controller.overlap_check_on = true;
@@ -166,9 +167,8 @@ zx::result<> RegistersVisitor::ParseRegisterChild(fdf_devicetree::Node& child,
   }
 
   if (!register_name) {
-    FDF_LOG(DEBUG,
-            "Register reference '%s' does not have a register name, will be using child name.",
-            child.name().c_str());
+    fdf::debug("Register reference '{}' does not have a register name, will be using child name.",
+               child.name());
   }
 
   // Check if a register for the name already exists.
@@ -181,7 +181,8 @@ zx::result<> RegistersVisitor::ParseRegisterChild(fdf_devicetree::Node& child,
   MaskEntry mask;
   zx::result mask_value = cells.mask();
   if (mask_value.is_error()) {
-    FDF_LOG(ERROR, "Register reference '%s' has invalid mask value.", child.name().c_str());
+    fdf::error("Register reference '{}' has invalid mask value.", child.name());
+
     return mask_value.take_error();
   }
 
@@ -190,10 +191,9 @@ zx::result<> RegistersVisitor::ParseRegisterChild(fdf_devicetree::Node& child,
   mask.count(1);
   mask.overlap_check_on(controller.overlap_check_on);
 
-  FDF_LOG(DEBUG,
-          "Mask added to controller '%s'- mask 0x%lx(%d) offset 0x%lx overlap %d bind name '%s'",
-          parent.name().c_str(), cells.mask_as_u64(), cells.size(), *mask.mmio_offset(),
-          *mask.overlap_check_on(), name.c_str());
+  fdf::debug("Mask added to controller '{}'- mask {:#x}({}) offset {:#x} overlap {} bind name '{}'",
+             parent.name(), cells.mask_as_u64(), cells.size(), *mask.mmio_offset(),
+             *mask.overlap_check_on(), name);
 
   if (!register_entry.masks()) {
     register_entry.masks() = std::vector<MaskEntry>();
@@ -218,8 +218,9 @@ zx::result<> RegistersVisitor::DriverFinalizeNode(fdf_devicetree::Node& node) {
   if (node.phandle()) {
     auto controller = register_controllers_.find(*node.phandle());
     if (controller == register_controllers_.end()) {
-      FDF_LOG(INFO, "Register controller '%s' is not being used. Not adding any metadata for it.",
-              node.name().c_str());
+      fdf::info("Register controller '{}' is not being used. Not adding any metadata for it.",
+                node.name());
+
       return zx::ok();
     }
 
@@ -232,8 +233,8 @@ zx::result<> RegistersVisitor::DriverFinalizeNode(fdf_devicetree::Node& node) {
 
     fit::result encoded = fidl::Persist(registers_metadata);
     if (encoded.is_error()) {
-      FDF_LOG(ERROR, "Failed to persist data - %s.",
-              encoded.error_value().FormatDescription().c_str());
+      fdf::error("Failed to persist data - {}.", encoded.error_value().FormatDescription());
+
       return zx::ok();
     }
 
@@ -244,8 +245,7 @@ zx::result<> RegistersVisitor::DriverFinalizeNode(fdf_devicetree::Node& node) {
 
     node.AddMetadata(std::move(metadata));
 
-    FDF_LOG(DEBUG, "Registers metadata added for node '%.*s'",
-            static_cast<int>(node.name().length()), node.name().data());
+    fdf::debug("Registers metadata added for node '{}'", node.name());
   }
 
   return zx::ok();

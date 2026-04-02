@@ -24,7 +24,7 @@ zx::result<> PwmInitVisitor::AddChildNodeSpec(fdf_devicetree::Node& child) {
   auto pwm_init_node = fuchsia_driver_framework::ParentSpec2{{bind_rules, bind_properties}};
 
   child.AddNodeSpec(pwm_init_node);
-  FDF_LOG(DEBUG, "Added pwm init node spec of to '%s'.", child.name().c_str());
+  fdf::debug("Added pwm init node spec of to '{}'.", child.name());
 
   return zx::ok();
 }

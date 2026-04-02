@@ -42,8 +42,8 @@ zx::result<> ThermalZonesVisitor::Visit(fdf_devicetree::Node& node,
 
   auto parser_output = thermal_sensor_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Thermal zones visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Thermal zones visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -52,9 +52,9 @@ zx::result<> ThermalZonesVisitor::Visit(fdf_devicetree::Node& node,
     return zx::ok();
   }
   if (thermal_sensors->size() != 1) {
-    FDF_LOG(ERROR,
-            "Thermal sensor reference in node '%s' can only reference 1 sensor, actual: %zu.",
-            node.name().c_str(), thermal_sensors->size());
+    fdf::error("Thermal sensor reference in node '{}' can only reference 1 sensor, actual: {}.",
+               node.name(), thermal_sensors->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   for (auto& child : node.children()) {
@@ -76,16 +76,16 @@ zx::result<> ThermalZonesVisitor::ParseTrips(fdf_devicetree::Node& node,
   for (auto& child : node.children()) {
     zx::result trips_output = trips_parser_->Parse(*child.GetNode());
     if (trips_output.is_error()) {
-      FDF_LOG(ERROR, "Failed to parse trips for node '%s' : %s", node.name().c_str(),
-              trips_output.status_string());
+      fdf::error("Failed to parse trips for node '{}' : {}", node.name(), trips_output);
+
       return trips_output.take_error();
     }
 
     if (trips_output->Get<std::string>(kType) == "critical") {
       sensor.trip_metadata->critical_temp_celsius() =
           static_cast<float>(*trips_output->Get<uint32_t>(kTemperature)) / 1000.0f;
-      FDF_LOG(DEBUG, "Set critical temperature to '%.2f' for sensor '%s'",
-              sensor.trip_metadata->critical_temp_celsius(), reference.name().c_str());
+      fdf::debug("Set critical temperature to '{:.2f}' for sensor '{}'",
+                 sensor.trip_metadata->critical_temp_celsius(), reference.name());
     }
   }
   return zx::ok();
@@ -103,8 +103,9 @@ zx::result<> ThermalZonesVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   if (sensor->second.trip_metadata) {
     auto persisted_metadata = fidl::Persist(*sensor->second.trip_metadata);
     if (persisted_metadata.is_error()) {
-      FDF_LOG(ERROR, "Failed to persist Trip Point Metadata: %d",
-              persisted_metadata.error_value().status());
+      fdf::error("Failed to persist Trip Point Metadata: {}",
+                 persisted_metadata.error_value().status());
+
       return zx::error(persisted_metadata.error_value().status());
     }
 
@@ -114,7 +115,7 @@ zx::result<> ThermalZonesVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     }};
 
     node.AddMetadata(std::move(metadata));
-    FDF_LOG(DEBUG, "Trip point metadata added to node '%s'", node.name().c_str());
+    fdf::debug("Trip point metadata added to node '{}'", node.name());
   }
   return zx::ok();
 }

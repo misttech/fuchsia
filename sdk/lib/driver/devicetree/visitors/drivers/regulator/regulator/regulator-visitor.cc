@@ -50,23 +50,23 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
   if (is_match(node.name())) {
     auto parser_output = parser_->Parse(node);
     if (parser_output.is_error()) {
-      FDF_LOG(ERROR, "Regulator visitor failed for node '%s' : %s", node.name().c_str(),
-              parser_output.status_string());
+      fdf::error("Regulator visitor failed for node '{}' : {}", node.name(), parser_output);
+
       return parser_output.take_error();
     }
 
     auto status = AddRegulatorMetadata(node, *parser_output);
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Failed to add regulator metadata '%s' : %s", node.name().c_str(),
-              status.status_string());
+      fdf::error("Failed to add regulator metadata '{}' : {}", node.name(), status);
+
       return status.take_error();
     }
   }
 
   auto reference_output = reference_parser_->Parse(node);
   if (reference_output.is_error()) {
-    FDF_LOG(ERROR, "Regulator visitor failed for node '%s' : %s", node.name().c_str(),
-            reference_output.status_string());
+    fdf::error("Regulator visitor failed for node '{}' : {}", node.name(), reference_output);
+
     return reference_output.take_error();
   }
 
@@ -90,9 +90,9 @@ zx::result<> RegulatorVisitor::Visit(fdf_devicetree::Node& node,
 
     auto status = AddChildNodeSpec(node, reference_node, current_count);
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Failed to add regulator '%s' node spec to '%s' : %s",
-              reference.reference_node().name().c_str(), node.name().c_str(),
-              status.status_string());
+      fdf::error("Failed to add regulator '{}' node spec to '{}' : {}",
+                 reference.reference_node().name(), node.name(), status);
+
       return status.take_error();
     }
   }
@@ -104,7 +104,8 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
                                                     fdf_devicetree::ParsedProperties& properties) {
   auto name = properties.Get<std::string>(kRegulatorName);
   if (!name) {
-    FDF_LOG(ERROR, "Regulator node '%s' does not have a name.", node.name().c_str());
+    fdf::error("Regulator node '{}' does not have a name.", node.name());
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -124,16 +125,18 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
   auto max_uv = properties.Get<uint32_t>(kRegulatorMaxMicrovolt);
   if (max_uv && metadata.voltage_step_uv() && metadata.min_voltage_uv()) {
     if (*max_uv < *metadata.min_voltage_uv()) {
-      FDF_LOG(ERROR, "Regulator max voltage (%d) is not more than min voltage (%d) in node '%s'",
-              *max_uv, *metadata.min_voltage_uv(), node.name().c_str());
+      fdf::error("Regulator max voltage ({}) is not more than min voltage ({}) in node '{}'",
+                 *max_uv, *metadata.min_voltage_uv(), node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     auto voltage_range = (*max_uv - *metadata.min_voltage_uv());
 
     if (voltage_range % (*metadata.voltage_step_uv()) != 0) {
-      FDF_LOG(ERROR, "Voltage range (%d) is not a multiple of step size (%d) for node '%s'",
-              voltage_range, (*metadata.voltage_step_uv()), node.name().c_str());
+      fdf::error("Voltage range ({}) is not a multiple of step size ({}) for node '{}'",
+                 voltage_range, *metadata.voltage_step_uv(), node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
@@ -142,8 +145,9 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
 
   fit::result persisted_metadata = fidl::Persist(metadata);
   if (!persisted_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to persist vreg metadata for node %s: %s", node.name().c_str(),
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist vreg metadata for node {}: {}", node.name(),
+               persisted_metadata.error_value().FormatDescription());
+
     return zx::error(persisted_metadata.error_value().status());
   }
   fuchsia_hardware_platform_bus::Metadata vreg_metadata = {{
@@ -152,7 +156,7 @@ zx::result<> RegulatorVisitor::AddRegulatorMetadata(fdf_devicetree::Node& node,
   }};
 
   node.AddMetadata(std::move(vreg_metadata));
-  FDF_LOG(DEBUG, "Added regulator metadata to node '%s'.", node.name().c_str());
+  fdf::debug("Added regulator metadata to node '{}'.", node.name());
 
   return zx::ok();
 }
@@ -163,8 +167,8 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                                 uint32_t instance_id) {
   auto regulator_name = parent.GetProperty<std::string>(kRegulatorName);
   if (regulator_name.is_error()) {
-    FDF_LOG(ERROR, "Regulator node '%s' does not have a name: %s.", parent.name().c_str(),
-            regulator_name.status_string());
+    fdf::error("Regulator node '{}' does not have a name: {}.", parent.name(), regulator_name);
+
     return regulator_name.take_error();
   }
 
@@ -185,8 +189,7 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   }};
 
   child.AddNodeSpec(regulator_node);
-  FDF_LOG(DEBUG, "Added regulator node spec of '%s' to '%s'.", parent.name().c_str(),
-          child.name().c_str());
+  fdf::debug("Added regulator node spec of '{}' to '{}'.", parent.name(), child.name());
 
   return zx::ok();
 }

@@ -50,18 +50,18 @@ zx::result<> ResetVisitor::Visit(fdf_devicetree::Node& node,
   const size_t count = reset_references->size();
   const auto& names_property = parser_output->Get<std::vector<std::string>>(kResetNames);
   if (!names_property) {
-    FDF_LOG(ERROR,
-            "Reset reference '%s' error: `resets` property present but `reset-names` missing",
-            node.name().c_str());
+    fdf::error("Reset reference '{}' error: `resets` property present but `reset-names` missing",
+               node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   const size_t names_count = names_property->size();
   if (names_count != count) {
-    FDF_LOG(
-        ERROR,
-        "Node '%s' error. `resets` (%lu) and `reset-names` (%lu) must have the same number of elements.",
-        node.name().c_str(), count, names_count);
+    fdf::error(
+        "Node '{}' error. `resets` ({}) and `reset-names` ({}) must have the same number of elements.",
+        node.name(), count, names_count);
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -98,13 +98,15 @@ zx::result<> ResetVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   if (specifiers.size_bytes() == sizeof(uint32_t)) {
     devicetree::PropertyValue pv(specifiers);
     if (!pv.AsUint32()) {
-      FDF_LOG(ERROR, "Node (%s) failed to parse resets id nodes", child.name().c_str());
+      fdf::error("Node ({}) failed to parse resets id nodes", child.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
     reset_id = *pv.AsUint32();
   } else if (specifiers.size_bytes() != 0) {
-    FDF_LOG(ERROR, "Reset reference cell for node %s must be 0 or 4 bytes, actually = %lu",
-            child.name().c_str(), specifiers.size_bytes());
+    fdf::error("Reset reference cell for node {} must be 0 or 4 bytes, actually = {}", child.name(),
+               specifiers.size_bytes());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -144,15 +146,16 @@ zx::result<> ResetVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   auto controller = reset_controllers_.find(node.id());
   if (controller == reset_controllers_.end()) {
-    FDF_LOG(WARNING, "Found a reset controller node but no nodes refer to it '%s'",
-            node.name().c_str());
+    fdf::warn("Found a reset controller node but no nodes refer to it '{}'", node.name());
+
     return zx::ok();
   }
 
   const fit::result persisted_metadata = fidl::Persist(controller->second.metadata);
   if (!persisted_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to encode reset metadata for reset controller %s: %s",
-            node.name().c_str(), persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to encode reset metadata for reset controller {}: {}", node.name(),
+               persisted_metadata.error_value().FormatDescription());
+
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -163,7 +166,7 @@ zx::result<> ResetVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   node.AddMetadata(std::move(reset_metadata));
 
-  FDF_LOG(DEBUG, "Reset metadata added to node '%s'", node.name().c_str());
+  fdf::debug("Reset metadata added to node '{}'", node.name());
 
   return zx::ok();
 }

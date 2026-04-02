@@ -42,8 +42,8 @@ zx::result<> PowerDomainVisitor::Visit(fdf_devicetree::Node& node,
                                        const devicetree::PropertyDecoder& decoder) {
   auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Power domain visitor failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Power domain visitor failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -78,8 +78,8 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
               fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id),
           },
   }};
-  FDF_LOG(DEBUG, "Added power domain (id: %d) parent to node '%s'", domain_id,
-          child.name().c_str());
+  fdf::debug("Added power domain (id: {}) parent to node '{}'", domain_id, child.name());
+
   child.AddNodeSpec(power_node);
   return zx::ok();
 }
@@ -96,10 +96,9 @@ zx::result<> PowerDomainVisitor::ParseReferenceChild(fdf_devicetree::Node& child
   auto& controller = GetController(*parent.phandle());
 
   if (specifiers.size_bytes() != kPowerDomainCellsSize * sizeof(uint32_t)) {
-    FDF_LOG(ERROR,
-            "Power domain reference '%s' has incorrect number of specifiers (%lu) - expected %d.",
-            child.name().c_str(), specifiers.size_bytes() / sizeof(uint32_t),
-            kPowerDomainCellsSize);
+    fdf::error("Power domain reference '{}' has incorrect number of specifiers ({}) - expected {}.",
+               child.name(), specifiers.size_bytes() / sizeof(uint32_t), kPowerDomainCellsSize);
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -117,8 +116,8 @@ zx::result<> PowerDomainVisitor::ParseReferenceChild(fdf_devicetree::Node& child
       [&domain](const fuchsia_hardware_power::Domain& entry) { return entry.id() == domain.id(); });
   if (it == controller.domain_info.domains()->end()) {
     controller.domain_info.domains()->push_back(domain);
-    FDF_LOG(DEBUG, "Power domain added (id: %u) added to controller '%s'", cells.domain_id(),
-            parent.name().c_str());
+    fdf::debug("Power domain added (id: {}) added to controller '{}'", cells.domain_id(),
+               parent.name());
   }
 
   return AddChildNodeSpec(child, cells.domain_id());
@@ -134,8 +133,9 @@ zx::result<> PowerDomainVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   if (controller.domain_info.domains()) {
     const fit::result persisted_domain_info = fidl::Persist(controller.domain_info);
     if (!persisted_domain_info.is_ok()) {
-      FDF_LOG(ERROR, "Failed to persist Power domain metadata for node %s: %s", node.name().c_str(),
-              persisted_domain_info.error_value().FormatDescription().c_str());
+      fdf::error("Failed to persist Power domain metadata for node {}: {}", node.name(),
+                 persisted_domain_info.error_value().FormatDescription());
+
       return zx::error(persisted_domain_info.error_value().status());
     }
     fuchsia_hardware_platform_bus::Metadata controller_metadata = {{
@@ -143,7 +143,7 @@ zx::result<> PowerDomainVisitor::FinalizeNode(fdf_devicetree::Node& node) {
         .data = persisted_domain_info.value(),
     }};
     node.AddMetadata(std::move(controller_metadata));
-    FDF_LOG(DEBUG, "Power domain metadata added to node '%s'", node.name().c_str());
+    fdf::debug("Power domain metadata added to node '{}'", node.name());
   }
 
   return zx::ok();

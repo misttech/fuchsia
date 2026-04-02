@@ -32,8 +32,8 @@ zx::result<> SerialPortVisitor::Visit(fdf_devicetree::Node& node,
                                       const devicetree::PropertyDecoder& decoder) {
   auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Serial port visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Serial port visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -53,8 +53,9 @@ zx::result<> SerialPortVisitor::ParseSerialPort(fdf_devicetree::Node& node,
   }
 
   if (serial_port->size() != 3) {
-    FDF_LOG(ERROR, "Node '%s' has invalid serial port property size %zu, expected 3.",
-            node.name().c_str(), serial_port->size());
+    fdf::error("Node '{}' has invalid serial port property size {}, expected 3.", node.name(),
+               serial_port->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -68,14 +69,14 @@ zx::result<> SerialPortVisitor::ParseSerialPort(fdf_devicetree::Node& node,
 
   fit::result encoded = fidl::Persist(serial_port_info);
   if (encoded.is_error()) {
-    FDF_LOG(ERROR, "Failed to encode serial metadata: %s",
-            encoded.error_value().FormatDescription().c_str());
+    fdf::error("Failed to encode serial metadata: {}", encoded.error_value().FormatDescription());
+
     return zx::error(encoded.error_value().status());
   }
 
-  FDF_LOG(DEBUG, "Added serial port metadata (class=%d, vid=%d, pid=%d) to node '%s'",
-          serial_port_info.serial_class(), serial_port_info.serial_vid(),
-          serial_port_info.serial_pid(), node.name().c_str());
+  fdf::debug("Added serial port metadata (class={}, vid={}, pid={}) to node '{}'",
+             static_cast<uint32_t>(serial_port_info.serial_class()), serial_port_info.serial_vid(),
+             serial_port_info.serial_pid(), node.name());
 
   fuchsia_hardware_platform_bus::Metadata metadata = {{
       .id = fuchsia_hardware_serial::SerialPortInfo::kSerializableName,
@@ -103,8 +104,9 @@ zx::result<> SerialPortVisitor::ParseReferenceChild(fdf_devicetree::Node& node,
 
   auto uart_names = properties.Get<std::vector<std::string>>(kUartNames);
   if (uart_names && uart_names->size() > uarts->size()) {
-    FDF_LOG(ERROR, "Node '%s' has %zu uart entries but has %zu uart names.", node.name().c_str(),
-            uarts->size(), uart_names->size());
+    fdf::error("Node '{}' has {} uart entries but has {} uart names.", node.name(), uarts->size(),
+               uart_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -121,7 +123,7 @@ zx::result<> SerialPortVisitor::ParseReferenceChild(fdf_devicetree::Node& node,
         return result;
       }
     } else {
-      FDF_LOG(ERROR, "Node '%s' has a invalid uarts property.", node.name().c_str());
+      fdf::error("Node '{}' has a invalid uarts property.", node.name());
     }
   }
 
@@ -152,8 +154,8 @@ zx::result<> SerialPortVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, ui
   }
 
   child.AddNodeSpec(uart_node);
-  FDF_LOG(DEBUG, "Added uart node spec with class %d name '%s' to node '%s'", serial_class,
-          uart_name ? uart_name->c_str() : "", child.name().c_str());
+  fdf::debug("Added uart node spec with class {} name '{}' to node '{}'", serial_class,
+             uart_name.value_or(""), child.name());
 
   return zx::ok();
 }
@@ -161,8 +163,8 @@ zx::result<> SerialPortVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, ui
 zx::result<> SerialPortVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Serial port visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Serial port visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 

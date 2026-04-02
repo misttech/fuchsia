@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/common-types.h>
 #include <lib/driver/devicetree/visitors/registration.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 
 #include <algorithm>
@@ -43,15 +44,17 @@ zx::result<> SpiBusVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   }};
   fit::result encoded_bus_metadata = fidl::Persist(bus_metadata);
   if (encoded_bus_metadata.is_error()) {
-    FDF_LOG(INFO, "Failed to persist FIDL metadata for SPI controller '%s': %s",
-            node.name().c_str(), encoded_bus_metadata.error_value().FormatDescription().c_str());
+    fdf::info("Failed to persist FIDL metadata for SPI controller '{}': {}", node.name(),
+              encoded_bus_metadata.error_value().FormatDescription());
+
     return zx::error(encoded_bus_metadata.error_value().status());
   }
   node.AddMetadata({{
       .id = fuchsia_hardware_spi_businfo::SpiBusMetadata::kSerializableName,
       .data = std::move(encoded_bus_metadata.value()),
   }});
-  FDF_LOG(DEBUG, "SPI channels metadata added to node '%s'", node.name().c_str());
+  fdf::debug("SPI channels metadata added to node '{}'", node.name());
+
   return zx::ok();
 }
 
@@ -67,7 +70,8 @@ zx::result<> SpiBusVisitor::Visit(fdf_devicetree::Node& node,
 
 zx::result<> SpiBusVisitor::CreateController(const std::string& node_name) {
   if (spi_controllers_.contains(node_name)) {
-    FDF_LOG(ERROR, "Duplicate SPI controller '%s'", node_name.c_str());
+    fdf::error("Duplicate SPI controller '{}'", node_name);
+
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
 
@@ -100,8 +104,8 @@ zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree
                                        fdf_devicetree::ChildNode& child) {
   auto reg = child.GetProperty<std::vector<uint32_t>>("reg");
   if (reg.is_error()) {
-    FDF_LOG(ERROR, "SPI child '%s' has no reg property: %s", child.name().c_str(),
-            reg.status_string());
+    fdf::error("SPI child '{}' has no reg property: {}", child.name(), reg);
+
     return reg.take_error();
   }
 
@@ -114,12 +118,13 @@ zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree
                        return other.cs() == chip_select;
                      });
     if (it != controller.channels.cend()) {
-      FDF_LOG(ERROR, "Duplicate reg property %u for SPI controller '%s'", chip_select,
-              parent.name().c_str());
+      fdf::error("Duplicate reg property {} for SPI controller '{}'", chip_select, parent.name());
+
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
 
-    FDF_LOG(DEBUG, "SPI channel %u to controller '%s'", chip_select, parent.name().c_str());
+    fdf::debug("SPI channel {} to controller '{}'", chip_select, parent.name());
+
     controller.channels.emplace_back(fuchsia_hardware_spi_businfo::SpiChannel{{.cs = chip_select}});
     AddChildNodeSpec(child, controller.bus_id, chip_select, i);
   }

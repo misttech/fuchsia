@@ -43,8 +43,8 @@ zx::result<> PwmVisitor::Visit(fdf_devicetree::Node& node,
                                const devicetree::PropertyDecoder& decoder) {
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "PWM visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("PWM visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -55,18 +55,18 @@ zx::result<> PwmVisitor::Visit(fdf_devicetree::Node& node,
 
   auto pwm_names = parser_output->Get<std::vector<std::string>>(kPwmNames);
   if (!pwm_names && pwms->size() != 1u) {
-    FDF_LOG(
-        ERROR,
-        "PWM reference '%s' does not have valid pwm names property. Name is required to generate bind rules, especially when more than one pwm is referenced.",
-        node.name().c_str());
+    fdf::error(
+        "PWM reference '{}' does not have valid pwm names property. Name is required to generate bind rules, especially when more than one pwm is referenced.",
+        node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   if (pwm_names && pwm_names->size() != pwms->size()) {
-    FDF_LOG(ERROR,
-            "PWM reference '%s' does not expected number of pwm names property. Expected: %lu "
-            "actual: %lu.",
-            node.name().c_str(), pwms->size(), pwm_names->size());
+    fdf::error(
+        "PWM reference '{}' does not expected number of pwm names property. Expected: {} actual: {}.",
+        node.name(), pwms->size(), pwm_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -100,10 +100,10 @@ zx::result<> PwmVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   auto& controller = GetController(*parent.phandle());
 
   if (specifiers.size_bytes() < 1 * sizeof(uint32_t)) {
-    FDF_LOG(
-        ERROR,
-        "PWM reference '%s' has incorrect number of pwm specifiers (%lu) - expected at least 1.",
-        child.name().c_str(), specifiers.size_bytes() / sizeof(uint32_t));
+    fdf::error(
+        "PWM reference '{}' has incorrect number of pwm specifiers ({}) - expected at least 1.",
+        child.name(), specifiers.size_bytes() / sizeof(uint32_t));
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -126,12 +126,10 @@ zx::result<> PwmVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
     }
   }
 
-  FDF_LOG(
-      DEBUG,
-      "PWM channel added - ID 0x%x, Period %d, Polarity %d, Skip init %d, and name '%s' to controller '%s'",
+  fdf::debug(
+      "PWM channel added - ID {:#x}, Period {}, Polarity {}, Skip init {}, and name '{}' to controller '{}'",
       *pwm_channel.id(), pwm_channel.period_ns().value_or(0), pwm_channel.polarity().value_or(0),
-      pwm_channel.skip_init().value_or(0),
-      pwm_name ? std::string(*pwm_name).c_str() : "<anonymous>", parent.name().c_str());
+      pwm_channel.skip_init().value_or(0), pwm_name.value_or("<anonymous>"), parent.name());
 
   if (!controller.pwm_channels.channels()) {
     controller.pwm_channels.channels() = std::vector<PwmChannelInfo>();
@@ -176,16 +174,18 @@ zx::result<> PwmVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   if (node.phandle()) {
     auto controller = pwm_controllers_.find(*node.phandle());
     if (controller == pwm_controllers_.end()) {
-      FDF_LOG(INFO, "PWM controller '%s' is not being used. Not adding any metadata for it.",
-              node.name().c_str());
+      fdf::info("PWM controller '{}' is not being used. Not adding any metadata for it.",
+                node.name());
+
       return zx::ok();
     }
 
     if (controller->second.pwm_channels.channels()) {
       fit::result persisted_metadata = fidl::Persist(controller->second.pwm_channels);
       if (persisted_metadata.is_error()) {
-        FDF_LOG(ERROR, "Failed to persist pwm channels metadata: %s",
-                persisted_metadata.error_value().FormatDescription().c_str());
+        fdf::error("Failed to persist pwm channels metadata: {}",
+                   persisted_metadata.error_value().FormatDescription());
+
         return zx::error(persisted_metadata.error_value().status());
       }
 
@@ -195,7 +195,7 @@ zx::result<> PwmVisitor::FinalizeNode(fdf_devicetree::Node& node) {
       }};
 
       node.AddMetadata(std::move(channels_metadata));
-      FDF_LOG(DEBUG, "PWM Channels metadata added to node '%s'", node.name().c_str());
+      fdf::debug("PWM Channels metadata added to node '{}'", node.name());
     }
   }
   return zx::ok();
