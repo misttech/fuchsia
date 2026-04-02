@@ -36,45 +36,42 @@ class BufferTracker {
 
  private:
   inspect::Node node_;
+  inspect::LazyNode buffer_tracker_node_;
+  std::mutex mutex_;
+
   bool started_monitoring_min_max_buffers_ __TA_GUARDED(mutex_) = false;
   bool currently_monitoring_min_max_buffers_ __TA_GUARDED(mutex_) = false;
 
   // Total buffer counts
-  inspect::UintProperty total_buffers_processed_count_prop_;
-  uint64_t total_buffers_processed_count_ __TA_GUARDED(mutex_) = 0;
-  std::optional<inspect::LazyNode> total_buffers_processed_duration_node_;
-  std::optional<zx::duration> per_buffer_duration_;
+  inspect::UintProperty buffers_processed_count_prop_;
+  uint64_t buffers_processed_count_ __TA_GUARDED(mutex_) = 0;
+  std::optional<zx::duration> per_buffer_duration_ __TA_GUARDED(mutex_);
 
   // Outstanding buffer metrics.
-  inspect::LazyNode avg_outstanding_buffer_count_node_;
-  uint64_t cumulative_outstanding_buffer_count_ __TA_GUARDED(mutex_) = 0;
-  inspect::LazyNode minmax_outstanding_buffer_counts_;
+  uint64_t outstanding_buffer_count_cumulative_ __TA_GUARDED(mutex_) = 0;
   uint64_t outstanding_buffers_count_min_ __TA_GUARDED(mutex_) = UINT64_MAX;
   uint64_t outstanding_buffers_count_max_ __TA_GUARDED(mutex_) = 0;
+  std::queue<zx::time> submission_times_ __TA_GUARDED(mutex_);
 
   // Processing time metrics.
-  inspect::LazyNode avg_processing_time_node_;
-  inspect::UintProperty max_processing_time_us_prop_;
-  uint64_t total_processing_duration_us_ __TA_GUARDED(mutex_) = 0;
-  zx::duration max_processing_duration_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
+  uint64_t processing_total_duration_us_ __TA_GUARDED(mutex_) = 0;
+  zx::duration processing_max_episode_duration_ __TA_GUARDED(mutex_) =
+      zx::duration::infinite_past();
 
   // Empty buffer metrics.
-  inspect::UintProperty total_empty_buffer_duration_us_prop_;
-  inspect::UintProperty empty_buffer_episode_count_prop_;
-  inspect::UintProperty max_empty_buffer_duration_us_prop_;
-  zx::duration max_empty_buffer_duration_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
+  uint64_t empty_buffer_count_ __TA_GUARDED(mutex_) = 0;
+  zx::time empty_buffer_start_time_ __TA_GUARDED(mutex_) = zx::time(0);
+  zx::duration empty_buffer_total_duration_ __TA_GUARDED(mutex_) = zx::duration(0);
+  zx::duration empty_buffer_max_episode_duration_ __TA_GUARDED(mutex_) =
+      zx::duration::infinite_past();
 
   // Full buffer metrics.
-  std::optional<inspect::UintProperty> total_full_buffer_duration_us_prop_;
-  std::optional<inspect::UintProperty> full_buffer_episode_count_prop_;
-  std::optional<inspect::UintProperty> max_full_buffer_duration_us_prop_;
-  zx::duration max_full_buffer_duration_ __TA_GUARDED(mutex_) = zx::duration::infinite_past();
-
-  std::queue<zx::time> submission_times_ __TA_GUARDED(mutex_);
-  zx::time empty_buffer_start_time_ __TA_GUARDED(mutex_) = zx::time(0);
-  zx::time full_buffer_start_time_ __TA_GUARDED(mutex_) = zx::time(0);
   std::optional<uint32_t> max_buffer_count_;
-  std::mutex mutex_;
+  uint64_t full_buffer_count_ __TA_GUARDED(mutex_) = 0;
+  zx::time full_buffer_start_time_ __TA_GUARDED(mutex_) = zx::time(0);
+  zx::duration full_buffer_total_duration_ __TA_GUARDED(mutex_) = zx::duration(0);
+  zx::duration full_buffer_max_episode_duration_ __TA_GUARDED(mutex_) =
+      zx::duration::infinite_past();
 };
 
 }  // namespace audio

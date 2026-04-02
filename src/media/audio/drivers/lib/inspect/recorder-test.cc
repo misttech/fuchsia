@@ -202,27 +202,17 @@ TEST_F(RecorderTest, ActiveChannels) {
                                                     })))))))))))))))))));
 }
 
-// By default, if no buffers are ever submitted, only a few fields should be populated to Inspect:
-//   count_buffers_processed, empty|full_buffer_episode_count, processing_time_max_usec
+// If we don't submit buffers, only 'count_buffers_processed' will be populated; all others
+// should be absent. Also if we don't start the instance, that tracker should not exist at all.
 TEST_F(RecorderTest, BufferTrackerDefaults) {
   recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
   auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
   rb_recorder->SetupBufferTracker("test_buffer_tracker", 5, zx::msec(10));
 
-  rb_recorder->RecordStartTime(zx::time(100));
-  auto task = audio::Subtask("task_0", /*collect_thread_metrics*/ false);
-  task.Start();
-  sleep(1);
-  task.Done();
-  rb_recorder->RecordStopTime(zx::time(200));
-
   auto hierarchy = GetHierarchy();
   auto expected_buffers =
       AllOf(NameMatches(std::string("test_buffer_tracker")),
-            PropertyList(UnorderedElementsAre(UintIs(std::string(kCountBuffersProcessed), 0),
-                                              UintIs(std::string(kEmptyBufferEpisodeCount), 0),
-                                              UintIs(std::string(kFullBufferEpisodeCount), 0),
-                                              UintIs(std::string(kProcessingTimeMaxUsec), 0))));
+            PropertyList(UnorderedElementsAre(UintIs(std::string(kCountBuffersProcessed), 0))));
 
   std::vector<std::string> summary_buffer_tracker_path = {
       std::string(kRingBuffers),
@@ -234,6 +224,7 @@ TEST_F(RecorderTest, BufferTrackerDefaults) {
   ASSERT_TRUE(summary_buffer_tracker_hierarchy);
   EXPECT_THAT(*summary_buffer_tracker_hierarchy, NodeMatches(expected_buffers));
 
+  // This buffer tracker should not exist; the instance never started (never recorded start_time).
   std::vector<std::string> running_instance_buffer_tracker_path = {
       std::string(kRingBuffers),
       "test_ring_buffer",
@@ -245,8 +236,7 @@ TEST_F(RecorderTest, BufferTrackerDefaults) {
   };
   const auto running_instance_buffer_tracker_hierarchy =
       hierarchy.GetByPath(running_instance_buffer_tracker_path);
-  ASSERT_TRUE(running_instance_buffer_tracker_hierarchy);
-  EXPECT_THAT(*running_instance_buffer_tracker_hierarchy, NodeMatches(expected_buffers));
+  EXPECT_FALSE(running_instance_buffer_tracker_hierarchy);
 }
 
 TEST_F(RecorderTest, EmptyFullTracking) {
@@ -325,26 +315,53 @@ TEST_F(RecorderTest, EmptyFullTracking) {
   EXPECT_THAT(*running_instance_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
 }
 
-// Test incorrect accounting of outstanding buffers (min, max, avg). We just need to not crash, in
-// order to pass this test case.
+// Various incorrect calls to buffer-accounting methods. To pass, we just need to not crash.
 TEST_F(RecorderTest, BufferErrors) {
   recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
-  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(123));
+  {
+    // Setup a buffer tracker that can hold 0 buffers!
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 0, zx::msec(10));
+  }
+  {
+    // Setup a buffer tracker with buffers of zero duration!
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(0));
+  }
+  {
+    // SetupBufferTracker is called twice!
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
+    rb_recorder->SetupBufferTracker("test_buffer_tracker - again?", 1, zx::msec(20));
+  }
+  {
+    // Call StopMonitoringOutstandingBufferCount() before StartMonitoringOutstandingBufferCount()!
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
+    rb_recorder->StopMonitoringOutstandingBufferCount();
+  }
+  {
+    // Call StartMonitoringOutstandingBufferCount() before there even is a buffer tracker.
+    rb_recorder->StartMonitoringOutstandingBufferCount();
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
+  }
+  {
+    // RecordBufferCompletion() decrements the outstanding buffer count below zero.
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
+    rb_recorder->RecordBufferCompletion();
+  }
+  {
+    // RecordBufferSubmission() increments the buffer count beyond the tracker's capacity.
+    rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
+    rb_recorder->RecordBufferSubmission();
+    rb_recorder->RecordBufferSubmission();
 
-  rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
-
-  rb_recorder->RecordBufferCompletion();
-  usleep(1000);
-
-  rb_recorder->RecordBufferSubmission();
-  usleep(1000);
-
-  rb_recorder->RecordBufferSubmission();
+    // And don't call StopMonitoringOutstandingBufferCount() to cleanup afterward....
+    rb_recorder->StartMonitoringOutstandingBufferCount();
+  }
   usleep(2000);
 }
 
 // Test the accounting of outstanding buffers (min, max, avg).
-// We calculate "average outstanding buffers" based on each 'RecordBufferCompletion' call.
+// We evaluate for min/max before and after each submission/completion call.
+// We take "average outstanding buffers" samples BEFORE acting on a 'RecordBufferCompletion' call.
 TEST_F(RecorderTest, BufferLevelAccounting) {
   recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
   auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
@@ -416,6 +433,136 @@ TEST_F(RecorderTest, BufferLevelAccounting) {
       hierarchy.GetByPath(running_instance_buffer_tracker_path);
   ASSERT_TRUE(running_instance_buffer_tracker_hierarchy);
   EXPECT_THAT(*running_instance_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
+}
+
+// A recorder instance maintains separate accounting for each RingBuffer start/stop session.
+TEST_F(RecorderTest, BufferAccountingByInstance) {
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
+  rb_recorder->SetupBufferTracker("test_buffer_tracker", 4, zx::msec(10));
+
+  // Instance 0
+  rb_recorder->RecordStartTime(zx::time(1'000'000));
+  rb_recorder->RecordBufferSubmission();  // current now 1
+  usleep(1000);
+  rb_recorder->StartMonitoringOutstandingBufferCount();
+  rb_recorder->RecordBufferSubmission();  // min 1; current now 2; max 2
+  usleep(2000);
+  rb_recorder->RecordBufferSubmission();  // current now 3; max 3
+  usleep(3000);
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 3; current now 2
+  usleep(1000);
+  usleep(4000);
+  rb_recorder->RecordBufferSubmission();  // current now 3
+  usleep(3000);
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 3; current now 2
+  usleep(2000);
+  rb_recorder->StopMonitoringOutstandingBufferCount();
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 2; current now 1
+  usleep(1000);
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 1; current now 0
+  rb_recorder->RecordStopTime(zx::time(20'000'000));
+  // 4 buffs processed; running buff levels 3,3,2,1; min 1; max 3; 0 EMPTY episodes; 0 FULL.
+  auto expected_running_instance0_buffer_tracker = AllOf(
+      NameMatches(std::string("test_buffer_tracker")),
+      PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
+          UintIs(std::string(kCountBuffersProcessed), 4),  // (3+3+2+1) = 9; avg = 9/4 = 2.25
+          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.25)),
+          UintIs(std::string(kCountOutstandingBuffersMax), 3),
+          UintIs(std::string(kCountOutstandingBuffersMin), 1),
+          UintIs(std::string(kEmptyBufferEpisodeCount), 0),
+          UintIs(std::string(kFullBufferEpisodeCount), 0),
+      })));
+
+  // We record an EMPTY episode between the 2 sessions, attributed only to the summary.
+
+  // Instance 1
+  rb_recorder->RecordStartTime(zx::time(21'000'000));
+  rb_recorder->RecordBufferSubmission();  // current now 1
+  usleep(1000);
+  rb_recorder->RecordBufferSubmission();  // current now 2
+  usleep(2000);
+  rb_recorder->RecordBufferSubmission();  // current now 3
+  usleep(3000);
+  rb_recorder->StartMonitoringOutstandingBufferCount();
+  rb_recorder->RecordBufferCompletion();  // max 3; avg_buffs data point: 3; current now 2; min 2
+  usleep(4000);
+  rb_recorder->RecordBufferSubmission();  // current now 3
+  usleep(3000);
+  rb_recorder->RecordBufferSubmission();  // current now 4; max 4; FULL episode recorded
+  usleep(3000);
+  rb_recorder->StopMonitoringOutstandingBufferCount();
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 4; current now 3
+  usleep(2000);
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 3; current now 2
+  usleep(2000);
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 2; current now 1
+  usleep(1000);
+  rb_recorder->RecordBufferCompletion();  // avg_buffs data point: 1; current now 0
+  rb_recorder->RecordStopTime(zx::time(40'000'000));
+  // 5 buffs processed; running buff levels 3,4,3,2,1; min 2; max 4; 0 EMPTY; 1 FULL.
+  auto expected_running_instance1_buffer_tracker = AllOf(
+      NameMatches(std::string("test_buffer_tracker")),
+      PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
+          UintIs(std::string(kCountBuffersProcessed), 5),  // (3+4+3+2+1) = 13; avg = 13/5 = 2.6
+          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.6)),
+          UintIs(std::string(kCountOutstandingBuffersMax), 4),
+          UintIs(std::string(kCountOutstandingBuffersMin), 2),
+          UintIs(std::string(kEmptyBufferEpisodeCount), 0),
+          UintIs(std::string(kFullBufferEpisodeCount), 1),
+      })));
+
+  // Summary: 9 buffers; running levels 3,3,2,1,3,4,3,2,1; min 1; max 4; 1 EMPTY; 1 FULL.
+  auto expected_summary_buffer_tracker = AllOf(
+      NameMatches(std::string("test_buffer_tracker")),
+      PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
+          UintIs(std::string(kCountBuffersProcessed), 9),  // (3+3+2+1+3+4+3+2+1)=22; 22/9=2.44...
+          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.444444444444444)),
+          UintIs(std::string(kCountOutstandingBuffersMax), 4),
+          UintIs(std::string(kCountOutstandingBuffersMin), 1),
+          UintIs(std::string(kEmptyBufferEpisodeCount), 1),
+          UintIs(std::string(kFullBufferEpisodeCount), 1),
+      })));
+
+  auto hierarchy = GetHierarchy();
+  std::vector<std::string> running_instance0_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "0",
+      std::string(kDiagnostics),
+      "test_buffer_tracker",
+  };
+  const auto running_instance0_buffer_tracker_hierarchy =
+      hierarchy.GetByPath(running_instance0_buffer_tracker_path);
+  ASSERT_TRUE(running_instance0_buffer_tracker_hierarchy);
+  EXPECT_THAT(*running_instance0_buffer_tracker_hierarchy,
+              NodeMatches(expected_running_instance0_buffer_tracker));
+
+  std::vector<std::string> running_instance1_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "1",
+      std::string(kDiagnostics),
+      "test_buffer_tracker",
+  };
+  const auto running_instance1_buffer_tracker_hierarchy =
+      hierarchy.GetByPath(running_instance1_buffer_tracker_path);
+  ASSERT_TRUE(running_instance1_buffer_tracker_hierarchy);
+  EXPECT_THAT(*running_instance1_buffer_tracker_hierarchy,
+              NodeMatches(expected_running_instance1_buffer_tracker));
+  std::vector<std::string> summary_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      std::string(kDiagnosticsSummary),
+      "test_buffer_tracker",
+  };
+  const auto summary_buffer_tracker_hierarchy = hierarchy.GetByPath(summary_buffer_tracker_path);
+  ASSERT_TRUE(summary_buffer_tracker_hierarchy);
+  EXPECT_THAT(*summary_buffer_tracker_hierarchy, NodeMatches(expected_summary_buffer_tracker));
 }
 
 TEST_F(RecorderTest, AvgTaskMetrics) {

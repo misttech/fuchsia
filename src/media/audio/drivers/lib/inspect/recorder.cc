@@ -83,16 +83,16 @@ void TaskRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
 }
 
 AggregateRecords::AggregateRecords(inspect::Node& node, std::string_view name)
-    : diagnostics_(node.CreateChild(name)),
-      task_records_(diagnostics_.CreateChild(kTaskRecords)),
-      sum_node_(task_records_.CreateChild(kSum)),
-      min_task_records_(task_records_.CreateChild(kMin), 1),
-      max_task_records_(task_records_.CreateChild(kMax), 1),
-      avg_task_records_(task_records_.CreateChild(kAvg), 1) {
-  task_count_ = diagnostics_.CreateUint(kCountTasks, 0);
-  task_underrun_count_ = diagnostics_.CreateUint(kCountUnderruns, 0);
-  task_overrun_count_ = diagnostics_.CreateUint(kCountOverruns, 0);
-  dropped_transfer_count_ = diagnostics_.CreateUint(kCountDroppedTransfers, 0);
+    : diagnostics_node_(node.CreateChild(name)),
+      task_records_node_(diagnostics_node_.CreateChild(kTaskRecords)),
+      sum_node_(task_records_node_.CreateChild(kSum)),
+      min_task_records_(task_records_node_.CreateChild(kMin), 1),
+      max_task_records_(task_records_node_.CreateChild(kMax), 1),
+      avg_task_records_(task_records_node_.CreateChild(kAvg), 1) {
+  task_count_prop_ = diagnostics_node_.CreateUint(kCountTasks, 0);
+  task_underrun_count_prop_ = diagnostics_node_.CreateUint(kCountUnderruns, 0);
+  task_overrun_count_prop_ = diagnostics_node_.CreateUint(kCountOverruns, 0);
+  dropped_transfer_count_prop_ = diagnostics_node_.CreateUint(kCountDroppedTransfers, 0);
 
   // TODO(b/458465136): Eliminate the unnecessary Node indirection (task_records/metrics)
   min_metrics_ = Subtask::Metrics{kMin};
@@ -109,7 +109,7 @@ AggregateRecords::AggregateRecords(inspect::Node& node, std::string_view name)
 void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
                                          std::optional<InterTaskDurations> inter_task_durations) {
   total_task_count_++;
-  task_count_.Set(total_task_count_);
+  task_count_prop_.Set(total_task_count_);
 
   // Get the min and max values for every field, including start-to-start and end-to-end deltas.
   // If `metrics.got_detailed_thread_metrics` is false, we only get basic wall-clock durations.
@@ -195,7 +195,7 @@ void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
       max_metrics_, max_inter_task_durations_,
       has_scheduling_delay ? std::make_optional(max_schedule_delay_) : std::nullopt);
 
-  TaskRecords::UpdateInt(&sum_kernel_lock_time_property_, &sum_node_, kKernelLockContentionTimeUsec,
+  TaskRecords::UpdateInt(&sum_kernel_lock_time_prop_, &sum_node_, kKernelLockContentionTimeUsec,
                          sum_kernel_lock_contention_time_.to_usecs());
 
   avg_task_records_.RecordTaskMetrics(
@@ -206,7 +206,7 @@ void AggregateRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
 void AggregateRecords::SetupBufferTracker(const std::string& name,
                                           std::optional<uint32_t> max_buffer_count,
                                           std::optional<zx::duration> per_buffer_duration) {
-  buffer_tracker_ = std::make_unique<BufferTracker>(diagnostics_.CreateChild(name),
+  buffer_tracker_ = std::make_unique<BufferTracker>(diagnostics_node_.CreateChild(name),
                                                     max_buffer_count, per_buffer_duration);
 }
 
@@ -359,12 +359,12 @@ void RingBufferRecorder::RecordDroppedTransfer() {
 void RingBufferRecorder::RecordActiveChannelsCall(uint64_t active_channels_bitmask,
                                                   const zx::time& set_active_channels_called_at,
                                                   const zx::time& active_channels_completed_at) {
-  if (!active_channels_calls_root_) {
-    active_channels_calls_root_ = instance_node_.CreateChild(kSetActiveChannelsCalls);
+  if (!active_channels_calls_node_) {
+    active_channels_calls_node_ = instance_node_.CreateChild(kSetActiveChannelsCalls);
   }
 
   ActiveChannelsCall active_channels_call{
-      active_channels_calls_root_.CreateChild(std::to_string(active_channels_calls_.size())),
+      active_channels_calls_node_.CreateChild(std::to_string(active_channels_calls_.size())),
       active_channels_bitmask, set_active_channels_called_at, active_channels_completed_at};
   active_channels_calls_.emplace_back(std::move(active_channels_call));
 }

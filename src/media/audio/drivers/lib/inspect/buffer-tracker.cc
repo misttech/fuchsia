@@ -15,62 +15,66 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
 
       per_buffer_duration_(per_buffer_duration),
       max_buffer_count_(max_buffer_count) {
-  avg_processing_time_node_ = node_.CreateLazyValues(
-      kProcessingTimeAvgUsec, [this]() -> fpromise::promise<inspect::Inspector> {
+  buffers_processed_count_prop_ = node_.CreateUint(kCountBuffersProcessed, 0);
+
+  // We don't auto-populate ALL Inspect fields; some have meaning only after some initial event.
+  // Until then, those fields offer no value to someone perusing Inspect for important information.
+
+  buffer_tracker_node_ =
+      node_.CreateLazyValues(kBufferAccounting, [this]() -> fpromise::promise<inspect::Inspector> {
         std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
-        if (total_buffers_processed_count_ > 0) {
-          inspector.GetRoot().CreateUint(
-              kProcessingTimeAvgUsec,
-              total_processing_duration_us_ / total_buffers_processed_count_, &inspector);
-        }
-        return fpromise::make_ok_promise(inspector);
-      });
-  max_processing_time_us_prop_ = node_.CreateUint(kProcessingTimeMaxUsec, 0);
-  empty_buffer_episode_count_prop_ = node_.CreateUint(kEmptyBufferEpisodeCount, 0);
-  avg_outstanding_buffer_count_node_ = node_.CreateLazyValues(
-      kCountOutstandingBuffersAvg, [this]() -> fpromise::promise<inspect::Inspector> {
-        std::lock_guard<std::mutex> lock(mutex_);
-        inspect::Inspector inspector;
-        if (total_buffers_processed_count_ > 0) {
+
+        // These fields only have value after we start processing buffers.
+        if (buffers_processed_count_ > 0) {
+          // Outstanding buffer accounting
           inspector.GetRoot().CreateDouble(
               kCountOutstandingBuffersAvg,
-              static_cast<double>(cumulative_outstanding_buffer_count_) /
-                  static_cast<double>(total_buffers_processed_count_),
+              static_cast<double>(outstanding_buffer_count_cumulative_) /
+                  static_cast<double>(buffers_processed_count_),
               &inspector);
-        }
-        return fpromise::make_ok_promise(inspector);
-      });
-  minmax_outstanding_buffer_counts_ = node_.CreateLazyValues(
-      kCountOutstandingBuffersMax, [this]() -> fpromise::promise<inspect::Inspector> {
-        std::lock_guard<std::mutex> lock(mutex_);
-        inspect::Inspector inspector;
-        if (started_monitoring_min_max_buffers_) {
-          inspector.GetRoot().CreateUint(kCountOutstandingBuffersMin,
-                                         outstanding_buffers_count_min_, &inspector);
-          inspector.GetRoot().CreateUint(kCountOutstandingBuffersMax,
-                                         outstanding_buffers_count_max_, &inspector);
-        }
-        return fpromise::make_ok_promise(inspector);
-      });
-  total_buffers_processed_count_prop_ = node_.CreateUint(kCountBuffersProcessed, 0);
-  if (max_buffer_count.has_value()) {
-    full_buffer_episode_count_prop_ = node_.CreateUint(kFullBufferEpisodeCount, 0);
-  }
-  if (per_buffer_duration_.has_value()) {
-    total_buffers_processed_duration_node_ = node_.CreateLazyValues(
-        kProcessingTimeCumulativeUsec, [this]() -> fpromise::promise<inspect::Inspector> {
-          std::lock_guard<std::mutex> lock(mutex_);
-          inspect::Inspector inspector;
-          if (total_buffers_processed_count_ > 0) {
+          // These only have value if we started monitoring.
+          if (started_monitoring_min_max_buffers_) {
+            inspector.GetRoot().CreateUint(kCountOutstandingBuffersMin,
+                                           outstanding_buffers_count_min_, &inspector);
+            inspector.GetRoot().CreateUint(kCountOutstandingBuffersMax,
+                                           outstanding_buffers_count_max_, &inspector);
+          }
+          // Empty buffer episode accounting
+          inspector.GetRoot().CreateUint(kEmptyBufferEpisodeCount, empty_buffer_count_, &inspector);
+          if (empty_buffer_count_ > 0) {
+            inspector.GetRoot().CreateUint(kEmptyBufferDurationMaxUsec,
+                                           empty_buffer_max_episode_duration_.to_usecs(),
+                                           &inspector);
+            inspector.GetRoot().CreateUint(kEmptyBufferDurationCumulativeUsec,
+                                           empty_buffer_total_duration_.to_usecs(), &inspector);
+          }
+          // Full buffer episode accounting
+          if (max_buffer_count_.has_value()) {
+            inspector.GetRoot().CreateUint(kFullBufferEpisodeCount, full_buffer_count_, &inspector);
+            if (full_buffer_count_ > 0) {
+              inspector.GetRoot().CreateUint(kFullBufferDurationMaxUsec,
+                                             full_buffer_max_episode_duration_.to_usecs(),
+                                             &inspector);
+              inspector.GetRoot().CreateUint(kFullBufferDurationCumulativeUsec,
+                                             full_buffer_total_duration_.to_usecs(), &inspector);
+            }
+          }
+          // Processing-time accounting
+          inspector.GetRoot().CreateUint(kProcessingTimeAvgUsec,
+                                         processing_total_duration_us_ / buffers_processed_count_,
+                                         &inspector);
+          inspector.GetRoot().CreateUint(kProcessingTimeMaxUsec,
+                                         processing_max_episode_duration_.to_usecs(), &inspector);
+          // This only has value if the caller specified a buffer duration.
+          if (per_buffer_duration_.has_value()) {
             inspector.GetRoot().CreateUint(
                 kProcessingTimeCumulativeUsec,
-                total_buffers_processed_count_ * per_buffer_duration_->to_nsecs() / 1000,
-                &inspector);
+                buffers_processed_count_ * per_buffer_duration_->to_nsecs() / 1000, &inspector);
           }
-          return fpromise::make_ok_promise(inspector);
-        });
-  }
+        }
+        return fpromise::make_ok_promise(inspector);
+      });
 }
 
 void BufferTracker::RecordSubmission() {
@@ -84,16 +88,10 @@ void BufferTracker::RecordSubmission() {
   if (submission_times_.empty()) {
     if (empty_buffer_start_time_.get() != 0) {
       const zx::duration duration = submission_time - empty_buffer_start_time_;
-      if (!total_empty_buffer_duration_us_prop_) {
-        total_empty_buffer_duration_us_prop_ =
-            node_.CreateUint(kEmptyBufferDurationCumulativeUsec, 0);
-        max_empty_buffer_duration_us_prop_ = node_.CreateUint(kEmptyBufferDurationMaxUsec, 0);
-      }
-      total_empty_buffer_duration_us_prop_.Add(duration.to_usecs());
-      empty_buffer_episode_count_prop_.Add(1);
-      if (duration > max_empty_buffer_duration_) {
-        max_empty_buffer_duration_ = duration;
-        max_empty_buffer_duration_us_prop_.Set(duration.to_usecs());
+      empty_buffer_total_duration_ += duration;
+      empty_buffer_count_++;
+      if (duration > empty_buffer_max_episode_duration_) {
+        empty_buffer_max_episode_duration_ = duration;
       }
       empty_buffer_start_time_ = zx::time(0);
     }
@@ -126,22 +124,15 @@ void BufferTracker::RecordCompletion() {
   if (max_buffer_count_.has_value() && submission_times_.size() == max_buffer_count_.value()) {
     if (full_buffer_start_time_.get() != 0) {
       const zx::duration duration = completion_time - full_buffer_start_time_;
-      if (!total_full_buffer_duration_us_prop_) {
-        total_full_buffer_duration_us_prop_ =
-            node_.CreateUint(kFullBufferDurationCumulativeUsec, 0);
-        max_full_buffer_duration_us_prop_ = node_.CreateUint(kFullBufferDurationMaxUsec, 0);
-      }
-
-      total_full_buffer_duration_us_prop_->Add(duration.to_usecs());
-      full_buffer_episode_count_prop_->Add(1);
-      if (duration > max_full_buffer_duration_) {
-        max_full_buffer_duration_ = duration;
-        max_full_buffer_duration_us_prop_->Set(duration.to_usecs());
+      full_buffer_total_duration_ += duration;
+      full_buffer_count_++;
+      if (duration > full_buffer_max_episode_duration_) {
+        full_buffer_max_episode_duration_ = duration;
       }
       full_buffer_start_time_ = zx::time(0);
     }
   }
-  cumulative_outstanding_buffer_count_ += submission_times_.size();
+  outstanding_buffer_count_cumulative_ += submission_times_.size();
   zx::time submission_time = submission_times_.front();
   submission_times_.pop();
 
@@ -161,13 +152,13 @@ void BufferTracker::RecordCompletion() {
     }
   }
 
-  total_buffers_processed_count_++;
-  total_buffers_processed_count_prop_.Set(total_buffers_processed_count_);
-  zx::duration processing_duration = completion_time - submission_time;
-  total_processing_duration_us_ += processing_duration.to_usecs();
-  if (processing_duration > max_processing_duration_) {
-    max_processing_duration_ = processing_duration;
-    max_processing_time_us_prop_.Set(max_processing_duration_.to_usecs());
+  zx::duration processing_time = completion_time - submission_time;
+  processing_total_duration_us_ += processing_time.to_usecs();
+  buffers_processed_count_++;
+  buffers_processed_count_prop_.Set(buffers_processed_count_);
+
+  if (processing_time > processing_max_episode_duration_) {
+    processing_max_episode_duration_ = processing_time;
   }
 }
 

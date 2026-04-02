@@ -71,6 +71,7 @@ static constexpr std::string_view kCountUnderruns = "count_underruns";
 static constexpr std::string_view kWorstOverrunFrames = "worst_overrun_frames";
 static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames";
 
+static constexpr std::string_view kBufferAccounting = "buffer_accounting";
 static constexpr std::string_view kCountBuffersProcessed = "count_buffers_processed";
 static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstanding_buffers_avg";
 static constexpr std::string_view kCountOutstandingBuffersMax = "count_outstanding_buffers_max";
@@ -176,28 +177,28 @@ class AggregateRecords {
                          std::optional<InterTaskDurations> inter_task_durations);
 
   void RecordTaskUnderrun(int64_t underrun_frames) {
-    task_underrun_count_.Add(1);
+    task_underrun_count_prop_.Add(1);
     worst_underrun_frames_ = std::max(worst_underrun_frames_, underrun_frames);
-    if (!worst_underrun_frames_property_) {
-      worst_underrun_frames_property_ =
-          diagnostics_.CreateUint(kWorstUnderrunFrames, worst_underrun_frames_);
+    if (!worst_underrun_frames_prop_) {
+      worst_underrun_frames_prop_ =
+          diagnostics_node_.CreateUint(kWorstUnderrunFrames, worst_underrun_frames_);
     } else {
-      worst_underrun_frames_property_.Set(worst_underrun_frames_);
+      worst_underrun_frames_prop_.Set(worst_underrun_frames_);
     }
   }
 
   void RecordTaskOverrun(int64_t overrun_frames) {
-    task_overrun_count_.Add(1);
+    task_overrun_count_prop_.Add(1);
     worst_overrun_frames_ = std::max(worst_overrun_frames_, overrun_frames);
-    if (!worst_overrun_frames_property_) {
-      worst_overrun_frames_property_ =
-          diagnostics_.CreateUint(kWorstOverrunFrames, worst_overrun_frames_);
+    if (!worst_overrun_frames_prop_) {
+      worst_overrun_frames_prop_ =
+          diagnostics_node_.CreateUint(kWorstOverrunFrames, worst_overrun_frames_);
     } else {
-      worst_overrun_frames_property_.Set(worst_overrun_frames_);
+      worst_overrun_frames_prop_.Set(worst_overrun_frames_);
     }
   }
 
-  void RecordDroppedTransfer() { dropped_transfer_count_.Add(1); }
+  void RecordDroppedTransfer() { dropped_transfer_count_prop_.Add(1); }
 
   void SetupBufferTracker(const std::string& name,
                           std::optional<uint32_t> max_buffer_count = std::nullopt,
@@ -210,19 +211,19 @@ class AggregateRecords {
   void SetTaskScheduleInterval(zx::duration interval);
 
  private:
-  inspect::Node diagnostics_;
-  inspect::Node task_records_;
+  inspect::Node diagnostics_node_;
+  inspect::Node task_records_node_;
   inspect::Node sum_node_;
   TaskRecords min_task_records_;
   TaskRecords max_task_records_;
   TaskRecords avg_task_records_;
-  inspect::UintProperty worst_underrun_frames_property_;
-  inspect::UintProperty worst_overrun_frames_property_;
-  inspect::UintProperty task_count_;
-  inspect::UintProperty task_underrun_count_;
-  inspect::UintProperty task_overrun_count_;
-  inspect::UintProperty dropped_transfer_count_;
-  inspect::IntProperty sum_kernel_lock_time_property_;
+  inspect::UintProperty worst_underrun_frames_prop_;
+  inspect::UintProperty worst_overrun_frames_prop_;
+  inspect::UintProperty task_count_prop_;
+  inspect::UintProperty task_underrun_count_prop_;
+  inspect::UintProperty task_overrun_count_prop_;
+  inspect::UintProperty dropped_transfer_count_prop_;
+  inspect::IntProperty sum_kernel_lock_time_prop_;
 
   Subtask::Metrics min_metrics_;
   Subtask::Metrics max_metrics_;
@@ -321,7 +322,7 @@ class RingBufferRecorder {
   inspect::IntProperty created_at_;
   inspect::IntProperty destroyed_at_;
 
-  inspect::Node active_channels_calls_root_;
+  inspect::Node active_channels_calls_node_;
   std::vector<ActiveChannelsCall> active_channels_calls_;
 
   inspect::Node running_intervals_root_;
