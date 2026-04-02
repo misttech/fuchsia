@@ -14,6 +14,7 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_data_path.h"
 
 #include <fidl/fuchsia.hardware.network.driver/cpp/fidl.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/env.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
@@ -117,7 +118,7 @@ void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_di
 
     auto bind_result = test_net_dev_ifc_.Bind(ifc_dispatcher_.get());
     if (bind_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to bind NetworkDeviceIfc: %s", bind_result.status_string());
+      fdf::error("Failed to bind NetworkDeviceIfc: {}", bind_result);
       on_complete(bind_result.status_value());
       return;
     }
@@ -125,19 +126,19 @@ void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_di
     fdf::Arena arena('SMDP');
     auto result = netdev_client_->sync().buffer(arena)->Init(std::move(*bind_result));
     if (!result.ok()) {
-      FDF_LOG(ERROR, "NetDevice init failed: %s", result.FormatDescription().c_str());
+      fdf::error("NetDevice init failed: {}", result.FormatDescription());
       on_complete(result.status());
       return;
     }
     if (result->s != ZX_OK) {
-      FDF_LOG(ERROR, "NetDevice init failed: %s", zx_status_get_string(result->s));
+      fdf::error("NetDevice init failed: {}", zx_status_get_string(result->s));
       on_complete(result->s);
       return;
     }
 
     auto info = netdev_client_->sync().buffer(arena)->GetInfo();
     if (!info.ok()) {
-      FDF_LOG(ERROR, "GetInfo failed: %s", info.FormatDescription().c_str());
+      fdf::error("GetInfo failed: {}", info.FormatDescription());
       on_complete(info.status());
       return;
     }
@@ -147,7 +148,7 @@ void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_di
     zx::vmo tx_vmo;
     auto tx_result = CreateAndMapVmo(tx_vmo, kMaxFrameSize);
     if (tx_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create and map TX VMO: %s", tx_result.status_string());
+      fdf::error("Failed to create and map TX VMO: {}", tx_result);
       on_complete(tx_result.status_value());
       return;
     }
@@ -157,7 +158,7 @@ void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_di
     zx::vmo rx_vmo;
     auto rx_result = CreateAndMapVmo(rx_vmo, kMaxFrameSize);
     if (rx_result.is_error()) {
-      FDF_LOG(ERROR, "Failed to create and map RX VMO: %s", rx_result.status_string());
+      fdf::error("Failed to create and map RX VMO: {}", rx_result);
       on_complete(rx_result.status_value());
       return;
     }
@@ -166,25 +167,23 @@ void SimDataPath::Init(fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_di
     // Give both vmos to net device
     auto prepare = netdev_client_->sync().buffer(arena)->PrepareVmo(kTxVmoId, std::move(tx_vmo));
     if (!prepare.ok() || prepare->s != ZX_OK) {
-      FDF_LOG(
-          ERROR, "Failed to prepare TX VMO: %s",
-          prepare.ok() ? zx_status_get_string(prepare->s) : prepare.FormatDescription().c_str());
+      fdf::error("Failed to prepare TX VMO: {}",
+                 prepare.ok() ? zx_status_get_string(prepare->s) : prepare.FormatDescription());
       on_complete(prepare.ok() ? prepare->s : prepare.status());
       return;
     }
     prepare = netdev_client_->sync().buffer(arena)->PrepareVmo(kRxVmoId, std::move(rx_vmo));
     if (!prepare.ok() || prepare->s != ZX_OK) {
-      FDF_LOG(
-          ERROR, "Failed to prepare RX VMO: %s",
-          prepare.ok() ? zx_status_get_string(prepare->s) : prepare.FormatDescription().c_str());
+      fdf::error("Failed to prepare RX VMO: {}",
+                 prepare.ok() ? zx_status_get_string(prepare->s) : prepare.FormatDescription());
       on_complete(prepare.ok() ? prepare->s : prepare.status());
       return;
     }
 
     auto start = netdev_client_->sync().buffer(arena)->Start();
     if (!start.ok() || start->s != ZX_OK) {
-      FDF_LOG(ERROR, "Failed to start network device: %s",
-              start.ok() ? zx_status_get_string(start->s) : start.FormatDescription().c_str());
+      fdf::error("Failed to start network device: {}",
+                 start.ok() ? zx_status_get_string(start->s) : start.FormatDescription());
       on_complete(start.ok() ? start->s : start.status());
       return;
     }

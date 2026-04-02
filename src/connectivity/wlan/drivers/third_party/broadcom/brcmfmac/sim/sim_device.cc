@@ -14,6 +14,7 @@
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_device.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/status.h>
 
 #include <wlan/drivers/log_instance.h>
@@ -42,7 +43,7 @@ zx::result<> SimDevice::Start() {
   zx::result<std::unique_ptr<DeviceInspect>> result =
       DeviceInspect::Create(dispatcher(), inspector().root());
   if (result.is_error()) {
-    FDF_LOG(ERROR, "ERROR calling DeviceInspect::Create(): %s", result.status_string());
+    fdf::error("ERROR calling DeviceInspect::Create(): {}", result);
     return result.take_error();
   }
 
@@ -68,14 +69,14 @@ zx_status_t SimDevice::InitWithEnv(
 
 void SimDevice::Initialize(fit::callback<void(zx_status_t)>&& on_complete) {
   if (!outgoing_dir_client_.has_value()) {
-    FDF_LOG(ERROR, "Missing outgoing directory client, call Initialize first");
+    fdf::error("Missing outgoing directory client, call Initialize first");
     on_complete(ZX_ERR_BAD_STATE);
     return;
   }
 
   zx_status_t status = InitDevice(*outgoing());
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to initialize device: %s", zx_status_get_string(status));
+    fdf::error("Failed to initialize device: {}", zx_status_get_string(status));
     on_complete(status);
     return;
   }
@@ -83,7 +84,7 @@ void SimDevice::Initialize(fit::callback<void(zx_status_t)>&& on_complete) {
   data_path_.Init(
       *outgoing_dir_client_, [on_complete = std::move(on_complete)](zx_status_t status) mutable {
         if (status != ZX_OK) {
-          FDF_LOG(ERROR, "Failed to initialize data path: %s", zx_status_get_string(status));
+          fdf::error("Failed to initialize data path: {}", zx_status_get_string(status));
         }
         on_complete(status);
       });

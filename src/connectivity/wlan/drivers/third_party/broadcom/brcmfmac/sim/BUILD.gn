@@ -55,6 +55,7 @@ source_set("sim_common") {
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_hlcpp",
     "//sdk/lib/async",
     "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/connectivity/wlan/drivers/lib/components/cpp/test:support",
     "//src/connectivity/wlan/drivers/testing/lib/sim-env",
