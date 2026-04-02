@@ -50,7 +50,7 @@ fn get_daemon_benches() -> criterion::Benchmark {
 }
 
 fn get_large_topology_lease_benches(name: &'static str) -> criterion::Benchmark {
-    let num_elements = 50;
+    let num_elements = 30;
     let topology_control = daemon_work::prepare_large_topology(num_elements);
     criterion::Benchmark::new(name, move |b| {
         b.iter(|| {
