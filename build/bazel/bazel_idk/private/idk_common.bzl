@@ -32,7 +32,7 @@ def _get_idk_label(label_str):
 
     # Build the label to handle cases where `label_str` omits the target name
     # (e.g., "//path/to/package").
-    return "{}_idk".format(str(label))
+    return "//{}:{}_idk".format(label.package, label.name)
 
 def get_idk_deps(underlying_deps):
     return [_get_idk_label(dep) for dep in underlying_deps]

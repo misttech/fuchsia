@@ -34,7 +34,9 @@ def _get_deps_with_suffix(deps, dep_suffix):
         # with C++ fidlgens. Normalize the dep when comparing.
         if Label(dep) == Label("//zircon/vdso/zx"):
             continue
-        result.append(_get_name_with_suffix(str(dep), dep_suffix))
+        dep_label = _get_name_with_suffix(dep.name, dep_suffix)
+        dep_with_binding = "//%s:%s" % (dep.package, dep_label)
+        result.append(dep_with_binding)
     return result
 
 def _get_fidl_cc_lib_name(fidl_target_name, bindings_flavor):
