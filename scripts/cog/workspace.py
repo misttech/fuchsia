@@ -693,7 +693,7 @@ class Workspace:
         integration_commit_time = datetime.fromtimestamp(
             integration_commit_timestamp
         )
-        two_days_ago = (integration_commit_time - timedelta(days=2)).strftime(
+        four_days_ago = (integration_commit_time - timedelta(days=4)).strftime(
             "%Y-%m-%d"
         )
         if not self.cartfs_fuchsia_dir.exists():
@@ -703,7 +703,7 @@ class Workspace:
                     "clone",
                     "https://fuchsia.googlesource.com/fuchsia",
                     f"--revision={fuchsia_repo_commit_hash}",
-                    f"--shallow-since={two_days_ago}",
+                    f"--shallow-since={four_days_ago}",
                 ],
                 cwd=self.cartfs_directory,
             )
@@ -713,7 +713,6 @@ class Workspace:
                     "fetch",
                     "origin",
                     "main:refs/remotes/origin/main",
-                    "--depth=100",
                 ],
                 cwd=self.cartfs_fuchsia_dir,
             )
