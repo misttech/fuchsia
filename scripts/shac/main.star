@@ -9,6 +9,7 @@ load("./confusing_characters.star", "confusing_characters")
 load("./dart.star", "register_dart_checks")
 load("./docs.star", "register_doc_checks")
 load("./fidl.star", "register_fidl_checks")
+load("./gn.star", "gn_no_print")
 load("./go.star", "register_go_checks")
 load("./json.star", "register_json_checks")
 load("./keep_sorted.star", "keep_sorted")
@@ -122,6 +123,7 @@ def register_all_checks():
     shac.register_check(keep_sorted)
     shac.register_check(bug_urls)
     shac.register_check(confusing_characters)
+    shac.register_check(gn_no_print)
 
     # keeps-sorted start
     register_cml_checks()
