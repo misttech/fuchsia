@@ -66,11 +66,29 @@ where
 
     let mut starting_artifacts =
         get_pb_release_info(client, pb_name, from_success, &mut print_fn).await?;
-    starting_artifacts.retain(|a| a.slot == slot);
+    starting_artifacts.retain(|a| {
+        a.slot == slot
+            && matches!(
+                a.artifact_type,
+                // TODO(https://fxbug.dev/477619542): Bisect all artifact types.
+                assembly_artifact_cache::ArtifactType::Platform
+                    | assembly_artifact_cache::ArtifactType::Product
+                    | assembly_artifact_cache::ArtifactType::Board
+            )
+    });
 
     let mut ending_artifacts =
         get_pb_release_info(client, pb_name, to_failure, &mut print_fn).await?;
-    ending_artifacts.retain(|a| a.slot == slot);
+    ending_artifacts.retain(|a| {
+        a.slot == slot
+            && matches!(
+                a.artifact_type,
+                // TODO(https://fxbug.dev/477619542): Bisect all artifact types.
+                assembly_artifact_cache::ArtifactType::Platform
+                    | assembly_artifact_cache::ArtifactType::Product
+                    | assembly_artifact_cache::ArtifactType::Board
+            )
+    });
 
     match interpolate(client, &starting_artifacts, &ending_artifacts, &mut print_fn).await {
         Ok(space) => Ok(space),
