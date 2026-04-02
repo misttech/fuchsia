@@ -5,10 +5,10 @@
 use crate::graph::{NodeGraph, NodeId, Path, PathId};
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
-use fidl_next::{FlexibleResult, FrameworkError};
+use fidl_next::{Client, FlexibleResult, FrameworkError, ServerEnd};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, Property, UintProperty};
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info};
 use std::cell::{Cell, RefCell};
@@ -16,11 +16,18 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use zx::Status;
 
-use fidl_next_fuchsia_hardware_interconnect as icc;
+use fidl_next_fuchsia_hardware_interconnect::{self as icc, Device};
 use fuchsia_async as fasync;
 use fuchsia_trace as ftrace;
 
 mod graph;
+
+struct InterconnectDriver {
+    #[expect(unused)]
+    node: Node,
+    inspector: Inspector,
+    scope: fasync::Scope,
+}
 
 driver_register!(InterconnectDriver);
 
@@ -28,22 +35,20 @@ struct Child {
     /// List of nodes following directed path from start of path to end of path.
     path: Path,
     tag: Option<u32>,
-    /// Directed graph which stores all nodes and bandwidth requests for each of their incoming
-    /// edges.
-    graph: Rc<RefCell<NodeGraph>>,
-    #[allow(unused)]
+    #[expect(unused)]
     controller: NodeControllerProxy,
     device: fidl_next::Client<icc::Device>,
-    #[allow(unused)]
+    #[expect(unused)]
     inspect: fuchsia_inspect::Node,
     average_bandwidth_bps: UintProperty,
     peak_bandwidth_bps: UintProperty,
-    sync_state: Rc<Cell<bool>>,
 }
 
 impl Child {
-    async fn set_bandwidth_impl(
+    async fn set_bandwidth(
         &self,
+        graph: &RefCell<NodeGraph>,
+        synced: bool,
         average_bandwidth_bps: Option<u64>,
         peak_bandwidth_bps: Option<u64>,
         tag: Option<u32>,
@@ -61,14 +66,14 @@ impl Child {
             "peak_bandwidth_bps" => peak_bandwidth_bps);
 
         // If we've not hit sync_state yet, update the graph and return right away.
-        if !self.sync_state.get() {
-            let mut graph = self.graph.borrow_mut();
+        if !synced {
+            let mut graph = graph.borrow_mut();
             graph.update_path(&self.path, average_bandwidth_bps, peak_bandwidth_bps, tag);
             return Ok(());
         }
 
         let requests = {
-            let mut graph = self.graph.borrow_mut();
+            let mut graph = graph.borrow_mut();
             graph.update_path(&self.path, average_bandwidth_bps, peak_bandwidth_bps, tag);
             graph.make_bandwidth_requests(&self.path)
         };
@@ -90,14 +95,21 @@ impl Child {
             }
         }?;
 
-        self.graph.borrow_mut().update_stats(response.aggregated_bandwidth);
+        graph.borrow_mut().update_stats(response.aggregated_bandwidth);
 
         // TODO(b/405206028): On failure, try to set old values?
 
         Ok(())
     }
 }
-impl icc::PathLocalServerHandler for &Child {
+
+struct ChildHandler<'a> {
+    child: &'a Child,
+    graph: &'a RefCell<NodeGraph>,
+    sync_state: &'a Cell<bool>,
+}
+
+impl icc::PathLocalServerHandler for ChildHandler<'_> {
     async fn set_bandwidth(
         &mut self,
         request: fidl_next::Request<icc::path::SetBandwidth>,
@@ -105,7 +117,10 @@ impl icc::PathLocalServerHandler for &Child {
     ) {
         let payload = request.payload();
         let res = self
-            .set_bandwidth_impl(
+            .child
+            .set_bandwidth(
+                self.graph,
+                self.sync_state.get(),
                 payload.average_bandwidth_bps,
                 payload.peak_bandwidth_bps,
                 payload.tag,
@@ -121,28 +136,115 @@ impl icc::PathLocalServerHandler for &Child {
 struct PathService {
     scope: fasync::ScopeHandle,
     name: String,
-    sender: mpsc::Sender<(fidl_next::ServerEnd<icc::Path>, String)>,
+    sender: mpsc::UnboundedSender<(fidl_next::ServerEnd<icc::Path>, String)>,
 }
 
 impl icc::PathServiceHandler for PathService {
     fn path(&self, server_end: fidl_next::ServerEnd<icc::Path>) {
         let name = self.name.clone();
         let mut sender = self.sender.clone();
-        self.scope.spawn_local(async move {
+        self.scope.spawn(async move {
             sender.send((server_end, name)).await.ok();
         });
     }
 }
 
-#[allow(unused)]
-struct InterconnectDriver {
-    node: Node,
-    inspector: Inspector,
-    scope: fasync::Scope,
+impl InterconnectDriver {
+    async fn run_graph_service(
+        self,
+        device: Client<Device>,
+        children: BTreeMap<String, Child>,
+        graph: NodeGraph,
+        sync_complete_rx: oneshot::Receiver<()>,
+        conn_rx: mpsc::UnboundedReceiver<(ServerEnd<icc::Path>, String)>,
+    ) -> Result<Self, Status> {
+        let sync_state = Rc::new(Cell::new(false));
+        let sync_state_clone = sync_state.clone();
+        self.inspector.root().record_lazy_child_with_thread_local("sync_state", move || {
+            Box::pin({
+                let sync_state = sync_state_clone.clone();
+                async move {
+                    let inspector = Inspector::default();
+                    inspector.root().record_bool("sync_state", sync_state.get());
+                    Ok(inspector)
+                }
+            })
+        });
+
+        let graph = Rc::new(RefCell::new(graph));
+        let graph_clone = graph.clone();
+        self.inspector.root().record_lazy_child_with_thread_local("nodes", move || {
+            Box::pin({
+                let graph = graph_clone.clone();
+                async move {
+                    let inspector = Inspector::default();
+                    graph.borrow().record_inspect(inspector.root());
+                    Ok(inspector)
+                }
+            })
+        });
+
+        let sync_graph = graph.clone();
+        let sync_state_clone = sync_state.clone();
+        self.scope.spawn_local(async move {
+            sync_complete_rx.await.unwrap();
+            sync_state_clone.set(true);
+
+            info!("Sending initial votes");
+            // Vote for all nodes with all received votes thus far.
+            let requests = { sync_graph.borrow().make_inital_bandwidth_requests() };
+
+            match device.set_nodes_bandwidth(&requests).await {
+                Err(err) => {
+                    error!("Failed to set bandwidth with {err}");
+                }
+                Ok(FlexibleResult::Ok(result)) => {
+                    sync_graph.borrow_mut().update_stats(result.aggregated_bandwidth);
+                }
+                Ok(FlexibleResult::Err(err)) => {
+                    error!("Failed to set bandwidth with {}", Status::from_raw(err));
+                }
+                Ok(FlexibleResult::FrameworkErr(FrameworkError::UnknownMethod)) => {
+                    panic!("Device does not implement set_nodes_bandwidth");
+                }
+            };
+        });
+
+        self.scope.spawn_local(async move {
+            let children = Rc::new(children);
+            conn_rx
+                .for_each_concurrent(None, move |(request, child_name)| {
+                    let children = children.clone();
+                    let graph = graph.clone();
+                    let sync_state = sync_state.clone();
+                    async move {
+                        if let Some(child) = children.get(&child_name) {
+                            let child_handler =
+                                ChildHandler { child, sync_state: &sync_state, graph: &graph };
+                            let dispatcher = fidl_next::ServerDispatcher::new(request);
+                            dispatcher
+                                .run_local(child_handler)
+                                .await
+                                .inspect_err(|err| {
+                                    error!("Error in child dispatch loop for {child_name}: {err}");
+                                })
+                                .ok();
+                        } else {
+                            error!("Failed to find child {child_name}");
+                        }
+                    }
+                })
+                .await;
+        });
+
+        Ok(self)
+    }
 }
 
-impl InterconnectDriver {
-    async fn start_local(mut context: DriverContext) -> Result<Self, Status> {
+impl Driver for InterconnectDriver {
+    const NAME: &str = "interconnect";
+
+    async fn start(mut context: DriverContext) -> Result<Self, Status> {
         let node = context.take_node()?;
 
         let inspector = Inspector::default();
@@ -190,26 +292,13 @@ impl InterconnectDriver {
 
         let paths_inspect = inspector.root().create_child("paths");
 
-        let graph = Rc::new(RefCell::new(graph));
-        let graph_clone = graph.clone();
-        inspector.root().record_lazy_child_with_thread_local("nodes", move || {
-            Box::pin({
-                let graph = graph_clone.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    graph.borrow().record_inspect(inspector.root());
-                    Ok(inspector)
-                }
-            })
-        });
-
-        let (conn_tx, conn_rx) = mpsc::channel(1);
+        let (conn_tx, conn_rx) = mpsc::unbounded();
         let scope = fasync::Scope::new_with_name("driver");
         let mut children = BTreeMap::new();
         let mut sync_state_completers = Vec::new();
-        let sync_state = Rc::new(Cell::new(false));
         for (path, tag) in paths {
             let name = format!("{}-{}", path.name(), path.id());
+            debug!("Adding child node {name}");
             let offer = ServiceOffer::new_marker_next(icc::PathService)
                 .add_default_named_next(
                     &mut outgoing,
@@ -227,7 +316,6 @@ impl InterconnectDriver {
                 .add_offer(offer)
                 .build();
             let controller = node.add_child(node_args).await?.into_proxy();
-            let graph = graph.clone();
             let device = device.clone();
             let inspect = paths_inspect.create_child(path.name());
             let average_bandwidth_bps = inspect.create_uint("average_bandwidth_bps", 0);
@@ -237,6 +325,7 @@ impl InterconnectDriver {
             let controller_clone = controller.clone();
             let path_name = path.name().to_string();
             sync_state_completers.push(async move {
+                debug!("Waiting for {path_name} to bind");
                 match controller_clone.wait_for_driver().await {
                     Err(e) => {
                         error!("Failed to wait for driver to bind and start: {e:?}");
@@ -247,100 +336,46 @@ impl InterconnectDriver {
                 }
             });
 
-            let sync_state = sync_state.clone();
-
             children.insert(
                 name.clone(),
                 Child {
                     path,
-                    graph,
                     controller,
                     device,
                     inspect,
                     average_bandwidth_bps,
                     peak_bandwidth_bps,
-                    sync_state,
                     tag,
                 },
             );
         }
         inspector.root().record(paths_inspect);
 
-        let sync_state_clone = sync_state.clone();
-        inspector.root().record_lazy_child_with_thread_local("sync_state", move || {
-            Box::pin({
-                let sync_state = sync_state_clone.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    inspector.root().record_bool("sync_state", sync_state.get());
-                    Ok(inspector)
-                }
-            })
-        });
+        context.serve_outgoing(&mut outgoing)?;
+        scope.spawn(outgoing.collect());
 
-        // Once we all child devices spawned have had drivers bind and run their start routines, we
+        // Once all child devices spawned have had drivers bind and run their start routines, we
         // can assume they have also cast their initial votes and inform our parent to act upon
         // these votes.
-        let sync_state_clone = sync_state.clone();
-        scope.spawn_local(async move {
+        let (sync_complete_tx, sync_complete_rx) = oneshot::channel();
+        scope.spawn(async move {
+            debug!("Waiting for all node bindings to complete");
             futures::future::join_all(sync_state_completers).await;
-            info!("Sync state achieved. Sending initial votes");
-            sync_state_clone.set(true);
-
-            // Vote for all nodes with all received votes thus far.
-            let requests = { graph.borrow().make_inital_bandwidth_requests() };
-
-            match device.set_nodes_bandwidth(&requests).await {
-                Err(err) => {
-                    error!("Failed to set bandwidth with {err}");
-                }
-                Ok(FlexibleResult::Ok(result)) => {
-                    graph.borrow_mut().update_stats(result.aggregated_bandwidth);
-                }
-                Ok(FlexibleResult::Err(err)) => {
-                    error!("Failed to set bandwidth with {}", Status::from_raw(err));
-                }
-                Ok(FlexibleResult::FrameworkErr(FrameworkError::UnknownMethod)) => {
-                    panic!("Device does not implement set_nodes_bandwidth");
-                }
-            };
+            info!("Sync state achieved.");
+            sync_complete_tx.send(()).ok();
         });
 
-        context.serve_outgoing(&mut outgoing)?;
-
-        let children = Rc::new(children);
-        scope.spawn_local(outgoing.collect());
-        scope.spawn_local(async move {
-            conn_rx
-                .for_each_concurrent(None, move |(request, child_name)| {
-                    let children = children.clone();
-                    async move {
-                        if let Some(node) = children.get(&child_name) {
-                            let dispatcher = fidl_next::ServerDispatcher::new(request);
-                            dispatcher
-                                .run_local(node)
-                                .await
-                                .inspect_err(|err| {
-                                    error!("Error in child dispatch loop for {child_name}: {err}");
-                                })
-                                .ok();
-                        } else {
-                            error!("Failed to find child {child_name}");
-                        }
-                    }
-                })
-                .await;
-        });
-
-        Ok(Self { node, inspector, scope })
-    }
-}
-
-impl Driver for InterconnectDriver {
-    const NAME: &str = "interconnect";
-
-    async fn start(context: DriverContext) -> Result<Self, Status> {
-        fasync::Task::local(Self::start_local(context)).await
+        let driver = InterconnectDriver { node, inspector, scope };
+        fasync::Task::spawn(driver.run_graph_service(
+            device,
+            children,
+            graph,
+            sync_complete_rx,
+            conn_rx,
+        ))
+        .await
+        .inspect(|_| debug!("Started graph service"))
+        .inspect_err(|e| error!("Failed to start graph service: {e}"))
     }
 
     async fn stop(&self) {}
