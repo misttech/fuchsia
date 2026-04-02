@@ -293,6 +293,20 @@ impl From<DeviceClass> for InterfaceType {
         }
     }
 }
+
+impl From<DeviceClass> for fnp_socketproxy::NetworkType {
+    fn from(device_class: DeviceClass) -> Self {
+        match device_class {
+            DeviceClass::WlanClient | DeviceClass::WlanAp => fnp_socketproxy::NetworkType::Wifi,
+            DeviceClass::Ethernet
+            | DeviceClass::Bridge
+            | DeviceClass::Virtual
+            | DeviceClass::Lowpan => fnp_socketproxy::NetworkType::Ethernet,
+            DeviceClass::Ppp | DeviceClass::Blackhole => fnp_socketproxy::NetworkType::Unknown,
+        }
+    }
+}
+
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2939,6 +2953,8 @@ impl<'a> NetCfg<'a> {
                             // TODO(https://fxbug.dev/487288886): Set the connectivity state for
                             // Fuchsia networks.
                             connectivity_state: None,
+                            name: Some(interface_name.clone()),
+                            network_type: Some(device_info.device_class.into()),
                         }),
                     ))
                     .await;

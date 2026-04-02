@@ -136,6 +136,8 @@ struct NetworkProperties {
     // TODO(https://fxbug.dev/486892417): Use this field for snapshot metrics.
     #[allow(dead_code)]
     connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+    name: Option<String>,
+    network_type: Option<fnp_socketproxy::NetworkType>,
 }
 
 impl NetworkProperties {
@@ -200,7 +202,13 @@ impl RegisteredNetworks {
         network_id: NetworkId,
         event: NetworkPropertiesChange,
     ) -> UpdateApplied {
-        let NetworkPropertiesChange { added, marks: socket_marks, connectivity_state } = event;
+        let NetworkPropertiesChange {
+            added,
+            marks: socket_marks,
+            connectivity_state,
+            name,
+            network_type,
+        } = event;
         let entry = self.networks.entry(network_id);
         let result = match (added, &entry, network_id, socket_marks) {
             (true, Entry::Occupied(_), _, _) => Err("add already added network"),
@@ -225,8 +233,16 @@ impl RegisteredNetworks {
         match result {
             Ok((mut properties, changed_marks)) => {
                 properties.connectivity_state = connectivity_state;
+                properties.network_type = network_type;
+                properties.name = name.clone();
                 let _ = entry.insert_entry(properties);
-                UpdateApplied::NetworkChanged { network_id, added, changed_marks }
+                UpdateApplied::NetworkChanged {
+                    network_id,
+                    added,
+                    changed_marks,
+                    name,
+                    network_type,
+                }
             }
             Err(e) => {
                 error!("Cannot {e}. Update ignored.");
@@ -380,6 +396,10 @@ pub struct NetworkPropertiesChange {
     pub marks: Option<fnet::Marks>,
     /// The new connectivity state of the network.
     pub connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
+    /// The name of the network.
+    pub name: Option<String>,
+    /// The transport type of the network.
+    pub network_type: Option<fnp_socketproxy::NetworkType>,
 }
 
 #[derive(Debug)]
@@ -402,7 +422,13 @@ enum UpdateApplied {
     DnsChanged,
 
     /// Network was added or updated, contains the NetworkId of the added network.
-    NetworkChanged { network_id: NetworkId, added: bool, changed_marks: bool },
+    NetworkChanged {
+        network_id: NetworkId,
+        added: bool,
+        changed_marks: bool,
+        name: Option<String>,
+        network_type: Option<fnp_socketproxy::NetworkType>,
+    },
 
     /// Network was removed, contains the NetworkId of the removed network.
     NetworkRemoved(NetworkId),
@@ -630,6 +656,8 @@ impl NetpolNetworksService {
                             added: true,
                             marks: Some(marks),
                             connectivity_state: network.connectivity,
+                            name: network.name,
+                            network_type: network.network_type,
                         }),
                     ))
                     .await;
@@ -658,6 +686,8 @@ impl NetpolNetworksService {
                             added: false,
                             marks: Some(marks),
                             connectivity_state: network.connectivity,
+                            name: network.name,
+                            network_type: network.network_type,
                         }),
                     ))
                     .await;
@@ -957,7 +987,8 @@ mod tests {
     use std::num::NonZeroU64;
     const ID_1: InterfaceId = InterfaceId(NonZeroU64::new(1).unwrap());
     const ID_2: InterfaceId = InterfaceId(NonZeroU64::new(2).unwrap());
-    const ID_3: InterfaceId = InterfaceId(NonZeroU64::new(3).unwrap());
+    const NAME_1: &str = "testif1";
+    const NAME_2: &str = "testif2";
 
     #[test]
     fn test_handle_changed_network_delegated() {
@@ -970,10 +1001,18 @@ mod tests {
             added: true,
             marks: Some(marks.clone()),
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
             networks.handle_changed_network(network_id, event),
-            UpdateApplied::NetworkChanged { network_id, added: true, changed_marks: true }
+            UpdateApplied::NetworkChanged {
+                network_id,
+                added: true,
+                changed_marks: true,
+                name: Some(NAME_1.to_string()),
+                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+            }
         );
 
         let properties = networks.networks.get(&network_id).expect("network should be present");
@@ -988,10 +1027,18 @@ mod tests {
             added: false,
             marks: Some(marks.clone()),
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
             networks.handle_changed_network(network_id, event),
-            UpdateApplied::NetworkChanged { network_id, added: false, changed_marks: false }
+            UpdateApplied::NetworkChanged {
+                network_id,
+                added: false,
+                changed_marks: false,
+                name: Some(NAME_1.to_string()),
+                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+            }
         );
 
         let properties = networks.networks.get(&network_id).expect("network should be present");
@@ -1007,10 +1054,18 @@ mod tests {
             added: false,
             marks: Some(new_marks.clone()),
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
             networks.handle_changed_network(network_id, event),
-            UpdateApplied::NetworkChanged { network_id, added: false, changed_marks: true }
+            UpdateApplied::NetworkChanged {
+                network_id,
+                added: false,
+                changed_marks: true,
+                name: Some(NAME_1.to_string()),
+                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+            }
         );
 
         let properties = networks.networks.get(&network_id).expect("network should be present");
@@ -1024,17 +1079,25 @@ mod tests {
     #[test]
     fn test_handle_changed_network_fuchsia() {
         let mut networks = RegisteredNetworks::default();
-        let network_id = NetworkId::Fuchsia(ID_1);
+        let network_id = NetworkId::Fuchsia(ID_2);
 
         // Add a Fuchsia network
         let event = NetworkPropertiesChange {
             added: true,
             marks: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
+            name: Some(NAME_2.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Wifi),
         };
         assert_eq!(
             networks.handle_changed_network(network_id, event),
-            UpdateApplied::NetworkChanged { network_id, added: true, changed_marks: true }
+            UpdateApplied::NetworkChanged {
+                network_id,
+                added: true,
+                changed_marks: true,
+                name: Some(NAME_2.to_string()),
+                network_type: Some(fnp_socketproxy::NetworkType::Wifi),
+            }
         );
 
         let properties = networks.networks.get(&network_id).expect("network should be present");
@@ -1049,10 +1112,18 @@ mod tests {
             added: false,
             marks: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            name: Some(NAME_2.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Wifi),
         };
         assert_eq!(
             networks.handle_changed_network(network_id, event),
-            UpdateApplied::NetworkChanged { network_id, added: false, changed_marks: false }
+            UpdateApplied::NetworkChanged {
+                network_id,
+                added: false,
+                changed_marks: false,
+                name: Some(NAME_2.to_string()),
+                network_type: Some(fnp_socketproxy::NetworkType::Wifi),
+            }
         );
 
         let properties = networks.networks.get(&network_id).expect("network should be present");
@@ -1073,6 +1144,8 @@ mod tests {
             added: false,
             marks: Some(marks.clone()),
             connectivity_state: None,
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
         // Add the network
@@ -1080,10 +1153,18 @@ mod tests {
             added: true,
             marks: Some(marks.clone()),
             connectivity_state: None,
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(
             networks.handle_changed_network(network_id, event),
-            UpdateApplied::NetworkChanged { network_id, added: true, changed_marks: true }
+            UpdateApplied::NetworkChanged {
+                network_id,
+                added: true,
+                changed_marks: true,
+                name: Some(NAME_1.to_string()),
+                network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+            }
         );
 
         // Add already added network
@@ -1091,21 +1172,31 @@ mod tests {
             added: true,
             marks: Some(marks.clone()),
             connectivity_state: None,
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(networks.handle_changed_network(network_id, event), UpdateApplied::None);
 
         // Fuchsia network with marks
-        let fuchsia_id = NetworkId::Fuchsia(ID_2);
+        let fuchsia_id = NetworkId::Fuchsia(ID_1);
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
             connectivity_state: None,
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(networks.handle_changed_network(fuchsia_id, event), UpdateApplied::None);
 
         // Delegated network without marks
-        let delegated_id = NetworkId::Delegated(ID_3);
-        let event = NetworkPropertiesChange { added: true, marks: None, connectivity_state: None };
+        let delegated_id = NetworkId::Delegated(ID_1);
+        let event = NetworkPropertiesChange {
+            added: true,
+            marks: None,
+            connectivity_state: None,
+            name: Some(NAME_1.to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
+        };
         assert_eq!(networks.handle_changed_network(delegated_id, event), UpdateApplied::None);
     }
 }
