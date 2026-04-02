@@ -149,7 +149,7 @@ TEST_F(PowerLibTest, AddElementNoDep) {
       fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
   FakeTopology fake_power_broker(loop.dispatcher(), std::move(endpoints.server));
   std::unique_ptr<FakeElementControl> fake_element_control(nullptr);
-  loop.executor().schedule_task(fake_power_broker.TakeSchemaPromise().then(
+  loop.executor().schedule_task(fake_power_broker.TakeElementSchemaPromise().then(
       [&loop,
        &fake_element_control](fpromise::result<fuchsia_power_broker::ElementSchema, void>& result) {
         EXPECT_TRUE(result.is_ok());
@@ -228,7 +228,7 @@ TEST_F(PowerLibTest, AddElementSingleDep) {
       fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
   std::unique_ptr<FakeElementControl> fake_element_control(nullptr);
   FakeTopology fake_power_broker(loop.dispatcher(), std::move(endpoints.server));
-  loop.executor().schedule_task(fake_power_broker.TakeSchemaPromise().then(
+  loop.executor().schedule_task(fake_power_broker.TakeElementSchemaPromise().then(
       [parent_token = std::move(parent_token),
        child_to_parent_levels = std::move(child_to_parent_levels), &loop, &fake_element_control](
           fpromise::result<fuchsia_power_broker::ElementSchema, void>& result) mutable {
@@ -297,7 +297,7 @@ TEST_F(PowerLibTest, AddElementWithElementRunner) {
       fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
   std::unique_ptr<FakeElementControl> fake_element_control(nullptr);
   FakeTopology fake_power_broker(loop.dispatcher(), std::move(endpoints.server));
-  loop.executor().schedule_task(fake_power_broker.TakeSchemaPromise().then(
+  loop.executor().schedule_task(fake_power_broker.TakeElementSchemaPromise().then(
       [&loop, &fake_element_control,
        &sent_koid](fpromise::result<fuchsia_power_broker::ElementSchema, void>& result) mutable {
         EXPECT_TRUE(result.is_ok());
@@ -405,7 +405,7 @@ TEST_F(PowerLibTest, AddElementDoubleDep) {
       fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
   std::unique_ptr<FakeElementControl> fake_element_control(nullptr);
   FakeTopology fake_power_broker(loop.dispatcher(), std::move(endpoints.server));
-  loop.executor().schedule_task(fake_power_broker.TakeSchemaPromise().then(
+  loop.executor().schedule_task(fake_power_broker.TakeElementSchemaPromise().then(
       [parent_token_one = std::move(parent_token_one),
        parent_token_two = std::move(parent_token_two),
        child_to_parent_levels = std::move(child_to_parent_levels), dep_one_level = dep_one_level,
@@ -895,7 +895,7 @@ TEST_F(PowerLibTest, ApplyPowerConfiguration) {
       [&loop, &executor, &fake_power_brokers, &fake_element_control, &instance_one_data,
        &instance_two_data](fidl::ServerEnd<fuchsia_power_broker::Topology> chan) -> int {
         fake_power_brokers.emplace_back(loop.dispatcher(), std::move(chan));
-        executor.schedule_task(fake_power_brokers.back().TakeSchemaPromise().then(
+        executor.schedule_task(fake_power_brokers.back().TakeElementSchemaPromise().then(
             [&instance_one_data, &instance_two_data, &loop, &fake_element_control](
                 fpromise::result<fuchsia_power_broker::ElementSchema, void>& result) {
               EXPECT_TRUE(result.is_ok());
@@ -1744,8 +1744,50 @@ TEST_F(PowerLibTest, TestDriverInstanceDep) {
       .get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(zx_info_handle_basic_t), nullptr, nullptr);
   EXPECT_EQ(info1.koid, info2.koid);
 }
-// TODO(https://fxbug.dev/328527466) This dependency is invalid because it has
-// no level deps add a test that checks we return a proper error
+
+TEST_F(PowerLibTest, TestAcquireLease) {
+  zx::event dependency_token;
+  ASSERT_EQ(ZX_OK, zx::event::create(0, &dependency_token));
+
+  fdf_power::testing::ScopedBackgroundLoop loop;
+  fidl::Endpoints<fuchsia_power_broker::Topology> endpoints =
+      fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
+
+  FakeTopology fake_topology(loop.dispatcher(), std::move(endpoints.server));
+  fuchsia_power_broker::LeaseSchema lease_schema;
+  bool lease_called = false;
+
+  fpromise::promise<fuchsia_power_broker::LeaseSchema, void> lease_promise =
+      fake_topology.TakeLeaseSchemaPromise();
+
+  loop.executor().schedule_task(lease_promise.then(
+      [&](fpromise::result<fuchsia_power_broker::LeaseSchema, void>& result) mutable {
+        ASSERT_TRUE(result.is_ok());
+        lease_schema = std::move(result.value());
+        lease_called = true;
+      }));
+
+  fuchsia_power_broker::LeaseToken lease_token, lease_token_broker;
+  ASSERT_EQ(ZX_OK, zx::eventpair::create(0, &lease_token, &lease_token_broker));
+
+  auto status = fdf_power::AcquireLease(endpoints.client, std::move(dependency_token), 2,
+                                        "test-lease", true, std::move(lease_token_broker));
+  ASSERT_TRUE(status.is_ok());
+
+  RunLoopUntil([&lease_called] { return lease_called; });
+
+  ASSERT_TRUE(lease_schema.lease_name().has_value());
+  ASSERT_EQ(lease_schema.lease_name().value(), "test-lease");
+  ASSERT_TRUE(lease_schema.should_return_pending_lease().has_value());
+  ASSERT_TRUE(lease_schema.should_return_pending_lease().value());
+
+  zx_info_handle_basic_t remote_info, received_info;
+  lease_token.get_info(ZX_INFO_HANDLE_BASIC, &remote_info, sizeof(zx_info_handle_basic_t), nullptr,
+                       nullptr);
+  lease_schema.lease_token().value().get_info(ZX_INFO_HANDLE_BASIC, &received_info,
+                                              sizeof(zx_info_handle_basic_t), nullptr, nullptr);
+  ASSERT_EQ(remote_info.related_koid, received_info.koid);
+}
 
 }  // namespace power_lib_test
 

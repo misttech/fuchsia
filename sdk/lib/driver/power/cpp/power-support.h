@@ -63,6 +63,8 @@ enum class Error : uint8_t {
   CPU_ELEMENT_MANAGER_UNAVAILABLE,
   /// There was an error making a request to the CpuElementManager protocol.
   CPU_ELEMENT_MANAGER_REQUEST,
+  INTERNAL,
+  NOT_AUTHORIZED,
 };
 
 // Convenience methods that provide an approximate mapping to Zircon error values.
@@ -202,6 +204,15 @@ fit::result<Error> AddElement(
 ///     channel.
 fit::result<Error> AddElement(fidl::ClientEnd<fuchsia_power_broker::Topology>& power_broker,
                               ElementDesc& description);
+
+/// Helper to acquire a lease on an element using `fuchsia.power.broker/Topology.Lease`.
+/// Clients should create an eventpair and pass one end as `broker_lease_token` to be held by the
+/// broker. The other end should be retained by the client. The lease will remain open until the
+/// client's end is dropped.
+fit::result<Error> AcquireLease(
+    const fidl::UnownedClientEnd<fuchsia_power_broker::Topology>& topology,
+    zx::event dependency_token, fuchsia_power_broker::PowerLevel level, std::string_view lease_name,
+    bool should_return_pending_lease, fuchsia_power_broker::LeaseToken broker_lease_token);
 }  // namespace fdf_power
 
 #endif

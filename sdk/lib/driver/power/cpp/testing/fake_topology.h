@@ -14,6 +14,7 @@
 namespace fdf_power::testing {
 
 using fuchsia_power_broker::ElementSchema;
+using fuchsia_power_broker::LeaseSchema;
 using fuchsia_power_broker::Topology;
 
 class FakeTopology : public FidlTestBaseDefault<Topology> {
@@ -23,17 +24,27 @@ class FakeTopology : public FidlTestBaseDefault<Topology> {
   // Takes a promise containing the next ElementSchema sent to this server via AddElement. This
   // promise can then be processed on a different async dispatcher (possibly on a different thread)
   // from the one used by this server.
-  fpromise::promise<ElementSchema, void> TakeSchemaPromise() {
-    return schema_bridge_.consumer.promise();
+  fpromise::promise<ElementSchema, void> TakeElementSchemaPromise() {
+    return element_schema_bridge_.consumer.promise();
+  }
+
+  fpromise::promise<LeaseSchema, void> TakeLeaseSchemaPromise() {
+    return lease_schema_bridge_.consumer.promise();
   }
 
  private:
   void AddElement(ElementSchema& schema, AddElementCompleter::Sync& completer) override {
-    schema_bridge_.completer.complete_ok(std::move(schema));
+    element_schema_bridge_.completer.complete_ok(std::move(schema));
     completer.Reply(fit::ok());
   }
 
-  fpromise::bridge<ElementSchema, void> schema_bridge_;
+  void Lease(LeaseSchema& schema, LeaseCompleter::Sync& completer) override {
+    lease_schema_bridge_.completer.complete_ok(std::move(schema));
+    completer.Reply(fit::ok());
+  }
+
+  fpromise::bridge<ElementSchema, void> element_schema_bridge_;
+  fpromise::bridge<LeaseSchema, void> lease_schema_bridge_;
 };
 
 }  // namespace fdf_power::testing

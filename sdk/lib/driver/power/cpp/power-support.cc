@@ -262,6 +262,10 @@ zx::error<zx_status_t> ErrorToZxError(Error e) {
     case Error::READ_INSTANCES:
     case Error::ACTIVITY_GOVERNOR_REQUEST:
       return zx::error(ZX_ERR_IO_REFUSED);
+    case Error::INTERNAL:
+      return zx::error(ZX_ERR_INTERNAL);
+    case Error::NOT_AUTHORIZED:
+      return zx::error(ZX_ERR_ACCESS_DENIED);
   }
   return zx::error(ZX_ERR_INTERNAL);
 }
@@ -294,6 +298,10 @@ const char* ErrorToString(Error e) {
       return "CPU_ELEMENT_MANAGER_UNAVAILABLE";
     case Error::CPU_ELEMENT_MANAGER_REQUEST:
       return "CPU_ELEMENT_MANAGER_REQUEST";
+    case Error::INTERNAL:
+      return "INTERNAL";
+    case Error::NOT_AUTHORIZED:
+      return "NOT_AUTHORIZED";
   }
   return "(unknown)";
 }
@@ -631,6 +639,48 @@ fit::result<Error, std::vector<ElementDesc>> ApplyPowerConfiguration(
     descriptions.emplace_back(std::move(description));
   }
   return fit::success(std::move(descriptions));
+}
+
+fit::result<Error> AcquireLease(
+    const fidl::UnownedClientEnd<fuchsia_power_broker::Topology>& topology,
+    zx::event dependency_token, fuchsia_power_broker::PowerLevel level, std::string_view lease_name,
+    bool should_return_pending_lease, fuchsia_power_broker::LeaseToken broker_lease_token) {
+  fidl::Arena arena;
+  auto dependency = fuchsia_power_broker::wire::LeaseDependency::Builder(arena)
+                        .requires_token(std::move(dependency_token))
+                        .requires_level(level)
+                        .Build();
+
+  auto schema =
+      fuchsia_power_broker::wire::LeaseSchema::Builder(arena)
+          .lease_token(std::move(broker_lease_token))
+          .lease_name(fidl::StringView::FromExternal(lease_name.data(), lease_name.size()))
+          .dependencies(fidl::VectorView<fuchsia_power_broker::wire::LeaseDependency>::FromExternal(
+              &dependency, 1))
+          .should_return_pending_lease(should_return_pending_lease)
+          .Build();
+
+  auto result = fidl::WireCall(topology)->Lease(std::move(schema));
+  if (!result.ok()) {
+    if (result.is_peer_closed()) {
+      return fit::error(Error::IO);
+    }
+    return fit::error(Error::INTERNAL);
+  }
+  if (result->is_error()) {
+    switch (result->error_value()) {
+      case fuchsia_power_broker::LeaseError::kInternal:
+        return fit::error(Error::INTERNAL);
+      case fuchsia_power_broker::LeaseError::kNotAuthorized:
+        return fit::error(Error::NOT_AUTHORIZED);
+      case fuchsia_power_broker::LeaseError::kInvalidLevel:
+      case fuchsia_power_broker::LeaseError::kInvalidArgument:
+        return fit::error(Error::INVALID_ARGS);
+      default:
+        return fit::error(Error::INTERNAL);
+    }
+  }
+  return fit::success();
 }
 
 }  // namespace fdf_power
