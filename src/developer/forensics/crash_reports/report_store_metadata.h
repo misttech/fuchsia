@@ -44,7 +44,7 @@ class ReportStoreMetadata {
 
   const std::string& RootDir() const;
 
-  void Add(ReportId report_id, std::string program, std::vector<std::string> attachments,
+  void Add(ReportId report_id, std::string program_shortname, std::vector<std::string> attachments,
            StorageSize size);
   void Delete(ReportId report_id);
 
@@ -58,7 +58,7 @@ class ReportStoreMetadata {
   const std::deque<ReportId>& ProgramReports(const std::string& program) const;
 
   // The program report |report_id| was filed under.
-  const std::string& ReportProgram(ReportId report_id) const;
+  const std::string& ReportProgramShortname(ReportId report_id) const;
 
   // The directory that contains the attachments of report |report_id|.
   const std::string& ReportDirectory(ReportId report_id) const;
@@ -91,12 +91,12 @@ class ReportStoreMetadata {
   // Metadata about each report including:
   //  1) Its total size.
   //  2) The directory its attachments are stored in.
-  //  3) The program it was filed under.
+  //  3) The program shortname it was filed under.
   //  4) The attachments it includes.
   struct ReportMetadata {
     StorageSize size;
     std::string dir;
-    std::string program;
+    std::string program_shortname;
     std::vector<std::string> attachments;
   };
 

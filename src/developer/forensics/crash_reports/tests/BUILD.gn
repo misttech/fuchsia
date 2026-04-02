@@ -177,6 +177,19 @@ cc_test_executable("product_quotas_unittest_exe") {
   ]
 }
 
+cc_test_executable("program_shortname_unittest_exe") {
+  testonly = true
+
+  sources = [ "program_shortname_unittest.cc" ]
+
+  deps = [
+    "//src/developer/forensics/crash_reports:program_shortname",
+    "//src/developer/forensics/testing:gtest_with_syslog_main",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 cc_test_executable("queue_unittest_exe") {
   testonly = true
 
@@ -437,6 +450,10 @@ fuchsia_unittest_component("product_quotas_unittest") {
   ]
 }
 
+fuchsia_unittest_component("program_shortname_unittest") {
+  deps = [ ":program_shortname_unittest_exe" ]
+}
+
 fuchsia_component("queue_unittest") {
   testonly = true
 
@@ -522,6 +539,7 @@ fuchsia_test_package("crash-reports-tests") {
     ":reporting_policy_watcher_unittest",
     ":inspect_manager_unittest",
     ":product_quotas_unittest",
+    ":program_shortname_unittest",
     ":queue_unittest",
     ":report_util_unittest",
     ":sized_data_reader_unittest",

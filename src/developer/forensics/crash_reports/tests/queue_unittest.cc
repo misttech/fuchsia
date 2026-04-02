@@ -83,9 +83,14 @@ Report MakeReport(const std::size_t report_id, const bool empty_annotations = fa
   if (!empty_annotations) {
     annotations = MakeAnnotations();
   }
+
+  const std::optional<ProgramShortname> program_shortname =
+      ProgramShortname::Create(fxl::StringPrintf("program_%ld", report_id));
+  FX_CHECK(program_shortname.has_value());
+
   fpromise::result<Report> report =
-      Report::MakeReport(report_id, fxl::StringPrintf("program_%ld", report_id), annotations,
-                         MakeAttachments(), kSnapshotUuidValue, BuildAttachment(kMinidumpValue));
+      Report::MakeReport(report_id, *program_shortname, annotations, MakeAttachments(),
+                         kSnapshotUuidValue, BuildAttachment(kMinidumpValue));
   FX_CHECK(report.is_ok());
   return std::move(report.value());
 }
@@ -95,9 +100,10 @@ Report MakeHourlyReport(const std::size_t report_id, const bool empty_annotation
   if (!empty_annotations) {
     annotations = MakeAnnotations();
   }
-  fpromise::result<Report> report = Report::MakeReport(
-      report_id, kHourlySnapshotProgramName, annotations, MakeAttachments(), kSnapshotUuidValue,
-      BuildAttachment(kMinidumpValue), /*is_hourly_report=*/true);
+  fpromise::result<Report> report =
+      Report::MakeReport(report_id, *ProgramShortname::Create(kHourlySnapshotProgramName),
+                         annotations, MakeAttachments(), kSnapshotUuidValue,
+                         BuildAttachment(kMinidumpValue), /*is_hourly_report=*/true);
   FX_CHECK(report.is_ok());
   return std::move(report.value());
 }

@@ -15,6 +15,7 @@
 #include "src/developer/forensics/crash_reports/annotation_map.h"
 #include "src/developer/forensics/crash_reports/crash_register.h"
 #include "src/developer/forensics/crash_reports/dart_module_parser.h"
+#include "src/developer/forensics/crash_reports/program_shortname.h"
 #include "src/developer/forensics/crash_reports/report.h"
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/lib/fsl/vmo/strings.h"
@@ -22,58 +23,6 @@
 
 namespace forensics {
 namespace crash_reports {
-
-std::string Shorten(std::string program_name) {
-  // Remove leading whitespace
-  const size_t first_non_whitespace = program_name.find_first_not_of(" ");
-  if (first_non_whitespace == std::string::npos) {
-    return "";
-  }
-  program_name = program_name.substr(first_non_whitespace);
-
-  // Remove the "fuchsia-pkg://" prefix if present.
-  const std::string fuchsia_pkg_prefix("fuchsia-pkg://");
-  if (program_name.find(fuchsia_pkg_prefix) == 0) {
-    program_name.erase(/*pos=*/0u, /*len=*/fuchsia_pkg_prefix.size());
-  }
-  std::replace(program_name.begin(), program_name.end(), '/', ':');
-
-  // Remove all repeating ':'.
-  for (size_t idx = program_name.find("::"); idx != std::string::npos;
-       idx = program_name.find("::")) {
-    program_name.erase(idx, 1);
-  }
-
-  // Remove trailing white space
-  const size_t last_non_whitespace = program_name.find_last_not_of(" ");
-  return (last_non_whitespace == std::string::npos)
-             ? ""
-             : program_name.substr(0, last_non_whitespace + 1);
-}
-
-std::string Logname(std::string name) {
-  // Normalize |name|.
-  name = Shorten(name);
-
-  // Find the last colon in |name|.
-  const size_t last_colon = name.find_last_of(":");
-  if (last_colon == std::string::npos) {
-    return name;
-  }
-
-  // Remove everything leading up to the last colon.
-  name.erase(name.begin(), name.begin() + last_colon + 1);
-
-  // Determine if there's a ".cm" suffix in |name|.
-  const size_t cm_suffix = name.rfind(".cm");
-  if (cm_suffix == std::string::npos) {
-    return name;
-  }
-
-  // Erase the ".cm" and everything after it.
-  name.erase(name.begin() + cm_suffix, name.end());
-  return name;
-}
 
 namespace {
 
@@ -295,13 +244,13 @@ AnnotationMap GetReportAnnotations(const feedback::Annotations& snapshot_annotat
   return added_annotations;
 }
 
-fpromise::result<Report> MakeReport(fuchsia::feedback::CrashReport report, const ReportId report_id,
-                                    const std::string& snapshot_uuid,
+fpromise::result<Report> MakeReport(fuchsia::feedback::CrashReport report,
+                                    const ProgramShortname& program_shortname,
+                                    const ReportId report_id, const std::string& snapshot_uuid,
                                     const feedback::Annotations& snapshot_annotations,
                                     const std::optional<timekeeper::time_utc>& current_time,
                                     Product product, const bool is_hourly_report) {
   const std::string program_name = report.program_name();
-  const std::string shortname = Shorten(program_name);
 
   AnnotationMap annotations = {
       {feedback::kDebugReportUuid, uuid::Generate()},
@@ -320,7 +269,7 @@ fpromise::result<Report> MakeReport(fuchsia::feedback::CrashReport report, const
   // Crash server annotations common to all crash reports.
   AddCrashServerAnnotations(program_name, current_time, &annotations);
 
-  return Report::MakeReport(report_id, shortname, annotations, std::move(attachments),
+  return Report::MakeReport(report_id, program_shortname, annotations, std::move(attachments),
                             snapshot_uuid, std::move(minidump), is_hourly_report);
 }
 

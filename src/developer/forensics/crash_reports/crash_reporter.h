@@ -20,6 +20,7 @@
 #include "src/developer/forensics/crash_reports/info/info_context.h"
 #include "src/developer/forensics/crash_reports/log_tags.h"
 #include "src/developer/forensics/crash_reports/product_quotas.h"
+#include "src/developer/forensics/crash_reports/program_shortname.h"
 #include "src/developer/forensics/crash_reports/queue.h"
 #include "src/developer/forensics/crash_reports/report_id.h"
 #include "src/developer/forensics/crash_reports/report_store.h"
@@ -56,8 +57,8 @@ class CrashReporter : public fuchsia::feedback::CrashReporter {
   void FileReport(fuchsia::feedback::CrashReport report, FileReportCallback callback) override;
 
  private:
-  void File(fuchsia::feedback::CrashReport report, bool is_hourly_snapshot,
-            FileReportCallback callback);
+  void File(fuchsia::feedback::CrashReport report, ProgramShortname program_shortname,
+            bool is_hourly_snapshot, FileReportCallback callback);
   void ScheduleHourlySnapshot(zx::duration delay);
 
   async_dispatcher_t* dispatcher_;

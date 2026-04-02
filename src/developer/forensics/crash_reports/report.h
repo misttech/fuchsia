@@ -13,6 +13,7 @@
 #include <string>
 
 #include "src/developer/forensics/crash_reports/annotation_map.h"
+#include "src/developer/forensics/crash_reports/program_shortname.h"
 #include "src/developer/forensics/crash_reports/report_id.h"
 #include "src/developer/forensics/utils/sized_data.h"
 
@@ -24,9 +25,10 @@ class Report {
  public:
   // Return fpromise::ok with a Report unless there are issues reading a fuchsia::mem::Buffer.
   static fpromise::result<Report> MakeReport(
-      ReportId report_id, const std::string& program_shortname, const AnnotationMap& annotations,
-      std::map<std::string, fuchsia::mem::Buffer> attachments, std::string snapshot_uuid,
-      std::optional<fuchsia::mem::Buffer> minidump, bool is_hourly_report = false);
+      ReportId report_id, const ProgramShortname& program_shortname,
+      const AnnotationMap& annotations, std::map<std::string, fuchsia::mem::Buffer> attachments,
+      std::string snapshot_uuid, std::optional<fuchsia::mem::Buffer> minidump,
+      bool is_hourly_report = false);
 
   Report(ReportId report_id, const std::string& program_shortname, const AnnotationMap& annotations,
          std::map<std::string, SizedData> attachments, std::string snapshot_uuid,

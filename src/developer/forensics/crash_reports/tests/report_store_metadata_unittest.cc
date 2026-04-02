@@ -164,9 +164,9 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_Programs) {
   EXPECT_THAT(metadata().ProgramReports("program 1"), UnorderedElementsAreArray({0, 1, 2}));
   EXPECT_EQ(metadata().ProgramDirectory("program 1"), ProgramPath("program 1"));
 
-  EXPECT_EQ(metadata().ReportProgram(0), "program 1");
-  EXPECT_EQ(metadata().ReportProgram(1), "program 1");
-  EXPECT_EQ(metadata().ReportProgram(2), "program 1");
+  EXPECT_EQ(metadata().ReportProgramShortname(0), "program 1");
+  EXPECT_EQ(metadata().ReportProgramShortname(1), "program 1");
+  EXPECT_EQ(metadata().ReportProgramShortname(2), "program 1");
 
   // Add more reports to the filesystem.
   ASSERT_TRUE(WriteAttachment("program 2", /*report_id=*/3, "key 1", kValue));
@@ -184,12 +184,12 @@ TEST_F(ReportStoreMetadataTest, RecreateFromFilesystem_Programs) {
   EXPECT_EQ(metadata().ProgramDirectory("program 1"), ProgramPath("program 1"));
   EXPECT_EQ(metadata().ProgramDirectory("program 2"), ProgramPath("program 2"));
 
-  EXPECT_EQ(metadata().ReportProgram(0), "program 1");
-  EXPECT_EQ(metadata().ReportProgram(1), "program 1");
-  EXPECT_EQ(metadata().ReportProgram(2), "program 1");
-  EXPECT_EQ(metadata().ReportProgram(3), "program 2");
-  EXPECT_EQ(metadata().ReportProgram(4), "program 2");
-  EXPECT_EQ(metadata().ReportProgram(5), "program 2");
+  EXPECT_EQ(metadata().ReportProgramShortname(0), "program 1");
+  EXPECT_EQ(metadata().ReportProgramShortname(1), "program 1");
+  EXPECT_EQ(metadata().ReportProgramShortname(2), "program 1");
+  EXPECT_EQ(metadata().ReportProgramShortname(3), "program 2");
+  EXPECT_EQ(metadata().ReportProgramShortname(4), "program 2");
+  EXPECT_EQ(metadata().ReportProgramShortname(5), "program 2");
 }
 
 TEST_F(ReportStoreMetadataTest, AddAndDelete) {

@@ -149,9 +149,14 @@ class SnapshotCollectorTest : public UnitTestFixture {
     fuchsia::feedback::CrashReport report;
     report.set_program_name(kProgramName);
 
+    const std::optional<ProgramShortname> shortened_program_name =
+        ProgramShortname::Create(kProgramName);
+    FX_CHECK(shortened_program_name.has_value());
+
     executor_.schedule_task(snapshot_collector_
-                                ->GetReport(timeout, std::move(report), report_id, utc_time,
-                                            product, false, ReportingPolicy::kUpload)
+                                ->GetReport(timeout, std::move(report), *shortened_program_name,
+                                            report_id, utc_time, product, false,
+                                            ReportingPolicy::kUpload)
                                 .and_then(std::move(and_then))
                                 .or_else([]() { FX_CHECK(false); }));
   }

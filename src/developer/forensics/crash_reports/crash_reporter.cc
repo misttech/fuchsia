@@ -166,6 +166,16 @@ void CrashReporter::FileReport(fuchsia::feedback::CrashReport report, FileReport
     return;
   }
 
+  const std::optional<ProgramShortname> program_shortname =
+      ProgramShortname::Create(report.program_name());
+  if (!program_shortname.has_value()) {
+    FX_LOGS(ERROR) << "Program name of '" << report.program_name()
+                   << "' shortens to empty. Won't file.";
+    callback(InternalResultsToFidl(FilingResult::kInvalidArgsError));
+    info_.LogCrashState(cobalt::CrashState::kDropped);
+    return;
+  }
+
   if (report.has_weight() && report.weight() == 0) {
     FX_LOGS(ERROR) << "Input report has invalid weight of 0. Won't file.";
     callback(InternalResultsToFidl(FilingResult::kInvalidArgsError));
@@ -173,11 +183,11 @@ void CrashReporter::FileReport(fuchsia::feedback::CrashReport report, FileReport
     return;
   }
 
-  File(std::move(report), /*is_hourly_snapshot=*/false, std::move(callback));
+  File(std::move(report), *program_shortname, /*is_hourly_snapshot=*/false, std::move(callback));
 }
 
-void CrashReporter::File(fuchsia::feedback::CrashReport report, const bool is_hourly_snapshot,
-                         FileReportCallback callback) {
+void CrashReporter::File(fuchsia::feedback::CrashReport report, ProgramShortname program_shortname,
+                         const bool is_hourly_snapshot, FileReportCallback callback) {
   if (reporting_policy_watcher_->CurrentPolicy() == ReportingPolicy::kDoNotFileAndDelete) {
     callback(InternalResultsToFidl(FilingResult::kReportNotFiledUserOptedOut));
     info_.LogCrashState(cobalt::CrashState::kDeleted);
@@ -193,7 +203,7 @@ void CrashReporter::File(fuchsia::feedback::CrashReport report, const bool is_ho
                            ? crash_register_->GetProduct(program_name)
                            : Product::DefaultPlatformProduct();
 
-  tags_->Register(report_id, {Logname(program_name)});
+  tags_->Register(report_id, {program_shortname.Logname()});
 
   if (!product_quotas_.HasQuotaRemaining(product)) {
     FX_LOGST(INFO, tags_->Get(report_id)) << "Daily report quota reached. Won't retry";
@@ -214,8 +224,9 @@ void CrashReporter::File(fuchsia::feedback::CrashReport report, const bool is_ho
   const auto current_time = utc_provider_.CurrentTime();
 
   auto p = snapshot_collector_
-               .GetReport(kSnapshotTimeout, std::move(report), report_id, current_time, product,
-                          is_hourly_snapshot, reporting_policy_watcher_->CurrentPolicy())
+               .GetReport(kSnapshotTimeout, std::move(report), std::move(program_shortname),
+                          report_id, current_time, product, is_hourly_snapshot,
+                          reporting_policy_watcher_->CurrentPolicy())
                .then([this, report_id, is_hourly_snapshot,
                       callback = std::move(callback)](fpromise::result<Report>& result) mutable {
                  if (is_hourly_snapshot) {
@@ -263,7 +274,11 @@ void CrashReporter::ScheduleHourlySnapshot(const zx::duration delay) {
             .set_is_fatal(false)
             .set_crash_signature(kHourlySnapshotSignature);
 
-        File(std::move(report), /*is_hourly_snapshot=*/true,
+        const std::optional<ProgramShortname> program_shortname =
+            ProgramShortname::Create(kHourlySnapshotProgramName);
+        FX_CHECK(program_shortname.has_value());
+
+        File(std::move(report), *program_shortname, /*is_hourly_snapshot=*/true,
              [](const CrashReporter_FileReport_Result& result) {});
       },
       delay);

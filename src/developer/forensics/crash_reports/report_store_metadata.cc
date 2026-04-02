@@ -11,6 +11,7 @@
 #include <optional>
 #include <vector>
 
+#include "src/developer/forensics/crash_reports/program_shortname.h"
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
@@ -42,10 +43,17 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
 
   std::vector<fs::path> invalid_paths;
   for (const auto& program_dir : fs::directory_iterator(report_store_root_)) {
-    const std::string program = program_dir.path().filename();
-
     if (!files::IsDirectory(program_dir.path())) {
       FX_LOGS(WARNING) << "Unexpectedly not a program directory. Deleting: " << program_dir.path();
+      invalid_paths.push_back(program_dir.path());
+      continue;
+    }
+
+    const std::optional<ProgramShortname> program_shortname =
+        ProgramShortname::Create(program_dir.path().filename());
+    if (!program_shortname.has_value()) {
+      FX_LOGS(WARNING) << "Unexpectedly not a valid program shortname. Deleting: "
+                       << program_dir.path();
       invalid_paths.push_back(program_dir.path());
       continue;
     }
@@ -88,11 +96,11 @@ bool ReportStoreMetadata::RecreateFromAndCleanupFilesystem() {
 
       report_metadata_[report_id].size = report_size;
       report_metadata_[report_id].dir = report_dir.path();
-      report_metadata_[report_id].program = program;
+      report_metadata_[report_id].program_shortname = program_shortname->Value();
       report_metadata_[report_id].attachments = std::move(attachments);
 
-      program_metadata_[program].dir = program_dir.path();
-      program_metadata_[program].report_ids.push_back(report_id);
+      program_metadata_[program_shortname->Value()].dir = program_dir.path();
+      program_metadata_[program_shortname->Value()].report_ids.push_back(report_id);
     }
   }
 
@@ -127,18 +135,18 @@ StorageSize ReportStoreMetadata::RemainingSpace() const { return max_size_ - cur
 
 const std::string& ReportStoreMetadata::RootDir() const { return report_store_root_; }
 
-void ReportStoreMetadata::Add(const ReportId report_id, std::string program,
+void ReportStoreMetadata::Add(const ReportId report_id, std::string program_shortname,
                               std::vector<std::string> attachments, const StorageSize size) {
   FX_CHECK(IsDirectoryUsable());
   current_size_ += size;
 
-  program_metadata_[program].dir = fs::path(report_store_root_) / program;
-  program_metadata_[program].report_ids.push_back(report_id);
+  program_metadata_[program_shortname].dir = fs::path(report_store_root_) / program_shortname;
+  program_metadata_[program_shortname].report_ids.push_back(report_id);
 
   report_metadata_[report_id].size = size;
   report_metadata_[report_id].dir =
-      fs::path(program_metadata_[program].dir) / std::to_string(report_id);
-  report_metadata_[report_id].program = std::move(program);
+      fs::path(program_metadata_[program_shortname].dir) / std::to_string(report_id);
+  report_metadata_[report_id].program_shortname = std::move(program_shortname);
   report_metadata_[report_id].attachments = std::move(attachments);
 }
 
@@ -146,7 +154,7 @@ void ReportStoreMetadata::Delete(const ReportId report_id) {
   FX_CHECK(IsDirectoryUsable());
   FX_CHECK(Contains(report_id));
 
-  const auto& program = ReportProgram(report_id);
+  const auto& program = ReportProgramShortname(report_id);
   auto& report_ids = program_metadata_[program].report_ids;
   report_ids.erase(std::find(report_ids.begin(), report_ids.end(), report_id));
 
@@ -180,9 +188,9 @@ const std::deque<ReportId>& ReportStoreMetadata::ProgramReports(const std::strin
   return program_metadata_.at(program).report_ids;
 }
 
-const std::string& ReportStoreMetadata::ReportProgram(const ReportId report_id) const {
+const std::string& ReportStoreMetadata::ReportProgramShortname(const ReportId report_id) const {
   FX_CHECK(Contains(report_id));
-  return report_metadata_.at(report_id).program;
+  return report_metadata_.at(report_id).program_shortname;
 }
 
 const std::string& ReportStoreMetadata::ProgramDirectory(const std::string& program) const {

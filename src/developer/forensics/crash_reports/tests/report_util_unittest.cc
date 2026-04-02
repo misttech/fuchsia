@@ -25,49 +25,6 @@ using ::testing::IsSupersetOf;
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
 
-TEST(Shorten, ShortensCorrectly) {
-  const std::map<std::string, std::string> name_to_shortened_name = {
-      // Does nothing.
-      {"system", "system"},
-      // Remove leading whitespace.
-      {"    system", "system"},
-      // Remove trailing whitespace.
-      {"system    ", "system"},
-      // Remove "fuchsia-pkg://" prefix.
-      {"fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cm", "fuchsia.com:foo-bar#meta:foo_bar.cm"},
-      // Remove leading whitespace and "fuchsia-pkg://" prefix.
-      {"     fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cm",
-       "fuchsia.com:foo-bar#meta:foo_bar.cm"},
-      // Replaces runs of '/' with a single ':'.
-      {"//////////test/", ":test:"},
-  };
-
-  for (const auto& [name, shortend_name] : name_to_shortened_name) {
-    EXPECT_EQ(Shorten(name), shortend_name);
-  }
-}
-
-TEST(Logname, MakesLognameCorrectly) {
-  const std::map<std::string, std::string> name_to_logname = {
-      // Does nothing.
-      {"system", "system"},
-      // Remove leading whitespace.
-      {"    system", "system"},
-      // Remove trailing whitespace.
-      {"system    ", "system"},
-      // Extracts components_for_foo
-      {"bin/components_for_foo", "components_for_foo"},
-      // Extracts foo_bar from the URL.
-      {"fuchsia-pkg://fuchsia.com/foo-bar#meta/foo_bar.cm", "foo_bar"},
-      // Extracts foo_bar from the URL.
-      {"fuchsia.com:foo-bar#meta:foo_bar.cm", "foo_bar"},
-  };
-
-  for (const auto& [name, logname] : name_to_logname) {
-    EXPECT_EQ(Logname(name), logname);
-  }
-}
-
 TEST(MakeReport, AddsSnapshotAnnotations) {
   const feedback::Annotations annotations = {
       {"snapshot_annotation_key", ErrorOrString("snapshot_annotation_value")},
@@ -82,10 +39,10 @@ TEST(MakeReport, AddsSnapshotAnnotations) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const auto report =
-      MakeReport(std::move(crash_report), /*report_id=*/0, "snapshot_uuid", annotations,
-                 /*current_time=*/std::nullopt, std::move(product),
-                 /*is_hourly_report=*/false);
+  const auto report = MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
+                                 /*report_id=*/0, "snapshot_uuid", annotations,
+                                 /*current_time=*/std::nullopt, std::move(product),
+                                 /*is_hourly_report=*/false);
   ASSERT_TRUE(report.is_ok());
   EXPECT_EQ(report.value().Annotations().Get("snapshot_annotation_key"),
             "snapshot_annotation_value");
@@ -105,10 +62,10 @@ TEST(MakeReport, AddsCrashServerAnnotationsWithoutReportTime) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const fpromise::result<Report> report =
-      MakeReport(std::move(crash_report), /*report_id=*/0, "snapshot_uuid", annotations,
-                 /*current_time=*/std::nullopt, std::move(product),
-                 /*is_hourly_report=*/false);
+  const fpromise::result<Report> report = MakeReport(
+      std::move(crash_report), *ProgramShortname::Create("program_name"), /*report_id=*/0,
+      "snapshot_uuid", annotations, /*current_time=*/std::nullopt, std::move(product),
+      /*is_hourly_report=*/false);
   ASSERT_TRUE(report.is_ok());
   EXPECT_THAT(report.value().Annotations().Raw(), IsSupersetOf({
                                                       Pair("ptype", "program_name"),
@@ -132,10 +89,10 @@ TEST(MakeReport, AddsCrashServerAnnotationsWithReportTime) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const fpromise::result<Report> report =
-      MakeReport(std::move(crash_report), /*report_id=*/0, "snapshot_uuid", annotations,
-                 /*current_time=*/timekeeper::time_utc(zx::sec(55).get()), std::move(product),
-                 /*is_hourly_report=*/false);
+  const fpromise::result<Report> report = MakeReport(
+      std::move(crash_report), *ProgramShortname::Create("program_name"), /*report_id=*/0,
+      "snapshot_uuid", annotations, /*current_time=*/timekeeper::time_utc(zx::sec(55).get()),
+      std::move(product), /*is_hourly_report=*/false);
   ASSERT_TRUE(report.is_ok());
   EXPECT_THAT(report.value().Annotations().Raw(), IsSupersetOf({
                                                       Pair("ptype", "program_name"),
@@ -155,7 +112,8 @@ TEST(MakeReport, AddsRequiredAnnotations) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const auto report = MakeReport(std::move(crash_report), /*report_id=*/0, "snapshot_uuid", {},
+  const auto report = MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
+                                 /*report_id=*/0, "snapshot_uuid", {},
                                  /*current_time=*/std::nullopt, std::move(product),
                                  /*is_hourly_report=*/false);
 
@@ -230,8 +188,8 @@ TEST(MakeReport, AddsWeight) {
       .channel = ErrorOrString("product_channel"),
   };
 
-  const auto report = MakeReport(std::move(crash_report), /*report_id=*/0, "snapshot_uuid",
-                                 /*snapshot_annotations=*/{},
+  const auto report = MakeReport(std::move(crash_report), *ProgramShortname::Create("program_name"),
+                                 /*report_id=*/0, "snapshot_uuid", /*snapshot_annotations=*/{},
                                  /*current_time=*/std::nullopt, std::move(product),
                                  /*is_hourly_report=*/false);
   ASSERT_TRUE(report.is_ok());

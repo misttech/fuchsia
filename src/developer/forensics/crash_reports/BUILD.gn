@@ -171,6 +171,13 @@ source_set("product") {
   public_deps = [ "//src/developer/forensics/utils:errors" ]
 }
 
+source_set("program_shortname") {
+  sources = [
+    "program_shortname.cc",
+    "program_shortname.h",
+  ]
+}
+
 source_set("queue") {
   sources = [
     "queue.cc",
@@ -206,6 +213,7 @@ source_set("report") {
 
   public_deps = [
     ":annotation_map",
+    ":program_shortname",
     ":report_id",
     ":snapshot",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_hlcpp",
@@ -247,6 +255,7 @@ source_set("report_util") {
   public_deps = [
     ":crash_register",
     ":product",
+    ":program_shortname",
     ":report",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/lib/fit-promise",

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "src/developer/forensics/crash_reports/constants.h"
+#include "src/developer/forensics/crash_reports/program_shortname.h"
 #include "src/developer/forensics/crash_reports/report_id.h"
 #include "src/developer/forensics/crash_reports/report_util.h"
 #include "src/developer/forensics/crash_reports/snapshot.h"
@@ -66,15 +67,17 @@ feedback::Annotations SnapshotCollector::GetMissingSnapshotAnnotations(const std
 
 ::fpromise::promise<Report> SnapshotCollector::GetReport(
     const zx::duration timeout, fuchsia::feedback::CrashReport fidl_report,
-    const ReportId report_id, const std::optional<timekeeper::time_utc> current_utc_time,
-    const Product& product, const bool is_hourly_snapshot, const ReportingPolicy reporting_policy) {
-  auto GetReport = [fidl_report = std::move(fidl_report), report_id, current_utc_time, product,
-                    is_hourly_snapshot](
+    ProgramShortname program_shortname, const ReportId report_id,
+    const std::optional<timekeeper::time_utc> current_utc_time, const Product& product,
+    const bool is_hourly_snapshot, const ReportingPolicy reporting_policy) {
+  auto GetReport = [fidl_report = std::move(fidl_report),
+                    program_shortname = std::move(program_shortname), report_id, current_utc_time,
+                    product, is_hourly_snapshot](
                        const std::string& actual_uuid, const std::string& request_uuid,
                        feedback::Annotations annotations) mutable -> ::fpromise::result<Report> {
     AddAnnotation(feedback::kSnapshotUuid, request_uuid, annotations);
-    return MakeReport(std::move(fidl_report), report_id, actual_uuid, annotations, current_utc_time,
-                      product, is_hourly_snapshot);
+    return MakeReport(std::move(fidl_report), program_shortname, report_id, actual_uuid,
+                      annotations, current_utc_time, product, is_hourly_snapshot);
   };
 
   // Only generate a snapshot if the report won't be immediately archived in the filesystem in

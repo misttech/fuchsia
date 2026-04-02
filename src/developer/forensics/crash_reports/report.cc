@@ -9,6 +9,8 @@
 
 #include <string>
 
+#include "src/developer/forensics/crash_reports/program_shortname.h"
+
 namespace forensics {
 namespace crash_reports {
 namespace {
@@ -30,7 +32,7 @@ std::optional<SizedData> MakeAttachment(const fuchsia::mem::Buffer& buffer) {
 }  // namespace
 
 fpromise::result<Report> Report::MakeReport(const ReportId report_id,
-                                            const std::string& program_shortname,
+                                            const class ProgramShortname& program_shortname,
                                             const AnnotationMap& annotations,
                                             std::map<std::string, fuchsia::mem::Buffer> attachments,
                                             std::string snapshot_uuid,
@@ -52,7 +54,7 @@ fpromise::result<Report> Report::MakeReport(const ReportId report_id,
   std::optional<SizedData> minidump_copy =
       minidump.has_value() ? MakeAttachment(minidump.value()) : std::nullopt;
 
-  return fpromise::ok(Report(report_id, program_shortname, annotations,
+  return fpromise::ok(Report(report_id, program_shortname.Value(), annotations,
                              std::move(attachment_copies), std::move(snapshot_uuid),
                              std::move(minidump_copy), is_hourly_report));
 }

@@ -713,6 +713,18 @@ TEST_F(CrashReporterTest, FailOnInvalidInputNoProgramName) {
   EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
 }
 
+TEST_F(CrashReporterTest, FailOnInvalidInputEmptyShortenedProgramName) {
+  SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
+  SetUpCrashReporterDefaultConfig();
+
+  CrashReport report;
+  report.set_program_name("fuchsia-pkg://");
+  const CrashReporter_FileReport_Result result = FileOneCrashReport(std::move(report));
+
+  EXPECT_TRUE(result.is_err());
+  EXPECT_EQ(result.err(), FilingError::INVALID_ARGS_ERROR);
+}
+
 TEST_F(CrashReporterTest, FailOnInvalidInputZeroWeight) {
   SetUpDataProviderServer(std::make_unique<stubs::DataProviderReturnsEmptySnapshot>());
   SetUpCrashReporterDefaultConfig();

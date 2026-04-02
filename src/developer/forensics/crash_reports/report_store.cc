@@ -352,7 +352,7 @@ std::optional<Report> ReportStore::Get(const ReportId report_id) {
     }
   }
 
-  return Report(report_id, root_metadata.ReportProgram(report_id), std::move(annotations),
+  return Report(report_id, root_metadata.ReportProgramShortname(report_id), std::move(annotations),
                 std::move(attachments), std::move(snapshot_uuid), std::move(minidump));
 }
 
@@ -423,7 +423,7 @@ bool ReportStore::Remove(const ReportId report_id) {
   }
 
   // If this was the last report for a program, delete the directory for the program.
-  const auto& program = root_metadata.ReportProgram(report_id);
+  const auto& program = root_metadata.ReportProgramShortname(report_id);
   if (root_metadata.ProgramReports(program).size() == 1 &&
       !DeletePath(root_metadata.ProgramDirectory(program))) {
     FX_LOGST(ERROR, tags_->Get(report_id))
@@ -456,7 +456,14 @@ void ReportStore::RemoveAll() {
 bool ReportStore::RecreateFromFilesystem(ReportStoreMetadata& store_root) {
   const bool success = store_root.RecreateFromAndCleanupFilesystem();
   for (const auto report_id : store_root.Reports()) {
-    tags_->Register(report_id, {Logname(store_root.ReportProgram(report_id))});
+    const std::optional<ProgramShortname> program_shortname =
+        ProgramShortname::Create(store_root.ReportProgramShortname(report_id));
+
+    if (program_shortname.has_value()) {
+      tags_->Register(report_id, {program_shortname->Logname()});
+    } else {
+      FX_LOGS(WARNING) << "Invalid program shortname for report: " << report_id;
+    }
   }
 
   return success;

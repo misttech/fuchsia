@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "src/developer/forensics/crash_reports/product.h"
+#include "src/developer/forensics/crash_reports/program_shortname.h"
 #include "src/developer/forensics/crash_reports/queue.h"
 #include "src/developer/forensics/crash_reports/report.h"
 #include "src/developer/forensics/crash_reports/reporting_policy_watcher.h"
@@ -45,7 +46,7 @@ class SnapshotCollector {
   // snapshots contain data that is out-of-date). No snapshot will be saved if |timeout| expires.
   ::fpromise::promise<Report> GetReport(zx::duration timeout,
                                         fuchsia::feedback::CrashReport fidl_report,
-                                        ReportId report_id,
+                                        ProgramShortname program_shortname, ReportId report_id,
                                         std::optional<timekeeper::time_utc> current_utc_time,
                                         const Product& product, bool is_hourly_snapshot,
                                         ReportingPolicy reporting_policy);
