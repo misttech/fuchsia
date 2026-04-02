@@ -63,7 +63,7 @@ void UsbPeripheral::RequestComplete(usb_request_t* req) {
   zx_status_t status = request.request()->response.status;
   size_t actual = request.request()->response.actual;
 
-  UnlockedCallback all_complete_cb;
+  fit::callback<void()> all_complete_cb;
   {
     fbl::AutoLock l(&pending_requests_lock_);
     pending_requests_.erase(&request);
@@ -893,87 +893,24 @@ void UsbPeripheral::ClearFunctions() {
     UsbDciCancelAll(static_cast<uint8_t>(i | 0x80));
   }
 
-  std::vector<UsbFunction*> to_teardown;
   {
     fbl::AutoLock lock(&lock_);
-    // num_functions_to_clear_ is used to synchronize the completion with callers.
-    // shutting_down_ should stay true until FunctionCleared finishes for all functions.
-    // lock_functions_ is false because we can start configuring again after all are gone.
+    shutting_down_ = false;
     configurations_.clear();
     lock_functions_ = false;
     for (size_t i = 0; i < std::size(endpoint_map_); i++) {
       endpoint_map_[i].reset();
     }
     strings_.clear();
+    functions_.clear();
 
-    num_functions_to_clear_ = functions_.size();
-    fdf::debug("UsbPeripheral: Clearing {} functions", num_functions_to_clear_);
+    DeviceStateChangedLocked();
 
-    if (num_functions_to_clear_ == 0) {
-      shutting_down_ = false;
-      if (listener_.is_valid()) {
-        fdf::debug("UsbPeripheral: Sending FunctionsCleared event (0 functions gone)");
-        if (fidl::Status status = fidl::WireCall(listener_)->FunctionsCleared(); !status.ok()) {
-          fdf::error("Failed to send FunctionsCleared request: {}", status);
-        }
+    if (listener_.is_valid()) {
+      if (fidl::Status status = fidl::WireCall(listener_)->FunctionsCleared(); !status.ok()) {
+        fdf::error("Failed to send FunctionsCleared request: {}", status.status_string());
       }
-
-      std::vector<UnlockedCallback> callbacks = std::move(on_all_functions_cleared_);
-      lock.release();
-      for (auto& callback : callbacks) {
-        callback();
-      }
-      return;
-    } else {
-      for (auto& function : functions_) {
-        to_teardown.push_back(function.get());
-        tearing_down_functions_.emplace_back(std::move(function));
-      }
-      functions_.clear();
     }
-  }
-
-  RequestFunctionsRemoval(to_teardown);
-  DeviceStateChanged();
-}
-
-void UsbPeripheral::RequestFunctionsRemoval(const std::vector<UsbFunction*>& functions) {
-  for (auto* function : functions) {
-    fdf::info("UsbPeripheral: Requesting removal for function index {}",
-              function->function_index());
-    function->RequestRemoval();
-  }
-}
-
-void UsbPeripheral::FunctionCleared() {
-  fbl::AutoLock lock(&lock_);
-  fdf::debug("UsbPeripheral: FunctionCleared called. {} functions remaining.",
-             num_functions_to_clear_);
-
-  if (num_functions_to_clear_ == 0) {
-    fdf::error("FunctionCleared called when num_functions_to_clear_ is 0");
-    return;
-  }
-  num_functions_to_clear_--;
-  if (num_functions_to_clear_ != 0) {
-    return;
-  }
-
-  // All functions cleared.
-  tearing_down_functions_.clear();
-  shutting_down_ = false;
-
-  if (listener_.is_valid()) {
-    fdf::info("UsbPeripheral: All functions cleared. Sending FunctionsCleared event.");
-    if (fidl::Status status = fidl::WireCall(listener_)->FunctionsCleared(); !status.ok()) {
-      fdf::error("Failed to send FunctionsCleared request: {}", status.status_string());
-    }
-  }
-
-  std::vector<UnlockedCallback> callbacks = std::move(on_all_functions_cleared_);
-  lock.release();
-  for (auto& callback : callbacks) {
-    callback();
   }
 }
 
@@ -1326,11 +1263,7 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
 
   fdf::debug("{}", __func__);
   ClearFunctions();
-
-  auto on_complete = [this, completer = completer.ToAsync()]() mutable {
-    WaitForPendingRequests([completer = std::move(completer)]() mutable { completer.Reply(); });
-  };
-  WaitForFunctionsCleared(std::move(on_complete));
+  WaitForPendingRequests([completer = completer.ToAsync()]() mutable { completer.Reply(); });
 }
 
 void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView request,
@@ -1355,10 +1288,7 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
                                  zx::time::infinite(), &observed);
   }
 
-  auto on_complete = [this, completer = std::move(completer)]() mutable {
-    WaitForPendingRequests([completer = std::move(completer)]() mutable { completer(zx::ok()); });
-  };
-  WaitForFunctionsCleared(std::move(on_complete));
+  WaitForPendingRequests([completer = std::move(completer)]() mutable { completer(zx::ok()); });
 }
 
 zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& functions) {
@@ -1486,17 +1416,7 @@ void UsbPeripheral::WaitForPendingRequests(fit::callback<void()> callback) {
     callback();
     return;
   }
-  on_all_pending_requests_complete_ = UnlockedCallback(std::move(callback), pending_requests_lock_);
-}
-
-void UsbPeripheral::WaitForFunctionsCleared(fit::callback<void()> callback) {
-  fbl::AutoLock lock(&lock_);
-  if (num_functions_to_clear_ == 0) {
-    lock.release();
-    callback();
-    return;
-  }
-  on_all_functions_cleared_.emplace_back(std::move(callback), lock_);
+  on_all_pending_requests_complete_ = std::move(callback);
 }
 
 }  // namespace usb_peripheral

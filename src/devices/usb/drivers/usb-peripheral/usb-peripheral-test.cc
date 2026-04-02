@@ -317,37 +317,6 @@ class FakeUsbFunction
       binding_;
 };
 
-class FakeEvents : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Events> {
- public:
-  void FunctionRegistered(FunctionRegisteredCompleter::Sync& completer) override {
-    completer.Reply();
-  }
-  void FunctionsCleared(FunctionsClearedCompleter::Sync& completer) override {
-    cleared_called_.Signal();
-  }
-
-  void WaitUntilCleared() {
-    cleared_called_.Wait();
-    cleared_called_.Reset();
-  }
-
-  void Bind(async_dispatcher_t* dispatcher,
-            fidl::ServerEnd<fuchsia_hardware_usb_peripheral::Events> server_end) {
-    binding_.emplace(fidl::BindServer(dispatcher, std::move(server_end), this));
-  }
-
-  void Unbind() {
-    if (binding_) {
-      binding_->Unbind();
-      binding_.reset();
-    }
-  }
-
- private:
-  libsync::Completion cleared_called_;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_peripheral::Events>> binding_;
-};
-
 class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
  public:
   void Init(std::string_view serial_number) {
@@ -470,15 +439,6 @@ class UsbPeripheralFunctionTest : public ManagedUsbPeripheralTest {
     }
     return zx::ok(fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>(
         std::move(result.value())));
-  }
-
-  zx::result<fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>> ConnectPeripheral() {
-    zx::result result = dut().Connect<fuchsia_hardware_usb_peripheral::Service::Device>();
-    if (result.is_error()) {
-      return result.take_error();
-    }
-    return zx::ok(
-        fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>(std::move(result.value())));
   }
 
   zx::result<std::tuple<std::shared_ptr<FakeUsbFunction>,
@@ -657,29 +617,6 @@ TEST_F(ManagedUsbPeripheralTest, PendingRequestsCompletedOnClearFunctions) {
   completion.Wait();
 }
 
-TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
-  StartDriverWithConfig(usb_peripheral_config::Config{});
-
-  auto client = this->Client();
-
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
-  ASSERT_OK(endpoints);
-
-  FakeEvents fake_events;
-  fake_events.Bind(dut().runtime().StartBackgroundDispatcher()->async_dispatcher(),
-                   std::move(endpoints->server));
-
-  auto set_listener_res = client->SetStateChangeListener(std::move(endpoints->client));
-  ASSERT_TRUE(set_listener_res.ok()) << set_listener_res.FormatDescription();
-
-  // Clear functions - should work immediately.
-  auto clear_res = client->ClearFunctions();
-  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
-
-  fake_events.WaitUntilCleared();
-  fake_events.Unbind();
-}
-
 TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {
   usb_peripheral_config::Config config;
   config.functions() = {"ums"};
@@ -805,64 +742,6 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   EXPECT_TRUE(fake_function->set_interface_called());
   EXPECT_EQ(interface_num, fake_function->interface());
   EXPECT_EQ(1, fake_function->alt_setting());
-}
-
-TEST_F(UsbPeripheralFunctionTest, ClearFunctionsWaitsForTeardown) {
-  zx::result peripheral_client_result = ConnectPeripheral();
-  ASSERT_OK(peripheral_client_result);
-  auto peripheral_client = std::move(peripheral_client_result.value());
-
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
-  ASSERT_OK(endpoints);
-
-  FakeEvents fake_events;
-  fake_events.Bind(dut().runtime().StartBackgroundDispatcher()->async_dispatcher(),
-                   std::move(endpoints->server));
-
-  auto set_listener_res = peripheral_client->SetStateChangeListener(std::move(endpoints->client));
-  ASSERT_TRUE(set_listener_res.ok());
-
-  // Add a function so there is something to clear.
-  zx::result function_client_result = ConnectFunction();
-  ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
-      std::move(function_client_result.value());
-
-  zx::result fake_function_result = BindFakeFunction();
-  ASSERT_OK(fake_function_result);
-  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
-
-  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
-  ASSERT_TRUE(alloc_res.ok()) << alloc_res.FormatDescription();
-  ASSERT_OK(alloc_res.value());
-  uint8_t interface_num = alloc_res->value()->interface_nums[0];
-
-  usb_interface_descriptor_t intf_desc = {
-      .b_length = sizeof(usb_interface_descriptor_t),
-      .b_descriptor_type = USB_DT_INTERFACE,
-      .b_interface_number = interface_num,
-      .b_alternate_setting = 0,
-      .b_num_endpoints = 0,
-      .b_interface_class = 8,
-      .b_interface_sub_class = 6,
-      .b_interface_protocol = 80,
-      .i_interface = 0,
-  };
-  std::vector<uint8_t> descriptors(sizeof(intf_desc));
-  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
-
-  fidl::WireResult configure_res = function_client->Configure(
-      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
-      std::move(fake_function_endpoint));
-  ASSERT_TRUE(configure_res.ok()) << configure_res.FormatDescription();
-  ASSERT_OK(configure_res.value());
-
-  // Clear functions and wait for event.
-  auto clear_res = peripheral_client->ClearFunctions();
-  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
-
-  fake_events.WaitUntilCleared();
-  fake_events.Unbind();
 }
 
 TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfInterfaceNotAllocated) {
