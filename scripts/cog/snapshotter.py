@@ -98,3 +98,7 @@ def snapshot_workspace(
         logger.log_error(f"stdout: {e.stdout}")
         logger.log_error(f"stderr: {e.stderr}")
         raise
+
+    # Delete the .fx/config/metrics file from the snapshot.
+    metrics_file = to_path / "fuchsia" / ".fx" / "config" / "metrics"
+    metrics_file.unlink(missing_ok=True)
