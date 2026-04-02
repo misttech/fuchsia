@@ -31,9 +31,8 @@ extern "C" void wlan_drivers_log_with_severity(FuchsiaLogSeverity severity, uint
     case FUCHSIA_LOG_NONE:
       break;
     default:
-      FDF_LOGL(WARNING, (*logger),
-               "Unrecognized log severity: %u. Logging message with WARNING level instead.",
-               severity);
+      fdf::warn("Unrecognized log severity: {}. Logging message with WARNING level instead.",
+                severity);
       logger->logvf(FUCHSIA_LOG_WARNING, tag, file, line, fmt, args);
       break;
   }

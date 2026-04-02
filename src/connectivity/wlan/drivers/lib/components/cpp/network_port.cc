@@ -4,8 +4,7 @@
 #include "src/connectivity/wlan/drivers/lib/components/cpp/include/wlan/drivers/components/network_port.h"
 
 #include <lib/async/cpp/task.h>
-
-#include "src/connectivity/wlan/drivers/lib/components/cpp/log.h"
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace wlan::drivers::components {
 
@@ -30,39 +29,38 @@ void NetworkPort::Init(Role role, fdf_dispatcher_t* dispatcher,
     std::lock_guard lock(mutex_);
     role_ = role;
     if (!netdev_ifc_.is_valid()) {
-      LOGF(WARNING, "netdev_ifc_ invalid, port likely removed.");
+      fdf::warn("netdev_ifc_ invalid, port likely removed.");
       return ZX_ERR_BAD_STATE;
     }
     if (dispatcher_ != nullptr) {
-      LOGF(WARNING, "NetworkPort already initialized");
+      fdf::warn("NetworkPort already initialized");
       return ZX_ERR_ALREADY_BOUND;
     }
     fdf::Arena arena('NETD');
     zx::result endpoints = fdf::CreateEndpoints<fuchsia_hardware_network_driver::NetworkPort>();
     if (endpoints.is_error()) {
-      LOGF(ERROR, "Failed to create NetworkPort endpoints: %s", endpoints.status_string());
+      fdf::error("Failed to create NetworkPort endpoints: {}", endpoints.status_string());
       return endpoints.status_value();
     }
 
     dispatcher_ = dispatcher;
 
-    port_binding_ =
-        fdf::BindServer(dispatcher_, std::move(endpoints->server), this,
-                        [this](NetworkPort*, fidl::UnbindInfo info,
-                               fdf::ServerEnd<fuchsia_hardware_network_driver::NetworkPort>) {
-                          // RemovePortLocked will unlock the mutex.
-                          mutex_.lock();
-                          if (!info.is_user_initiated()) {
-                            // on_removed_ means removal started so a peer closed is highly likely.
-                            // Logging a warning at that point adds no value.
-                            if (!on_removed_ || info.status() != ZX_ERR_PEER_CLOSED) {
-                              LOGF(WARNING, "Port binding unbound unexpectedly: %s",
-                                   info.FormatDescription().c_str());
-                            }
-                          }
-                          port_binding_.reset();
-                          RemovePortLocked(nullptr);
-                        });
+    port_binding_ = fdf::BindServer(
+        dispatcher_, std::move(endpoints->server), this,
+        [this](NetworkPort*, fidl::UnbindInfo info,
+               fdf::ServerEnd<fuchsia_hardware_network_driver::NetworkPort>) {
+          // RemovePortLocked will unlock the mutex.
+          mutex_.lock();
+          if (!info.is_user_initiated()) {
+            // on_removed_ means removal started so a peer closed is highly likely.
+            // Logging a warning at that point adds no value.
+            if (!on_removed_ || info.status() != ZX_ERR_PEER_CLOSED) {
+              fdf::warn("Port binding unbound unexpectedly: {}", info.FormatDescription());
+            }
+          }
+          port_binding_.reset();
+          RemovePortLocked(nullptr);
+        });
 
     netdev_ifc_.buffer(arena)
         ->AddPort(port_id_, std::move(endpoints->client))
@@ -74,11 +72,11 @@ void NetworkPort::Init(Role role, fdf_dispatcher_t* dispatcher,
                     result) mutable {
               const zx_status_t status = [&] {
                 if (!result.ok()) {
-                  LOGF(ERROR, "Failed to add port: %s", result.FormatDescription().c_str());
+                  fdf::error("Failed to add port: {}", result.FormatDescription());
                   return result.status();
                 }
                 if (result->status != ZX_OK) {
-                  LOGF(ERROR, "Failed to add port: %s", zx_status_get_string(result->status));
+                  fdf::error("Failed to add port: {}", zx_status_get_string(result->status));
                   return result->status;
                 }
                 return ZX_OK;
@@ -167,7 +165,7 @@ void NetworkPort::RemovePortLocked(fit::callback<void(zx_status_t)>&& on_complet
       // Port removal failed, assume that this is because netdev_ifc_ has somehow become invalid.
       // Log an error and continue the removal. Don't attempt to use netdev_ifc_ again.
       netdev_ifc_ = {};
-      LOGF(ERROR, "Failed to remove port %u: %s", port_id_, status.FormatDescription().c_str());
+      fdf::error("Failed to remove port {}: {}", port_id_, status.FormatDescription());
     }
 
     // At this point the port binding should already be unbound after the port removal above. But if
@@ -223,7 +221,7 @@ void NetworkPort::SetPortOnline(bool online) {
   GetPortStatusLocked(&port_status);
 
   if (!netdev_ifc_.is_valid()) {
-    LOGF(WARNING, "netdev_ifc_ invalid, port likely removed.");
+    fdf::warn("netdev_ifc_ invalid, port likely removed.");
     return;
   }
 
@@ -231,7 +229,7 @@ void NetworkPort::SetPortOnline(bool online) {
   auto status =
       netdev_ifc_.buffer(arena)->PortStatusChanged(port_id_, fidl::ToWire(arena, port_status));
   if (!status.ok()) {
-    LOGF(ERROR, "Call to PortStatusChanged failed: %s", status.FormatDescription().c_str());
+    fdf::error("Call to PortStatusChanged failed: {}", status.FormatDescription());
   }
 }
 
@@ -281,7 +279,7 @@ void NetworkPort::SetActive(
 void NetworkPort::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
   zx::result endpoints = fdf::CreateEndpoints<fuchsia_hardware_network_driver::MacAddr>();
   if (endpoints.is_error()) {
-    LOGF(ERROR, "Failed to create MacAddr endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create MacAddr endpoints: {}", endpoints.status_string());
     completer.Close(endpoints.error_value());
     return;
   }
@@ -296,8 +294,8 @@ void NetworkPort::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
                                      // on_removed_ means removal started so a peer closed is almost
                                      // guaranteed. Logging a warning at that point adds no value.
                                      if (!on_removed_ || info.status() != ZX_ERR_PEER_CLOSED) {
-                                       LOGF(WARNING, "MacAddr server unbound unexpectedly: %s",
-                                            info.FormatDescription().c_str());
+                                       fdf::warn("MacAddr server unbound unexpectedly: {}",
+                                                 info.FormatDescription());
                                      }
                                    }
 

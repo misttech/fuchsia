@@ -6,10 +6,9 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/wire_natural_conversions.h>
 #include <lib/zx/vmar.h>
-
-#include "src/connectivity/wlan/drivers/lib/components/cpp/log.h"
 
 namespace netdriver = fuchsia_hardware_network_driver;
 
@@ -49,7 +48,7 @@ zx_status_t NetworkDevice::Initialize(fidl::WireClient<fuchsia_driver_framework:
                                       fdf::OutgoingDirectory& outgoing, const char* device_name) {
   std::lock_guard lock(mutex_);
   if (state_ != State::UnInitialized) {
-    LOGF(ERROR, "NetworkDevice already initialized");
+    fdf::error("NetworkDevice already initialized");
     return ZX_ERR_ALREADY_BOUND;
   }
   state_ = State::Initialized;
@@ -72,11 +71,11 @@ zx_status_t NetworkDevice::Initialize(fidl::WireClient<fuchsia_driver_framework:
 
   auto result = parent.sync()->AddChild(args, std::move(server), {});
   if (!result.ok()) {
-    LOGF(ERROR, "Failed to make add child call: %s", result.FormatDescription().c_str());
+    fdf::error("Failed to make add child call: {}", result.FormatDescription());
     return result.status();
   }
   if (result->is_error()) {
-    LOGF(ERROR, "Failed to add child: %u", static_cast<uint32_t>(result->error_value()));
+    fdf::error("Failed to add child: {}", static_cast<uint32_t>(result->error_value()));
     return ZX_ERR_INTERNAL;
   }
   node_controller_.Bind(std::move(client), fdf::Dispatcher::GetCurrent()->async_dispatcher(), this);
@@ -155,7 +154,7 @@ void NetworkDevice::CompleteRx(Frame&& frame) {
 
   auto status = netdev_ifc_.buffer(fdf_arena)->CompleteRx(buffers);
   if (!status.ok()) {
-    LOGF(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+    fdf::error("Failed to complete RX: {}", status.FormatDescription());
     return;
   }
 }
@@ -191,7 +190,7 @@ void NetworkDevice::CompleteRx(FrameContainer&& frames) {
       buffers.set_size(count);
       auto status = netdev_ifc_.buffer(fdf_arena)->CompleteRx(buffers);
       if (!status.ok()) {
-        LOGF(ERROR, "Failed to complete RX: %s", status.FormatDescription().c_str());
+        fdf::error("Failed to complete RX: {}", status.FormatDescription());
         return;
       }
     }
@@ -230,7 +229,7 @@ void NetworkDevice::CompleteTx(cpp20::span<Frame> frames, zx_status_t status) {
       results.set_size(count);
       auto status = netdev_ifc_.buffer(fdf_arena)->CompleteTx(results);
       if (!status.ok()) {
-        LOGF(ERROR, "Failed to complete TX: %s", status.FormatDescription().c_str());
+        fdf::error("Failed to complete TX: {}", status.FormatDescription());
         return;
       }
     }
@@ -250,7 +249,7 @@ void NetworkDevice::Init(netdriver::wire::NetworkDeviceImplInitRequest* request,
 void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
   bool expected = false;
   if (!started_.compare_exchange_strong(expected, true)) {
-    LOGF(ERROR, "NetworkDevice already started, unexpected Start call");
+    fdf::error("NetworkDevice already started, unexpected Start call");
     return;
   }
   callbacks_->NetDevStart(Callbacks::StartTxn(completer));
@@ -259,7 +258,7 @@ void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
 void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
   bool expected = true;
   if (!started_.compare_exchange_strong(expected, false)) {
-    LOGF(ERROR, "NetworkDevice not started, unexpected Stop call");
+    fdf::error("NetworkDevice not started, unexpected Stop call");
     return;
   }
   callbacks_->NetDevStop(Callbacks::StopTxn(completer));
@@ -287,7 +286,7 @@ void NetworkDevice::QueueTx(netdriver::wire::NetworkDeviceImplQueueTxRequest* re
     }
     auto status = netdev_ifc_.buffer(arena)->CompleteTx(results);
     if (!status.ok()) {
-      LOGF(ERROR, "Failed to reject TX: %s", status.FormatDescription().c_str());
+      fdf::error("Failed to reject TX: {}", status.FormatDescription());
       return;
     }
     return;
@@ -320,14 +319,14 @@ void NetworkDevice::PrepareVmo(netdriver::wire::NetworkDeviceImplPrepareVmoReque
     zx::vmo& vmo = request->vmo;
     zx_status_t status = vmo.get_size(&size);
     if (status != ZX_OK) {
-      LOGF(ERROR, "Failed to get VMO size on prepare: %s", zx_status_get_string(status));
+      fdf::error("Failed to get VMO size on prepare: {}", zx_status_get_string(status));
       return status;
     }
 
     zx_vaddr_t addr = 0;
     status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, size, &addr);
     if (status != ZX_OK) {
-      LOGF(ERROR, "Failed to map VMO on prepare: %s", zx_status_get_string(status));
+      fdf::error("Failed to map VMO on prepare: {}", zx_status_get_string(status));
       return status;
     }
     vmo_addrs_[id] = reinterpret_cast<uint8_t*>(addr);
@@ -347,7 +346,7 @@ void NetworkDevice::ReleaseVmo(netdriver::wire::NetworkDeviceImplReleaseVmoReque
   zx_status_t status =
       zx::vmar::root_self()->unmap(reinterpret_cast<zx_vaddr_t>(vmo_addrs_[id]), vmo_lengths_[id]);
   if (status != ZX_OK) {
-    LOGF(ERROR, "Failed to unmap VMO on release: %s", zx_status_get_string(status));
+    fdf::error("Failed to unmap VMO on release: {}", zx_status_get_string(status));
   }
   vmo_addrs_[id] = nullptr;
   vmo_lengths_[id] = 0;
@@ -357,7 +356,7 @@ void NetworkDevice::ReleaseVmo(netdriver::wire::NetworkDeviceImplReleaseVmoReque
 
 void NetworkDevice::on_fidl_error(fidl::UnbindInfo error) {
   if (error.status() != ZX_OK) {
-    LOGF(ERROR, "NetworkDevice fidl error: %s", error.FormatDescription().c_str());
+    fdf::error("NetworkDevice fidl error: {}", error.FormatDescription());
     return;
   }
   // Begin or continue removal. Either the child node was removed because we initiated the removal
@@ -378,7 +377,7 @@ zx_status_t NetworkDevice::AddService(fdf::OutgoingDirectory& outgoing) {
             [this](NetworkDevice*, fidl::UnbindInfo info,
                    fdf::ServerEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>) {
               if (!info.is_user_initiated()) {
-                LOGF(WARNING, "NetworkDevice server unbound: %s", info.FormatDescription().c_str());
+                fdf::warn("NetworkDevice server unbound: {}", info.FormatDescription());
               }
               std::lock_guard lock(mutex_);
               binding_.reset();
@@ -393,7 +392,7 @@ zx_status_t NetworkDevice::AddService(fdf::OutgoingDirectory& outgoing) {
 
   auto status = outgoing.AddService<netdriver::Service>(std::move(handler));
   if (status.is_error()) {
-    LOGF(ERROR, "Failed to add outgoing service: %s", status.status_string());
+    fdf::error("Failed to add outgoing service: {}", status.status_string());
     return status.status_value();
   }
 
@@ -424,7 +423,7 @@ void NetworkDevice::RemoveService() {
   if (outgoing_directory_) {
     auto result = outgoing_directory_->RemoveService<netdriver::Service>(fdf::kDefaultInstance);
     if (result.is_error()) {
-      LOGF(ERROR, "Failed to remove service from outgoing directory: %s", result.status_string());
+      fdf::error("Failed to remove service from outgoing directory: {}", result.status_string());
     }
     outgoing_directory_ = nullptr;
   }
@@ -438,8 +437,7 @@ void NetworkDevice::RemoveNode() {
   if (node_controller_.is_valid()) {
     auto result = node_controller_->Remove();
     if (!result.ok()) {
-      LOGF(ERROR, "Controller node remove failed, FIDL error: %s",
-           result.FormatDescription().c_str());
+      fdf::error("Controller node remove failed, FIDL error: {}", result.FormatDescription());
     }
     // Don't destroy the node controller here, it needs to stay alive to call on_fidl_error to
     // continue the removal procedure.

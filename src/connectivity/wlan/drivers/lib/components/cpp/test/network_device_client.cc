@@ -5,10 +5,9 @@
 
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <lib/component/incoming/cpp/service.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/protocol.h>
 #include <lib/fdio/directory.h>
-
-#include "src/connectivity/wlan/drivers/lib/components/cpp/log.h"
 
 namespace netdriver = fuchsia_hardware_network_driver;
 
@@ -40,19 +39,19 @@ zx_status_t NetworkDeviceClient::Connect(
 
   auto endpoints = fdf::CreateEndpoints<netdriver::Service::NetworkDeviceImpl::ProtocolType>();
   if (endpoints.is_error()) {
-    LOGF(ERROR, "Failed to create netdev endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create netdev endpoints: {}", endpoints.status_string());
     return endpoints.status_value();
   }
 
   zx::channel client_token, server_token;
   if (zx_status_t status = zx::channel::create(0, &client_token, &server_token); status != ZX_OK) {
-    LOGF(ERROR, "Failed to create channel: %s", zx_status_get_string(status));
+    fdf::error("Failed to create channel: {}", zx_status_get_string(status));
     return status;
   }
   if (zx_status_t status = fdf::ProtocolConnect(
           std::move(client_token), fdf::Channel(endpoints->server.TakeChannel().release()));
       status != ZX_OK) {
-    LOGF(ERROR, "Failed to connect protocol: %s", zx_status_get_string(status));
+    fdf::error("Failed to connect protocol: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -63,7 +62,7 @@ zx_status_t NetworkDeviceClient::Connect(
   if (zx_status_t status = fdio_service_connect_at(driver_outgoing.channel()->get(), path.c_str(),
                                                    server_token.release());
       status != ZX_OK) {
-    LOGF(ERROR, "Failed to connect to service: %s", zx_status_get_string(status));
+    fdf::error("Failed to connect to service: {}", zx_status_get_string(status));
     return status;
   }
 
