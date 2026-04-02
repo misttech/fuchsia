@@ -153,7 +153,7 @@ initial `Start()` hook:
 
 {% includecode gerrit_repo="fuchsia/sdk-samples/drivers" gerrit_path="src/qemu_edu/drivers/qemu_edu.cc" region_tag="start_method_start" adjust_indentation="auto" %}
 
-  FDF_SLOG(INFO, "edu driver loaded successfully");
+  fdf::info("edu driver loaded successfully");
 
 {% includecode gerrit_repo="fuchsia/sdk-samples/drivers" gerrit_path="src/qemu_edu/drivers/qemu_edu.cc" region_tag="start_method_end" adjust_indentation="auto" %}
 
@@ -220,7 +220,7 @@ Successfully bound:
 Node 'root.sys.platform.pt.PCI0.bus.00_06_0_.pci-00_06.0-fidl', Driver 'fuchsia-pkg://bazel.pkg.component/qemu_edu#meta/qemu_edu.cm'.
 ```
 
-Inspect the system log and verify that you can see `FDF_SLOG()` message from the
+Inspect the system log and verify that you can see `fdf::info()` message from the
 driver code after the driver successfully binds:
 
 ```posix-terminal

@@ -68,7 +68,7 @@ offered by the parent device during driver initialization:
 
 {{ '<strong>' }}{% includecode gerrit_repo="fuchsia/sdk-samples/drivers" gerrit_path="src/qemu_edu/drivers/qemu_edu.cc" region_tag="connect_device" %}{{ '</strong>' }}
 
-  FDF_SLOG(INFO, "edu driver loaded successfully");
+  fdf::info("edu driver loaded successfully");
 
 {% includecode gerrit_repo="fuchsia/sdk-samples/drivers" gerrit_path="src/qemu_edu/drivers/qemu_edu.cc" region_tag="start_method_end" adjust_indentation="auto" %}
 
@@ -162,7 +162,7 @@ initialization:
 
 {{ '<strong>' }}{% includecode gerrit_repo="fuchsia/sdk-samples/drivers" gerrit_path="src/qemu_edu/drivers/qemu_edu.cc" region_tag="hw_resources" %}{{ '</strong>' }}
 
-  FDF_SLOG(INFO, "edu driver loaded successfully");
+  fdf::info("edu driver loaded successfully");
 
 {% includecode gerrit_repo="fuchsia/sdk-samples/drivers" gerrit_path="src/qemu_edu/drivers/qemu_edu.cc" region_tag="start_method_end" adjust_indentation="auto" %}
 ```
@@ -266,7 +266,7 @@ bazel run //fuchsia-codelab/qemu_edu/drivers:pkg.component
 The `bazel run` command rebuilds the package and runs `ffx driver register` to
 reload the driver component.
 
-Inspect the system log and verify that you can see the updated `FDF_SLOG()`
+Inspect the system log and verify that you can see the updated `fdf::info()`
 message containing the version read from the identification register:
 
 ```posix-terminal

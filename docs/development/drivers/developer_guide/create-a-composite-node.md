@@ -590,9 +590,8 @@ fidl::ToWire(fidl_arena, dev),
 fidl::ToWire(fidl_arena, spec), false);
 
 if (!result.ok()) {
-    FDF_LOG(ERROR, "AddCompositeNodeSpec request failed: %s",
-               result.FormatDescription().data());
-    return result.status();
+  fdf::error("AddCompositeNodeSpec request failed: {}", result.FormatDescription());
+  return result.status();
 }
 ```
 

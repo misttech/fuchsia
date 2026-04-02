@@ -304,8 +304,7 @@ directory:
                  fidl::kIgnoreBindingClosure),
          }));
    if (serve_result.is_error()) {
-       FDF_LOG(ERROR, "Failed to add Device service %s",
-           serve_result.status_string());
+       fdf::error("Failed to add Device service: {}", serve_result);
        return serve_result.take_error();
    }
    ```
@@ -390,8 +389,7 @@ to the FIDL protocols.
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
       incoming()->Connect<fuchsia_examples_gizmo::Service::Device>();
   if (connect_result.is_error()) {
-    FDF_SLOG(ERROR, "Failed to connect gizmo device protocol.",
-             KV("status", connect_result.status_string()));
+    fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
   }
   ```
@@ -418,8 +416,7 @@ to the FIDL protocols.
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
       incoming()->Connect<fuchsia_examples_gizmo::Service::Device>("gizmo");
   if (connect_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect gizmo device protocol: %s",
-        connect_result.status_string());
+    fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
   }
   ```
@@ -445,8 +442,7 @@ to the FIDL protocols.
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
       incoming()->Connect<fuchsia_examples_gizmo::Service::Device>();
   if (connect_result.is_error()) {
-    FDF_SLOG(ERROR, "Failed to connect gizmo device protocol.",
-             KV("status", connect_result.status_string()));
+    fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
   }
   ```
@@ -472,8 +468,7 @@ to the FIDL protocols.
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
       incoming()->Connect<fuchsia_examples_gizmo::Service::Device>("gizmo_parent");
   if (connect_result.is_error()) {
-    FDF_SLOG(ERROR, "Failed to connect gizmo device protocol.",
-             KV("status", connect_result.status_string()));
+    fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
   }
   ```
@@ -569,7 +564,7 @@ The `TRACE_DURATION()` method is available for both DFv1 and DFv2.
 ### zxlogf()
 
 The `zxlogf()` method is not available in DFv2 and needs to be migrated to
-`FDF_LOG()` or `FDF_SLOG()`.
+`fdf::info()`, `fdf::error()`, etc.
 
 For instructions, see the [Add logs][add-logs] section in the
 _Write a minimal DFv2 driver_ guide.

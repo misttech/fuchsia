@@ -371,8 +371,7 @@ for example:
 fuchsia_hardware_i2c_businfo::wire::I2CChannel local_channel(channel);
 fit::result metadata = fidl::Persist(local_channel);
 if (!metadata.is_ok()) {
-  FDF_LOG(ERROR, "Failed to fidl-encode channel: %s",
-          metadata.error_value().FormatDescription().data());
+  fdf::error("Failed to fidl-encode channel: {}", metadata.error_value().FormatDescription());
   return zx::error(metadata.error_value().status());
 }
 compat_server->AddMetadata(DEVICE_METADATA_PRIVATE, metadata.value().data(),
@@ -449,7 +448,7 @@ To use this metadata library, do the following:
    zx::result<fuchsia_hardware_vreg::wire::Metadata> metadata = compat::GetMetadata<fuchsia_hardware_vreg::wire::Metadata>(
              incoming(), arena, DEVICE_METADATA_VREG);
    if (metadata.is_error()) {
-     FDF_LOG(ERROR, "Failed to get metadata  %s", metadata.status_string());
+     fdf::error("Failed to get metadata: {}", metadata);
      return completer(metadata.take_error());
    }
    ```
@@ -484,7 +483,7 @@ zx::result<std::vector<aml_voltage_table_t>>  voltage_table =
      compat::GetMetadataArray<aml_voltage_table_t>(
       incoming(), DEVICE_METADATA_AML_VOLTAGE_TABLE);
  if (voltage_table.is_error()) {
-   FDF_LOG(ERROR, "%s: Failed to get voltage table metadata");
+   fdf::error("Failed to get voltage table metadata: {}", voltage_table);
    return zx::error(voltage_table.take_error());
  }
 ```

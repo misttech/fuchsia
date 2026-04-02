@@ -337,9 +337,8 @@ To connect the child driver to the parent driver, do the following:
          compat::ConnectBanjo<ddk::MiscProtocolClient>(incoming());
 
    if (client.is_error()) {
-       FDF_SLOG(ERROR, "Failed to connect client", KV("status",
-            client.status_string()));
-       return client.take_error();
+     fdf::error("Failed to connect client: {}", client);
+     return client.take_error();
    }
    ```
 

@@ -96,7 +96,7 @@ Bind the `devfs` connector to the driver's [dispatcher][dispatcher], for example
 ```cpp
 zx::result connector = devfs_connector_.Bind(dispatcher());
     if (connector.is_error()) {
-      FDF_SLOG(ERROR, "Failed to bind devfs connector.", KV("status", connector.status_string()));
+      fdf::error("Failed to bind devfs connector: {}", connector);
       return connector.status_value();
     }
 ```
@@ -118,7 +118,7 @@ fuchsia_driver_framework::DevfsAddArgs devfs_args{
 
 zx::result owned_child = AddOwnedChild("retriever", devfs_args);
 if (owned_child.is_error()) {
-  FDF_SLOG(ERROR, "Failed to add owned child.", KV("status", owned_child.status_string()));
+  fdf::error("Failed to add owned child: {}", owned_child);
   return owned_child.error_value();
 }
 ```

@@ -321,31 +321,31 @@ driver:
 
 ### Add logs {:#add-logs}
 
-By default, to print logs from a DFv2 driver, use the `FDF_LOG` macro, for
-example:
+To print logs from a DFv2 driver, use the logging macros (`fdf::info`, `fdf::error`, `fdf::warn`, `fdf::debug`, `fdf::trace`). These macros use `std::format`-style string formatting.
 
-```cpp
-FDF_LOG(INFO, "Starting SimpleDriver")
-```
-
-In addition to using the `FDF_LOG` macro, you can also print logs using
-Fuchsia's structured logger library
-([`structured_logger.h`][structured-logger-h]), which uses the
-`FDF_SLOG` macro.
-
-To use structured logs from your DFv2 driver, do the following:
+To use logs from your DFv2 driver, do the following:
 
 1. Include the following header:
 
    ```cpp
-   #include <lib/driver/logging/cpp/structured_logger.h>
+   #include <lib/driver/logging/cpp/logger.h>
    ```
 
-1. Use the `FDF_SLOG` macro to print logs, for example:
+1. Use the `fdf::` macros to print logs, for example:
 
    ```cpp
-   FDF_SLOG(ERROR, "Failed to add child", KV("status", result.status_string()));
+   fdf::info("Starting SimpleDriver");
+   fdf::error("Failed to add child: {}", status);
    ```
+
+Note: The Fuchsia environment supplies a specialized `std::formatter` for `zx::result` and `zx::status`. You can pass these objects directly to the logger without calling `.status_string()`.
+
+In `BUILD.gn`, make sure you depend on the logging library:
+```gn
+deps = [
+  "//sdk/lib/driver/logging/cpp",
+]
+```
 
 ### Add a child node {:#add-a-child-node}
 
@@ -447,7 +447,7 @@ driver's dispatchers shut down, for example:
 ```cpp
 void SimpleDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
  // Teardown threads
-  FDF_LOG(INFO, "Preparing to stop SimpleDriver");
+  fdf::info("Preparing to stop SimpleDriver");
   completer(zx::ok());
 }
 ```
@@ -457,7 +457,7 @@ are shut down, for example:
 
 ```cpp
 void SimpleDriver::Stop() {
-  FDF_LOG(INFO, "Stopping SimpleDriver");
+  fdf::info("Stopping SimpleDriver");
 }
 ```
 

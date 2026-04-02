@@ -230,7 +230,7 @@ outgoing directory, for example:
 ```none {:.devsite-disable-click-to-copy}
 zx::result result = outgoing()->AddService<fuchsia_examples_gizmo::Service>(std::move(handler));
 if (result.is_error()) {
-  FDF_SLOG(ERROR, "Failed to add service", KV("status", result.status_string()));
+  fdf::error("Failed to add service: {}", result);
   return result.take_error();
 }
 ```
