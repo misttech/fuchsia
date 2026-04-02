@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/epoll.h>
 #include <sys/poll.h>
@@ -305,4 +306,121 @@ TEST(EpollTest, EpollIsPollable) {
   pollfd pfd = {.fd = epoll_fd.get(), .events = POLLIN};
   ASSERT_EQ(1, poll(&pfd, 1, 0));
   EXPECT_EQ(POLLIN, pfd.revents);
+}
+
+TEST(EpollTest, PipeWritesNonemptyTriggerEpollInWithEpollET) {
+  int pipe_ends[2];
+  SAFE_SYSCALL(pipe2(pipe_ends, 0));
+  fbl::unique_fd pipe_rd(pipe_ends[0]);
+  fbl::unique_fd pipe_wr(pipe_ends[1]);
+
+  struct epoll_event ev{};
+  fbl::unique_fd epfd(epoll_create1(0));
+
+  ev.events = EPOLLIN | EPOLLET;
+  ev.data.fd = pipe_rd.get();
+
+  SAFE_SYSCALL(epoll_ctl(epfd.get(), EPOLL_CTL_ADD, pipe_rd.get(), &ev));
+
+  struct epoll_event events[1];
+  ASSERT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
+
+  // Write a byte into the pipe so that it is nonempty.
+  char buf = 'a';
+  EXPECT_EQ(1, write(pipe_wr.get(), &buf, 1));
+
+  // Read a EPOLLIN event.
+  ASSERT_EQ(1, epoll_wait(epfd.get(), events, 1, 0));
+  EXPECT_EQ(events[0].data.fd, pipe_rd.get());
+
+  // Now the epoll entry is not ready, so epoll_wait returns no ready items.
+  ASSERT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
+
+  // Write another byte to trigger EPOLLIN again.
+  EXPECT_EQ(1, write(pipe_wr.get(), &buf, 1));
+
+  // This marks the epoll entry as ready (even though the level didn't change).
+  ASSERT_EQ(1, epoll_wait(epfd.get(), events, 1, 0));
+  EXPECT_EQ(events[0].data.fd, pipe_rd.get());
+}
+
+TEST(EpollTest, SocketpairWritesNonemptyTriggerEpollInWithEpollET) {
+  int socketpair_fds[2];
+  SAFE_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM, 0, socketpair_fds));
+  fbl::unique_fd socket_a(socketpair_fds[0]);
+  fbl::unique_fd socket_b(socketpair_fds[1]);
+
+  struct epoll_event ev{};
+  fbl::unique_fd epfd(epoll_create1(0));
+
+  ev.events = EPOLLIN | EPOLLET;
+  ev.data.fd = socket_a.get();
+
+  SAFE_SYSCALL(epoll_ctl(epfd.get(), EPOLL_CTL_ADD, socket_a.get(), &ev));
+
+  struct epoll_event events[1];
+  ASSERT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
+
+  // Write a byte into the socket so that it is nonempty.
+  char buf = 'a';
+  EXPECT_EQ(1, write(socket_b.get(), &buf, 1));
+
+  // Read a EPOLLIN event.
+  ASSERT_EQ(1, epoll_wait(epfd.get(), events, 1, 0));
+  EXPECT_EQ(events[0].data.fd, socket_a.get());
+
+  // Now the epoll entry is not ready, so epoll_wait returns no ready items.
+  ASSERT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
+
+  // Write another byte to trigger EPOLLIN again.
+  EXPECT_EQ(1, write(socket_b.get(), &buf, 1));
+
+  // This marks the epoll entry as ready (even though the level didn't change).
+  ASSERT_EQ(1, epoll_wait(epfd.get(), events, 1, 0));
+  EXPECT_EQ(events[0].data.fd, socket_a.get());
+}
+
+TEST(EpollTest, PipeReadFullTriggerEpollOutWithEpollET) {
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, O_NONBLOCK));
+  fbl::unique_fd pipe_rd(pipe_fds[0]);
+  fbl::unique_fd pipe_wr(pipe_fds[1]);
+
+  struct epoll_event ev{};
+  fbl::unique_fd epfd(epoll_create1(0));
+
+  ev.events = EPOLLOUT | EPOLLET;
+  ev.data.fd = pipe_wr.get();
+
+  // Fill the pipe with page-sized buffers.
+  const size_t page_size = sysconf(_SC_PAGE_SIZE);
+  std::vector<std::byte> page_buffer(page_size, std::byte{0xAB});
+  SAFE_SYSCALL(fcntl(pipe_wr.get(), F_SETPIPE_SZ, 2 * page_size));
+  ASSERT_EQ(static_cast<ssize_t>(page_size),
+            write(pipe_wr.get(), page_buffer.data(), page_buffer.size()));
+  ASSERT_EQ(static_cast<ssize_t>(page_size),
+            write(pipe_wr.get(), page_buffer.data(), page_buffer.size()));
+
+  SAFE_SYSCALL(epoll_ctl(epfd.get(), EPOLL_CTL_ADD, pipe_wr.get(), &ev));
+
+  // Since the pipe is full, epoll_wait returns no available events.
+  struct epoll_event events[1];
+  ASSERT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
+
+  // Read a page out of the pipe to trigger EPOLLOUT.
+  EXPECT_EQ(static_cast<ssize_t>(page_buffer.size()),
+            read(pipe_rd.get(), page_buffer.data(), page_buffer.size()));
+
+  // This marks the epoll entry as ready since the pipe is no longer full.
+  ASSERT_EQ(1, epoll_wait(epfd.get(), events, 1, 0));
+  EXPECT_EQ(events[0].data.fd, pipe_wr.get());
+
+  EXPECT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
+
+  // Read another byte.
+  char rd_buf{};
+  EXPECT_EQ(1, read(pipe_rd.get(), &rd_buf, 1));
+
+  // Since the pipe was not full before reading, this read does not trigger EPOLLOUT.
+  ASSERT_EQ(0, epoll_wait(epfd.get(), events, 1, 0));
 }

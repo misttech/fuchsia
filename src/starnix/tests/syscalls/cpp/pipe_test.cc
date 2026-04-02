@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/poll.h>
 #include <unistd.h>
 
 #include <fbl/unique_fd.h>
@@ -107,6 +108,54 @@ TEST(PipeTest, OpenFifoBlock) {
     ASSERT_EQ(fd, -1);
     ASSERT_EQ(errno, EINTR);
   });
+}
+
+TEST(PipeTest, PolloutFragmentation) {
+  const size_t page_size = sysconf(_SC_PAGE_SIZE);
+  std::vector<std::byte> page_sized_buffer(page_size, std::byte{0xAB});
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, O_NONBLOCK));
+  fbl::unique_fd pipe_rd(pipe_fds[0]);
+  fbl::unique_fd pipe_wr(pipe_fds[1]);
+
+  // Set the pipe buffer capacity to 2 pages.
+  SAFE_SYSCALL(fcntl(pipe_wr.get(), F_SETPIPE_SZ, 2 * page_size));
+
+  // Fill the first page of the pipe completely.
+  ASSERT_EQ(static_cast<ssize_t>(page_size),
+            write(pipe_wr.get(), page_sized_buffer.data(), page_sized_buffer.size()));
+
+  // Write one more byte to occupy the start of the second page.
+  ASSERT_EQ(1, write(pipe_wr.get(), page_sized_buffer.data(), 1));
+
+  // Since there is not a full page size buffer available, POLLOUT is not asserted.
+  pollfd p = {
+      .fd = pipe_wr.get(),
+      .events = POLLOUT,
+  };
+  EXPECT_EQ(poll(&p, 1, 0), 0);
+
+  // Despite POLLOUT not being ready, writes that fit into the remaining portion of the second page
+  // do not block.
+  ASSERT_EQ(1, write(pipe_wr.get(), page_sized_buffer.data(), 1));
+
+  // Attempts to write more data than will fit into the remaining portion would block.
+  ASSERT_EQ(-1, write(pipe_wr.get(), page_sized_buffer.data(), page_size - 1));
+  EXPECT_EQ(errno, EAGAIN);
+
+  // Read out all but 1 byte from the first page of the pipe
+  ASSERT_EQ(static_cast<ssize_t>(page_size - 1),
+            read(pipe_rd.get(), page_sized_buffer.data(), page_size - 1));
+
+  // Even though only 3 bytes are currently in the pipe, POLLOUT is still not ready.
+  EXPECT_EQ(poll(&p, 1, 0), 0);
+
+  // Read one more byte so that the first page is no longer occupied.
+  ASSERT_EQ(1, read(pipe_rd.get(), page_sized_buffer.data(), 1));
+
+  // Now POLLOUT will finally be asserted.
+  EXPECT_EQ(poll(&p, 1, 0), 1);
+  EXPECT_EQ(p.revents, POLLOUT);
 }
 
 }  // namespace

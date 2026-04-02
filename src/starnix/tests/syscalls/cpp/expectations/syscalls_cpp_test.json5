@@ -159,6 +159,11 @@
                 "SeccompTest.BpfNegWithSourceXRejected",
                 "SeccompTest.BpfStWithSourceXRejected",
                 "SeccompTest.BpfUnknownCodeUpperBitsRejected",
+
+                // TODO(https://fxbug.dev/498681252)
+                "EpollTest.PipeReadFullTriggerEpollOutWithEpollET",
+                "EpollTest.PipeWritesNonemptyTriggerEpollInWithEpollET",
+                "PipeTest.PolloutFragmentation",
             ],
         },
     ],
