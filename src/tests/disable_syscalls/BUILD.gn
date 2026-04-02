@@ -54,7 +54,7 @@ if (is_linux) {
       embed = [ ":$split_name" ]
       non_go_deps = [
         ":misc_tools",
-        "//build/images/fuchsia:zedboot_zbi_for_host_tests",
+        "//build/images/fuchsia:default_product_bundle_for_emulator.go",
       ]
     }
   }

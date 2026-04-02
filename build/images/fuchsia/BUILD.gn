@@ -8,16 +8,20 @@ import("//build/assembly/product_bundle.gni")
 import("//build/assembly/update_package.gni")
 import("//build/board.gni")
 import("//build/product.gni")
-import("//build/testing/host_test_data.gni")
 
 if (is_host) {
-  host_test_data("fuchsia_zbi_for_host_tests") {
-    # No tests should be directly using this zbi, they should be using product bundles instead
-    # This visibility list is NOT to be expanded, and all entries here should be migrated to
-    # a form that can use the product bundle with the emulator instead of directly using the zbi.
+  import("//build/images/paths.gni")
+  import("//build/testing/host_test_data.gni")
+
+  host_test_data("default_product_bundle_for_emulator.go") {
+    # No tests should be assuming this product bundle target, but //tools/emulator/emulator.go
+    # finds the images in this product bundle via images.json, and uses them for its tests.
+    # They should explicitly use a product bundle instead.
+    # TODO(https://fxbug.dev/495904502)
     visibility = [
       "//src/devices/block/drivers/ufs/test/e2e:*",
       "//src/tests/disable_shell:*",
+      "//src/tests/disable_syscalls:*",
       "//src/tests/dlog:*",
       "//src/tests/end_to_end/component_tool:*",
       "//src/tests/kernel_cprng:*",
@@ -28,17 +32,32 @@ if (is_host) {
       "//src/tests/reboot:*",
       "//src/tests/shutdown:*",
     ]
-    sources = [ "$root_build_dir/fuchsia.zbi" ]
-    deps = [ ":fuchsia_assembly($default_toolchain)" ]
+    sources = [ files.product_bundle_dir ]
+
+    # For non-bazel-built images, we need to list out the old zbi paths (which are still used),
+    # so that all the right files end up on the test-runners.
+    if (!use_bazel_images_only) {
+      sources += [
+        "$root_build_dir/fuchsia.zbi",
+        "$root_build_dir/zedboot.zbi",
+      ]
+      deps = [ "//build/images/zedboot($default_toolchain)" ]
+    }
   }
 
-  host_test_data("zedboot_zbi_for_host_tests") {
-    # No tests should be directly using this zbi, they should be using product bundles instead
-    # This visibility list is NOT to be expanded, and all entries here should be migrated to
-    # a form that can use the product bundle with the emulator instead of directly using the zbi.
-    visibility = [ "//src/tests/disable_syscalls:*" ]
-    sources = [ "$root_build_dir/zedboot.zbi" ]
-    deps = [ "${recovery_label}(${default_toolchain})" ]
+  host_test_data("fuchsia_zbi_for_host_tests") {
+    # No tests should be directly using this zbi, they should be using product bundles instead.
+    # This test hardcodes the path to the fuchsia.zbi file
+    # TODO(https://fxbug.dev/495904502)
+    # TODO(https://fxbug.dev/496264014)
+    visibility = [ "//src/devices/block/drivers/ufs/test/e2e:*" ]
+    sources = [ "$root_build_dir/fuchsia.zbi" ]
+
+    if (use_bazel_images_only) {
+      deps = [ ":copy_zbi_to_root(${default_toolchain})" ]
+    } else {
+      deps = [ labels.images ]
+    }
   }
 }
 
@@ -48,49 +67,57 @@ if (is_fuchsia) {
   assert(current_toolchain == default_toolchain,
          "//build/images/* are only valid in the Fuchsia toolchain")
 
-  # This catches inadvertent dependencies on the "fucshia" assembly implementation
-  # in bringup-only configurations.
-  assert(
-      !use_bringup_assembly,
-      "The bringup product config cannot rely on the fuchsia assembly.  Bringup has it's own in //build/images/bringup")
+  if (use_bazel_images_only) {
+    import("//build/images/paths.gni")
+    copy("copy_zbi_to_root") {
+      testonly = true
+      sources = [ files.zbi ]
+      outputs = [ "$root_build_dir/fuchsia.zbi" ]
+      deps = [ labels.images ]
+    }
 
-  ##################################################
-  # Fuchsia
-  ##################################################
+    group("fuchsia") {
+    }
+  } else {
+    # This catches inadvertent dependencies on the "fucshia" assembly implementation
+    # in bringup-only configurations.
+    assert(
+        !use_bringup_assembly,
+        "The bringup product config cannot rely on the fuchsia assembly.  Bringup has it's own in //build/images/bringup")
 
-  # The `:fuchsia` target assembles the main Fuchsia image, for the core product only.
-  #
-  # This group only provides GN metadata about the update package(s), none of
-  # packages that are included in the assembled image are present in GN metadata
-  # walks of this target.
-  #
-  # To get the list of packages in this assembly, use the
-  # `package_list_from_assembly()` GN template.
-  group("fuchsia") {
-    testonly = true
+    ##################################################
+    # Fuchsia
+    ##################################################
 
-    if (!use_bazel_images_only) {
+    # The `:fuchsia` target assembles the main Fuchsia image, for the core product only.
+    #
+    # This group only provides GN metadata about the update package(s), none of
+    # packages that are included in the assembled image are present in GN metadata
+    # walks of this target.
+    #
+    # To get the list of packages in this assembly, use the
+    # `package_list_from_assembly()` GN template.
+    group("fuchsia") {
+      testonly = true
+
       public_deps = [
         ":fuchsia_assembly",
         ":product_bundle",
         ":update",
       ]
-    }
 
-    metadata = {
-      package_barrier = []
-      if (!use_bazel_images_only) {
+      metadata = {
+        package_barrier = []
+
         # Only include the update package(s) manifest(s) in metadata collection.
         # To get a file containing a list of the base & cache packages, use the
         # `package_list_from_assembly()` GN template.
         package_barrier = [ ":update" ]
       }
     }
-  }
 
-  # Bazel assembly builds a product bundle, so we don't need to build product
-  # bundle and update packages in GN.
-  if (!use_bazel_images_only) {
+    # Bazel assembly builds a product bundle, so we don't need to build product
+    # bundle and update packages in GN.
     assembled_system("fuchsia_assembly") {
       testonly = true
 
