@@ -106,7 +106,9 @@ template("go_build") {
     stripped_output_path = "${output_dir}/${output_name}"
   }
 
-  use_prebuilt_go = !is_fuchsia
+  # Hardcoding the use of prebuilt go as a test.  If this causes issues, it can be
+  # reverted by just setting this value back to '!is_fuchsia'.
+  use_prebuilt_go = true  # !is_fuchsia
 
   goroot_deps = []
   if (use_prebuilt_go) {
