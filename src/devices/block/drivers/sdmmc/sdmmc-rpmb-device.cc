@@ -60,7 +60,7 @@ zx_status_t RpmbDevice::AddDevice() {
         sdmmc_parent()->parent()->driver_outgoing()->AddService<fuchsia_hardware_rpmb::Service>(
             std::move(handler));
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to add RPMB service: %s", result.status_string());
+      fdf::error("Failed to add RPMB service: {}", result.status_string());
       return result.status_value();
     }
   }
@@ -81,7 +81,7 @@ zx_status_t RpmbDevice::AddDevice() {
 
   auto result = sdmmc_parent()->block_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child partition device: %s", result.status_string());
+    fdf::error("Failed to add child partition device: {}", result.status_string());
     return result.status();
   }
   return ZX_OK;
@@ -104,8 +104,6 @@ void RpmbDevice::Request(RequestRequestView request, RequestCompleter::Sync& com
                             completer.Reply(zx::make_result(status));
                           });
 }
-
-fdf::Logger& RpmbDevice::logger() { return sdmmc_parent()->logger(); }
 
 void DriverRpmbDevice::GetDeviceInfo(fdf::Arena& arena, GetDeviceInfoCompleter::Sync& completer) {
   fuchsia_hardware_rpmb::wire::EmmcDeviceInfo emmc_info = RpmbDeviceBase::GetDeviceInfo();

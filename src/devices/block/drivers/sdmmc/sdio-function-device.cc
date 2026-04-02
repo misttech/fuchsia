@@ -29,7 +29,7 @@ zx_status_t SdioFunctionDevice::Create(SdioControllerDevice* sdio_parent, uint32
   fbl::AllocChecker ac;
   out_dev->reset(new (&ac) SdioFunctionDevice(sdio_parent, func));
   if (!ac.check()) {
-    FDF_LOGL(ERROR, sdio_parent->logger(), "failed to allocate device memory");
+    fdf::error("failed to allocate device memory");
     return ZX_ERR_NO_MEMORY;
   }
 
@@ -64,7 +64,7 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
         sdio_parent_->parent()->driver_outgoing()->AddService<fuchsia_hardware_sdio::Service>(
             std::move(handler), sdio_function_name_);
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to add SDIO service: %s", result.status_string());
+      fdf::error("Failed to add SDIO service: {}", result.status_string());
       return result.status_value();
     }
   }
@@ -81,7 +81,7 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
         sdio_parent_->parent()->driver_outgoing()->AddService<fuchsia_hardware_sdio::DriverService>(
             std::move(handler), sdio_function_name_);
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to add SDIO driver service: %s", result.status_string());
+      fdf::error("Failed to add SDIO driver service: {}", result.status_string());
       return result.status_value();
     }
   }
@@ -125,20 +125,20 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
           .token_provider = power_token_provider_bindings_.CreateHandler(
               this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
       });
-      result = sdio_parent_->parent()
-                   ->driver_outgoing()
-                   ->AddService<fuchsia_hardware_power::PowerTokenService>(std::move(handler),
-                                                                           sdio_function_name_);
-      if (result.is_error()) {
-        FDF_LOGL(ERROR, logger(), "Failed to add power token service: %s", result.status_string());
+      if (zx::result<> result = sdio_parent_->parent()
+                                    ->driver_outgoing()
+                                    ->AddService<fuchsia_hardware_power::PowerTokenService>(
+                                        std::move(handler), sdio_function_name_);
+          result.is_error()) {
+        fdf::error("Failed to add power token service: {}", result.status_string());
         return result.status_value();
       }
 
       offers.push_back(
           fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(arena, sdio_function_name_));
     } else {
-      FDF_LOGL(ERROR, logger(), "Power configuration failed, power management disabled: %s",
-               result.status_string());
+      fdf::error("Power configuration failed, power management disabled: {}",
+                 result.status_string());
     }
   }
 
@@ -152,8 +152,7 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
   auto result =
       sdio_parent_->sdio_controller_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child sdio function device: %s",
-             result.status_string());
+    fdf::error("Failed to add child sdio function device: {}", result.status_string());
     return result.status();
   }
 
@@ -608,8 +607,8 @@ SdioFunctionDevice::GetPowerElementConfiguration() {
   zx::result<fidl::ClientEnd<fuchsia_io::File>> file_client =
       sdio_parent_->parent()->driver_incoming()->Open<fuchsia_io::File>(
           "/pkg/data/sdio_power_config.fidl", fuchsia_io::Flags::kPermReadBytes);
-  if (!file_client.is_ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to open SDIO power config: %s", file_client.status_string());
+  if (file_client.is_error()) {
+    fdf::error("Failed to open SDIO power config: {}", file_client.status_string());
     return file_client.take_error();
   }
 
@@ -617,22 +616,19 @@ SdioFunctionDevice::GetPowerElementConfiguration() {
       power_config::Load(*std::move(file_client));
 
   if (power_config->power_elements().size() != 1) {
-    FDF_LOGL(ERROR, logger(), "Unexpected number of power elements: %lu",
-             power_config->power_elements().size());
+    fdf::error("Unexpected number of power elements: {}", power_config->power_elements().size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto converted =
       fdf_power::PowerElementConfiguration::FromFidl(power_config->power_elements()[0]);
   if (converted.is_error()) {
-    FDF_LOGL(INFO, logger(), "Failed to convert power element config: %s",
-             converted.status_string());
+    fdf::info("Failed to convert power element config: {}", converted.status_string());
     return converted.take_error();
   }
 
   if (converted->dependencies.size() != 1) {
-    FDF_LOGL(ERROR, logger(), "Unexpected number of power dependencies: %lu",
-             converted->dependencies.size());
+    fdf::error("Unexpected number of power dependencies: {}", converted->dependencies.size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -656,14 +652,13 @@ zx::result<> SdioFunctionDevice::ConfigurePowerManagement() {
       fdf_power::ApplyPowerConfiguration(*sdio_parent_->parent()->driver_incoming(), configs, true);
 
   if (add_result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add power element: %s",
-             fdf_power::ErrorToString(add_result.error_value()));
+    fdf::error("Failed to add power element: {}",
+               fdf_power::ErrorToString(add_result.error_value()));
     return fdf_power::ErrorToZxError(add_result.error_value());
   }
 
   if (add_result.value().size() != 1) {
-    FDF_LOGL(ERROR, logger(), "Unexpected number of power elements: %lu",
-             add_result.value().size());
+    fdf::error("Unexpected number of power elements: {}", add_result.value().size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -680,12 +675,10 @@ zx::result<> SdioFunctionDevice::ConfigurePowerManagement() {
       result.ok() && result->is_ok()) {
     boot_level_lease_ = std::move(result->value()->lease_control);
   } else if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Call to Lease failed: %s",
-             result.error().FormatDescription().c_str());
+    fdf::error("Call to Lease failed: {}", result.error().status_string());
     return zx::error(result.error().status());
   } else {
-    FDF_LOGL(ERROR, logger(), "Failed to acquire lease: %s",
-             fdf_power::LeaseErrorToString(result->error_value()));
+    fdf::error("Failed to acquire lease: {}", fdf_power::LeaseErrorToString(result->error_value()));
     return fdf_power::LeaseErrorToZxError(result->error_value());
   }
 
@@ -716,7 +709,7 @@ void SdioFunctionDevice::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLe
       // Nothing to do in this case except let the level change propagate to our parent.
       break;
     default:
-      FDF_LOGL(ERROR, logger(), "Unexpected level %u", request->level);
+      fdf::error("Unexpected level {}", static_cast<uint8_t>(request->level));
       completer.Close(ZX_ERR_INVALID_ARGS);
       return;
   }
@@ -727,14 +720,13 @@ void SdioFunctionDevice::SetLevel(fuchsia_power_broker::wire::ElementRunnerSetLe
 void SdioFunctionDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOGL(ERROR, logger(), "Unexpected ElementRunner method ordinal 0x%016lx",
-           metadata.method_ordinal);
+  fdf::error("Unexpected ElementRunner method ordinal 0x{:016x}", metadata.method_ordinal);
 }
 
 void SdioFunctionDevice::GetToken(GetTokenCompleter::Sync& completer) {
-  if (!assertive_token_) {
-    FDF_LOGL(ERROR, logger(), "Received call to GetToken() but no token is available");
-    completer.ReplyError(ZX_ERR_UNAVAILABLE);
+  if (!assertive_token_.is_valid()) {
+    fdf::error("Received call to GetToken() but no token is available");
+    completer.Reply(zx::error(ZX_ERR_UNAVAILABLE));
     return;
   }
 
@@ -751,8 +743,7 @@ void SdioFunctionDevice::GetToken(GetTokenCompleter::Sync& completer) {
 void SdioFunctionDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_power::PowerTokenProvider> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOGL(ERROR, logger(), "Unexpected PowerTokenProvider method ordinal 0x%016lx",
-           metadata.method_ordinal);
+  fdf::error("Unexpected PowerTokenProvider method ordinal 0x{:016x}", metadata.method_ordinal);
 }
 
 }  // namespace sdmmc

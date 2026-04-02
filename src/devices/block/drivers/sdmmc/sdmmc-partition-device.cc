@@ -107,7 +107,7 @@ zx_status_t PartitionDevice::AddDevice() {
   auto result = sdmmc_parent_->block_node()->AddChild(args, std::move(controller_server_end),
                                                       std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child partition device: %s", result.status_string());
+    fdf::error("Failed to add child partition device: {}", result.status_string());
     return result.status();
   }
 
@@ -134,8 +134,7 @@ zx_status_t PartitionDevice::AddDevice() {
                               ->AddService<fuchsia_hardware_block_volume::Service>(
                                   std::move(handlers), partition_name_);
       result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add service instance for '%s': %s", partition_name_,
-             result.status_string());
+    fdf::error("Failed to add service instance for '{}': {}", partition_name_, result);
     return result.status_value();
   }
 

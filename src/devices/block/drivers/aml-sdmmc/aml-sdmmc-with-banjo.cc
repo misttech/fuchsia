@@ -4,6 +4,8 @@
 
 #include "aml-sdmmc-with-banjo.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 namespace aml_sdmmc {
 
 zx::result<fuchsia_hardware_sdmmc::wire::SdmmcReq> AmlSdmmcWithBanjo::BanjoToFidlReq(
@@ -30,7 +32,7 @@ zx::result<fuchsia_hardware_sdmmc::wire::SdmmcReq> AmlSdmmcWithBanjo::BanjoToFid
       zx_status_t status = zx_handle_duplicate(banjo_req.buffers_list[i].buffer.vmo,
                                                ZX_RIGHT_SAME_RIGHTS, dup.reset_and_get_address());
       if (status != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "Failed to duplicate vmo: %s", zx_status_get_string(status));
+        fdf::error("Failed to duplicate vmo: {}", zx_status_get_string(status));
         return zx::error(status);
       }
       wire_req.buffers[i].buffer =
@@ -59,7 +61,7 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcSetBusWidth(sdmmc_bus_width_t bus_width) {
   std::lock_guard<std::mutex> lock(lock_);
 
   if (power_suspended_) {
-    FDF_LOGL(ERROR, logger(), "Rejecting SdmmcSetBusWidth (Banjo) while power is suspended.");
+    fdf::error("Rejecting SdmmcSetBusWidth (Banjo) while power is suspended.");
     return ZX_ERR_BAD_STATE;
   }
 
@@ -87,7 +89,7 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcSetBusFreq(uint32_t bus_freq) {
   std::lock_guard<std::mutex> lock(lock_);
 
   if (power_suspended_) {
-    FDF_LOGL(ERROR, logger(), "Rejecting SdmmcSetBusFreq (Banjo) while power is suspended.");
+    fdf::error("Rejecting SdmmcSetBusFreq (Banjo) while power is suspended.");
     return ZX_ERR_BAD_STATE;
   }
 
@@ -98,7 +100,7 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcSetTiming(sdmmc_timing_t timing) {
   std::lock_guard<std::mutex> lock(lock_);
 
   if (power_suspended_) {
-    FDF_LOGL(ERROR, logger(), "Rejecting SdmmcSetTiming (Banjo) while power is suspended.");
+    fdf::error("Rejecting SdmmcSetTiming (Banjo) while power is suspended.");
     return ZX_ERR_BAD_STATE;
   }
 
@@ -126,7 +128,7 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcHwReset() {
   std::lock_guard<std::mutex> lock(lock_);
 
   if (power_suspended_) {
-    FDF_LOGL(ERROR, logger(), "Rejecting SdmmcHwReset (Banjo) while power is suspended.");
+    fdf::error("Rejecting SdmmcHwReset (Banjo) while power is suspended.");
     return ZX_ERR_BAD_STATE;
   }
 
@@ -139,7 +141,7 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcPerformTuning(uint32_t tuning_cmd_idx) {
   {
     std::lock_guard<std::mutex> lock(lock_);
     if (power_suspended_) {
-      FDF_LOGL(ERROR, logger(), "Rejecting SdmmcPerformTuning (Banjo) while power is suspended.");
+      fdf::error("Rejecting SdmmcPerformTuning (Banjo) while power is suspended.");
       return ZX_ERR_BAD_STATE;
     }
   }
@@ -162,7 +164,7 @@ zx_status_t AmlSdmmcWithBanjo::SdmmcUnregisterVmo(uint32_t vmo_id, uint8_t clien
 zx_status_t AmlSdmmcWithBanjo::SdmmcRequest(const sdmmc_req_t* req, uint32_t out_response[4]) {
   std::lock_guard<std::mutex> lock(lock_);
   if (power_suspended_) {
-    FDF_LOGL(ERROR, logger(), "Rejecting SdmmcRequest (Banjo) while power is suspended.");
+    fdf::error("Rejecting SdmmcRequest (Banjo) while power is suspended.");
     return ZX_ERR_BAD_STATE;
   }
 

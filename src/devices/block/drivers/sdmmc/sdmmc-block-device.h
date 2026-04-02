@@ -52,7 +52,7 @@ class SdmmcRootDevice;
 // creating and initializing objects.
 struct ReadWriteMetadata {
  public:
-  explicit ReadWriteMetadata(SdmmcBlockDevice* block_device) : block_device(block_device) {}
+  ReadWriteMetadata() = default;
 
   // This initialization is only required if packed commands are used.
   zx_status_t InitForPackedCommands(uint32_t buffer_region_count, uint32_t block_size) {
@@ -67,15 +67,13 @@ struct ReadWriteMetadata {
     // Create a VMO large enough to hold both the packed command header and EXT_CSD.
     zx_status_t status = zx::vmo::create(block_size + MMC_EXT_CSD_SIZE, 0, &packed_command_vmo);
     if (status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to create packed command header vmo: %s",
-               zx_status_get_string(status));
+      fdf::error("Failed to create packed command header vmo: {}", zx_status_get_string(status));
       return status;
     }
 
     status = packed_command_mapper.Map(packed_command_vmo);
     if (status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to map packed command header vmo: %s",
-               zx_status_get_string(status));
+      fdf::error("Failed to map packed command header vmo: {}", zx_status_get_string(status));
       return status;
     }
 
@@ -92,8 +90,6 @@ struct ReadWriteMetadata {
     return ext_csd.data() - static_cast<uint8_t*>(packed_command_mapper.start());
   }
 
-  fdf::Logger& logger();
-
   // For non-packed commands, only this is needed, as initialized here.
   std::unique_ptr<sdmmc_buffer_region_t[]> buffer_regions =
       std::make_unique<sdmmc_buffer_region_t[]>(1);
@@ -103,9 +99,6 @@ struct ReadWriteMetadata {
   std::span<const uint8_t> ext_csd;
   fzl::VmoMapper packed_command_mapper;
   PackedCommand* packed_command_header_data;
-
- private:
-  SdmmcBlockDevice* const block_device;
 };
 
 class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
@@ -332,7 +325,7 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
 
   uint32_t max_packed_reads_effective_ = 0;   // Use command packing up to this many reads.
   uint32_t max_packed_writes_effective_ = 0;  // Use command packing up to this many writes.
-  ReadWriteMetadata readwrite_metadata_ TA_GUARDED(worker_lock_){this};
+  ReadWriteMetadata readwrite_metadata_ TA_GUARDED(worker_lock_);
 
   inspect::Node root_;
   struct InspectProperties {

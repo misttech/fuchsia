@@ -23,7 +23,7 @@ zx::result<> SdmmcRootDevice::Start() {
   {
     zx::result result = GetMetadata();
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to get metadata: %s", result.status_string());
+      fdf::error("Failed to get metadata: {}", result);
       return result.take_error();
     }
     sdmmc_metadata = std::move(result.value());
@@ -44,7 +44,7 @@ zx::result<> SdmmcRootDevice::Start() {
   auto result =
       parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
@@ -79,14 +79,13 @@ zx::result<std::unique_ptr<SdmmcDevice>> SdmmcRootDevice::MaybeAddDevice(
     const std::string& name, std::unique_ptr<SdmmcDevice> sdmmc,
     const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata) {
   if (zx_status_t st = sdmmc->Init(metadata.use_fidl().value()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to initialize SdmmcDevice: %s", zx_status_get_string(st));
+    fdf::error("Failed to initialize SdmmcDevice: {}", zx_status_get_string(st));
     return zx::error(st);
   }
 
   std::unique_ptr<DeviceType> device;
   if (zx_status_t st = DeviceType::Create(this, std::move(sdmmc), &device) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to create %s device: %s", name.c_str(),
-             zx_status_get_string(st));
+    fdf::error("Failed to create {} device: {}", name, zx_status_get_string(st));
     return zx::error(st);
   }
 
@@ -108,11 +107,11 @@ zx::result<fuchsia_hardware_sdmmc::SdmmcMetadata> SdmmcRootDevice::GetMetadata()
   zx::result metadata =
       fdf_metadata::GetMetadataIfExists<fuchsia_hardware_sdmmc::SdmmcMetadata>(incoming());
   if (metadata.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to get metadata: %s", metadata.status_string());
+    fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
   }
   if (!metadata.value().has_value()) {
-    FDF_LOGL(INFO, logger(), "No metadata provided");
+    fdf::info("No metadata provided");
     return zx::ok(fuchsia_hardware_sdmmc::SdmmcMetadata{
         {.max_frequency = UINT32_MAX,
          .speed_capabilities = fuchsia_hardware_sdmmc::SdmmcHostPrefs{0},
@@ -169,14 +168,14 @@ zx_status_t SdmmcRootDevice::Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& m
     // success so that our device remains available.
     // TODO(https://fxbug.dev/42080592): Enable detection of card insert/removal after
     // initialization.
-    FDF_LOGL(INFO, logger(), "failed to probe removable device");
+    fdf::info("failed to probe removable device");
     return ZX_OK;
   }
 
   // Failure to probe a hardwired device is unexpected. Reply with an error code so that our device
   // gets removed.
   // LINT.IfChange(failed_to_probe_irremovable_device)
-  FDF_LOGL(ERROR, logger(), "failed to probe irremovable device");
+  fdf::error("failed to probe irremovable device");
   // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:failed_to_probe_irremovable_device)
   return ZX_ERR_NOT_FOUND;
 }

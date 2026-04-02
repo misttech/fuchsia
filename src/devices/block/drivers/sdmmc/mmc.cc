@@ -34,30 +34,30 @@ constexpr uint32_t kSwitchStatusRetries = 3;
 
 namespace {
 
-zx_status_t DecodeCid(const std::array<uint8_t, SDMMC_CID_SIZE>& raw_cid, fdf::Logger& logger) {
-  FDF_LOGL(INFO, logger, "product name=%c%c%c%c%c%c", raw_cid[MMC_CID_PRODUCT_NAME_START],
-           raw_cid[MMC_CID_PRODUCT_NAME_START + 1], raw_cid[MMC_CID_PRODUCT_NAME_START + 2],
-           raw_cid[MMC_CID_PRODUCT_NAME_START + 3], raw_cid[MMC_CID_PRODUCT_NAME_START + 4],
-           raw_cid[MMC_CID_PRODUCT_NAME_START + 5]);
-  FDF_LOGL(INFO, logger, "       revision=%u.%u", (raw_cid[MMC_CID_REVISION] >> 4) & 0xf,
-           raw_cid[MMC_CID_REVISION] & 0xf);
+zx_status_t DecodeCid(const std::array<uint8_t, SDMMC_CID_SIZE>& raw_cid) {
+  fdf::info("product name={}{}{}{}{}{}", raw_cid[MMC_CID_PRODUCT_NAME_START],
+            raw_cid[MMC_CID_PRODUCT_NAME_START + 1], raw_cid[MMC_CID_PRODUCT_NAME_START + 2],
+            raw_cid[MMC_CID_PRODUCT_NAME_START + 3], raw_cid[MMC_CID_PRODUCT_NAME_START + 4],
+            raw_cid[MMC_CID_PRODUCT_NAME_START + 5]);
+  fdf::info("       revision={}.{}", (raw_cid[MMC_CID_REVISION] >> 4) & 0xf,
+            raw_cid[MMC_CID_REVISION] & 0xf);
   uint32_t serial;
   memcpy(&serial, reinterpret_cast<const std::byte*>(&raw_cid[MMC_CID_SERIAL]), sizeof(uint32_t));
-  FDF_LOGL(INFO, logger, "       serial=%u", serial);
+  fdf::info("       serial={}", serial);
   return ZX_OK;
 }
 
-zx_status_t DecodeCsd(const std::array<uint8_t, SDMMC_CSD_SIZE>& raw_csd, fdf::Logger& logger) {
+zx_status_t DecodeCsd(const std::array<uint8_t, SDMMC_CSD_SIZE>& raw_csd) {
   uint8_t spec_vrsn = (raw_csd[MMC_CSD_SPEC_VERSION] >> 2) & 0xf;
   // Only support spec version > 4.0
   if (spec_vrsn < MMC_CID_SPEC_VRSN_40) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  FDF_LOGL(TRACE, logger, "CSD version %u spec version %u",
-           (raw_csd[MMC_CSD_SPEC_VERSION] >> 6) & 0x3, spec_vrsn);
+  fdf::trace("CSD version {} spec version {}", (raw_csd[MMC_CSD_SPEC_VERSION] >> 6) & 0x3,
+             spec_vrsn);
   if (fdf::Logger::GlobalInstance()->GetSeverity() <= FUCHSIA_LOG_TRACE) {
-    FDF_LOGL(TRACE, logger, "CSD:");
+    fdf::trace("CSD:");
     hexdump8_ex(raw_csd.data(), SDMMC_CSD_SIZE, 0);
   }
 
@@ -66,7 +66,7 @@ zx_status_t DecodeCsd(const std::array<uint8_t, SDMMC_CSD_SIZE>& raw_csd, fdf::L
                                           (raw_csd[MMC_CSD_SIZE_START + 1] << 2) |
                                           ((raw_csd[MMC_CSD_SIZE_START + 2] & 0x3) << 10));
   if (c_size != 0xfff) {
-    FDF_LOGL(ERROR, logger, "unsupported C_SIZE 0x%04x", c_size);
+    fdf::error("unsupported C_SIZE 0x{:04x}", c_size);
     return ZX_ERR_NOT_SUPPORTED;
   }
   return ZX_OK;
@@ -89,8 +89,7 @@ zx_status_t SdmmcBlockDevice::MmcDoSwitch(uint8_t index, uint8_t value) {
   // Send the MMC_SWITCH command
   zx_status_t st = sdmmc_->MmcSwitch(index, value);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to MMC_SWITCH (0x%x=%d): %s", index, value,
-             zx_status_get_string(st));
+    fdf::error("failed to MMC_SWITCH (0x{:x}={}): {}", index, value, zx_status_get_string(st));
     return st;
   }
 
@@ -125,17 +124,16 @@ zx_status_t SdmmcBlockDevice::MmcWaitForSwitch(uint8_t index, uint8_t value) {
 
   if (st == ZX_OK) {
     if (resp & MMC_STATUS_SWITCH_ERR) {
-      FDF_LOGL(ERROR, logger(), "mmc switch error after MMC_SWITCH (0x%x=%d), status = 0x%08x",
-               index, value, resp);
+      fdf::error("mmc switch error after MMC_SWITCH (0x{:x}={}), status = 0x{:08x}", index, value,
+                 resp);
       st = ZX_ERR_INTERNAL;
     } else if ((index == MMC_EXT_CSD_FLUSH_CACHE) && (resp & MMC_STATUS_ERR)) {
-      FDF_LOGL(ERROR, logger(), "mmc status error after MMC_SWITCH (0x%x=%d), status = 0x%08x",
-               index, value, resp);
+      fdf::error("mmc status error after MMC_SWITCH (0x{:x}={}), status = 0x{:08x}", index, value,
+                 resp);
       st = ZX_ERR_IO;
     }
   } else {
-    FDF_LOGL(ERROR, logger(), "failed to MMC_SEND_STATUS (%x=%d): %s", index, value,
-             zx_status_get_string(st));
+    fdf::error("failed to MMC_SEND_STATUS ({:x}={}): {}", index, value, zx_status_get_string(st));
   }
 
   return st;
@@ -146,16 +144,16 @@ zx_status_t SdmmcBlockDevice::MmcSetBusWidth(sdmmc_bus_width_t bus_width,
   // Switch the card to the new bus width
   zx_status_t st = MmcDoSwitch(MMC_EXT_CSD_BUS_WIDTH, mmc_ext_csd_bus_width);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch bus width to EXT_CSD %d: %s", mmc_ext_csd_bus_width,
-             zx_status_get_string(st));
+    fdf::error("failed to switch bus width to EXT_CSD {}: {}", mmc_ext_csd_bus_width,
+               zx_status_get_string(st));
     return ZX_ERR_INTERNAL;
   }
 
   if (bus_width != bus_width_) {
     // Switch the host to the new bus width
     if ((st = sdmmc_->SetBusWidth(bus_width)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "failed to switch the host bus width to %d: %s", bus_width,
-               zx_status_get_string(st));
+      fdf::error("failed to switch the host bus width to {}: {}", bus_width,
+                 zx_status_get_string(st));
       return ZX_ERR_INTERNAL;
     }
   }
@@ -203,13 +201,13 @@ zx_status_t SdmmcBlockDevice::MmcSwitchTiming(sdmmc_timing_t new_timing) {
 
   zx_status_t st = MmcDoSwitch(MMC_EXT_CSD_HS_TIMING, ext_csd_timing);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch device timing to %d", new_timing);
+    fdf::error("failed to switch device timing to {}", new_timing);
     return st;
   }
 
   // Switch the host timing
   if ((st = sdmmc_->SetTiming(new_timing)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch host timing to %d", new_timing);
+    fdf::error("failed to switch host timing to {}", new_timing);
     return st;
   }
 
@@ -220,14 +218,14 @@ zx_status_t SdmmcBlockDevice::MmcSwitchTiming(sdmmc_timing_t new_timing) {
 zx_status_t SdmmcBlockDevice::MmcSwitchTimingHs200ToHs() {
   zx_status_t st = sdmmc_->MmcSwitch(MMC_EXT_CSD_HS_TIMING, MMC_EXT_CSD_HS_TIMING_HS);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to MMC_SWITCH (0x%x=%d): %s", MMC_EXT_CSD_HS_TIMING,
-             MMC_EXT_CSD_HS_TIMING_HS, zx_status_get_string(st));
+    fdf::error("failed to MMC_SWITCH (0x{:x}={}): {}", MMC_EXT_CSD_HS_TIMING,
+               MMC_EXT_CSD_HS_TIMING_HS, zx_status_get_string(st));
     return st;
   }
 
   // The host must switch to HS timing/frequency before checking the status of MMC_SWITCH command.
   if ((st = sdmmc_->SetTiming(SDMMC_TIMING_HS)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch host timing to %d", SDMMC_TIMING_HS);
+    fdf::error("failed to switch host timing to {}", SDMMC_TIMING_HS);
     return st;
   }
 
@@ -246,7 +244,7 @@ zx_status_t SdmmcBlockDevice::MmcSwitchTimingHs200ToHs() {
 zx_status_t SdmmcBlockDevice::MmcSwitchFreq(uint32_t new_freq) {
   zx_status_t st;
   if ((st = sdmmc_->SetBusFreq(new_freq)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to set host bus frequency: %s", zx_status_get_string(st));
+    fdf::error("failed to set host bus frequency: {}", zx_status_get_string(st));
     return st;
   }
   clock_rate_ = new_freq;
@@ -254,8 +252,7 @@ zx_status_t SdmmcBlockDevice::MmcSwitchFreq(uint32_t new_freq) {
 }
 
 zx_status_t SdmmcBlockDevice::MmcDecodeExtCsd() {
-  FDF_LOGL(TRACE, logger(), "EXT_CSD version %u CSD version %u", raw_ext_csd_[192],
-           raw_ext_csd_[194]);
+  fdf::trace("EXT_CSD version {} CSD version {}", raw_ext_csd_[192], raw_ext_csd_[194]);
 
   // Get the capacity for the card
   uint32_t sectors = (raw_ext_csd_[212] << 0) | (raw_ext_csd_[213] << 8) |
@@ -263,8 +260,7 @@ zx_status_t SdmmcBlockDevice::MmcDecodeExtCsd() {
   block_info_.block_count = sectors * kMmcSectorSize / kMmcBlockSize;
   block_info_.block_size = kMmcBlockSize;
 
-  FDF_LOGL(DEBUG, logger(), "found card with capacity = %" PRIu64 "B",
-           block_info_.block_count * block_info_.block_size);
+  fdf::debug("found card with capacity = {}B", block_info_.block_count * block_info_.block_size);
 
   return ZX_OK;
 }
@@ -308,9 +304,9 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
   if (ocr.is_error()) {
     if (removable) {
       // This error is expected if no card is inserted.
-      FDF_LOGL(DEBUG, logger(), "MMC_SEND_OP_COND failed: %s", ocr.status_string());
+      fdf::debug("MMC_SEND_OP_COND failed: {}", ocr.status_string());
     } else {
-      FDF_LOGL(ERROR, logger(), "MMC_SEND_OP_COND failed: %s", ocr.status_string());
+      fdf::error("MMC_SEND_OP_COND failed: {}", ocr.status_string());
     }
     return ocr.status_value();
   }
@@ -322,47 +318,47 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
 
   zx_status_t st = sdmmc_->MmcWaitForReadyState(*ocr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SEND_OP_COND failed: %s", zx_status_get_string(st));
+    fdf::error("MMC_SEND_OP_COND failed: {}", zx_status_get_string(st));
     return st;
   }
 
   // Get CID from card
   // Only supports 1 card currently so no need to loop
   if ((st = sdmmc_->MmcAllSendCid(raw_cid_)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_ALL_SEND_CID failed: %s", zx_status_get_string(st));
+    fdf::error("MMC_ALL_SEND_CID failed: {}", zx_status_get_string(st));
     return st;
   }
-  FDF_LOGL(TRACE, logger(), "MMC_ALL_SEND_CID cid 0x%08x 0x%08x 0x%08x 0x%08x", raw_cid_[0],
-           raw_cid_[1], raw_cid_[2], raw_cid_[3]);
+  fdf::trace("MMC_ALL_SEND_CID cid 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x}", raw_cid_[0], raw_cid_[1],
+             raw_cid_[2], raw_cid_[3]);
 
-  DecodeCid(raw_cid_, logger());
+  DecodeCid(raw_cid_);
 
   // Set relative card address
   if ((st = sdmmc_->MmcSetRelativeAddr(1)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SET_RELATIVE_ADDR failed: %s", zx_status_get_string(st));
+    fdf::error("MMC_SET_RELATIVE_ADDR failed: {}", zx_status_get_string(st));
     return st;
   }
 
   // Read CSD register
   std::array<uint8_t, SDMMC_CSD_SIZE> raw_csd;
   if ((st = sdmmc_->MmcSendCsd(raw_csd)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SEND_CSD failed: %s", zx_status_get_string(st));
+    fdf::error("MMC_SEND_CSD failed: {}", zx_status_get_string(st));
     return st;
   }
 
-  if ((st = DecodeCsd(raw_csd, logger())) != ZX_OK) {
+  if ((st = DecodeCsd(raw_csd)) != ZX_OK) {
     return st;
   }
 
   // Select the card
   if ((st = sdmmc_->MmcSelectCard()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SELECT_CARD failed: %s", zx_status_get_string(st));
+    fdf::error("MMC_SELECT_CARD failed: {}", zx_status_get_string(st));
     return st;
   }
 
   // Read extended CSD register
   if ((st = sdmmc_->MmcSendExtCsd(raw_ext_csd_)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SEND_EXT_CSD failed: %s", zx_status_get_string(st));
+    fdf::error("MMC_SEND_EXT_CSD failed: {}", zx_status_get_string(st));
     return st;
   }
 
@@ -377,8 +373,8 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
     return st;
   }
 
-  FDF_LOGL(INFO, logger(), "initialized mmc @ %u MHz, bus width %d, timing %d",
-           clock_rate_ / 1000000, bus_width_, timing_);
+  fdf::info("initialized mmc @ {} MHz, bus width {}, timing {}", clock_rate_ / 1000000, bus_width_,
+            timing_);
 
   if (raw_ext_csd_[MMC_EXT_CSD_SEC_FEATURE_SUPPORT] &
       (0x1 << MMC_EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN)) {
@@ -389,23 +385,23 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
     // Enable the cache.
     st = MmcDoSwitch(MMC_EXT_CSD_CACHE_CTRL, MMC_EXT_CSD_CACHE_EN_MASK);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to enable the cache: %s", zx_status_get_string(st));
+      fdf::error("Failed to enable the cache: {}", zx_status_get_string(st));
       return st;
     }
     // Read extended CSD register again to verify that the cache has been enabled.
     if ((st = sdmmc_->MmcSendExtCsd(raw_ext_csd_)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "MMC_SEND_EXT_CSD failed: %s", zx_status_get_string(st));
+      fdf::error("MMC_SEND_EXT_CSD failed: {}", zx_status_get_string(st));
       return st;
     }
     if (!(raw_ext_csd_[MMC_EXT_CSD_CACHE_CTRL] & MMC_EXT_CSD_CACHE_EN_MASK)) {
-      FDF_LOGL(ERROR, logger(), "Cache is unexpectedly disabled.");
+      fdf::error("Cache is unexpectedly disabled.");
       return ZX_ERR_BAD_STATE;
     }
     cache_enabled_ = true;
   } else {
     // The cache should be off by default upon device power-on. Check that this is the case.
     if (raw_ext_csd_[MMC_EXT_CSD_CACHE_CTRL] & MMC_EXT_CSD_CACHE_EN_MASK) {
-      FDF_LOGL(ERROR, logger(), "Cache is unexpectedly enabled.");
+      fdf::error("Cache is unexpectedly enabled.");
       return ZX_ERR_BAD_STATE;
     }
   }
@@ -413,16 +409,16 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
   if (raw_ext_csd_[MMC_EXT_CSD_BARRIER_SUPPORT] & MMC_EXT_CSD_BARRIER_SUPPORTED) {
     zx_status_t st = MmcDoSwitch(MMC_EXT_CSD_BARRIER_CTRL, MMC_EXT_CSD_BARRIER_EN_MASK);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to set enable barriers: %s", zx_status_get_string(st));
+      fdf::error("Failed to set enable barriers: {}", zx_status_get_string(st));
       return st;
     }
     // Read extended CSD register again to verify that barriers have been enabled.
     if ((st = sdmmc_->MmcSendExtCsd(raw_ext_csd_)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "MMC_SEND_EXT_CSD failed: %s", zx_status_get_string(st));
+      fdf::error("MMC_SEND_EXT_CSD failed: {}", zx_status_get_string(st));
       return st;
     }
     if (!(raw_ext_csd_[MMC_EXT_CSD_BARRIER_CTRL] & MMC_EXT_CSD_BARRIER_EN_MASK)) {
-      FDF_LOGL(ERROR, logger(), "Barriers are unexpectedly disabled.");
+      fdf::error("Barriers are unexpectedly disabled.");
       return ZX_ERR_BAD_STATE;
     }
     block_info_.flags |= DEVICE_FLAG_BARRIER_SUPPORT;
@@ -440,8 +436,7 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
     // Change the value to POWERED_ON so that the device expects power off notifications.
     st = MmcDoSwitch(MMC_EXT_CSD_POWER_OFF_NOTIFICATION, MMC_EXT_CSD_POWERED_ON);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to set POWER_OFF_NOTIFICATION: %s",
-               zx_status_get_string(st));
+      fdf::error("Failed to set POWER_OFF_NOTIFICATION: {}", zx_status_get_string(st));
       return st;
     }
   }
@@ -462,32 +457,29 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
         1;  // +1 for header block.
     st = readwrite_metadata_.InitForPackedCommands(buffer_region_count, block_info_.block_size);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to initialize readwrite metadata for packed commands: %s",
-               zx_status_get_string(st));
+      fdf::error("Failed to initialize readwrite metadata for packed commands: {}",
+                 zx_status_get_string(st));
       return st;
     }
 
     zx::vmo dup;
     st = readwrite_metadata_.packed_command_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to duplicate packed command VMO: %s",
-               zx_status_get_string(st));
+      fdf::error("Failed to duplicate packed command VMO: {}", zx_status_get_string(st));
       return st;
     }
 
     uint64_t vmo_size{};
     st = dup.get_size(&vmo_size);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to duplicate packed command VMO size: %s",
-               zx_status_get_string(st));
+      fdf::error("Failed to duplicate packed command VMO size: {}", zx_status_get_string(st));
       return st;
     }
 
     st = sdmmc_->RegisterVmo(kPackedCommandVmoId, 0, std::move(dup), 0, vmo_size,
                              SDMMC_VMO_RIGHT_READ | SDMMC_VMO_RIGHT_WRITE);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to register packed command VMO: %s",
-               zx_status_get_string(st));
+      fdf::error("Failed to register packed command VMO: {}", zx_status_get_string(st));
       return st;
     }
   }
@@ -507,8 +499,7 @@ zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
 
   // Switch to 1.8V signal voltage before configuring high-speed timing.
   if (zx_status_t status = sdmmc_->SetSignalVoltage(SDMMC_VOLTAGE_V180); status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to switch to 1.8V signalling: %s",
-             zx_status_get_string(status));
+    fdf::error("Failed to switch to 1.8V signalling: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -555,8 +546,7 @@ zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
   }
 
   if (zx_status_t status = sdmmc_->PerformTuning(MMC_SEND_TUNING_BLOCK); status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Tuning failed (%s), falling back to HS mode",
-             zx_status_get_string(status));
+    fdf::error("Tuning failed ({}), falling back to HS mode", zx_status_get_string(status));
 
     // Tuning failed, but we still might be able to use High Speed/DDR52 mode instead. Reset the bus
     // clock frequency before we try that.
@@ -629,7 +619,7 @@ void SdmmcBlockDevice::MmcSetInspectProperties() {
       bus_width_bits = 8;
       break;
     default:
-      FDF_LOGL(ERROR, logger(), "Unexpected bus width enum: %u", bus_width_);
+      fdf::error("Unexpected bus width enum: {}", bus_width_);
       bus_width_bits = 0;
       break;
   }
@@ -670,7 +660,7 @@ void SdmmcBlockDevice::MmcSetInspectProperties() {
       timing_string = "HS400-ES";
       break;
     default:
-      FDF_LOGL(ERROR, logger(), "Unexpected timing enum: %u", timing_);
+      fdf::error("Unexpected timing enum: {}", timing_);
       timing_string = "Unknown";
       break;
   }

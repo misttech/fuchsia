@@ -45,12 +45,11 @@ constexpr uint32_t kBootSizeMultiplier = 128 * 1024;
 // arguments.
 zx::result<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion> GetBufferRegion(zx_handle_t vmo,
                                                                             uint64_t offset,
-                                                                            uint64_t size,
-                                                                            fdf::Logger& logger) {
+                                                                            uint64_t size) {
   zx::vmo dup;
   zx_status_t status = zx_handle_duplicate(vmo, ZX_RIGHT_SAME_RIGHTS, dup.reset_and_get_address());
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger, "Failed to duplicate vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to duplicate vmo: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -63,13 +62,11 @@ zx::result<fuchsia_hardware_sdmmc::wire::SdmmcBufferRegion> GetBufferRegion(zx_h
 
 }  // namespace
 
-fdf::Logger& ReadWriteMetadata::logger() { return block_device->logger(); }
-
 void SdmmcBlockDevice::BlockComplete(sdmmc::BlockOperation& txn, zx_status_t status) {
   if (txn.node()->complete_cb()) {
     txn.Complete(status);
   } else {
-    FDF_LOGL(DEBUG, logger(), "block op %p completion_cb unset!", txn.operation());
+    fdf::debug("block op {} completion_cb unset!", static_cast<const void*>(txn.operation()));
   }
 }
 
@@ -78,7 +75,7 @@ zx_status_t SdmmcBlockDevice::Create(SdmmcRootDevice* parent, std::unique_ptr<Sd
   fbl::AllocChecker ac;
   out_dev->reset(new (&ac) SdmmcBlockDevice(parent, std::move(sdmmc)));
   if (!ac.check()) {
-    FDF_LOGL(ERROR, parent->logger(), "failed to allocate device memory");
+    fdf::error("failed to allocate device memory");
     return ZX_ERR_NO_MEMORY;
   }
 
@@ -89,7 +86,7 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   // Device must be in TRAN state at this point
   zx_status_t st = WaitForTran();
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "waiting for TRAN state failed, retcode = %d", st);
+    fdf::error("waiting for TRAN state failed, retcode = {}", zx_status_get_string(st));
     return ZX_ERR_TIMED_OUT;
   }
 
@@ -109,15 +106,14 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
       [&](fdf_dispatcher_t*) { worker_shutdown_completion_.Signal(); },
       "fuchsia.devices.block.drivers.sdmmc.worker");
   if (dispatcher.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher: %s",
-             zx_status_get_string(dispatcher.status_value()));
+    fdf::error("Failed to create dispatcher: {}", zx_status_get_string(dispatcher.status_value()));
     return dispatcher.status_value();
   }
   worker_dispatcher_ = *std::move(dispatcher);
 
   st = async::PostTask(worker_dispatcher_.async_dispatcher(), [this] { WorkerLoop(); });
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to start worker thread: %s", zx_status_get_string(st));
+    fdf::error("Failed to start worker thread: {}", zx_status_get_string(st));
     return st;
   }
 
@@ -130,11 +126,11 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
     zx::result result = ConfigurePowerManagement();
 
     if (result.is_ok()) {
-      FDF_LOGL(INFO, logger(), "Configured power management successfully (sdmmc).");
+      fdf::info("Configured power management successfully (sdmmc).");
     } else if (parent_->config().enable_suspend()) {
       // Only log and return error on a failed power configuration if enable_suspend and
       // storage_power_management_enabled were true.
-      FDF_LOGL(ERROR, logger(), "Failed to configure power management: %s", result.status_string());
+      fdf::error("Failed to configure power management: {}", result.status_string());
       return result.status_value();
     }
   }
@@ -160,7 +156,7 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   auto result = parent_->root_node()->AddChild(args, std::move(controller_server_end),
                                                std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child block device: %s", result.status_string());
+    fdf::error("Failed to add child block device: {}", result.status_string());
     return result.status();
   }
 
@@ -172,16 +168,16 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
     if (!cq_enabled) {
       std::unique_ptr<RpmbDevice> rpmb_device(new (&ac) RpmbDevice(this, raw_cid_, raw_ext_csd_));
       if (!ac.check()) {
-        FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+        fdf::error("failed to allocate device memory");
         return ZX_ERR_NO_MEMORY;
       }
 
       // Only publish the RPMB service if command queueing is disabled.  When command queueing is
       // enabled, we instead expose this RPMB device as a driver FIDL service to be consumed by the
       // CQHCI driver.
-      FDF_LOGL(INFO, logger(), "Adding rpmb device");
+      fdf::info("Adding rpmb device");
       if ((st = rpmb_device->AddDevice()) != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "failed to add rpmb device: %d", st);
+        fdf::error("failed to add rpmb device: {}", zx_status_get_string(st));
         return st;
       }
       child_rpmb_device_ = std::move(rpmb_device);
@@ -189,34 +185,34 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
       std::unique_ptr<DriverRpmbDevice> rpmb_device(
           new (&ac) DriverRpmbDevice(this, raw_cid_, raw_ext_csd_));
       if (!ac.check()) {
-        FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+        fdf::error("failed to allocate device memory");
         return ZX_ERR_NO_MEMORY;
       }
 
       driver_rpmb_device_ = std::move(rpmb_device);
     }
 
-    FDF_LOGL(INFO, logger(), "Adding rpmb device done");
+    fdf::info("Adding rpmb device done");
   }
 
   if (cq_enabled) {
     // With command queueing, the child CQHCI driver handles fuchsia.storage.block.*.
-    FDF_LOGL(INFO, logger(), "Initializing cqhci driver");
+    fdf::info("Initializing cqhci driver");
     remove_device_on_error.cancel();
     return AddCqhciDevice();
   }
   // Otherwise, bind PartitionDevices for each partition to handle fuchsia.storage.block.*.
-  FDF_LOGL(INFO, logger(), "Initializing local block server");
+  fdf::info("Initializing local block server");
 
   std::unique_ptr<PartitionDevice> user_partition(
       new (&ac) PartitionDevice(this, block_info_, USER_DATA_PARTITION));
   if (!ac.check()) {
-    FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+    fdf::error("failed to allocate device memory");
     return ZX_ERR_NO_MEMORY;
   }
 
   if ((st = user_partition->AddDevice()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to add user partition device: %d", st);
+    fdf::error("failed to add user partition device: {}", zx_status_get_string(st));
     return st;
   }
 
@@ -238,26 +234,26 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
       std::unique_ptr<PartitionDevice> boot_partition_1(
           new (&ac) PartitionDevice(this, boot_info, BOOT_PARTITION_1));
       if (!ac.check()) {
-        FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+        fdf::error("failed to allocate device memory");
         return ZX_ERR_NO_MEMORY;
       }
 
       std::unique_ptr<PartitionDevice> boot_partition_2(
           new (&ac) PartitionDevice(this, boot_info, BOOT_PARTITION_2));
       if (!ac.check()) {
-        FDF_LOGL(ERROR, logger(), "failed to allocate device memory");
+        fdf::error("failed to allocate device memory");
         return ZX_ERR_NO_MEMORY;
       }
 
       if ((st = boot_partition_1->AddDevice()) != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "failed to add boot partition device: %d", st);
+        fdf::error("failed to add boot partition device: {}", zx_status_get_string(st));
         return st;
       }
 
       child_partition_devices_.push_back(std::move(boot_partition_1));
 
       if ((st = boot_partition_2->AddDevice()) != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "failed to add boot partition device: %d", st);
+        fdf::error("failed to add boot partition device: {}", zx_status_get_string(st));
         return st;
       }
 
@@ -330,7 +326,7 @@ zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
 
   auto result = block_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child partition device: %s", result.status_string());
+    fdf::error("Failed to add child partition device: {}", result.status_string());
     return result.status();
   }
   return ZX_OK;
@@ -344,8 +340,8 @@ zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
   zx::result connect_to_cpu_element_manager =
       parent_->driver_incoming()->Connect<fuchsia_power_system::CpuElementManager>();
   if (connect_to_cpu_element_manager.is_error()) {
-    FDF_LOGL(ERROR, logger(), "CpuElementManager unavailable: %s",
-             zx_status_get_string(connect_to_cpu_element_manager.error_value()));
+    fdf::error("CpuElementManager unavailable: {}",
+               zx_status_get_string(connect_to_cpu_element_manager.error_value()));
     return connect_to_cpu_element_manager.take_error();
   }
   fidl::SyncClient<fuchsia_power_system::CpuElementManager> cpu_element_manager(
@@ -354,8 +350,8 @@ zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
       cpu_element_manager->AddExecutionStateDependency(
           {{.dependency_token = parent_->power_element_token(), .power_level = 1}});
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "CpuElementManager token registration failed: %s",
-             result.error_value().FormatDescription().c_str());
+    fdf::error("CpuElementManager token registration failed: {}",
+               result.error_value().FormatDescription());
     if (result.error_value().is_framework_error()) {
       return zx::error(result.error_value().framework_error().status());
     }
@@ -397,8 +393,8 @@ void SdmmcBlockDevice::SetLevel(uint8_t level) {
       zx_status_t status = ResumePower();
       if (status != ZX_OK) {
         const zx::duration duration = zx::clock::get_monotonic() - start;
-        FDF_LOGL(ERROR, logger(), "Failed to resume power after %ld us: %s", duration.to_usecs(),
-                 zx_status_get_string(status));
+        fdf::error("Failed to resume power after {} us: {}", duration.to_usecs(),
+                   zx_status_get_string(status));
         return;
       }
 
@@ -411,14 +407,14 @@ void SdmmcBlockDevice::SetLevel(uint8_t level) {
       // Actually lower the hardware's power level.
       zx_status_t status = SuspendPower();
       if (status != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "Failed to suspend power: %s", zx_status_get_string(status));
+        fdf::error("Failed to suspend power: {}", zx_status_get_string(status));
         return;
       }
       // Communicate to Power Broker that the hardware power level has been lowered.
       break;
     }
     default:
-      FDF_LOGL(ERROR, logger(), "Unexpected power level for hardware power element: %u", level);
+      fdf::error("Unexpected power level for hardware power element: {}", level);
       return;
   }
 }
@@ -470,7 +466,7 @@ void SdmmcBlockDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sy
     return;
   }
   if (status = sdmmc_->MmcSendExtCsd(raw_ext_csd_); status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SEND_EXT_CSD failed: %s", zx_status_get_string(status));
+    fdf::error("MMC_SEND_EXT_CSD failed: {}", zx_status_get_string(status));
   }
   completer.buffer(arena).ReplySuccess();
 }
@@ -507,7 +503,7 @@ void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopComple
 }
 
 void SdmmcBlockDevice::SendPowerOffNotification() {
-  FDF_LOGL(INFO, logger(), "SendPowerOffNotification");
+  fdf::info("SendPowerOffNotification");
   if (is_sd_ || !parent_->config().storage_power_management_enabled()) {
     return;
   }
@@ -525,8 +521,7 @@ void SdmmcBlockDevice::SendPowerOffNotification() {
 
   zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_POWER_OFF_NOTIFICATION, MMC_EXT_CSD_POWER_OFF_LONG);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to send power off notification: %s",
-             zx_status_get_string(status));
+    fdf::error("Failed to send power off notification: {}", zx_status_get_string(status));
   }
 }
 
@@ -552,11 +547,11 @@ zx_status_t SdmmcBlockDevice::ReadWriteWithRetries(std::vector<Request>& request
 
   properties_.io_retries_.Add(attempts - 1);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "do_txn error: %s", zx_status_get_string(st));
+    fdf::error("do_txn error: {}", zx_status_get_string(st));
     properties_.io_errors_.Add(1);
   }
 
-  FDF_LOGL(DEBUG, logger(), "do_txn complete");
+  fdf::debug("do_txn complete");
   return st;
 }
 
@@ -620,13 +615,13 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     total_data_transfer_blocks += RequestAccessor<Request>(&request).block_count();
   }
 
-  FDF_LOGL(DEBUG, logger(),
-           "sdmmc: do_txn blockop %c offset_vmo 0x%" PRIx64
-           " length 0x%x packing_count %zu blocksize 0x%x"
-           " max_transfer_size 0x%x",
-           first_request.is_read() ? 'R' : 'W', first_request.vmo_offset(block_info_.block_size),
-           total_data_transfer_blocks, requests.size(), block_info_.block_size,
-           block_info_.max_transfer_size);
+  fdf::debug(
+      "sdmmc: do_txn blockop {} offset_vmo 0x{:x}"
+      " length 0x{:x} packing_count {} blocksize 0x{:x}"
+      " max_transfer_size 0x{:x}",
+      first_request.is_read() ? 'R' : 'W', first_request.vmo_offset(block_info_.block_size),
+      total_data_transfer_blocks, requests.size(), block_info_.block_size,
+      block_info_.max_transfer_size);
 
   fdf::Arena arena('SDMC');
   fidl::VectorView<fuchsia_hardware_sdmmc::wire::SdmmcReq> reqs;
@@ -652,7 +647,7 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     rw_multiple_block.buffers.Allocate(arena, 1);
     auto buffer_region =
         GetBufferRegion(first_request.vmo(), first_request.vmo_offset(block_info_.block_size),
-                        first_request.block_count() * block_info_.block_size, logger());
+                        first_request.block_count() * block_info_.block_size);
     if (buffer_region.is_error()) {
       return buffer_region.status_value();
     }
@@ -738,7 +733,7 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
 
       auto buffer_region =
           GetBufferRegion(request.vmo(), request.vmo_offset(block_info_.block_size),
-                          request.block_count() * block_info_.block_size, logger());
+                          request.block_count() * block_info_.block_size);
       if (buffer_region.is_error()) {
         return buffer_region.status_value();
       }
@@ -777,9 +772,9 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
 
   if (readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS] != 0) {
     if (!suppress_error_messages) {
-      FDF_LOGL(ERROR, logger(), "Packed command status: 0x%02x Packed failure index: %u",
-               readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS],
-               readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_FAILURE_INDEX]);
+      fdf::error("Packed command status: 0x{:02x} Packed failure index: {}",
+                 readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS],
+                 readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_FAILURE_INDEX]);
     }
     return ZX_ERR_IO;
   }
@@ -796,7 +791,7 @@ zx_status_t SdmmcBlockDevice::Flush() {
 
   zx_status_t st = MmcDoSwitch(MMC_EXT_CSD_FLUSH_CACHE, MMC_EXT_CSD_FLUSH_MASK);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to flush the cache: %s", zx_status_get_string(st));
+    fdf::error("Failed to flush the cache: {}", zx_status_get_string(st));
   }
   return st;
 }
@@ -819,7 +814,7 @@ zx_status_t SdmmcBlockDevice::Barrier() {
 
   zx_status_t st = MmcDoSwitch(MMC_EXT_CSD_FLUSH_CACHE, MMC_EXT_CSD_BARRIER_MASK);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to set a barrier: %s", zx_status_get_string(st));
+    fdf::error("Failed to set a barrier: {}", zx_status_get_string(st));
   }
   return st;
 }
@@ -849,12 +844,12 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
   };
   uint32_t response[4] = {};
   if ((status = sdmmc_->Request(&trim_start, response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to set trim group start: %d", status);
+    fdf::error("failed to set trim group start: {}", zx_status_get_string(status));
     properties_.io_errors_.Add(1);
     return status;
   }
   if (response[0] & kEraseErrorFlags) {
-    FDF_LOGL(ERROR, logger(), "card reported trim group start error: 0x%08x", response[0]);
+    fdf::error("card reported trim group start error: 0x{:08x}", response[0]);
     properties_.io_errors_.Add(1);
     return ZX_ERR_IO;
   }
@@ -865,12 +860,12 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
       .arg = static_cast<uint32_t>(txn.offset_dev + txn.length - 1),
   };
   if ((status = sdmmc_->Request(&trim_end, response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to set trim group end: %d", status);
+    fdf::error("failed to set trim group end: {}", zx_status_get_string(status));
     properties_.io_errors_.Add(1);
     return status;
   }
   if (response[0] & kEraseErrorFlags) {
-    FDF_LOGL(ERROR, logger(), "card reported trim group end error: 0x%08x", response[0]);
+    fdf::error("card reported trim group end error: 0x{:08x}", response[0]);
     properties_.io_errors_.Add(1);
     return ZX_ERR_IO;
   }
@@ -881,12 +876,12 @@ zx_status_t SdmmcBlockDevice::Trim(const block_trim_t& txn, const EmmcPartition 
       .arg = MMC_ERASE_TRIM_ARG,
   };
   if ((status = sdmmc_->Request(&trim, response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "trim failed: %d", status);
+    fdf::error("trim failed: {}", zx_status_get_string(status));
     properties_.io_errors_.Add(1);
     return status;
   }
   if (response[0] & kEraseErrorFlags) {
-    FDF_LOGL(ERROR, logger(), "card reported trim error: 0x%08x", response[0]);
+    fdf::error("card reported trim error: 0x{:08x}", response[0]);
     properties_.io_errors_.Add(1);
     return ZX_ERR_IO;
   }
@@ -906,7 +901,7 @@ zx::result<uint16_t> SdmmcBlockDevice::GetRpmbRequestType(const RpmbRequestInfo&
   if (zx_status_t status = request.tx_frames.vmo.read(
           &request_type_be, request.tx_frames.offset + kRequestTypeOffset, sizeof(request_type_be));
       status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to read RPMB TX frame: %s", zx_status_get_string(status));
+    fdf::error("Failed to read RPMB TX frame: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -971,7 +966,7 @@ zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
     }
 
     if ((status = sdmmc_->Request(&set_tx_block_count, unused_response)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "failed to set block count for RPMB request: %d", status);
+      fdf::error("failed to set block count for RPMB request: {}", zx_status_get_string(status));
       properties_.io_errors_.Add(1);
       return status;
     }
@@ -991,7 +986,7 @@ zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
         .buffers_count = 1,
     };
     if ((status = sdmmc_->Request(&write_tx_frames, unused_response)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "failed to write RPMB frames: %d", status);
+      fdf::error("failed to write RPMB frames: {}", zx_status_get_string(status));
       properties_.io_errors_.Add(1);
       return status;
     }
@@ -1009,7 +1004,7 @@ zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
       .arg = static_cast<uint32_t>(rx_frame_count),
   };
   if ((status = sdmmc_->Request(&set_rx_block_count, unused_response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to set block count for RPMB request: %d", status);
+    fdf::error("failed to set block count for RPMB request: {}", zx_status_get_string(status));
     properties_.io_errors_.Add(1);
     return status;
   }
@@ -1029,7 +1024,7 @@ zx_status_t SdmmcBlockDevice::RpmbRequest(const RpmbRequestInfo& request) {
       .buffers_count = 1,
   };
   if ((status = sdmmc_->Request(&read_rx_frames, unused_response)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to read RPMB frames: %d", status);
+    fdf::error("failed to read RPMB frames: {}", zx_status_get_string(status));
     properties_.io_errors_.Add(1);
     return status;
   }
@@ -1047,7 +1042,7 @@ zx_status_t SdmmcBlockDevice::SetPartition(const EmmcPartition partition) {
 
   zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_PARTITION_CONFIG, partition_config_value);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch to partition %u", partition);
+    fdf::error("failed to switch to partition {}", static_cast<uint32_t>(partition));
     properties_.io_errors_.Add(1);
     return status;
   }
@@ -1106,7 +1101,7 @@ void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
   using fuchsia_hardware_rpmb::wire::kFrameSize;
 
   if (info.tx_frames.size % kFrameSize != 0) {
-    FDF_LOGL(ERROR, logger(), "tx frame buffer size not a multiple of %u", kFrameSize);
+    fdf::error("tx frame buffer size not a multiple of {}", kFrameSize);
     info.callback(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -1121,23 +1116,23 @@ void SdmmcBlockDevice::RpmbQueue(RpmbRequestInfo info) {
   }
 
   if (tx_frame_count > SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS) {
-    FDF_LOGL(ERROR, logger(), "received %lu tx frames, maximum is %u", tx_frame_count,
-             SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS);
+    fdf::error("received {} tx frames, maximum is {}", tx_frame_count,
+               static_cast<uint32_t>(SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS));
     info.callback(ZX_ERR_OUT_OF_RANGE);
     return;
   }
 
   if (info.rx_frames.vmo.is_valid()) {
     if (info.rx_frames.size % kFrameSize != 0) {
-      FDF_LOGL(ERROR, logger(), "rx frame buffer size is not a multiple of %u", kFrameSize);
+      fdf::error("rx frame buffer size is not a multiple of {}", kFrameSize);
       info.callback(ZX_ERR_INVALID_ARGS);
       return;
     }
 
     const uint64_t rx_frame_count = info.rx_frames.size / kFrameSize;
     if (rx_frame_count > SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS) {
-      FDF_LOGL(ERROR, logger(), "received %lu rx frames, maximum is %u", rx_frame_count,
-               SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS);
+      fdf::error("received {} rx frames, maximum is {}", rx_frame_count,
+                 static_cast<uint32_t>(SDMMC_SET_BLOCK_COUNT_MAX_BLOCKS));
       info.callback(ZX_ERR_OUT_OF_RANGE);
       return;
     }
@@ -1228,7 +1223,7 @@ void SdmmcBlockDevice::HandleBlockOps(block::BorrowedOperationQueue<PartitionInf
                          TA_INT32(status));
     } else {
       // should not get here
-      FDF_LOGL(ERROR, logger(), "invalid block op %d", op);
+      fdf::error("invalid block op {}", op);
       TRACE_INSTANT("sdmmc", "unknown", TRACE_SCOPE_PROCESS, "opcode",
                     TA_INT32(bop.rw.command.opcode), "txn_status", TA_INT32(status));
       __UNREACHABLE;
@@ -1287,7 +1282,7 @@ void SdmmcBlockDevice::WorkerLoop() {
     }
   }
 
-  FDF_LOGL(DEBUG, logger(), "worker thread terminated successfully");
+  fdf::debug("worker thread terminated successfully");
 }
 
 zx_status_t SdmmcBlockDevice::SuspendPower() {
@@ -1296,7 +1291,7 @@ zx_status_t SdmmcBlockDevice::SuspendPower() {
   }
 
   if (zx_status_t status = Flush(); status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to flush: %s", zx_status_get_string(status));
+    fdf::error("Failed to flush: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -1304,19 +1299,17 @@ zx_status_t SdmmcBlockDevice::SuspendPower() {
     if (zx_status_t status =
             MmcDoSwitch(MMC_EXT_CSD_POWER_OFF_NOTIFICATION, MMC_EXT_CSD_POWER_OFF_SHORT);
         status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to send power off notification: %s",
-               zx_status_get_string(status));
+      fdf::error("Failed to send power off notification: {}", zx_status_get_string(status));
       return status;
     }
   } else {
     if (zx_status_t status = sdmmc_->MmcSelectCard(/*select=*/false); status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to (de-)SelectCard before sleep: %s",
-               zx_status_get_string(status));
+      fdf::error("Failed to (de-)SelectCard before sleep: {}", zx_status_get_string(status));
       return status;
     }
 
     if (zx_status_t status = sdmmc_->MmcSleepOrAwake(/*sleep=*/true); status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to sleep: %s", zx_status_get_string(status));
+      fdf::error("Failed to sleep: {}", zx_status_get_string(status));
       return status;
     }
   }
@@ -1325,7 +1318,7 @@ zx_status_t SdmmcBlockDevice::SuspendPower() {
   TRACE_ASYNC_BEGIN("sdmmc", "suspend", trace_async_id_);
   power_suspended_ = true;
   properties_.power_suspended_.Set(power_suspended_);
-  FDF_LOGL(INFO, logger(), "Power suspended.");
+  fdf::info("Power suspended.");
   return ZX_OK;
 }
 
@@ -1359,13 +1352,12 @@ zx_status_t SdmmcBlockDevice::ResumePower() {
     }
   } else {
     if (zx_status_t status = sdmmc_->MmcSleepOrAwake(/*sleep=*/false); status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to awake: %s", zx_status_get_string(status));
+      fdf::error("Failed to awake: {}", zx_status_get_string(status));
       return status;
     }
 
     if (zx_status_t status = sdmmc_->MmcSelectCard(/*select=*/true); status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to SelectCard after awake: %s",
-               zx_status_get_string(status));
+      fdf::error("Failed to SelectCard after awake: {}", zx_status_get_string(status));
       return status;
     }
   }
@@ -1374,7 +1366,7 @@ zx_status_t SdmmcBlockDevice::ResumePower() {
   power_suspended_ = false;
   properties_.power_suspended_.Set(power_suspended_);
 
-  FDF_LOGL(INFO, logger(), "Power resumed.");
+  fdf::info("Power resumed.");
   return ZX_OK;
 }
 
@@ -1389,7 +1381,7 @@ zx_status_t SdmmcBlockDevice::WaitForState(uint32_t state) {
     uint32_t response;
     zx_status_t st = sdmmc_->SdmmcSendStatus(&response);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "SDMMC_SEND_STATUS error, retcode = %d", st);
+      fdf::error("SDMMC_SEND_STATUS error, retcode = {}", zx_status_get_string(st));
       return st;
     }
 
@@ -1543,7 +1535,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
     if (zx_status_t status =
             block_server::CheckIoRange(request, partition.block_info().block_count);
         status != ZX_OK) {
-      FDF_LOGL(WARNING, logger(), "Invalid request range.");
+      fdf::warn("Invalid request range.");
       partition.SendReply(request.request_id, zx::make_result(status));
       continue;
     }
@@ -1617,13 +1609,12 @@ void SdmmcBlockDevice::ProgramKey(ProgramKeyRequestView request,
   auto result = inline_encryption_client_.buffer(arena)->ProgramKey(request->wrapped_key,
                                                                     request->data_unit_size);
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Transport error when sending ProgramKey: %s",
-             result.status_string());
+    fdf::error("Transport error when sending ProgramKey: {}", result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOGL(ERROR, logger(), "ProgramKey failed: %s", zx_status_get_string(result->error_value()));
+    fdf::error("ProgramKey failed: {}", zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }
@@ -1634,14 +1625,12 @@ void SdmmcBlockDevice::DeriveRawSecret(DeriveRawSecretRequestView request,
   fdf::Arena arena(kArenaTag);
   auto result = inline_encryption_client_.buffer(arena)->DeriveRawSecret(request->wrapped_key);
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Transport error when sending DeriveRawSecret: %s",
-             result.status_string());
+    fdf::error("Transport error when sending DeriveRawSecret: {}", result.status_string());
     completer.ReplyError(result.status());
     return;
   }
   if (result->is_error()) {
-    FDF_LOGL(ERROR, logger(), "DeriveRawSecret failed: %s",
-             zx_status_get_string(result->error_value()));
+    fdf::error("DeriveRawSecret failed: {}", zx_status_get_string(result->error_value()));
     completer.ReplyError(result->error_value());
     return;
   }

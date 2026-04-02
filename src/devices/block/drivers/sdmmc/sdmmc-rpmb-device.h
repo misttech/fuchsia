@@ -55,8 +55,6 @@ class RpmbDevice : public RpmbDeviceBase, public fidl::WireServer<fuchsia_hardwa
   void GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) override;
   void Request(RequestRequestView request, RequestCompleter::Sync& completer) override;
 
-  fdf::Logger& logger();
-
  private:
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
   compat::SyncInitializedDeviceServer compat_server_;

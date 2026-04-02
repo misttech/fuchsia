@@ -12,6 +12,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>  // TODO(b/301003087): Needed for PDEV_DID_AMLOGIC_SDMMC_A, etc.
 #include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
@@ -77,7 +78,7 @@ zx::result<> AmlSdmmc::Start() {
   {
     zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
     if (pdev.is_error() || !pdev->is_valid()) {
-      FDF_LOGL(ERROR, logger(), "Failed to connect to platform device: %s", pdev.status_string());
+      fdf::error("Failed to connect to platform device: {}", pdev);
       return pdev.take_error();
     }
 
@@ -89,8 +90,7 @@ zx::result<> AmlSdmmc::Start() {
   auto no_sync_calls_dispatcher =
       fdf::SynchronizedDispatcher::Create({}, "aml-sdmmc-worker", [](fdf_dispatcher_t*) {});
   if (no_sync_calls_dispatcher.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher: %s",
-             zx_status_get_string(no_sync_calls_dispatcher.status_value()));
+    fdf::error("Failed to create dispatcher: {}", no_sync_calls_dispatcher);
     return zx::error(no_sync_calls_dispatcher.status_value());
   }
   worker_dispatcher_ = *std::move(no_sync_calls_dispatcher);
@@ -101,7 +101,7 @@ zx::result<> AmlSdmmc::Start() {
     });
     auto result = outgoing()->AddService<fuchsia_hardware_sdmmc::SdmmcService>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to add sdmmc service: %s", result.status_string());
+      fdf::error("Failed to add sdmmc service: {}", result);
       return result.take_error();
     }
   }
@@ -113,7 +113,7 @@ zx::result<> AmlSdmmc::Start() {
     auto result =
         outgoing()->AddService<fuchsia_hardware_power::PowerTokenService>(std::move(handler));
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to add power token service: %s", result.status_string());
+      fdf::error("Failed to add power token service: {}", result);
       return result.take_error();
     }
   }
@@ -136,11 +136,11 @@ zx::result<> AmlSdmmc::Start() {
 
   auto result = parent_->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child: %s", result.status_string());
+    fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
-  FDF_LOGL(INFO, logger(), "Completed start hook");
+  fdf::info("Completed start hook");
 
   return zx::ok();
 }
@@ -150,22 +150,22 @@ zx::result<> AmlSdmmc::InitResources(
   fdf::PDev pdev{std::move(pdev_client_end)};
 
   if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to set metadata: %s", result.status_string());
+    fdf::error("Failed to set metadata: {}", result);
     return result.take_error();
   }
   if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to serve metadata: %s", result.status_string());
+    fdf::error("Failed to serve metadata: {}", result);
     return result.take_error();
   }
 
   {
     zx::result mmio_params = pdev.GetMmio(0);
     if (mmio_params.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to get MMIO: %s", mmio_params.status_string());
+      fdf::error("Failed to get MMIO: {}", mmio_params);
       return mmio_params.take_error();
     }
     if (!mmio_params->vmo || mmio_params->size == 0) {
-      FDF_LOGL(ERROR, logger(), "Platform device provided invalid MMIO");
+      fdf::error("Platform device provided invalid MMIO");
       return zx::error(ZX_ERR_BAD_STATE);
     }
 
@@ -173,7 +173,7 @@ zx::result<> AmlSdmmc::InitResources(
         fdf::MmioBuffer::Create(mmio_params->offset, mmio_params->size, std::move(mmio_params->vmo),
                                 ZX_CACHE_POLICY_UNCACHED_DEVICE);
     if (mmio_result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to map MMIO: %s", mmio_result.status_string());
+      fdf::error("Failed to map MMIO: {}", mmio_result);
       return mmio_result.take_error();
     }
     std::lock_guard<std::mutex> lock(lock_);
@@ -183,7 +183,7 @@ zx::result<> AmlSdmmc::InitResources(
   {
     zx::result result = pdev.GetInterrupt(0);
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to get interrupt: %s", result.status_string());
+      fdf::error("Failed to get interrupt: {}", result);
       return result.take_error();
     }
     irq_ = std::move(result.value());
@@ -192,7 +192,7 @@ zx::result<> AmlSdmmc::InitResources(
   {
     zx::result result = pdev.GetBti(0);
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to get BTI: %s", result.status_string());
+      fdf::error("Failed to get BTI: {}", result);
       return result.take_error();
     }
     bti_ = std::move(result.value());
@@ -215,7 +215,7 @@ zx::result<> AmlSdmmc::InitResources(
     zx_status_t status = buffer_factory->CreateContiguous(
         bti_, kMaxDmaDescriptors * sizeof(aml_sdmmc_desc_t), 0, true, &descs_buffer_);
     if (status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to allocate dma descriptors");
+      fdf::error("Failed to allocate dma descriptors");
       return zx::error(status);
     }
   }
@@ -226,8 +226,7 @@ zx::result<> AmlSdmmc::InitResources(
     const fidl::WireResult result = clock->Enable();
     if (result.ok()) {
       if (result->is_error()) {
-        FDF_LOGL(ERROR, logger(), "Failed to enable clock: %s",
-                 zx_status_get_string(result->error_value()));
+        fdf::error("Failed to enable clock: {}", zx_status_get_string(result->error_value()));
         return zx::error(result->error_value());
       }
       clock_gate_ = std::move(clock);
@@ -239,7 +238,7 @@ zx::result<> AmlSdmmc::InitResources(
     zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_sdmmc::SdmmcMetadata>(
         fuchsia_hardware_sdmmc::SdmmcMetadata::kSerializableName);
     if (metadata.is_error()) {
-      FDF_LOGL(WARNING, logger(), "Failed to get metadata: %s", metadata.status_string());
+      fdf::warn("Failed to get metadata: {}", metadata);
     } else if (metadata->instance_identifier().has_value()) {
       instance_identifier = "-" + metadata->instance_identifier().value();
     }
@@ -247,7 +246,7 @@ zx::result<> AmlSdmmc::InitResources(
     if (instance_identifier.empty()) {
       zx::result device_info = pdev.GetDeviceInfo();
       if (device_info.is_error()) {
-        FDF_LOGL(WARNING, logger(), "Failed to get device info: %s", device_info.status_string());
+        fdf::warn("Failed to get device info: {}", device_info);
       } else {
         switch (device_info->did) {
           case PDEV_DID_AMLOGIC_SDMMC_A:
@@ -275,10 +274,10 @@ zx::result<> AmlSdmmc::InitResources(
     // Always use the power element token if we have it.
     if (power_element_token().has_value()) {
       hardware_power_assertive_token_ = std::move(power_element_token().value());
-      FDF_LOGL(INFO, logger(), "Configured power management successfully.");
+      fdf::info("Configured power management successfully.");
     } else if (config_.enable_suspend()) {
       // If we don't have a valid token and suspend is enabled, this is an error.
-      FDF_LOGL(ERROR, logger(), "Failed to configure power management, power token unavailable.");
+      fdf::error("Failed to configure power management, power token unavailable.");
       return zx::error(ZX_ERR_NOT_FOUND);
     }
   }
@@ -288,7 +287,7 @@ zx::result<> AmlSdmmc::InitResources(
 
 void AmlSdmmc::GetToken(GetTokenCompleter::Sync& completer) {
   if (!hardware_power_assertive_token_.is_valid()) {
-    FDF_LOGL(ERROR, logger(), "Token provided by driver framework is invalid");
+    fdf::error("Token provided by driver framework is invalid");
     completer.Reply(fit::error(ZX_ERR_BAD_HANDLE));
     return;
   }
@@ -313,8 +312,8 @@ zx_status_t AmlSdmmc::SetLevel(fuchsia_power_broker::PowerLevel required_level) 
       zx_status_t status = ResumePower();
       if (status != ZX_OK) {
         const zx::duration duration = zx::clock::get_monotonic() - start;
-        FDF_LOGL(ERROR, logger(), "Failed to resume power after %ld us: %s", duration.to_usecs(),
-                 zx_status_get_string(status));
+        fdf::error("Failed to resume power after {} us: {}", duration.to_usecs(),
+                   zx_status_get_string(status));
         return ZX_ERR_INTERNAL;
       }
 
@@ -332,14 +331,13 @@ zx_status_t AmlSdmmc::SetLevel(fuchsia_power_broker::PowerLevel required_level) 
       // Actually lower the hardware's power level.
       zx_status_t status = SuspendPower();
       if (status != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "Failed to suspend power: %s", zx_status_get_string(status));
+        fdf::error("Failed to suspend power: {}", zx_status_get_string(status));
         return ZX_ERR_INTERNAL;
       }
       break;
     }
     default:
-      FDF_LOGL(ERROR, logger(), "Unexpected power level for hardware power element: %u",
-               required_level);
+      fdf::error("Unexpected power level for hardware power element: {}", required_level);
       return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;
@@ -428,7 +426,7 @@ zx::result<std::array<uint32_t, AmlSdmmc::kResponseCount>> AmlSdmmc::WaitForInte
   zx_status_t status = WaitForInterruptImpl();
 
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "WaitForInterruptImpl returned %s", zx_status_get_string(status));
+    fdf::error("WaitForInterruptImpl returned {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -442,35 +440,31 @@ zx::result<std::array<uint32_t, AmlSdmmc::kResponseCount>> AmlSdmmc::WaitForInte
 
   if (status_irq.rxd_err()) {
     if (req.suppress_error_messages) {
-      FDF_LOGL(TRACE, logger(), "RX Data CRC Error cmd%d, arg=0x%08x, status=0x%08x", req.cmd_idx,
-               req.arg, status_irq.reg_value());
+      fdf::trace("RX Data CRC Error cmd{}, arg=0x{:08x}, status=0x{:08x}", req.cmd_idx, req.arg,
+                 status_irq.reg_value());
     } else {
-      FDF_LOGL(WARNING, logger(),
-               "RX Data CRC Error cmd%d, arg=0x%08x, status=0x%08x, consecutive=%lu", req.cmd_idx,
-               req.arg, status_irq.reg_value(), ++consecutive_data_errors_);
+      fdf::warn("RX Data CRC Error cmd{}, arg=0x{:08x}, status=0x{:08x}, consecutive={}",
+                req.cmd_idx, req.arg, status_irq.reg_value(), ++consecutive_data_errors_);
     }
     return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
   }
   if (status_irq.txd_err()) {
-    FDF_LOGL(WARNING, logger(),
-             "TX Data CRC Error, cmd%d, arg=0x%08x, status=0x%08x, consecutive=%lu", req.cmd_idx,
-             req.arg, status_irq.reg_value(), ++consecutive_data_errors_);
+    fdf::warn("TX Data CRC Error, cmd{}, arg=0x{:08x}, status=0x{:08x}, consecutive={}",
+              req.cmd_idx, req.arg, status_irq.reg_value(), ++consecutive_data_errors_);
     return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
   }
   if (status_irq.desc_err()) {
-    FDF_LOGL(ERROR, logger(),
-             "Controller does not own the descriptor, cmd%d, arg=0x%08x, status=0x%08x",
-             req.cmd_idx, req.arg, status_irq.reg_value());
+    fdf::error("Controller does not own the descriptor, cmd{}, arg=0x{:08x}, status=0x{:08x}",
+               req.cmd_idx, req.arg, status_irq.reg_value());
     return zx::error(ZX_ERR_IO_INVALID);
   }
   if (status_irq.resp_err()) {
     if (req.suppress_error_messages) {
-      FDF_LOGL(TRACE, logger(), "Response CRC Error, cmd%d, arg=0x%08x, status=0x%08x", req.cmd_idx,
-               req.arg, status_irq.reg_value());
+      fdf::trace("Response CRC Error, cmd{}, arg=0x{:08x}, status=0x{:08x}", req.cmd_idx, req.arg,
+                 status_irq.reg_value());
     } else {
-      FDF_LOGL(WARNING, logger(),
-               "Response CRC Error, cmd%d, arg=0x%08x, status=0x%08x, consecutive=%lu", req.cmd_idx,
-               req.arg, status_irq.reg_value(), ++consecutive_cmd_errors_);
+      fdf::warn("Response CRC Error, cmd{}, arg=0x{:08x}, status=0x{:08x}, consecutive={}",
+                req.cmd_idx, req.arg, status_irq.reg_value(), ++consecutive_cmd_errors_);
     }
     return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
   }
@@ -485,25 +479,23 @@ zx::result<std::array<uint32_t, AmlSdmmc::kResponseCount>> AmlSdmmc::WaitForInte
                   (SD_SEND_IF_COND_FLAGS) != (MMC_SEND_EXT_CSD_FLAGS));
     // When mmc dev_ice is being probed with SDIO command this is an expected failure.
     if (req.suppress_error_messages || is_sd_cmd8) {
-      FDF_LOGL(TRACE, logger(), "Response timeout, cmd%d, arg=0x%08x, status=0x%08x", req.cmd_idx,
-               req.arg, status_irq.reg_value());
+      fdf::trace("Response timeout, cmd{}, arg=0x{:08x}, status=0x{:08x}", req.cmd_idx, req.arg,
+                 status_irq.reg_value());
     } else {
-      FDF_LOGL(ERROR, logger(),
-               "Response timeout, cmd%d, arg=0x%08x, status=0x%08x, consecutive=%lu", req.cmd_idx,
-               req.arg, status_irq.reg_value(), ++consecutive_cmd_errors_);
+      fdf::error("Response timeout, cmd{}, arg=0x{:08x}, status=0x{:08x}, consecutive={}",
+                 req.cmd_idx, req.arg, status_irq.reg_value(), ++consecutive_cmd_errors_);
     }
     return zx::error(ZX_ERR_TIMED_OUT);
   }
   if (status_irq.desc_timeout()) {
-    FDF_LOGL(ERROR, logger(),
-             "Descriptor timeout, cmd%d, arg=0x%08x, status=0x%08x, consecutive=%lu", req.cmd_idx,
-             req.arg, status_irq.reg_value(), ++consecutive_data_errors_);
+    fdf::error("Descriptor timeout, cmd{}, arg=0x{:08x}, status=0x{:08x}, consecutive={}",
+               req.cmd_idx, req.arg, status_irq.reg_value(), ++consecutive_data_errors_);
     return zx::error(ZX_ERR_TIMED_OUT);
   }
 
   if (!(status_irq.end_of_chain())) {
-    FDF_LOGL(ERROR, logger(), "END OF CHAIN bit is not set, cmd%d, arg=0x%08x, status=0x%08x",
-             req.cmd_idx, req.arg, status_irq.reg_value());
+    fdf::error("END OF CHAIN bit is not set, cmd{}, arg=0x{:08x}, status=0x{:08x}", req.cmd_idx,
+               req.arg, status_irq.reg_value());
     return zx::error(ZX_ERR_IO_INVALID);
   }
 
@@ -634,13 +626,12 @@ zx_status_t AmlSdmmc::SuspendPower() {
   if (clock_gate_.is_valid()) {
     const fidl::WireResult result = clock_gate_->Disable();
     if (!result.ok()) {
-      FDF_LOGL(ERROR, logger(), "Failed to send request to disable clock gate: %s",
-               result.status_string());
+      fdf::error("Failed to send request to disable clock gate: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOGL(ERROR, logger(), "Send request to disable clock gate error: %s",
-               zx_status_get_string(result->error_value()));
+      fdf::error("Send request to disable clock gate error: {}",
+                 zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -649,7 +640,7 @@ zx_status_t AmlSdmmc::SuspendPower() {
   TRACE_ASYNC_BEGIN("aml-sdmmc", "suspend", trace_async_id_);
   power_suspended_ = true;
   inspect_.power_suspended.Set(power_suspended_);
-  FDF_LOGL(INFO, logger(), "Power suspended.");
+  logger().log(fdf::INFO, "Power suspended.");
   return ZX_OK;
 }
 
@@ -662,13 +653,12 @@ zx_status_t AmlSdmmc::ResumePower() {
   if (clock_gate_.is_valid()) {
     const fidl::WireResult result = clock_gate_->Enable();
     if (!result.ok()) {
-      FDF_LOGL(ERROR, logger(), "Failed to send request to enable clock gate: %s",
-               result.status_string());
+      fdf::error("Failed to send request to enable clock gate: {}", result.status_string());
       return result.status();
     }
     if (result->is_error()) {
-      FDF_LOGL(ERROR, logger(), "Send request to enable clock gate error: %s",
-               zx_status_get_string(result->error_value()));
+      fdf::error("Send request to enable clock gate error: {}",
+                 zx_status_get_string(result->error_value()));
       return result->error_value();
     }
   }
@@ -680,7 +670,7 @@ zx_status_t AmlSdmmc::ResumePower() {
   TRACE_ASYNC_END("aml-sdmmc", "suspend", trace_async_id_);
   power_suspended_ = false;
   inspect_.power_suspended.Set(power_suspended_);
-  FDF_LOGL(INFO, logger(), "Power resumed.");
+  logger().log(fdf::INFO, "Power resumed.");
   return ZX_OK;
 }
 
@@ -752,26 +742,24 @@ zx_status_t AmlSdmmc::HwResetImpl() {
     fidl::WireResult result1 =
         reset_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputLow);
     if (!result1.ok()) {
-      FDF_LOGL(ERROR, logger(), "Failed to send SetBufferMode request to reset gpio: %s",
-               result1.status_string());
+      fdf::error("Failed to send SetBufferMode request to reset gpio: {}", result1.status_string());
       return result1.status();
     }
     if (result1->is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to configure reset gpio to output low: %s",
-               zx_status_get_string(result1->error_value()));
+      fdf::error("Failed to configure reset gpio to output low: {}",
+                 zx_status_get_string(result1->error_value()));
       return result1->error_value();
     }
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
     fidl::WireResult result2 =
         reset_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputHigh);
     if (!result2.ok()) {
-      FDF_LOGL(ERROR, logger(), "Failed to send SetBufferMode request to reset gpio: %s",
-               result2.status_string());
+      fdf::error("Failed to send SetBufferMode request to reset gpio: {}", result2.status_string());
       return result2.status();
     }
     if (result2->is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to configure reset gpio to output high: %s",
-               zx_status_get_string(result2->error_value()));
+      fdf::error("Failed to configure reset gpio to output high: {}",
+                 zx_status_get_string(result2->error_value()));
       return result2->error_value();
     }
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
@@ -870,8 +858,8 @@ zx::result<std::pair<aml_sdmmc_desc_t*, std::vector<fzl::PinnedVmo>>> AmlSdmmc::
     const fuchsia_hardware_sdmmc::wire::SdmmcReq& req, aml_sdmmc_desc_t* const cur_desc) {
   const uint32_t req_blk_len = log2_ceil(req.blocksize);
   if (req_blk_len > AmlSdmmcCfg::kMaxBlkLen) {
-    FDF_LOGL(ERROR, logger(), "blocksize %u is greater than the max (%u)", 1 << req_blk_len,
-             1 << AmlSdmmcCfg::kMaxBlkLen);
+    fdf::error("blocksize {} is greater than the max ({})", 1 << req_blk_len,
+               1 << AmlSdmmcCfg::kMaxBlkLen);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   AmlSdmmcCfg::Get().ReadFrom(&*mmio_).set_blk_len(req_blk_len).WriteTo(&*mmio_);
@@ -893,7 +881,7 @@ zx::result<std::pair<aml_sdmmc_desc_t*, std::vector<fzl::PinnedVmo>>> AmlSdmmc::
     } else {
       vmo_store::StoredVmo<OwnedVmoInfo>* const stored_vmo = vmos.GetVmo(buffer.buffer.vmo_id());
       if (stored_vmo == nullptr) {
-        FDF_LOGL(ERROR, logger(), "no VMO %u for client %u", buffer.buffer.vmo_id(), req.client_id);
+        fdf::error("no VMO {} for client {}", buffer.buffer.vmo_id(), req.client_id);
         return zx::error(ZX_ERR_NOT_FOUND);
       }
       auto status = SetupOwnedVmoDescs(req, buffer, *stored_vmo, desc);
@@ -905,7 +893,7 @@ zx::result<std::pair<aml_sdmmc_desc_t*, std::vector<fzl::PinnedVmo>>> AmlSdmmc::
   }
 
   if (desc == cur_desc) {
-    FDF_LOGL(ERROR, logger(), "empty descriptor list!");
+    fdf::error("empty descriptor list!");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -918,18 +906,18 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::SetupOwnedVmoDescs(
     vmo_store::StoredVmo<OwnedVmoInfo>& vmo, aml_sdmmc_desc_t* const cur_desc) {
   if (!(req.cmd_flags & SDMMC_CMD_READ) &&
       !(vmo.meta().rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kRead)) {
-    FDF_LOGL(ERROR, logger(), "Request would read from write-only VMO");
+    fdf::error("Request would read from write-only VMO");
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
   if ((req.cmd_flags & SDMMC_CMD_READ) &&
       !(vmo.meta().rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kWrite)) {
-    FDF_LOGL(ERROR, logger(), "Request would write to read-only VMO");
+    fdf::error("Request would write to read-only VMO");
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
 
   if (buffer.offset + buffer.size > vmo.meta().size) {
-    FDF_LOGL(ERROR, logger(), "buffer reads past vmo end: offset %zu, size %zu, vmo size %zu",
-             buffer.offset + vmo.meta().offset, buffer.size, vmo.meta().size);
+    fdf::error("buffer reads past vmo end: offset {}, size {}, vmo size {}",
+               buffer.offset + vmo.meta().offset, buffer.size, vmo.meta().size);
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
@@ -942,7 +930,7 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::SetupOwnedVmoDescs(
     zx_status_t status = vmo.GetPinnedRegions(offset + vmo.meta().offset, buffer.size, regions,
                                               std::size(regions), &region_count);
     if (status != ZX_OK && status != ZX_ERR_BUFFER_TOO_SMALL) {
-      FDF_LOGL(ERROR, logger(), "failed to get pinned regions: %s", zx_status_get_string(status));
+      fdf::error("failed to get pinned regions: {}", zx_status_get_string(status));
       return zx::error(status);
     }
 
@@ -959,7 +947,7 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::SetupOwnedVmoDescs(
     }
 
     if (offset == last_offset) {
-      FDF_LOGL(ERROR, logger(), "didn't get any pinned regions");
+      fdf::error("didn't get any pinned regions");
       return zx::error(ZX_ERR_BAD_STATE);
     }
   }
@@ -982,7 +970,7 @@ zx::result<std::pair<aml_sdmmc_desc_t*, fzl::PinnedVmo>> AmlSdmmc::SetupUnownedV
   zx_status_t status = pinned_vmo.PinRange(
       buffer.offset & ~PageMask(), pagecount * zx_system_get_page_size(), *vmo, bti_, options);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "bti-pin failed: %s", zx_status_get_string(status));
+    fdf::error("bti-pin failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -998,7 +986,7 @@ zx::result<std::pair<aml_sdmmc_desc_t*, fzl::PinnedVmo>> AmlSdmmc::SetupUnownedV
   }
 
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Cache op on unowned VMO failed: %s", zx_status_get_string(status));
+    fdf::error("Cache op on unowned VMO failed: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -1029,8 +1017,7 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::PopulateDescriptors(
     const fuchsia_hardware_sdmmc::wire::SdmmcReq& req, aml_sdmmc_desc_t* const cur_desc,
     fzl::PinnedVmo::Region region) {
   if (region.phys_addr > UINT32_MAX || (region.phys_addr + region.size) > UINT32_MAX) {
-    FDF_LOGL(ERROR, logger(), "DMA goes out of accessible range: 0x%0zx, %zu", region.phys_addr,
-             region.size);
+    fdf::error("DMA goes out of accessible range: 0x{:x}, {}", region.phys_addr, region.size);
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -1046,18 +1033,16 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::PopulateDescriptors(
     const size_t desc_size = std::min(region.size, max_desc_size);
 
     if (desc >= descs_end) {
-      FDF_LOGL(ERROR, logger(), "request with more than %zu chunks is unsupported",
-               kMaxDmaDescriptors);
+      fdf::error("request with more than {} chunks is unsupported", kMaxDmaDescriptors);
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     if (region.phys_addr % AmlSdmmcCmdCfg::kDataAddrAlignment != 0) {
       // The last two bits must be zero to indicate DDR/big-endian.
-      FDF_LOGL(ERROR, logger(), "DMA start address must be 4-byte aligned");
+      fdf::error("DMA start address must be 4-byte aligned");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     if (desc_size % req.blocksize != 0) {
-      FDF_LOGL(ERROR, logger(), "DMA length %zu is not multiple of block size %u", desc_size,
-               req.blocksize);
+      fdf::error("DMA length {} is not multiple of block size {}", desc_size, req.blocksize);
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
 
@@ -1081,7 +1066,7 @@ zx::result<aml_sdmmc_desc_t*> AmlSdmmc::PopulateDescriptors(
     } else if (blockcount == 1) {
       cmd.set_length(req.blocksize);
     } else {
-      FDF_LOGL(ERROR, logger(), "can't send more than one block of size %u", req.blocksize);
+      fdf::error("can't send more than one block of size {}", req.blocksize);
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
 
@@ -1109,8 +1094,7 @@ zx_status_t AmlSdmmc::FinishReq(const fuchsia_hardware_sdmmc::wire::SdmmcReq& re
           zx_vmo_op_range(region.buffer.vmo().get(), ZX_VMO_OP_CACHE_CLEAN_INVALIDATE,
                           region.offset, region.size, nullptr, 0);
       if (status != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "Failed to clean/invalidate cache: %s",
-                 zx_status_get_string(status));
+        fdf::error("Failed to clean/invalidate cache: {}", zx_status_get_string(status));
         return status;
       }
     }
@@ -1129,7 +1113,7 @@ zx_status_t AmlSdmmc::TuningDoTransfer(const TuneContext& context) {
   std::lock_guard<std::mutex> lock(lock_);
 
   if (power_suspended_) {
-    FDF_LOGL(ERROR, logger(), "Rejecting TuningDoTransfer while power is suspended.");
+    fdf::error("Rejecting TuningDoTransfer while power is suspended.");
     return ZX_ERR_BAD_STATE;
   }
 
@@ -1148,7 +1132,7 @@ zx_status_t AmlSdmmc::TuningDoTransfer(const TuneContext& context) {
   zx::vmo dup;
   zx_status_t status = context.vmo->duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to duplicate vmo: %s", zx_status_get_string(status));
+    fdf::error("Failed to duplicate vmo: {}", zx_status_get_string(status));
     return status;
   }
   tuning_req.buffers[0].buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmo(std::move(dup));
@@ -1174,8 +1158,8 @@ bool AmlSdmmc::TuningTestSettings(const TuneContext& context) {
     }
 
     uint8_t tuning_res[512] = {0};
-    if (status = context.vmo->read(tuning_res, 0, context.expected_block.size()); status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to read VMO: %s", zx_status_get_string(status));
+    if ((status = context.vmo->read(tuning_res, 0, context.expected_block.size())) != ZX_OK) {
+      fdf::error("Failed to read VMO: {}", zx_status_get_string(status));
       break;
     }
     if (memcmp(context.expected_block.data(), tuning_res, context.expected_block.size()) != 0) {
@@ -1298,7 +1282,7 @@ zx_status_t AmlSdmmc::PerformTuningImpl(uint32_t tuning_cmd_idx) {
     std::lock_guard<std::mutex> lock(lock_);
 
     if (power_suspended_) {
-      FDF_LOGL(ERROR, logger(), "Rejecting PerformTuning while power is suspended.");
+      fdf::error("Rejecting PerformTuning while power is suspended.");
       return zx::error(ZX_ERR_BAD_STATE);
     }
 
@@ -1323,14 +1307,14 @@ zx_status_t AmlSdmmc::PerformTuningImpl(uint32_t tuning_cmd_idx) {
     context.expected_block = cpp20::span<const uint8_t>(aml_sdmmc_tuning_blk_pattern_8bit,
                                                         sizeof(aml_sdmmc_tuning_blk_pattern_8bit));
   } else {
-    FDF_LOGL(ERROR, logger(), "Tuning at wrong buswidth: %d", bw);
+    fdf::error("Tuning at wrong buswidth: {}", bw);
     return ZX_ERR_INTERNAL;
   }
 
   zx::vmo received_block;
   zx_status_t status = zx::vmo::create(context.expected_block.size(), 0, &received_block);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to create VMO: %s", zx_status_get_string(status));
+    fdf::error("Failed to create VMO: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -1352,7 +1336,7 @@ zx_status_t AmlSdmmc::PerformTuningImpl(uint32_t tuning_cmd_idx) {
     inspect_.tuning_results_nodes.push_back(std::move(node));
 
     // Add a leading zero so that fx iquery show-file sorts the results properly.
-    FDF_LOGL(INFO, logger(), "Tuning results [%02u]: %s", i, results.c_str());
+    fdf::info("Tuning results [{:02}]: {}", i, results.c_str());
   }
 
   zx::result<TuneSettings> tuning_settings =
@@ -1365,7 +1349,7 @@ zx_status_t AmlSdmmc::PerformTuningImpl(uint32_t tuning_cmd_idx) {
     std::lock_guard<std::mutex> lock(lock_);
 
     if (power_suspended_) {
-      FDF_LOGL(ERROR, logger(), "Rejecting PerformTuning while power is suspended.");
+      fdf::error("Rejecting PerformTuning while power is suspended.");
       return ZX_ERR_BAD_STATE;
     }
 
@@ -1377,8 +1361,8 @@ zx_status_t AmlSdmmc::PerformTuningImpl(uint32_t tuning_cmd_idx) {
   inspect_.distance_to_failing_point.Set(
       DistanceToFailingPoint(*tuning_settings, adj_delay_results));
 
-  FDF_LOGL(INFO, logger(), "Clock divider %u, adj delay %u, delay %u", clk_div,
-           tuning_settings->adj_delay, tuning_settings->delay);
+  fdf::info("Clock divider {}, adj delay {}, delay {}", clk_div, tuning_settings->adj_delay,
+            tuning_settings->delay);
   return ZX_OK;
 }
 
@@ -1398,7 +1382,7 @@ zx::result<AmlSdmmc::TuneSettings> AmlSdmmc::PerformTuning(
   }
 
   if (largest_failing_window.size == 0) {
-    FDF_LOGL(INFO, logger(), "No transfers failed, using default settings");
+    fdf::info("No transfers failed, using default settings");
     return zx::ok(TuneSettings{.adj_delay = 0, .delay = 0});
   }
 
@@ -1417,10 +1401,9 @@ zx::result<AmlSdmmc::TuneSettings> AmlSdmmc::PerformTuning(
   inspect_.longest_window_size.Set(largest_failing_window.size);
   inspect_.longest_window_adj_delay.Set(failing_adj_delay);
 
-  FDF_LOGL(INFO, logger(),
-           "Largest failing window: adj_delay %u, delay start %u, size %u, middle %u",
-           failing_adj_delay, largest_failing_window.start, largest_failing_window.size,
-           largest_failing_window.middle());
+  fdf::info("Largest failing window: adj_delay {}, delay start {}, size {}, middle {}",
+            failing_adj_delay, largest_failing_window.start, largest_failing_window.size,
+            largest_failing_window.middle());
   return zx::ok(results);
 }
 
@@ -1457,8 +1440,8 @@ zx_status_t AmlSdmmc::RegisterVmoImpl(uint32_t vmo_id, uint8_t client_id, zx::vm
       (vmo_rights & fuchsia_hardware_sdmmc::wire::SdmmcVmoRight::kWrite) ? ZX_BTI_PERM_WRITE : 0;
   zx_status_t status = stored_vmo.Pin(bti_, read_perm | write_perm, true);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to pin VMO %u for client %u: %s", vmo_id, client_id,
-             zx_status_get_string(status));
+    fdf::error("Failed to pin VMO {} for client {}: {}", vmo_id, client_id,
+               zx_status_get_string(status));
     return status;
   }
 
@@ -1571,7 +1554,7 @@ zx_status_t AmlSdmmc::RequestImpl(const fuchsia_hardware_sdmmc::wire::SdmmcReq& 
   if (req.cmd_flags & SDMMC_RESP_DATA_PRESENT) {
     auto status = SetupDataDescs(req, desc);
     if (status.is_error()) {
-      FDF_LOGL(ERROR, logger(), "Failed to setup data descriptors");
+      fdf::error("Failed to setup data descriptors");
       return status.error_value();
     }
     last_desc = std::get<0>(status.value());
@@ -1581,8 +1564,9 @@ zx_status_t AmlSdmmc::RequestImpl(const fuchsia_hardware_sdmmc::wire::SdmmcReq& 
   auto cmd_info = AmlSdmmcCmdCfg::Get().FromValue(last_desc->cmd_info);
   cmd_info.set_end_of_chain(1);
   last_desc->cmd_info = cmd_info.reg_value();
-  FDF_LOGL(TRACE, logger(), "SUBMIT req:%p cmd_idx: %d cmd_cfg: 0x%x cmd_dat: 0x%x cmd_arg: 0x%x",
-           &req, req.cmd_idx, desc->cmd_info, desc->data_addr, desc->cmd_arg);
+  fdf::trace("SUBMIT req:{:p} cmd_idx: {} cmd_cfg: 0x{:x} cmd_dat: 0x{:x} cmd_arg: 0x{:x}",
+             static_cast<const void*>(&req), req.cmd_idx, desc->cmd_info, desc->data_addr,
+             desc->cmd_arg);
 
   zx_paddr_t desc_phys;
 
@@ -1620,7 +1604,7 @@ zx_status_t AmlSdmmc::Init(const std::string& instance_identifier) {
   AmlSdmmcStart::Get().ReadFrom(&*mmio_).set_desc_busy(0).WriteTo(&*mmio_);
   zx_status_t status = bti_.release_quarantine();
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to release quarantined pages");
+    fdf::error("Failed to release quarantined pages");
     return status;
   }
 

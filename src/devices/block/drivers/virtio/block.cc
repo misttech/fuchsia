@@ -80,8 +80,8 @@ uint32_t VirtioRequestType(const block_server::Request& request) {
 }  // namespace
 
 void BlockDevice::CompleteTxn(block_txn_t* transaction, zx_status_t status) {
-  logger().log(fdf::TRACE, "Complete txn {} {}", static_cast<const void*>(transaction),
-               zx_status_get_string(status));
+  fdf::trace("Complete txn {} {}", static_cast<const void*>(transaction),
+             zx_status_get_string(status));
   if (transaction->pmt != ZX_HANDLE_INVALID) {
     zx_pmt_unpin(transaction->pmt);
     transaction->pmt = ZX_HANDLE_INVALID;
@@ -174,7 +174,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
   for (auto& request : requests) {
     if (zx_status_t status = block_server::CheckIoRange(request, config_.capacity);
         status != ZX_OK) {
-      FDF_LOGL(WARNING, logger(), "Invalid request range.");
+      fdf::warn("Invalid request range.");
       std::lock_guard lock(block_server_lock_);
       if (block_server_) {
         block_server_->SendReply(request.request_id, zx::make_result(status));
@@ -185,7 +185,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         request.operation.write.options.flags.is_pre_barrier() && !supports_barriers_) {
       zx::result status = FlushSync(request);
       if (status.is_error()) {
-        logger().log(fdf::WARN, "FlushSync failed: {}", status);
+        fdf::warn("FlushSync failed: {}", status);
         std::lock_guard lock(block_server_lock_);
         if (block_server_) {
           block_server_->SendReply(request.request_id, status.take_error());
@@ -195,7 +195,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
     }
     zx::result status = SubmitBlockServerRequest(request);
     if (status.is_error()) {
-      logger().log(fdf::WARN, "Failed to submit request: {}", status);
+      fdf::warn("Failed to submit request: {}", status);
       std::lock_guard lock(block_server_lock_);
       if (block_server_) {
         block_server_->SendReply(request.request_id, status.take_error());
@@ -975,7 +975,7 @@ zx::result<> BlockDriver::Start() {
                   fidl::kIgnoreBindingClosure),
           }));
       result.is_error()) {
-    logger().log(fdf::ERROR, "Failed to add volume service instance: {}", result);
+    fdf::error("Failed to add volume service instance: {}", result);
     return result.take_error();
   }
 

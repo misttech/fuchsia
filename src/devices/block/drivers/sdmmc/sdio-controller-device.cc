@@ -64,7 +64,7 @@ zx_status_t SdioControllerDevice::Create(SdmmcRootDevice* parent,
   fbl::AllocChecker ac;
   out_dev->reset(new (&ac) SdioControllerDevice(parent, std::move(sdmmc)));
   if (!ac.check()) {
-    FDF_LOGL(ERROR, parent->logger(), "failed to allocate device memory");
+    fdf::error("failed to allocate device memory");
     return ZX_ERR_NO_MEMORY;
   }
 
@@ -84,7 +84,7 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
   zx_status_t st = SdioReset();
 
   if ((st = sdmmc_->SdmmcGoIdle()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "SDMMC_GO_IDLE_STATE failed, retcode = %d", st);
+    fdf::error("SDMMC_GO_IDLE_STATE failed, retcode = {}", st);
     return st;
   }
 
@@ -92,13 +92,13 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
 
   uint32_t ocr;
   if ((st = sdmmc_->SdioSendOpCond(0, &ocr)) != ZX_OK) {
-    FDF_LOGL(DEBUG, logger(), "SDIO_SEND_OP_COND failed, retcode = %d", st);
+    fdf::debug("SDIO_SEND_OP_COND failed, retcode = {}", st);
     return st;
   }
   // Select voltage 3.3 V. Also request for 1.8V. Section 3.2 SDIO spec
   constexpr uint32_t kOcr33vS18r = SDIO_SEND_OP_COND_IO_OCR_33V | SDIO_SEND_OP_COND_CMD_S18R;
   if ((st = sdmmc_->SdioSendOpCond(kOcr33vS18r, &ocr)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "SDIO_SEND_OP_COND failed, retcode = %d", st);
+    fdf::error("SDIO_SEND_OP_COND failed, retcode = {}", st);
     return st;
   }
 
@@ -106,7 +106,7 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
   while (!(ocr & SDIO_SEND_OP_COND_RESP_IORDY)) {
     zx::nanosleep(zx::deadline_after(zx::msec(1)));
     if ((st = sdmmc_->SdioSendOpCond(kOcr33vS18r, &ocr)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "SDIO_SEND_OP_COND failed, retcode = %d", st);
+      fdf::error("SDIO_SEND_OP_COND failed, retcode = {}", st);
       return st;
     }
 
@@ -117,23 +117,23 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
 
   if (ocr & SDIO_SEND_OP_COND_RESP_MEM_PRESENT) {
     // Combo cards not supported
-    FDF_LOGL(ERROR, logger(), "Combo card not supported");
+    fdf::error("Combo card not supported");
     return ZX_ERR_NOT_SUPPORTED;
   }
   if (!(ocr & SDIO_SEND_OP_COND_RESP_IORDY)) {
-    FDF_LOGL(WARNING, logger(), "IO not ready after SDIO_SEND_OP_COND");
+    fdf::warn("IO not ready after SDIO_SEND_OP_COND");
     return ZX_ERR_IO;
   }
   if (ocr & SDIO_SEND_OP_COND_RESP_S18A) {
     if ((st = sdmmc_->SdSwitchUhsVoltage(ocr)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to switch voltage to 1.8V");
+      fdf::error("Failed to switch voltage to 1.8V");
       return st;
     }
   }
   hw_info_.num_funcs =
       GetBits(ocr, SDIO_SEND_OP_COND_RESP_NUM_FUNC_MASK, SDIO_SEND_OP_COND_RESP_NUM_FUNC_LOC);
   if ((st = sdmmc_->SdSendRelativeAddr(nullptr)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "SD_SEND_RELATIVE_ADDR failed, retcode = %d", st);
+    fdf::error("SD_SEND_RELATIVE_ADDR failed, retcode = {}", st);
     return st;
   }
 
@@ -141,20 +141,20 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
   hw_info_.num_funcs++;
 
   if ((st = sdmmc_->MmcSelectCard()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "MMC_SELECT_CARD failed, retcode = %d", st);
+    fdf::error("MMC_SELECT_CARD failed, retcode = {}", st);
     return st;
   }
 
   sdmmc_->SetRequestRetries(10);
 
   if ((st = ProcessCccr()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Read CCCR failed, retcode = %d", st);
+    fdf::error("Read CCCR failed, retcode = {}", st);
     return st;
   }
 
   // Read CIS to get max block size
   if ((st = ProcessCis(0)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Read CIS failed, retcode = %d", st);
+    fdf::error("Read CIS failed, retcode = {}", st);
     return st;
   }
 
@@ -162,15 +162,15 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
     // The voltage switch succeeded and we're now in SDR12 mode. Move to the highest available UHS-I
     // speed mode.
     if ((st = TrySwitchUhs()) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Switching to ultra high speed failed, retcode = %d", st);
+      fdf::error("Switching to ultra high speed failed, retcode = {}", st);
       return st;
     }
   } else {
     // The device does not support UHS-I; move to High- or Full-Speed instead.
     if ((st = TrySwitchHs()) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Switching to high speed failed, retcode = %d", st);
+      fdf::error("Switching to high speed failed, retcode = {}", st);
       if ((st = SwitchFreq(SDIO_DEFAULT_FREQ)) != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "Switch freq retcode = %d", st);
+        fdf::error("Switch freq retcode = {}", st);
         return st;
       }
     }
@@ -179,26 +179,26 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
   // This effectively excludes cards that don't report the mandatory FUNCE tuple, as the max block
   // size would still be set to zero.
   if ((st = SdioUpdateBlockSizeLocked(0, 0, true)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to update function 0 block size, retcode = %d", st);
+    fdf::error("Failed to update function 0 block size, retcode = {}", st);
     return st;
   }
 
   // 0 is the common function. Already initialized
   for (size_t i = 1; i < hw_info_.num_funcs; i++) {
     if ((st = InitFunc(static_cast<uint8_t>(i))) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to initialize function %zu, retcode = %d", i, st);
+      fdf::error("Failed to initialize function {}, retcode = {}", i, st);
       return st;
     }
   }
 
   sdmmc_->SetRequestRetries(0);
 
-  FDF_LOGL(INFO, logger(), "sdio device initialized successfully");
-  FDF_LOGL(INFO, logger(), "          Manufacturer: 0x%x", funcs_[0].hw_info.manufacturer_id);
-  FDF_LOGL(INFO, logger(), "          Product: 0x%x", funcs_[0].hw_info.product_id);
-  FDF_LOGL(INFO, logger(), "          cccr vsn: 0x%x", hw_info_.cccr_vsn);
-  FDF_LOGL(INFO, logger(), "          SDIO vsn: 0x%x", hw_info_.sdio_vsn);
-  FDF_LOGL(INFO, logger(), "          num funcs: %d", hw_info_.num_funcs);
+  fdf::info("sdio device initialized successfully");
+  fdf::info("          Manufacturer: 0x{:x}", funcs_[0].hw_info.manufacturer_id);
+  fdf::info("          Product: 0x{:x}", funcs_[0].hw_info.product_id);
+  fdf::info("          cccr vsn: 0x{:x}", hw_info_.cccr_vsn);
+  fdf::info("          SDIO vsn: 0x{:x}", hw_info_.sdio_vsn);
+  fdf::info("          num funcs: {}", hw_info_.num_funcs);
   return ZX_OK;
 }
 
@@ -215,8 +215,8 @@ zx_status_t SdioControllerDevice::StartSdioIrqDispatcherIfNeeded() {
   for (uint32_t i = 1; i < hw_info_.num_funcs; i++) {
     zx_status_t status = zx::interrupt::create({}, 0, ZX_INTERRUPT_VIRTUAL, &sdio_irqs_[i]);
     if (status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to create virtual interrupt for function %u: %s", i,
-               zx_status_get_string(status));
+      fdf::error("Failed to create virtual interrupt for function {}: {}", i,
+                 zx_status_get_string(status));
       return status;
     }
   }
@@ -225,8 +225,7 @@ zx_status_t SdioControllerDevice::StartSdioIrqDispatcherIfNeeded() {
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "sdio-irq-thread",
       [&](fdf_dispatcher_t*) { irq_shutdown_completion_.Signal(); });
   if (dispatcher.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to create dispatcher: %s",
-             zx_status_get_string(dispatcher.status_value()));
+    fdf::error("Failed to create dispatcher: {}", zx_status_get_string(dispatcher.status_value()));
     return dispatcher.status_value();
   }
   irq_dispatcher_ = *std::move(dispatcher);
@@ -269,8 +268,7 @@ zx_status_t SdioControllerDevice::AddDevice() {
   auto result = parent_->root_node()->AddChild(args, std::move(controller_server_end),
                                                std::move(node_server_end));
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to add child sdio controller device: %s",
-             result.status_string());
+    fdf::error("Failed to add child sdio controller device: {}", result.status_string());
     return result.status();
   }
 
@@ -359,31 +357,31 @@ zx_status_t SdioControllerDevice::SdioEnableFnLocked(uint8_t fn_idx) {
     return ZX_OK;
   }
   if ((st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IOEx_EN_FUNC_ADDR, 0, &ioex_reg)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error enabling func:%d status:%d", fn_idx, st);
+    fdf::error("Error enabling func:{} status:{}", fn_idx, zx_status_get_string(st));
     return st;
   }
 
   ioex_reg = static_cast<uint8_t>(ioex_reg | (1 << fn_idx));
   st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_IOEx_EN_FUNC_ADDR, ioex_reg, nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error enabling func:%d status:%d", fn_idx, st);
+    fdf::error("Error enabling func:{} status:{}", fn_idx, zx_status_get_string(st));
     return st;
   }
   // wait for the device to enable the func.
   zx::nanosleep(zx::deadline_after(zx::msec(10)));
   if ((st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IOEx_EN_FUNC_ADDR, 0, &ioex_reg)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error enabling func:%d status:%d", fn_idx, st);
+    fdf::error("Error enabling func:{} status:{}", fn_idx, zx_status_get_string(st));
     return st;
   }
 
   if (!(ioex_reg & (1 << fn_idx))) {
     st = ZX_ERR_IO;
-    FDF_LOGL(ERROR, logger(), "Failed to enable func %d", fn_idx);
+    fdf::error("Failed to enable func {}", fn_idx);
     return st;
   }
 
   func.enabled = true;
-  FDF_LOGL(DEBUG, logger(), "Func %d is enabled", fn_idx);
+  fdf::debug("Func {} is enabled", fn_idx);
   return st;
 }
 
@@ -399,24 +397,24 @@ zx_status_t SdioControllerDevice::SdioDisableFn(uint8_t fn_idx) {
 
   SdioFunction* func = &funcs_[fn_idx];
   if (!func->enabled) {
-    FDF_LOGL(ERROR, logger(), "Func %d is not enabled", fn_idx);
+    fdf::error("Func {} is not enabled", fn_idx);
     return ZX_ERR_IO;
   }
 
   if ((st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IOEx_EN_FUNC_ADDR, 0, &ioex_reg)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading IOEx reg. func: %d status: %d", fn_idx, st);
+    fdf::error("Error reading IOEx reg. func: {} status: {}", fn_idx, zx_status_get_string(st));
     return st;
   }
 
   ioex_reg = static_cast<uint8_t>(ioex_reg & ~(1 << fn_idx));
   st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_IOEx_EN_FUNC_ADDR, ioex_reg, nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error writing IOEx reg. func: %d status:%d", fn_idx, st);
+    fdf::error("Error writing IOEx reg. func: {} status:{}", fn_idx, zx_status_get_string(st));
     return st;
   }
 
   func->enabled = false;
-  FDF_LOGL(DEBUG, logger(), "Function %d is disabled", fn_idx);
+  fdf::debug("Function {} is disabled", fn_idx);
   return st;
 }
 
@@ -431,7 +429,7 @@ zx_status_t SdioControllerDevice::SdioIoReady(uint8_t fn_idx, bool* out_ready) {
 
   zx_status_t st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IORx_FUNC_RDY_ADDR, 0, &io_ready_reg);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading I/O Ready: %d status: %d", fn_idx, st);
+    fdf::error("Error reading I/O Ready: {} status: {}", fn_idx, zx_status_get_string(st));
     return st;
   }
 
@@ -456,7 +454,8 @@ zx_status_t SdioControllerDevice::SdioEnableFnIntr(uint8_t fn_idx) {
   uint8_t intr_byte;
   st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IEN_INTR_EN_ADDR, 0, &intr_byte);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to enable interrupt for fn: %d status: %d", fn_idx, st);
+    fdf::error("Failed to enable interrupt for fn: {} status: {}", fn_idx,
+               zx_status_get_string(st));
     return st;
   }
 
@@ -467,12 +466,13 @@ zx_status_t SdioControllerDevice::SdioEnableFnIntr(uint8_t fn_idx) {
 
   st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_IEN_INTR_EN_ADDR, intr_byte, nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to enable interrupt for fn: %d status: %d", fn_idx, st);
+    fdf::error("Failed to enable interrupt for fn: {} status: {}", fn_idx,
+               zx_status_get_string(st));
     return st;
   }
 
   func->intr_enabled = true;
-  FDF_LOGL(DEBUG, logger(), "Interrupt enabled for fn %d", fn_idx);
+  fdf::debug("Interrupt enabled for fn {}", fn_idx);
   return ZX_OK;
 }
 
@@ -487,14 +487,14 @@ zx_status_t SdioControllerDevice::SdioDisableFnIntr(uint8_t fn_idx) {
 
   SdioFunction* func = &funcs_[fn_idx];
   if (!func->intr_enabled) {
-    FDF_LOGL(ERROR, logger(), "Interrupt is not enabled for %d", fn_idx);
+    fdf::error("Interrupt is not enabled for {}", fn_idx);
     return ZX_ERR_BAD_STATE;
   }
 
   uint8_t intr_byte;
-  st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IEN_INTR_EN_ADDR, 0, &intr_byte);
-  if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed reading intr enable reg. func: %d status: %d", fn_idx, st);
+  if ((st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_IEN_INTR_EN_ADDR, 0, &intr_byte)) != ZX_OK) {
+    fdf::error("Failed reading intr enable reg. func: {} status: {}", fn_idx,
+               zx_status_get_string(st));
     return st;
   }
 
@@ -506,12 +506,13 @@ zx_status_t SdioControllerDevice::SdioDisableFnIntr(uint8_t fn_idx) {
 
   st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_IEN_INTR_EN_ADDR, intr_byte, nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error writing to intr enable reg. func: %d status: %d", fn_idx, st);
+    fdf::error("Error writing to intr enable reg. func: {} status: {}", fn_idx,
+               zx_status_get_string(st));
     return st;
   }
 
   func->intr_enabled = false;
-  FDF_LOGL(DEBUG, logger(), "Interrupt disabled for fn %d", fn_idx);
+  fdf::debug("Interrupt disabled for fn {}", fn_idx);
   return ZX_OK;
 }
 
@@ -546,8 +547,8 @@ zx_status_t SdioControllerDevice::SdioUpdateBlockSizeLocked(uint8_t fn_idx, uint
     zx_status_t st =
         WriteData16(0, SDIO_CIA_FBR_BASE_ADDR(fn_idx) + SDIO_CIA_FBR_BLK_SIZE_ADDR, blk_sz);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Error setting blk size.fn: %d blk_sz: %d ret: %d", fn_idx, blk_sz,
-               st);
+      fdf::error("Error setting blk size.fn: {} blk_sz: {} ret: {}", fn_idx, blk_sz,
+                 zx_status_get_string(st));
       return st;
     }
   }
@@ -567,7 +568,7 @@ zx_status_t SdioControllerDevice::SdioGetBlockSize(uint8_t fn_idx, uint16_t* out
     zx_status_t st = ReadData16(0, SDIO_CIA_FBR_BASE_ADDR(fn_idx) + SDIO_CIA_FBR_BLK_SIZE_ADDR,
                                 out_cur_blk_size);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed to get block size for fn: %d ret: %d", fn_idx, st);
+      fdf::error("Failed to get block size for fn: {} ret: {}", fn_idx, zx_status_get_string(st));
     }
     return st;
   }
@@ -671,7 +672,7 @@ void SdioControllerDevice::Callback(fdf::Arena& arena, CallbackCompleter::Sync& 
 
     zx_status_t st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, 0, &intr_byte);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed reading intr pending reg. status: %d", st);
+      fdf::error("Failed reading intr pending reg. status: {}", zx_status_get_string(st));
       completer.buffer(arena).Reply();
       return;
     }
@@ -738,7 +739,7 @@ zx_status_t SdioControllerDevice::SdioIntrPending(uint8_t fn_idx, bool* out_pend
   uint8_t intr_byte;
   zx_status_t st = SdioDoRwByte(false, 0, SDIO_CIA_CCCR_INTx_INTR_PEN_ADDR, 0, &intr_byte);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed reading intr pending reg. status: %d", st);
+    fdf::error("Failed reading intr pending reg. status: {}", zx_status_get_string(st));
     return st;
   }
 
@@ -793,9 +794,9 @@ zx_status_t SdioControllerDevice::SdioRequestCardReset() {
 
   zx_status_t status = PowerOnReset();
   if (status == ZX_OK) {
-    FDF_LOGL(INFO, logger(), "Reset card successfully");
+    fdf::info("Reset card successfully");
   } else {
-    FDF_LOGL(ERROR, logger(), "Card reset failed: %s", zx_status_get_string(status));
+    fdf::error("Card reset failed: {}", zx_status_get_string(status));
   }
 
   return status;
@@ -1026,7 +1027,7 @@ zx_status_t SdioControllerDevice::ProcessCccr() {
   // version info
   zx_status_t status = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_CCCR_SDIO_VER_ADDR, 0, &vsn_info);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading CCCR reg: %d", status);
+    fdf::error("Error reading CCCR reg: {}", zx_status_get_string(status));
     return status;
   }
   cccr_vsn = GetBits(vsn_info, SDIO_CIA_CCCR_CCCR_VER_MASK, SDIO_CIA_CCCR_CCCR_VER_LOC);
@@ -1040,7 +1041,7 @@ zx_status_t SdioControllerDevice::ProcessCccr() {
   // card capabilities
   status = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_CARD_CAPS_ADDR, 0, &card_caps);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading CAPS reg: %d", status);
+    fdf::error("Error reading CAPS reg: {}", zx_status_get_string(status));
     return status;
   }
   hw_info_.caps = 0;
@@ -1057,7 +1058,7 @@ zx_status_t SdioControllerDevice::ProcessCccr() {
   // speed
   status = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_BUS_SPEED_SEL_ADDR, 0, &bus_speed);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading SPEED reg: %d", status);
+    fdf::error("Error reading SPEED reg: {}", zx_status_get_string(status));
     return status;
   }
   if (bus_speed & SDIO_CIA_CCCR_BUS_SPEED_SEL_SHS) {
@@ -1067,7 +1068,7 @@ zx_status_t SdioControllerDevice::ProcessCccr() {
   // Is UHS supported?
   status = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_UHS_SUPPORT_ADDR, 0, &uhs_caps);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading SPEED reg: %d", status);
+    fdf::error("Error reading SPEED reg: {}", zx_status_get_string(status));
     return status;
   }
   if (uhs_caps & SDIO_CIA_CCCR_UHS_SDR50) {
@@ -1083,7 +1084,7 @@ zx_status_t SdioControllerDevice::ProcessCccr() {
   // drv_strength
   status = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_DRV_STRENGTH_ADDR, 0, &drv_strength);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading SPEED reg: %d", status);
+    fdf::error("Error reading SPEED reg: {}", zx_status_get_string(status));
     return status;
   }
   if (drv_strength & SDIO_CIA_CCCR_DRV_STRENGTH_SDTA) {
@@ -1111,13 +1112,13 @@ zx_status_t SdioControllerDevice::ProcessCis(uint8_t fn_idx) {
         false, 0, static_cast<uint32_t>(SDIO_CIA_FBR_BASE_ADDR(fn_idx) + SDIO_CIA_FBR_CIS_ADDR + i),
         0, &addr);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Error reading CIS of CCCR reg: %d", st);
+      fdf::error("Error reading CIS of CCCR reg: {}", zx_status_get_string(st));
       return st;
     }
     cis_ptr |= addr << (i * 8);
   }
   if (!cis_ptr) {
-    FDF_LOGL(ERROR, logger(), "CIS address is invalid");
+    fdf::error("CIS address is invalid");
     return ZX_ERR_IO;
   }
 
@@ -1126,7 +1127,7 @@ zx_status_t SdioControllerDevice::ProcessCis(uint8_t fn_idx) {
     SdioFuncTuple cur_tup;
     st = SdioDoRwByteLocked(false, 0, cis_ptr + SDIO_CIS_TPL_FRMT_TCODE_OFF, 0, &tuple_code);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Error reading tuple code for fn %d", fn_idx);
+      fdf::error("Error reading tuple code for fn {}", fn_idx);
       break;
     }
     // Ignore null tuples
@@ -1139,7 +1140,7 @@ zx_status_t SdioControllerDevice::ProcessCis(uint8_t fn_idx) {
     }
     st = SdioDoRwByteLocked(false, 0, cis_ptr + SDIO_CIS_TPL_FRMT_TLINK_OFF, 0, &tuple_link);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Error reading tuple size for fn %d", fn_idx);
+      fdf::error("Error reading tuple size for fn {}", fn_idx);
       break;
     }
     if (tuple_link == SDIO_CIS_TPL_LINK_END) {
@@ -1153,7 +1154,7 @@ zx_status_t SdioControllerDevice::ProcessCis(uint8_t fn_idx) {
     for (size_t i = 0; i < tuple_link; i++, cis_ptr++) {
       st = SdioDoRwByteLocked(false, 0, cis_ptr, 0, &cur_tup.tuple_body[i]);
       if (st != ZX_OK) {
-        FDF_LOGL(ERROR, logger(), "Error reading tuple body for fn %d", fn_idx);
+        fdf::error("Error reading tuple body for fn {}", fn_idx);
         return st;
       }
     }
@@ -1192,7 +1193,7 @@ zx_status_t SdioControllerDevice::ParseFuncExtTuple(uint8_t fn_idx, const SdioFu
         std::min<uint64_t>(sdmmc_->host_info().max_transfer_size, func->hw_info.max_blk_size));
 
     if (func->hw_info.max_blk_size == 0) {
-      FDF_LOGL(ERROR, logger(), "Invalid max block size for function 0");
+      fdf::error("Invalid max block size for function 0");
       return ZX_ERR_IO_INVALID;
     }
 
@@ -1207,14 +1208,14 @@ zx_status_t SdioControllerDevice::ParseFuncExtTuple(uint8_t fn_idx, const SdioFu
   }
 
   if (tup.tuple_body_size < SDIO_CIS_TPL_FUNCx_FUNCE_MIN_BDY_SZ) {
-    FDF_LOGL(ERROR, logger(), "Invalid body size: %d for func_ext tuple", tup.tuple_body_size);
+    fdf::error("Invalid body size: {} for func_ext tuple", tup.tuple_body_size);
     return ZX_ERR_IO;
   }
 
   func->hw_info.max_blk_size =
       SdioReadTupleBody(tup.tuple_body, SDIO_CIS_TPL_FUNCE_FUNCx_MAX_BLK_SIZE_LOC, 2);
   if (func->hw_info.max_blk_size == 0) {
-    FDF_LOGL(ERROR, logger(), "Invalid max block size for function %u", fn_idx);
+    fdf::error("Invalid max block size for function {}", fn_idx);
     return ZX_ERR_IO_INVALID;
   }
 
@@ -1239,7 +1240,7 @@ zx_status_t SdioControllerDevice::ProcessFbr(uint8_t fn_idx) {
   if ((st = SdioDoRwByteLocked(
            false, 0, SDIO_CIA_FBR_BASE_ADDR(fn_idx) + SDIO_CIA_FBR_STD_IF_CODE_ADDR, 0, &fbr)) !=
       ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading intf code: %d", st);
+    fdf::error("Error reading intf code: {}", zx_status_get_string(st));
     return st;
   }
   fn_intf_code = GetBitsU8(fbr, SDIO_CIA_FBR_STD_IF_CODE_MASK, SDIO_CIA_FBR_STD_IF_CODE_LOC);
@@ -1248,7 +1249,7 @@ zx_status_t SdioControllerDevice::ProcessFbr(uint8_t fn_idx) {
     if ((st = SdioDoRwByteLocked(false, 0,
                                  SDIO_CIA_FBR_BASE_ADDR(fn_idx) + SDIO_CIA_FBR_STD_IF_CODE_EXT_ADDR,
                                  0, &fn_intf_code)) != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Error while reading the extended intf code %d", st);
+      fdf::error("Error while reading the extended intf code {}", zx_status_get_string(st));
       return st;
     }
   }
@@ -1283,7 +1284,7 @@ zx_status_t SdioControllerDevice::InitFunc(uint8_t fn_idx) {
 zx_status_t SdioControllerDevice::SwitchFreq(uint32_t new_freq) {
   zx_status_t st;
   if ((st = sdmmc_->SetBusFreq(new_freq)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error while switching host bus frequency, retcode = %d", st);
+    fdf::error("Error while switching host bus frequency, retcode = {}", zx_status_get_string(st));
     return st;
   }
   return ZX_OK;
@@ -1294,34 +1295,34 @@ zx_status_t SdioControllerDevice::TrySwitchHs() {
   uint8_t speed = 0;
 
   if (!(hw_info_.caps & SDIO_CARD_HIGH_SPEED)) {
-    FDF_LOGL(ERROR, logger(), "High speed not supported, retcode = %d", st);
+    fdf::error("High speed not supported, retcode = {}", zx_status_get_string(st));
     return ZX_ERR_NOT_SUPPORTED;
   }
   st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_BUS_SPEED_SEL_ADDR, 0, &speed);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error while reading CCCR reg, retcode = %d", st);
+    fdf::error("Error while reading CCCR reg, retcode = {}", zx_status_get_string(st));
     return st;
   }
   UpdateBitsU8(&speed, SDIO_CIA_CCCR_BUS_SPEED_BSS_MASK, SDIO_CIA_CCCR_BUS_SPEED_BSS_LOC,
                SDIO_BUS_SPEED_EN_HS);
   st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_BUS_SPEED_SEL_ADDR, speed, nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error while writing to CCCR reg, retcode = %d", st);
+    fdf::error("Error while writing to CCCR reg, retcode = {}", zx_status_get_string(st));
     return st;
   }
   // Switch the host timing
   if ((st = sdmmc_->SetTiming(SDMMC_TIMING_HS)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch to hs timing on host : %d", st);
+    fdf::error("failed to switch to hs timing on host : {}", zx_status_get_string(st));
     return st;
   }
 
   if ((st = SwitchFreq(SDIO_HS_MAX_FREQ)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch to hs timing on host : %d", st);
+    fdf::error("failed to switch to hs frequency on host : {}", zx_status_get_string(st));
     return st;
   }
 
   if ((st = SwitchBusWidth(SDIO_BW_4BIT)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Swtiching to 4-bit bus width failed, retcode = %d", st);
+    fdf::error("Switching to 4-bit bus width failed, retcode = {}", zx_status_get_string(st));
     return st;
   }
   return ZX_OK;
@@ -1330,7 +1331,7 @@ zx_status_t SdioControllerDevice::TrySwitchHs() {
 zx_status_t SdioControllerDevice::TrySwitchUhs() {
   zx_status_t st = ZX_OK;
   if ((st = SwitchBusWidth(SDIO_BW_4BIT)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Swtiching to 4-bit bus width failed, retcode = %d", st);
+    fdf::error("Switching to 4-bit bus width failed, retcode = {}", zx_status_get_string(st));
     return st;
   }
 
@@ -1342,7 +1343,7 @@ zx_status_t SdioControllerDevice::TrySwitchUhs() {
 
   st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_BUS_SPEED_SEL_ADDR, 0, &speed);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error while reading CCCR reg, retcode = %d", st);
+    fdf::error("Error while reading CCCR reg, retcode = {}", zx_status_get_string(st));
     return st;
   }
 
@@ -1372,17 +1373,17 @@ zx_status_t SdioControllerDevice::TrySwitchUhs() {
 
   st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_BUS_SPEED_SEL_ADDR, speed, nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error while writing to CCCR reg, retcode = %d", st);
+    fdf::error("Error while writing to CCCR reg, retcode = {}", zx_status_get_string(st));
     return st;
   }
   // Switch the host timing
   if ((st = sdmmc_->SetTiming(timing)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch to uhs timing on host : %d", st);
+    fdf::error("failed to switch to uhs timing on host : {}", zx_status_get_string(st));
     return st;
   }
 
   if ((st = SwitchFreq(new_freq)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch to uhs timing on host : %d", st);
+    fdf::error("failed to switch to uhs frequency on host : {}", zx_status_get_string(st));
     return st;
   }
 
@@ -1392,7 +1393,7 @@ zx_status_t SdioControllerDevice::TrySwitchUhs() {
        !(sdmmc_->host_info().caps & SDMMC_HOST_CAP_NO_TUNING_SDR50))) {
     st = sdmmc_->PerformTuning(SD_SEND_TUNING_BLOCK);
     if (st != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "tuning failed %d", st);
+      fdf::error("tuning failed {}", zx_status_get_string(st));
       return st;
     }
     tuned_ = true;
@@ -1403,25 +1404,25 @@ zx_status_t SdioControllerDevice::TrySwitchUhs() {
 zx_status_t SdioControllerDevice::Enable4BitBus() {
   zx_status_t st = ZX_OK;
   if ((hw_info_.caps & SDIO_CARD_LOW_SPEED) && !(hw_info_.caps & SDIO_CARD_FOUR_BIT_BUS)) {
-    FDF_LOGL(ERROR, logger(), "Switching to 4-bit bus unsupported");
+    fdf::error("Switching to 4-bit bus unsupported");
     return ZX_ERR_NOT_SUPPORTED;
   }
   uint8_t bus_ctrl_reg;
   if ((st = SdioDoRwByteLocked(false, 0, SDIO_CIA_CCCR_BUS_INTF_CTRL_ADDR, 0, &bus_ctrl_reg)) !=
       ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading the current bus width");
+    fdf::error("Error reading the current bus width");
     return st;
   }
   UpdateBitsU8(&bus_ctrl_reg, SDIO_CIA_CCCR_INTF_CTRL_BW_MASK, SDIO_CIA_CCCR_INTF_CTRL_BW_LOC,
                SDIO_BW_4BIT);
   if ((st = SdioDoRwByteLocked(true, 0, SDIO_CIA_CCCR_BUS_INTF_CTRL_ADDR, bus_ctrl_reg, nullptr)) !=
       ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error while switching the bus width");
+    fdf::error("Error while switching the bus width");
     return st;
   }
   if ((st = sdmmc_->SetBusWidth(SDMMC_BUS_WIDTH_FOUR)) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "failed to switch the host bus width to %d, retcode = %d",
-             SDMMC_BUS_WIDTH_FOUR, st);
+    fdf::error("failed to switch the host bus width to {}, retcode = {}",
+               static_cast<int>(SDMMC_BUS_WIDTH_FOUR), zx_status_get_string(st));
     return ZX_ERR_INTERNAL;
   }
 
@@ -1445,13 +1446,13 @@ zx_status_t SdioControllerDevice::ReadData16(uint8_t fn_idx, uint32_t addr, uint
   uint8_t byte1 = 0, byte2 = 0;
   zx_status_t st = SdioDoRwByteLocked(false, 0, addr, 0, &byte1);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading from addr:0x%x, retcode: %d", addr, st);
+    fdf::error("Error reading from addr:0x{:x}, retcode: {}", addr, zx_status_get_string(st));
     return st;
   }
 
   st = SdioDoRwByteLocked(false, 0, addr + 1, 0, &byte2);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error reading from addr:0x%x, retcode: %d", addr + 1, st);
+    fdf::error("Error reading from addr:0x{:x}, retcode: {}", addr + 1, zx_status_get_string(st));
     return st;
   }
 
@@ -1462,13 +1463,13 @@ zx_status_t SdioControllerDevice::ReadData16(uint8_t fn_idx, uint32_t addr, uint
 zx_status_t SdioControllerDevice::WriteData16(uint8_t fn_idx, uint32_t addr, uint16_t word) {
   zx_status_t st = SdioDoRwByteLocked(true, 0, addr, static_cast<uint8_t>(word & 0xff), nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error writing to addr:0x%x, retcode: %d", addr, st);
+    fdf::error("Error writing to addr:0x{:x}, retcode: {}", addr, zx_status_get_string(st));
     return st;
   }
 
   st = SdioDoRwByteLocked(true, 0, addr + 1, static_cast<uint8_t>((word >> 8) & 0xff), nullptr);
   if (st != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Error writing to addr:0x%x, retcode: %d", addr + 1, st);
+    fdf::error("Error writing to addr:0x{:x}, retcode: {}", addr + 1, zx_status_get_string(st));
     return st;
   }
 
