@@ -504,6 +504,8 @@ Symbols:
   - { Name: fread, Type: Func }
   - { Name: fread_unlocked, Type: Func, Weak: true }
   - { Name: free, Type: Func, Weak: true }
+  - { Name: free_aligned_sized, Type: Func, Weak: true }
+  - { Name: free_sized, Type: Func, Weak: true }
   - { Name: freeaddrinfo, Type: Func }
   - { Name: freeifaddrs, Type: Func, Weak: true }
   - { Name: freelocale, Type: Func }
