@@ -7,6 +7,12 @@
 
 #include "lib/console.h"
 
+// TODO(https://fxbug.dev/371568912): Once we can stamp out multiple kernel
+// executables, we will able to simply not link in this code at all when the
+// console is disabled, at which point we can simply make this an #error when
+// !CONSOLE_ENABLED
+#if CONSOLE_ENABLED
+
 #include <assert.h>
 #include <ctype.h>
 #include <debug.h>
@@ -967,3 +973,5 @@ void kernel_shell_init() {
     console_start();
   }
 }
+
+#endif  // #if CONSOLE_ENABLED

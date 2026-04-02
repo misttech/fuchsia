@@ -467,11 +467,9 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
       power_reboot(power_reboot_flags::REBOOT_NORMAL);
       printf("reboot failed\n");
     }
-#if ENABLE_PANIC_SHELL
     dprintf(ALWAYS, "CRASH: starting debug shell... (reason = %d)\n", static_cast<int>(reason));
     arch_disable_ints();
     panic_shell_start();
-#endif  // ENABLE_PANIC_SHELL
   }
 
   dprintf(ALWAYS, "HALT: spinning forever... (reason = %d)\n", static_cast<int>(reason));

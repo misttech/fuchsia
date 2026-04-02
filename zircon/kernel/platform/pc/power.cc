@@ -181,9 +181,7 @@ void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_
 
   printf("Halted\n");
 
-#if ENABLE_PANIC_SHELL
   panic_shell_start();
-#endif
 
   for (;;) {
     x86_hlt();

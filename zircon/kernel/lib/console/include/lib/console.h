@@ -46,19 +46,9 @@ struct cmd {
 
 /* register a static block of commands at init time */
 
-/* enable the panic shell if we're being built */
-#if !defined(ENABLE_PANIC_SHELL) && PLATFORM_SUPPORTS_PANIC_SHELL
-#define ENABLE_PANIC_SHELL 1
-#endif
+#define CONSOLE_ENABLED (LK_DEBUGLEVEL > 0)
 
-#if LK_DEBUGLEVEL == 0
-
-#define STATIC_COMMAND_START [[maybe_unused]] static void _lk_cmd_list() {
-#define STATIC_COMMAND_END(name) }
-#define STATIC_COMMAND(command_str, help_str, func) (void)(func);
-#define STATIC_COMMAND_MASKED(command_str, help_str, func, availability_mask) (void)(func);
-
-#else  // LK_DEBUGLEVEL != 0
+#if CONSOLE_ENABLED
 
 #define STATIC_COMMAND_START \
   static const cmd _lk_cmd_list SPECIAL_SECTION(".data.rel.ro.commands", cmd)[] = {
@@ -70,7 +60,14 @@ struct cmd {
 #define STATIC_COMMAND_MASKED(command_str, help_str, func, availability_mask) \
   {command_str, help_str, func, availability_mask},
 
-#endif  // LK_DEBUGLEVEL == 0
+#else
+
+#define STATIC_COMMAND_START [[maybe_unused]] static void _lk_cmd_list() {
+#define STATIC_COMMAND_END(name) }
+#define STATIC_COMMAND(command_str, help_str, func) (void)(func);
+#define STATIC_COMMAND_MASKED(command_str, help_str, func, availability_mask) (void)(func);
+
+#endif  // CONSOLE_ENABLED
 
 // TODO(cpu): move somewhere else.
 class RecurringCallback {
@@ -105,5 +102,14 @@ void panic_shell_start();
 void kernel_shell_init();
 
 extern int lastresult;
+
+#if !CONSOLE_ENABLED
+// Easier to link in stubbed definitions when the console is disabled.
+inline int console_run_script(const char* string) { return 0; }
+inline int console_run_script_locked(const char* string) { return 0; }
+inline void console_exit() {}
+inline void panic_shell_start() {}
+inline void kernel_shell_init() {}
+#endif
 
 #endif  // ZIRCON_KERNEL_LIB_CONSOLE_INCLUDE_LIB_CONSOLE_H_

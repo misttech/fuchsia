@@ -36,7 +36,7 @@ void platform_halt(platform_halt_action suggested_action, zircon_crash_reason_t 
   // try to actually reboot, pet the dog one last time to give ourselves the
   // maximum amount of time to arrange our graceful reboot.
   bool halt_on_panic = BootOptions::Get()->halt_on_panic;
-  if (ENABLE_PANIC_SHELL || halt_on_panic) {
+  if (halt_on_panic) {
     hw_watchdog_set_enabled(false);
   } else {
     hw_watchdog_pet();
