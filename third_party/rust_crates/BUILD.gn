@@ -226,11 +226,11 @@ group("bit-vec-0.9.1") {
 }
 
 group("bitfield") {
-  public_deps = [ ":bitfield-v0_14_0" ]
+  public_deps = [ ":bitfield-v0_19_4" ]
 }
 
-group("bitfield-0.14.0") {
-  public_deps = [ ":bitfield-v0_14_0" ]
+group("bitfield-0.19.4") {
+  public_deps = [ ":bitfield-v0_19_4" ]
 }
 
 group("bitflags") {
@@ -4317,36 +4317,72 @@ rustc_library("bit-vec-v0_9_1") {
   applicable_licenses = [ ":bit-vec-v0_9_1.license" ]
 }
 
-license("bitfield-v0_14_0.license") {
+license("bitfield-v0_19_4.license") {
   public_package_name = "bitfield"
   license_files = [
-    "//third_party/rust_crates/vendor/bitfield-0.14.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/bitfield-0.14.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/bitfield-0.19.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bitfield-0.19.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("bitfield-v0_14_0") {
+rustc_library("bitfield-v0_19_4") {
   crate_name = "bitfield"
-  source_root = "//third_party/rust_crates/vendor/bitfield-0.14.0/src/lib.rs"
-  output_name = "bitfield-36a15d1ed087f920"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/bitfield-0.19.4/src/lib.rs"
+  output_name = "bitfield-2a63fc7b499c902f"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":bitfield-macros-v0_19_4($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=36a15d1ed087f920",
-    "-Cextra-filename=-36a15d1ed087f920",
+    "-Cmetadata=2a63fc7b499c902f",
+    "-Cextra-filename=-2a63fc7b499c902f",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bitfield-v0_14_0.license" ]
+  applicable_licenses = [ ":bitfield-v0_19_4.license" ]
+}
+
+license("bitfield-macros-v0_19_4.license") {
+  public_package_name = "bitfield_macros"
+  license_files = [
+    "//third_party/rust_crates/forks/bitfield-macros/LICENSE-APACHE",
+    "//third_party/rust_crates/forks/bitfield-macros/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("bitfield-macros-v0_19_4") {
+  crate_name = "bitfield_macros"
+  source_root = "//third_party/rust_crates/forks/bitfield-macros/src/lib.rs"
+  output_name = "bitfield_macros-7f78d20d2f594d19"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_106" ]
+  deps += [ ":quote-v1_0_45" ]
+  deps += [ ":syn-v2_0_117" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=7f78d20d2f594d19",
+    "-Cextra-filename=-7f78d20d2f594d19",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bitfield-macros-v0_19_4.license" ]
 }
 
 license("bitflags-v1_3_2.license") {

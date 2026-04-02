@@ -331,14 +331,14 @@ alias(
 )
 
 alias(
-    name = "bitfield-0.14.0",
-    actual = "//third_party/rust_crates/vendor/bitfield-0.14.0:bitfield",
+    name = "bitfield-0.19.4",
+    actual = "//third_party/rust_crates/vendor/bitfield-0.19.4:bitfield",
     tags = ["manual"],
 )
 
 alias(
     name = "bitfield",
-    actual = "//third_party/rust_crates/vendor/bitfield-0.14.0:bitfield",
+    actual = "//third_party/rust_crates/vendor/bitfield-0.19.4:bitfield",
     tags = ["manual"],
 )
 

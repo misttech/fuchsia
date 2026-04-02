@@ -273,10 +273,13 @@ pub trait WritableIndexedRegister: IndexedRegister {
 ///     }
 /// }
 /// ```
+///
+/// NOTE: If you use this macro, you must add a dependency on the bitfield crate. (At the time of
+/// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! register {
     ($name:ident, $val_type:ty, $offset:expr, RO, { $($field_spec:tt)* }) => {
-        $crate::bitfield::bitfield! {
+        ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
             pub struct $name($val_type);
             impl Debug;
@@ -313,7 +316,7 @@ macro_rules! register {
         }
     };
     ($name:ident, $val_type:ty, $offset:expr, WO, { $($field_spec:tt)* }) => {
-        $crate::bitfield::bitfield! {
+        ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
             pub struct $name($val_type);
             impl Debug;
@@ -350,7 +353,7 @@ macro_rules! register {
         }
     };
     ($name:ident, $val_type:ty, $offset:expr, RW, { $($field_spec:tt)* }) => {
-        $crate::bitfield::bitfield! {
+        ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
             pub struct $name($val_type);
             impl Debug;
@@ -405,10 +408,13 @@ macro_rules! register {
 ///     }
 /// }
 /// ```
+///
+/// NOTE: If you use this macro, you must add a dependency on the bitfield crate. (At the time of
+/// writing, it isn't easy to avoid this.)
 #[macro_export]
 macro_rules! indexed_register {
     ($name:ident, $val_type:ty, $base_offset:expr, $stride:expr, $count:expr, RO, { $($field_spec:tt)* }) => {
-        $crate::bitfield::bitfield! {
+        ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
             pub struct $name($val_type);
             impl Debug;
@@ -447,7 +453,7 @@ macro_rules! indexed_register {
         }
     };
     ($name:ident, $val_type:ty, $base_offset:expr, $stride:expr, $count:expr, WO, { $($field_spec:tt)* }) => {
-        $crate::bitfield::bitfield! {
+        ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
             pub struct $name($val_type);
             impl Debug;
@@ -486,7 +492,7 @@ macro_rules! indexed_register {
         }
     };
     ($name:ident, $val_type:ty, $base_offset:expr, $stride:expr, $count:expr, RW, { $($field_spec:tt)* }) => {
-        $crate::bitfield::bitfield! {
+        ::bitfield::bitfield! {
             #[derive(Copy, Clone, PartialEq, Eq, Default)]
             pub struct $name($val_type);
             impl Debug;

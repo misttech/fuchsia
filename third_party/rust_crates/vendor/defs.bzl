@@ -315,7 +315,7 @@ _NORMAL_DEPENDENCIES = {
             "bincode": Label("//third_party/rust_crates/vendor/bincode-1.3.3:bincode"),
             "bit-set": Label("//third_party/rust_crates/vendor/bit-set-0.9.1:bit_set"),
             "bit-vec": Label("//third_party/rust_crates/vendor/bit-vec-0.9.1:bit_vec"),
-            "bitfield": Label("//third_party/rust_crates/vendor/bitfield-0.14.0:bitfield"),
+            "bitfield": Label("//third_party/rust_crates/vendor/bitfield-0.19.4:bitfield"),
             "bitflags": Label("//third_party/rust_crates/vendor/bitflags-2.11.0:bitflags"),
             "blocking": Label("//third_party/rust_crates/vendor/blocking-1.3.0:blocking"),
             "bstr": Label("//third_party/rust_crates/vendor/bstr-1.12.1:bstr"),

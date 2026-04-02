@@ -221,9 +221,7 @@ pub mod region;
 mod register;
 pub mod vmo;
 
-#[doc(hidden)]
-pub use bitfield;
+pub use mmio::*;
 #[doc(hidden)]
 pub use paste;
-pub use mmio::*;
 pub use register::*;
