@@ -88,22 +88,25 @@ std::vector<fuchsia_hardware_power::PowerElementConfiguration> GetAllPowerConfig
 
 }  // namespace
 
-zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> Ufs::AcquireInitLease(
-    const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client) {
-  const fidl::WireResult result = lessor_client->Lease(Ufs::kPowerLevelBoot);
-  if (!result.ok()) {
-    fdf::error("Call to Lease failed: {}", result.status_string());
-    return zx::error(result.status());
+zx::result<fuchsia_power_broker::LeaseToken> Ufs::AcquireInitLease(
+    const fidl::WireSyncClient<fuchsia_power_broker::Topology>& topology_client) {
+  fuchsia_power_broker::LeaseToken lease_token_local, lease_token_broker;
+  zx_status_t status = zx::eventpair::create(0, &lease_token_local, &lease_token_broker);
+  if (status != ZX_OK) {
+    return zx::error(status);
   }
-  if (result->is_error()) {
-    fdf::error("Lease returned error: {}", fdf_power::LeaseErrorToString(result->error_value()));
-    return zx::error(ZX_ERR_INTERNAL);
+
+  zx::event dependency_token;
+  ZX_ASSERT(hardware_power_assertive_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dependency_token) ==
+            ZX_OK);
+  auto result = fdf_power::AcquireLease(topology_client.client_end().borrow(),
+                                        std::move(dependency_token), Ufs::kPowerLevelBoot,
+                                        "ufs-init", true, std::move(lease_token_broker));
+  if (result.is_error()) {
+    fdf::error("Failed to acquire lease: {}", fdf_power::ErrorToString(result.error_value()));
+    return fdf_power::ErrorToZxError(result.error_value());
   }
-  if (!result->value()->lease_control.is_valid()) {
-    fdf::error("Lease returned invalid lease control client end.");
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  return zx::ok(std::move(result->value()->lease_control));
+  return zx::ok(std::move(lease_token_local));
 }
 
 zx::result<> Ufs::NotifyEventCallback(NotifyEvent event, uint64_t data) {
@@ -1140,8 +1143,6 @@ zx::result<> Ufs::ConfigurePowerManagement() {
       hardware_power_element_control_client_ =
           fidl::WireSyncClient<fuchsia_power_broker::ElementControl>(
               std::move(description.element_control_client.value()));
-      hardware_power_lessor_client_ = fidl::WireSyncClient<fuchsia_power_broker::Lessor>(
-          std::move(description.lessor_client.value()));
       hardware_power_element_runner_server_binding_.emplace(
           fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(element_runner.server),
           &this->hardware_power_element_runner_server_, fidl::kIgnoreBindingClosure);
@@ -1186,13 +1187,15 @@ zx::result<> Ufs::ConfigurePowerManagement() {
 
   // The lease request on the hardware power element remains until we register
   // our power element token with the CpuElementManager protocol
-  zx::result lease_control_client_end = AcquireInitLease(hardware_power_lessor_client_);
+  fidl::WireSyncClient<fuchsia_power_broker::Topology> topology_client(
+      std::move(power_broker.value()));
+  zx::result lease_control_client_end = AcquireInitLease(topology_client);
   if (!lease_control_client_end.is_ok()) {
     fdf::error("Failed to acquire lease on hardware power: {}",
                zx_status_get_string(lease_control_client_end.status_value()));
     return lease_control_client_end.take_error();
   }
-  hardware_power_lease_control_client_end_ = std::move(lease_control_client_end.value());
+  hardware_power_lease_control_token_ = std::move(lease_control_client_end.value());
 
   return zx::success();
 }
@@ -1209,7 +1212,7 @@ void Ufs::HardwareElementRunner::SetLevel(
       // external lease raised our power level. This means we can drop
       // our self-lease and allow the external entity to drive our power
       // state.
-      parent_.hardware_power_lease_control_client_end_.reset();
+      parent_.hardware_power_lease_control_token_.reset();
 
       // Actually raise the hardware's power level.
       zx::result result = parent_.device_manager_->ResumePower();

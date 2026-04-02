@@ -315,8 +315,8 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
 
   // Acquires a lease during initialization that holds the power element at its "boot" level until
   // an external dependency pulls it to "on".
-  zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> AcquireInitLease(
-      const fidl::WireSyncClient<fuchsia_power_broker::Lessor> &lessor_client);
+  zx::result<fuchsia_power_broker::LeaseToken> AcquireInitLease(
+      const fidl::WireSyncClient<fuchsia_power_broker::Topology> &topology_client);
 
   // Adjusts the hardware power level in response to SetLevel calls from the Power Broker.
   class HardwareElementRunner : public fidl::Server<fuchsia_power_broker::ElementRunner> {
@@ -406,9 +406,8 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
   fidl::WireSyncClient<fuchsia_power_broker::ElementControl> hardware_power_element_control_client_;
-  fidl::WireSyncClient<fuchsia_power_broker::Lessor> hardware_power_lessor_client_;
   zx::event hardware_power_assertive_token_;
-  fidl::ClientEnd<fuchsia_power_broker::LeaseControl> hardware_power_lease_control_client_end_;
+  fuchsia_power_broker::LeaseToken hardware_power_lease_control_token_;
 };
 
 }  // namespace ufs
