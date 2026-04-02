@@ -339,6 +339,7 @@ pub async fn serve_impl(
     context: EnvironmentContext,
     mode: ServerMode,
     tx: &mut mpsc::UnboundedSender<crate::target::ConnectEvent>,
+    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<ServeStarted> {
     // Validate the cmd args before processing. This allows good error messages to be presented
     // to the user when running in Background mode. If the server is already running, this returns
@@ -372,10 +373,9 @@ pub async fn serve_impl(
                     format!("getting repositories from product bundle {product_bundle}")
                 })?;
             for repository in repositories {
-                let aliases = repository.aliases().clone();
                 let repo_name = format!(
                     "{repo_base_name}.{first_alias}",
-                    first_alias = aliases.first().unwrap().clone()
+                    first_alias = repository.aliases().first().unwrap()
                 );
 
                 let repo_client = RepoClient::from_trusted_remote(Box::new(repository) as Box<_>)
@@ -463,15 +463,14 @@ pub async fn serve_impl(
     if let Some(port_path) = cmd.port_path.clone() {
         let port = server.local_addr().port().to_string();
 
-        fs::write(port_path, port.clone())
+        fs::write(port_path, &port)
             .with_context(|| format!("creating port file for port {}", port))?;
     };
 
-    let server_addr = server.local_addr().clone();
+    let server_addr = server.local_addr();
 
     // Write out the instance data
-    for (name, repo_client) in repo_manager.repositories() {
-        let repo_name = cmd.repository.clone().unwrap_or_else(|| DEFAULT_REPO_NAME.to_string());
+    for (repo_name, repo_client) in repo_manager.repositories() {
         let repo_url =
             fuchsia_url::RepositoryUrl::parse_host(repo_name.clone()).map_err(|e| bug!(e))?;
         let mirror_url = format!("http://{server_addr}/{repo_name}")
@@ -484,9 +483,9 @@ pub async fn serve_impl(
             .map_err(|e| bug!("{e}"))?;
         let repo_spec = repo_client.read().await.spec();
         if let Err(e) = write_instance_info(
-            &context.clone(),
+            &context,
             mode.clone(),
-            &name,
+            &repo_name,
             &server_addr,
             repo_spec,
             cmd.storage_type
@@ -546,6 +545,15 @@ pub async fn serve_impl(
     }
 
     let result = if cmd.no_device {
+        if let Err(e) = tx
+            .send(crate::target::ConnectEvent::StartServe {
+                repo_path: repo_path.to_string(),
+                addr: server_addr,
+            })
+            .await
+        {
+            log::warn!("Error sending start serve message: {e}");
+        }
         Ok(ServeStarted::Started { address: server_addr, repo_path })
     } else {
         let tunnel_addr = cmd.tunnel_addr.clone().unwrap_or_else(|| default_tunnel_addr());
@@ -568,6 +576,7 @@ pub async fn serve_impl(
             host_address,
             tunnel_addr,
             connection_sink,
+            repo_host_tx,
         ))
         .await;
         if r.is_err() {
@@ -1916,6 +1925,7 @@ mod test {
                 env.environment_context().clone(),
                 ServerMode::Foreground,
                 &mut tx,
+                None,
             ))
             .await
             .unwrap()
@@ -2037,58 +2047,8 @@ mod test {
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
         let tmp_port_file_path = tmp_port_file.path().to_owned();
 
-        let (fake_repo, _fake_repo_rx) = FakeRepositoryManager::new();
-        let (fake_engine, _fake_engine_rx) = FakeEngine::new();
-        let (_, fake_target_proxy, _) = FakeTarget::new(None);
-
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(fidl::endpoints::ClientEnd::from(
-                FakeRcs::new(fake_repo, fake_engine, fake_netstack)
-                    .into_channel()
-                    .unwrap()
-                    .into_zx_channel(),
-            ))
-        });
-
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fake_injector = FakeInjector {
-            remote_factory_closure: Box::new(move || {
-                let fake_repo = frc.clone();
-                let fake_engine = fec.clone();
-                let fake_netstack = fake_netstack.clone();
-                Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            remote_factory_closure_f: Box::new(move || {
-                let fdomain_client = fdomain_client.clone();
-                Box::pin(async move {
-                    Ok(fdomain_client::fidl::ClientEnd::<
-                        fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker,
-                    >::from(fdomain_client.namespace().await.unwrap())
-                    .into_proxy())
-                })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
-            }),
-            ..Default::default()
-        };
-
         let env =
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
-        let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (mut tx, mut rx) = futures::channel::mpsc::unbounded();
         // Run main in background
@@ -2098,23 +2058,21 @@ mod test {
             let tmp_repo_path = Utf8Path::from_path(tmp_repo.path()).unwrap();
             test_utils::make_empty_pm_repo_dir(tmp_repo_path);
             Box::pin(serve_impl(
-                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
-                    "".to_string(),
-                )))),
+                Deferred::from_output(Err(bug!("no target_spec"))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
-                Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
+                Deferred::from_output(Err(bug!("no host address"))),
                 StartCommand {
                     repository: Some(REPO_NAME.to_string()),
                     trusted_root: None,
                     address: Some((REPO_LOCALHOST_IPV4_ADDR, REPO_PORT).into()),
                     repo_path: Some(tmp_repo_path.into()),
                     product_bundle: None,
-                    alias: vec!["example.com".into(), "fuchsia.com".into()],
-                    storage_type: Some(RepositoryStorageType::Ephemeral),
+                    alias: vec![],
+                    storage_type: None,
                     alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
                     port_path: Some(tmp_port_file_path),
                     tunnel_addr: None,
-                    no_device: false,
+                    no_device: true,
                     refresh_metadata: false,
                     auto_publish: None,
                     background: false,
@@ -2124,6 +2082,7 @@ mod test {
                 env.environment_context().clone(),
                 ServerMode::Foreground,
                 &mut tx,
+                None,
             ))
             .await
             .unwrap()
@@ -2285,6 +2244,7 @@ mod test {
         };
 
         let (mut tx, _rx) = futures::channel::mpsc::unbounded();
+        let (repo_host_tx, mut repo_host_rx) = futures::channel::mpsc::unbounded();
 
         // Run main in background
         let _task = fasync::Task::local(async move {
@@ -2315,6 +2275,7 @@ mod test {
                 test_env.context.clone(),
                 ServerMode::Foreground,
                 &mut tx,
+                Some(repo_host_tx),
             ))
             .await
             .unwrap()
@@ -2335,6 +2296,8 @@ mod test {
         let repo_base_name = "devhost";
         let target_repo_port =
             if direct_target_connection { dynamic_repo_port } else { DEVICE_PORT };
+
+        assert_eq!(repo_host_rx.next().await.unwrap(), format!("{repo_host}:{target_repo_port}"));
         assert_eq!(
             fake_repo.take_events(),
             ["example.com", "fuchsia.com"].map(|repo_name| RepositoryManagerEvent::Add {
@@ -2545,6 +2508,7 @@ mod test {
                 test_env.context.clone(),
                 ServerMode::Foreground,
                 &mut tx,
+                None,
             ))
             .await
             .is_err(),
@@ -2655,6 +2619,7 @@ mod test {
                 test_env.context.clone(),
                 ServerMode::Foreground,
                 &mut tx,
+                None,
             ))
             .await
             .unwrap()

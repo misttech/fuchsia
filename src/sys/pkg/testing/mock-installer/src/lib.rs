@@ -199,6 +199,10 @@ impl MockUpdateInstallerService {
         assert_eq!(*self.captured_args.lock(), expected_args);
     }
 
+    pub fn captured_args(&self) -> &Mutex<Vec<CapturedUpdateInstallerRequest>> {
+        &self.captured_args
+    }
+
     pub fn assert_reboot_controller_called_with(
         &self,
         expected_requests: Vec<CapturedRebootControllerRequest>,

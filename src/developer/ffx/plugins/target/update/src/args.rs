@@ -212,9 +212,10 @@ pub struct ForceInstall {
     #[argh(option, default = "true")]
     pub reboot: bool,
 
-    /// the url of the update package describing the update to install
+    /// the url of the update to install, can be a fuchsia-pkg update package url or a http(s)
+    /// manifest url
     #[argh(positional)]
-    pub update_pkg_url: String,
+    pub update_url: Option<String>,
 
     /// use the product bundle to use as the source of the update.
     #[argh(switch)]
@@ -226,11 +227,15 @@ pub struct ForceInstall {
     #[ffx_config_default(key = "repository.ota_port", default = "0")]
     pub product_bundle_port: Option<u64>,
 
-    /// optionally specify the product bundle to use as the source of the update
-    /// when `--product-bundle` is set. The default is to use the product bundle
-    /// configured with `product.path`.
-    #[argh(positional)]
+    /// optionally specify the product bundle to use as the source of the update, implies
+    /// `--product-bundle`. The default is to use the product bundle configured with
+    /// `product.path`.
+    #[argh(option)]
     pub product_bundle_path: Option<PathBuf>,
+
+    /// use a default packageless update url if no update_url is provided
+    #[argh(switch)]
+    pub packageless: bool,
 }
 
 /// Wait for the update to be committed.
@@ -353,8 +358,21 @@ mod tests {
     }
 
     #[test]
-    fn test_force_install_requires_positional_arg() {
-        assert_matches!(Update::from_args(&["update"], &["force-install"]), Err(_));
+    fn test_force_install_without_positional_arg() {
+        let update = Update::from_args(&["update"], &["force-install"]).unwrap();
+        assert_eq!(
+            update,
+            Update {
+                cmd: Command::ForceInstall(ForceInstall {
+                    update_url: None,
+                    reboot: true,
+                    product_bundle: false,
+                    product_bundle_port: None,
+                    product_bundle_path: None,
+                    packageless: false,
+                })
+            }
+        );
     }
 
     #[test]
@@ -364,11 +382,12 @@ mod tests {
             update,
             Update {
                 cmd: Command::ForceInstall(ForceInstall {
-                    update_pkg_url: "url".to_owned(),
+                    update_url: Some("url".to_owned()),
                     reboot: true,
                     product_bundle: false,
+                    product_bundle_port: None,
                     product_bundle_path: None,
-                    product_bundle_port: None
+                    packageless: false,
                 })
             }
         );
@@ -382,11 +401,12 @@ mod tests {
             update,
             Update {
                 cmd: Command::ForceInstall(ForceInstall {
-                    update_pkg_url: "url".to_owned(),
+                    update_url: Some("url".to_owned()),
                     reboot: false,
                     product_bundle: false,
+                    product_bundle_port: None,
                     product_bundle_path: None,
-                    product_bundle_port: None
+                    packageless: false,
                 })
             }
         );
@@ -402,11 +422,12 @@ mod tests {
             update,
             Update {
                 cmd: Command::ForceInstall(ForceInstall {
-                    update_pkg_url: "url".to_owned(),
+                    update_url: Some("url".to_owned()),
                     reboot: true,
                     product_bundle: true,
+                    product_bundle_port: Some(1234),
                     product_bundle_path: None,
-                    product_bundle_port: Some(1234)
+                    packageless: false,
                 })
             }
         );
