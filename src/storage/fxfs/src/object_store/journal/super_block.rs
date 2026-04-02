@@ -37,7 +37,7 @@ use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::journal::{BLOCK_SIZE, JournalCheckpoint, JournalCheckpointV32};
 use crate::object_store::object_record::{
     ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43, ObjectItemV46, ObjectItemV47,
-    ObjectItemV49, ObjectItemV50,
+    ObjectItemV49, ObjectItemV50, ObjectItemV54,
 };
 use crate::object_store::transaction::{AssocObj, Options};
 use crate::object_store::tree::MajorCompactable;
@@ -47,7 +47,8 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::serialized_types::{
     EARLIEST_SUPPORTED_VERSION, FIRST_EXTENT_IN_SUPERBLOCK_VERSION, Migrate,
-    SMALL_SUPERBLOCK_VERSION, Version, Versioned, VersionedLatest, migrate_to_version,
+    SMALL_SUPERBLOCK_VERSION, Version, Versioned, VersionedLatest, migrate_nodefault,
+    migrate_to_version,
 };
 use anyhow::{Context, Error, bail, ensure};
 use fprint::TypeFingerprint;
@@ -220,20 +221,30 @@ impl<'de> Deserialize<'de> for UuidWrapper {
     }
 }
 
-pub type SuperBlockRecord = SuperBlockRecordV50;
+pub type SuperBlockRecord = SuperBlockRecordV54;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
-pub enum SuperBlockRecordV50 {
+pub enum SuperBlockRecordV54 {
     // When reading the super-block we know the initial extent, but not subsequent extents, so these
     // records need to exist to allow us to completely read the super-block.
     Extent(Range<u64>),
 
     // Following the super-block header are ObjectItem records that are to be replayed into the root
     // parent object store.
-    ObjectItem(ObjectItemV50),
+    ObjectItem(ObjectItemV54),
 
     // Marks the end of the full super-block.
+    End,
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(SuperBlockRecordV54)]
+#[migrate_nodefault]
+pub enum SuperBlockRecordV50 {
+    Extent(Range<u64>),
+    ObjectItem(ObjectItemV50),
     End,
 }
 

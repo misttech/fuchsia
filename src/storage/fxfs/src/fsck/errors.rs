@@ -223,7 +223,7 @@ pub enum FsckError {
     AllocatedSizeMismatch(u64, u64, u64, u64),
     AllocationForNonexistentOwner(Allocation),
     AllocationMismatch(Allocation, Allocation),
-    BadCasefoldHash(u64, u64, u64),
+    BadCasefoldHash(u64, u64, u64, u32, u32),
     BadGraveyardValue(u64, u64),
     BadLastObjectId(u64, u64),
     CasefoldInconsistency(u64, u64, u64),
@@ -295,10 +295,10 @@ impl FsckError {
             FsckError::AllocationMismatch(observed, stored) => {
                 format!("Observed allocation {:?} but allocator has {:?}", observed, stored)
             }
-            FsckError::BadCasefoldHash(store_id, parent_id, child_id) => {
+            FsckError::BadCasefoldHash(store_id, parent_id, child_id, expected, actual) => {
                 format!(
                     "Bad casefold hash code for store {store_id}, directory {parent_id}, child \
-                     {child_id}",
+                     {child_id}. Expected {expected:08x}, actual {actual:08x}",
                 )
             }
             FsckError::BadLastObjectId(highest, last_object_id) => {
@@ -562,8 +562,8 @@ impl FsckError {
             FsckError::AllocationMismatch(observed, stored) => {
                 error!(observed:?, stored:?; "Unexpected allocation");
             }
-            FsckError::BadCasefoldHash(store_id, parent_id, child_id) => {
-                error!(store_id, parent_id, child_id; "Bad casefold hash code");
+            FsckError::BadCasefoldHash(store_id, parent_id, child_id, expected, actual) => {
+                warn!(store_id, parent_id, child_id, expected, actual; "Bad casefold hash code");
             }
             FsckError::BadLastObjectId(highest, last_object_id) => {
                 error!(highest, last_object_id; "Last object ID is less than highest found");

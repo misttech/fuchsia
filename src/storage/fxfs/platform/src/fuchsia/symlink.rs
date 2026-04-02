@@ -12,7 +12,7 @@ use fxfs::errors::FxfsError;
 use fxfs::object_handle::{ObjectHandle, ObjectProperties};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{
-    HandleOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectValue,
+    DirType, HandleOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectValue,
     StoreObjectHandle,
 };
 use fxfs_macros::ToWeakNode;
@@ -82,8 +82,7 @@ impl FxSymlink {
                 change_time,
                 sub_dirs: 0,
                 posix_attributes,
-                casefold: false,
-                wrapping_key_id: None,
+                dir_type: DirType::Normal,
             }),
             ObjectValue::Object {
                 kind: ObjectKind::EncryptedSymlink { refs, link },
@@ -110,8 +109,7 @@ impl FxSymlink {
                     change_time,
                     sub_dirs: 0,
                     posix_attributes,
-                    casefold: false,
-                    wrapping_key_id: None,
+                    dir_type: DirType::Normal,
                 })
             }
             ObjectValue::None => Err(FxfsError::NotFound.into()),

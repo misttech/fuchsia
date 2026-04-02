@@ -12,8 +12,8 @@ use crate::object_handle::{
 use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
-    AttributeKey, FsverityMetadata, ObjectAttributes, ObjectItem, ObjectKey, ObjectKeyData,
-    ObjectKind, ObjectValue, Timestamp,
+    AttributeKey, DirType, FsverityMetadata, ObjectAttributes, ObjectItem, ObjectKey,
+    ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::store_object_handle::{MaybeChecksums, NeedsTrim};
 use crate::object_store::transaction::{
@@ -1670,8 +1670,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 change_time,
                 sub_dirs: 0,
                 posix_attributes,
-                casefold: false,
-                wrapping_key_id: None,
+                dir_type: DirType::Normal,
             }),
             _ => bail!(FxfsError::NotFile),
         }
@@ -1956,7 +1955,7 @@ mod tests {
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, Directory, ExtentKey,
+        AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, DirType, Directory, ExtentKey,
         ExtentMode, ExtentValue, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, LockKey,
         NewChildStoreOptions, ObjectKeyData, ObjectStore, PosixAttributes, StoreOptions,
         TRANSACTION_MUTATION_THRESHOLD,
@@ -3607,7 +3606,7 @@ mod tests {
             transaction.add(
                 store.store_object_id(),
                 Mutation::replace_or_insert_object(
-                    ObjectKey::child(root_directory.object_id(), TEST_OBJECT_NAME, false),
+                    ObjectKey::child(root_directory.object_id(), TEST_OBJECT_NAME, DirType::Normal),
                     ObjectValue::None,
                 ),
             );

@@ -8,8 +8,8 @@ use crate::object_store::directory::Directory;
 use crate::object_store::transaction::{LockKeys, Mutation, Options, Transaction, lock_keys};
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::{
-    ChildValue, INVALID_OBJECT_ID, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectKey,
-    ObjectStore, ObjectValue, StoreOptions, load_store_info,
+    ChildValue, DirType, INVALID_OBJECT_ID, LockKey, NewChildStoreOptions, ObjectDescriptor,
+    ObjectKey, ObjectStore, ObjectValue, StoreOptions, load_store_info,
 };
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use std::sync::Arc;
@@ -198,7 +198,7 @@ impl RootVolume {
         transaction.add(
             self.volume_directory().store().store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::child(self.volume_directory().object_id(), src, false),
+                ObjectKey::child(self.volume_directory().object_id(), src, DirType::Normal),
                 ObjectValue::None,
             ),
         );
@@ -206,7 +206,7 @@ impl RootVolume {
         transaction.add(
             self.volume_directory().store().store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::child(self.volume_directory().object_id(), dst, false),
+                ObjectKey::child(self.volume_directory().object_id(), dst, DirType::Normal),
                 ObjectValue::Child(ChildValue {
                     object_id: src_object_id,
                     object_descriptor: ObjectDescriptor::Volume,

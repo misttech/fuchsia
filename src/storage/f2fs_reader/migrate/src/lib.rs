@@ -13,7 +13,7 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, Directory, ExtentValue,
+    AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, DataObjectHandle, DirType, Directory, ExtentValue,
     FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions,
     NewChildStoreOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore,
     ObjectValue, PosixAttributes, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
@@ -219,8 +219,24 @@ pub async fn migrate(
         for entry in f2fs.readdir(ino).await? {
             let object_id = entry.ino as u64;
             let inode = f2fs.read_inode(entry.ino).await?;
+
+            let (wrapping_key_id, key_id, keys) = keys_from_context(
+                object_id,
+                &inode.context,
+                &dir,
+                dir.wrapping_key_id().is_some(),
+                entry.file_type == FileType::RegularFile,
+            )
+            .await?;
+
             let flags = inode.header.flags;
             let casefold = flags.contains(Flags::Casefold);
+            let dir_type = match (casefold, wrapping_key_id) {
+                (true, Some(id)) => DirType::EncryptedCasefold(id),
+                (true, None) => DirType::Casefold,
+                (false, Some(id)) => DirType::Encrypted(id),
+                (false, None) => DirType::Normal,
+            };
 
             let mut transaction = fxfs
                 .clone()
@@ -233,15 +249,6 @@ pub async fn migrate(
                 )
                 .await?;
 
-            let (wrapping_key_id, key_id, keys) = keys_from_context(
-                object_id,
-                &inode.context,
-                &dir,
-                dir.wrapping_key_id().is_some(),
-                entry.file_type == FileType::RegularFile,
-            )
-            .await?;
-
             transaction.add(
                 dir.owner().store_object_id(),
                 Mutation::replace_or_insert_object(
@@ -253,14 +260,18 @@ pub async fn migrate(
             if !existing_inodes.insert(entry.ino) {
                 // Hard link to an existing inode.
                 ensure!(entry.file_type == FileType::RegularFile, "Hard link to non-file");
-                if wrapping_key_id.is_some() {
+                if dir.dir_type().is_encrypted() {
                     transaction.add(
                         dir.store().store_object_id(),
                         Mutation::replace_or_insert_object(
                             ObjectKey::encrypted_child(
                                 dir.object_id(),
                                 entry.raw_filename,
-                                casefold.then_some(entry.hash_code),
+                                if dir.dir_type().is_casefold() {
+                                    Some(entry.hash_code)
+                                } else {
+                                    None
+                                },
                             ),
                             ObjectValue::child(object_id, ObjectDescriptor::File),
                         ),
@@ -269,7 +280,7 @@ pub async fn migrate(
                     transaction.add(
                         dir.store().store_object_id(),
                         Mutation::replace_or_insert_object(
-                            ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                            ObjectKey::child(dir.object_id(), &entry.filename, dir.dir_type()),
                             ObjectValue::child(object_id, ObjectDescriptor::File),
                         ),
                     );
@@ -290,23 +301,23 @@ pub async fn migrate(
                         Mutation::insert_object(
                             ObjectKey::object(object_id),
                             ObjectValue::Object {
-                                kind: ObjectKind::Directory {
-                                    sub_dirs: 0,
-                                    casefold,
-                                    wrapping_key_id,
-                                },
+                                kind: ObjectKind::Directory { sub_dirs: 0, dir_type },
                                 attributes: inode_to_object_attributes(&inode, 0),
                             },
                         ),
                     );
-                    if dir.wrapping_key_id().is_some() {
+                    if dir.dir_type().is_encrypted() {
                         transaction.add(
                             dir.store().store_object_id(),
                             Mutation::replace_or_insert_object(
                                 ObjectKey::encrypted_child(
                                     dir.object_id(),
                                     entry.raw_filename,
-                                    casefold.then_some(entry.hash_code),
+                                    if dir.dir_type().is_casefold() {
+                                        Some(entry.hash_code)
+                                    } else {
+                                        None
+                                    },
                                 ),
                                 ObjectValue::child(object_id, ObjectDescriptor::Directory),
                             ),
@@ -315,7 +326,7 @@ pub async fn migrate(
                         transaction.add(
                             dir.store().store_object_id(),
                             Mutation::replace_or_insert_object(
-                                ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                                ObjectKey::child(dir.object_id(), &entry.filename, dir.dir_type()),
                                 ObjectValue::child(object_id, ObjectDescriptor::Directory),
                             ),
                         );
@@ -336,12 +347,8 @@ pub async fn migrate(
                     transaction.add(dir.store().store_object_id(), Mutation::ObjectStore(mutation));
 
                     transaction.commit().await?;
-                    let new_dir = Directory::open_unchecked(
-                        dir.owner().clone(),
-                        object_id,
-                        wrapping_key_id,
-                        casefold,
-                    );
+                    let new_dir =
+                        Directory::open_unchecked(dir.owner().clone(), object_id, dir_type);
                     stack.push((entry.ino, new_dir));
                 }
                 FileType::RegularFile => {
@@ -477,14 +484,18 @@ pub async fn migrate(
                             },
                         ),
                     );
-                    if inode.context.is_some() {
+                    if dir.dir_type().is_encrypted() {
                         transaction.add(
                             dir.owner().store_object_id(),
                             Mutation::replace_or_insert_object(
                                 ObjectKey::encrypted_child(
                                     dir.object_id(),
                                     entry.raw_filename,
-                                    casefold.then_some(entry.hash_code),
+                                    if dir.dir_type().is_casefold() {
+                                        Some(entry.hash_code)
+                                    } else {
+                                        None
+                                    },
                                 ),
                                 ObjectValue::child(object_id, ObjectDescriptor::File),
                             ),
@@ -493,7 +504,7 @@ pub async fn migrate(
                         transaction.add(
                             dir.owner().store_object_id(),
                             Mutation::replace_or_insert_object(
-                                ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                                ObjectKey::child(dir.object_id(), &entry.filename, dir.dir_type()),
                                 ObjectValue::child(object_id, ObjectDescriptor::File),
                             ),
                         );
@@ -514,7 +525,7 @@ pub async fn migrate(
                     let mut filename = filename.to_vec();
 
                     let object_attributes = inode_to_object_attributes(&inode, 0);
-                    if inode.context.is_some() {
+                    if dir.dir_type().is_encrypted() {
                         // Redundant 2-byte length prefix on encrypted symlinks (use
                         // inline_data.len()).
                         filename.drain(..2);
@@ -524,7 +535,11 @@ pub async fn migrate(
                                 ObjectKey::encrypted_child(
                                     dir.object_id(),
                                     entry.raw_filename.clone(),
-                                    casefold.then_some(entry.hash_code),
+                                    if dir.dir_type().is_casefold() {
+                                        Some(entry.hash_code)
+                                    } else {
+                                        None
+                                    },
                                 ),
                                 ObjectValue::child(object_id, ObjectDescriptor::Symlink),
                             ),
@@ -545,7 +560,7 @@ pub async fn migrate(
                         transaction.add(
                             dir.owner().store_object_id(),
                             Mutation::replace_or_insert_object(
-                                ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                                ObjectKey::child(dir.object_id(), &entry.filename, dir.dir_type()),
                                 ObjectValue::child(object_id, ObjectDescriptor::Symlink),
                             ),
                         );
@@ -595,8 +610,6 @@ pub async fn verify(
         for entry in f2fs.readdir(ino).await? {
             let object_id = entry.ino as u64;
             let inode = f2fs.read_inode(entry.ino).await.unwrap();
-            let flags = inode.header.flags;
-            let casefold = flags.contains(Flags::Casefold);
             let mut wrapping_key_id = dir.wrapping_key_id();
 
             // If f2fs inode has a context, we have an fscrypt file. In fxfs this is marked by the
@@ -605,16 +618,20 @@ pub async fn verify(
                 wrapping_key_id = Some([0; 16]);
             }
 
+            let flags = inode.header.flags;
+            let casefold = flags.contains(Flags::Casefold);
+            let dir_type = match (casefold, wrapping_key_id) {
+                (true, Some(id)) => DirType::EncryptedCasefold(id),
+                (true, None) => DirType::Casefold,
+                (false, Some(id)) => DirType::Encrypted(id),
+                (false, None) => DirType::Normal,
+            };
+
             // TODO(https://fxbug.dev/393449584): Lookup and compare fxfs filename.
 
             match entry.file_type {
                 FileType::Directory => {
-                    let dir = Directory::open_unchecked(
-                        dir.owner().clone(),
-                        object_id,
-                        wrapping_key_id,
-                        casefold,
-                    );
+                    let dir = Directory::open_unchecked(dir.owner().clone(), object_id, dir_type);
 
                     for xattr in &inode.xattr {
                         match xattr.index {
@@ -648,8 +665,7 @@ pub async fn verify(
                         change_time: object_attributes.change_time,
                         sub_dirs: inode.header.links as u64 - 2,
                         posix_attributes: object_attributes.posix_attributes,
-                        casefold,
-                        wrapping_key_id,
+                        dir_type,
                     };
                     let h = inode.header;
                     assert_eq!(
@@ -710,8 +726,7 @@ pub async fn verify(
                         change_time: object_attributes.change_time,
                         sub_dirs: 0,
                         posix_attributes: object_attributes.posix_attributes,
-                        casefold,
-                        wrapping_key_id: None,
+                        dir_type: DirType::Normal,
                     };
                     assert_eq!(fxfs_properties, f2fs_properties, "{}", entry.filename);
 
@@ -1045,7 +1060,7 @@ pub async fn migrate_device(
             .await
             .expect("Opening volume");
         let root_dir =
-            Directory::open_unchecked(vol.clone(), vol.root_directory_object_id(), None, false);
+            Directory::open_unchecked(vol.clone(), vol.root_directory_object_id(), DirType::Normal);
 
         // Copy everything from f2fs to userdata, reusing existing extents.
         let mut files_to_copy = HashSet::new();

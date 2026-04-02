@@ -12,7 +12,7 @@ use crate::object_store::directory::decrypt_filename;
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::object_record::EncryptedCasefoldChild;
 use crate::object_store::{
-    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, EXTENDED_ATTRIBUTE_RANGE_END,
+    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EXTENDED_ATTRIBUTE_RANGE_END,
     EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
     FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes,
     ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue,
@@ -21,7 +21,7 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::round::round_up;
 use anyhow::{Error, bail};
-use fxfs_crypto::{Crypt, WrappedKey, WrappingKeyId, key_to_cipher};
+use fxfs_crypto::{Crypt, WrappedKey, key_to_cipher};
 use rustc_hash::FxHashSet as HashSet;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;
@@ -95,12 +95,10 @@ struct ScannedDir {
     parent: Option<u64>,
     // Used to detect directory cycles.
     visited: UnsafeCell<bool>,
-    // If set, stores the wrapping_key_id that the directory was encrypted with.
-    wrapping_key_id: Option<WrappingKeyId>,
     // Attributes for this directory.
     attributes: ScannedAttributes,
-    // True if directory uses casefold
-    casefold: bool,
+    // The type of directory (casefolding, etc.)
+    dir_type: DirType,
     // The fscrypt encryption key.
     fscrypt_key: Option<WrappedKey>,
 }
@@ -235,7 +233,7 @@ impl<'a> ScannedStore<'a> {
                     }
                     ObjectValue::Object {
                         // TODO: https://fxbug.dev/356897866: Add validation for fscrypt.
-                        kind: ObjectKind::Directory { sub_dirs, casefold, wrapping_key_id },
+                        kind: ObjectKind::Directory { sub_dirs, dir_type },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
                         if *project_id > 0 {
@@ -263,7 +261,6 @@ impl<'a> ScannedStore<'a> {
                                 observed_sub_dirs: 0,
                                 parent,
                                 visited: UnsafeCell::new(false),
-                                wrapping_key_id: *wrapping_key_id,
                                 attributes: ScannedAttributes {
                                     attributes: Vec::new(),
                                     tombstoned_attributes: Vec::new(),
@@ -272,7 +269,7 @@ impl<'a> ScannedStore<'a> {
                                     in_graveyard: false,
                                     extended_attributes: Vec::new(),
                                 },
-                                casefold: *casefold,
+                                dir_type: *dir_type,
                                 fscrypt_key: None,
                             }),
                         );
@@ -522,6 +519,7 @@ impl<'a> ScannedStore<'a> {
             // TODO(b/365631616): Check that the child type matches the directory metadata.
             ObjectKeyData::Child { .. }
             | ObjectKeyData::CasefoldChild { .. }
+            | ObjectKeyData::LegacyCasefoldChild(_)
             | ObjectKeyData::EncryptedChild(_)
             | ObjectKeyData::EncryptedCasefoldChild(_) => match value {
                 ObjectValue::None => {}
@@ -658,7 +656,13 @@ impl<'a> ScannedStore<'a> {
         if let Some(ScannedObject::Directory(dir)) = self.objects.get(&parent_id) {
             match object_key_data {
                 ObjectKeyData::Child { .. } => {
-                    if dir.casefold {
+                    if dir.dir_type.is_encrypted() {
+                        self.fsck.error(FsckError::EncryptedDirectoryHasUnencryptedChild(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    } else if dir.dir_type != DirType::Normal {
                         self.fsck.error(FsckError::CasefoldInconsistency(
                             self.store_id,
                             parent_id,
@@ -666,8 +670,40 @@ impl<'a> ScannedStore<'a> {
                         ))?;
                     }
                 }
-                ObjectKeyData::CasefoldChild { .. } => {
-                    if !dir.casefold {
+                ObjectKeyData::CasefoldChild { hash_code, name } => {
+                    if dir.dir_type.is_encrypted() {
+                        self.fsck.error(FsckError::EncryptedDirectoryHasUnencryptedChild(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    } else if dir.dir_type != DirType::Casefold {
+                        self.fsck.error(FsckError::CasefoldInconsistency(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    }
+                    let casefolded: String = fxfs_unicode::casefold(name.chars()).collect();
+                    let expected_hash = fscrypt::direntry::tea_hash_filename(casefolded.as_bytes());
+                    if *hash_code != expected_hash {
+                        self.fsck.error(FsckError::BadCasefoldHash(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                            expected_hash,
+                            *hash_code,
+                        ))?;
+                    }
+                }
+                ObjectKeyData::LegacyCasefoldChild(_) => {
+                    if dir.dir_type.is_encrypted() {
+                        self.fsck.error(FsckError::EncryptedDirectoryHasUnencryptedChild(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    } else if dir.dir_type != DirType::LegacyCasefold {
                         self.fsck.error(FsckError::CasefoldInconsistency(
                             self.store_id,
                             parent_id,
@@ -679,8 +715,14 @@ impl<'a> ScannedStore<'a> {
                     hash_code,
                     name,
                 }) => {
-                    if dir.wrapping_key_id.is_none() {
+                    if !dir.dir_type.is_encrypted() {
                         self.fsck.error(FsckError::UnencryptedDirectoryHasEncryptedChild(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    } else if !matches!(dir.dir_type, DirType::EncryptedCasefold(_)) {
+                        self.fsck.error(FsckError::CasefoldInconsistency(
                             self.store_id,
                             parent_id,
                             child_id,
@@ -694,11 +736,14 @@ impl<'a> ScannedStore<'a> {
                             let cipher = key_to_cipher(key, &unwrapped_key)?;
                             match decrypt_filename(cipher.as_ref(), parent_id, &name) {
                                 Ok(name) => {
-                                    if cipher.hash_code_casefold(&name) != *hash_code {
+                                    let expected_hash = cipher.hash_code_casefold(&name);
+                                    if expected_hash != *hash_code {
                                         self.fsck.error(FsckError::BadCasefoldHash(
                                             self.store_id,
                                             parent_id,
                                             child_id,
+                                            expected_hash,
+                                            *hash_code,
                                         ))?;
                                     }
                                 }
@@ -710,8 +755,14 @@ impl<'a> ScannedStore<'a> {
                     }
                 }
                 ObjectKeyData::EncryptedChild(_) => {
-                    if dir.wrapping_key_id.is_none() {
+                    if !dir.dir_type.is_encrypted() {
                         self.fsck.error(FsckError::UnencryptedDirectoryHasEncryptedChild(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    } else if !matches!(dir.dir_type, DirType::Encrypted(_)) {
+                        self.fsck.error(FsckError::CasefoldInconsistency(
                             self.store_id,
                             parent_id,
                             child_id,
@@ -734,20 +785,23 @@ impl<'a> ScannedStore<'a> {
                 parents.push(parent_id);
             }
             (
-                Some(ScannedObject::Directory(ScannedDir { parent, wrapping_key_id, .. })),
+                Some(ScannedObject::Directory(ScannedDir { parent, dir_type, .. })),
                 ObjectDescriptor::Directory,
             ) => {
                 if matches!(
                     object_key_data,
                     ObjectKeyData::EncryptedChild(_) | ObjectKeyData::EncryptedCasefoldChild(_)
                 ) {
-                    if let Some(id) = wrapping_key_id {
-                        child_wrapping_key_id = Some(*id);
-                    } else {
-                        self.fsck.error(FsckError::EncryptedChildDirectoryNoWrappingKey(
-                            self.store_id,
-                            child_id,
-                        ))?;
+                    match dir_type {
+                        DirType::Encrypted(id) | DirType::EncryptedCasefold(id) => {
+                            child_wrapping_key_id = Some(*id);
+                        }
+                        _ => {
+                            self.fsck.error(FsckError::EncryptedChildDirectoryNoWrappingKey(
+                                self.store_id,
+                                child_id,
+                            ))?;
+                        }
                     }
                 }
                 if parent.is_some() {
@@ -792,35 +846,20 @@ impl<'a> ScannedStore<'a> {
             ) => {
                 self.fsck.error(FsckError::ObjectHasChildren(self.store_id, parent_id))?;
             }
-            Some(ScannedObject::Directory(ScannedDir {
-                observed_sub_dirs,
-                wrapping_key_id,
-                ..
-            })) => {
-                if let Some(parent_wrapping_key_id) = *wrapping_key_id {
-                    if !matches!(
-                        object_key_data,
-                        ObjectKeyData::EncryptedChild(_) | ObjectKeyData::EncryptedCasefoldChild(_)
-                    ) {
-                        self.fsck.error(FsckError::EncryptedDirectoryHasUnencryptedChild(
-                            self.store_id,
-                            parent_id,
-                            child_id,
-                        ))?;
-                    } else {
-                        if let Some(child_wrapping_key_id) = child_wrapping_key_id {
-                            if child_wrapping_key_id != parent_wrapping_key_id {
-                                self.fsck.error(
-                                    FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(
-                                        self.store_id,
-                                        parent_id,
-                                        child_id,
-                                        parent_wrapping_key_id,
-                                        child_wrapping_key_id,
-                                    ),
-                                )?;
-                            }
-                        }
+            Some(ScannedObject::Directory(ScannedDir { observed_sub_dirs, dir_type, .. })) => {
+                if let (Some(parent_wrapping_key_id), Some(child_wrapping_key_id)) =
+                    (dir_type.wrapping_key_id(), child_wrapping_key_id)
+                {
+                    if child_wrapping_key_id != parent_wrapping_key_id {
+                        self.fsck.error(
+                            FsckError::ChildEncryptedWithDifferentWrappingKeyThanParent(
+                                self.store_id,
+                                parent_id,
+                                child_id,
+                                parent_wrapping_key_id,
+                                child_wrapping_key_id,
+                            ),
+                        )?;
                     }
                 }
                 if *object_descriptor == ObjectDescriptor::Directory {
@@ -1000,11 +1039,7 @@ impl<'a> ScannedStore<'a> {
                 }
 
                 match self.objects.get_mut(&current_file.object_id) {
-                    Some(ScannedObject::Directory(ScannedDir {
-                        wrapping_key_id,
-                        attributes,
-                        ..
-                    })) => {
+                    Some(ScannedObject::Directory(ScannedDir { dir_type, attributes, .. })) => {
                         if !attributes.extended_attributes.is_empty() {
                             if !key_ids.contains(&VOLUME_DATA_KEY_ID) {
                                 self.fsck.error(FsckError::MissingKey(
@@ -1014,7 +1049,7 @@ impl<'a> ScannedStore<'a> {
                                 ))?;
                             }
                         }
-                        if wrapping_key_id.is_some() {
+                        if dir_type.is_encrypted() {
                             if !key_ids.contains(&FSCRYPT_KEY_ID) {
                                 self.fsck.error(FsckError::MissingKey(
                                     self.store_id,
@@ -1118,7 +1153,8 @@ async fn scan_extents_and_directory_children<'a>(
                             object_key_data @ (ObjectKeyData::Child { .. }
                             | ObjectKeyData::EncryptedChild(_)
                             | ObjectKeyData::CasefoldChild { .. }
-                            | ObjectKeyData::EncryptedCasefoldChild { .. }),
+                            | ObjectKeyData::LegacyCasefoldChild(_)
+                            | ObjectKeyData::EncryptedCasefoldChild(_)),
                     },
                 value: ObjectValue::Child(ChildValue { object_id: child_id, object_descriptor }),
                 ..

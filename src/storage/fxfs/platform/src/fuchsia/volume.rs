@@ -33,7 +33,7 @@ use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
-use fxfs::object_store::{HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore};
+use fxfs::object_store::{DirType, HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore};
 use refaults_vmo::PageRefaultCounter;
 use std::future::Future;
 use std::pin::pin;
@@ -267,7 +267,7 @@ impl FxVolume {
             .await?;
         Ok(match internal_dir.directory().lookup(PROFILE_DIRECTORY).await? {
             Some((object_id, _, _)) => {
-                Directory::open_unchecked(self.clone(), object_id, None, false)
+                Directory::open_unchecked(self.clone(), object_id, DirType::Normal)
             }
             None => {
                 let new_dir = internal_dir

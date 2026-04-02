@@ -56,13 +56,13 @@ pub enum ProjectPropertyV32 {
     Usage,
 }
 
-pub type ObjectKeyData = ObjectKeyDataV43;
+pub type ObjectKeyData = ObjectKeyDataV54;
 
 #[derive(
     Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum ObjectKeyDataV43 {
+pub enum ObjectKeyDataV54 {
     /// A generic, untyped object.  This must come first and sort before all other keys for a given
     /// object because it's also used as a tombstone and it needs to merge with all following keys.
     Object,
@@ -91,11 +91,13 @@ pub enum ObjectKeyDataV43 {
     /// some legacy cases, this is also used in non-casefolded cases, and in some of those cases the
     /// hash code can be 0.  Going forward, these cases are covered by `EncryptedChild` below.
     EncryptedCasefoldChild(EncryptedCasefoldChild),
-    /// A child of a directory that uses the casefold feature.
-    /// (i.e. case insensitive, case preserving names)
-    CasefoldChild { name: CasefoldString },
+    /// Case-insensitive child (legacy).
+    LegacyCasefoldChild(CasefoldString),
     /// An encrypted child that does not use case folding.
     EncryptedChild(EncryptedChild),
+    /// A child of a directory that uses the casefold feature.
+    /// (i.e. case insensitive, case preserving names)
+    CasefoldChild { hash_code: u32, name: String },
 }
 
 #[derive(
@@ -127,7 +129,7 @@ pub enum AttributeKeyV32 {
 }
 
 /// ObjectKey is a key in the object store.
-pub type ObjectKey = ObjectKeyV43;
+pub type ObjectKey = ObjectKeyV54;
 
 #[derive(
     Clone,
@@ -143,11 +145,11 @@ pub type ObjectKey = ObjectKeyV43;
     Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub struct ObjectKeyV43 {
+pub struct ObjectKeyV54 {
     /// The ID of the object referred to.
     pub object_id: u64,
     /// The type and data of the key.
-    pub data: ObjectKeyDataV43,
+    pub data: ObjectKeyDataV54,
 }
 
 impl SortByU64 for ObjectKey {
@@ -192,11 +194,25 @@ impl ObjectKey {
     }
 
     /// Creates an ObjectKey for a child.
-    pub fn child(object_id: u64, name: &str, casefold: bool) -> Self {
-        if casefold {
-            Self { object_id, data: ObjectKeyData::CasefoldChild { name: name.into() } }
-        } else {
-            Self { object_id, data: ObjectKeyData::Child { name: name.into() } }
+    pub fn child(object_id: u64, name: &str, dir_type: DirType) -> Self {
+        match dir_type {
+            DirType::Casefold => {
+                let casefolded_name: String = fxfs_unicode::casefold(name.chars()).collect();
+                let hash_code = fscrypt::direntry::tea_hash_filename(casefolded_name.as_bytes());
+                Self {
+                    object_id,
+                    data: ObjectKeyData::CasefoldChild { hash_code, name: name.into() },
+                }
+            }
+            DirType::LegacyCasefold => Self {
+                object_id,
+                data: ObjectKeyData::LegacyCasefoldChild(CasefoldString::new(name.into())),
+            },
+            DirType::Normal => Self { object_id, data: ObjectKeyData::Child { name: name.into() } },
+            DirType::Encrypted(_) | DirType::EncryptedCasefold(_) => {
+                // These shouldn't be used directly; encrypted_child should be used instead.
+                panic!("Encrypted modes require an encrypted name");
+            }
         }
     }
 
@@ -311,6 +327,7 @@ impl LayerKey for ObjectKey {
             | ObjectKeyData::EncryptedChild(_)
             | ObjectKeyData::EncryptedCasefoldChild(_)
             | ObjectKeyData::CasefoldChild { .. }
+            | ObjectKeyData::LegacyCasefoldChild(_)
             | ObjectKeyData::GraveyardEntry { .. }
             | ObjectKeyData::GraveyardAttributeEntry { .. }
             | ObjectKeyData::Project { property: ProjectProperty::Limit, .. }
@@ -492,9 +509,98 @@ impl From<Timestamp> for std::time::Duration {
     }
 }
 
-pub type ObjectKind = ObjectKindV49;
+pub type ObjectKind = ObjectKindV54;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, TypeFingerprint)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum DirType {
+    Normal,
+    Encrypted(WrappingKeyId),
+    /// Legacy casefolded mode.
+    LegacyCasefold,
+    Casefold,
+    EncryptedCasefold(WrappingKeyId),
+}
+
+impl DirType {
+    pub fn is_casefold(&self) -> bool {
+        matches!(self, DirType::LegacyCasefold | DirType::Casefold | DirType::EncryptedCasefold(_))
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        matches!(self, DirType::Encrypted(_) | DirType::EncryptedCasefold(_))
+    }
+
+    pub fn with_encryption(self, id: WrappingKeyId) -> Self {
+        match self {
+            DirType::Normal => DirType::Encrypted(id),
+            DirType::Casefold => DirType::EncryptedCasefold(id),
+            _ => self,
+        }
+    }
+
+    pub fn with_casefold(self, val: bool) -> Self {
+        match (val, self) {
+            (true, DirType::Encrypted(id) | DirType::EncryptedCasefold(id)) => {
+                DirType::EncryptedCasefold(id)
+            }
+            (true, _) => DirType::Casefold,
+            (false, DirType::Encrypted(id) | DirType::EncryptedCasefold(id)) => {
+                DirType::Encrypted(id)
+            }
+            (false, _) => DirType::Normal,
+        }
+    }
+
+    pub fn wrapping_key_id(&self) -> Option<WrappingKeyId> {
+        match self {
+            DirType::Encrypted(id) | DirType::EncryptedCasefold(id) => Some(*id),
+            _ => None,
+        }
+    }
+}
+
+impl Default for DirType {
+    fn default() -> Self {
+        DirType::Normal
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum ObjectKindV54 {
+    File {
+        /// The number of references to this file.
+        refs: u64,
+    },
+    Directory {
+        /// The number of sub-directories in this directory.
+        sub_dirs: u64,
+        /// The type of directory (encryption, casefolding, etc.)
+        dir_type: DirType,
+    },
+    Graveyard,
+    Symlink {
+        /// The number of references to this symbolic link.
+        refs: u64,
+        /// `link` is the target of the link and has no meaning within Fxfs; clients are free to
+        /// interpret it however they like.
+        #[serde(with = "crate::zerocopy_serialization")]
+        link: Box<[u8]>,
+    },
+    EncryptedSymlink {
+        /// The number of references to this symbolic link.
+        refs: u64,
+        /// `link` is the target of the link and has no meaning within Fxfs; clients are free to
+        /// interpret it however they like.
+        /// `link` is stored here in encrypted form, encrypted with the symlink's key using the
+        /// volume's data key.
+        #[serde(with = "crate::zerocopy_serialization")]
+        link: Box<[u8]>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectKindV49 {
     File {
@@ -589,7 +695,7 @@ pub enum ExtendedAttributeValueV32 {
 /// Id and descriptor for a child entry.
 pub type ChildValue = ChildValueV32;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ChildValueV32 {
     /// The ID of the child object.
@@ -669,12 +775,47 @@ impl std::ops::Deref for EncryptionKeys {
 /// ObjectValue is the value of an item in the object store.
 /// Note that the tree stores deltas on objects, so these values describe deltas. Unless specified
 /// otherwise, a value indicates an insert/replace mutation.
-pub type ObjectValue = ObjectValueV50;
+pub type ObjectValue = ObjectValueV54;
 impl Value for ObjectValue {
     const DELETED_MARKER: Self = Self::None;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum ObjectValueV54 {
+    /// Some keys have no value (this often indicates a tombstone of some sort).  Records with this
+    /// value are always filtered when a major compaction is performed, so the meaning must be the
+    /// same as if the item was not present.
+    None,
+    /// Some keys have no value but need to differentiate between a present value and no value
+    /// (None) i.e. their value is really a boolean: None => false, Some => true.
+    Some,
+    /// The value for an ObjectKey::Object record.
+    Object { kind: ObjectKindV54, attributes: ObjectAttributesV49 },
+    /// Specifies encryption keys to use for an object.
+    Keys(EncryptionKeysV49),
+    /// An attribute associated with a file object. |size| is the size of the attribute in bytes.
+    Attribute { size: u64, has_overwrite_extents: bool },
+    /// An extent associated with an object.
+    Extent(ExtentValueV38),
+    /// A child of an object.
+    Child(ChildValue),
+    /// Graveyard entries can contain these entries which will cause a file that has extents beyond
+    /// EOF to be trimmed at mount time.  This is used in cases where shrinking a file can exceed
+    /// the bounds of a single transaction.
+    Trim,
+    /// Added to support tracking Project ID usage and limits.
+    BytesAndNodes { bytes: i64, nodes: i64 },
+    /// A value for an extended attribute. Either inline or a redirection to an attribute with
+    /// extents.
+    ExtendedAttribute(ExtendedAttributeValueV32),
+    /// An attribute associated with a verified file object. |size| is the size of the attribute
+    /// in bytes.
+    VerifiedAttribute { size: u64, fsverity_metadata: FsverityMetadataV50 },
+}
+
+#[derive(Migrate, Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectValueV54)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectValueV50 {
     /// Some keys have no value (this often indicates a tombstone of some sort).  Records with this
@@ -806,7 +947,9 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV50;
+pub type ObjectItem = ObjectItemV54;
+
+pub type ObjectItemV54 = Item<ObjectKeyV54, ObjectValueV54>;
 pub type ObjectItemV50 = Item<ObjectKeyV43, ObjectValueV50>;
 
 impl ObjectItem {
@@ -851,7 +994,7 @@ pub type FxfsKeyV49 = fxfs_crypto::FxfsKey;
 
 #[cfg(test)]
 mod tests {
-    use super::{ObjectKey, ObjectKeyV43, TimestampV49};
+    use super::{ObjectKey, ObjectKeyV54, TimestampV49};
     use crate::lsm_tree::types::{
         FuzzyHash as _, LayerKey, OrdLowerBound, OrdUpperBound, RangeKey,
     };
@@ -865,15 +1008,15 @@ mod tests {
     // https://fxbug.dev/419133532).
     #[test]
     fn test_hash_stability() {
-        // Target a specific version of ObjectKey.  If you want to delete ObjectKeyV43, simply
+        // Target a specific version of ObjectKey.  If you want to delete ObjectKeyV54, simply
         // update this test with a later key version, which will also require re-generating the
         // hashes.
         assert_eq!(
-            &ObjectKeyV43::object(100).fuzzy_hash().collect::<Vec<_>>()[..],
+            &ObjectKeyV54::object(100).fuzzy_hash().collect::<Vec<_>>()[..],
             &[11885326717398844384]
         );
         assert_eq!(
-            &ObjectKeyV43::extent(1, 0, 0..2 * 1024 * 1024).fuzzy_hash().collect::<Vec<_>>()[..],
+            &ObjectKeyV54::extent(1, 0, 0..2 * 1024 * 1024).fuzzy_hash().collect::<Vec<_>>()[..],
             &[11090579907097549012, 2814892992701560424]
         );
     }
@@ -896,8 +1039,8 @@ mod tests {
     fn test_range_key() {
         // Make sure we disallow using extent keys with point queries. Other object keys should
         // still be allowed with point queries.
-        assert!(ObjectKeyV43::extent(1, 0, 0..2 * 1024 * 1024).is_range_key());
-        assert!(!ObjectKeyV43::object(100).is_range_key());
+        assert!(ObjectKey::extent(1, 0, 0..2 * 1024 * 1024).is_range_key());
+        assert!(!ObjectKey::object(100).is_range_key());
 
         assert_eq!(ObjectKey::object(1).overlaps(&ObjectKey::object(1)), true);
         assert_eq!(ObjectKey::object(1).overlaps(&ObjectKey::object(2)), false);

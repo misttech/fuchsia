@@ -77,11 +77,38 @@ pub struct TransactionLocks<'a>(pub WriteGuard<'a>);
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
 /// (and we require custom comparison functions below).  For example, we need to be able to find
 /// object size changes.
-pub type Mutation = MutationV50;
+pub type Mutation = MutationV54;
 
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint, Versioned,
 )]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum MutationV54 {
+    ObjectStore(ObjectStoreMutationV54),
+    EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
+    Allocator(AllocatorMutationV32),
+    BeginFlush,
+    EndFlush,
+    DeleteVolume,
+    UpdateBorrowed(u64),
+    UpdateMutationsKey(UpdateMutationsKey),
+    CreateInternalDir(u64),
+}
+
+#[derive(
+    Migrate,
+    Clone,
+    Debug,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    Versioned,
+)]
+#[migrate_to_version(MutationV54)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum MutationV50 {
     ObjectStore(ObjectStoreMutationV50),
@@ -213,9 +240,18 @@ impl Mutation {
 // We have custom comparison functions for mutations that just use the key, rather than the key and
 // value that would be used by default so that we can deduplicate and find mutations (see
 // get_object_mutation below).
-pub type ObjectStoreMutation = ObjectStoreMutationV50;
+pub type ObjectStoreMutation = ObjectStoreMutationV54;
 
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct ObjectStoreMutationV54 {
+    pub item: crate::object_store::object_record::ObjectItem,
+    pub op: Operation,
+}
+
+#[derive(Migrate, Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(ObjectStoreMutationV54)]
+#[migrate_nodefault]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ObjectStoreMutationV50 {
     pub item: ObjectItemV50,
@@ -300,6 +336,26 @@ impl PartialEq for ObjectStoreMutation {
 }
 
 impl Eq for ObjectStoreMutation {}
+
+impl Ord for ObjectStoreMutationV50 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.item.key.cmp(&other.item.key)
+    }
+}
+
+impl PartialOrd for ObjectStoreMutationV50 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for ObjectStoreMutationV50 {
+    fn eq(&self, other: &Self) -> bool {
+        self.item.key.eq(&other.item.key)
+    }
+}
+
+impl Eq for ObjectStoreMutationV50 {}
 
 impl Ord for AllocatorItem {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -860,7 +916,8 @@ impl<'a> Transaction<'a> {
                     ObjectKeyData::Child { .. }
                     | ObjectKeyData::EncryptedChild(_)
                     | ObjectKeyData::EncryptedCasefoldChild(_)
-                    | ObjectKeyData::CasefoldChild { .. } => {
+                    | ObjectKeyData::CasefoldChild { .. }
+                    | ObjectKeyData::LegacyCasefoldChild(_) => {
                         let id = key.object_id;
                         if !self.txn_locks.contains(&LockKey::object(*store_object_id, id))
                             && !self.new_objects.contains(&(*store_object_id, id))

@@ -27,7 +27,7 @@ pub use data_object_handle::{
     DataObjectHandle, DirectWriter, FileExtent, FsverityState, FsverityStateInner, RangeType,
 };
 pub use directory::Directory;
-pub use object_record::{ChildValue, ObjectDescriptor, PosixAttributes, Timestamp};
+pub use object_record::{ChildValue, DirType, ObjectDescriptor, PosixAttributes, Timestamp};
 pub use store_object_handle::{
     EXTENDED_ATTRIBUTE_RANGE_END, EXTENDED_ATTRIBUTE_RANGE_START, SetExtendedAttributeMode,
     StoreObjectHandle,

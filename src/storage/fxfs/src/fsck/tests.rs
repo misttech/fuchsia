@@ -19,7 +19,7 @@ use crate::object_store::directory::{
 use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
-    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, EncryptionKeys, ExtentValue,
+    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EncryptionKeys, ExtentValue,
     FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions,
     ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
     ObjectValue, RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
@@ -1249,7 +1249,7 @@ async fn test_children_on_file() {
             &fs,
             store.as_ref(),
             vec![Item::new(
-                ObjectKey::child(object_id, "foo", false),
+                ObjectKey::child(object_id, "foo", DirType::Normal),
                 ObjectValue::Child(ChildValue {
                     object_id,
                     object_descriptor: ObjectDescriptor::File,
@@ -1283,11 +1283,7 @@ async fn test_non_file_marked_as_verified() {
                 Item::new(
                     ObjectKey::object(10),
                     ObjectValue::Object {
-                        kind: ObjectKind::Directory {
-                            sub_dirs: 0,
-                            wrapping_key_id: None,
-                            casefold: false,
-                        },
+                        kind: ObjectKind::Directory { sub_dirs: 0, dir_type: DirType::Normal },
                         attributes: ObjectAttributes { ..Default::default() },
                     },
                 ),
@@ -1710,11 +1706,7 @@ async fn test_tombstoned_attribute_does_not_exist() {
                 Item::new(
                     ObjectKey::object(10),
                     ObjectValue::Object {
-                        kind: ObjectKind::Directory {
-                            sub_dirs: 0,
-                            wrapping_key_id: None,
-                            casefold: false,
-                        },
+                        kind: ObjectKind::Directory { sub_dirs: 0, dir_type: DirType::Normal },
                         attributes: ObjectAttributes { ..Default::default() },
                     },
                 ),
@@ -2706,7 +2698,7 @@ async fn test_encrypted_directory_has_unencrypted_child() {
         }) = &mutation
         {
             let mutation = Mutation::replace_or_insert_object(
-                ObjectKey::child(*object_id, "subdir", false),
+                ObjectKey::child(*object_id, "subdir", DirType::Normal),
                 value.clone(),
             );
             transaction.add(store_id, mutation);
@@ -2727,6 +2719,109 @@ async fn test_encrypted_directory_has_unencrypted_child() {
         store_id, parent_oid, child_oid,
     ))];
     assert_eq!(&test.errors()[..], &expected);
+}
+
+#[fuchsia::test]
+async fn test_encrypted_directory_has_legacy_casefold_child() {
+    let mut test = FsckTest::new().await;
+    assert!(test.filesystem.is_some());
+
+    let (store_id, parent_oid, child_oid) = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let crypt = test.get_crypt();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // Set up the wrapping key up front.
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
+
+        let handle;
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        handle = root_directory
+            .create_child_dir(&mut transaction, "dir")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        // Make the directory encrypted.
+        let transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        handle
+            .update_attributes(
+                transaction,
+                Some(&fio::MutableNodeAttributes {
+                    wrapping_key_id: Some(WRAPPING_KEY_ID),
+                    ..Default::default()
+                }),
+                0,
+                None,
+            )
+            .await
+            .expect("update attributes failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let subdir = Directory::create_with_options(&mut transaction, &store, DirType::Normal)
+            .await
+            .expect("create_directory");
+
+        transaction.add(
+            store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::child(handle.object_id(), "subdir", DirType::LegacyCasefold),
+                ObjectValue::child(subdir.object_id(), ObjectDescriptor::Directory),
+            ),
+        );
+        transaction.commit().await.expect("commit failed");
+
+        (store.store_object_id(), handle.object_id(), subdir.object_id())
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+
+    // Check that the expected error is present. We use `any` to ignore other incidental
+    // errors (like `SubDirCountMismatch`) triggered by manual corruption.
+    // The `if` clause is a match guard. `sid`, `pid`, and `cid` are bound as references
+    // because `e` is a reference, so we dereference them to compare with values.
+    assert!(test.errors().iter().any(|e| matches!(
+        e,
+        FsckIssue::Error(FsckError::EncryptedDirectoryHasUnencryptedChild(
+            sid, pid, cid
+        )) if *sid == store_id && *pid == parent_oid && *cid == child_oid
+    )));
 }
 
 #[fuchsia::test]
@@ -2917,13 +3012,12 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
                             key: ObjectKey { object_id, data: ObjectKeyData::Object },
                             value:
                                 ObjectValue::Object {
-                                    kind: ObjectKind::Directory { wrapping_key_id, .. },
-                                    ..
+                                    kind: ObjectKind::Directory { dir_type, .. }, ..
                                 },
                             ..
                         },
                     ..
-                }) if object_id == subdir.object_id() && wrapping_key_id.is_some() => true,
+                }) if object_id == subdir.object_id() && dir_type.is_encrypted() => true,
                 _ => false,
             })
             .expect("find failed");
@@ -2935,16 +3029,13 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
         if let Mutation::ObjectStore(ObjectStoreMutation {
             item:
                 Item {
-                    value:
-                        ObjectValue::Object {
-                            kind: ObjectKind::Directory { wrapping_key_id, .. }, ..
-                        },
+                    value: ObjectValue::Object { kind: ObjectKind::Directory { dir_type, .. }, .. },
                     ..
                 },
             ..
         }) = &mut mutation
         {
-            *wrapping_key_id = Some(CHILD_WRAPPING_KEY_ID);
+            *dir_type = DirType::Encrypted(CHILD_WRAPPING_KEY_ID);
         } else {
             unreachable!();
         }
@@ -3044,13 +3135,12 @@ async fn test_encrypted_directory_no_wrapping_key() {
                             key: ObjectKey { object_id, data: ObjectKeyData::Object },
                             value:
                                 ObjectValue::Object {
-                                    kind: ObjectKind::Directory { wrapping_key_id, .. },
-                                    ..
+                                    kind: ObjectKind::Directory { dir_type, .. }, ..
                                 },
                             ..
                         },
                     ..
-                }) if object_id == subdir.object_id() && wrapping_key_id.is_some() => true,
+                }) if object_id == subdir.object_id() && dir_type.is_encrypted() => true,
                 _ => false,
             })
             .expect("find failed");
@@ -3062,16 +3152,13 @@ async fn test_encrypted_directory_no_wrapping_key() {
         if let Mutation::ObjectStore(ObjectStoreMutation {
             item:
                 Item {
-                    value:
-                        ObjectValue::Object {
-                            kind: ObjectKind::Directory { wrapping_key_id, .. }, ..
-                        },
+                    value: ObjectValue::Object { kind: ObjectKind::Directory { dir_type, .. }, .. },
                     ..
                 },
             ..
         }) = &mut mutation
         {
-            *wrapping_key_id = None;
+            *dir_type = DirType::Normal;
         } else {
             unreachable!();
         }
@@ -3951,13 +4038,17 @@ async fn test_casefold() {
             .expect("new_transaction failed");
 
         // Manually add a child entry so we can add the wrong ObjectKeyData child type.
-        let handle = Directory::create_with_options(&mut transaction, &store, None, true)
+        let handle = Directory::create_with_options(&mut transaction, &store, DirType::Casefold)
             .await
             .expect("create_directory");
         transaction.add(
             child_dir.store().store_object_id(),
             Mutation::replace_or_insert_object(
-                ObjectKey::child(child_dir.object_id(), "b", !dir_is_casefold),
+                ObjectKey::child(
+                    child_dir.object_id(),
+                    "b",
+                    if !dir_is_casefold { DirType::Casefold } else { DirType::Normal },
+                ),
                 ObjectValue::child(handle.object_id(), ObjectDescriptor::Directory),
             ),
         );
@@ -3978,6 +4069,70 @@ async fn test_casefold() {
     assert_matches!(
         test.errors()[..],
         [FsckIssue::Error(FsckError::CasefoldInconsistency(..)), ..]
+    );
+}
+
+#[fuchsia::test]
+async fn test_legacy_casefold_inconsistency() {
+    let mut test = FsckTest::new().await;
+
+    let (store_id, parent_oid, child_oid) = {
+        let fs = test.filesystem();
+        let store = fs.root_store();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let child_dir = root_directory
+            .create_child_dir(&mut transaction, "dir")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("commit transaction failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), child_dir.object_id()),],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+
+        // Manually add a child entry so we can add the wrong ObjectKeyData child type.
+        let handle = Directory::create_with_options(&mut transaction, &store, DirType::Normal)
+            .await
+            .expect("create_directory");
+        transaction.add(
+            child_dir.store().store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::child(
+                    child_dir.object_id(),
+                    "b",
+                    DirType::LegacyCasefold, // Wrong type!
+                ),
+                ObjectValue::child(handle.object_id(), ObjectDescriptor::Directory),
+            ),
+        );
+
+        transaction.commit().await.expect("commit transaction failed");
+
+        (store.store_object_id(), child_dir.object_id(), handle.object_id())
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions::default()).await.expect_err("Fsck should fail");
+    // Verify that the first reported error is a CasefoldInconsistency for the expected IDs.
+    assert_matches!(
+        test.errors()[..],
+        [FsckIssue::Error(FsckError::CasefoldInconsistency(s, p, c)), ..]
+        if s == store_id && p == parent_oid && c == child_oid
     );
 }
 

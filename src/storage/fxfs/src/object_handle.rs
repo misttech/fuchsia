@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::object_store::{PosixAttributes, Timestamp};
+use crate::object_store::{DirType, PosixAttributes, Timestamp};
 use anyhow::Error;
 use async_trait::async_trait;
-use fxfs_crypto::WrappingKeyId;
 use std::future::Future;
 use std::ops::Deref;
 use std::pin::Pin;
@@ -52,11 +51,10 @@ pub struct ObjectProperties {
     pub change_time: Timestamp,
     /// The number of sub-directories.
     pub sub_dirs: u64,
-    /// The POSIX attributes: mode, uid, gid, rdev
+    /// POSIX attributes: mode, uid, gid, rdev
     pub posix_attributes: Option<PosixAttributes>,
-    /// True if this is a directory that has casefolding enabled.
-    pub casefold: bool,
-    pub wrapping_key_id: Option<WrappingKeyId>,
+    /// The type of directory (encryption, casefolding, etc.)
+    pub dir_type: DirType,
 }
 
 #[async_trait]

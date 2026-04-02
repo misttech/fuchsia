@@ -46,7 +46,7 @@ use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
     AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43, MutationV46,
-    MutationV47, MutationV49, MutationV50, ObjectStoreMutation, Options,
+    MutationV47, MutationV49, MutationV50, MutationV54, ObjectStoreMutation, Options,
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation, lock_keys,
 };
 use crate::object_store::{
@@ -55,7 +55,9 @@ use crate::object_store::{
 };
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down};
-use crate::serialized_types::{LATEST_VERSION, Migrate, Version, Versioned, migrate_to_version};
+use crate::serialized_types::{
+    LATEST_VERSION, Migrate, Version, Versioned, migrate_nodefault, migrate_to_version,
+};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use event_listener::Event;
 use fprint::TypeFingerprint;
@@ -114,38 +116,51 @@ pub struct JournalCheckpointV32 {
     pub version: Version,
 }
 
-pub type JournalRecord = JournalRecordV50;
+pub type JournalRecord = JournalRecordV54;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum JournalRecordV50 {
-    // Indicates no more records in this block.
+pub enum JournalRecordV54 {
+    /// Indicates no more records in this block.
     EndBlock,
-    // Mutation for a particular object.  object_id here is for the collection i.e. the store or
-    // allocator.
-    Mutation { object_id: u64, mutation: MutationV50 },
-    // Commits records in the transaction.
+    /// Mutation for a particular object.  object_id here is for the collection i.e. the store or
+    /// allocator.
+    Mutation { object_id: u64, mutation: MutationV54 },
+    /// Commits records in the transaction.
     Commit,
-    // Discard all mutations with offsets greater than or equal to the given offset.
+    /// Discard all mutations with offsets greater than or equal to the given offset.
     Discard(u64),
-    // Indicates the device was flushed at the given journal offset.
-    // Note that this really means that at this point in the journal offset, we can be certain that
-    // there's no remaining buffered data in the block device; the buffers and the disk contents are
-    // consistent.
-    // We insert one of these records *after* a flush along with the *next* transaction to go
-    // through.  If that never comes (either due to graceful or hard shutdown), the journal reset
-    // on the next mount will serve the same purpose and count as a flush, although it is necessary
-    // to defensively flush the device before replaying the journal (if possible, i.e. not
-    // read-only) in case the block device connection was reused.
+    /// Indicates the device was flushed at the given journal offset.
+    /// Note that this really means that at this point in the journal offset, we can be certain that
+    /// there's no remaining buffered data in the block device; the buffers and the disk contents are
+    /// consistent.
+    /// We insert one of these records *after* a flush along with the *next* transaction to go
+    /// through.  If that never comes (either due to graceful or hard shutdown), the journal reset
+    /// on the next mount will serve the same purpose and count as a flush, although it is necessary
+    /// to defensively flush the device before replaying the journal (if possible, i.e. not
+    /// read-only) in case the block device connection was reused.
     DidFlushDevice(u64),
-    // Checksums for a data range written by this transaction. A transaction is only valid if these
-    // checksums are right. The range is the device offset the checksums are for.
-    //
-    // A boolean indicates whether this range is being written to for the first time. For overwrite
-    // extents, we only check the checksums for a block if it has been written to for the first
-    // time since the last flush, because otherwise we can't roll it back anyway so it doesn't
-    // matter. For copy-on-write extents, the bool is always true.
+    /// Checksums for a data range written by this transaction. A transaction is only valid if these
+    /// checksums are right. The range is the device offset the checksums are for.
+    ///
+    /// A boolean indicates whether this range is being written to for the first time. For overwrite
+    /// extents, we only check the checksums for a block if it has been written to for the first
+    /// time since the last flush, because otherwise we can't roll it back anyway so it doesn't
+    /// matter. For copy-on-write extents, the bool is always true.
+    DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(JournalRecordV54)]
+#[migrate_nodefault]
+pub enum JournalRecordV50 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV50 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
     DataChecksums(Range<u64>, ChecksumsV38, bool),
 }
 

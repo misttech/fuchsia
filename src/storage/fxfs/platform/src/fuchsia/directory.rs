@@ -349,13 +349,9 @@ impl FxDirectory {
         &self,
         source_wrapping_key_id: Option<WrappingKeyId>,
     ) -> Result<(), zx::Status> {
-        match (self.directory().wrapping_key_id(), source_wrapping_key_id) {
-            (None, None) | (None, Some(_)) => {}
-            (Some(_), None) => return Err(zx::Status::BAD_STATE),
-            (Some(target_id), Some(src_id)) => {
-                if target_id != src_id {
-                    return Err(zx::Status::BAD_STATE);
-                }
+        if let Some(target_id) = self.directory().dir_type().wrapping_key_id() {
+            if Some(target_id) != source_wrapping_key_id {
+                return Err(zx::Status::BAD_STATE);
             }
         }
         Ok(())
@@ -863,14 +859,14 @@ impl vfs::node::Node for FxDirectory {
                 uid: props.posix_attributes.map(|a| a.uid),
                 gid: props.posix_attributes.map(|a| a.gid),
                 rdev: props.posix_attributes.map(|a| a.rdev),
-                casefold: self.directory.casefold(),
+                casefold: self.directory.dir_type().is_casefold(),
                 selinux_context: self
                     .directory
                     .handle()
                     .get_inline_selinux_context()
                     .await
                     .map_err(map_to_status)?,
-                wrapping_key_id: props.wrapping_key_id,
+                wrapping_key_id: props.dir_type.wrapping_key_id(),
             },
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,
@@ -1152,6 +1148,8 @@ mod tests {
     use anyhow::bail;
     use assert_matches::assert_matches;
     use fidl::endpoints::{ClientEnd, Proxy, create_proxy};
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_fs::directory::{DirEntry, DirentKind};
     use fuchsia_fs::file;
     use futures::{StreamExt, join};
@@ -1172,7 +1170,6 @@ mod tests {
     use vfs::ObjectRequest;
     use vfs::node::Node;
     use vfs::path::Path;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 

@@ -13,20 +13,20 @@ use crate::object_store::allocator::{
 use crate::object_store::journal::super_block::{
     SuperBlockHeader, SuperBlockHeaderV32, SuperBlockRecord, SuperBlockRecordV40,
     SuperBlockRecordV41, SuperBlockRecordV43, SuperBlockRecordV46, SuperBlockRecordV47,
-    SuperBlockRecordV49, SuperBlockRecordV50,
+    SuperBlockRecordV49, SuperBlockRecordV50, SuperBlockRecordV54,
 };
 use crate::object_store::journal::{
     JournalRecord, JournalRecordV40, JournalRecordV41, JournalRecordV42, JournalRecordV43,
-    JournalRecordV46, JournalRecordV47, JournalRecordV49, JournalRecordV50,
+    JournalRecordV46, JournalRecordV47, JournalRecordV49, JournalRecordV50, JournalRecordV54,
 };
 use crate::object_store::object_record::{
     FsverityMetadata, FsverityMetadataV33, FsverityMetadataV50, ObjectKey, ObjectKeyV40,
-    ObjectKeyV43, ObjectValue, ObjectValueV40, ObjectValueV41, ObjectValueV46, ObjectValueV47,
-    ObjectValueV49, ObjectValueV50,
+    ObjectKeyV43, ObjectKeyV54, ObjectValue, ObjectValueV40, ObjectValueV41, ObjectValueV46,
+    ObjectValueV47, ObjectValueV49, ObjectValueV50, ObjectValueV54,
 };
 use crate::object_store::transaction::{
     Mutation, MutationV40, MutationV41, MutationV43, MutationV46, MutationV47, MutationV49,
-    MutationV50,
+    MutationV50, MutationV54,
 };
 use crate::object_store::{
     EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, StoreInfo, StoreInfoV40,
@@ -44,7 +44,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 53, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 54, minor: 0 };
 
 /// The earliest supported version of the on-disk filesystem format.
 ///
@@ -129,6 +129,7 @@ versioned_types! {
         33.. => FsverityMetadataV33,
     }
     JournalRecord {
+        54.. => JournalRecordV54,
         50.. => JournalRecordV50,
         49.. => JournalRecordV49,
         47.. => JournalRecordV47,
@@ -139,6 +140,7 @@ versioned_types! {
         40.. => JournalRecordV40,
     }
     Mutation {
+        54.. => MutationV54,
         50.. => MutationV50,
         49.. => MutationV49,
         47.. => MutationV47,
@@ -148,10 +150,12 @@ versioned_types! {
         40.. => MutationV40,
     }
     ObjectKey {
+        54.. => ObjectKeyV54,
         43.. => ObjectKeyV43,
         40.. => ObjectKeyV40,
     }
     ObjectValue {
+        54.. => ObjectValueV54,
         50.. => ObjectValueV50,
         49.. => ObjectValueV49,
         47.. => ObjectValueV47,
@@ -174,6 +178,7 @@ versioned_types! {
         32.. => SuperBlockHeaderV32,
     }
     SuperBlockRecord {
+        54.. => SuperBlockRecordV54,
         50.. => SuperBlockRecordV50,
         49.. => SuperBlockRecordV49,
         47.. => SuperBlockRecordV47,

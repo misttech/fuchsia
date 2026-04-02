@@ -422,9 +422,10 @@ mod tests {
     /// Verifies that non-extent records are passed through the iterator unmodified.
     #[fuchsia::test]
     async fn test_extent_mapper_emits_other_records_unmodified() {
+        use crate::object_store::DirType;
         let objects = [
             (
-                ObjectKey::child(1, "test", false),
+                ObjectKey::child(1, "test", DirType::Normal),
                 ObjectValue::child(1, ObjectDescriptor::Directory),
             ),
             (ObjectKey::graveyard_entry(2, 3), ObjectValue::None),

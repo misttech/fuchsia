@@ -7,6 +7,83 @@
 use super::*;
 use fxfs_crypto::WrappedKeyBytes;
 
+impl From<ObjectKeyDataV43> for ObjectKeyDataV54 {
+    fn from(item: ObjectKeyDataV43) -> Self {
+        match item {
+            ObjectKeyDataV43::Object => Self::Object,
+            ObjectKeyDataV43::Keys => Self::Keys,
+            ObjectKeyDataV43::Attribute(a, b) => Self::Attribute(a, b),
+            ObjectKeyDataV43::Child { name } => Self::Child { name },
+            ObjectKeyDataV43::GraveyardEntry { object_id } => Self::GraveyardEntry { object_id },
+            ObjectKeyDataV43::Project { project_id, property } => {
+                Self::Project { project_id, property }
+            }
+            ObjectKeyDataV43::ExtendedAttribute { name } => Self::ExtendedAttribute { name },
+            ObjectKeyDataV43::GraveyardAttributeEntry { object_id, attribute_id } => {
+                Self::GraveyardAttributeEntry { object_id, attribute_id }
+            }
+            ObjectKeyDataV43::EncryptedCasefoldChild(c) => Self::EncryptedCasefoldChild(c),
+            ObjectKeyDataV43::CasefoldChild { name } => Self::LegacyCasefoldChild(name),
+            ObjectKeyDataV43::EncryptedChild(c) => Self::EncryptedChild(c),
+        }
+    }
+}
+
+#[derive(
+    Clone, Debug, Eq, Ord, Hash, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub enum ObjectKeyDataV43 {
+    Object,
+    Keys,
+    Attribute(u64, AttributeKeyV32),
+    Child {
+        name: String,
+    },
+    GraveyardEntry {
+        object_id: u64,
+    },
+    Project {
+        project_id: u64,
+        property: ProjectPropertyV32,
+    },
+    ExtendedAttribute {
+        #[serde(with = "crate::zerocopy_serialization")]
+        name: Vec<u8>,
+    },
+    GraveyardAttributeEntry {
+        object_id: u64,
+        attribute_id: u64,
+    },
+    EncryptedCasefoldChild(EncryptedCasefoldChild),
+    CasefoldChild {
+        name: CasefoldString,
+    },
+    EncryptedChild(EncryptedChild),
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Ord,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Migrate,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    Versioned,
+)]
+#[migrate_to_version(ObjectKeyV54)]
+#[migrate_nodefault]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+pub struct ObjectKeyV43 {
+    pub object_id: u64,
+    pub data: ObjectKeyDataV43,
+}
+
 impl From<ObjectKeyDataV40> for ObjectKeyDataV43 {
     fn from(item: ObjectKeyDataV40) -> Self {
         match item {
@@ -51,6 +128,28 @@ pub enum ObjectKeyDataV40 {
 pub struct ObjectKeyV40 {
     pub object_id: u64,
     pub data: ObjectKeyDataV40,
+}
+
+impl From<ObjectKindV49> for ObjectKindV54 {
+    fn from(kind: ObjectKindV49) -> Self {
+        match kind {
+            ObjectKindV49::File { refs } => ObjectKindV54::File { refs },
+            ObjectKindV49::Directory { sub_dirs, wrapping_key_id, casefold } => {
+                let dir_type = match (casefold, wrapping_key_id) {
+                    (true, Some(id)) => DirType::EncryptedCasefold(id),
+                    (true, None) => DirType::LegacyCasefold, // Existing casefold dirs use Legacy
+                    (false, Some(id)) => DirType::Encrypted(id),
+                    (false, None) => DirType::Normal,
+                };
+                ObjectKindV54::Directory { sub_dirs, dir_type }
+            }
+            ObjectKindV49::Graveyard => ObjectKindV54::Graveyard,
+            ObjectKindV49::Symlink { refs, link } => ObjectKindV54::Symlink { refs, link },
+            ObjectKindV49::EncryptedSymlink { refs, link } => {
+                ObjectKindV54::EncryptedSymlink { refs, link }
+            }
+        }
+    }
 }
 
 impl From<ObjectKindV46> for ObjectKindV49 {
@@ -303,6 +402,12 @@ pub type ObjectItemV46 = Item<ObjectKeyV43, ObjectValueV46>;
 pub type ObjectItemV43 = Item<ObjectKeyV43, ObjectValueV41>;
 pub type ObjectItemV41 = Item<ObjectKeyV40, ObjectValueV41>;
 pub type ObjectItemV40 = Item<ObjectKeyV40, ObjectValueV40>;
+
+impl From<ObjectItemV50> for ObjectItemV54 {
+    fn from(item: ObjectItemV50) -> Self {
+        Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }
+    }
+}
 
 impl From<ObjectItemV49> for ObjectItemV50 {
     fn from(item: ObjectItemV49) -> Self {
