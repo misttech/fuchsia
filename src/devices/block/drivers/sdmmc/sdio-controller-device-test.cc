@@ -6,6 +6,8 @@
 
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/test_base.h>
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
+#include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -88,7 +90,8 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
   }
 };
 
-class FakeActivityGovernor : public fidl::Server<fuchsia_power_system::ActivityGovernor> {
+class FakeActivityGovernor
+    : public fidl::testing::TestBase<fuchsia_power_system::ActivityGovernor> {
  public:
   void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
     completer.Reply({});
@@ -98,12 +101,6 @@ class FakeActivityGovernor : public fidl::Server<fuchsia_power_system::ActivityG
     zx::eventpair token, peer;
     zx::eventpair::create(0, &token, &peer);
     completer.Reply(std::move(token));
-  }
-  void AcquireLongWakeLease(AcquireLongWakeLeaseRequest& request,
-                            AcquireLongWakeLeaseCompleter::Sync& completer) override {
-    zx::eventpair token, peer;
-    zx::eventpair::create(0, &token, &peer);
-    completer.Reply(fit::success(std::move(token)));
   }
   void AcquireWakeLease(AcquireWakeLeaseRequest& request,
                         AcquireWakeLeaseCompleter::Sync& completer) override {
@@ -128,6 +125,8 @@ class FakeActivityGovernor : public fidl::Server<fuchsia_power_system::ActivityG
     zx::eventpair::create(0, &token, &peer);
     completer.Reply(fit::success(std::move(token)));
   }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override { FAIL(); }
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_system::ActivityGovernor> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
