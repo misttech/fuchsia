@@ -43,17 +43,6 @@ source_set("cpp") {
   public_deps = library_public_deps
 }
 
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-source_set("cpp-cxx17") {
-  sources = library_sources
-  deps = library_deps
-  public_deps = library_public_deps
-
-  # Remove the C++ language specifier.
-  configs -= [ "//build/config:language" ]
-  configs += [ ":cxx17" ]
-}
-
 test_sources = [
   "backlight-fidl-adapter-test.cc",
   "backlight-interface-test.cc",
@@ -100,42 +89,12 @@ test("unittests") {
   visibility = [ ":*" ]
 }
 
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-test("unittests-cxx17") {
-  sources = test_sources
-  output_name = "display-api-protocols-cpp17-tests"
-  deps = [
-    ":cpp-cxx17",
-    ":test-deps",
-  ]
-  visibility = [ ":*" ]
-
-  # Remove the C++ language specifier.
-  configs -= [ "//build/config:language" ]
-  configs += [ ":cxx17" ]
-}
-
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-config("cxx17") {
-  visibility = [ ":*" ]
-  cflags_cc = [ "-std=c++17" ]
-}
-
 fuchsia_unittest_package("unittests-package") {
   package_name = "display-api-protocols-cpp-tests"
   deps = [ ":unittests" ]
 }
 
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-fuchsia_unittest_package("unittests-cxx17-package") {
-  package_name = "display-api-protocols-cpp17-tests"
-  deps = [ ":unittests-cxx17" ]
-}
-
 group("tests") {
   testonly = true
-  deps = [
-    ":unittests-cxx17-package",
-    ":unittests-package",
-  ]
+  deps = [ ":unittests-package" ]
 }

@@ -22,8 +22,7 @@ zx::result<> DependencyInjectionServer::Create(fdf::OutgoingDirectory* outgoing)
     auto status = outgoing->template AddService<fuchsia_gpu_magma::DependencyInjectionService>(
         std::move(handler));
     if (status.is_error()) {
-      FDF_LOG(ERROR, "%s(): Failed to add service to outgoing directory: %s\n", __func__,
-              status.status_string());
+      fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
       return status.take_error();
     }
   }

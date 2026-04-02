@@ -119,8 +119,7 @@ zx::result<> MagmaDriverBase::CreateTestService(MagmaTestServer& test_server) {
     auto status =
         outgoing()->template AddService<fuchsia_gpu_magma::TestService>(std::move(handler));
     if (status.is_error()) {
-      FDF_LOG(ERROR, "%s(): Failed to add service to outgoing directory: %s\n", __func__,
-              status.status_string());
+      fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
       return status.take_error();
     }
   }
@@ -138,7 +137,7 @@ zx::result<> MagmaDriverBase::CreateDevfsNode() {
 
   zx::result gpu_node = AddOwnedChild("magma_gpu", devfs);
   if (gpu_node.is_error()) {
-    FDF_LOG(ERROR, "Failed to add child: %s", gpu_node.status_string());
+    fdf::error("Failed to add child: {}", gpu_node);
     return gpu_node.take_error();
   }
   gpu_node_ = std::move(gpu_node.value());
@@ -160,8 +159,7 @@ zx::result<> MagmaDriverBase::CreateDevfsNode() {
     {
       auto status = outgoing()->template AddService<fuchsia_gpu_magma::Service>(std::move(handler));
       if (status.is_error()) {
-        FDF_LOG(ERROR, "%s(): Failed to add service to outgoing directory: %s\n", __func__,
-                status.status_string());
+        fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
         return status.take_error();
       }
     }
@@ -190,8 +188,7 @@ zx::result<> MagmaDriverBase::CreateDevfsNode() {
       auto status =
           outgoing()->template AddService<fuchsia_gpu_magma::TrustedService>(std::move(handler));
       if (status.is_error()) {
-        FDF_LOG(ERROR, "%s(): Failed to add service to outgoing directory: %s\n", __func__,
-                status.status_string());
+        fdf::error("{}(): Failed to add service to outgoing directory: {}", __func__, status);
         return status.take_error();
       }
     }

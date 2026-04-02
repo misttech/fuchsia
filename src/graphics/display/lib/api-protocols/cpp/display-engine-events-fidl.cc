@@ -58,7 +58,7 @@ void DisplayEngineEventsFidl::OnDisplayAdded(
   ZX_DEBUG_ASSERT(pixel_formats.size() <= kMaxPixelFormats);
 
   if (!fidl_client_.is_valid()) {
-    FDF_LOG(WARNING, "OnDisplayAdded() emitted with invalid event listener; event dropped");
+    fdf::warn("OnDisplayAdded() emitted with invalid event listener; event dropped");
     return;
   }
 
@@ -88,8 +88,8 @@ void DisplayEngineEventsFidl::OnDisplayAdded(
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->OnDisplayAdded(std::move(fidl_display_info));
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "FIDL error calling OnDisplayAdded: %s",
-            fidl_transport_status.error().FormatDescription().c_str());
+    fdf::error("FIDL error calling OnDisplayAdded: {}",
+               fidl_transport_status.error().FormatDescription());
   }
 }
 
@@ -97,7 +97,7 @@ void DisplayEngineEventsFidl::OnDisplayRemoved(display::DisplayId display_id) {
   std::lock_guard lock_guard(fidl_client_mutex_);
 
   if (!fidl_client_.is_valid()) {
-    FDF_LOG(WARNING, "OnDisplayRemoved() emitted with invalid event listener; event dropped");
+    fdf::warn("OnDisplayRemoved() emitted with invalid event listener; event dropped");
     return;
   }
 
@@ -107,8 +107,8 @@ void DisplayEngineEventsFidl::OnDisplayRemoved(display::DisplayId display_id) {
   fidl::OneWayStatus fidl_transport_status =
       fidl_client_.buffer(arena)->OnDisplayRemoved(display_id.ToFidl());
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "FIDL error calling OnDisplayRemoved: %s",
-            fidl_transport_status.error().FormatDescription().c_str());
+    fdf::error("FIDL error calling OnDisplayRemoved: {}",
+               fidl_transport_status.error().FormatDescription());
   }
 }
 
@@ -118,7 +118,7 @@ void DisplayEngineEventsFidl::OnDisplayVsync(display::DisplayId display_id,
   std::lock_guard lock_guard(fidl_client_mutex_);
 
   if (!fidl_client_.is_valid()) {
-    FDF_LOG(WARNING, "OnDisplayVsync() emitted with invalid event listener; event dropped");
+    fdf::warn("OnDisplayVsync() emitted with invalid event listener; event dropped");
     return;
   }
 
@@ -128,8 +128,8 @@ void DisplayEngineEventsFidl::OnDisplayVsync(display::DisplayId display_id,
   fidl::OneWayStatus fidl_transport_status = fidl_client_.buffer(arena)->OnDisplayVsync(
       display_id.ToFidl(), timestamp, config_stamp.ToFidl());
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "FIDL error calling OnDisplayVsync: %s",
-            fidl_transport_status.error().FormatDescription().c_str());
+    fdf::error("FIDL error calling OnDisplayVsync: {}",
+               fidl_transport_status.error().FormatDescription());
   }
 }
 
@@ -137,7 +137,7 @@ void DisplayEngineEventsFidl::OnCaptureComplete() {
   std::lock_guard lock_guard(fidl_client_mutex_);
 
   if (!fidl_client_.is_valid()) {
-    FDF_LOG(WARNING, "OnCaptureComplete() emitted with invalid event listener; event dropped");
+    fdf::warn("OnCaptureComplete() emitted with invalid event listener; event dropped");
     return;
   }
 
@@ -146,8 +146,8 @@ void DisplayEngineEventsFidl::OnCaptureComplete() {
   fdf::Arena arena(kArenaTag);
   fidl::OneWayStatus fidl_transport_status = fidl_client_.buffer(arena)->OnCaptureComplete();
   if (!fidl_transport_status.ok()) {
-    FDF_LOG(ERROR, "FIDL error calling OnCaptureComplete: %s",
-            fidl_transport_status.error().FormatDescription().c_str());
+    fdf::error("FIDL error calling OnCaptureComplete: {}",
+               fidl_transport_status.error().FormatDescription());
   }
 }
 

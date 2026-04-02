@@ -272,7 +272,7 @@ void DisplayEngineFidlAdapter::ReleaseCapture(
 void DisplayEngineFidlAdapter::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_display_engine::Engine> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(WARNING, "Dropping unknown FIDL method: %" PRIu64, metadata.method_ordinal);
+  fdf::warn("Dropping unknown FIDL method: {}", metadata.method_ordinal);
 }
 
 }  // namespace display
