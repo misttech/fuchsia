@@ -73,7 +73,7 @@ pub async fn log_impl(
     rcs_connector: Connector<RemoteControlProxyHolder>,
     include_timestamp: bool,
 ) -> Result<(), LogError> {
-    if ctx.is_in_tree() && !cmd.noprefer_url_component_name {
+    if !cmd.noprefer_url_component_name {
         cmd.prefer_url_component_name = true;
     }
 
