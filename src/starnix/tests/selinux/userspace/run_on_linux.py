@@ -251,6 +251,7 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
         update_audit_expectations=False,
         rebuild_tests=False,
         skip_audit=False,
+        kernel=None,
     )
     new_audit_expectations: list[dict[str, Any]] = []
 
@@ -275,12 +276,27 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
                 cwd=cls.fuchsia_dir,
             )
 
-        cls.kernel_path = cls.fuchsia_dir / "local/vmlinuz"
+        # The directory that contains the Android kernel and kernel modules.
+        gki_dir = cls.fuchsia_dir / "prebuilt/starnix/internal/gki/x86_64"
+
+        if cls.args.kernel:
+            if cls.args.kernel.is_absolute():
+                cls.kernel_path = cls.args.kernel
+            else:
+                cls.kernel_path = pathlib.Path.cwd() / cls.args.kernel
+        else:
+            cls.kernel_path = gki_dir / "bzImage"
+
         if not cls.kernel_path.is_file():
             raise RuntimeError(f"Kernel not found at {cls.kernel_path}")
 
         try:
             files, _ = collect_distribution_files(cls.fuchsia_dir, output_dir)
+            # Only add kernel modules to the initrd if we are using the default kernel.
+            if not cls.args.kernel:
+                for item in gki_dir.iterdir():
+                    if item.is_file() and item.suffix == ".ko":
+                        files[f"lib/modules/{item.name}"] = item
             cls.initrd_path = build_initrd(cls.work_dir, cls.fuchsia_dir, files)
         except Exception as e:
             raise RuntimeError(f"Failed to build initrd: {e}")
@@ -411,6 +427,11 @@ if __name__ == "__main__":
         "--preserve-work-dir",
         help="Keep the work directory on exit.",
         action="store_true",
+    )
+    parser.add_argument(
+        "--kernel",
+        help="Path to the linux kernel to use (optional, defaults to prebuilt GKI kernel).",
+        type=pathlib.Path,
     )
     parser.add_argument(
         "--all-output",

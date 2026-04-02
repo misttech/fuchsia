@@ -5,7 +5,7 @@ can also run on Linux but the Linux version is not tested in CQ.
 
 ### Running the tests
 
-Run on Starnix with:
+#### Run on Starnix with:
 ```
 fx test sestarnix_userspace_tests
 ```
@@ -15,7 +15,25 @@ Or use `#meta/<test_name>.cm` to only execute a specific test. E.g.
 fx test sestarnix_userspace_tests#meta/socketpipes.cm
 ```
 
-For running the tests on Linux please see [//vendor/google/starnix/tests/selinux/userspace/README.md](../../../../../vendor/google/starnix/tests/selinux/userspace/README.md).
+#### Run on Linux with:
+
+```
+./run_on_linux.py --kernel ./local/vmlinuz
+```
+
+Or use `-k` to execute a specific test and `--all-output` to get all the outputs:
+```
+./run_on_linux.py --kernel ./local/vmlinuz -k "*mprotect*" --all-output
+```
+
+Requires having a kernel located at $FUCHSIA_DIR/local/vmlinuz
+
+You can download one from CIPD:
+```
+wget -qO- "https://chrome-infra-packages.appspot.com/dl/fuchsia/third_party/3pp/sestarnix/linux/linux-amd64/+/latest" | bsdtar -xO -f - bzImage > "$FUCHSIA_DIR/local/vmlinuz"
+```
+
+For running the tests on other kernels please see [//vendor/google/starnix/tests/selinux/userspace/README.md](../../../../../vendor/google/starnix/tests/selinux/userspace/README.md).
 
 
 ### Audit checker
