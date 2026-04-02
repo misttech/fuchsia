@@ -628,8 +628,12 @@ impl Type {
             }
             (Type::MemoryParameter { size, .. }, Type::PtrToMemory { offset, buffer_size, .. }) => {
                 let expected_size = size.size(context)?;
-                let size_left = ScalarValueData::from(*buffer_size) - offset;
-                if expected_size > size_left.min() {
+                let offset_max = offset.max();
+                if offset_max > *buffer_size {
+                    return Err("out of bound read".to_string());
+                }
+                let size_left = *buffer_size - offset_max;
+                if expected_size > size_left {
                     return Err("out of bound read".to_string());
                 }
                 Ok(())
