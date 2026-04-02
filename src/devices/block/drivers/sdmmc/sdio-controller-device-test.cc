@@ -99,6 +99,12 @@ class FakeActivityGovernor : public fidl::Server<fuchsia_power_system::ActivityG
     zx::eventpair::create(0, &token, &peer);
     completer.Reply(std::move(token));
   }
+  void AcquireLongWakeLease(AcquireLongWakeLeaseRequest& request,
+                            AcquireLongWakeLeaseCompleter::Sync& completer) override {
+    zx::eventpair token, peer;
+    zx::eventpair::create(0, &token, &peer);
+    completer.Reply(fit::success(std::move(token)));
+  }
   void AcquireWakeLease(AcquireWakeLeaseRequest& request,
                         AcquireWakeLeaseCompleter::Sync& completer) override {
     zx::eventpair token, peer;

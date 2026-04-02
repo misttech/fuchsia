@@ -293,6 +293,7 @@ impl LeaseManager {
         &self,
         name: String,
         server_token: fsystem::LeaseToken,
+        is_long: bool,
     ) -> Result<()> {
         let suspend_blocker = match self.suspend_block_manager.try_get_blocker() {
             None => {
@@ -327,6 +328,9 @@ impl LeaseManager {
             inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name.clone());
             inspect_lease_node
                 .record_string(fobs::WAKE_LEASE_ITEM_TYPE, fobs::WAKE_LEASE_ITEM_TYPE_WAKE);
+            if is_long {
+                inspect_lease_node.record_bool("is_long_lease", true);
+            }
             inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
             inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, lease_id);
             let lease_status_property = inspect_lease_node.create_string(
@@ -403,9 +407,9 @@ impl LeaseManager {
         Ok(())
     }
 
-    async fn create_wake_lease(&self, name: String) -> Result<fsystem::LeaseToken> {
+    async fn create_wake_lease(&self, name: String, is_long: bool) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
-        self.create_wake_lease_using_token(name, server_token).await?;
+        self.create_wake_lease_using_token(name, server_token, is_long).await?;
         Ok(client_token)
     }
 
@@ -856,6 +860,9 @@ impl SystemActivityGovernor {
                 }) => {
                     self.handle_acquire_wake_lease_with_token(responder, name, server_token).await;
                 }
+                Ok(fsystem::ActivityGovernorRequest::AcquireLongWakeLease { responder, name }) => {
+                    self.handle_acquire_long_wake_lease(responder, name).await;
+                }
                 Ok(fsystem::ActivityGovernorRequest::RegisterSuspendBlocker {
                     responder,
                     payload,
@@ -925,7 +932,7 @@ impl SystemActivityGovernor {
         responder: fsystem::ActivityGovernorTakeWakeLeaseResponder,
         name: String,
     ) {
-        let client_token = match self.lease_manager.create_wake_lease(name).await {
+        let client_token = match self.lease_manager.create_wake_lease(name, false).await {
             Ok(client_token) => client_token,
             Err(error) => {
                 log::warn!(error:?; "Encountered error while registering wake lease");
@@ -941,17 +948,17 @@ impl SystemActivityGovernor {
         }
     }
 
-    async fn handle_acquire_wake_lease(
+    async fn acquire_wake_lease_common(
         &self,
-        responder: fsystem::ActivityGovernorAcquireWakeLeaseResponder,
         name: String,
-    ) {
-        let client_token_res = if name.is_empty() {
+        is_long: bool,
+    ) -> Result<fsystem::LeaseToken, fsystem::AcquireWakeLeaseError> {
+        if name.is_empty() {
             log::warn!("Received invalid name while acquiring wake lease");
             Err(fsystem::AcquireWakeLeaseError::InvalidName)
         } else {
             self.lease_manager
-                .create_wake_lease(name)
+                .create_wake_lease(name, is_long)
                 .await
                 .and_then(|client_token| {
                     client_token
@@ -970,12 +977,33 @@ impl SystemActivityGovernor {
 
                     Err(fsystem::AcquireWakeLeaseError::Internal)
                 })
-        };
+        }
+    }
 
+    async fn handle_acquire_wake_lease(
+        &self,
+        responder: fsystem::ActivityGovernorAcquireWakeLeaseResponder,
+        name: String,
+    ) {
+        let client_token_res = self.acquire_wake_lease_common(name, false).await;
         if let Err(error) = responder.send(client_token_res) {
             log::warn!(
                 error:?;
                 "Encountered error while responding to AcquireWakeLease request"
+            );
+        }
+    }
+
+    async fn handle_acquire_long_wake_lease(
+        &self,
+        responder: fsystem::ActivityGovernorAcquireLongWakeLeaseResponder,
+        name: String,
+    ) {
+        let client_token_res = self.acquire_wake_lease_common(name, true).await;
+        if let Err(error) = responder.send(client_token_res) {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to AcquireLongWakeLease request"
             );
         }
     }
@@ -990,16 +1018,17 @@ impl SystemActivityGovernor {
             log::warn!("Received invalid name while acquiring wake lease");
             Err(fsystem::AcquireWakeLeaseError::InvalidName)
         } else {
-            self.lease_manager.create_wake_lease_using_token(name, server_token).await.or_else(
-                |error| {
+            self.lease_manager
+                .create_wake_lease_using_token(name, server_token, false)
+                .await
+                .or_else(|error| {
                     log::warn!(
                         error:?;
                         "Encountered error while registering wake lease"
                     );
 
                     Err(fsystem::AcquireWakeLeaseError::Internal)
-                },
-            )
+                })
         };
 
         if let Err(error) = responder.send(client_token_res) {
@@ -1024,7 +1053,7 @@ impl SystemActivityGovernor {
                 }
 
                 self.lease_manager
-                    .create_wake_lease(name.clone())
+                    .create_wake_lease(name.clone(), false)
                     .await
                     .and_then(|client_token| {
                         client_token

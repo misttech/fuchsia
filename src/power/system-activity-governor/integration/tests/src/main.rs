@@ -3599,3 +3599,81 @@ async fn test_activity_governor_captures_inspect_event_buffer_stats() -> Result<
 
     Ok(())
 }
+
+#[fuchsia::test]
+async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_to_suspending()
+-> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let element_info_provider = realm
+        .connect_to_service_instance::<fbroker::ElementInfoProviderServiceMarker>(
+            &"system_activity_governor",
+        )
+        .await
+        .expect("failed to connect to service ElementInfoProviderService")
+        .connect_to_status_provider()
+        .expect("failed to connect to protocol ElementInfoProvider");
+
+    let status_endpoints: HashMap<String, fbroker::StatusProxy> = element_info_provider
+        .get_status_endpoints()
+        .await?
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.identifier.unwrap(), s.status.unwrap().into_proxy()))
+        .collect();
+
+    let es_status = status_endpoints.get("execution_state").unwrap();
+    assert_eq!(es_status.watch_power_level().await?.unwrap(), 2);
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let wake_lease_name = "wake_lease";
+    let wake_lease =
+        activity_governor.acquire_long_wake_lease(wake_lease_name).await.unwrap().unwrap();
+
+    // Trigger "boot complete" signal.
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        let () =
+            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    // Execution State should be at the "Suspending" power level, 1.
+    assert_eq!(es_status.watch_power_level().await?.unwrap(), 1);
+
+    let server_token_koid = &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var server_token_koid: contains {
+                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    "is_long_lease": true,
+                }
+            },
+        }
+    );
+
+    drop(wake_lease);
+    assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {},
+            config: {
+                use_suspender: true,
+                wait_for_suspending_token: false,
+            },
+        }
+    );
+
+    Ok(())
+}
