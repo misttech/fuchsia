@@ -384,6 +384,7 @@
 
                 // iptables_test
                 "IPTablesBasic.GetRevision",
+                "IPTablesBasic.CTTargetGetRevision",
                 "IPTablesBasic.GetInfoErrorPrecedence",
                 "IPTablesBasic.OriginalDstErrors",
                 "IPTablesBasic.GetEntriesErrorPrecedence",
@@ -817,6 +818,9 @@
                 "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/0",
                 "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/6",
 
+                // stat_test
+                "StatTest.StatxMntId",
+
                 // statfs_test
                 "FstatfsTest.BlocksFree",
 
@@ -882,6 +886,7 @@
 
                 // utimes_test
                 "FutimesatTest.OnNullPathWithOPath",
+                "UtimensatTest.AtEmptyPath",
 
                 // wait_test - https://fxbug.dev/42159689
                 "Waiters/WaitAnyChildTest.IgnoredChildRusage/*",
