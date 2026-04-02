@@ -5,10 +5,10 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_API_PROTOCOLS_CPP_DISPLAY_ENGINE_EVENTS_INTERFACE_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_API_PROTOCOLS_CPP_DISPLAY_ENGINE_EVENTS_INTERFACE_H_
 
-#include <lib/stdcompat/span.h>
 #include <lib/zx/time.h>
 
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
@@ -28,8 +28,8 @@ class DisplayEngineEventsInterface {
   DisplayEngineEventsInterface& operator=(DisplayEngineEventsInterface&&) = delete;
 
   virtual void OnDisplayAdded(display::DisplayId display_id,
-                              cpp20::span<const display::ModeAndId> preferred_modes,
-                              cpp20::span<const display::PixelFormat> pixel_formats) = 0;
+                              std::span<const display::ModeAndId> preferred_modes,
+                              std::span<const display::PixelFormat> pixel_formats) = 0;
   virtual void OnDisplayRemoved(display::DisplayId display_id) = 0;
   virtual void OnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                               display::DriverConfigStamp config_stamp) = 0;

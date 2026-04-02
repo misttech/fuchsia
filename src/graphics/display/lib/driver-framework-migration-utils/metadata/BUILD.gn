@@ -9,7 +9,6 @@ source_set("metadata-getter") {
   sources = [ "metadata-getter.h" ]
   public_deps = [
     "//sdk/lib/fidl/cpp/wire",
-    "//sdk/lib/stdcompat",
     "//zircon/system/public",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",

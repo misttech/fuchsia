@@ -4,7 +4,7 @@
 
 #include "src/graphics/display/lib/edid/timings.h"
 
-#include <lib/stdcompat/span.h>
+#include <span>
 
 #include <gtest/gtest.h>
 

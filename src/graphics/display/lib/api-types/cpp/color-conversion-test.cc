@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <lib/stdcompat/array.h>
 
 #include <array>
 #include <limits>
@@ -21,9 +20,9 @@ const ColorConversion kIdentity({
     .preoffsets = {0.0f, 0.0f, 0.0f},
     .coefficients =
         {
-            cpp20::to_array({1.0f, 0.0f, 0.0f}),
-            cpp20::to_array({0.0f, 1.0f, 0.0f}),
-            cpp20::to_array({0.0f, 0.0f, 1.0f}),
+            std::to_array({1.0f, 0.0f, 0.0f}),
+            std::to_array({0.0f, 1.0f, 0.0f}),
+            std::to_array({0.0f, 0.0f, 1.0f}),
         },
     .postoffsets = {0.0f, 0.0f, 0.0f},
 });
@@ -32,9 +31,9 @@ const ColorConversion kIdentity2({
     .preoffsets = {0.0f, 0.0f, 0.0f},
     .coefficients =
         {
-            cpp20::to_array({1.0f, 0.0f, 0.0f}),
-            cpp20::to_array({0.0f, 1.0f, 0.0f}),
-            cpp20::to_array({0.0f, 0.0f, 1.0f}),
+            std::to_array({1.0f, 0.0f, 0.0f}),
+            std::to_array({0.0f, 1.0f, 0.0f}),
+            std::to_array({0.0f, 0.0f, 1.0f}),
         },
     .postoffsets = {0.0f, 0.0f, 0.0f},
 });
@@ -43,9 +42,9 @@ const ColorConversion kAnotherConfig({
     .preoffsets = {0.1f, 0.2f, 0.3f},
     .coefficients =
         {
-            cpp20::to_array({1.0f, 2.0f, 3.0f}),
-            cpp20::to_array({4.0f, 5.0f, 6.0f}),
-            cpp20::to_array({7.0f, 8.0f, 9.0f}),
+            std::to_array({1.0f, 2.0f, 3.0f}),
+            std::to_array({4.0f, 5.0f, 6.0f}),
+            std::to_array({7.0f, 8.0f, 9.0f}),
         },
     .postoffsets = {0.4f, 0.5f, 0.6f},
 });
@@ -71,9 +70,9 @@ TEST(ColorConversionTest, FromDesignatedInitializer) {
       .preoffsets = {0.1f, 0.2f, 0.3f},
       .coefficients =
           {
-              cpp20::to_array({1.0f, 2.0f, 3.0f}),
-              cpp20::to_array({4.0f, 5.0f, 6.0f}),
-              cpp20::to_array({7.0f, 8.0f, 9.0f}),
+              std::to_array({1.0f, 2.0f, 3.0f}),
+              std::to_array({4.0f, 5.0f, 6.0f}),
+              std::to_array({7.0f, 8.0f, 9.0f}),
           },
       .postoffsets = {0.4f, 0.5f, 0.6f},
   });

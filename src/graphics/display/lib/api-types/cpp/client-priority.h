@@ -7,11 +7,8 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 
-#include <cstdint>
-
-#if __cplusplus >= 202002L
+#include <compare>
 #include <format>
-#endif
 
 namespace display {
 
@@ -37,6 +34,9 @@ class ClientPriority {
     return value_;
   }
 
+  constexpr bool operator==(const ClientPriority&) const noexcept = default;
+  constexpr std::strong_ordering operator<=>(const ClientPriority&) const noexcept = default;
+
   // Raw numerical value of the equivalent FIDL value.
   //
   // This is intended to be used for developer-facing output, such as logging
@@ -54,13 +54,6 @@ class ClientPriority {
   static const ClientPriority kPrimary;
 
  private:
-  friend constexpr bool operator==(const ClientPriority& lhs, const ClientPriority& rhs);
-  friend constexpr bool operator!=(const ClientPriority& lhs, const ClientPriority& rhs);
-  friend constexpr bool operator>(const ClientPriority& lhs, const ClientPriority& rhs);
-  friend constexpr bool operator>=(const ClientPriority& lhs, const ClientPriority& rhs);
-  friend constexpr bool operator<(const ClientPriority& lhs, const ClientPriority& rhs);
-  friend constexpr bool operator<=(const ClientPriority& lhs, const ClientPriority& rhs);
-
   fuchsia_hardware_display::wire::ClientPriorityValue value_;
 };
 
@@ -71,39 +64,13 @@ constexpr inline ClientPriority ClientPriority::kVirtcon(
 constexpr inline ClientPriority ClientPriority::kPrimary(
     fuchsia_hardware_display::wire::kPrimaryClientPriorityValue);
 
-constexpr bool operator==(const ClientPriority& lhs, const ClientPriority& rhs) {
-  return lhs.value_ == rhs.value_;
-}
-
-constexpr bool operator!=(const ClientPriority& lhs, const ClientPriority& rhs) {
-  return !(lhs == rhs);
-}
-
-constexpr bool operator>(const ClientPriority& lhs, const ClientPriority& rhs) {
-  return lhs.value_ > rhs.value_;
-}
-
-constexpr bool operator>=(const ClientPriority& lhs, const ClientPriority& rhs) {
-  return lhs.value_ >= rhs.value_;
-}
-
-constexpr bool operator<(const ClientPriority& lhs, const ClientPriority& rhs) {
-  return lhs.value_ < rhs.value_;
-}
-
-constexpr bool operator<=(const ClientPriority& lhs, const ClientPriority& rhs) {
-  return lhs.value_ <= rhs.value_;
-}
-
 }  // namespace display
 
-#if __cplusplus >= 202002L
 template <>
 struct std::formatter<display::ClientPriority> : std::formatter<uint32_t> {
   auto format(const display::ClientPriority& client_priority, std::format_context& ctx) const {
     return std::formatter<uint32_t>::format(client_priority.ValueForLogging(), ctx);
   }
 };
-#endif
 
 #endif  // SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_CLIENT_PRIORITY_H_

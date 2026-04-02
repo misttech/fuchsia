@@ -5,12 +5,12 @@
 #include "src/graphics/display/lib/api-protocols/cpp/mock-display-engine.h"
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
 #include <mutex>
+#include <span>
 #include <utility>
 
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
@@ -203,7 +203,7 @@ void MockDisplayEngine::ReleaseImage(display::DriverImageId driver_image_id) {
 
 display::ConfigCheckResult MockDisplayEngine::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
+    display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
   Expectation& call_expectation = expectations_[call_index_];
@@ -218,7 +218,7 @@ display::ConfigCheckResult MockDisplayEngine::CheckConfiguration(
 void MockDisplayEngine::SubmitConfiguration(display::DisplayId display_id,
                                             display::ModeId display_mode_id,
                                             display::ColorConversion color_conversion,
-                                            cpp20::span<const display::DriverLayer> layers,
+                                            std::span<const display::DriverLayer> layers,
                                             display::DriverConfigStamp config_stamp) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");

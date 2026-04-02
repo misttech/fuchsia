@@ -5,113 +5,72 @@
 import("//build/components.gni")
 import("//build/test.gni")
 
-library_sources = [
-  "alpha-mode.cc",
-  "alpha-mode.h",
-  "backlight-state.cc",
-  "backlight-state.h",
-  "buffer-collection-id.h",
-  "client-priority.cc",
-  "client-priority.h",
-  "color-conversion.cc",
-  "color-conversion.h",
-  "color.cc",
-  "color.h",
-  "config-check-result.cc",
-  "config-check-result.h",
-  "config-stamp.h",
-  "coordinate-transformation.cc",
-  "coordinate-transformation.h",
-  "dimensions.cc",
-  "dimensions.h",
-  "display-id.h",
-  "display-timing.h",
-  "driver-buffer-collection-id.h",
-  "driver-capture-image-id.h",
-  "driver-config-stamp.h",
-  "driver-image-id.h",
-  "driver-layer.cc",
-  "driver-layer.h",
-  "engine-info.cc",
-  "engine-info.h",
-  "event-id.h",
-  "id-type.cc",
-  "id-type.h",
-  "image-buffer-usage.cc",
-  "image-buffer-usage.h",
-  "image-id.h",
-  "image-metadata.cc",
-  "image-metadata.h",
-  "image-tiling-type.cc",
-  "image-tiling-type.h",
-  "layer-id.h",
-  "mode-and-id.cc",
-  "mode-and-id.h",
-  "mode-id.h",
-  "mode.cc",
-  "mode.h",
-  "pixel-format.cc",
-  "pixel-format.h",
-  "power-mode.cc",
-  "power-mode.h",
-  "rectangle.cc",
-  "rectangle.h",
-  "vsync-ack-cookie.h",
-]
-
-library_public_deps = [
-  "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_cpp",
-  "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_cpp",
-  "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
-  "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp",
-  "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
-  "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
-  "//sdk/lib/stdcompat",
-]
-
 source_set("cpp") {
-  sources = library_sources
-  public_deps = library_public_deps
+  sources = [
+    "alpha-mode.cc",
+    "alpha-mode.h",
+    "backlight-state.cc",
+    "backlight-state.h",
+    "buffer-collection-id.h",
+    "client-priority.cc",
+    "client-priority.h",
+    "color-conversion.cc",
+    "color-conversion.h",
+    "color.cc",
+    "color.h",
+    "config-check-result.cc",
+    "config-check-result.h",
+    "config-stamp.h",
+    "coordinate-transformation.cc",
+    "coordinate-transformation.h",
+    "dimensions.cc",
+    "dimensions.h",
+    "display-id.h",
+    "display-timing.h",
+    "driver-buffer-collection-id.h",
+    "driver-capture-image-id.h",
+    "driver-config-stamp.h",
+    "driver-image-id.h",
+    "driver-layer.cc",
+    "driver-layer.h",
+    "engine-info.cc",
+    "engine-info.h",
+    "event-id.h",
+    "id-type.cc",
+    "id-type.h",
+    "image-buffer-usage.cc",
+    "image-buffer-usage.h",
+    "image-id.h",
+    "image-metadata.cc",
+    "image-metadata.h",
+    "image-tiling-type.cc",
+    "image-tiling-type.h",
+    "layer-id.h",
+    "mode-and-id.cc",
+    "mode-and-id.h",
+    "mode-id.h",
+    "mode.cc",
+    "mode.h",
+    "pixel-format.cc",
+    "pixel-format.h",
+    "power-mode.cc",
+    "power-mode.h",
+    "rectangle.cc",
+    "rectangle.h",
+    "vsync-ack-cookie.h",
+  ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_cpp",
+    "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_cpp",
+    "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
+    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
+    "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
+  ]
 
   # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
   assert_no_deps = [ "//src/ui/scenic/lib/display/*" ]
 }
-
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-source_set("cpp-cxx17") {
-  sources = library_sources
-  public_deps = library_public_deps
-
-  # Remove the C++ language specifier.
-  configs -= [ "//build/config:language" ]
-  configs += [ ":cxx17" ]
-
-  # TODO(https://fxbug.dev/446717362): Scenic also has a display:: namespace.
-  assert_no_deps = [ "//src/ui/scenic/lib/display/*" ]
-}
-
-test_sources = [
-  "alpha-mode-test.cc",
-  "backlight-state-test.cc",
-  "client-priority-test.cc",
-  "color-conversion-test.cc",
-  "color-test.cc",
-  "config-check-result-test.cc",
-  "coordinate-transformation-test.cc",
-  "dimensions-test.cc",
-  "display-timing-test.cc",
-  "driver-layer-test.cc",
-  "engine-info-test.cc",
-  "id-type-test.cc",
-  "image-buffer-usage-test.cc",
-  "image-metadata-test.cc",
-  "image-tiling-type-test.cc",
-  "mode-and-id-test.cc",
-  "mode-test.cc",
-  "pixel-format-test.cc",
-  "power-mode-test.cc",
-  "rectangle-test.cc",
-]
 
 group("test-deps") {
   testonly = true
@@ -125,7 +84,28 @@ group("test-deps") {
 }
 
 test("unittests") {
-  sources = test_sources
+  sources = [
+    "alpha-mode-test.cc",
+    "backlight-state-test.cc",
+    "client-priority-test.cc",
+    "color-conversion-test.cc",
+    "color-test.cc",
+    "config-check-result-test.cc",
+    "coordinate-transformation-test.cc",
+    "dimensions-test.cc",
+    "display-timing-test.cc",
+    "driver-layer-test.cc",
+    "engine-info-test.cc",
+    "id-type-test.cc",
+    "image-buffer-usage-test.cc",
+    "image-metadata-test.cc",
+    "image-tiling-type-test.cc",
+    "mode-and-id-test.cc",
+    "mode-test.cc",
+    "pixel-format-test.cc",
+    "power-mode-test.cc",
+    "rectangle-test.cc",
+  ]
   output_name = "display-api-types-cpp-tests"
   deps = [
     ":cpp",
@@ -134,42 +114,12 @@ test("unittests") {
   visibility = [ ":*" ]
 }
 
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-test("unittests-cxx17") {
-  sources = test_sources
-  output_name = "display-api-types-cpp17-tests"
-  deps = [
-    ":cpp-cxx17",
-    ":test-deps",
-  ]
-  visibility = [ ":*" ]
-
-  # Remove the C++ language specifier.
-  configs -= [ "//build/config:language" ]
-  configs += [ ":cxx17" ]
-}
-
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-config("cxx17") {
-  visibility = [ ":*" ]
-  cflags_cc = [ "-std=c++17" ]
-}
-
 fuchsia_unittest_package("unittests-package") {
   package_name = "display-api-types-cpp-tests"
   deps = [ ":unittests" ]
 }
 
-# TODO(https://fxbug.dev/378965477): Remove once C++17 support is dropped.
-fuchsia_unittest_package("unittests-cxx17-package") {
-  package_name = "display-api-types-cpp17-tests"
-  deps = [ ":unittests-cxx17" ]
-}
-
 group("tests") {
   testonly = true
-  deps = [
-    ":unittests-cxx17-package",
-    ":unittests-package",
-  ]
+  deps = [ ":unittests-package" ]
 }

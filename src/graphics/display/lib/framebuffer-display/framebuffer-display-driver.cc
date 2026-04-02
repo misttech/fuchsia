@@ -152,8 +152,8 @@ zx::result<> FramebufferDisplayDriver::InitializeFidlServiceNode() {
   };
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>>
-      node_controller_client_result = AddChild(
-          name(), cpp20::span<const fuchsia_driver_framework::NodeProperty>(), node_offers);
+      node_controller_client_result =
+          AddChild(name(), std::span<const fuchsia_driver_framework::NodeProperty>(), node_offers);
   if (node_controller_client_result.is_error()) {
     fdf::error("Failed to add child node: {}", node_controller_client_result);
     return node_controller_client_result.take_error();

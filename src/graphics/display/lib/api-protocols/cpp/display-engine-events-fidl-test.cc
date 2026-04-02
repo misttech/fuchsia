@@ -99,7 +99,7 @@ TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithPreferredModes) {
           }),
       }),
   };
-  static constexpr cpp20::span<const display::PixelFormat> kEmptyPixelFormats;
+  static constexpr std::span<const display::PixelFormat> kEmptyPixelFormats;
 
   mock_->ExpectOnDisplayAdded(
       [&](fuchsia_hardware_display_engine::wire::EngineListenerOnDisplayAddedRequest* request,
@@ -142,7 +142,7 @@ constexpr std::array<uint8_t, Size> CreateArithmeticProgression(size_t starting_
 
 TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithPixelFormats) {
   static constexpr display::DisplayId kDisplayId(42);
-  static constexpr cpp20::span<const display::ModeAndId> kEmptyPreferredModes;
+  static constexpr std::span<const display::ModeAndId> kEmptyPreferredModes;
   static constexpr display::PixelFormat kPixelFormats[] = {
       display::PixelFormat::kB8G8R8A8, display::PixelFormat::kR8G8B8A8,
       display::PixelFormat::kR8G8B8, display::PixelFormat::kB8G8R8};
@@ -177,9 +177,9 @@ TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithNoListener) {
           .refresh_rate_millihertz = 60'000,
       }),
   });
-  static constexpr cpp20::span<const display::ModeAndId> kPreferredModes(&kDisplayModeAndId, 1);
+  static constexpr std::span<const display::ModeAndId> kPreferredModes(&kDisplayModeAndId, 1);
   static constexpr display::PixelFormat kPixelFormat = display::PixelFormat::kB8G8R8A8;
-  static constexpr cpp20::span<const display::PixelFormat> kPixelFormats(&kPixelFormat, 1);
+  static constexpr std::span<const display::PixelFormat> kPixelFormats(&kPixelFormat, 1);
 
   fidl_adapter_.SetListener(fdf::ClientEnd<fuchsia_hardware_display_engine::EngineListener>());
   interface_.OnDisplayAdded(kDisplayId, kPreferredModes, kPixelFormats);

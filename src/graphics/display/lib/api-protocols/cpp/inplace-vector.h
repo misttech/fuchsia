@@ -5,11 +5,11 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_API_PROTOCOLS_CPP_INPLACE_VECTOR_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_API_PROTOCOLS_CPP_INPLACE_VECTOR_H_
 
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <array>
 #include <memory>
+#include <span>
 #include <utility>
 
 namespace display::internal {
@@ -30,16 +30,16 @@ class InplaceVector {
  public:
   using value_type = ValueType;
 
-  using size_type = typename cpp20::span<ValueType>::size_type;
-  using difference_type = typename cpp20::span<ValueType>::difference_type;
-  using reference = typename cpp20::span<ValueType>::reference;
-  using const_reference = typename cpp20::span<const ValueType>::reference;
-  using pointer = typename cpp20::span<ValueType>::pointer;
-  using const_pointer = typename cpp20::span<const ValueType>::const_pointer;
-  using iterator = typename cpp20::span<ValueType>::iterator;
-  using const_iterator = typename cpp20::span<const ValueType>::iterator;
-  using reverse_iterator = typename cpp20::span<ValueType>::reverse_iterator;
-  using const_reverse_iterator = typename cpp20::span<const ValueType>::reverse_iterator;
+  using size_type = typename std::span<ValueType>::size_type;
+  using difference_type = typename std::span<ValueType>::difference_type;
+  using reference = typename std::span<ValueType>::reference;
+  using const_reference = typename std::span<const ValueType>::reference;
+  using pointer = typename std::span<ValueType>::pointer;
+  using const_pointer = typename std::span<const ValueType>::const_pointer;
+  using iterator = typename std::span<ValueType>::iterator;
+  using const_iterator = typename std::span<const ValueType>::iterator;
+  using reverse_iterator = typename std::span<ValueType>::reverse_iterator;
+  using const_reverse_iterator = typename std::span<const ValueType>::reverse_iterator;
 
   // The default constructor creates an empty container.
   constexpr InplaceVector() noexcept = default;
@@ -57,8 +57,8 @@ class InplaceVector {
   constexpr const ValueType* data() const noexcept { return &storage_[0].element; }
 
   // span pointng to the vector's elements.
-  constexpr cpp20::span<ValueType> Elements() noexcept { return {data(), size()}; }
-  constexpr cpp20::span<const ValueType> Elements() const noexcept { return {data(), size()}; }
+  constexpr std::span<ValueType> Elements() noexcept { return {data(), size()}; }
+  constexpr std::span<const ValueType> Elements() const noexcept { return {data(), size()}; }
 
   constexpr reference operator[](size_type index) { return Elements()[index]; }
   constexpr const_reference operator[](size_type index) const { return Elements()[index]; }

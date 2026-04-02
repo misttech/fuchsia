@@ -6,13 +6,12 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_COLOR_CONVERSION_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
-#include <lib/stdcompat/array.h>
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <span>
 
 namespace display {
 
@@ -72,7 +71,7 @@ class ColorConversion {
   //
   // TODO(https://fxbug.dev/42085024): Make it constexpr when C++23 is
   // supported. C++23 makes `std::isfinite()` a constexpr function.
-  static bool AreAllFinite(cpp20::span<const float> values);
+  static bool AreAllFinite(std::span<const float> values);
 
   // In debug mode, asserts that IsValid() would return true.
   //
@@ -87,7 +86,7 @@ class ColorConversion {
 };
 
 // static
-inline bool ColorConversion::AreAllFinite(cpp20::span<const float> values) {
+inline bool ColorConversion::AreAllFinite(std::span<const float> values) {
   return std::all_of(values.begin(), values.end(), [](float f) { return std::isfinite(f); });
 }
 
@@ -183,9 +182,9 @@ inline const ColorConversion ColorConversion::kIdentity({
     .preoffsets = {0.0f, 0.0f, 0.0f},
     .coefficients =
         {
-            cpp20::to_array({1.0f, 0.0f, 0.0f}),
-            cpp20::to_array({0.0f, 1.0f, 0.0f}),
-            cpp20::to_array({0.0f, 0.0f, 1.0f}),
+            std::to_array({1.0f, 0.0f, 0.0f}),
+            std::to_array({0.0f, 1.0f, 0.0f}),
+            std::to_array({0.0f, 0.0f, 1.0f}),
         },
     .postoffsets = {0.0f, 0.0f, 0.0f},
 });

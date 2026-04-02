@@ -31,14 +31,14 @@ zx::result<> DisplayEngineInterface::SetMinimumRgb(uint8_t minimum_rgb) {
 
 display::ConfigCheckResult DisplayEngineInterface::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    cpp20::span<const display::DriverLayer> layers) {
+    std::span<const display::DriverLayer> layers) {
   ZX_PANIC("DisplayEngineInterface subclasses must override one CheckConfiguration() overload.");
   return display::ConfigCheckResult::kUnsupportedConfig;
 }
 
 display::ConfigCheckResult DisplayEngineInterface::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
+    display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers) {
   if (color_conversion != display::ColorConversion::kIdentity) {
     return display::ConfigCheckResult::kUnsupportedConfig;
   }
@@ -47,7 +47,7 @@ display::ConfigCheckResult DisplayEngineInterface::CheckConfiguration(
 
 void DisplayEngineInterface::SubmitConfiguration(display::DisplayId display_id,
                                                  display::ModeId display_mode_id,
-                                                 cpp20::span<const display::DriverLayer> layers,
+                                                 std::span<const display::DriverLayer> layers,
                                                  display::DriverConfigStamp driver_config_stamp) {
   ZX_PANIC("DisplayEngineInterface subclasses must override a SubmitConfiguration() overload");
 }
@@ -55,7 +55,7 @@ void DisplayEngineInterface::SubmitConfiguration(display::DisplayId display_id,
 void DisplayEngineInterface::SubmitConfiguration(display::DisplayId display_id,
                                                  display::ModeId display_mode_id,
                                                  display::ColorConversion color_conversion,
-                                                 cpp20::span<const display::DriverLayer> layers,
+                                                 std::span<const display::DriverLayer> layers,
                                                  display::DriverConfigStamp driver_config_stamp) {
   ZX_DEBUG_ASSERT_MSG(color_conversion == display::ColorConversion::kIdentity,
                       "Display coordinator submitted rejected ColorConversion");

@@ -14,7 +14,6 @@
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/inspect/cpp/reader.h>
 #include <lib/inspect/cpp/vmo/types.h>
-#include <lib/stdcompat/span.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -30,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -76,8 +76,8 @@ class TestDisplayEngineListener : public display::DisplayEngineEventsInterface {
  public:
   // display::DisplayEngineEventsInterface:
   void OnDisplayAdded(display::DisplayId display_id,
-                      cpp20::span<const display::ModeAndId> preferred_modes,
-                      cpp20::span<const display::PixelFormat> pixel_formats) override {
+                      std::span<const display::ModeAndId> preferred_modes,
+                      std::span<const display::PixelFormat> pixel_formats) override {
     display_added_.Signal();
   }
   void OnDisplayRemoved(display::DisplayId display_id) override {
@@ -202,7 +202,7 @@ constexpr display::DriverLayer kAcceptableLayer({
 TEST_F(FakeDisplayTest, CheckConfigMultipleLayersSuccess) {
   display::DriverLayer layers[2] = {kAcceptableLayer, kAcceptableLayer};
 
-  cpp20::span<const display::DriverLayer> one_layer(layers, 1);
+  std::span<const display::DriverLayer> one_layer(layers, 1);
   // Check the display configuration, to make sure the layer configuration succeeds.
   display::ConfigCheckResult config_check_result =
       fake_display_->CheckConfiguration(kDisplayId, kModeId, one_layer);
@@ -210,7 +210,7 @@ TEST_F(FakeDisplayTest, CheckConfigMultipleLayersSuccess) {
       << "This test uses a DriverLayer that does not pass FakeDisplay::CheckConfiguration().";
 
   // Two layers should succeed, as FakeDisplay only supports up to two layers.
-  cpp20::span<const display::DriverLayer> two_layers(std::begin(layers), std::end(layers));
+  std::span<const display::DriverLayer> two_layers(std::begin(layers), std::end(layers));
   config_check_result = fake_display_->CheckConfiguration(kDisplayId, kModeId, two_layers);
   EXPECT_EQ(display::ConfigCheckResult::kOk, config_check_result);
 }
@@ -218,7 +218,7 @@ TEST_F(FakeDisplayTest, CheckConfigMultipleLayersSuccess) {
 TEST_F(FakeDisplayTest, CheckConfigMultipleLayersFailureTooMany) {
   display::DriverLayer layers[3] = {kAcceptableLayer, kAcceptableLayer, kAcceptableLayer};
 
-  cpp20::span<const display::DriverLayer> one_layer(layers, 1);
+  std::span<const display::DriverLayer> one_layer(layers, 1);
   // Check the display configuration, to make sure the layer configuration succeeds.
   display::ConfigCheckResult config_check_result =
       fake_display_->CheckConfiguration(kDisplayId, kModeId, one_layer);
@@ -226,7 +226,7 @@ TEST_F(FakeDisplayTest, CheckConfigMultipleLayersFailureTooMany) {
       << "This test uses a DriverLayer that does not pass FakeDisplay::CheckConfiguration().";
 
   // Three layers should fail, as FakeDisplay only supports up to two layers.
-  cpp20::span<const display::DriverLayer> three_layers(std::begin(layers), std::end(layers));
+  std::span<const display::DriverLayer> three_layers(std::begin(layers), std::end(layers));
   config_check_result = fake_display_->CheckConfiguration(kDisplayId, kModeId, three_layers);
   EXPECT_EQ(display::ConfigCheckResult::kUnsupportedConfig, config_check_result);
 }

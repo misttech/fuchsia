@@ -7,13 +7,13 @@
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <span>
 #include <vector>
 
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-interface.h"
@@ -53,10 +53,10 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
   using ReleaseImageChecker = fit::function<void(display::DriverImageId driver_image_id)>;
   using CheckConfigurationChecker = fit::function<display::ConfigCheckResult(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers)>;
+      display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers)>;
   using SubmitConfigurationChecker = fit::function<void(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
+      display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers,
       display::DriverConfigStamp config_stamp)>;
   using SetBufferCollectionConstraintsChecker =
       fit::function<zx::result<>(const display::ImageBufferUsage& image_buffer_usage,
@@ -113,10 +113,10 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
       display::ColorConversion color_conversion,
-      cpp20::span<const display::DriverLayer> layers) override;
+      std::span<const display::DriverLayer> layers) override;
   void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
                            display::ColorConversion color_conversion,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,

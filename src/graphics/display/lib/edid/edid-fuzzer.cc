@@ -17,7 +17,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   }
 
   fdf_testing::ScopedGlobalLogger logger;
-  fit::result<const char*, edid::Edid> result = edid::Edid::Create(cpp20::span(data, size));
+  fit::result<const char*, edid::Edid> result = edid::Edid::Create(std::span(data, size));
   if (!result.is_ok()) {
     return 0;
   }

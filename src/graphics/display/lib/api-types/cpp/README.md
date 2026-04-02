@@ -69,7 +69,6 @@ work around this limitation by adding the following CL footers.
 
 ```
 Multiply: display-api-types-cpp: 1
-Multiply: display-api-types-cpp17: 1
 ```
 
 This workaround is acceptable given the current library scope and design.

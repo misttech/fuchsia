@@ -6,10 +6,10 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_PROTOCOLS_CPP_DISPLAY_ENGINE_INTERFACE_H_
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
@@ -58,24 +58,24 @@ class DisplayEngineInterface {
 
   virtual display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      cpp20::span<const display::DriverLayer> layers);
+      std::span<const display::DriverLayer> layers);
   // Out-of-tree drivers must not override this overload, because it will be
   // reworked.
   virtual display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers);
+      display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers);
 
   // Display engine drivers must override **exactly one** of the following
   // `SubmitConfiguration()` methods.
 
   virtual void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                                   cpp20::span<const display::DriverLayer> layers,
+                                   std::span<const display::DriverLayer> layers,
                                    display::DriverConfigStamp driver_config_stamp);
   // Out-of-tree drivers must not override this overload, because it will be
   // reworked.
   virtual void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
                                    display::ColorConversion color_conversion,
-                                   cpp20::span<const display::DriverLayer> layers,
+                                   std::span<const display::DriverLayer> layers,
                                    display::DriverConfigStamp driver_config_stamp);
 
   virtual zx::result<> SetBufferCollectionConstraints(

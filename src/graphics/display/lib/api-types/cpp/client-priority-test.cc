@@ -6,11 +6,9 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
 
-#include <gtest/gtest.h>
-
-#if __cplusplus >= 202002L
 #include <format>
-#endif
+
+#include <gtest/gtest.h>
 
 namespace display {
 
@@ -93,7 +91,6 @@ TEST(ClientPriorityTest, FidlConversionRoundtrip) {
   EXPECT_EQ(ClientPriority::kVirtcon, ClientPriority(ClientPriority::kVirtcon.ToFidlValue()));
 }
 
-#if __cplusplus >= 202002L
 TEST(ClientPriority, Format) {
   EXPECT_EQ(std::format("{}", ClientPriority::kPrimary),
             std::format("{}", fuchsia_hardware_display::wire::kPrimaryClientPriorityValue));
@@ -102,7 +99,6 @@ TEST(ClientPriority, Format) {
   EXPECT_EQ(std::format("{:>2}", ClientPriority::kPrimary),
             std::format("{:>2}", fuchsia_hardware_display::wire::kPrimaryClientPriorityValue));
 }
-#endif  // __cplusplus >= 202002L
 
 }  // namespace
 

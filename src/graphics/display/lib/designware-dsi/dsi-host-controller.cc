@@ -51,7 +51,7 @@ constexpr uint32_t kBitPldWEmpty = 2;
 constexpr uint32_t kBitCmdFull = 1;
 constexpr uint32_t kBitCmdEmpty = 0;
 
-void LogBytes(cpp20::span<const uint8_t> bytes) {
+void LogBytes(std::span<const uint8_t> bytes) {
   if (bytes.empty()) {
     return;
   }
@@ -140,7 +140,7 @@ zx_status_t DsiHostController::PhyWaitForReady() {
 }
 
 zx::result<> DsiHostController::IssueCommands(
-    cpp20::span<const mipi_dsi::DsiCommandAndResponse> commands) {
+    std::span<const mipi_dsi::DsiCommandAndResponse> commands) {
   for (const mipi_dsi::DsiCommandAndResponse& command : commands) {
     zx_status_t status = IssueCommand(command);
     if (status != ZX_OK) {

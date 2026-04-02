@@ -7,12 +7,13 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
+#include <algorithm>
 #include <array>
 #include <cinttypes>
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 
@@ -55,8 +56,7 @@ class Color {
   constexpr Color& operator=(Color&&) noexcept = default;
   ~Color() = default;
 
-  friend constexpr bool operator==(const Color& lhs, const Color& rhs);
-  friend constexpr bool operator!=(const Color& lhs, const Color& rhs);
+  constexpr bool operator==(const Color& rhs) const = default;
 
   constexpr fuchsia_hardware_display_types::wire::Color ToFidl() const;
 
@@ -64,7 +64,7 @@ class Color {
   constexpr PixelFormat format() const { return format_; }
 
   // Guaranteed to meet the requirements in the FIDL documentation.
-  constexpr cpp20::span<const uint8_t> bytes() const { return bytes_; }
+  constexpr std::span<const uint8_t> bytes() const { return bytes_; }
 
   // True iff `format` meets the requirements in the FIDL documentation.
   static constexpr bool SupportsFormat(PixelFormat format);
@@ -72,7 +72,7 @@ class Color {
  private:
   struct ConstructorArgs {
     PixelFormat format;
-    cpp20::span<const uint8_t> bytes;
+    std::span<const uint8_t> bytes;
   };
 
   // In debug mode, asserts that IsValid() would return true.
@@ -116,21 +116,9 @@ constexpr bool Color::IsValid(const fuchsia_hardware_display_types::wire::Color&
   return true;
 }
 
-constexpr Color::Color(const Color::ConstructorArgs& args)
-    : format_(args.format),
-      // TODO(https://fxbug.dev/378965477): Given C++20, this error-prone code can be replaced by
-      //                                    std::ranges::copy().
-      bytes_({
-          args.bytes.size() > 0 ? args.bytes[0] : uint8_t{0},
-          args.bytes.size() > 1 ? args.bytes[1] : uint8_t{0},
-          args.bytes.size() > 2 ? args.bytes[2] : uint8_t{0},
-          args.bytes.size() > 3 ? args.bytes[3] : uint8_t{0},
-          args.bytes.size() > 4 ? args.bytes[4] : uint8_t{0},
-          args.bytes.size() > 5 ? args.bytes[5] : uint8_t{0},
-          args.bytes.size() > 6 ? args.bytes[6] : uint8_t{0},
-          args.bytes.size() > 7 ? args.bytes[7] : uint8_t{0},
-      }) {
+constexpr Color::Color(const Color::ConstructorArgs& args) : format_(args.format), bytes_({}) {
   DebugAssertIsValid(args);
+  std::ranges::copy(args.bytes, bytes_.begin());
 }
 
 // static
@@ -142,19 +130,9 @@ constexpr Color Color::From(const fuchsia_hardware_display_types::wire::Color& f
   });
 }
 
-constexpr bool operator==(const Color& lhs, const Color& rhs) {
-  return lhs.format_ == rhs.format_ && lhs.bytes_ == rhs.bytes_;
-}
-
-constexpr bool operator!=(const Color& lhs, const Color& rhs) { return !(lhs == rhs); }
-
 constexpr fuchsia_hardware_display_types::wire::Color Color::ToFidl() const {
   fuchsia_hardware_display_types::wire::Color fidl_color{.format = format_.ToFidl()};
-  // TODO(https://fxbug.dev/378965477): Given C++20, this error-prone code can be replaced by
-  //                                    std::ranges::copy().
-  for (int i = 0; i < Color::kBytesElements; ++i) {
-    fidl_color.bytes[i] = bytes_[i];
-  }
+  std::ranges::copy(bytes_, fidl_color.bytes.begin());
   return fidl_color;
 }
 

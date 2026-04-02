@@ -118,8 +118,8 @@ display::EngineInfo FramebufferDisplay::CompleteCoordinatorConnection() {
       }),
   });
 
-  const cpp20::span<const display::ModeAndId> preferred_modes(&mode_and_id, 1);
-  const cpp20::span<const display::PixelFormat> pixel_formats(&properties_.pixel_format, 1);
+  const std::span<const display::ModeAndId> preferred_modes(&mode_and_id, 1);
+  const std::span<const display::PixelFormat> pixel_formats(&properties_.pixel_format, 1);
   engine_events_.OnDisplayAdded(kDisplayId, preferred_modes, pixel_formats);
 
   return kEngineInfo;
@@ -289,7 +289,7 @@ void FramebufferDisplay::ReleaseImage(display::DriverImageId image_id) {
 
 display::ConfigCheckResult FramebufferDisplay::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    cpp20::span<const display::DriverLayer> layers) {
+    std::span<const display::DriverLayer> layers) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
 
   if (layers.size() > kEngineInfo.max_layer_count()) {
@@ -329,7 +329,7 @@ display::ConfigCheckResult FramebufferDisplay::CheckConfiguration(
 
 void FramebufferDisplay::SubmitConfiguration(display::DisplayId display_id,
                                              display::ModeId display_mode_id,
-                                             cpp20::span<const display::DriverLayer> layers,
+                                             std::span<const display::DriverLayer> layers,
                                              display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
   ZX_DEBUG_ASSERT(display_mode_id == kDisplayModeId);

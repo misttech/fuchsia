@@ -6,13 +6,13 @@
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <span>
 #include <type_traits>
 #include <vector>
 
@@ -48,10 +48,10 @@ class DisplayEngineMinimalMock final : public display::DisplayEngineInterface {
  public:
   using CheckConfigurationChecker = fit::function<display::ConfigCheckResult(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      cpp20::span<const display::DriverLayer> layers)>;
+      std::span<const display::DriverLayer> layers)>;
   using SubmitConfigurationChecker = fit::function<void(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      cpp20::span<const display::DriverLayer> layers, display::DriverConfigStamp config_stamp)>;
+      std::span<const display::DriverLayer> layers, display::DriverConfigStamp config_stamp)>;
 
   DisplayEngineMinimalMock();
   DisplayEngineMinimalMock(const DisplayEngineMinimalMock&) = delete;
@@ -82,9 +82,9 @@ class DisplayEngineMinimalMock final : public display::DisplayEngineInterface {
   void ReleaseImage(display::DriverImageId driver_image_id) override;
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      cpp20::span<const display::DriverLayer> layers) override;
+      std::span<const display::DriverLayer> layers) override;
   void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp driver_config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
@@ -162,7 +162,7 @@ void DisplayEngineMinimalMock::ReleaseImage(display::DriverImageId driver_image_
 
 display::ConfigCheckResult DisplayEngineMinimalMock::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    cpp20::span<const display::DriverLayer> layers) {
+    std::span<const display::DriverLayer> layers) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
   Expectation& call_expectation = expectations_[call_index_];
@@ -175,7 +175,7 @@ display::ConfigCheckResult DisplayEngineMinimalMock::CheckConfiguration(
 
 void DisplayEngineMinimalMock::SubmitConfiguration(display::DisplayId display_id,
                                                    display::ModeId display_mode_id,
-                                                   cpp20::span<const display::DriverLayer> layers,
+                                                   std::span<const display::DriverLayer> layers,
                                                    display::DriverConfigStamp driver_config_stamp) {
   std::lock_guard<std::mutex> lock(mutex_);
   ZX_ASSERT_MSG(call_index_ < expectations_.size(), "All expected calls were already received");
@@ -240,14 +240,14 @@ TEST_F(DisplayEngineInterfaceTest, CheckConfigurationIdentityColorConversionSucc
   static constexpr display::ModeId kModeId(2);
   static constexpr std::array<display::DriverLayer, 1> kLayers = {CreateValidLayerWithSeed(0)};
 
-  mock_display_engine_.ExpectCheckConfiguration(
-      [&](display::DisplayId display_id, display::ModeId mode_id,
-          cpp20::span<const display::DriverLayer> layers) {
-        EXPECT_EQ(kDisplayId, display_id);
-        EXPECT_EQ(kModeId, mode_id);
-        EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));
-        return display::ConfigCheckResult::kOk;
-      });
+  mock_display_engine_.ExpectCheckConfiguration([&](display::DisplayId display_id,
+                                                    display::ModeId mode_id,
+                                                    std::span<const display::DriverLayer> layers) {
+    EXPECT_EQ(kDisplayId, display_id);
+    EXPECT_EQ(kModeId, mode_id);
+    EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));
+    return display::ConfigCheckResult::kOk;
+  });
 
   DisplayEngineInterface& display_engine = mock_display_engine_;
   EXPECT_EQ(display::ConfigCheckResult::kOk,
@@ -289,7 +289,7 @@ TEST_F(DisplayEngineInterfaceTest, SubmitConfigurationIdentityColorConversion) {
 
   mock_display_engine_.ExpectSubmitConfiguration(
       [&](display::DisplayId display_id, display::ModeId mode_id,
-          cpp20::span<const display::DriverLayer> layers, display::DriverConfigStamp config_stamp) {
+          std::span<const display::DriverLayer> layers, display::DriverConfigStamp config_stamp) {
         EXPECT_EQ(kDisplayId, display_id);
         EXPECT_EQ(kModeId, mode_id);
         EXPECT_THAT(layers, ::testing::ElementsAreArray(kLayers));

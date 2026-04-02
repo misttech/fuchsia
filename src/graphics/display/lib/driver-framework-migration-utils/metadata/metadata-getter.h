@@ -6,12 +6,12 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_DRIVER_FRAMEWORK_MIGRATION_UTILS_METADATA_METADATA_GETTER_H_
 
 #include <lib/fidl/cpp/wire/traits.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -69,8 +69,7 @@ zx::result<std::unique_ptr<ReturnType>> MetadataGetter::Get(uint32_t type,
   if (!alloc_checker.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
-  cpp20::span<uint8_t> metadata_bytes(reinterpret_cast<uint8_t*>(metadata.get()),
-                                      sizeof(ReturnType));
+  std::span<uint8_t> metadata_bytes(reinterpret_cast<uint8_t*>(metadata.get()), sizeof(ReturnType));
   std::copy(bytes.begin(), bytes.end(), metadata_bytes.begin());
   return zx::ok(std::move(metadata));
 }

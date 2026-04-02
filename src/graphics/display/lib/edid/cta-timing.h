@@ -6,8 +6,8 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_EDID_CTA_TIMING_H_
 
 #include <cinttypes>
+#include <span>
 
-#include "lib/stdcompat/span.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/edid/timings.h"
 
@@ -2501,7 +2501,7 @@ constexpr CtaTiming kCtaTimingsArray[] = {
         .pixel_clock_khz = 594'000,
     },
 };
-constexpr cpp20::span<const CtaTiming> kCtaTimings(kCtaTimingsArray);
+constexpr std::span<const CtaTiming> kCtaTimings(kCtaTimingsArray);
 
 }  // namespace edid::internal
 

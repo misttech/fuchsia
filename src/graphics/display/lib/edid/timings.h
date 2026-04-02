@@ -5,16 +5,15 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_EDID_TIMINGS_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_EDID_TIMINGS_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <cinttypes>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 
 namespace edid::internal {
 
-extern const cpp20::span<const display::DisplayTiming> kDmtDisplayTimings;
-extern const cpp20::span<const display::DisplayTiming> kCtaDisplayTimings;
+extern const std::span<const display::DisplayTiming> kDmtDisplayTimings;
+extern const std::span<const display::DisplayTiming> kCtaDisplayTimings;
 
 }  // namespace edid::internal
 

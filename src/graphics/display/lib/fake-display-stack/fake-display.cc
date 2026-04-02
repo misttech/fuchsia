@@ -302,7 +302,7 @@ display::EngineInfo FakeDisplay::CompleteCoordinatorConnection() {
       .mode = device_config_.display_mode,
   });
 
-  const cpp20::span<const display::ModeAndId> preferred_modes(&mode_and_id, 1);
+  const std::span<const display::ModeAndId> preferred_modes(&mode_and_id, 1);
   engine_events_.OnDisplayAdded(device_config_.display_id, preferred_modes, kSupportedPixelFormats);
   return device_config_.engine_info;
 }
@@ -428,7 +428,7 @@ void FakeDisplay::ReleaseImage(display::DriverImageId image_id) {
 
 display::ConfigCheckResult FakeDisplay::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    cpp20::span<const display::DriverLayer> layers) {
+    std::span<const display::DriverLayer> layers) {
   ZX_DEBUG_ASSERT(display_id == device_config_.display_id);
   // `layers` is required to be non-empty by the `fuchsia.hardware.
   // display.engine/Engine` protocol.
@@ -486,7 +486,7 @@ display::ConfigCheckResult FakeDisplay::CheckConfiguration(
 
 void FakeDisplay::SubmitConfiguration(display::DisplayId display_id,
                                       display::ModeId display_mode_id,
-                                      cpp20::span<const display::DriverLayer> layers,
+                                      std::span<const display::DriverLayer> layers,
                                       display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT(display_id == device_config_.display_id);
   ZX_DEBUG_ASSERT(display_mode_id == device_config_.display_mode_id);

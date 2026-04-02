@@ -4,6 +4,7 @@
 
 #include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 
+#include <concepts>
 #include <type_traits>
 
 namespace display {
@@ -16,8 +17,6 @@ static_assert(std::is_trivially_destructible_v<ClientPriority>);
 static_assert(std::is_trivially_move_assignable_v<ClientPriority>);
 static_assert(std::is_trivially_move_constructible_v<ClientPriority>);
 
-#if __cplusplus >= 202002L
 static_assert(std::totally_ordered<ClientPriority>);
-#endif
 
 }  // namespace display

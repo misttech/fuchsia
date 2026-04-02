@@ -6,7 +6,6 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/result.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
@@ -19,6 +18,7 @@
 #include <cstring>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -155,7 +155,7 @@ bool CeaEdidTimingExtension::validate() const {
 }
 
 // static
-fit::result<const char*, Edid> Edid::Create(cpp20::span<const uint8_t> bytes) {
+fit::result<const char*, Edid> Edid::Create(std::span<const uint8_t> bytes) {
   if (bytes.empty()) {
     return fit::error("EDID is empty");
   }
@@ -179,7 +179,7 @@ fit::result<const char*, Edid> Edid::Create(cpp20::span<const uint8_t> bytes) {
   if (declared_edid_size > bytes.size()) {
     return fit::error("EDID size based on declared block count exceeds byte buffer size");
   }
-  cpp20::span<const uint8_t> valid_edid_bytes = bytes.subspan(0, declared_edid_size);
+  std::span<const uint8_t> valid_edid_bytes = bytes.subspan(0, declared_edid_size);
 
   // The maximum EDID block count is based on the fact that the size field is stored in a
   // byte.

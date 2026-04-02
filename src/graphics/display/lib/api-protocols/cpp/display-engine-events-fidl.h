@@ -6,11 +6,11 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_PROTOCOLS_CPP_DISPLAY_ENGINE_EVENTS_FIDL_H_
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/driver/wire.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/time.h>
 #include <zircon/compiler.h>
 
 #include <mutex>
+#include <span>
 
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
@@ -51,8 +51,8 @@ class DisplayEngineEventsFidl final : public DisplayEngineEventsInterface {
 
   // DisplayEngineEventsInterface:
   void OnDisplayAdded(display::DisplayId display_id,
-                      cpp20::span<const display::ModeAndId> preferred_modes,
-                      cpp20::span<const display::PixelFormat> pixel_formats) override;
+                      std::span<const display::ModeAndId> preferred_modes,
+                      std::span<const display::PixelFormat> pixel_formats) override;
   void OnDisplayRemoved(display::DisplayId display_id) override;
   void OnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                       display::DriverConfigStamp config_stamp) override;

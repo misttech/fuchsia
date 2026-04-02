@@ -4,10 +4,9 @@
 
 #include "src/graphics/display/lib/edid/timings.h"
 
-#include <lib/stdcompat/span.h>
-
 #include <array>
 #include <cstddef>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/edid/cta-timing.h"
@@ -23,7 +22,7 @@ constexpr std::array<display::DisplayTiming, kDmtTimings.size()> kDmtDisplayTimi
   return params;
 }();
 
-const cpp20::span<const display::DisplayTiming> kDmtDisplayTimings(kDmtDisplayTimingsArray);
+const std::span<const display::DisplayTiming> kDmtDisplayTimings(kDmtDisplayTimingsArray);
 
 constexpr std::array<display::DisplayTiming, kCtaTimings.size()> kCtaDisplayTimingsArray = [] {
   std::array<display::DisplayTiming, kCtaTimings.size()> params = {};
@@ -33,6 +32,6 @@ constexpr std::array<display::DisplayTiming, kCtaTimings.size()> kCtaDisplayTimi
   return params;
 }();
 
-const cpp20::span<const display::DisplayTiming> kCtaDisplayTimings(kCtaDisplayTimingsArray);
+const std::span<const display::DisplayTiming> kCtaDisplayTimings(kCtaDisplayTimingsArray);
 
 }  // namespace edid::internal

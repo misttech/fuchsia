@@ -79,9 +79,9 @@ class FakeDisplay : public display::DisplayEngineInterface {
   void ReleaseImage(display::DriverImageId image_id) override __TA_EXCLUDES(mutex_);
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      cpp20::span<const display::DriverLayer> layers) override __TA_EXCLUDES(mutex_);
+      std::span<const display::DriverLayer> layers) override __TA_EXCLUDES(mutex_);
   void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp config_stamp) override __TA_EXCLUDES(mutex_);
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,

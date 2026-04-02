@@ -6,12 +6,12 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_EDID_EDID_H_
 
 #include <lib/fit/result.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <string>
 
 #include <fbl/vector.h>
@@ -316,7 +316,7 @@ class Edid {
   //
   // On error, returns a `const char*` string of static storage duration
   // containing the error message.
-  static fit::result<const char*, Edid> Create(cpp20::span<const uint8_t> bytes);
+  static fit::result<const char*, Edid> Create(std::span<const uint8_t> bytes);
 
   // Production code must use the factory method `Create()`.
   //

@@ -5,9 +5,8 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_EDID_VALUES_EDID_VALUES_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_EDID_VALUES_EDID_VALUES_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <cstdint>
+#include <span>
 
 namespace edid {
 
@@ -25,7 +24,7 @@ constexpr uint8_t kHpZr30wEdidArray[] = {
     0x50, 0x20, 0x5a, 0x52, 0x33, 0x30, 0x77, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xff,
     0x00, 0x43, 0x4e, 0x34, 0x31, 0x33, 0x30, 0x31, 0x30, 0x59, 0x48, 0x0a, 0x20, 0x20, 0x00, 0x40};
 
-constexpr cpp20::span<const uint8_t> kHpZr30wEdid(edid::kHpZr30wEdidArray);
+constexpr std::span<const uint8_t> kHpZr30wEdid(edid::kHpZr30wEdidArray);
 
 // EDID value of Dell P2719h monitor.
 constexpr uint8_t kDellP2719hEdidArray[] = {
@@ -47,7 +46,7 @@ constexpr uint8_t kDellP2719hEdidArray[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd9,
 };
 
-constexpr cpp20::span<const uint8_t> kDellP2719hEdid(edid::kDellP2719hEdidArray);
+constexpr std::span<const uint8_t> kDellP2719hEdid(edid::kDellP2719hEdidArray);
 
 // E-EDID value of Samsung CRG9 49" monitor.
 constexpr uint8_t kSamsungCrg9EdidArray[] = {
@@ -85,7 +84,7 @@ constexpr uint8_t kSamsungCrg9EdidArray[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd6, 0x90,
 };
 
-constexpr cpp20::span<const uint8_t> kSamsungCrg9Edid(edid::kSamsungCrg9EdidArray);
+constexpr std::span<const uint8_t> kSamsungCrg9Edid(edid::kSamsungCrg9EdidArray);
 
 constexpr uint8_t kQemuVirtioGpuEdidArray[] = {
     0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x49, 0x14, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00,
@@ -106,7 +105,7 @@ constexpr uint8_t kQemuVirtioGpuEdidArray[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2f,
 };
 
-const cpp20::span<const uint8_t> kQemuVirtioGpuEdid(edid::kQemuVirtioGpuEdidArray);
+const std::span<const uint8_t> kQemuVirtioGpuEdid(edid::kQemuVirtioGpuEdidArray);
 
 }  // namespace edid
 

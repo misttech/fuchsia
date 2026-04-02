@@ -4,5 +4,4 @@
 
 source_set("edid-values") {
   sources = [ "edid-values.h" ]
-  public_deps = [ "//sdk/lib/stdcompat" ]
 }

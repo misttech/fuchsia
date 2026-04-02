@@ -26,7 +26,7 @@ class DsiHostController {
   void PowerUp();
   void PowerDown();
   void SetMode(mipi_dsi::DsiOperationMode operation_mode);
-  zx::result<> IssueCommands(cpp20::span<const mipi_dsi::DsiCommandAndResponse> commands);
+  zx::result<> IssueCommands(std::span<const mipi_dsi::DsiCommandAndResponse> commands);
   void PhyPowerUp();
   void PhyPowerDown();
   void PhySendCode(uint32_t code, uint32_t parameter);

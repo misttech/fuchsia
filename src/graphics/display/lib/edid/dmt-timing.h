@@ -5,9 +5,8 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_EDID_DMT_TIMING_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_EDID_DMT_TIMING_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <cinttypes>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/edid/timings.h"
@@ -2900,7 +2899,7 @@ constexpr DmtTiming kDmtTimingArray[] = {
         .vertical_top_border_lines = 0,
     },
 };
-constexpr cpp20::span<const DmtTiming> kDmtTimings(kDmtTimingArray);
+constexpr std::span<const DmtTiming> kDmtTimings(kDmtTimingArray);
 
 }  // namespace edid::internal
 

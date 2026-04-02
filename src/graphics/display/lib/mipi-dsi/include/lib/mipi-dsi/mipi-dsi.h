@@ -5,10 +5,9 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_MIPI_DSI_INCLUDE_LIB_MIPI_DSI_MIPI_DSI_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_MIPI_DSI_INCLUDE_LIB_MIPI_DSI_MIPI_DSI_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 // Some of the constants here are from the MIPI Alliance Specification for
 // Display Serial Interface (DSI), which can be obtained from
@@ -251,7 +250,7 @@ struct DsiCommandAndResponse {
   // The size of `payload` must match the packet format specified in
   // mipi_dsi1 Section 8.8 "Processor-to-Peripheral Transactions – Detailed
   // Format Description".
-  cpp20::span<const uint8_t> payload;
+  std::span<const uint8_t> payload;
 
   // The buffer for the payload (application data) bytes in the
   // Peripheral-to-Processor packet.
@@ -261,7 +260,7 @@ struct DsiCommandAndResponse {
   //
   // Otherwise, the Processor expects to receive exactly `response.size()`
   // bytes of payload in the response sent by the Peripheral.
-  cpp20::span<uint8_t> response_payload;
+  std::span<uint8_t> response_payload;
 };
 
 }  // namespace mipi_dsi

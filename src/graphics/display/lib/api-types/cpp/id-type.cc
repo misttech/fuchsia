@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/wire.h>
 
+#include <concepts>
 #include <type_traits>
 
 namespace display::internal {
@@ -23,6 +24,8 @@ static_assert(std::is_trivially_copy_constructible_v<TestIdType>);
 static_assert(std::is_trivially_destructible_v<TestIdType>);
 static_assert(std::is_trivially_move_assignable_v<TestIdType>);
 static_assert(std::is_trivially_move_constructible_v<TestIdType>);
+
+static_assert(std::totally_ordered<TestIdType>);
 
 }  // namespace
 

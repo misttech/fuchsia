@@ -368,7 +368,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationSingleLayerSuccess) {
 
   mock_.ExpectCheckConfiguration([&](display::DisplayId display_id, display::ModeId display_mode_id,
                                      display::ColorConversion color_conversion,
-                                     cpp20::span<const display::DriverLayer> layers) {
+                                     std::span<const display::DriverLayer> layers) {
     EXPECT_EQ(kDisplayId, display_id);
     EXPECT_EQ(kModeId, display_mode_id);
     EXPECT_EQ(kColorConversion, color_conversion);
@@ -405,7 +405,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationMultiLayerSuccess) {
 
   mock_.ExpectCheckConfiguration([&](display::DisplayId display_id, display::ModeId display_mode_id,
                                      display::ColorConversion color_conversion,
-                                     cpp20::span<const display::DriverLayer> layers) {
+                                     std::span<const display::DriverLayer> layers) {
     EXPECT_EQ(kDisplayId, display_id);
     EXPECT_EQ(kModeId, display_mode_id);
     EXPECT_EQ(display::ColorConversion::kIdentity, color_conversion);
@@ -484,7 +484,7 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationEngineError) {
 
   mock_.ExpectCheckConfiguration([&](display::DisplayId display_id, display::ModeId display_mode_id,
                                      display::ColorConversion color_conversion,
-                                     cpp20::span<const display::DriverLayer> layers) {
+                                     std::span<const display::DriverLayer> layers) {
     return display::ConfigCheckResult::kUnsupportedDisplayModes;
   });
 
@@ -595,7 +595,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SubmitConfigurationSingleLayer) {
 
   mock_.ExpectSubmitConfiguration(
       [&](display::DisplayId display_id, display::ModeId display_mode_id,
-          display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
+          display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers,
           display::DriverConfigStamp config_stamp) {
         EXPECT_EQ(kDisplayId, display_id);
         EXPECT_EQ(kModeId, display_mode_id);
@@ -631,7 +631,7 @@ TEST_F(DisplayEngineFidlAdapterTest, SubmitConfigurationMultiLayer) {
 
   mock_.ExpectSubmitConfiguration(
       [&](display::DisplayId display_id, display::ModeId display_mode_id,
-          display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
+          display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers,
           display::DriverConfigStamp config_stamp) {
         EXPECT_EQ(kDisplayId, display_id);
         EXPECT_EQ(kModeId, display_mode_id);

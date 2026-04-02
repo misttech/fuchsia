@@ -6,13 +6,13 @@
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/driver/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
 #include <zircon/time.h>
 
 #include <array>
 #include <mutex>
+#include <span>
 
 #include <sdk/lib/driver/logging/cpp/logger.h>
 
@@ -49,9 +49,9 @@ constexpr fdf_arena_tag_t kArenaTag = 'DISP';
 
 }  // namespace
 
-void DisplayEngineEventsFidl::OnDisplayAdded(
-    display::DisplayId display_id, cpp20::span<const display::ModeAndId> preferred_modes,
-    cpp20::span<const display::PixelFormat> pixel_formats) {
+void DisplayEngineEventsFidl::OnDisplayAdded(display::DisplayId display_id,
+                                             std::span<const display::ModeAndId> preferred_modes,
+                                             std::span<const display::PixelFormat> pixel_formats) {
   std::lock_guard lock_guard(fidl_client_mutex_);
 
   ZX_DEBUG_ASSERT(preferred_modes.size() <= kMaxPreferredModes);

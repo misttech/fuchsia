@@ -5,12 +5,10 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_ID_TYPE_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_ID_TYPE_H_
 
+#include <compare>
+#include <format>
 #include <functional>
 #include <type_traits>
-
-#if __cplusplus >= 202002L
-#include <format>
-#endif  // __cplusplus >= 202002L
 
 namespace display::internal {
 
@@ -80,40 +78,15 @@ class IdType {
 
   constexpr FidlType ToFidl() const { return IdTraits::ToFidl(value_); }
 
+  constexpr bool operator==(const IdType&) const noexcept = default;
+  constexpr std::strong_ordering operator<=>(const IdType&) const noexcept = default;
+
   constexpr IdType& operator++();
   constexpr IdType operator++(int);
 
  private:
   ValueType value_;
 };
-
-// Equality comparison can be defaulted when C++20 is required.
-template <typename IdTraits>
-constexpr bool operator==(const IdType<IdTraits>& lhs, const IdType<IdTraits>& rhs) {
-  return lhs.value() == rhs.value();
-}
-template <typename IdTraits>
-constexpr bool operator!=(const IdType<IdTraits>& lhs, const IdType<IdTraits>& rhs) {
-  return !(lhs == rhs);
-}
-
-// Ordering comparison can be defaulted when C++20 is required.
-template <typename IdTraits>
-constexpr bool operator<(const IdType<IdTraits>& lhs, const IdType<IdTraits>& rhs) {
-  return lhs.value() < rhs.value();
-}
-template <typename IdTraits>
-constexpr bool operator>=(const IdType<IdTraits>& lhs, const IdType<IdTraits>& rhs) {
-  return !(lhs < rhs);
-}
-template <typename IdTraits>
-constexpr bool operator>(const IdType<IdTraits>& lhs, const IdType<IdTraits>& rhs) {
-  return lhs.value() > rhs.value();
-}
-template <typename IdTraits>
-constexpr bool operator<=(const IdType<IdTraits>& lhs, const IdType<IdTraits>& rhs) {
-  return !(lhs > rhs);
-}
 
 template <typename IdTraits>
 constexpr IdType<IdTraits>& IdType<IdTraits>::operator++() {
@@ -155,7 +128,6 @@ struct std::hash<display::internal::IdType<IdTraits>> {
   }
 };
 
-#if __cplusplus >= 202002L
 template <typename IdTraits>
 struct std::formatter<display::internal::IdType<IdTraits>>
     : std::formatter<typename display::internal::IdType<IdTraits>::ValueType> {
@@ -164,6 +136,5 @@ struct std::formatter<display::internal::IdType<IdTraits>>
         id.value(), ctx);
   }
 };
-#endif  // __cplusplus >= 202002L
 
 #endif  // SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_ID_TYPE_H_
