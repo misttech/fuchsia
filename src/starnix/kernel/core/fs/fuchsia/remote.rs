@@ -1179,6 +1179,10 @@ impl FsNodeOps for RemoteNode {
             .map_err(|status| from_status_like_fdio!(status, name))?
     }
 
+    fn has_lookup_pipelined(&self) -> bool {
+        true
+    }
+
     fn lookup_pipelined(
         &self,
         _locked: &mut Locked<FileOpsCore>,

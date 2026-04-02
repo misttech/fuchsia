@@ -645,27 +645,22 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         error!(ENOENT, format!("looking for {name}"))
     }
 
+    /// Returns whether this node supports pipelined lookups.
+    fn has_lookup_pipelined(&self) -> bool {
+        false
+    }
+
     /// Find multiple children nodes in sequence.
     ///
     /// This can be used to pipeline lookups in filesystems that support it.
     fn lookup_pipelined(
         &self,
-        locked: &mut Locked<FileOpsCore>,
-        node: &FsNode,
-        current_task: &CurrentTask,
-        names: &[&FsStr],
+        _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        _names: &[&FsStr],
     ) -> LookupVec<Result<FsNodeHandle, Errno>> {
-        let mut names = names.iter();
-        std::iter::successors(
-            names.next().map(|name| self.lookup(locked, node, current_task, name)),
-            |prev| match prev {
-                Err(_) => None,
-                Ok(node) => {
-                    names.next().map(|name| node.ops().lookup(locked, node, current_task, name))
-                }
-            },
-        )
-        .collect()
+        panic!("has_lookup_pipelined should be false");
     }
 
     /// Create and return the given child node.

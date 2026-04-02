@@ -341,7 +341,7 @@ impl DirEntry {
     {
         let locked = locked.cast_locked::<FileOpsCore>();
 
-        let mut nodes = LookupVec::new(); // : Option<LookupVec<Result<FsNodeHandle, Errno>>> = None;
+        let mut nodes = LookupVec::new();
         let mut results = LookupVec::new();
         let mut current_parent = self.clone();
         for i in 0..names.len() {

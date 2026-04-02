@@ -13,9 +13,9 @@ use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
     CheckAccessReason, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
     FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle, FsNodeOps, FsStr,
-    FsString, LookupVec, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind,
-    fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_node_impl_not_dir,
+    FsString, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
+    fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    fs_node_impl_not_dir,
 };
 use fuchsia_rcu::RcuReadScope;
 use macro_rules_attribute::apply;
@@ -1280,6 +1280,63 @@ impl NamespaceNode {
         }
     }
 
+    // Resolve the current node.
+    //
+    // Depending on context, this will resolve symlink and mount point.
+    fn resolve<L>(
+        self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        context: &mut LookupContext,
+    ) -> Result<NamespaceNode, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let mut node = self;
+
+        loop {
+            if !node.entry.node.is_lnk() || context.symlink_mode == SymlinkMode::NoFollow {
+                break;
+            }
+            if context.remaining_follows == 0
+                || context.resolve_flags.contains(ResolveFlags::NO_SYMLINKS)
+            {
+                return error!(ELOOP);
+            }
+            context.remaining_follows -= 1;
+            node = match node.readlink(locked, current_task)? {
+                SymlinkTarget::Path(link_target) => {
+                    let link_directory = if link_target[0] == b'/' {
+                        // If the path is absolute, we'll resolve the root directory.
+                        match &context.resolve_base {
+                            ResolveBase::None => current_task.fs().root(),
+                            ResolveBase::Beneath(_) => return error!(EXDEV),
+                            ResolveBase::InRoot(root) => root.clone(),
+                        }
+                    } else {
+                        // If the path is not absolute, it's a relative directory.
+                        // Let's try to get the parent of the current node, or in the case that
+                        // the node is the root we can just use that directly.
+                        node.parent().unwrap_or(node)
+                    };
+                    current_task.lookup_path(
+                        locked,
+                        context,
+                        link_directory,
+                        link_target.as_ref(),
+                    )?
+                }
+                SymlinkTarget::Node(node) => {
+                    if context.resolve_flags.contains(ResolveFlags::NO_MAGICLINKS) {
+                        return error!(ELOOP);
+                    }
+                    node
+                }
+            };
+        }
+        Ok(node.enter_mount())
+    }
+
     /// Traverse down a parent-to-child link in the namespace.
     pub fn lookup_child<L>(
         &self,
@@ -1300,63 +1357,11 @@ impl NamespaceNode {
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
         context: &mut LookupContext,
-        basenames: &[&FsStr],
+        mut basenames: &[&FsStr],
     ) -> Result<NamespaceNode, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        fn resolve_symlink<L>(
-            locked: &mut Locked<L>,
-            current_task: &CurrentTask,
-            context: &mut LookupContext,
-            mut node: NamespaceNode,
-        ) -> Result<NamespaceNode, Errno>
-        where
-            L: LockEqualOrBefore<FileOpsCore>,
-        {
-            if context.symlink_mode == SymlinkMode::NoFollow {
-                return Ok(node);
-            }
-            while node.entry.node.is_lnk() {
-                if context.remaining_follows == 0
-                    || context.resolve_flags.contains(ResolveFlags::NO_SYMLINKS)
-                {
-                    return error!(ELOOP);
-                }
-                context.remaining_follows -= 1;
-                node = match node.readlink(locked, current_task)? {
-                    SymlinkTarget::Path(link_target) => {
-                        let link_directory = if link_target[0] == b'/' {
-                            // If the path is absolute, we'll resolve the root directory.
-                            match &context.resolve_base {
-                                ResolveBase::None => current_task.fs().root(),
-                                ResolveBase::Beneath(_) => return error!(EXDEV),
-                                ResolveBase::InRoot(root) => root.clone(),
-                            }
-                        } else {
-                            // If the path is not absolute, it's a relative directory.
-                            // Let's try to get the parent of the current node, or in the case that
-                            // the node is the root we can just use that directly.
-                            node.parent().unwrap_or(node)
-                        };
-                        current_task.lookup_path(
-                            locked,
-                            context,
-                            link_directory,
-                            link_target.as_ref(),
-                        )?
-                    }
-                    SymlinkTarget::Node(node) => {
-                        if context.resolve_flags.contains(ResolveFlags::NO_MAGICLINKS) {
-                            return error!(ELOOP);
-                        }
-                        node
-                    }
-                };
-            }
-            Ok(node)
-        }
-
         for name in basenames {
             if name.len() > NAME_MAX as usize {
                 return error!(ENAMETOOLONG);
@@ -1364,17 +1369,18 @@ impl NamespaceNode {
         }
 
         let mut current_namespace_node = self.clone();
-        let mut precomputed_entries = LookupVec::new();
 
-        for index in 0..basenames.len() {
-            let basename = basenames[index];
+        while basenames.len() > 0 {
             if !current_namespace_node.entry.node.is_dir() {
                 return error!(ENOTDIR);
             }
 
-            current_namespace_node = if basename.is_empty() || basename == "." {
-                current_namespace_node
-            } else if basename == ".." {
+            let basename = basenames[0];
+            if basename.is_empty() || basename == "." {
+                basenames = &basenames[1..];
+                continue;
+            }
+            if basename == ".." {
                 let root = match &context.resolve_base {
                     ResolveBase::None => current_task.fs().root(),
                     ResolveBase::Beneath(node) => {
@@ -1388,50 +1394,83 @@ impl NamespaceNode {
                 };
 
                 // Make sure this can't escape a chroot.
-                if current_namespace_node == root {
-                    root
-                } else {
-                    current_namespace_node.parent().unwrap_or(current_namespace_node)
+                if current_namespace_node != root {
+                    current_namespace_node =
+                        current_namespace_node.parent().unwrap_or(current_namespace_node)
                 }
-            } else {
-                if precomputed_entries.is_empty() {
-                    let basenames = basenames[index..]
-                        .iter()
-                        .position(|&name| name.is_empty() || name == "." || name == "..")
-                        .map(|pos| &basenames[index..index + pos])
-                        .unwrap_or_else(|| &basenames[index..]);
+                if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
+                    && current_namespace_node.mount != self.mount
+                {
+                    return error!(EXDEV);
+                }
 
-                    precomputed_entries = current_namespace_node.entry.get_children_pipelined(
+                if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                    return error!(ENOTDIR);
+                }
+                basenames = &basenames[1..];
+                continue;
+            }
+            if basenames.len() == 1
+                || !current_namespace_node.entry.node.ops().has_lookup_pipelined()
+            {
+                current_namespace_node = current_namespace_node.with_new_entry(
+                    current_namespace_node.entry.component_lookup(
                         locked,
                         current_task,
                         &current_namespace_node.mount,
-                        basenames,
-                    );
-                    precomputed_entries.reverse();
-                    debug_assert!(!precomputed_entries.is_empty());
-                }
-                let mut child =
-                    current_namespace_node.with_new_entry(precomputed_entries.pop().unwrap()?);
+                        basename,
+                    )?,
+                );
 
-                if child.entry.node.is_lnk() {
-                    child = resolve_symlink(locked, current_task, context, child)?;
-                    precomputed_entries.clear();
-                }
-                let next_child = child.enter_mount();
-                if next_child != child {
-                    precomputed_entries.clear();
-                }
-                next_child
-            };
+                current_namespace_node =
+                    current_namespace_node.resolve(locked, current_task, context)?;
 
-            if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
-                && current_namespace_node.mount != self.mount
-            {
-                return error!(EXDEV);
+                if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
+                    && current_namespace_node.mount != self.mount
+                {
+                    return error!(EXDEV);
+                }
+
+                if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                    return error!(ENOTDIR);
+                }
+
+                basenames = &basenames[1..];
+                continue;
             }
 
-            if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
-                return error!(ENOTDIR);
+            let pipelined_basenames = if let Some(pos) =
+                basenames.iter().position(|&name| name.is_empty() || name == "." || name == "..")
+            {
+                &basenames[..pos]
+            } else {
+                basenames
+            };
+            let precomputed_entries = current_namespace_node.entry.get_children_pipelined(
+                locked,
+                current_task,
+                &current_namespace_node.mount,
+                pipelined_basenames,
+            );
+            for entry in precomputed_entries {
+                basenames = &basenames[1..];
+                let child = current_namespace_node.with_new_entry(entry?);
+
+                current_namespace_node = child.clone().resolve(locked, current_task, context)?;
+
+                if context.resolve_flags.contains(ResolveFlags::NO_XDEV)
+                    && current_namespace_node.mount != self.mount
+                {
+                    return error!(EXDEV);
+                }
+
+                if context.must_be_directory && !current_namespace_node.entry.node.is_dir() {
+                    return error!(ENOTDIR);
+                }
+
+                if current_namespace_node != child {
+                    break;
+                }
             }
         }
 
