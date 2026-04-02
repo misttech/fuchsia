@@ -15,7 +15,6 @@ import("//zircon/kernel/phys/kernel_elf_binary.gni")
 import("kernel_package.gni")
 import("kernel_shell_script.gni")
 import("params.gni")
-import("switchset/kernel_switchset.gni")
 
 declare_args() {
   # Cause //zircon/kernel:boot_tests to generate the phys boot tests
@@ -43,12 +42,6 @@ declare_args() {
   # injecting new instances of subsystems that the kernel has defined modularly
   # (e.g., pdev drivers or k commands).
   kernel_extra_deps = []
-}
-
-if (current_toolchain == default_toolchain) {
-  # In the default toolchain, just define the kernel toolchains.
-  kernel_switchset("kernel") {
-  }
 }
 
 # For any standalone static binary.
@@ -504,8 +497,13 @@ if (is_kernel) {
     }
   }
 } else {
+  # TODO(https://fxbug.dev/371568912): Once the dust settles, audit what uses this
+  # target and for what purposes. Eventually, we likely want to get to having no
+  # such target here.
   group("kernel") {
-    public_deps = [ ":kernel(//zircon/kernel:kernel_$target_cpu)" ]
+    public_deps = [
+      ":kernel(//zircon/kernel/switch/set/legacy:kernel_${target_cpu}.legacy)",
+    ]
   }
 
   group("tests") {
@@ -559,7 +557,7 @@ if (!is_efi_toolchain) {
     kernel_shell_script_test(target_name) {
       environments = kernel_test_environments
       deps = [
-        ":kernel(:kernel_$current_cpu)",
+        ":kernel($default_test_kernel_switchset)",
         "//zircon/system/utest/core:core-tests-standalone.args",
       ]
       script = [
@@ -595,7 +593,7 @@ foreach(cpu, standard_fuchsia_cpus) {
   group("boot_tests.$cpu") {
     testonly = true
     deps = [
-      ":kernel-unittests-boot-test(:kernel_$cpu)",
+      ":kernel-unittests-boot-test($default_test_kernel_switchset)",
       "phys/test:$cpu",
     ]
   }

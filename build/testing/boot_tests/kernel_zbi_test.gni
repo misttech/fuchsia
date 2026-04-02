@@ -22,6 +22,11 @@ declare_args() {
   disable_cuckoo_tests = false
 }
 
+# TODO(https://fxbug.dev/371568912): Pick an appropriate unconditionally "debug"
+# switchset when available.
+default_test_kernel_switchset =
+    "//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy"
+
 template("_cuckoo_product_bundle") {
   assert(current_toolchain == default_toolchain)
   assert(defined(invoker.kernel_zbi))

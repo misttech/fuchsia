@@ -7,6 +7,7 @@
 import("//build/config/zircon/standard.gni")
 import("//build/dist/generated_resource.gni")
 import("//build/testing/boot_tests/boot_test.gni")
+import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/zbi/kernel_cmdline.gni")
 import("//build/zbi/zbi_input.gni")
 import("//src/bringup/lib/mexec/testing/zbi_test.gni")
@@ -562,7 +563,7 @@ zbi("physboot-zbi-kernel-test-zircon") {
 
   deps = [
     ":physboot-zbi-kernel-test-data($phys_toolchain)",
-    "//zircon/kernel:zircon(//zircon/kernel:kernel_$current_cpu)",
+    "//zircon/kernel:zircon($default_test_kernel_switchset)",
   ]
 }
 

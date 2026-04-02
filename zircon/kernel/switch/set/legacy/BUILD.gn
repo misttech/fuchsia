@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//zircon/kernel/kernel_switchset.gni")
+
+# TODO(https://fxbug.dev/371568912): Legacy kernel switchset. Delete me in
+# favour of the new ones!
+kernel_switchset("legacy") {
+}

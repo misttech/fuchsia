@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/testing/boot_tests/zbi_test.gni")
 import("//build/zbi/kernel_cmdline.gni")
 
@@ -50,7 +51,7 @@ template("kernel_shell_script") {
 #     - Optional: As for zbi_test(). By default it will include the standard
 #     kernel ZBI, but if overriden the kernel ZBI must be listed explicitly.
 #     - Type: list(label)
-#     - Default: [ "//zircon/kernel(//zircon/kernel:kernel_$current_cpu)" ]
+#     - Default: [ "//zircon/kernel($default_test_kernel_switchset)" ]
 #
 #   * script
 #     - Required: This is a list of strings, each a kernel shell command line.
@@ -76,7 +77,7 @@ template("kernel_shell_script_test") {
     if (defined(invoker.deps)) {
       deps = invoker.deps
     } else {
-      deps = [ "//zircon/kernel(//zircon/kernel:kernel_$current_cpu)" ]
+      deps = [ "//zircon/kernel($default_test_kernel_switchset)" ]
     }
 
     deps += [ ":$script_target" ]

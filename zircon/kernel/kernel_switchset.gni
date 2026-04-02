@@ -6,25 +6,36 @@
 
 import("//build/config/zircon/standard.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
+import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/params.gni")
+
+assert(
+    current_toolchain == default_toolchain,
+    "A switchset should only be defined in the default toolchain (and not $current_toolchain)")
 
 # A kernel "switchset" is a suite of kernel-specific GN toolchains parameterized
 # by target architecture. A switchset represents a set of kernel-defining
 # compiler and linker flags.
 #
+# kernel_switchset(name) must be instantiated in
+# //zircon/kernel/switch/set/$name/BUILD.gn. The associated cpu-specific
+# toolchain is then defined as
+# //zircon/kernel/switchset/$name:kernel_$cpu.$name.
+#
 # # Parameters
 #
 # TODO(https://fxbug.dev/371568912): Nothing to parameterize just yet.
 template("kernel_switchset") {
-  assert(
-      current_toolchain == default_toolchain,
-      "A switchset should only be defined in the default toolchain (and not $current_toolchain)")
+  _dir = get_label_info(":$target_name", "dir")
+  _expected_dir = "//zircon/kernel/switch/set/${target_name}"
+  assert(_dir == _expected_dir,
+         "This switchset must be instantiated in ${_expected_dir}/BUILD.gn")
 
   # TODO(https://fxbug.dev/371568912): Remove once there are parameters
   not_needed(invoker, "*")
 
   foreach(cpu, standard_fuchsia_cpus) {
-    zircon_toolchain_suite("${target_name}_$cpu") {
+    zircon_toolchain_suite("kernel_${cpu}.${target_name}") {
       cpu = cpu
       os = "fuchsia"
       environment = "kernel"
