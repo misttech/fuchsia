@@ -95,15 +95,6 @@ pub struct PlatformUiConfig {
     /// Attaches a11y view in SceneManager
     pub attach_a11y_view: bool,
 
-    // TODO(b/443729860): Remove these temporary feature flags once enabled.
-    /// Enables baton passing in different input drivers.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub enable_button_baton_passing: bool,
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub enable_mouse_baton_passing: bool,
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub enable_touch_baton_passing: bool,
-
     /// Enables merging move only touch events in the input pipeline.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_merge_touch_events: bool,
@@ -134,9 +125,6 @@ impl Default for PlatformUiConfig {
             scenic_frame_counter_overlay: Default::default(),
             visual_debugging_level: Default::default(),
             attach_a11y_view: true,
-            enable_button_baton_passing: false,
-            enable_mouse_baton_passing: false,
-            enable_touch_baton_passing: false,
             enable_merge_touch_events: false,
             enable_experimental_dso: false,
         }
