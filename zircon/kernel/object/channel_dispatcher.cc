@@ -690,8 +690,10 @@ void ChannelDispatcher::MessageWaiter::Signal() {
         wait_queue_.LockForWakeOperationOrBackoff(UINT32_MAX, wake_hooks, threads)) {
       ChainLockTransaction::Finalize();
       signaled_ = true;
+      // TODO(https://fxbug.dev/42182908): Once fair-to-fair priority inheritance is implemented,
+      // change this to `ForceInheritance::Yes`.
       wait_queue_.WakeThreadsLocked(ktl::move(threads), wake_hooks,
-                                    OwnedWaitQueue::WakeOption::AssignOwner, ForceInheritance::Yes);
+                                    OwnedWaitQueue::WakeOption::AssignOwner, ForceInheritance::No);
       wait_queue_.get_lock().Release();
       return ChainLockTransaction::Done;
     }
@@ -745,9 +747,11 @@ zx_status_t ChannelDispatcher::MessageWaiter::Wait(const Deadline& deadline) {
     if (OwnedWaitQueue::BAAOLockingDetails details;
         wait_queue_.TryLockForBAAOOperationLocked(current_thread, new_owner, details)) {
       ChainLockTransaction::Finalize();
+      // TODO(https://fxbug.dev/42182908): Once fair-to-fair priority inheritance is implemented,
+      // change this to `ForceInheritance::Yes`.
       const zx_status_t result = wait_queue_.BlockAndAssignOwnerLocked(
           current_thread, deadline, details, ResourceOwnership::Normal, Interruptible::Yes,
-          ForceInheritance::Yes);
+          ForceInheritance::No);
       current_thread->get_lock().Release();
       return result;
     }

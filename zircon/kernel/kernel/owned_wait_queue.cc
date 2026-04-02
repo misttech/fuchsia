@@ -129,17 +129,19 @@ inline bool IpvsAreConsequential(const SchedulerState::InheritedProfileValues* i
 }
 
 template <typename UpstreamType, typename DownstreamType>
-void Propagate(UpstreamType& upstream, DownstreamType& downstream, AddSingleEdgeTag)
+void Propagate(UpstreamType& upstream, DownstreamType& downstream, AddSingleEdgeTag,
+               ForceInheritance force_inheritance)
     TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
            ChainLockable::GetLock(downstream), preempt_disabled_token) {
-  Scheduler::JoinNodeToPiGraph(upstream, downstream);
+  Scheduler::JoinNodeToPiGraph(upstream, downstream, force_inheritance);
   if constexpr (ktl::is_same_v<DownstreamType, Thread>) {
     pi_promotions.Add(1u);
   }
 }
 
 template <typename UpstreamType, typename DownstreamType>
-void Propagate(UpstreamType& upstream, DownstreamType& downstream, RemoveSingleEdgeTag)
+void Propagate(UpstreamType& upstream, DownstreamType& downstream, RemoveSingleEdgeTag,
+               ForceInheritance force_inheritance)
     TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
            ChainLockable::GetLock(downstream), preempt_disabled_token) {
   Scheduler::SplitNodeFromPiGraph(upstream, downstream);
@@ -149,7 +151,8 @@ void Propagate(UpstreamType& upstream, DownstreamType& downstream, RemoveSingleE
 }
 
 template <typename UpstreamType, typename DownstreamType>
-void Propagate(UpstreamType& upstream, DownstreamType& downstream, BaseProfileChangedTag)
+void Propagate(UpstreamType& upstream, DownstreamType& downstream, BaseProfileChangedTag,
+               ForceInheritance force_inheritance)
     TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
            ChainLockable::GetLock(downstream), preempt_disabled_token) {
   Scheduler::UpstreamThreadBaseProfileChanged(upstream, downstream);
@@ -447,7 +450,7 @@ void OwnedWaitQueue::BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downs
   if constexpr (OpType == PropagateOp::RemoveSingleEdge) {
     FinishPropagate(upstream_node, downstream_node, nullptr, &ipv_snapshot, op);
   } else if constexpr (OpType == PropagateOp::AddSingleEdge) {
-    FinishPropagate(upstream_node, downstream_node, &ipv_snapshot, nullptr, op);
+    FinishPropagate(upstream_node, downstream_node, &ipv_snapshot, nullptr, op, force_inheritance);
   }
 }
 
@@ -487,7 +490,8 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
                                      DownstreamNodeType& downstream_node,
                                      const SchedulerState::InheritedProfileValues* added_ipv,
                                      const SchedulerState::InheritedProfileValues* lost_ipv,
-                                     PropagateOpTag<OpType> op) {
+                                     PropagateOpTag<OpType> op,
+                                     ForceInheritance force_inheritance) {
   // Propagation must start from a(n) (OWQ|Thread) and proceed to a(n) (Thread|OWQ).
   static_assert((ktl::is_same_v<UpstreamNodeType, OwnedWaitQueue> &&
                  ktl::is_same_v<DownstreamNodeType, Thread>) ||
@@ -639,7 +643,7 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
           // The overall utilization has changed, but there was deadline
           // pressure both before and after.  We need to recompute the dynamic
           // scheduler parameters.
-          Propagate(upstream_node, *owq_iter, op);
+          Propagate(upstream_node, *owq_iter, op, force_inheritance);
         }
       }
 
@@ -667,7 +671,7 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
       // Apply the change in pressure to the next thread in the chain.
       thread_iter->get_lock().AssertHeld();
       ApplyIpvDeltaToThread(lost_ipv, added_ipv, *thread_iter);
-      Propagate(upstream_node, *thread_iter, op);
+      Propagate(upstream_node, *thread_iter, op, force_inheritance);
       len_tracker.NodeVisited();
 
       owq_iter = DowncastToOwq(thread_iter->wait_queue_state().blocking_wait_queue_);

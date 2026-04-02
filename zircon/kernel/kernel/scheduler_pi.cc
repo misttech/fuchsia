@@ -357,7 +357,8 @@ template <typename UpstreamType, typename TargetType>
 class JoinNodeToPiGraphOp
     : public Scheduler::PiOperation<JoinNodeToPiGraphOp<UpstreamType, TargetType>, TargetType> {
  public:
-  JoinNodeToPiGraphOp(const UpstreamType& upstream, TargetType& target)
+  JoinNodeToPiGraphOp(const UpstreamType& upstream, TargetType& target,
+                      ForceInheritance force_inheritance)
       TA_REQ(upstream.get_lock(), target.get_lock())
       : Base{target}, upstream_{upstream} {}
 
@@ -376,6 +377,7 @@ class JoinNodeToPiGraphOp
     // currently has no effect on deadline utilization).  Any scheduler specific
     // side effects will be handled by the active thread path (below) if the
     // target_ is an active thread.
+    // TODO(https://fxbug.dev/42182908): Implement fair-to-fair priority inheritance.
     if (upstream_ep().IsFair()) {
       return;
     }
@@ -863,9 +865,10 @@ void Scheduler::UpstreamThreadBaseProfileChanged(const Thread& upstream, TargetT
 }
 
 template <typename UpstreamType, typename TargetType>
-void Scheduler::JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& target) {
+void Scheduler::JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& target,
+                                  ForceInheritance force_inheritance) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_pi: join");
-  JoinNodeToPiGraphOp op{upstream, target};
+  JoinNodeToPiGraphOp op{upstream, target, force_inheritance};
   op.DoOperation();
 }
 
@@ -879,10 +882,11 @@ void Scheduler::SplitNodeFromPiGraph(const UpstreamType& upstream, TargetType& t
 template void Scheduler::UpstreamThreadBaseProfileChanged(const Thread&, Thread&);
 template void Scheduler::UpstreamThreadBaseProfileChanged(const Thread&, OwnedWaitQueue&);
 
-template void Scheduler::JoinNodeToPiGraph(const Thread&, Thread&);
-template void Scheduler::JoinNodeToPiGraph(const Thread&, OwnedWaitQueue&);
-template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, Thread&);
-template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, OwnedWaitQueue&);
+template void Scheduler::JoinNodeToPiGraph(const Thread&, Thread&, ForceInheritance);
+template void Scheduler::JoinNodeToPiGraph(const Thread&, OwnedWaitQueue&, ForceInheritance);
+template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, Thread&, ForceInheritance);
+template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, OwnedWaitQueue&,
+                                           ForceInheritance);
 
 template void Scheduler::SplitNodeFromPiGraph(const Thread&, Thread&);
 template void Scheduler::SplitNodeFromPiGraph(const Thread&, OwnedWaitQueue&);

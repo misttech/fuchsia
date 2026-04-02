@@ -500,7 +500,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   static void FinishPropagate(UpstreamNodeType& upstream_node, DownstreamNodeType& downstream_node,
                               const SchedulerState::InheritedProfileValues* added_ipv,
                               const SchedulerState::InheritedProfileValues* lost_ipv,
-                              PropagateOpTag<Op>)
+                              PropagateOpTag<Op>,
+                              ForceInheritance force_inheritance = ForceInheritance::No)
       TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream_node),
              ChainLockable::GetLock(downstream_node), preempt_disabled_token);
 

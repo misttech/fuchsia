@@ -351,7 +351,8 @@ class Scheduler {
   // parameters (start time, finish time, time slice remaining) of |target| as
   // needed because of the join operation.
   template <typename UpstreamType, typename TargetType>
-  static void JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& target)
+  static void JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& target,
+                                ForceInheritance force_inheritance)
       TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
              ChainLockable::GetLock(target), preempt_disabled_token);
 
