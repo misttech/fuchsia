@@ -16,16 +16,16 @@ namespace block {
 template <typename T>
 inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count, fdf::Logger& logger) {
   if (io.length == 0 || io.length > total_block_count) {
-    FDF_LOGL(ERROR, logger,
-             "IO request length (%u blocks) is zero or exceeds the total block count (%lu).",
-             io.length, total_block_count);
+    logger.log(fdf::ERROR,
+               "IO request length ({} blocks) is zero or exceeds the total block count ({}).",
+               io.length, total_block_count);
     return ZX_ERR_OUT_OF_RANGE;
   }
   if (io.offset_dev >= total_block_count || io.offset_dev > total_block_count - io.length) {
-    FDF_LOGL(ERROR, logger,
-             "IO request offset (%lu blocks) and length (%u blocks) does not fit within the total "
-             "block count (%lu).",
-             io.offset_dev, io.length, total_block_count);
+    logger.log(fdf::ERROR,
+               "IO request offset ({} blocks) and length ({} blocks) does not fit within the total "
+               "block count ({}).",
+               io.offset_dev, io.length, total_block_count);
     return ZX_ERR_OUT_OF_RANGE;
   }
   return ZX_OK;
@@ -37,8 +37,8 @@ template <typename T>
 inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count,
                                 uint32_t max_tranfser_blocks, fdf::Logger& logger) {
   if (io.length > max_tranfser_blocks) {
-    FDF_LOGL(ERROR, logger, "IO request length (%u blocks) exceeds max transfer size (%u blocks).",
-             io.length, max_tranfser_blocks);
+    logger.log(fdf::ERROR, "IO request length ({} blocks) exceeds max transfer size ({} blocks).",
+               io.length, max_tranfser_blocks);
     return ZX_ERR_OUT_OF_RANGE;
   }
   return CheckIoRange(io, total_block_count, logger);
@@ -47,10 +47,10 @@ inline zx_status_t CheckIoRange(const T& io, uint64_t total_block_count,
 // Check that the data arguments are cleared for a flush request.
 inline zx_status_t CheckFlushValid(const block_read_write& rw, fdf::Logger& logger) {
   if (rw.vmo || rw.length || rw.offset_dev || rw.offset_vmo) {
-    FDF_LOGL(ERROR, logger,
-             "Flush request has data arguments: rw.vmo = %u, rw.length = %u, rw.offset_dev = %lu, "
-             "rw.offset_vmo = %lu.",
-             rw.vmo, rw.length, rw.offset_dev, rw.offset_vmo);
+    logger.log(fdf::ERROR,
+               "Flush request has data arguments: rw.vmo = {}, rw.length = {}, rw.offset_dev = {}, "
+               "rw.offset_vmo = {}.",
+               rw.vmo, rw.length, rw.offset_dev, rw.offset_vmo);
     return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;

@@ -27,6 +27,7 @@ zx_library("scsi") {
   ]
   public_deps = [
     "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/lib/driver:driver_runtime",

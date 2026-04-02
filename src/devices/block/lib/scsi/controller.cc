@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include <endian.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
 #include <zircon/status.h>
@@ -20,8 +21,8 @@ zx_status_t Controller::TestUnitReady(uint8_t target, uint16_t lun) {
   zx_status_t status =
       ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false, {nullptr, 0});
   if (status != ZX_OK) {
-    FDF_LOGL(DEBUG, driver_logger(), "TEST_UNIT_READY failed for target %u, lun %u: %s", target,
-             lun, zx_status_get_string(status));
+    driver_logger().log(fdf::DEBUG, "TEST_UNIT_READY failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }
@@ -33,8 +34,8 @@ zx_status_t Controller::RequestSense(uint8_t target, uint16_t lun, iovec data) {
   zx_status_t status =
       ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false, data);
   if (status != ZX_OK) {
-    FDF_LOGL(DEBUG, driver_logger(), "REQUEST_SENSE failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::DEBUG, "REQUEST_SENSE failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }
@@ -47,8 +48,8 @@ zx::result<InquiryData> Controller::Inquiry(uint8_t target, uint16_t lun) {
   zx_status_t status = ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false,
                                           {&data, sizeof(data)});
   if (status != ZX_OK) {
-    FDF_LOGL(DEBUG, driver_logger(), "INQUIRY failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::DEBUG, "INQUIRY failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
     return zx::error(status);
   }
   return zx::ok(data);
@@ -65,8 +66,8 @@ zx::result<VPDBlockLimits> Controller::InquiryBlockLimits(uint8_t target, uint16
   zx_status_t status = ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false,
                                           {&vpd_pagelist, sizeof(vpd_pagelist)});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "INQUIRY failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "INQUIRY failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -77,8 +78,9 @@ zx::result<VPDBlockLimits> Controller::InquiryBlockLimits(uint8_t target, uint16
     }
   }
   if (i == vpd_pagelist.page_length) {
-    FDF_LOGL(INFO, driver_logger(),
-             "The Block Limits VPD page is not supported for target %u, lun %u.", target, lun);
+    driver_logger().log(fdf::INFO,
+                        "The Block Limits VPD page is not supported for target {}, lun {}.", target,
+                        lun);
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -89,8 +91,8 @@ zx::result<VPDBlockLimits> Controller::InquiryBlockLimits(uint8_t target, uint16
   status = ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false,
                               {&block_limits, sizeof(block_limits)});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "INQUIRY failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "INQUIRY failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -108,8 +110,8 @@ zx::result<bool> Controller::InquirySupportUnmapCommand(uint8_t target, uint16_t
   zx_status_t status = ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false,
                                           {&vpd_pagelist, sizeof(vpd_pagelist)});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "INQUIRY failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "INQUIRY failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -120,9 +122,10 @@ zx::result<bool> Controller::InquirySupportUnmapCommand(uint8_t target, uint16_t
     }
   }
   if (i == vpd_pagelist.page_length) {
-    FDF_LOGL(ERROR, driver_logger(),
-             "The Logical Block Provisioning VPD page is not supported for target %u, lun %u.",
-             target, lun);
+    driver_logger().log(
+        fdf::ERROR,
+        "The Logical Block Provisioning VPD page is not supported for target {}, lun {}.", target,
+        lun);
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -133,8 +136,8 @@ zx::result<bool> Controller::InquirySupportUnmapCommand(uint8_t target, uint16_t
   status = ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false,
                               {&provisioning, sizeof(provisioning)});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "INQUIRY failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "INQUIRY failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -176,8 +179,8 @@ zx::result<> Controller::ModeSense(uint8_t target, uint16_t lun, PageCode page_c
   zx_status_t status = ExecuteCommandSync(target, lun, {&cdb, cdb_size},
                                           /*is_write=*/false, data);
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "MODE_SENSE_%zu failed for target %u, lun %u: %s", cdb_size,
-             target, lun, zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "MODE_SENSE_{} failed for target {}, lun {}: {}", cdb_size,
+                        target, lun, zx_status_get_string(status));
     return zx::error(status);
   }
 
@@ -193,8 +196,8 @@ zx::result<std::tuple<bool, bool>> Controller::ModeSenseDpoFuaAndWriteProtectedE
   zx::result result =
       ModeSense(target, lun, PageCode::kAllPageCode, {data, sizeof(data)}, use_mode_sense_6);
   if (result.is_error()) {
-    FDF_LOGL(ERROR, driver_logger(), "MODE_SENSE failed for target %u, lun %u: %s", target, lun,
-             result.status_string());
+    driver_logger().log(fdf::ERROR, "MODE_SENSE failed for target {}, lun {}: {}", target, lun,
+                        result.status_string());
     return result.take_error();
   }
 
@@ -221,8 +224,8 @@ zx::result<bool> Controller::ModeSenseWriteCacheEnabled(uint8_t target, uint16_t
   zx::result result =
       ModeSense(target, lun, PageCode::kCachingPageCode, {data, sizeof(data)}, use_mode_sense_6);
   if (result.is_error()) {
-    FDF_LOGL(ERROR, driver_logger(), "MODE_SENSE failed for target %u, lun %u: %s", target, lun,
-             result.status_string());
+    driver_logger().log(fdf::ERROR, "MODE_SENSE failed for target {}, lun {}: {}", target, lun,
+                        result.status_string());
     return result.take_error();
   }
 
@@ -230,8 +233,8 @@ zx::result<bool> Controller::ModeSenseWriteCacheEnabled(uint8_t target, uint16_t
       use_mode_sense_6 ? sizeof(Mode6ParameterHeader) : sizeof(Mode10ParameterHeader);
   CachingModePage* mode_page = reinterpret_cast<CachingModePage*>(data + mode_page_offset);
   if (mode_page->page_code() != static_cast<uint8_t>(PageCode::kCachingPageCode)) {
-    FDF_LOGL(ERROR, driver_logger(), "failed for target %u, lun %u to retrieve caching mode page",
-             target, lun);
+    driver_logger().log(fdf::ERROR, "failed for target {}, lun {} to retrieve caching mode page",
+                        target, lun);
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -246,8 +249,8 @@ zx_status_t Controller::ReadCapacity(uint8_t target, uint16_t lun, uint64_t* blo
   zx_status_t status = ExecuteCommandSync(target, lun, {&cdb10, sizeof(cdb10)}, /*is_write=*/false,
                                           {&data10, sizeof(data10)});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "READ_CAPACITY_10 failed for target %u, lun %u: %s", target,
-             lun, zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "READ_CAPACITY_10 failed for target {}, lun {}: {}", target,
+                        lun, zx_status_get_string(status));
     return status;
   }
 
@@ -263,8 +266,8 @@ zx_status_t Controller::ReadCapacity(uint8_t target, uint16_t lun, uint64_t* blo
     status = ExecuteCommandSync(target, lun, {&cdb16, sizeof(cdb16)}, /*is_write=*/false,
                                 {&data16, sizeof(data16)});
     if (status != ZX_OK) {
-      FDF_LOGL(ERROR, driver_logger(), "READ_CAPACITY_16 failed for target %u, lun %u: %s", target,
-               lun, zx_status_get_string(status));
+      driver_logger().log(fdf::ERROR, "READ_CAPACITY_16 failed for target {}, lun {}: {}", target,
+                          lun, zx_status_get_string(status));
       return status;
     }
 
@@ -289,14 +292,14 @@ zx::result<uint16_t> Controller::ReportLuns(uint8_t target) {
     // Do not log the error, as it generates too many messages. Instead, log on success.
     return zx::error(status);
   } else {
-    FDF_LOGL(DEBUG, driver_logger(), "REPORT_LUNS succeeded for target %u.", target);
+    driver_logger().log(fdf::DEBUG, "REPORT_LUNS succeeded for target {}.", target);
   }
 
   // data.lun_list_length is the number of bytes of LUN structures.
   const uint32_t lun_count = betoh32(data.lun_list_length) / 8;
   if (lun_count > UINT16_MAX) {
-    FDF_LOGL(ERROR, driver_logger(), "REPORT_LUNS returned unexpectedly large LUN count: %u",
-             lun_count);
+    driver_logger().log(fdf::ERROR, "REPORT_LUNS returned unexpectedly large LUN count: {}",
+                        lun_count);
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
@@ -314,9 +317,10 @@ zx_status_t Controller::StartStopUnit(uint8_t target, uint16_t lun, bool immed,
   cdb.set_no_flush(false);  // Currently, we only support flush.
   if (load_or_unload.has_value()) {
     if (power_condition != PowerCondition::kStartValid) {
-      FDF_LOGL(ERROR, driver_logger(),
-               "Power condition must be START_VALID to perform load/unload, power_condition=0x%x",
-               static_cast<uint8_t>(power_condition));
+      driver_logger().log(
+          fdf::ERROR,
+          "Power condition must be START_VALID to perform load/unload, power_condition=0x{:x}",
+          static_cast<uint8_t>(power_condition));
       return ZX_ERR_INVALID_ARGS;
     }
     cdb.set_load_eject(true);
@@ -326,8 +330,8 @@ zx_status_t Controller::StartStopUnit(uint8_t target, uint16_t lun, bool immed,
   zx_status_t status =
       ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false, {nullptr, 0});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "START STOP UNIT failed for target %u, lun %u: %s", target,
-             lun, zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "START STOP UNIT failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }
@@ -345,8 +349,8 @@ zx_status_t Controller::FormatUnit(uint8_t target, uint16_t lun) {
   zx_status_t status =
       ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false, {nullptr, 0});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "FORMAT UNIT failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "FORMAT UNIT failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }
@@ -367,8 +371,8 @@ zx_status_t Controller::SendDiagnostic(uint8_t target, uint16_t lun, SelfTestCod
   zx_status_t status =
       ExecuteCommandSync(target, lun, {&cdb, sizeof(cdb)}, /*is_write=*/false, {nullptr, 0});
   if (status != ZX_OK) {
-    FDF_LOGL(ERROR, driver_logger(), "SEND DIAGNOSTIC failed for target %u, lun %u: %s", target,
-             lun, zx_status_get_string(status));
+    driver_logger().log(fdf::ERROR, "SEND DIAGNOSTIC failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }
@@ -393,8 +397,8 @@ zx::result<uint32_t> Controller::ScanAndBindLogicalUnits(uint8_t target,
       if (lu_callback) {
         zx::result result = lu_callback(lun, dev->block_size_bytes(), dev->block_count());
         if (result.is_error()) {
-          FDF_LOGL(ERROR, driver_logger(), "SCSI: lu_callback for block device failed: %s",
-                   result.status_string());
+          driver_logger().log(fdf::ERROR, "SCSI: lu_callback for block device failed: {}",
+                              result.status_string());
           return result.take_error();
         }
       }
@@ -407,9 +411,9 @@ zx::result<uint32_t> Controller::ScanAndBindLogicalUnits(uint8_t target,
   }
 
   if (luns_found != lun_count.value()) {
-    FDF_LOGL(ERROR, driver_logger(),
-             "SCSI: Lun count(%d) and the number of luns found(%d) are different.",
-             lun_count.value(), luns_found);
+    driver_logger().log(fdf::ERROR,
+                        "SCSI: Lun count({}) and the number of luns found({}) are different.",
+                        lun_count.value(), luns_found);
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -419,15 +423,15 @@ zx::result<uint32_t> Controller::ScanAndBindLogicalUnits(uint8_t target,
 zx::result<PostProcess> Controller::CheckSenseData(const FixedFormatSenseDataHeader& sense_data) {
   // Currently, we only support fixed format sense data.
   if (sense_data.response_code() != SenseDataResponseCodes::kFixedCurrentInformation) {
-    FDF_LOGL(WARNING, driver_logger(),
-             "SCSI: It only supports FixedFormatSenseData, response_code=0x%x",
-             static_cast<uint8_t>(sense_data.response_code()));
+    driver_logger().log(fdf::WARN,
+                        "SCSI: It only supports FixedFormatSenseData, response_code=0x{:x}",
+                        static_cast<uint8_t>(sense_data.response_code()));
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   if (sense_data.filemark() || sense_data.eom() || sense_data.ili()) {
-    FDF_LOGL(WARNING, driver_logger(), "SCSI: Invalid flags, filemark=%d, EOM=%d, ILI=%d",
-             sense_data.filemark(), sense_data.eom(), sense_data.ili());
+    driver_logger().log(fdf::WARN, "SCSI: Invalid flags, filemark={}, EOM={}, ILI={}",
+                        sense_data.filemark(), sense_data.eom(), sense_data.ili());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -533,8 +537,8 @@ zx::result<> Controller::ScsiComplete(
       post_process = zx::error(ZX_ERR_IO_REFUSED);
       break;
     default:
-      FDF_LOGL(WARNING, driver_logger(), "SCSI: Unexpected host status value(%d)",
-               static_cast<uint8_t>(status_message.host_status_code));
+      driver_logger().log(fdf::WARN, "SCSI: Unexpected host status value({})",
+                          static_cast<uint8_t>(status_message.host_status_code));
       post_process = zx::error(ZX_ERR_BAD_STATE);
       break;
   }
@@ -573,8 +577,8 @@ zx_status_t Controller::ReadBuffer(uint8_t target, uint16_t lun, uint8_t mod, ui
   zx_status_t status = ExecuteCommandSync(target, lun, {.iov_base = &cdb, .iov_len = sizeof(cdb)},
                                           /*is_write=*/false, data);
   if (status != ZX_OK) {
-    FDF_LOGL(DEBUG, driver_logger(), "READ BUFFER failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::DEBUG, "READ BUFFER failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }
@@ -594,8 +598,8 @@ zx_status_t Controller::WriteBuffer(uint8_t target, uint16_t lun, uint8_t mod, u
   zx_status_t status = ExecuteCommandSync(target, lun, {.iov_base = &cdb, .iov_len = sizeof(cdb)},
                                           /*is_write=*/true, data);
   if (status != ZX_OK) {
-    FDF_LOGL(DEBUG, driver_logger(), "WRITE BUFFER failed for target %u, lun %u: %s", target, lun,
-             zx_status_get_string(status));
+    driver_logger().log(fdf::DEBUG, "WRITE BUFFER failed for target {}, lun {}: {}", target, lun,
+                        zx_status_get_string(status));
   }
   return status;
 }

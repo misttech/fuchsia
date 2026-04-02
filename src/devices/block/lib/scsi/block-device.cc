@@ -6,6 +6,7 @@
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <lib/ddk/binding_driver.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/block-device.h>
 #include <netinet/in.h>
 #include <zircon/process.h>
@@ -17,9 +18,7 @@
 
 namespace scsi {
 
-BlockDevice::~BlockDevice() {
-  RemoveDevice();
-}
+BlockDevice::~BlockDevice() { RemoveDevice(); }
 
 zx::result<std::unique_ptr<BlockDevice>> BlockDevice::Bind(Controller* controller, uint8_t target,
                                                            uint16_t lun,
@@ -45,8 +44,8 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   }
   // Check that its a direct access block device first.
   if (inquiry_data.value().peripheral_device_type != 0) {
-    FDF_LOGL(ERROR, logger(), "Device is not direct access block device!, device type: 0x%x",
-             inquiry_data.value().peripheral_device_type);
+    logger().log(fdf::ERROR, "Device is not direct access block device!, device type: 0x{:x}",
+                 inquiry_data.value().peripheral_device_type);
     return ZX_ERR_IO;
   }
 
@@ -59,8 +58,8 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   // illegal characters.
   vendor_id = std::string(vendor_id.c_str());
   product_id = std::string(product_id.c_str());
-  FDF_LOGL(INFO, logger(), "Target %u LUN %u: Vendor ID = %s, Product ID = %s", target_, lun_,
-           vendor_id.c_str(), product_id.c_str());
+  logger().log(fdf::INFO, "Target {} LUN {}: Vendor ID = {}, Product ID = {}", target_, lun_,
+               vendor_id, product_id);
 
   removable_ = inquiry_data.value().removable_media();
 
@@ -68,11 +67,11 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   if (zx_status_t status = controller_->TestUnitReady(target_, lun_); status != ZX_OK) {
     // TestUnitReady returns ZX_ERR_UNAVAILABLE status if a unit attention error occurred.
     if (status != ZX_ERR_UNAVAILABLE) {
-      FDF_LOGL(ERROR, logger(), "Failed SCSI TEST UNIT READY command: %s",
-               zx_status_get_string(status));
+      logger().log(fdf::ERROR, "Failed SCSI TEST UNIT READY command: {}",
+                   zx_status_get_string(status));
       return status;
     }
-    FDF_LOGL(DEBUG, logger(), "Expected Unit Attention error: %s", zx_status_get_string(status));
+    logger().log(fdf::DEBUG, "Expected Unit Attention error: {}", zx_status_get_string(status));
 
     // Send request sense commands to clear the Unit Attention Condition(UAC) of LUs. UAC is a
     // condition which needs to be serviced before the logical unit can process commands.
@@ -85,16 +84,16 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
     zx_status_t clear_uac_status = controller_->RequestSense(
         target_, lun_, {request_sense_buffer, sizeof(request_sense_buffer)});
     if (clear_uac_status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed SCSI REQUEST SENSE command: %s",
-               zx_status_get_string(clear_uac_status));
+      logger().log(fdf::ERROR, "Failed SCSI REQUEST SENSE command: {}",
+                   zx_status_get_string(clear_uac_status));
       return clear_uac_status;
     }
 
     // Verify that the Lun is ready. This command expects a success.
     clear_uac_status = controller_->TestUnitReady(target_, lun_);
     if (clear_uac_status != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "Failed SCSI TEST UNIT READY command: %s",
-               zx_status_get_string(clear_uac_status));
+      logger().log(fdf::ERROR, "Failed SCSI TEST UNIT READY command: {}",
+                   zx_status_get_string(clear_uac_status));
       return clear_uac_status;
     }
   }
@@ -103,9 +102,9 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
       controller_->ModeSenseDpoFuaAndWriteProtectedEnabled(target_, lun_,
                                                            device_options_.use_mode_sense_6);
   if (parameter.is_error()) {
-    FDF_LOGL(WARNING, logger(),
-             "Failed to get DPO FUA and write protected parameter for target %u, lun %u: %s.",
-             target_, lun_, zx_status_get_string(parameter.status_value()));
+    logger().log(fdf::WARN,
+                 "Failed to get DPO FUA and write protected parameter for target {}, lun {}: {}.",
+                 target_, lun_, zx_status_get_string(parameter.status_value()));
     return parameter.error_value();
   }
   std::tie(dpo_fua_available_, write_protected_) = parameter.value();
@@ -113,8 +112,8 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   zx::result write_cache_enabled =
       controller_->ModeSenseWriteCacheEnabled(target_, lun_, device_options_.use_mode_sense_6);
   if (write_cache_enabled.is_error()) {
-    FDF_LOGL(WARNING, logger(), "Failed to get write cache status for target %u, lun %u: %s.",
-             target_, lun_, zx_status_get_string(write_cache_enabled.status_value()));
+    logger().log(fdf::WARN, "Failed to get write cache status for target {}, lun {}: {}.", target_,
+                 lun_, zx_status_get_string(write_cache_enabled.status_value()));
     // Assume write cache is enabled so that flush operations are not ignored.
     write_cache_enabled_ = true;
   } else {
@@ -125,7 +124,7 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   if (status != ZX_OK) {
     return status;
   }
-  FDF_LOGL(INFO, logger(), "%ld blocks of %d bytes", block_count_, block_size_bytes_);
+  logger().log(fdf::INFO, "{} blocks of {} bytes", block_count_, block_size_bytes_);
 
   zx::result<VPDBlockLimits> block_limits = controller_->InquiryBlockLimits(target_, lun_);
   if (block_limits.is_ok()) {
@@ -145,9 +144,9 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
     max_transfer_blocks_ = UINT32_MAX;
   } else {
     if (max_transfer_bytes_ % block_size_bytes_ != 0) {
-      FDF_LOGL(ERROR, logger(),
-               "Max transfer size (%u bytes) is not a multiple of the block size (%u bytes).",
-               max_transfer_bytes_, block_size_bytes_);
+      logger().log(fdf::ERROR,
+                   "Max transfer size ({} bytes) is not a multiple of the block size ({} bytes).",
+                   max_transfer_bytes_, block_size_bytes_);
       return ZX_ERR_BAD_STATE;
     }
     max_transfer_blocks_ = max_transfer_bytes_ / block_size_bytes_;
@@ -205,12 +204,12 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   fidl::WireResult<fuchsia_driver_framework::Node::AddChild> result =
       controller_->root_node()->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
-    FDF_LOGL(ERROR, logger(), "Failed to call AddChild: %s", result.status_string());
+    logger().log(fdf::ERROR, "Failed to call AddChild: {}", result.status_string());
     return result.status();
   }
   if (result->is_error()) {
     fuchsia_driver_framework::NodeError node_error = result->error_value();
-    FDF_LOGL(ERROR, logger(), "AddChild returned failure: %u", static_cast<uint32_t>(node_error));
+    logger().log(fdf::ERROR, "AddChild returned failure: {}", static_cast<uint32_t>(node_error));
     return ZX_ERR_INTERNAL;
   }
   return ZX_OK;
