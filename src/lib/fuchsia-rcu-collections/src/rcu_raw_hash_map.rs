@@ -15,7 +15,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The initial capacity of the hash map.
-const INITIAL_CAPACITY: usize = 128;
+const INITIAL_CAPACITY: usize = 16;
 
 /// An entry in the hash table.
 #[derive(Debug)]
@@ -109,7 +109,7 @@ where
     V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
-        Self::with_capacity_and_hasher(INITIAL_CAPACITY, rapidhash::RapidBuildHasher::default())
+        Self::with_capacity_and_hasher(0, rapidhash::RapidBuildHasher::default())
     }
 }
 
@@ -169,13 +169,16 @@ where
     }
 
     /// Returns a reference to the bucket for the given key.
-    fn read_bucket<'a, Q>(&self, scope: &'a RcuReadScope, key: &Q) -> &'a Bucket<K, V>
+    fn read_bucket<'a, Q>(&self, scope: &'a RcuReadScope, key: &Q) -> Option<&'a Bucket<K, V>>
     where
         K: Borrow<Q>,
         Q: ?Sized + Hash,
     {
         let table = self.table.as_slice(scope);
-        self.get_bucket(table, key)
+        if table.is_empty() {
+            return None;
+        }
+        Some(self.get_bucket(table, key))
     }
 
     /// Returns a reference to the value corresponding to the key.
@@ -186,7 +189,7 @@ where
         K: Borrow<Q>,
         Q: ?Sized + Hash + Eq,
     {
-        let bucket = self.read_bucket(scope, key);
+        let bucket = self.read_bucket(scope, key)?;
         bucket.iter(scope).find(|entry| entry.key.borrow() == key).map(|entry| &entry.value)
     }
 
@@ -260,7 +263,7 @@ where
         Q: ?Sized + Hash + Eq,
     {
         let scope = RcuReadScope::new();
-        let bucket = self.read_bucket(&scope, key);
+        let bucket = self.read_bucket(&scope, key)?;
         let mut cursor = bucket.cursor(&scope);
         while let Some(entry) = cursor.current() {
             if entry.key.borrow() == key {
@@ -281,7 +284,7 @@ where
 
     /// Whether the given table needs to grow to reduce the number of collisions.
     fn needs_to_grow(&self, table: &[Bucket<K, V>]) -> bool {
-        self.num_entries.load(Ordering::Relaxed) > table.len() * 2
+        table.is_empty() || self.num_entries.load(Ordering::Relaxed) > table.len() * 2
     }
 
     /// Grows the table to reduce the number of collisions.
@@ -298,7 +301,7 @@ where
         scope: &'a RcuReadScope,
         old_table: &[Bucket<K, V>],
     ) -> &'a [Bucket<K, V>] {
-        let new_size = old_table.len() * 2;
+        let new_size = if old_table.is_empty() { INITIAL_CAPACITY } else { old_table.len() * 2 };
         let mut new_table = Vec::new();
         let new_insertion_chain = RcuIntrusiveList::default();
         new_table.resize_with(new_size, Default::default);
@@ -585,6 +588,27 @@ mod tests {
         for i in 0..(INITIAL_CAPACITY * 3) {
             assert_eq!(map.get(&scope, &i), Some(&(i * 10)));
         }
+
+        std::mem::drop(scope);
+        rcu_synchronize();
+    }
+
+    #[test]
+    fn test_rcu_hash_map_capacity_zero() {
+        let map = RcuRawHashMap::with_capacity(0);
+        let scope = RcuReadScope::new();
+
+        assert_eq!(map.get(&scope, &1), None);
+
+        unsafe {
+            map.insert(&scope, 1, 10);
+        }
+        assert_eq!(map.get(&scope, &1), Some(&10));
+
+        unsafe {
+            assert_eq!(map.remove(&1), Some(10));
+        }
+        assert_eq!(map.get(&scope, &1), None);
 
         std::mem::drop(scope);
         rcu_synchronize();

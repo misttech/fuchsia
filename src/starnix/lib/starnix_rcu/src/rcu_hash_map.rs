@@ -450,4 +450,20 @@ mod tests {
         assert!(!guard.contains_key(&2));
         assert!(!guard.contains_key(&3));
     }
+
+    #[test]
+    fn test_rcu_hash_map_capacity_zero() {
+        use std::collections::hash_map::RandomState;
+        let map =
+            RcuHashMap::<i32, i32, RandomState>::with_capacity_and_hasher(0, RandomState::new());
+        let mut guard = map.lock();
+
+        assert_eq!(guard.get(&1), None);
+
+        guard.insert(1, 10);
+        assert_eq!(guard.get(&1), Some(10));
+
+        guard.remove(&1);
+        assert_eq!(guard.get(&1), None);
+    }
 }
