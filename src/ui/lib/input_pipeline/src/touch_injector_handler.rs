@@ -430,7 +430,7 @@ impl TouchInjectorHandler {
         for phase in ordered_phases {
             let contacts: Vec<touch_binding::TouchContact> = touch_event
                 .injector_contacts
-                .get(&(phase as u32))
+                .get(&phase)
                 .map_or(vec![], |contacts| contacts.to_owned());
             let new_events = contacts.into_iter().map(|contact| {
                 Self::create_pointer_sample_event(

@@ -15,6 +15,7 @@ use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_fuchsia_ui_input3 as fidl_ui_input3;
 use fidl_fuchsia_ui_pointerinjector as pointerinjector;
+use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
 use futures::{FutureExt as _, TryFutureExt, TryStreamExt};
 use log::error;
 use maplit::hashmap;
@@ -656,11 +657,11 @@ pub fn create_touch_screen_event_with_handled(
     contacts.entry(fidl_ui_input::PointerEventPhase::Remove).or_insert(vec![]);
 
     let injector_contacts = hashmap! {
-        pointerinjector::EventPhase::Add as u32 =>
+        pointerinjector_next::EventPhase::Add =>
         contacts.get(&fidl_ui_input::PointerEventPhase::Add).unwrap().clone(),
-        pointerinjector::EventPhase::Change as u32 =>
+        pointerinjector_next::EventPhase::Change =>
         contacts.get(&fidl_ui_input::PointerEventPhase::Move).unwrap().clone(),
-        pointerinjector::EventPhase::Remove as u32 =>
+        pointerinjector_next::EventPhase::Remove =>
         contacts.get(&fidl_ui_input::PointerEventPhase::Remove).unwrap().clone(),
     };
     input_device::InputEvent {

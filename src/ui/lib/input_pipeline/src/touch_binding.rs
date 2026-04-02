@@ -14,13 +14,12 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use zx;
 
 use fidl::HandleBased;
+use fidl_fuchsia_input_report as fidl_input_report;
+use fidl_fuchsia_ui_input as fidl_ui_input;
+use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
 use maplit::hashmap;
 use metrics_registry::*;
 use std::collections::{HashMap, HashSet};
-use {
-    fidl_fuchsia_input_report as fidl_input_report, fidl_fuchsia_ui_input as fidl_ui_input,
-    fidl_next_fuchsia_ui_pointerinjector as pointerinjector,
-};
 
 /// A [`TouchScreenEvent`] represents a set of contacts and the phase those contacts are in.
 ///
@@ -50,9 +49,7 @@ pub struct TouchScreenEvent {
     /// in one touch event with two [`TouchContact`]s.
     ///
     /// Contacts are grouped based on their current phase (e.g., add, change).
-    // TODO(https://fxbug.dev/495373798): Revert the key type to `pointerinjector::EventPhase` once
-    // natural bindings implement `Hash`.
-    pub injector_contacts: HashMap<u32, Vec<TouchContact>>,
+    pub injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
 
     /// Indicates whether any touch buttons are pressed.
     pub pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
@@ -596,15 +593,15 @@ fn is_move_only(event: &InputEvent) -> bool {
         input_device::InputDeviceEvent::TouchScreen(event)
             if event
                 .injector_contacts
-                .get(&(pointerinjector::EventPhase::Add as u32))
+                .get(&pointerinjector::EventPhase::Add)
                 .map_or(true, |c| c.is_empty())
                 && event
                     .injector_contacts
-                    .get(&(pointerinjector::EventPhase::Remove as u32))
+                    .get(&pointerinjector::EventPhase::Remove)
                     .map_or(true, |c| c.is_empty())
                 && event
                     .injector_contacts
-                    .get(&(pointerinjector::EventPhase::Cancel as u32))
+                    .get(&pointerinjector::EventPhase::Cancel)
                     .map_or(true, |c| c.is_empty())
     )
 }
@@ -810,9 +807,9 @@ fn process_single_touch_screen_report(
             fidl_ui_input::PointerEventPhase::Remove => removed_contacts.clone(),
         },
         hashmap! {
-            pointerinjector::EventPhase::Add as u32 => added_contacts,
-            pointerinjector::EventPhase::Change as u32 => moved_contacts,
-            pointerinjector::EventPhase::Remove as u32 => removed_contacts,
+            pointerinjector::EventPhase::Add => added_contacts,
+            pointerinjector::EventPhase::Change => moved_contacts,
+            pointerinjector::EventPhase::Remove => removed_contacts,
         },
         current_buttons,
         device_descriptor,
@@ -940,7 +937,7 @@ fn touch_contacts_and_buttons_from_touch_report(
 /// - `wake_lease`: The wake lease to send with the event.
 fn create_touch_screen_event(
     contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
-    injector_contacts: HashMap<u32, Vec<TouchContact>>,
+    injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
     pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     trace_id: fuchsia_trace::Id,
@@ -2059,19 +2056,19 @@ mod tests {
         assert_matches!(
             &batch[0].device_event,
             input_device::InputDeviceEvent::TouchScreen(event)
-                if event.injector_contacts.get(&(pointerinjector::EventPhase::Add as u32)).is_some()
+                if event.injector_contacts.get(&pointerinjector::EventPhase::Add).is_some()
         );
         // Verify Move event (merged to the last one)
         assert_matches!(
             &batch[1].device_event,
             input_device::InputDeviceEvent::TouchScreen(event)
-                if event.injector_contacts.get(&(pointerinjector::EventPhase::Change as u32)).map(|c| c[0].position.x) == Some(30.0)
+                if event.injector_contacts.get(&pointerinjector::EventPhase::Change).map(|c| c[0].position.x) == Some(30.0)
         );
         // Verify Remove event
         assert_matches!(
             &batch[2].device_event,
             input_device::InputDeviceEvent::TouchScreen(event)
-                if event.injector_contacts.get(&(pointerinjector::EventPhase::Remove as u32)).is_some()
+                if event.injector_contacts.get(&pointerinjector::EventPhase::Remove).is_some()
         );
     }
 
