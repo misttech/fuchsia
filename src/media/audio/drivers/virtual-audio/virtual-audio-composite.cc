@@ -678,10 +678,12 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
   element_map_.clear();
   elements_.clear();
 
+  // Configure RING_BUFFER element
   fuchsia_hardware_audio_signalprocessing::Element ring_buffer;
   ring_buffer.id(kRingBufferId)
       .type(fuchsia_hardware_audio_signalprocessing::ElementType::kRingBuffer);
 
+  // Configure DAI element
   fuchsia_hardware_audio_signalprocessing::Element dai;
   fuchsia_hardware_audio_signalprocessing::DaiInterconnect dai_interconnect;
   // Connect this to the existing virtualaudio FIDL method for dynamic plug_state changes?
@@ -693,6 +695,7 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
           fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithDaiInterconnect(
               std::move(dai_interconnect)));
 
+  // Configure GAIN element
   fuchsia_hardware_audio_signalprocessing::Element gain;
   fuchsia_hardware_audio_signalprocessing::Gain gain_type_specific;
   gain_type_specific.type(fuchsia_hardware_audio_signalprocessing::GainType::kDecibels)
@@ -700,11 +703,13 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
       .min_gain(-68.0)
       .max_gain(+6.0)
       .min_gain_step(0.5);
-  gain.id(kGainId)
+  gain.can_bypass(true)  // This is the only element that can be tested for bypass.
+      .id(kGainId)
       .type(fuchsia_hardware_audio_signalprocessing::ElementType::kGain)
       .type_specific(fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithGain(
           gain_type_specific));
 
+  // Configure standalone (self-referential) DAI element
   fuchsia_hardware_audio_signalprocessing::Element single_dai;
   fuchsia_hardware_audio_signalprocessing::DaiInterconnect single_dai_interconnect;
   single_dai_interconnect.plug_detect_capabilities(
@@ -718,6 +723,7 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
       .can_stop(false)
       .can_bypass(false);
 
+  // Configure PACKET_STREAM element
   fuchsia_hardware_audio_signalprocessing::Element packet_stream;
   packet_stream.id(kPacketStreamId)
       .type(fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream)
