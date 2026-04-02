@@ -46,9 +46,11 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
  protected:
   static inline const std::string kClassName = "InspectorTest";
   static inline const fuchsia_audio_device::RingBufferOptions kDefaultRingBufferOptions{{
-      .format = fuchsia_audio::Format{{.sample_type = fuchsia_audio::SampleType::kInt16,
-                                       .channel_count = 2,
-                                       .frames_per_second = 22000}},
+      .format = fuchsia_audio::Format{{
+          .sample_type = fuchsia_audio::SampleType::kInt16,
+          .channel_count = 2,
+          .frames_per_second = 22000,
+      }},
       .ring_buffer_min_bytes = 2000,
   }};
 

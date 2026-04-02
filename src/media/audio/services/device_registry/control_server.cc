@@ -536,9 +536,13 @@ void ControlServer::DaiFormatIsChanged(
   auto completer = std::move(set_dai_format_completers_.find(element_id)->second);
   set_dai_format_completers_.erase(element_id);
   if (codec_format_info.has_value()) {
-    completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{.state = *codec_format_info}}));
+    completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{
+        .state = codec_format_info,
+    }}));
   } else {
-    completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{.state = std::nullopt}}));
+    completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{
+        .state = std::nullopt,
+    }}));
   }
 }
 
@@ -562,8 +566,9 @@ void ControlServer::DaiFormatIsNotChanged(ElementId element_id, const fha::DaiFo
   set_dai_format_completers_.erase(element_id);
   // If `error` is 0, SetDaiFormat was not an error but resulted in no change, so succeed that call.
   if (error == fad::ControlSetDaiFormatError(0)) {
-    completer.Reply(fit::success(
-        fad::ControlSetDaiFormatResponse{{.state = device_->codec_format_info(element_id)}}));
+    completer.Reply(fit::success(fad::ControlSetDaiFormatResponse{{
+        .state = device_->codec_format_info(element_id),
+    }}));
   } else {
     completer.Reply(fit::error(error));
   }
@@ -627,7 +632,9 @@ void ControlServer::CodecIsStarted(const zx::time& start_time) {
 
   auto completer = std::move(*codec_start_completer_);
   codec_start_completer_.reset();
-  completer.Reply(fit::success(fad::ControlCodecStartResponse{{.start_time = start_time.get()}}));
+  completer.Reply(fit::success(fad::ControlCodecStartResponse{{
+      .start_time = start_time.get(),
+  }}));
 }
 
 void ControlServer::CodecIsNotStarted() {
@@ -705,7 +712,9 @@ void ControlServer::CodecIsStopped(const zx::time& stop_time) {
 
   auto completer = std::move(*codec_stop_completer_);
   codec_stop_completer_.reset();
-  completer.Reply(fit::success(fad::ControlCodecStopResponse{{.stop_time = stop_time.get()}}));
+  completer.Reply(fit::success(fad::ControlCodecStopResponse{{
+      .stop_time = stop_time.get(),
+  }}));
 }
 
 void ControlServer::CodecIsNotStopped() {
@@ -852,7 +861,7 @@ void ControlServer::SetTopology(SetTopologyRequest& request,
     return;
   }
 
-  if (device_->topology_ids().find(request.topology_id()) == device_->topology_ids().end()) {
+  if (!device_->topology_ids().contains(request.topology_id())) {
     ADR_WARN_METHOD() << "Unknown topology_id " << request.topology_id();
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
@@ -946,15 +955,14 @@ void ControlServer::WatchElementState(WatchElementStateRequest& request,
     return;
   }
 
-  if (device_->element_ids().find(request.processing_element_id()) ==
-      device_->element_ids().end()) {
+  if (!device_->element_ids().contains(request.processing_element_id())) {
     ADR_WARN_METHOD() << "Unknown element_id " << request.processing_element_id();
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
   ElementId element_id = request.processing_element_id();
-  if (watch_element_state_completers_.find(element_id) != watch_element_state_completers_.end()) {
+  if (watch_element_state_completers_.contains(element_id)) {
     ADR_WARN_METHOD() << "previous `WatchElementState(" << element_id
                       << ")` request has not yet completed";
     completer.Close(ZX_ERR_BAD_STATE);
@@ -990,8 +998,7 @@ void ControlServer::SetElementState(SetElementStateRequest& request,
     return;
   }
 
-  if (device_->element_ids().find(request.processing_element_id()) ==
-      device_->element_ids().end()) {
+  if (!device_->element_ids().contains(request.processing_element_id())) {
     ADR_WARN_METHOD() << "Unknown element_id " << request.processing_element_id();
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;

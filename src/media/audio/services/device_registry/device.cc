@@ -299,8 +299,8 @@ std::shared_ptr<Device> Device::Create(std::weak_ptr<DevicePresenceWatcher> pres
                  std::move(driver_client), added_by) {}
   };
 
-  return std::make_shared<MakePublicCtor>(presence_watcher, dispatcher, name, device_type,
-                                          std::move(driver_client), added_by);
+  return std::make_shared<MakePublicCtor>(std::move(presence_watcher), dispatcher, name,
+                                          device_type, std::move(driver_client), added_by);
 }
 
 // Device notifies presence_watcher when it is available (Initialized), unhealthy (Error) or
@@ -1552,8 +1552,10 @@ void Device::RetrieveDaiFormatSets() {
           << "GetDaiFormats(token " << token_id_ << ", element " << element_id << "): success";
       auto& element_node = dai_element_inspect_nodes_[element_id];
 
-      element_dai_format_sets_.push_back(
-          {{.element_id = element_id, .format_sets = dai_format_sets}});
+      element_dai_format_sets_.push_back({{
+          .element_id = element_id,
+          .format_sets = dai_format_sets,
+      }});
       element_node->RecordSupportedFormatSets(dai_format_sets);
       remaining_dai_ids->erase(element_id);
       if (remaining_dai_ids->empty()) {
@@ -1697,8 +1699,10 @@ void Device::AddRingBufferFormatSet(
   ADR_LOG_METHOD(kLogCompositeFidlResponses) << context;
 
   element_driver_ring_buffer_format_sets_.emplace_back(id, format_set);
-  element_ring_buffer_format_sets_.push_back(
-      {{.element_id = id, .format_sets = translated_ring_buffer_format_sets}});
+  element_ring_buffer_format_sets_.push_back({{
+      .element_id = id,
+      .format_sets = translated_ring_buffer_format_sets,
+  }});
   remaining_ring_buffer_ids->erase(id);
   if (remaining_ring_buffer_ids->empty()) {
     ADR_LOG_OBJECT(kLogCompositeFidlResponses) << context << ": success";
@@ -2018,22 +2022,23 @@ std::optional<fha::Format2> Device::SupportedPacketStreamDriverFormatForClientFo
     }
 
     return fha::Format2::WithPcmFormat(*best_pcm_format);
-  } else {
-    if (!client_format.encoding()) {
-      ADR_WARN_METHOD() << "client format missing both pcm_format and encoding";
-      return {};
-    }
-    const auto& encoding = client_format.encoding().value();
+  }
 
-    auto matched_encoding = MatchEncodingSet(driver_packet_stream_format_sets, encoding);
-    if (matched_encoding) {
-      return fha::Format2::WithEncoding(*matched_encoding);
-    }
-    ADR_WARN_METHOD() << "no supported driver encoding found for client encoding";
+  if (!client_format.encoding()) {
+    ADR_WARN_METHOD() << "client format missing both pcm_format and encoding";
     return {};
   }
+  const auto& encoding = client_format.encoding().value();
+
+  auto matched_encoding = MatchEncodingSet(driver_packet_stream_format_sets, encoding);
+  if (matched_encoding) {
+    return fha::Format2::WithEncoding(*matched_encoding);
+  }
+  ADR_WARN_METHOD() << "no supported driver encoding found for client encoding";
+  return {};
 }
 
+// static
 std::optional<fha::PcmFormat> Device::MatchPcmFormatSet(
     const std::vector<fha::SupportedFormats2>& supported_formats,
     const fha::PcmFormat& format_template) {
@@ -2074,6 +2079,7 @@ std::optional<fha::PcmFormat> Device::MatchPcmFormatSet(
   return best_pcm_format;
 }
 
+// static
 std::optional<fha::Encoding> Device::MatchEncodingSet(
     const std::vector<fha::SupportedFormats2>& supported_formats, const fha::Encoding& encoding) {
   for (const auto& supported_format : supported_formats) {
@@ -2258,11 +2264,15 @@ void Device::SetDaiFormat(ElementId element_id, const fha::DaiFormat& dai_format
           }
 
           // Reset DaiFormat (and Start state if it's a change). Notify our controlling entity.
-          codec_format_ =
-              CodecFormat{.dai_format = dai_format, .codec_format_info = result->state()};
+          codec_format_ = CodecFormat{
+              .dai_format = dai_format,
+              .codec_format_info = result->state(),
+          };
           if (codec_start_state_.started) {
-            codec_start_state_ =
-                CodecStartState{.started = false, .start_stop_time = zx::clock::get_monotonic()};
+            codec_start_state_ = CodecStartState{
+                .started = false,
+                .start_stop_time = zx::clock::get_monotonic(),
+            };
             notify->CodecIsStopped(codec_start_state_.start_stop_time);
           }
           notify->DaiFormatIsChanged(element_id, codec_format_->dai_format,
@@ -2806,8 +2816,8 @@ void Device::ConnectRingBufferFidl(
                 .sample_type = client_sample_type,
                 .channel_count = driver_format.pcm_format()->number_of_channels(),
                 .frames_per_second = driver_format.pcm_format()->frame_rate(),
-                // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated from
-                // driver.
+                // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated
+                // from driver.
             }},
             .driver_format = driver_format,
         };
@@ -2920,10 +2930,9 @@ void Device::ConnectPacketStreamFidl(
                 // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated from
                 // driver.
             }});
-          } else {
-            return fuchsia_audio_device::PacketStreamFormat::WithEncoding(
-                driver_format.encoding().value());
           }
+          return fuchsia_audio_device::PacketStreamFormat::WithEncoding(
+              driver_format.encoding().value());
         }();
 
         PacketStreamRecord packet_stream_record{
@@ -3084,8 +3093,10 @@ void Device::GetRingBufferVmo(ElementId element_id, uint32_t min_frames,
   FX_CHECK(ring_buffer.driver_format.has_value());
 
   (*ring_buffer.ring_buffer_client)
-      ->GetVmo({{.min_frames = min_frames,
-                 .clock_recovery_notifications_per_ring = position_notifications_per_ring}})
+      ->GetVmo({{
+          .min_frames = min_frames,
+          .clock_recovery_notifications_per_ring = position_notifications_per_ring,
+      }})
       .Then([this, &ring_buffer, element_id](fidl::Result<fha::RingBuffer::GetVmo>& result) {
         if (SetDeviceErrorOnFidlError(result, "RingBuffer/GetVmo response")) {
           return;
@@ -3310,7 +3321,9 @@ bool Device::SetActiveChannels(
   }
   SetCommandTimeout(kDefaultShortCmdTimeout, "SetActiveChannels");
   (*ring_buffer.ring_buffer_client)
-      ->SetActiveChannels({{.active_channels_bitmask = channel_bitmask}})
+      ->SetActiveChannels({{
+          .active_channels_bitmask = channel_bitmask,
+      }})
       .Then([this, &ring_buffer, channel_bitmask,
              callback = std::move(set_active_channels_callback)](
                 fidl::Result<fha::RingBuffer::SetActiveChannels>& result) mutable {
@@ -3688,7 +3701,7 @@ void Device::SetPacketStreamBuffers(
 
     SetCommandTimeout(kDefaultShortCmdTimeout, "AllocateVmos");
     (*ps_record.packet_stream_client)
-        ->AllocateVmos(std::move(allocate_info))
+        ->AllocateVmos(allocate_info)
         .Then([this, element_id, cb = std::move(set_buffers_callback), buffer_type, required_rights,
                expected_vmo_count,
                min_vmo_size](fidl::Result<fha::PacketStreamControl::AllocateVmos>& result) mutable {

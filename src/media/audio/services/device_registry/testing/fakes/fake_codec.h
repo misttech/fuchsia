@@ -139,7 +139,7 @@ class FakeCodec final
 
   ////////////////////////////////////////////////////////////////
  private:
-  static inline constexpr std::string_view kClassName = "FakeCodec";
+  static constexpr std::string_view kClassName = "FakeCodec";
 
   // fuchsia_hardware_audio::CodecConnector
   void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override {

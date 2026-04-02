@@ -19,10 +19,10 @@ using ::inspect::UintPropertyValue;
 namespace fad = fuchsia_audio_device;
 
 namespace media_audio {
-
+namespace {
 class InspectorWarningTest : public InspectorTest {
  protected:
-  static inline const std::string kClassName = "InspectorWarningTest";
+  static constexpr std::string kClassName = "InspectorWarningTest";
 };
 
 // The relevant fields are `added at` and `failed at` -- located at // root/Devices/[device name]/
@@ -119,4 +119,5 @@ TEST_F(InspectorWarningTest, FailedThenRemovedDevice) {
   EXPECT_FALSE(device_node->children().empty());
 }
 
+}  // namespace
 }  // namespace media_audio

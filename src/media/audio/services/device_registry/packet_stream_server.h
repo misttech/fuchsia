@@ -59,7 +59,7 @@ class PacketStreamServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline constexpr std::string_view kClassName = "PacketStreamServer";
+  static constexpr std::string_view kClassName = "PacketStreamServer";
   static inline uint64_t count_ = 0;
 
   PacketStreamServer(std::shared_ptr<ControlServer> parent, std::shared_ptr<Device> device,

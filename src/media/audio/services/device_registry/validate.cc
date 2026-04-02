@@ -277,13 +277,13 @@ bool ValidateSupportedEncodings(const fha::SupportedEncodings& encoding_format_s
     return false;
   }
   const auto& encodings = *encoding_format_set.encoding_types();
-  for (const auto& encoding : encodings) {
-    if (std::count(encodings.begin(), encodings.end(), encoding) > 1) {
+  return std::ranges::all_of(encodings, [&encodings](const auto& encoding) {
+    if (std::ranges::count(encodings, encoding) > 1) {
       FX_LOGS(WARNING) << "ValidateSupportedEncodings: duplicate encoding_type found: " << encoding;
       return false;
     }
-  }
-  return true;
+    return true;
+  });
 }
 
 bool ValidateRingBufferFormatSets(
@@ -848,8 +848,9 @@ bool ValidateRingBufferVmo(const zx::vmo& vmo, uint32_t num_frames, const fha::F
   if (size < static_cast<uint64_t>(num_frames) * rb_format.pcm_format()->number_of_channels() *
                  rb_format.pcm_format()->bytes_per_sample()) {
     FX_LOGS(WARNING) << "RingBuffer.GetVmo num_frames (" << num_frames << ", "
-                     << rb_format.pcm_format()->number_of_channels() << " channels, "
-                     << rb_format.pcm_format()->bytes_per_sample()
+                     << static_cast<uint16_t>(rb_format.pcm_format()->number_of_channels())
+                     << " channels, "
+                     << static_cast<uint16_t>(rb_format.pcm_format()->bytes_per_sample())
                      << " bytes_per_sample) does not match VMO size (" << size << " bytes)";
     return false;
   }
@@ -1859,8 +1860,14 @@ bool ValidateTopology(const fhasp::Topology& topology,
   std::unordered_map<ElementId, uint64_t> edge_source_id_counts, edge_dest_id_counts;
   for (const auto& edge_pair : edge_pairs) {
     // Only succeeds if the ElementId is not yet present in the map.
-    edge_source_id_counts.insert({edge_pair.processing_element_id_from(), 0});
-    edge_dest_id_counts.insert({edge_pair.processing_element_id_to(), 0});
+    edge_source_id_counts.insert({
+        edge_pair.processing_element_id_from(),
+        0,
+    });
+    edge_dest_id_counts.insert({
+        edge_pair.processing_element_id_to(),
+        0,
+    });
 
     // Always succeeds.
     edge_source_id_counts[edge_pair.processing_element_id_from()] += 1;

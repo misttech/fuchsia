@@ -23,7 +23,6 @@ using ::inspect::StringPropertyValue;
 using ::inspect::UintPropertyValue;
 
 namespace fad = fuchsia_audio_device;
-namespace fha = fuchsia_hardware_audio;
 
 namespace media_audio {
 
@@ -36,7 +35,6 @@ const inspect::Hierarchy* GetChild(const inspect::Hierarchy* parent, std::string
                          [name](const inspect::Hierarchy& h) { return h.name() == name; });
   return (it == parent->children().end()) ? nullptr : &(*it);
 }
-}  // namespace
 
 TEST_F(InspectorTest, DefaultValues) {
   auto hierarchy = GetHierarchy();
@@ -1658,7 +1656,7 @@ class InspectorPacketStreamFormatTest : public InspectorTest,
                                         public ::testing::WithParamInterface<ElementAndFormat> {};
 
 TEST_P(InspectorPacketStreamFormatTest, PacketStreamFormat) {
-  auto param = GetParam();
+  const auto& param = GetParam();
   auto element_id = param.element_id;
   auto format = param.format;
 
@@ -1734,4 +1732,5 @@ INSTANTIATE_TEST_SUITE_P(
         ElementAndFormat{FakeComposite::kSourceDualSupportPsElementId,
                          fad::PacketStreamFormat::WithEncoding(FakeComposite::kDefaultPsFormat3)}));
 
+}  // namespace
 }  // namespace media_audio

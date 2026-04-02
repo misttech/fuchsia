@@ -35,6 +35,7 @@ static constexpr bool kLogDeviceTestNotifyResponses = false;
 // Test class to verify the driver initialization/configuration sequence.
 class DeviceTestBase : public gtest::TestLoopFixture {
  public:
+ protected:
   void SetUp() override {
     // Use our production Inspector during device unittests.
     media_audio::Inspector::Initialize(dispatcher());
@@ -44,8 +45,7 @@ class DeviceTestBase : public gtest::TestLoopFixture {
   }
   void TearDown() override { fake_device_presence_watcher_.reset(); }
 
- protected:
-  static inline const std::string kClassName = "DeviceTestBase";
+  static constexpr std::string_view kClassName = "DeviceTestBase";
   static fuchsia_audio_device::Info GetDeviceInfo(const std::shared_ptr<Device>& device) {
     return *device->info();
   }

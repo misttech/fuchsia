@@ -22,7 +22,7 @@
 #include <string_view>
 
 #include "src/media/audio/services/device_registry/basic_types.h"
-#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
+#include "src/media/audio/services/device_registry/logging.h"
 
 namespace media_audio {
 

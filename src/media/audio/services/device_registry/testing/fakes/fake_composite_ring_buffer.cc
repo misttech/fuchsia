@@ -18,6 +18,7 @@
 #include "src/media/audio/services/device_registry/basic_types.h"
 #include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
+#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
 
 namespace media_audio {
 
@@ -73,13 +74,13 @@ void FakeCompositeRingBuffer::GetProperties(GetPropertiesCompleter::Sync& comple
 
   fha::RingBufferProperties props;
   if (needs_cache_flush_or_invalidate_.has_value()) {
-    props.needs_cache_flush_or_invalidate(*needs_cache_flush_or_invalidate_);
+    props.needs_cache_flush_or_invalidate(needs_cache_flush_or_invalidate_);
   }
   if (turn_on_delay_.has_value()) {
     props.turn_on_delay(turn_on_delay_->get());
   }
   if (driver_transfer_bytes_.has_value()) {
-    props.driver_transfer_bytes(*driver_transfer_bytes_);
+    props.driver_transfer_bytes(driver_transfer_bytes_);
   }
   completer.Reply(props);
 }
@@ -94,7 +95,7 @@ void FakeCompositeRingBuffer::GetVmo(GetVmoRequest& request, GetVmoCompleter::Sy
   }
 
   auto total_requested_size =
-      driver_transfer_bytes_.value_or(0) + request.min_frames() * bytes_per_frame_;
+      driver_transfer_bytes_.value_or(0) + (request.min_frames() * bytes_per_frame_);
   if (total_requested_size > allocated_size_) {
     ADR_WARN_METHOD() << "Requested size " << total_requested_size << " exceeds allocated size "
                       << allocated_size_;
@@ -102,7 +103,7 @@ void FakeCompositeRingBuffer::GetVmo(GetVmoRequest& request, GetVmoCompleter::Sy
     return;
   }
   clock_recovery_notifications_per_ring_ = request.clock_recovery_notifications_per_ring();
-  requested_frames_ = (total_requested_size - 1) / bytes_per_frame_ + 1;
+  requested_frames_ = ((total_requested_size - 1) / bytes_per_frame_) + 1;
 
   // Dup our ring buffer VMO to send over the channel.
   zx::vmo out_vmo;

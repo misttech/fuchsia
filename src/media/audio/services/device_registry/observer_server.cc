@@ -283,13 +283,13 @@ void ObserverServer::WatchElementState(WatchElementStateRequest& request,
   }
 
   ElementId element_id = request.processing_element_id();
-  if (device_->element_ids().find(element_id) == device_->element_ids().end()) {
+  if (!device_->element_ids().contains(element_id)) {
     ADR_WARN_METHOD() << "unknown element_id " << element_id;
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
-  if (watch_element_state_completers_.find(element_id) != watch_element_state_completers_.end()) {
+  if (watch_element_state_completers_.contains(element_id)) {
     ADR_WARN_METHOD() << "previous `WatchElementState(" << element_id
                       << ")` request has not yet completed";
     completer.Close(ZX_ERR_BAD_STATE);
@@ -311,8 +311,8 @@ void ObserverServer::ElementStateIsChanged(
 
 // If we have an outstanding hanging-get and a state-change, respond with the state change.
 void ObserverServer::MaybeCompleteWatchElementState(ElementId element_id) {
-  if (watch_element_state_completers_.find(element_id) != watch_element_state_completers_.end() &&
-      element_states_to_notify_.find(element_id) != element_states_to_notify_.end()) {
+  if (watch_element_state_completers_.contains(element_id) &&
+      element_states_to_notify_.contains(element_id)) {
     ADR_LOG_METHOD(kLogObserverServerMethods || kLogNotifyMethods)
         << "(" << element_id << ") will Reply";
     auto completer = std::move(watch_element_state_completers_.find(element_id)->second);

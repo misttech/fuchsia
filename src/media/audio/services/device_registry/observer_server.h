@@ -12,7 +12,6 @@
 #include "src/media/audio/services/common/base_fidl_server.h"
 #include "src/media/audio/services/device_registry/device.h"
 #include "src/media/audio/services/device_registry/inspector.h"
-#include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/observer_notify.h"
 
 namespace media_audio {
@@ -29,6 +28,10 @@ class ObserverServer
       fidl::ServerEnd<fuchsia_audio_device::Observer> server_end,
       std::shared_ptr<const Device> device);
 
+  ObserverServer(const ObserverServer&) = delete;
+  ObserverServer(ObserverServer&&) = delete;
+  ObserverServer& operator=(const ObserverServer&) = delete;
+  ObserverServer& operator=(ObserverServer&&) = delete;
   ~ObserverServer() override;
 
   // ObserverNotify
@@ -70,7 +73,7 @@ class ObserverServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline constexpr std::string_view kClassName = "ObserverServer";
+  static constexpr std::string_view kClassName = "ObserverServer";
   static inline uint64_t count_ = 0;
 
   explicit ObserverServer(std::shared_ptr<const Device> device);

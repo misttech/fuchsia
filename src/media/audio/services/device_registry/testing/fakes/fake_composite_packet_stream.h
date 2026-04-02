@@ -16,7 +16,7 @@
 #include <optional>
 #include <string_view>
 
-#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
+#include "src/media/audio/services/device_registry/basic_types.h"
 
 namespace media_audio {
 

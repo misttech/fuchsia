@@ -4,6 +4,7 @@
 
 #ifndef SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKES_LOGGING_H_
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_TESTING_FAKES_LOGGING_H_
+
 #include "src/media/audio/services/device_registry/logging.h"
 
 namespace media_audio {

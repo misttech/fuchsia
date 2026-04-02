@@ -56,10 +56,18 @@ fha::SupportedFormats2 CompliantPcmFormatSet() {
               }},
           }},
       }},
-      .sample_formats = {{fha::SampleFormat::kPcmSigned}},
-      .bytes_per_sample = {{2}},
-      .valid_bits_per_sample = {{16}},
-      .frame_rates = {{48000}},
+      .sample_formats = {{
+          fha::SampleFormat::kPcmSigned,
+      }},
+      .bytes_per_sample = {{
+          2,
+      }},
+      .valid_bits_per_sample = {{
+          16,
+      }},
+      .frame_rates = {{
+          48000,
+      }},
   }});
 }
 
@@ -75,8 +83,12 @@ fha::SupportedFormats2 CompliantEncodingSet() {
               }},
           }},
       }},
-      .decoded_frame_rates = {{44100}},
-      .encoding_types = {{fha::EncodingType::kAac}},
+      .decoded_frame_rates = {{
+          44100,
+      }},
+      .encoding_types = {{
+          fha::EncodingType::kAac,
+      }},
   }});
 }
 
@@ -106,15 +118,22 @@ TEST(ValidateWarningTest, RingBufferSupportedFormatsFrameRatesInvalid) {
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Too low frame_rate
-  supported_formats.at(0).pcm_supported_formats().value().frame_rates() = {{999}};
+  supported_formats.at(0).pcm_supported_formats().value().frame_rates() = {{
+      999,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Too high frame_rate
-  supported_formats.at(0).pcm_supported_formats().value().frame_rates() = {{192001}};
+  supported_formats.at(0).pcm_supported_formats().value().frame_rates() = {{
+      192001,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Out-of-order frame_rates
-  supported_formats.at(0).pcm_supported_formats().value().frame_rates() = {{48000, 44100}};
+  supported_formats.at(0).pcm_supported_formats().value().frame_rates() = {{
+      48000,
+      44100,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 }
 
@@ -137,11 +156,11 @@ TEST(ValidateWarningTest, RingBufferSupportedFormatsChannelSetsInvalid) {
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Empty attributes vector
-  supported_formats.at(0).pcm_supported_formats().value().channel_sets() = {{
-      {
+  supported_formats.at(0).pcm_supported_formats().value().channel_sets() = {
+      {{
           .attributes = {{}},
-      },
-  }};
+      }},
+  };
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Duplicate channel_set lengths
@@ -212,7 +231,9 @@ TEST(ValidateWarningTest, RingBufferSupportedFormatsSampleFormatsInvalid) {
 
 // Negative-test ValidateRingBufferFormatSets for bytes_per_sample
 TEST(ValidateWarningTest, RingBufferSupportedFormatsBytesPerSampleInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
+  std::vector<fha::SupportedFormats2> supported_formats{
+      CompliantPcmFormatSet(),
+  };
 
   // Missing bytes_per_sample
   supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = std::nullopt;
@@ -223,41 +244,73 @@ TEST(ValidateWarningTest, RingBufferSupportedFormatsBytesPerSampleInvalid) {
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Out-of-order bytes_per_sample
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{4, 2}};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      4,
+      2,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Bad bytes_per_sample - unsigned
-  supported_formats.at(0).pcm_supported_formats().value().sample_formats() = {
-      {fha::SampleFormat::kPcmUnsigned}};
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{0, 1}};
+  supported_formats.at(0).pcm_supported_formats().value().sample_formats() = {{
+      fha::SampleFormat::kPcmUnsigned,
+  }};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      0,
+      1,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{1, 2}};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      1,
+      2,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Bad bytes_per_sample - signed
-  supported_formats.at(0).pcm_supported_formats().value().sample_formats() = {
-      {fha::SampleFormat::kPcmSigned}};
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{1, 2}};
+  supported_formats.at(0).pcm_supported_formats().value().sample_formats() = {{
+      fha::SampleFormat::kPcmSigned,
+  }};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      1,
+      2,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{3, 4}};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      3,
+      4,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{2, 8}};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      2,
+      8,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Bad bytes_per_sample - float
-  supported_formats.at(0).pcm_supported_formats().value().sample_formats() = {
-      {fha::SampleFormat::kPcmFloat}};
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{2, 4}};
+  supported_formats.at(0).pcm_supported_formats().value().sample_formats() = {{
+      fha::SampleFormat::kPcmFloat,
+  }};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      2,
+      4,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{6, 8}};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      6,
+      8,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
-  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{4, 16}};
+  supported_formats.at(0).pcm_supported_formats().value().bytes_per_sample() = {{
+      4,
+      16,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 }
 
 // Negative-test ValidateRingBufferFormatSets for valid_bits_per_sample
 TEST(ValidateWarningTest, RingBufferSupportedFormatsValidBitsPerSampleInvalid) {
-  std::vector<fha::SupportedFormats2> supported_formats{CompliantPcmFormatSet()};
+  std::vector<fha::SupportedFormats2> supported_formats{
+      CompliantPcmFormatSet(),
+  };
 
   // Missing valid_bits_per_sample
   supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = std::nullopt;
@@ -268,15 +321,24 @@ TEST(ValidateWarningTest, RingBufferSupportedFormatsValidBitsPerSampleInvalid) {
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Out-of-order valid_bits_per_sample
-  supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = {{16, 15}};
+  supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = {{
+      16,
+      15,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Too low valid_bits_per_sample
-  supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = {{0, 16}};
+  supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = {{
+      0,
+      16,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 
   // Too high valid_bits_per_sample
-  supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = {{16, 18}};
+  supported_formats.at(0).pcm_supported_formats().value().valid_bits_per_sample() = {{
+      16,
+      18,
+  }};
   EXPECT_FALSE(ValidateRingBufferFormatSets(supported_formats));
 }
 
@@ -452,9 +514,26 @@ TEST(ValidateWarningTest, PcmFormatInvalid) {
 // Negative-test ValidateSampleFormatCompatibility
 TEST(ValidateWarningTest, FormatIncompatibility) {
   const std::set<std::pair<uint8_t, fha::SampleFormat>> kAllowedFormats{
-      {1, fha::SampleFormat::kPcmUnsigned}, {2, fha::SampleFormat::kPcmSigned},
-      {4, fha::SampleFormat::kPcmSigned},   {4, fha::SampleFormat::kPcmFloat},
-      {8, fha::SampleFormat::kPcmFloat},
+      {
+          1,
+          fha::SampleFormat::kPcmUnsigned,
+      },
+      {
+          2,
+          fha::SampleFormat::kPcmSigned,
+      },
+      {
+          4,
+          fha::SampleFormat::kPcmSigned,
+      },
+      {
+          4,
+          fha::SampleFormat::kPcmFloat,
+      },
+      {
+          8,
+          fha::SampleFormat::kPcmFloat,
+      },
   };
   const std::vector<uint8_t> kSampleSizesToTest{
       0, 1, 2, 3, 4, 6, 8,
@@ -467,7 +546,7 @@ TEST(ValidateWarningTest, FormatIncompatibility) {
 
   for (auto sample_size : kSampleSizesToTest) {
     for (auto sample_format : kSampleFormatsToTest) {
-      if (kAllowedFormats.find({sample_size, sample_format}) == kAllowedFormats.end()) {
+      if (!kAllowedFormats.contains({sample_size, sample_format})) {
         EXPECT_FALSE(ValidateSampleFormatCompatibility(sample_size, sample_format));
       }
     }
@@ -591,7 +670,9 @@ TEST(ValidateWarningTest, PacketStreamSupportedFormatsFrameRatesInvalid) {
 
   // PCM variant: too low
   auto pcm_set = CompliantPcmFormatSet();
-  pcm_set.pcm_supported_formats()->frame_rates() = {{999}};
+  pcm_set.pcm_supported_formats()->frame_rates() = {{
+      999,
+  }};
   ps_format_sets.push_back(std::move(pcm_set));
   EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
 
@@ -612,7 +693,9 @@ TEST(ValidateWarningTest, PacketStreamSupportedFormatsFrameRatesInvalid) {
   // Encoding variant: too high
   ps_format_sets.clear();
   auto encoding_set = CompliantEncodingSet();
-  encoding_set.supported_encodings()->decoded_frame_rates() = {{192001}};
+  encoding_set.supported_encodings()->decoded_frame_rates() = {{
+      192001,
+  }};
   ps_format_sets.push_back(std::move(encoding_set));
   EXPECT_FALSE(ValidatePacketStreamFormatSets(ps_format_sets));
 
@@ -699,19 +782,21 @@ TEST(ValidateWarningTest, PacketStreamSupportedFormatsNyquistLimitWarning) {
 
 TEST(ValidateWarningTest, CompositePropertiesInvalid) {
   // This should be an accepted configuration; the below cases are based on this.
-  EXPECT_TRUE(ValidateCompositeProperties(
-      fha::CompositeProperties{{.clock_domain = fha::kClockDomainMonotonic}}))
-      << "baseline";
+  EXPECT_TRUE(ValidateCompositeProperties(fha::CompositeProperties{{
+      .clock_domain = fha::kClockDomainMonotonic,
+  }})) << "baseline";
 
   // manufacturer, if present, cannot be empty
-  EXPECT_FALSE(ValidateCompositeProperties(
-      fha::CompositeProperties{{.manufacturer = "", .clock_domain = fha::kClockDomainMonotonic}}))
-      << "empty manufacturer";
+  EXPECT_FALSE(ValidateCompositeProperties(fha::CompositeProperties{{
+      .manufacturer = "",
+      .clock_domain = fha::kClockDomainMonotonic,
+  }})) << "empty manufacturer";
 
   // product, if present, cannot be empty
-  EXPECT_FALSE(ValidateCompositeProperties(
-      fha::CompositeProperties{{.product = "", .clock_domain = fha::kClockDomainMonotonic}}))
-      << "empty product";
+  EXPECT_FALSE(ValidateCompositeProperties(fha::CompositeProperties{{
+      .product = "",
+      .clock_domain = fha::kClockDomainMonotonic,
+  }})) << "empty product";
 
   // clock_domain is required
   EXPECT_FALSE(ValidateCompositeProperties(fha::CompositeProperties{})) << "missing clock_domain";
@@ -752,133 +837,245 @@ TEST(ValidateWarningTest, DaiSupportedFormatsInvalid) {
   // each empty
   EXPECT_FALSE(ValidateDaiFormatSets({{
       {{
-          // .number_of_channels = {1},
+          // .number_of_channels = {1,},
           .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
           .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
               fha::DaiFrameFormatStandard::kI2S)},
-          .frame_rates = {48000},
-          .bits_per_slot = {32},
-          .bits_per_sample = {16},
+          .frame_rates =
+              {
+                  48000,
+              },
+          .bits_per_slot =
+              {
+                  32,
+              },
+          .bits_per_sample =
+              {
+                  16,
+              },
       }},
   }}));
   EXPECT_FALSE(ValidateDaiFormatSets({{
       {{
-          .number_of_channels = {1},
+          .number_of_channels =
+              {
+                  1,
+              },
           // .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
           .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
               fha::DaiFrameFormatStandard::kI2S)},
-          .frame_rates = {48000},
-          .bits_per_slot = {32},
-          .bits_per_sample = {16},
+          .frame_rates =
+              {
+                  48000,
+              },
+          .bits_per_slot =
+              {
+                  32,
+              },
+          .bits_per_sample =
+              {
+                  16,
+              },
       }},
   }}));
   EXPECT_FALSE(ValidateDaiFormatSets({{
       {{
-          .number_of_channels = {1},
+          .number_of_channels =
+              {
+                  1,
+              },
           .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
           // .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
           //     fha::DaiFrameFormatStandard::kI2S)},
-          .frame_rates = {48000},
-          .bits_per_slot = {32},
-          .bits_per_sample = {16},
+          .frame_rates =
+              {
+                  48000,
+              },
+          .bits_per_slot =
+              {
+                  32,
+              },
+          .bits_per_sample =
+              {
+                  16,
+              },
       }},
   }}));
   EXPECT_FALSE(ValidateDaiFormatSets({{
       {{
-          .number_of_channels = {1},
+          .number_of_channels =
+              {
+                  1,
+              },
           .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
           .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
               fha::DaiFrameFormatStandard::kI2S)},
-          // .frame_rates = {48000},
-          .bits_per_slot = {32},
-          .bits_per_sample = {16},
+          // .frame_rates = {48000,},
+          .bits_per_slot =
+              {
+                  32,
+              },
+          .bits_per_sample =
+              {
+                  16,
+              },
       }},
   }}));
   EXPECT_FALSE(ValidateDaiFormatSets({{
       {{
-          .number_of_channels = {1},
+          .number_of_channels =
+              {
+                  1,
+              },
           .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
           .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
               fha::DaiFrameFormatStandard::kI2S)},
-          .frame_rates = {48000},
-          // .bits_per_slot = {32},
-          .bits_per_sample = {16},
+          .frame_rates =
+              {
+                  48000,
+              },
+          // .bits_per_slot = {32,},
+          .bits_per_sample =
+              {
+                  16,
+              },
       }},
   }}));
   EXPECT_FALSE(ValidateDaiFormatSets({{
       {{
-          .number_of_channels = {1},
+          .number_of_channels =
+              {
+                  1,
+              },
           .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
           .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
               fha::DaiFrameFormatStandard::kI2S)},
-          .frame_rates = {48000},
-          .bits_per_slot = {32},
-          // .bits_per_sample = {16},
+          .frame_rates =
+              {
+                  48000,
+              },
+          .bits_per_slot =
+              {
+                  32,
+              },
+          // .bits_per_sample = {16,},
       }},
   }}));
 
   const fha::DaiSupportedFormats valid = {{
-      .number_of_channels = {1},
+      .number_of_channels =
+          {
+              1,
+          },
       .sample_formats = {fha::DaiSampleFormat::kPcmSigned},
-      .frame_formats = {fha::DaiFrameFormat::WithFrameFormatStandard(
-          fha::DaiFrameFormatStandard::kI2S)},
-      .frame_rates = {48000},
-      .bits_per_slot = {32},
-      .bits_per_sample = {16},
+      .frame_formats =
+          {
+              fha::DaiFrameFormat::WithFrameFormatStandard(fha::DaiFrameFormatStandard::kI2S),
+          },
+      .frame_rates =
+          {
+              48000,
+          },
+      .bits_per_slot =
+          {
+              32,
+          },
+      .bits_per_sample =
+          {
+              16,
+          },
   }};
 
   // values too small
   fha::DaiSupportedFormats fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.number_of_channels({0, 1, 2}),
+      fmts.number_of_channels({
+          0,
+          1,
+          2,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.frame_rates({0, 48000}),
+      fmts.frame_rates({
+          0,
+          48000,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.bits_per_slot({0, 32}),
+      fmts.bits_per_slot({
+          0,
+          32,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.bits_per_sample({0, 16}),
+      fmts.bits_per_sample({
+          0,
+          16,
+      }),
   }}));
 
   // values too large
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.number_of_channels({1, 2, 65}),
+      fmts.number_of_channels({
+          1,
+          2,
+          65,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.frame_rates({48000, 2'000'000'000}),
+      fmts.frame_rates({
+          48000,
+          2'000'000'000,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.bits_per_slot({32, 65}),
+      fmts.bits_per_slot({
+          32,
+          65,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.bits_per_sample({16, 33}),
+      fmts.bits_per_sample({
+          16,
+          33,
+      }),
   }}));
 
   // values out of order
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.number_of_channels({2, 1}),
+      fmts.number_of_channels({
+          2,
+          1,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.frame_rates({48000, 44100}),
+      fmts.frame_rates({
+          48000,
+          44100,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.bits_per_slot({32, 16}),
+      fmts.bits_per_slot({
+          32,
+          16,
+      }),
   }}));
   fmts = valid;
   EXPECT_FALSE(ValidateDaiFormatSets({{
-      fmts.bits_per_sample({16, 8}),
+      fmts.bits_per_sample({
+          16,
+          8,
+      }),
   }}));
 }
 
@@ -1336,8 +1533,13 @@ TEST(ValidateWarningTest, ElementStateWithIncorrectTypeSpecificState) {
 
   // Element is an DaiInterconnect, but the state has an Equalizer type_specific table.
   fhasp::ElementState state_with_incorrect_type_specific = kDaiInterconnectElementState;
-  state_with_incorrect_type_specific.type_specific(
-      fhasp::TypeSpecificElementState::WithEqualizer({{.band_states = {{{{.id = 0}}}}}}));
+  state_with_incorrect_type_specific.type_specific(fhasp::TypeSpecificElementState::WithEqualizer({{
+      .band_states = {{
+          {{
+              .id = 0,
+          }},
+      }},
+  }}));
   EXPECT_FALSE(ValidateElementState(state_with_incorrect_type_specific, kDaiInterconnectElement));
 }
 
@@ -1349,7 +1551,13 @@ TEST(ValidateWarningTest, SettableElementStateWithIncorrectTypeSpecificState) {
   // Element is an Endpoint, but the state has an Equalizer type_specific table.
   fhasp::SettableElementState state_with_incorrect_type_specific = kSettableDynamicsElementState;
   state_with_incorrect_type_specific.type_specific(
-      fhasp::SettableTypeSpecificElementState::WithEqualizer({{.band_states = {{{{.id = 0}}}}}}));
+      fhasp::SettableTypeSpecificElementState::WithEqualizer({{
+          .band_states = {{
+              {{
+                  .id = 0,
+              }},
+          }},
+      }}));
   EXPECT_FALSE(ValidateSettableElementState(state_with_incorrect_type_specific, kDynamicsElement));
 }
 
@@ -1901,7 +2109,7 @@ TEST(ValidateWarningTest, EqualizerElementStateInvalid) {
   {
     auto eq_state_freq_too_low = kEqualizerElementState;
     eq_state_freq_too_low.type_specific()->equalizer()->band_states()->at(0).frequency(
-        *kEqualizerElement.type_specific()->equalizer()->min_frequency());
+        kEqualizerElement.type_specific()->equalizer()->min_frequency());
     auto eq_element = kEqualizerElement;
     eq_element.type_specific()->equalizer()->min_frequency(
         *eq_element.type_specific()->equalizer()->min_frequency() + 1);
@@ -1911,7 +2119,7 @@ TEST(ValidateWarningTest, EqualizerElementStateInvalid) {
   {
     auto eq_state_freq_too_high = kEqualizerElementState;
     eq_state_freq_too_high.type_specific()->equalizer()->band_states()->at(0).frequency(
-        *kEqualizerElement.type_specific()->equalizer()->max_frequency());
+        kEqualizerElement.type_specific()->equalizer()->max_frequency());
     auto eq_element = kEqualizerElement;
     eq_element.type_specific()->equalizer()->max_frequency(
         *eq_element.type_specific()->equalizer()->max_frequency() - 1);
@@ -2005,7 +2213,7 @@ TEST(ValidateWarningTest, SettableEqualizerElementStateInvalid) {
   {
     auto eq_state_freq_too_low = kSettableEqualizerElementState;
     eq_state_freq_too_low.type_specific()->equalizer()->band_states()->at(0).frequency(
-        *kEqualizerElement.type_specific()->equalizer()->min_frequency());
+        kEqualizerElement.type_specific()->equalizer()->min_frequency());
     auto eq_element = kEqualizerElement;
     eq_element.type_specific()->equalizer()->min_frequency(
         *eq_element.type_specific()->equalizer()->min_frequency() + 1);
@@ -2015,7 +2223,7 @@ TEST(ValidateWarningTest, SettableEqualizerElementStateInvalid) {
   {
     auto eq_state_freq_too_high = kSettableEqualizerElementState;
     eq_state_freq_too_high.type_specific()->equalizer()->band_states()->at(0).frequency(
-        *kEqualizerElement.type_specific()->equalizer()->max_frequency());
+        kEqualizerElement.type_specific()->equalizer()->max_frequency());
     auto eq_element = kEqualizerElement;
     eq_element.type_specific()->equalizer()->max_frequency(
         *eq_element.type_specific()->equalizer()->max_frequency() - 1);

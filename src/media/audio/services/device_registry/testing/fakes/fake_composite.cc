@@ -18,6 +18,7 @@
 #include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite_packet_stream.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite_ring_buffer.h"
+#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
 namespace media_audio {
 
 namespace fha = fuchsia_hardware_audio;
@@ -358,23 +359,62 @@ fidl::ClientEnd<fha::Composite> FakeComposite::Enable() {
 }
 
 void FakeComposite::SetupElementsMap() {
-  elements_.insert({kSourceDaiElementId, FakeElementRecord{.element = kSourceDaiElement,
-                                                           .state = kSourceDaiElementInitState}});
-  elements_.insert({kDestDaiElementId, FakeElementRecord{.element = kDestDaiElement,
-                                                         .state = kDestDaiElementInitState}});
-  elements_.insert({kDestRbElementId, FakeElementRecord{.element = kDestRbElement,
-                                                        .state = kDestRbElementInitState}});
-  elements_.insert({kDestPsElementId, FakeElementRecord{.element = kDestPsElement,
-                                                        .state = kDestPsElementInitState}});
-  elements_.insert({kSourceRbElementId, FakeElementRecord{.element = kSourceRbElement,
-                                                          .state = kSourceRbElementInitState}});
-  elements_.insert({kSourcePsElementId, FakeElementRecord{.element = kSourcePsElement,
-                                                          .state = kSourcePsElementInitState}});
-  elements_.insert({kSourceDualSupportPsElementId,
-                    FakeElementRecord{.element = kSourceDualSupportPsElement,
-                                      .state = kSourceDualSupportPsElementInitState}});
-  elements_.insert(
-      {kMuteElementId, FakeElementRecord{.element = kMuteElement, .state = kMuteElementInitState}});
+  elements_.insert({
+      kSourceDaiElementId,
+      FakeElementRecord{
+          .element = kSourceDaiElement,
+          .state = kSourceDaiElementInitState,
+      },
+  });
+  elements_.insert({
+      kDestDaiElementId,
+      FakeElementRecord{
+          .element = kDestDaiElement,
+          .state = kDestDaiElementInitState,
+      },
+  });
+  elements_.insert({
+      kDestRbElementId,
+      FakeElementRecord{
+          .element = kDestRbElement,
+          .state = kDestRbElementInitState,
+      },
+  });
+  elements_.insert({
+      kDestPsElementId,
+      FakeElementRecord{
+          .element = kDestPsElement,
+          .state = kDestPsElementInitState,
+      },
+  });
+  elements_.insert({
+      kSourceRbElementId,
+      FakeElementRecord{
+          .element = kSourceRbElement,
+          .state = kSourceRbElementInitState,
+      },
+  });
+  elements_.insert({
+      kSourcePsElementId,
+      FakeElementRecord{
+          .element = kSourcePsElement,
+          .state = kSourcePsElementInitState,
+      },
+  });
+  elements_.insert({
+      kSourceDualSupportPsElementId,
+      FakeElementRecord{
+          .element = kSourceDualSupportPsElement,
+          .state = kSourceDualSupportPsElementInitState,
+      },
+  });
+  elements_.insert({
+      kMuteElementId,
+      FakeElementRecord{
+          .element = kMuteElement,
+          .state = kMuteElementInitState,
+      },
+  });
 
   ASSERT_TRUE(elements_.at(kSourceDaiElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kDestDaiElementId).state_has_changed);
@@ -402,7 +442,9 @@ void FakeComposite::GetHealthState(GetHealthStateCompleter::Sync& completer) {
   }
 
   if (healthy_.has_value()) {
-    completer.Reply(fha::HealthState{{healthy_}});
+    completer.Reply(fha::HealthState{{
+        healthy_,
+    }});
   } else {
     completer.Reply({});
   }
@@ -650,7 +692,10 @@ void FakeComposite::CreateRingBuffer(CreateRingBufferRequest& request,
   }
 
   ring_buffers_.erase(element_id);
-  ring_buffers_.insert({element_id, std::move(ring_buffer_impl)});
+  ring_buffers_.insert({
+      element_id,
+      std::move(ring_buffer_impl),
+  });
   ring_buffer_bindings_.insert_or_assign(
       element_id,
       fidl::BindServer(dispatcher_, std::move(request.ring_buffer()),
@@ -712,7 +757,10 @@ void FakeComposite::CreatePacketStream(CreatePacketStreamRequest& request,
       std::make_unique<FakeCompositePacketStream>(this, element_id, request.format(), buffer_types);
 
   packet_streams_.erase(element_id);
-  packet_streams_.insert({element_id, std::move(packet_stream_impl)});
+  packet_streams_.insert({
+      element_id,
+      std::move(packet_stream_impl),
+  });
   packet_stream_bindings_.insert_or_assign(
       element_id,
       fidl::BindServer(dispatcher_, std::move(request.packet_stream_control()),

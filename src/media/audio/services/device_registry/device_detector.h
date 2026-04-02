@@ -38,7 +38,10 @@ class DeviceDetector {
           .path = "/dev/class/audio-composite",
           .device_type = fuchsia_audio_device::DeviceType::kComposite,
       },
-      {.path = "/dev/class/codec", .device_type = fuchsia_audio_device::DeviceType::kCodec},
+      {
+          .path = "/dev/class/codec",
+          .device_type = fuchsia_audio_device::DeviceType::kCodec,
+      },
   };
 
  public:

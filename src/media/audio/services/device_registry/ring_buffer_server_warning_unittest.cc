@@ -25,6 +25,9 @@ namespace fad = fuchsia_audio_device;
 
 class RingBufferServerWarningTest : public AudioDeviceRegistryServerTestBase,
                                     public fidl::AsyncEventHandler<fad::RingBuffer> {
+ public:
+  void handle_unknown_event(fidl::UnknownEventMetadata<fad::RingBuffer> metadata) override;
+
  protected:
   static fad::RingBufferOptions DefaultRingBufferOptions() {
     return {{
@@ -45,12 +48,13 @@ class RingBufferServerWarningTest : public AudioDeviceRegistryServerTestBase,
         fidl::Client<fad::RingBuffer>(std::move(ring_buffer_client_end), dispatcher(), this);
     return std::make_pair(std::move(ring_buffer_client), std::move(ring_buffer_server_end));
   }
-
-  void handle_unknown_event(fidl::UnknownEventMetadata<fad::RingBuffer> metadata) override {
-    FAIL() << "RingBufferServerWarningTest: unknown event (RingBuffer) ordinal "
-           << metadata.event_ordinal;
-  }
 };
+
+void RingBufferServerWarningTest::handle_unknown_event(
+    fidl::UnknownEventMetadata<fad::RingBuffer> metadata) {
+  FAIL() << "RingBufferServerWarningTest: unknown event (RingBuffer) ordinal "
+         << metadata.event_ordinal;
+}
 
 class RingBufferServerCompositeWarningTest : public RingBufferServerWarningTest {
  protected:
@@ -94,9 +98,12 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsMissingChannelBitm
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -150,9 +157,12 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsBadChannelBitmask)
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -206,9 +216,12 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsWhilePending) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -222,13 +235,19 @@ TEST_F(RingBufferServerCompositeWarningTest, SetActiveChannelsWhilePending) {
             (1u << *format.channel_count()) - 1u);
   bool received_callback_1 = false, received_callback_2 = false;
 
-  ring_buffer_client->SetActiveChannels({{1}}).Then(
-      [&received_callback_1](fidl::Result<fad::RingBuffer::SetActiveChannels>& result) {
+  ring_buffer_client
+      ->SetActiveChannels({{
+          1,
+      }})
+      .Then([&received_callback_1](fidl::Result<fad::RingBuffer::SetActiveChannels>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
         received_callback_1 = true;
       });
-  ring_buffer_client->SetActiveChannels({{0}}).Then(
-      [&received_callback_2](fidl::Result<fad::RingBuffer::SetActiveChannels>& result) {
+  ring_buffer_client
+      ->SetActiveChannels({{
+          0,
+      }})
+      .Then([&received_callback_2](fidl::Result<fad::RingBuffer::SetActiveChannels>& result) {
         ASSERT_TRUE(result.is_error()) << result.error_value();
         ASSERT_TRUE(result.error_value().is_domain_error()) << result.error_value();
         EXPECT_EQ(result.error_value().domain_error(),
@@ -264,9 +283,12 @@ TEST_F(RingBufferServerCompositeWarningTest, StartWhilePending) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -323,9 +345,12 @@ TEST_F(RingBufferServerCompositeWarningTest, StartWhileStarted) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -388,9 +413,12 @@ TEST_F(RingBufferServerCompositeWarningTest, StopBeforeStarted) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -438,9 +466,12 @@ TEST_F(RingBufferServerCompositeWarningTest, StopWhilePending) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -513,9 +544,12 @@ TEST_F(RingBufferServerCompositeWarningTest, StopAfterStopped) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -592,9 +626,12 @@ TEST_F(RingBufferServerCompositeWarningTest, WatchDelayInfoWhilePending) {
 
   control_->client()
       ->CreateRingBuffer({{
-          element_id,
-          fad::RingBufferOptions{{.format = format, .ring_buffer_min_bytes = 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = element_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();

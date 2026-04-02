@@ -18,6 +18,7 @@
 #include "src/media/audio/services/device_registry/basic_types.h"
 #include "src/media/audio/services/device_registry/logging.h"
 #include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
+#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
 
 namespace media_audio {
 
@@ -80,7 +81,10 @@ void FakeCompositePacketStream::AllocateVmos(AllocateVmosRequest& request,
     zx::vmo out_vmo;
     record.vmo.duplicate(ZX_RIGHT_READ | ZX_RIGHT_WRITE | ZX_RIGHT_MAP | ZX_RIGHT_TRANSFER,
                          &out_vmo);
-    out_vmos.push_back(fha::VmoInfo{{.id = i, .vmo = std::move(out_vmo)}});
+    out_vmos.push_back(fha::VmoInfo{{
+        .id = i,
+        .vmo = std::move(out_vmo),
+    }});
     vmos_[i] = std::move(record);
   }
   buffers_configured_ = true;

@@ -35,20 +35,33 @@ const std::vector<uint32_t> FakeComposite::kDefaultDaiNumberOfChannelsSet2{
 const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet{
     kDefaultDaiSampleFormat};
 const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet2{
-    kDefaultDaiSampleFormat, kDefaultDaiSampleFormat2};
+    kDefaultDaiSampleFormat,
+    kDefaultDaiSampleFormat2,
+};
 const std::vector<fha::DaiFrameFormat> FakeComposite::kDefaultDaiFrameFormatSet{
-    kDefaultDaiFrameFormat, kDefaultDaiFrameFormat2};
+    kDefaultDaiFrameFormat,
+    kDefaultDaiFrameFormat2,
+};
 const std::vector<fha::DaiFrameFormat> FakeComposite::kDefaultDaiFrameFormatSet2{
-    kDefaultDaiFrameFormat2};
+    kDefaultDaiFrameFormat2,
+};
 const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRateSet{kDefaultDaiFrameRate};
-const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRateSet2{kDefaultDaiFrameRate,
-                                                                    kDefaultDaiFrameRate2};
-const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSlotSet{kDefaultDaiBitsPerSlot,
-                                                                    kDefaultDaiBitsPerSlot2};
-const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSlotSet2{kDefaultDaiBitsPerSlot2};
+const std::vector<uint32_t> FakeComposite::kDefaultDaiFrameRateSet2{
+    kDefaultDaiFrameRate,
+    kDefaultDaiFrameRate2,
+};
+const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSlotSet{
+    kDefaultDaiBitsPerSlot,
+    kDefaultDaiBitsPerSlot2,
+};
+const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSlotSet2{
+    kDefaultDaiBitsPerSlot2,
+};
 const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSampleSet{kDefaultDaiBitsPerSample};
-const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSampleSet2{kDefaultDaiBitsPerSample,
-                                                                       kDefaultDaiBitsPerSample2};
+const std::vector<uint8_t> FakeComposite::kDefaultDaiBitsPerSampleSet2{
+    kDefaultDaiBitsPerSample,
+    kDefaultDaiBitsPerSample2,
+};
 
 const fha::DaiSupportedFormats FakeComposite::kDefaultDaiFormatSet{{
     .number_of_channels = kDefaultDaiNumberOfChannelsSet,
@@ -71,13 +84,17 @@ const fha::DaiSupportedFormats FakeComposite::kDefaultDaiFormatSet2{{
 const std::vector<fha::DaiSupportedFormats> FakeComposite::kDefaultDaiFormatSets{
     kDefaultDaiFormatSet};
 const std::vector<fha::DaiSupportedFormats> FakeComposite::kDefaultDaiFormatSets2{
-    kDefaultDaiFormatSet2};
+    kDefaultDaiFormatSet2,
+};
 
 // Map of Dai format sets, by element. Used within the driver.
 const std::unordered_map<ElementId, std::vector<fha::DaiSupportedFormats>>
     FakeComposite::kDefaultDaiFormatsMap = {{
         {kSourceDaiElementId, kDefaultDaiFormatSets},
-        {kDestDaiElementId, kDefaultDaiFormatSets2},
+        {
+            kDestDaiElementId,
+            kDefaultDaiFormatSets2,
+        },
     }};
 
 // Specific DAI formats
@@ -135,34 +152,62 @@ const fha::ChannelSet FakeComposite::kDefaultChannelSet3{{
 const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets1{
     kDefaultChannelSet1,
 };
-const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets2{kDefaultChannelSet2};
-const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets3{kDefaultChannelSet3};
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets2{
+    kDefaultChannelSet2,
+};
+const std::vector<fha::ChannelSet> FakeComposite::kDefaultChannelSets3{
+    kDefaultChannelSet3,
+};
 
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats1{
-    kDefaultRbSampleFormat1};
+    kDefaultRbSampleFormat1,
+};
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats2{
-    kDefaultRbSampleFormat2};
+    kDefaultRbSampleFormat2,
+};
 const std::vector<fha::SampleFormat> FakeComposite::kDefaultRbSampleFormats3{
-    kDefaultRbSampleFormat3};
-const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet1{kDefaultRbBytesPerSample1};
-const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet2{kDefaultRbBytesPerSample2};
-const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet3{kDefaultRbBytesPerSample3};
+    kDefaultRbSampleFormat3,
+};
+const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet1{
+    kDefaultRbBytesPerSample1,
+};
+const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet2{
+    kDefaultRbBytesPerSample2,
+};
+const std::vector<uint8_t> FakeComposite::kDefaultRbBytesPerSampleSet3{
+    kDefaultRbBytesPerSample3,
+};
 const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet1{
-    kDefaultRbValidBitsPerSample1};
+    kDefaultRbValidBitsPerSample1,
+};
 const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet2{
-    kDefaultRbValidBitsPerSample2};
+    kDefaultRbValidBitsPerSample2,
+};
 const std::vector<uint8_t> FakeComposite::kDefaultRbValidBitsPerSampleSet3{
-    kDefaultRbValidBitsPerSample3};
-const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates1{kDefaultRbFrameRate1};
-const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates2{kDefaultRbFrameRate2};
-const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates3{kDefaultRbFrameRate3};
-const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates1{kDefaultPsFrameRate1};
-const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates2{kDefaultPsFrameRate2};
+    kDefaultRbValidBitsPerSample3,
+};
+const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates1{
+    kDefaultRbFrameRate1,
+};
+const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates2{
+    kDefaultRbFrameRate2,
+};
+const std::vector<uint32_t> FakeComposite::kDefaultRbFrameRates3{
+    kDefaultRbFrameRate3,
+};
+const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates1{
+    kDefaultPsFrameRate1,
+};
+const std::vector<uint32_t> FakeComposite::kDefaultPsFrameRates2{
+    kDefaultPsFrameRate2,
+};
 
 const std::vector<fuchsia_hardware_audio::EncodingType> FakeComposite::kDefaultPsEncodingTypes1{
-    kDefaultPsEncodingType1};
+    kDefaultPsEncodingType1,
+};
 const std::vector<fuchsia_hardware_audio::EncodingType> FakeComposite::kDefaultPsEncodingTypes2{
-    kDefaultPsEncodingType2};
+    kDefaultPsEncodingType2,
+};
 
 const fha::PcmSupportedFormats FakeComposite::kDefaultPcmRingBufferFormatSet1{{
     .channel_sets = kDefaultChannelSets1,
@@ -224,27 +269,49 @@ const fha::Encoding FakeComposite::kDefaultPsFormat3{{
 
 // RingBuffer and PacketStream format sets that are returned by the driver.
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets1{
-    kDefaultRbFormatSet1};
+    kDefaultRbFormatSet1,
+};
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultRbFormatSets2{
-    kDefaultRbFormatSet2};
+    kDefaultRbFormatSet2,
+};
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultPsFormatSets1{
-    kDefaultPsFormatSet1, kDefaultPsFormatSet3};
+    kDefaultPsFormatSet1,
+    kDefaultPsFormatSet3,
+};
 const std::vector<fha::SupportedFormats2> FakeComposite::kDefaultPsFormatSets2{
-    kDefaultPsFormatSet2};
+    kDefaultPsFormatSet2,
+};
 const std::vector<fha::SupportedFormats2> FakeComposite::kSourceDualSupportPsFormatSets{
-    kDefaultPsFormatSet1, kDefaultPsFormatSet2};
+    kDefaultPsFormatSet1,
+    kDefaultPsFormatSet2,
+};
 
 // Map of RingBuffer format sets, by element. Used internally by the driver.
 const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
     FakeComposite::kDefaultRbFormatsMap = {{
-        {kDestRbElementId, kDefaultRbFormatSets1},
-        {kSourceRbElementId, kDefaultRbFormatSets2},
+        {
+            kDestRbElementId,
+            kDefaultRbFormatSets1,
+        },
+        {
+            kSourceRbElementId,
+            kDefaultRbFormatSets2,
+        },
     }};
 const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
     FakeComposite::kDefaultPsFormatsMap = {{
-        {kDestPsElementId, kDefaultPsFormatSets1},
-        {kSourcePsElementId, kDefaultPsFormatSets2},
-        {kSourceDualSupportPsElementId, kSourceDualSupportPsFormatSets},
+        {
+            kDestPsElementId,
+            kDefaultPsFormatSets1,
+        },
+        {
+            kSourcePsElementId,
+            kDefaultPsFormatSets2,
+        },
+        {
+            kSourceDualSupportPsElementId,
+            kSourceDualSupportPsFormatSets,
+        },
     }};
 
 // signalprocessing elements and topologies
@@ -343,7 +410,17 @@ const fhasp::ElementState FakeComposite::kSourceDaiElementInitState{{
         }},
         .external_delay = 0,
     }}),
-    .vendor_specific_data = std::vector<uint8_t>{1, 2, 3, 4, 5, 6, 7, 8},
+    .vendor_specific_data =
+        std::vector<uint8_t>{
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        },
     .started = false,
     .bypassed = false,
     .processing_delay = kSourceDaiElementProcessingDelay.get(),
@@ -356,7 +433,18 @@ const fhasp::ElementState FakeComposite::kDestDaiElementInitState{{
         }},
         .external_delay = 123,
     }}),
-    .vendor_specific_data = std::vector<uint8_t>{8, 7, 6, 5, 4, 3, 2, 1, 0},
+    .vendor_specific_data =
+        std::vector<uint8_t>{
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+            0,
+        },
     .started = false,
     .bypassed = false,
     .processing_delay = kDestDaiElementProcessingDelay.get(),

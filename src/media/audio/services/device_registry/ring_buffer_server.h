@@ -27,8 +27,12 @@ class RingBufferServer
       fidl::ServerEnd<fuchsia_audio_device::RingBuffer> server_end,
       std::shared_ptr<ControlServer> parent, std::shared_ptr<Device> device, ElementId element_id);
 
+  RingBufferServer(const RingBufferServer&) = delete;
+  RingBufferServer(RingBufferServer&&) = delete;
+  RingBufferServer& operator=(const RingBufferServer&) = delete;
+  RingBufferServer& operator=(RingBufferServer&&) = delete;
+
   ~RingBufferServer() override;
-  void OnShutdown(fidl::UnbindInfo info) override;
   void DeviceDroppedRingBuffer();
   void ClientDroppedControl();
 
@@ -60,11 +64,14 @@ class RingBufferServer
   // Static object count, for debugging purposes.
   static uint64_t count() { return count_; }
 
+ protected:
+  void OnShutdown(fidl::UnbindInfo info) override;
+
  private:
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline constexpr std::string_view kClassName = "RingBufferServer";
+  static constexpr std::string_view kClassName = "RingBufferServer";
   static inline uint64_t count_ = 0;
 
   RingBufferServer(std::shared_ptr<ControlServer> parent, std::shared_ptr<Device> device,

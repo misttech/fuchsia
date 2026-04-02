@@ -772,11 +772,12 @@ TEST_F(CompositeWarningTest, UnresponsiveSetElementStateBecomesError) {
   ASSERT_TRUE(SetControl(device));
 
   RunLoopUntilIdle();
-  ASSERT_TRUE(notify()->element_states().find(FakeComposite::kMuteElementId) !=
-              notify()->element_states().end());
+  ASSERT_TRUE(notify()->element_states().contains(FakeComposite::kMuteElementId));
   notify()->clear_element_states();
-  fuchsia_hardware_audio_signalprocessing::SettableElementState state{
-      {.started = true, .bypassed = false}};
+  fuchsia_hardware_audio_signalprocessing::SettableElementState state{{
+      .started = true,
+      .bypassed = false,
+  }};
 
   fake_driver->set_unresponsive();
   EXPECT_EQ(device->SetElementState(FakeComposite::kMuteElementId, state), ZX_OK);
@@ -1415,7 +1416,10 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosInvalidVmoHandle)
   ASSERT_TRUE(CreatePacketStreamForTest(device, element_id));
 
   std::vector<fha::VmoInfo> vmo_infos_vec;
-  vmo_infos_vec.emplace_back(fha::VmoInfo{{.id = 0, .vmo = zx::vmo()}});
+  vmo_infos_vec.emplace_back(fha::VmoInfo{{
+      .id = 0,
+      .vmo = zx::vmo(),
+  }});
   fha::RegisterVmosConfig register_vmos_config{{
       .vmo_infos = std::move(vmo_infos_vec),
   }};
@@ -1452,7 +1456,10 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosInsufficientRight
   ASSERT_EQ(vmo.replace(ZX_RIGHT_READ | ZX_RIGHT_MAP, &insufficient_rights_vmo), ZX_OK);
 
   std::vector<fha::VmoInfo> vmo_infos;
-  vmo_infos.push_back(fha::VmoInfo{{.id = 0, .vmo = std::move(insufficient_rights_vmo)}});
+  vmo_infos.push_back(fha::VmoInfo{{
+      .id = 0,
+      .vmo = std::move(insufficient_rights_vmo),
+  }});
 
   fha::RegisterVmosConfig register_vmos_config{{
       .vmo_infos = std::move(vmo_infos),
@@ -1520,7 +1527,10 @@ TEST_F(CompositeWarningTest, SetPacketStreamBuffersRegisterVmosDriverError) {
   ASSERT_EQ(zx::vmo::create(8192, 0, &vmo), ZX_OK);
 
   std::vector<fha::VmoInfo> vmo_infos_vec;
-  vmo_infos_vec.emplace_back(fha::VmoInfo{{.id = 0, .vmo = std::move(vmo)}});
+  vmo_infos_vec.emplace_back(fha::VmoInfo{{
+      .id = 0,
+      .vmo = std::move(vmo),
+  }});
   fha::RegisterVmosConfig register_vmos_config{{
       .vmo_infos = std::move(vmo_infos_vec),
   }};

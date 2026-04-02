@@ -160,9 +160,9 @@ class ControlServerCompositeWarningTest : public ControlServerWarningTest {
 
       control_client
           ->CreateRingBuffer({{
-              ring_buffer_id,
-              bad_options,
-              std::move(ring_buffer_server_end),
+              .element_id = ring_buffer_id,
+              .options = bad_options,
+              .ring_buffer_server = std::move(ring_buffer_server_end),
           }})
           .Then([&received_callback,
                  expected_error](fidl::Result<fad::Control::CreateRingBuffer>& result) {
@@ -202,13 +202,17 @@ TEST_F(ControlServerCodecWarningTest, SetDaiFormatWhenAlreadyPending) {
   auto received_callback2 = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
       });
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback2](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback2 = true;
         ASSERT_TRUE(result.is_error());
@@ -243,7 +247,9 @@ TEST_F(ControlServerCodecWarningTest, SetDaiFormatInvalidFormat) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = invalid_dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = invalid_dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         ASSERT_TRUE(result.is_error());
@@ -277,7 +283,9 @@ TEST_F(ControlServerCodecWarningTest, SetDaiFormatUnsupportedFormat) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = unsupported_dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = unsupported_dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         ASSERT_TRUE(result.is_error());
@@ -309,7 +317,9 @@ TEST_F(ControlServerCodecWarningTest, CodecStartWhenAlreadyPending) {
   auto dai_format = SafeDaiFormatFromElementDaiFormatSets(dai_id(), device->dai_format_sets());
   auto received_callback = false;
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -386,7 +396,9 @@ TEST_F(ControlServerCodecWarningTest, CodecStartWhenStarted) {
   auto dai_format = SafeDaiFormatFromElementDaiFormatSets(dai_id(), device->dai_format_sets());
   auto received_callback = false;
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -437,7 +449,9 @@ TEST_F(ControlServerCodecWarningTest, CodecStopWhenAlreadyPending) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -525,7 +539,9 @@ TEST_F(ControlServerCodecWarningTest, CodecStopWhenStopped) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -788,7 +804,12 @@ TEST_F(ControlServerCodecWarningTest, SetElementStateUnsupported) {
   auto received_callback = false;
 
   control->client()
-      ->SetElementState({fad::kDefaultDaiInterconnectElementId, {{.started = false}}})
+      ->SetElementState({
+          fad::kDefaultDaiInterconnectElementId,
+          {{
+              .started = false,
+          }},
+      })
       .Then([&received_callback](fidl::Result<fad::Control::SetElementState>& result) {
         received_callback = true;
         ASSERT_TRUE(result.is_error());
@@ -827,8 +848,8 @@ TEST_F(ControlServerCompositeWarningTest, SetDaiFormatWhenAlreadyPending) {
 
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            dai_format,
+            .element_id = dai_id,
+            .dai_format = dai_format,
         }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
@@ -836,8 +857,8 @@ TEST_F(ControlServerCompositeWarningTest, SetDaiFormatWhenAlreadyPending) {
         });
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            dai_format2,
+            .element_id = dai_id,
+            .dai_format = dai_format2,
         }})
         .Then([&received_callback2](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback2 = true;
@@ -878,8 +899,8 @@ TEST_F(ControlServerCompositeWarningTest, SetDaiFormatInvalidFormat) {
 
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            invalid_dai_format,
+            .element_id = dai_id,
+            .dai_format = invalid_dai_format,
         }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
@@ -919,8 +940,8 @@ TEST_F(ControlServerCompositeWarningTest, SetDaiFormatUnsupportedFormat) {
 
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            unsupported_dai_format,
+            .element_id = dai_id,
+            .dai_format = unsupported_dai_format,
         }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
@@ -960,8 +981,8 @@ TEST_F(ControlServerCompositeWarningTest, SetDaiFormatWrongElementType) {
 
   control->client()
       ->SetDaiFormat({{
-          ring_buffer_id,
-          dai_format,
+          .element_id = ring_buffer_id,
+          .dai_format = dai_format,
       }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
@@ -998,8 +1019,8 @@ TEST_F(ControlServerCompositeWarningTest, SetDaiFormatUnknownElementId) {
 
   control->client()
       ->SetDaiFormat({{
-          ring_buffer_id,
-          dai_format,
+          .element_id = ring_buffer_id,
+          .dai_format = dai_format,
       }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
@@ -1131,8 +1152,8 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWrongElementType) {
 
     control->client()
         ->CreateRingBuffer({{
-            dai_id,
-            fad::RingBufferOptions{{
+            .element_id = dai_id,
+            .options = fad::RingBufferOptions{{
                 .format = fuchsia_audio::Format{{
                     .sample_type = fuchsia_audio::SampleType::kInt16,
                     .channel_count = 2,
@@ -1140,7 +1161,7 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWrongElementType) {
                 }},
                 .ring_buffer_min_bytes = 2000,
             }},
-            std::move(ring_buffer_server_end),
+            .ring_buffer_server = std::move(ring_buffer_server_end),
         }})
         .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           received_callback = true;
@@ -1572,9 +1593,9 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWhilePending) {
 
     control_client
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            options,
-            std::move(ring_buffer_server_end1),
+            .element_id = ring_buffer_id,
+            .options = options,
+            .ring_buffer_server = std::move(ring_buffer_server_end1),
         }})
         .Then([&received_callback_1](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           received_callback_1 = true;
@@ -1584,9 +1605,9 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferWhilePending) {
         });
     control_client
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            options,
-            std::move(ring_buffer_server_end2),
+            .element_id = ring_buffer_id,
+            .options = options,
+            .ring_buffer_server = std::move(ring_buffer_server_end2),
         }})
         .Then([&received_callback_2](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           received_callback_2 = true;
@@ -1730,9 +1751,9 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferUnknownElementId) {
 
   control_client
       ->CreateRingBuffer({{
-          unknown_element_id,
-          options,
-          std::move(ring_buffer_server_end),
+          .element_id = unknown_element_id,
+          .options = options,
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         received_callback = true;
@@ -1817,8 +1838,8 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferBadRingBufferServerEnd
     fake_driver->ReserveRingBufferSize(ring_buffer_id, 8192);
     control_client
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            fad::RingBufferOptions{{
+            .element_id = ring_buffer_id,
+            .options = fad::RingBufferOptions{{
                 .format = fuchsia_audio::Format{{
                     .sample_type = fuchsia_audio::SampleType::kInt16,
                     .channel_count = 2,
@@ -1826,7 +1847,7 @@ TEST_F(ControlServerCompositeWarningTest, CreateRingBufferBadRingBufferServerEnd
                 }},
                 .ring_buffer_min_bytes = 8192,
             }},
-            fidl::ServerEnd<fad::RingBuffer>(),  // bad value
+            .ring_buffer_server = fidl::ServerEnd<fad::RingBuffer>(),  // bad value
         }})
         .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           ASSERT_TRUE(result.is_error());
@@ -1926,7 +1947,7 @@ TEST_F(ControlServerCompositeWarningTest, WatchElementStateUnknownElementId) {
   auto& elements_from_device = element_map(device);
   ElementId unknown_element_id = 0;
   while (true) {
-    if (elements_from_device.find(unknown_element_id) == elements_from_device.end()) {
+    if (!elements_from_device.contains(unknown_element_id)) {
       break;
     }
     ++unknown_element_id;
@@ -2046,14 +2067,9 @@ TEST_F(ControlServerCompositeWarningTest, SetTopologyUnknownId) {
   ASSERT_EQ(ControlServer::count(), 1u);
   const auto& topologies = topology_map(device);
   TopologyId unknown_topology_id = 0;
-  bool found_an_unknown_topology_id = false;
-  do {
-    if (topologies.find(unknown_topology_id) == topologies.end()) {
-      found_an_unknown_topology_id = true;
-    } else {
-      ++unknown_topology_id;
-    }
-  } while (!found_an_unknown_topology_id);
+  while (topologies.contains(unknown_topology_id)) {
+    ++unknown_topology_id;
+  }
   auto received_callback = false;
 
   control->client()

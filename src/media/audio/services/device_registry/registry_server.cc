@@ -182,8 +182,9 @@ void RegistryServer::MaybeReplyWatchDeviceRemoved() {
   ADR_LOG_METHOD(kLogRegistryServerResponses) << "responding with token_id " << next_removed_id;
   auto completer = *std::move(watch_device_removed_completer_);
   watch_device_removed_completer_.reset();
-  completer.Reply(
-      fit::success(fad::RegistryWatchDeviceRemovedResponse{{.token_id = next_removed_id}}));
+  completer.Reply(fit::success(fad::RegistryWatchDeviceRemovedResponse{{
+      .token_id = next_removed_id,
+  }}));
 }
 
 void RegistryServer::CreateObserver(CreateObserverRequest& request,

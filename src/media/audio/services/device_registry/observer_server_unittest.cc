@@ -32,6 +32,9 @@ namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 
 class ObserverServerTest : public AudioDeviceRegistryServerTestBase,
                            public fidl::AsyncEventHandler<fad::Observer> {
+ public:
+  void handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) override;
+
  protected:
   std::optional<TokenId> WaitForRemovedDeviceTokenId(fidl::Client<fad::Registry>& registry_client) {
     std::optional<TokenId> removed_device_id;
@@ -39,7 +42,7 @@ class ObserverServerTest : public AudioDeviceRegistryServerTestBase,
         [&removed_device_id](fidl::Result<fad::Registry::WatchDeviceRemoved>& result) mutable {
           ASSERT_TRUE(result.is_ok()) << result.error_value();
           ASSERT_TRUE(result->token_id());
-          removed_device_id = *result->token_id();
+          removed_device_id = result->token_id();
         });
 
     RunLoopUntilIdle();
@@ -86,11 +89,11 @@ class ObserverServerTest : public AudioDeviceRegistryServerTestBase,
         fidl::Client<fad::PacketStream>(std::move(packet_stream_client_end), dispatcher());
     return std::make_pair(std::move(packet_stream_client), std::move(packet_stream_server_end));
   }
-
-  void handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) override {
-    FAIL() << "ObserverServerTest: unknown event (Observer) ordinal " << metadata.event_ordinal;
-  }
 };
+
+void ObserverServerTest::handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) {
+  FAIL() << "ObserverServerTest: unknown event (Observer) ordinal " << metadata.event_ordinal;
+}
 
 class ObserverServerCodecTest : public ObserverServerTest {
  protected:
@@ -178,7 +181,7 @@ TEST_F(ObserverServerCodecTest, Creation) {
 
   registry->client()
       ->CreateObserver({{
-          .token_id = *added_device_id,
+          .token_id = added_device_id,
           .observer_server = std::move(observer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Registry::CreateObserver>& result) {
@@ -483,7 +486,7 @@ TEST_F(ObserverServerCompositeTest, Creation) {
 
   registry->client()
       ->CreateObserver({{
-          .token_id = *added_device_id,
+          .token_id = added_device_id,
           .observer_server = std::move(observer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Registry::CreateObserver>& result) {
@@ -572,9 +575,12 @@ TEST_F(ObserverServerCompositeTest, ObserverDoesNotDropIfDriverRingBufferDrops) 
 
   control->client()
       ->CreateRingBuffer({{
-          ring_buffer_id,
-          fad::RingBufferOptions{{format, 2000}},
-          std::move(ring_buffer_server_end),
+          .element_id = ring_buffer_id,
+          .options = fad::RingBufferOptions{{
+              .format = format,
+              .ring_buffer_min_bytes = 2000,
+          }},
+          .ring_buffer_server = std::move(ring_buffer_server_end),
       }})
       .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
         received_callback = true;
@@ -614,9 +620,12 @@ TEST_F(ObserverServerCompositeTest, ObserverDoesNotDropIfClientRingBufferDrops) 
 
     control->client()
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            fad::RingBufferOptions{{format, 2000}},
-            std::move(ring_buffer_server_end),
+            .element_id = ring_buffer_id,
+            .options = fad::RingBufferOptions{{
+                .format = format,
+                .ring_buffer_min_bytes = 2000,
+            }},
+            .ring_buffer_server = std::move(ring_buffer_server_end),
         }})
         .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           received_callback = true;
@@ -839,7 +848,7 @@ TEST_F(ObserverServerCompositeTest, TopologyChangeViaControl) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(current_topology_id.has_value());
-  ASSERT_TRUE(device->topology_ids().find(*current_topology_id) != device->topology_ids().end());
+  ASSERT_TRUE(device->topology_ids().contains(*current_topology_id));
 
   TopologyId topology_id_to_set = 0;
   for (auto id : device->topology_ids()) {
@@ -905,7 +914,7 @@ TEST_F(ObserverServerCompositeTest, WatchTopologyInitial) {
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
   EXPECT_TRUE(topology_id.has_value());
-  EXPECT_FALSE(topology_map(device).find(*topology_id) == topology_map(device).end());
+  EXPECT_TRUE(topology_map(device).contains(*topology_id));
 }
 
 // Verify that WatchTopology pends when called a second time (if no change).
@@ -969,7 +978,7 @@ TEST_F(ObserverServerCompositeTest, WatchTopologyUpdate) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(topology_id.has_value());
-  ASSERT_FALSE(topology_map(device).find(*topology_id) == topology_map(device).end());
+  ASSERT_TRUE(topology_map(device).contains(*topology_id));
   std::optional<TopologyId> topology_id_to_inject;
   for (const auto& [id, _] : topology_map(device)) {
     if (id != *topology_id) {
@@ -998,7 +1007,7 @@ TEST_F(ObserverServerCompositeTest, WatchTopologyUpdate) {
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
   ASSERT_TRUE(topology_id.has_value());
-  EXPECT_FALSE(topology_map(device).find(*topology_id) == topology_map(device).end());
+  EXPECT_TRUE(topology_map(device).contains(*topology_id));
   EXPECT_EQ(*topology_id, *topology_id_to_inject);
 }
 
@@ -1036,7 +1045,7 @@ TEST_F(ObserverServerCompositeTest, WatchElementStateInitial) {
   // Compare them to the collection held by the Device object.
   EXPECT_EQ(element_states.size(), elements_from_device.size());
   for (const auto& [element_id, element_record] : elements_from_device) {
-    ASSERT_FALSE(element_states.find(element_id) == element_states.end())
+    ASSERT_TRUE(element_states.contains(element_id))
         << "WatchElementState response not received for element_id " << element_id;
     const auto& state_from_device = element_record.state;
     ASSERT_TRUE(state_from_device.has_value())
@@ -1151,14 +1160,31 @@ TEST_F(ObserverServerCompositeTest, WatchElementStateUpdate) {
     auto new_state = fhasp::ElementState{{
         .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect(
             fhasp::DaiInterconnectElementState{{
-                fhasp::PlugState{{
-                    !was_plugged,
-                    plug_change_time_to_inject.get(),
+                .plug_state = fhasp::PlugState{{
+                    .plugged = !was_plugged,
+                    .plug_state_time = plug_change_time_to_inject.get(),
                 }},
-                ZX_MSEC(element_id),
+                .external_delay = ZX_MSEC(element_id),
             }}),
-        .vendor_specific_data = {{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C',
-                                  'D', 'E', 'F', 'Z'}},  // 'Z' is located at byte [16].
+        .vendor_specific_data = {{
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+            'A',
+            'B',
+            'C',
+            'D',
+            'E',
+            'F',
+            'Z',
+        }},  // 'Z' is located at byte [16].
         .started = false,
         .bypassed = false,
         .processing_delay = ZX_USEC(element_id),
@@ -1227,13 +1253,13 @@ TEST_F(ObserverServerCompositeTest, WatchElementStateUpdate) {
     EXPECT_EQ(*state_received.processing_delay(), ZX_USEC(element_id));
 
     // Compare to what we injected.
-    ASSERT_FALSE(element_states_to_inject.find(element_id) == element_states_to_inject.end())
+    ASSERT_TRUE(element_states_to_inject.contains(element_id))
         << "Unexpected WatchElementState response received for element_id " << element_id;
     const auto& state_injected = element_states_to_inject.find(element_id)->second;
     EXPECT_EQ(state_received, state_injected);
 
     // Compare the updates received by the client to the collection held by the Device object.
-    ASSERT_FALSE(elements_from_device.find(element_id) == elements_from_device.end());
+    ASSERT_TRUE(elements_from_device.contains(element_id));
     const auto& state_from_device = elements_from_device.find(element_id)->second.state;
     EXPECT_EQ(state_received, state_from_device);
   }

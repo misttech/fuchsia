@@ -38,7 +38,7 @@ std::vector<fuchsia_audio_device::PacketStreamSupportedFormats> TranslatePacketS
 
 // Maps driver-level PcmSupportedFormats to fuchsia_audio_device::PcmFormatSet.
 std::optional<fuchsia_audio_device::PcmFormatSet> MapPcmSupportedFormats(
-    const fuchsia_hardware_audio::PcmSupportedFormats& pcm_supported_formats);
+    const fuchsia_hardware_audio::PcmSupportedFormats& pcm_formats);
 
 size_t CountFormatMatches(const std::vector<fuchsia_hardware_audio::SampleFormat>& sample_formats,
                           fuchsia_hardware_audio::SampleFormat format_to_match);

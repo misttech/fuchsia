@@ -30,6 +30,10 @@ class ProviderServer
       fidl::ServerEnd<fuchsia_audio_device::Provider> server_end,
       std::shared_ptr<AudioDeviceRegistry> parent);
 
+  ProviderServer(const ProviderServer&) = delete;
+  ProviderServer(ProviderServer&&) = delete;
+  ProviderServer& operator=(const ProviderServer&) = delete;
+  ProviderServer& operator=(ProviderServer&&) = delete;
   ~ProviderServer() override;
 
   // fuchsia.audio.device.Provider implementation
@@ -49,7 +53,7 @@ class ProviderServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline constexpr std::string_view kClassName = "ProviderServer";
+  static constexpr std::string_view kClassName = "ProviderServer";
   static inline uint64_t count_ = 0;
 
   explicit ProviderServer(std::shared_ptr<AudioDeviceRegistry> parent);

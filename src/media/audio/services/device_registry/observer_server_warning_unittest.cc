@@ -24,12 +24,15 @@ namespace fad = fuchsia_audio_device;
 
 class ObserverServerWarningTest : public AudioDeviceRegistryServerTestBase,
                                   public fidl::AsyncEventHandler<fad::Observer> {
- protected:
-  void handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) override {
-    FAIL() << "ObserverServerWarningTest: unknown event (Observer) ordinal "
-           << metadata.event_ordinal;
-  }
+ public:
+  void handle_unknown_event(fidl::UnknownEventMetadata<fad::Observer> metadata) override;
 };
+
+void ObserverServerWarningTest::handle_unknown_event(
+    fidl::UnknownEventMetadata<fad::Observer> metadata) {
+  FAIL() << "ObserverServerWarningTest: unknown event (Observer) ordinal "
+         << metadata.event_ordinal;
+}
 
 class ObserverServerCodecWarningTest : public ObserverServerWarningTest {
  protected:
@@ -349,7 +352,7 @@ TEST_F(ObserverServerCompositeWarningTest, WatchElementStateUnknownElementId) {
   auto& elements_from_device = element_map(device);
   ElementId unknown_element_id = 0;
   while (true) {
-    if (elements_from_device.find(unknown_element_id) == elements_from_device.end()) {
+    if (!elements_from_device.contains(unknown_element_id)) {
       break;
     }
     ++unknown_element_id;

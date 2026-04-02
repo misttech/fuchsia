@@ -217,7 +217,11 @@ class DeviceDetectorTest : public gtest::TestLoopFixture {
     while (!task_has_run) {
       RunLoopUntilIdle();
     }
-    return {.name = name, .dir = codec_dir_, .dispatcher = dispatcher()};
+    return {
+        .name = name,
+        .dir = codec_dir_,
+        .dispatcher = dispatcher(),
+    };
   }
 
   // Adds a `FakeAudioComposite` to the emulated 'composite' directory that has been installed in
@@ -232,7 +236,11 @@ class DeviceDetectorTest : public gtest::TestLoopFixture {
     while (!task_has_run) {
       RunLoopUntilIdle();
     }
-    return {.name = name, .dir = composite_dir_, .dispatcher = dispatcher()};
+    return {
+        .name = name,
+        .dir = composite_dir_,
+        .dispatcher = dispatcher(),
+    };
   }
 
  private:

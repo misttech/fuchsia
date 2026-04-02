@@ -31,6 +31,7 @@ namespace media_audio {
 namespace fad = fuchsia_audio_device;
 namespace fha = fuchsia_hardware_audio;
 namespace fhasp = fuchsia_hardware_audio_signalprocessing;
+namespace {
 
 /////////////////////
 // Codec tests
@@ -1334,6 +1335,7 @@ TEST_F(CompositeTest, Reset) {
 
   EXPECT_TRUE(notify()->device_is_reset());
 }
+}  // namespace
 
 // RingBuffer test cases
 //
@@ -1399,6 +1401,8 @@ void CompositeTest::TestCreateRingBuffer(const std::shared_ptr<Device>& device,
   // Now client can drop its RingBuffer connection.
   device->DropRingBuffer(element_id);
 }
+
+namespace {
 
 TEST_F(CompositeTest, CreateRingBuffers) {
   auto fake_driver = MakeFakeComposite();
@@ -1772,6 +1776,8 @@ TEST_F(CompositeTest, WatchDelayInfoUpdate) {
   }
 }
 
+}  // namespace
+
 void CompositeTest::TestCreatePacketStream(const std::shared_ptr<Device>& device,
                                            ElementId element_id, const fha::Format2& safe_format) {
   std::stringstream stream;
@@ -1869,7 +1875,10 @@ void CompositeTest::TestRegisterPacketStreamBuffers(const std::shared_ptr<Device
   ASSERT_EQ(zx::vmo::create(8192, 0, &vmo), ZX_OK);
 
   std::vector<fha::VmoInfo> vmo_infos;
-  vmo_infos.push_back(fha::VmoInfo{{.id = 0, .vmo = std::move(vmo)}});
+  vmo_infos.push_back(fha::VmoInfo{{
+      .id = 0,
+      .vmo = std::move(vmo),
+  }});
 
   auto callback_received = false;
   device->SetPacketStreamBuffers(
@@ -1888,6 +1897,8 @@ void CompositeTest::TestRegisterPacketStreamBuffers(const std::shared_ptr<Device
   ASSERT_TRUE(callback_received);
 }
 
+namespace {
+
 // Allocating buffers on a PacketStream that supports allocated buffers should succeed.
 TEST_F(CompositeTest, PacketStreamAllocateBuffers) {
   auto fake_driver = MakeFakeComposite();
@@ -1897,7 +1908,7 @@ TEST_F(CompositeTest, PacketStreamAllocateBuffers) {
 
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   for (auto element_id : device->packet_stream_ids()) {
-    for (auto safe_format :
+    for (const auto& safe_format :
          SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
       TestCreatePacketStream(device, element_id, safe_format);
       TestAllocatePacketStreamBuffers(device, element_id);
@@ -1914,7 +1925,7 @@ TEST_F(CompositeTest, PacketStreamRegisterBuffers) {
 
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   for (auto element_id : device->packet_stream_ids()) {
-    for (auto safe_format :
+    for (const auto& safe_format :
          SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
       TestCreatePacketStream(device, element_id, safe_format);
       TestRegisterPacketStreamBuffers(device, element_id);
@@ -1932,7 +1943,7 @@ TEST_F(CompositeTest, CreatePacketStreams) {
   // Create PacketStreams on every PacketStream element.
   auto packet_stream_format_sets_by_element = ElementDriverPacketStreamFormatSets(device);
   for (auto element_id : device->packet_stream_ids()) {
-    for (auto safe_format :
+    for (const auto& safe_format :
          SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
       TestCreatePacketStream(device, element_id, safe_format);
       TestAllocatePacketStreamBuffers(device, element_id);
@@ -1980,7 +1991,7 @@ TEST_F(CompositeTest, PacketStreamStartAndStop) {
   ASSERT_EQ(device->packet_stream_ids().size(), packet_stream_format_sets_by_element.size());
 
   for (auto element_id : device->packet_stream_ids()) {
-    for (auto safe_format :
+    for (const auto& safe_format :
          SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
       SCOPED_TRACE(std::string("Testing PacketStream Start/Stop: element_id ") +
                    std::to_string(element_id));
@@ -2281,8 +2292,10 @@ TEST_F(CompositeTest, WatchElementStateUpdate) {
       EXPECT_TRUE(*state.started());
       ASSERT_TRUE(state.bypassed().has_value());
       EXPECT_TRUE(*state.bypassed());
-      element_states_to_inject.insert_or_assign(
-          element_id, fhasp::ElementState{{.started = true, .bypassed = false}});
+      element_states_to_inject.insert_or_assign(element_id, fhasp::ElementState{{
+                                                                .started = true,
+                                                                .bypassed = false,
+                                                            }});
       continue;
     }
 
@@ -2305,14 +2318,31 @@ TEST_F(CompositeTest, WatchElementStateUpdate) {
     auto new_state = fhasp::ElementState{{
         .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect(
             fhasp::DaiInterconnectElementState{{
-                fhasp::PlugState{{
-                    !was_plugged,
-                    plug_change_time_to_inject.get(),
+                .plug_state = fhasp::PlugState{{
+                    .plugged = !was_plugged,
+                    .plug_state_time = plug_change_time_to_inject.get(),
                 }},
-                ZX_MSEC(element_id),
+                .external_delay = ZX_MSEC(element_id),
             }}),
-        .vendor_specific_data = {{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C',
-                                  'D', 'E', 'F', 'Z'}},  // 'Z' is located at byte [16].
+        .vendor_specific_data = {{
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+            'A',
+            'B',
+            'C',
+            'D',
+            'E',
+            'F',
+            'Z',
+        }},  // 'Z' is located at byte [16].
         .started = true,
         .bypassed = false,
         .processing_delay = ZX_USEC(element_id),
@@ -2462,7 +2492,10 @@ TEST_F(CompositeTest, SetElementState) {
   RunLoopUntilIdle();
   ASSERT_TRUE(notify()->element_states().contains(FakeComposite::kMuteElementId));
   notify()->clear_element_states();
-  fhasp::SettableElementState state{{.started = true, .bypassed = false}};
+  fhasp::SettableElementState state{{
+      .started = true,
+      .bypassed = false,
+  }};
 
   EXPECT_EQ(device->SetElementState(FakeComposite::kMuteElementId, state), ZX_OK);
 
@@ -2482,4 +2515,5 @@ TEST_F(CompositeTest, SetElementState) {
   EXPECT_FALSE(new_state.processing_delay().has_value());
 }
 
+}  // namespace
 }  // namespace media_audio

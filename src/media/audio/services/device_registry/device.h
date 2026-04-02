@@ -108,11 +108,9 @@ class Device : public std::enable_shared_from_this<Device> {
 
   template <typename ProtocolT>
   class FidlOpenErrorHandler : public FidlErrorHandler<ProtocolT> {
+   public:
     using FidlErrorHandler<ProtocolT>::FidlErrorHandler;
-    void handle_unknown_event(fidl::UnknownEventMetadata<ProtocolT> metadata) override {
-      ADR_WARN_METHOD() << "FidlOpenErrorHandler: unknown event with ordinal "
-                        << metadata.event_ordinal;
-    }
+    void handle_unknown_event(fidl::UnknownEventMetadata<ProtocolT> metadata) override;
   };
 
   void Initialize();
@@ -139,13 +137,13 @@ class Device : public std::enable_shared_from_this<Device> {
 
   // Matches a client's PCM format requirements against a driver's supported PCM formats.
   // Returns the best matching PcmFormat (with optimal valid_bits_per_sample) if found.
-  std::optional<fuchsia_hardware_audio::PcmFormat> MatchPcmFormatSet(
+  static std::optional<fuchsia_hardware_audio::PcmFormat> MatchPcmFormatSet(
       const std::vector<fuchsia_hardware_audio::SupportedFormats2>& supported_formats,
       const fuchsia_hardware_audio::PcmFormat& format_template);
 
   // Checks if a driver's supported encodings match a client's requested encoding.
   // Returns the matched Encoding if found.
-  std::optional<fuchsia_hardware_audio::Encoding> MatchEncodingSet(
+  static std::optional<fuchsia_hardware_audio::Encoding> MatchEncodingSet(
       const std::vector<fuchsia_hardware_audio::SupportedFormats2>& supported_formats,
       const fuchsia_hardware_audio::Encoding& client_encoding);
 
@@ -655,6 +653,12 @@ class Device : public std::enable_shared_from_this<Device> {
   // Inspect-related
   std::shared_ptr<DeviceInspectInstance> device_inspect_instance_;
 };
+template <typename ProtocolT>
+inline void Device::FidlOpenErrorHandler<ProtocolT>::handle_unknown_event(
+    fidl::UnknownEventMetadata<ProtocolT> metadata) {
+  ADR_WARN_METHOD() << "FidlOpenErrorHandler: unknown event with ordinal "
+                    << metadata.event_ordinal;
+}
 
 inline std::ostream& operator<<(std::ostream& out, Device::State device_state) {
   switch (device_state) {

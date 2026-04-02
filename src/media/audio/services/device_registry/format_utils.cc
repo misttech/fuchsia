@@ -6,6 +6,8 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <algorithm>
+
 #include "src/media/audio/services/device_registry/validate.h"
 
 namespace media_audio {
@@ -406,12 +408,9 @@ bool RingBufferFormatIsSupported(
     return false;
   }
 
-  for (const auto& ring_buffer_format_set : *ring_buffer_format_sets) {
-    if (FormatSetSupportsPcmFormat(ring_buffer_format_set, format.pcm_format().value())) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(*ring_buffer_format_sets, [&](const auto& ring_buffer_format_set) {
+    return FormatSetSupportsPcmFormat(ring_buffer_format_set, format.pcm_format().value());
+  });
 }
 
 bool PacketStreamFormatIsSupported(
@@ -435,25 +434,21 @@ bool PacketStreamFormatIsSupported(
   }
 
   if (format.pcm_format().has_value()) {
-    for (const auto& packet_stream_format : *element_format_set->format_sets()) {
-      if (packet_stream_format.pcm_format().has_value() &&
-          FormatSetSupportsPcmFormat(packet_stream_format.pcm_format().value(),
-                                     format.pcm_format().value())) {
-        return true;
-      }
-    }
-    return false;
+    return std::ranges::any_of(
+        *element_format_set->format_sets(), [&](const auto& packet_stream_format) {
+          return packet_stream_format.pcm_format().has_value() &&
+                 FormatSetSupportsPcmFormat(packet_stream_format.pcm_format().value(),
+                                            format.pcm_format().value());
+        });
   }
 
   if (format.encoding().has_value()) {
-    for (const auto& packet_stream_format : *element_format_set->format_sets()) {
-      if (packet_stream_format.supported_encodings().has_value() &&
-          FormatSetSupportsEncoding(packet_stream_format.supported_encodings().value(),
-                                    format.encoding().value())) {
-        return true;
-      }
-    }
-    return false;
+    return std::ranges::any_of(
+        *element_format_set->format_sets(), [&](const auto& packet_stream_format) {
+          return packet_stream_format.supported_encodings().has_value() &&
+                 FormatSetSupportsEncoding(packet_stream_format.supported_encodings().value(),
+                                           format.encoding().value());
+        });
   }
 
   return false;  // `format` contains an unknown union variant.

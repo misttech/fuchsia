@@ -56,7 +56,9 @@ std::unordered_map<ElementId, ElementRecord> MapElements(
       FX_LOGS(WARNING) << "invalid element_id";
       return {};
     }
-    auto element_insertion = element_map.insert({*element.id(), ElementRecord{.element = element}});
+    auto element_insertion = element_map.insert({*element.id(), ElementRecord{
+                                                                    .element = element,
+                                                                }});
     if (!element_insertion.second) {
       FX_LOGS(WARNING) << "duplicate element_id " << *element.id();
       return {};

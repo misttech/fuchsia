@@ -15,7 +15,7 @@
 #include <optional>
 #include <string_view>
 
-#include "src/media/audio/services/device_registry/testing/fakes/logging.h"
+#include "src/media/audio/services/device_registry/basic_types.h"
 
 namespace media_audio {
 
@@ -23,7 +23,7 @@ class FakeComposite;
 
 class FakeCompositeRingBuffer final
     : public fidl::testing::TestBase<fuchsia_hardware_audio::RingBuffer> {
-  static inline constexpr std::string_view kClassName = "FakeCompositeRingBuffer";
+  static constexpr std::string_view kClassName = "FakeCompositeRingBuffer";
 
  public:
   static constexpr std::optional<bool> kDefaultNeedsCacheFlushInvalidate = false;

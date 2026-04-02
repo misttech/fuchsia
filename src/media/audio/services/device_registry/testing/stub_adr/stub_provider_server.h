@@ -53,7 +53,7 @@ class StubProviderServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline constexpr std::string_view kClassName = "StubProviderServer";
+  static constexpr std::string_view kClassName = "StubProviderServer";
 
   StubProviderServer() = default;
 };

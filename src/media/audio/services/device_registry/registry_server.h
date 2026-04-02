@@ -34,6 +34,10 @@ class RegistryServer
       fidl::ServerEnd<fuchsia_audio_device::Registry> server_end,
       std::shared_ptr<AudioDeviceRegistry> parent);
 
+  RegistryServer(const RegistryServer&) = delete;
+  RegistryServer(RegistryServer&&) = delete;
+  RegistryServer& operator=(const RegistryServer&) = delete;
+  RegistryServer& operator=(RegistryServer&&) = delete;
   ~RegistryServer() override;
 
   // fuchsia.audio.device.Registry implementation
@@ -60,7 +64,7 @@ class RegistryServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline constexpr std::string_view kClassName = "RegistryServer";
+  static constexpr std::string_view kClassName = "RegistryServer";
   static inline uint64_t count_ = 0;
 
   explicit RegistryServer(std::shared_ptr<AudioDeviceRegistry> parent);

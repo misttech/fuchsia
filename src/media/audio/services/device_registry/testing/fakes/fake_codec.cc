@@ -29,7 +29,9 @@ const fha::DaiFrameFormat FakeCodec::kDefaultFrameFormat =
     fha::DaiFrameFormat::WithFrameFormatStandard(fha::DaiFrameFormatStandard::kI2S);
 
 const std::vector<uint32_t> FakeCodec::kDefaultNumberOfChannelsSet{
-    FakeCodec::kDefaultNumberOfChannels, FakeCodec::kDefaultNumberOfChannels2};
+    FakeCodec::kDefaultNumberOfChannels,
+    FakeCodec::kDefaultNumberOfChannels2,
+};
 const std::vector<fha::DaiSampleFormat> FakeCodec::kDefaultSampleFormatSet{
     FakeCodec::kDefaultDaiSampleFormat};
 const std::vector<fha::DaiFrameFormat> FakeCodec::kDefaultFrameFormatSet{
@@ -87,7 +89,9 @@ void FakeCodec::DropCodec() {
 void FakeCodec::GetHealthState(GetHealthStateCompleter::Sync& completer) {
   ADR_LOG_METHOD(kLogFakeCodec);
   if (healthy_.has_value()) {
-    completer.Reply(fha::HealthState{{healthy_}});
+    completer.Reply(fha::HealthState{{
+        healthy_,
+    }});
   } else {
     completer.Reply({});
   }

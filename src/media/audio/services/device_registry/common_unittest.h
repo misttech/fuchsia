@@ -65,8 +65,6 @@ fuchsia_hardware_audio::DaiFormat UnsupportedDaiFormatFromDaiFormatSets(
     const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& dai_format_sets);
 
 // RingBuffer-related functions
-fuchsia_audio::Format SafeRingBufferFormatFromRingBufferFormatSets(
-    const std::vector<fuchsia_audio_device::PcmFormatSet>& ring_buffer_format_sets);
 fuchsia_audio::Format SecondRingBufferFormatFromRingBufferFormatSets(
     const std::vector<fuchsia_audio_device::PcmFormatSet>& ring_buffer_format_sets);
 fuchsia_audio::Format SafeRingBufferFormatFromElementRingBufferFormatSets(
@@ -76,8 +74,6 @@ fuchsia_audio::Format SecondRingBufferFormatFromElementRingBufferFormatSets(
     ElementId element_id, const std::vector<fuchsia_audio_device::ElementRingBufferFormatSet>&
                               element_ring_buffer_format_sets);
 
-fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromDriverRingBufferFormatSets(
-    const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_ring_buffer_format_sets);
 fuchsia_hardware_audio::Format2 SecondDriverRingBufferFormatFromDriverRingBufferFormatSets(
     const std::vector<fuchsia_hardware_audio::SupportedFormats2>& driver_ring_buffer_format_sets);
 fuchsia_hardware_audio::Format2 SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(

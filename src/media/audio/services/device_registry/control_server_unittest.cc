@@ -204,7 +204,9 @@ TEST_F(ControlServerCodecTest, SetDaiFormat) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -236,7 +238,9 @@ TEST_F(ControlServerCodecTest, DaiFormatAlreadySet) {
     auto dai_format = SafeDaiFormatFromElementDaiFormatSets(dai_id(), device->dai_format_sets());
     auto received_callback = false;
     control->client()
-        ->SetDaiFormat({{.dai_format = dai_format}})
+        ->SetDaiFormat({{
+            .dai_format = dai_format,
+        }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
           ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -292,7 +296,9 @@ TEST_F(ControlServerCodecTest, CodecStart) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -336,7 +342,9 @@ TEST_F(ControlServerCodecTest, CodecStop) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -390,7 +398,9 @@ TEST_F(ControlServerCodecTest, Reset) {
   auto received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -424,7 +434,9 @@ TEST_F(ControlServerCodecTest, Reset) {
   received_callback = false;
 
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         EXPECT_TRUE(result.is_ok()) << result.error_value();
@@ -490,7 +502,9 @@ TEST_F(ControlServerCodecTest, GetTopologiesUnsupported) {
   auto dai_format = SafeDaiFormatFromElementDaiFormatSets(dai_id(), device->dai_format_sets());
   received_callback = false;
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -538,7 +552,9 @@ TEST_F(ControlServerCodecTest, GetElementsUnsupported) {
   auto dai_format = SafeDaiFormatFromElementDaiFormatSets(dai_id(), device->dai_format_sets());
   received_callback = false;
   control->client()
-      ->SetDaiFormat({{.dai_format = dai_format}})
+      ->SetDaiFormat({{
+          .dai_format = dai_format,
+      }})
       .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
         received_callback = true;
         ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -680,12 +696,12 @@ TEST_F(ControlServerCompositeTest, CreateRingBuffer) {
 
     control->client()
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            fad::RingBufferOptions{{
+            .element_id = ring_buffer_id,
+            .options = fad::RingBufferOptions{{
                 .format = requested_format,
                 .ring_buffer_min_bytes = requested_ring_buffer_bytes,
             }},
-            std::move(ring_buffer_server_end),
+            .ring_buffer_server = std::move(ring_buffer_server_end),
         }})
         .Then([&received_callback, requested_format,
                requested_ring_buffer_bytes](fidl::Result<fad::Control::CreateRingBuffer>& result) {
@@ -960,13 +976,13 @@ TEST_F(ControlServerCompositeTest, ClientRingBufferDropDoesNotAffectControl) {
 
     control->client()
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            fad::RingBufferOptions{{
+            .element_id = ring_buffer_id,
+            .options = fad::RingBufferOptions{{
                 .format = SafeRingBufferFormatFromElementRingBufferFormatSets(
                     ring_buffer_id, device->ring_buffer_format_sets()),
                 .ring_buffer_min_bytes = 2000,
             }},
-            std::move(ring_buffer_server_end),
+            .ring_buffer_server = std::move(ring_buffer_server_end),
         }})
         .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           received_callback = true;
@@ -1013,13 +1029,13 @@ TEST_F(ControlServerCompositeTest, DriverRingBufferDropDoesNotAffectControl) {
 
     control->client()
         ->CreateRingBuffer({{
-            ring_buffer_id,
-            fad::RingBufferOptions{{
+            .element_id = ring_buffer_id,
+            .options = fad::RingBufferOptions{{
                 .format = SafeRingBufferFormatFromElementRingBufferFormatSets(
                     ring_buffer_id, device->ring_buffer_format_sets()),
                 .ring_buffer_min_bytes = 2000,
             }},
-            std::move(ring_buffer_server_end),
+            .ring_buffer_server = std::move(ring_buffer_server_end),
         }})
         .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
           ASSERT_TRUE(result.is_ok()) << result.error_value();
@@ -1066,8 +1082,8 @@ TEST_F(ControlServerCompositeTest, SetDaiFormat) {
     auto dai_format = SecondDaiFormatFromElementDaiFormatSets(dai_id, device->dai_format_sets());
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            dai_format,
+            .element_id = dai_id,
+            .dai_format = dai_format,
         }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
@@ -1101,8 +1117,8 @@ TEST_F(ControlServerCompositeTest, Reset) {
     auto received_callback = false;
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            dai_format,
+            .element_id = dai_id,
+            .dai_format = dai_format,
         }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
@@ -1128,8 +1144,8 @@ TEST_F(ControlServerCompositeTest, Reset) {
     received_callback = false;
     control->client()
         ->SetDaiFormat({{
-            dai_id,
-            dai_format,
+            .element_id = dai_id,
+            .dai_format = dai_format,
         }})
         .Then([&received_callback](fidl::Result<fad::Control::SetDaiFormat>& result) {
           received_callback = true;
@@ -1237,7 +1253,7 @@ TEST_F(ControlServerCompositeTest, WatchTopologyInitial) {
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
   EXPECT_TRUE(topology_id.has_value());
-  EXPECT_FALSE(topology_map(device).find(*topology_id) == topology_map(device).end());
+  EXPECT_TRUE(topology_map(device).contains(*topology_id));
 
   EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
   EXPECT_FALSE(control_fidl_error_status().has_value()) << *control_fidl_error_status();
@@ -1307,7 +1323,7 @@ TEST_F(ControlServerCompositeTest, WatchTopologyUpdate) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(topology_id.has_value());
-  ASSERT_FALSE(topology_map(device).find(*topology_id) == topology_map(device).end());
+  ASSERT_TRUE(topology_map(device).contains(*topology_id));
   std::optional<TopologyId> topology_id_to_inject;
   for (const auto& [id, _] : topology_map(device)) {
     if (id != *topology_id) {
@@ -1336,7 +1352,7 @@ TEST_F(ControlServerCompositeTest, WatchTopologyUpdate) {
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
   ASSERT_TRUE(topology_id.has_value());
-  EXPECT_FALSE(topology_map(device).find(*topology_id) == topology_map(device).end());
+  EXPECT_TRUE(topology_map(device).contains(*topology_id));
   EXPECT_EQ(*topology_id, *topology_id_to_inject);
 
   EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
@@ -1377,12 +1393,12 @@ TEST_F(ControlServerCompositeTest, WatchElementStateInitial) {
   // Compare them to the collection held by the Device object.
   EXPECT_EQ(element_states.size(), elements_from_device.size());
   for (const auto& [element_id, element_record] : elements_from_device) {
-    ASSERT_FALSE(element_states.find(element_id) == element_states.end())
+    ASSERT_TRUE(element_states.contains(element_id))
         << "WatchElementState response not received for element_id " << element_id;
     const auto& state_from_device = element_record.state;
     ASSERT_TRUE(state_from_device.has_value())
         << "Device element_map did not contain ElementState for element_id ";
-    EXPECT_EQ(element_states.find(element_id)->second, state_from_device);
+    EXPECT_EQ(element_states.at(element_id), state_from_device);
   }
 
   EXPECT_FALSE(registry_fidl_error_status().has_value()) << *registry_fidl_error_status();
@@ -1497,14 +1513,31 @@ TEST_F(ControlServerCompositeTest, WatchElementStateUpdate) {
     auto new_state = fhasp::ElementState{{
         .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect(
             fhasp::DaiInterconnectElementState{{
-                fhasp::PlugState{{
-                    !was_plugged,
-                    plug_change_time_to_inject.get(),
+                .plug_state = fhasp::PlugState{{
+                    .plugged = !was_plugged,
+                    .plug_state_time = plug_change_time_to_inject.get(),
                 }},
-                ZX_MSEC(element_id),
+                .external_delay = ZX_MSEC(element_id),
             }}),
-        .vendor_specific_data = {{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C',
-                                  'D', 'E', 'F', 'Z'}},  // 'Z' is located at byte [16].
+        .vendor_specific_data = {{
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+            'A',
+            'B',
+            'C',
+            'D',
+            'E',
+            'F',
+            'Z',
+        }},  // 'Z' is located at byte [16].
         .started = false,
         .bypassed = false,
         .processing_delay = ZX_USEC(element_id),
@@ -1573,14 +1606,14 @@ TEST_F(ControlServerCompositeTest, WatchElementStateUpdate) {
     EXPECT_EQ(*state_received.processing_delay(), ZX_USEC(element_id));
 
     // Compare to what we injected.
-    ASSERT_FALSE(element_states_to_inject.find(element_id) == element_states_to_inject.end())
+    ASSERT_TRUE(element_states_to_inject.contains(element_id))
         << "Unexpected WatchElementState response received for element_id " << element_id;
-    const auto& state_injected = element_states_to_inject.find(element_id)->second;
+    const auto& state_injected = element_states_to_inject.at(element_id);
     EXPECT_EQ(state_received, state_injected);
 
     // Compare the updates received by the client to the collection held by the Device object.
-    ASSERT_FALSE(elements_from_device.find(element_id) == elements_from_device.end());
-    const auto& state_from_device = elements_from_device.find(element_id)->second.state;
+    ASSERT_TRUE(elements_from_device.contains(element_id));
+    const auto& state_from_device = elements_from_device.at(element_id).state;
     EXPECT_EQ(state_received, state_from_device);
   }
 
@@ -1615,7 +1648,7 @@ TEST_F(ControlServerCompositeTest, SetTopology) {
   RunLoopUntilIdle();
   ASSERT_TRUE(received_callback);
   ASSERT_TRUE(current_topology_id.has_value());
-  ASSERT_TRUE(device->topology_ids().find(*current_topology_id) != device->topology_ids().end());
+  ASSERT_TRUE(device->topology_ids().contains(*current_topology_id));
   TopologyId topology_id_to_set = 0;
   for (auto id : device->topology_ids()) {
     if (id != *current_topology_id) {

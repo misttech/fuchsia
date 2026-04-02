@@ -11,7 +11,6 @@
 namespace media_audio {
 
 namespace fad = fuchsia_audio_device;
-namespace fha = fuchsia_hardware_audio;
 
 std::shared_ptr<PacketStreamServer> PacketStreamServer::Create(
     std::shared_ptr<const FidlThread> thread, fidl::ServerEnd<fad::PacketStream> server_end,
