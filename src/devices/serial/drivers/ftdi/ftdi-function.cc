@@ -92,8 +92,7 @@ void FakeFtdiFunction::OutComplete(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
   for (auto& completion : completions) {
     if (completion.status() && *completion.status() != ZX_OK) {
-      FDF_LOGL(ERROR, logger(), "OutComplete error: %s",
-               zx_status_get_string(*completion.status()));
+      logger().log(fdf::ERROR, "OutComplete error: {}", zx_status_get_string(*completion.status()));
       continue;
     }
 
@@ -117,8 +116,8 @@ void FakeFtdiFunction::OutComplete(
       in_reqs.push_back(in_req->take_request());
       fit::result<fidl::OneWayError> result = bulk_in_ep_->QueueRequests({std::move(in_reqs)});
       if (result.is_error()) {
-        FDF_LOGL(ERROR, logger(), "QueueRequests IN failed: %s",
-                 result.error_value().FormatDescription().c_str());
+        logger().log(fdf::ERROR, "QueueRequests IN failed: {}",
+                     result.error_value().FormatDescription());
       }
     }
 
@@ -130,8 +129,8 @@ void FakeFtdiFunction::OutComplete(
     out_reqs.push_back(req.take_request());
     fit::result<fidl::OneWayError> result = bulk_out_ep_->QueueRequests({std::move(out_reqs)});
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "QueueRequests OUT failed: %s",
-               result.error_value().FormatDescription().c_str());
+      logger().log(fdf::ERROR, "QueueRequests OUT failed: {}",
+                   result.error_value().FormatDescription());
     }
   }
 }
@@ -168,8 +167,8 @@ void FakeFtdiFunction::SetConfigured(
 
   fidl::Result result_in = function_->ConfigureEndpoint({bulk_in_addr_, std::move(ep_config_in)});
   if (result_in.is_error()) {
-    FDF_LOGL(ERROR, logger(), "ConfigureEndpoint IN failed: %s",
-             result_in.error_value().FormatDescription().c_str());
+    logger().log(fdf::ERROR, "ConfigureEndpoint IN failed: {}",
+                 result_in.error_value().FormatDescription());
   }
 
   // Configure OUT Endpoint
@@ -183,8 +182,8 @@ void FakeFtdiFunction::SetConfigured(
   fidl::Result result_out =
       function_->ConfigureEndpoint({bulk_out_addr_, std::move(ep_config_out)});
   if (result_out.is_error()) {
-    FDF_LOGL(ERROR, logger(), "ConfigureEndpoint OUT failed: %s",
-             result_out.error_value().FormatDescription().c_str());
+    logger().log(fdf::ERROR, "ConfigureEndpoint OUT failed: {}",
+                 result_out.error_value().FormatDescription());
   }
 
   // Queue first read on OUT endpoint
@@ -194,8 +193,8 @@ void FakeFtdiFunction::SetConfigured(
     reqs.push_back(req->take_request());
     fit::result<fidl::OneWayError> result = bulk_out_ep_->QueueRequests({std::move(reqs)});
     if (result.is_error()) {
-      FDF_LOGL(ERROR, logger(), "QueueRequests OUT failed: %s",
-               result.error_value().FormatDescription().c_str());
+      logger().log(fdf::ERROR, "QueueRequests OUT failed: {}",
+                   result.error_value().FormatDescription());
     }
   }
   completer.Reply(zx::ok());
@@ -210,7 +209,7 @@ void FakeFtdiFunction::SetInterface(
 void FakeFtdiFunction::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  fdf::warn("Unknown method %ld", metadata.method_ordinal);
+  logger().log(fdf::WARN, "Unknown method {}", metadata.method_ordinal);
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -249,8 +248,7 @@ zx::result<> FakeFtdiFunction::Start() {
   zx::result client_end =
       incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client_end.is_error()) {
-    FDF_LOGL(ERROR, logger(), "FakeFtdiFunction: Failed to connect FIDL protocol: %s",
-             client_end.status_string());
+    logger().log(fdf::ERROR, "FakeFtdiFunction: Failed to connect FIDL protocol: {}", client_end);
     return client_end.take_error();
   }
   function_ = fidl::SyncClient(std::move(*client_end));
@@ -284,8 +282,8 @@ zx::result<> FakeFtdiFunction::Start() {
   fidl::Result alloc_result = function_->AllocResources(std::move(alloc_req));
 
   if (alloc_result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "FakeFtdiFunction: AllocResources failed: %s",
-             alloc_result.error_value().FormatDescription().c_str());
+    logger().log(fdf::ERROR, "FakeFtdiFunction: AllocResources failed: {}",
+                 alloc_result.error_value().FormatDescription());
     return zx::error(alloc_result.error_value().is_framework_error()
                          ? alloc_result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -312,12 +310,12 @@ zx::result<> FakeFtdiFunction::Start() {
   // Add requests to pool
   if (bulk_in_ep_.AddRequests(2, BULK_MAX_PACKET,
                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 2) {
-    fdf::error("Failed to allocate all IN requests");
+    logger().log(fdf::ERROR, "Failed to allocate all IN requests");
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (bulk_out_ep_.AddRequests(2, BULK_MAX_PACKET,
                                fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 2) {
-    fdf::error("Failed to allocate all OUT requests");
+    logger().log(fdf::ERROR, "Failed to allocate all OUT requests");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -328,7 +326,7 @@ zx::result<> FakeFtdiFunction::Start() {
   zx::result endpoints_res =
       fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
   if (endpoints_res.is_error()) {
-    FDF_LOGL(ERROR, logger(), "Failed to create endpoints");
+    logger().log(fdf::ERROR, "Failed to create endpoints");
     return zx::error(endpoints_res.error_value());
   }
   auto [iface_client, iface_server] = std::move(*endpoints_res);
@@ -340,8 +338,8 @@ zx::result<> FakeFtdiFunction::Start() {
 
   fidl::Result configure_result = function_->Configure(std::move(config_req));
   if (configure_result.is_error()) {
-    FDF_LOGL(ERROR, logger(), "FakeFtdiFunction: Configure failed: %s",
-             configure_result.error_value().FormatDescription().c_str());
+    logger().log(fdf::ERROR, "FakeFtdiFunction: Configure failed: {}",
+                 configure_result.error_value().FormatDescription());
     return zx::error(configure_result.error_value().is_framework_error()
                          ? configure_result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
