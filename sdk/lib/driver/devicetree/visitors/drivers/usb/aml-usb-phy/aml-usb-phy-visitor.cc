@@ -32,8 +32,8 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
                                            const devicetree::PropertyDecoder& decoder) {
   auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Aml usb phy visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Aml usb phy visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -44,8 +44,8 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
   } else if ((*compatible)[0] == "amlogic,g12b-usb-phy") {
     phy_type = fuchsia_hardware_usb_phy::AmlogicPhyType::kG12B;
   } else {
-    FDF_LOG(ERROR, "Node '%s' has invalid compatible string. Cannot determine PHY type. ",
-            node.name().c_str());
+    fdf::error("Node '{}' has invalid compatible string. Cannot determine PHY type. ", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -53,10 +53,10 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
   auto dr_modes = parser_output->Get<std::vector<std::string>>(kDrModes);
 
   if (reg_names->size() - 1 != dr_modes->size()) {
-    FDF_LOG(ERROR,
-            "Node '%s' does not have entries in dr_modes for each PHY device. Expected - %zu, "
-            "Actual - %zu.",
-            node.name().c_str(), reg_names->size() - 1, dr_modes->size());
+    fdf::error(
+        "Node '{}' does not have entries in dr_modes for each PHY device. Expected - {}, Actual - {}.",
+        node.name(), reg_names->size() - 1, dr_modes->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -91,8 +91,9 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
       {.usb_phy_modes{std::move(phy_modes)}, .phy_type = phy_type}};
   fit::result persisted_metadata = fidl::Persist(metadata);
   if (!persisted_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to persist metadata for node %s: %s", node.name().c_str(),
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist metadata for node {}: {}", node.name(),
+               persisted_metadata.error_value().FormatDescription());
+
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -101,7 +102,7 @@ zx::result<> AmlUsbPhyVisitor::DriverVisit(fdf_devicetree::Node& node,
       .data = std::move(persisted_metadata.value()),
   }};
   node.AddMetadata(std::move(usb_phy_metadata));
-  FDF_LOG(DEBUG, "Added %zu usb phy metadata to node '%s'.", phy_modes.size(), node.name().c_str());
+  fdf::debug("Added {} usb phy metadata to node '{}'.", phy_modes.size(), node.name());
 
   return zx::ok();
 }

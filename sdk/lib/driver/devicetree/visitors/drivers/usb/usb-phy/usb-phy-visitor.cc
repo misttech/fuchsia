@@ -36,8 +36,8 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
                                   const devicetree::PropertyDecoder& decoder) {
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Usb visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Usb visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -46,15 +46,16 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
     auto phy_names = parser_output->Get<std::vector<std::string>>(kPhyNames);
     if (!phy_names) {
       if (phys->size() > 1) {
-        FDF_LOG(ERROR, "Node '%s' is missing phy-names.", node.name().c_str());
+        fdf::error("Node '{}' is missing phy-names.", node.name());
+
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
     } else {
       if (phy_names->size() != phys->size()) {
-        FDF_LOG(
-            ERROR,
-            "Node '%s' does not have required number of phy-names. Expected (%zu), actual (%zu).",
-            node.name().c_str(), phys->size(), phy_names->size());
+        fdf::error(
+            "Node '{}' does not have required number of phy-names. Expected ({}), actual ({}).",
+            node.name(), phys->size(), phy_names->size());
+
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
     }
@@ -62,8 +63,8 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
     for (uint32_t index = 0; index < phys->size(); index++) {
       auto& reference = (*phys)[index];
       if (!reference.reference_node()) {
-        FDF_LOG(ERROR, "Node '%s' has invalid phy reference at %d index.", node.name().c_str(),
-                index);
+        fdf::error("Node '{}' has invalid phy reference at {} index.", node.name(), index);
+
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
@@ -122,8 +123,8 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
 
   child.AddNodeSpec(phy_node);
 
-  FDF_LOG(DEBUG, "Added '%s' bind rules to node '%s'.", std::string(phy_name).c_str(),
-          child.name().c_str());
+  fdf::debug("Added '{}' bind rules to node '{}'.", phy_name, child.name());
+
   return zx::ok();
 }
 

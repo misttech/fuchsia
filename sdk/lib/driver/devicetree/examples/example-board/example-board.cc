@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/devicetree/manager/publisher-dev.h>
 #include <lib/driver/devicetree/visitors/load-visitors.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 namespace example_board {
 
@@ -17,31 +18,36 @@ zx::result<> ExampleBoard::Start() {
 
   auto manager = fdf_devicetree::Manager::CreateFromNamespace(*incoming());
   if (manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to create devicetree manager: %s", manager.status_string());
+    fdf::error("Failed to create devicetree manager: {}", manager);
+
     return manager.take_error();
   }
 
   auto visitors = fdf_devicetree::LoadVisitors(symbols());
   if (visitors.is_error()) {
-    FDF_LOG(ERROR, "Failed to create visitors: %s", visitors.status_string());
+    fdf::error("Failed to create visitors: {}", visitors);
+
     return visitors.take_error();
   }
 
   auto status = manager->Walk(*(visitors.value()));
   if (status.is_error()) {
-    FDF_LOG(ERROR, "Failed to walk the device tree: %s", status.status_string());
+    fdf::error("Failed to walk the device tree: {}", status);
+
     return status.take_error();
   }
 
   auto pbus = incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
   if (pbus.is_error() || !pbus->is_valid()) {
-    FDF_LOG(ERROR, "Failed to connect to pbus: %s", pbus.status_string());
+    fdf::error("Failed to connect to pbus: {}", pbus);
+
     return pbus.take_error();
   }
 
   auto group_manager = incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
   if (group_manager.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to device group manager: %s", group_manager.status_string());
+    fdf::error("Failed to connect to device group manager: {}", group_manager);
+
     return group_manager.take_error();
   }
 
@@ -50,7 +56,8 @@ zx::result<> ExampleBoard::Start() {
   fdf_devicetree::PublisherDev publisher(pbus_client, mgr_client, node_);
   status = manager->PublishDevices(publisher);
   if (status.is_error()) {
-    FDF_LOG(ERROR, "Failed to publish devices: %s", status.status_string());
+    fdf::error("Failed to publish devices: {}", status);
+
     return status.take_error();
   }
 

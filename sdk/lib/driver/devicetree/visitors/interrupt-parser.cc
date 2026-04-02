@@ -36,8 +36,9 @@ InterruptParser::InterruptParser() : PropertyParser(MakeInterruptProperties()) {
 zx::result<ParsedProperties> InterruptParser::Parse(Node& node) {
   zx::result interrupt_values = PropertyParser::Parse(node);
   if (interrupt_values.is_error()) {
-    FDF_LOG(ERROR, "Interrupts-extended parser failed for node '%s - %s", node.name().c_str(),
-            interrupt_values.status_string());
+    fdf::error("Interrupts-extended parser failed for node '{}' - {}", node.name(),
+               interrupt_values);
+
     return interrupt_values.take_error();
   }
 
@@ -63,8 +64,8 @@ zx::result<ParsedProperties> InterruptParser::Parse(Node& node) {
     if (parent_phandle.is_ok()) {
       auto result = node.GetReferenceNode(*parent_phandle);
       if (result.is_error()) {
-        FDF_LOG(ERROR, "Failed to get reference node for phandle %d - %s ", *parent_phandle,
-                result.status_string());
+        fdf::error("Failed to get reference node for phandle {} - {} ", *parent_phandle, result);
+
         return result.take_error();
       }
       interrupt_parent = *result;
@@ -82,33 +83,35 @@ zx::result<ParsedProperties> InterruptParser::Parse(Node& node) {
   }
 
   if (!interrupt_parent) {
-    FDF_LOG(ERROR, "Interrupt parent not found for node '%s'", node.name().c_str());
+    fdf::error("Interrupt parent not found for node '{}'", node.name());
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   auto cell_width_prop = interrupt_parent.properties().find(kInterruptCells);
   if (cell_width_prop == current.properties().end()) {
-    FDF_LOG(
-        ERROR,
-        "Could not find the interrupt cells property in the in interrupt parent '%s' for node '%s",
-        interrupt_parent.name().c_str(), node.name().c_str());
+    fdf::error(
+        "Could not find the interrupt cells property in the in interrupt parent '{}' for node '{}'",
+        interrupt_parent.name(), node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto cell_width = cell_width_prop->second.AsUint32();
   if (!cell_width) {
-    FDF_LOG(ERROR, "Invalid interrupt cells property in the in interrupt parent '%s' for node '%s",
-            interrupt_parent.name().c_str(), node.name().c_str());
+    fdf::error("Invalid interrupt cells property in the in interrupt parent '{}' for node '{}'",
+               interrupt_parent.name(), node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   size_t cell_count = interrupts_property->second.AsBytes().size_bytes() / sizeof(uint32_t);
 
   if ((cell_count % cell_width.value()) != 0) {
-    FDF_LOG(
-        ERROR,
-        "Invalid number of interrupt elements in node '%s. Interrupt cell size is %d and there are %zu extra entries.",
-        node.name().c_str(), cell_width.value(), cell_count % cell_width.value());
+    fdf::error(
+        "Invalid number of interrupt elements in node '{}. Interrupt cell size is {} and there are {} extra entries.",
+        node.name(), cell_width.value(), cell_count % cell_width.value());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -126,8 +129,9 @@ zx::result<ParsedProperties> InterruptParser::Parse(Node& node) {
     const size_t interrupt_name_count =
         interrupt_values->Get<std::vector<std::string>>(kInterruptNames)->size();
     if (interrupt_count != interrupt_name_count) {
-      FDF_LOG(ERROR, "Number of interrupts (%zu) doesn't match number of interrupt-names (%zu)",
-              interrupt_count, interrupt_name_count);
+      fdf::error("Number of interrupts ({}) doesn't match number of interrupt-names ({})",
+                 interrupt_count, interrupt_name_count);
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
   }

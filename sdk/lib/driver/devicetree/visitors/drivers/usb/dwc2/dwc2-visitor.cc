@@ -32,8 +32,8 @@ zx::result<> Dwc2Visitor::DriverVisit(fdf_devicetree::Node& node,
                                       const devicetree::PropertyDecoder& decoder) {
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "dwc2 visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("dwc2 visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -62,9 +62,9 @@ zx::result<> Dwc2Visitor::DriverVisit(fdf_devicetree::Node& node,
 
   if (auto tx_fifo_sizes = parser_output->Get<std::vector<uint32_t>>(kGTxFifoSize)) {
     if (tx_fifo_sizes->size() > dwc2_metadata.tx_fifo_sizes().size()) {
-      FDF_LOG(ERROR, "Node '%s' has invalid '%s'. Expected size to be <= %lu, actual: %zu.",
-              node.name().c_str(), kGTxFifoSize, dwc2_metadata.tx_fifo_sizes().size(),
-              tx_fifo_sizes->size());
+      fdf::error("Node '{}' has invalid '{}'. Expected size to be <= {}, actual: {}.", node.name(),
+                 kGTxFifoSize, dwc2_metadata.tx_fifo_sizes().size(), tx_fifo_sizes->size());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
@@ -77,8 +77,9 @@ zx::result<> Dwc2Visitor::DriverVisit(fdf_devicetree::Node& node,
   if (metadata_found) {
     fit::result persisted_metadata = fidl::Persist(dwc2_metadata);
     if (!persisted_metadata.is_ok()) {
-      FDF_LOG(ERROR, "Failed to persist dwc2 metadata: %s",
-              persisted_metadata.error_value().FormatDescription().c_str());
+      fdf::error("Failed to persist dwc2 metadata: {}",
+                 persisted_metadata.error_value().FormatDescription());
+
       return zx::error(persisted_metadata.error_value().status());
     }
 
@@ -87,7 +88,7 @@ zx::result<> Dwc2Visitor::DriverVisit(fdf_devicetree::Node& node,
         .data = std::move(persisted_metadata.value()),
     });
     node.AddMetadata(std::move(metadata));
-    FDF_LOG(DEBUG, "Added dwc2 metadata to node '%s'.", node.name().c_str());
+    fdf::debug("Added dwc2 metadata to node '{}'.", node.name());
   }
 
   return zx::ok();

@@ -40,6 +40,7 @@ fuchsia_cc_driver(
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
         "@fuchsia_sdk//fidl/fuchsia.io:fuchsia.io_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
+        "@fuchsia_sdk//pkg/driver_logging_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
         "@fuchsia_sdk//pkg/driver_runtime_cpp",
         "@internal_sdk//pkg/devicetree-default",
