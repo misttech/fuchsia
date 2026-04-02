@@ -67,15 +67,16 @@ zx::result<> SmcVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
 
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Smc visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Smc visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
   std::optional smc_names = parser_output->Get<std::vector<std::string>>(KSmcNamesProp);
   if (smc_names && smc_names->size() != count) {
-    FDF_LOG(ERROR, "Smc names count mismatch for node '%s'. Expected %zu, got %zu.",
-            node.name().c_str(), count, smc_names->size());
+    fdf::error("Smc names count mismatch for node '{}'. Expected {}, got {}.", node.name(), count,
+               smc_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -94,8 +95,9 @@ zx::result<> SmcVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
       metadata.name((*smc_names)[index]);
     }
 
-    FDF_LOG(DEBUG, "SMC (0x%0x, 0x%0x) added to node '%s'.", *metadata.service_call_num_base(),
-            *metadata.count(), node.name().c_str());
+    fdf::debug("SMC ({:#x}, {:#x}) added to node '{}'.", *metadata.service_call_num_base(),
+               *metadata.count(), node.name());
+
     node.AddSmc(metadata);
   }
 

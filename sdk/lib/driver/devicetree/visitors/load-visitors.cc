@@ -24,7 +24,7 @@ zx::result<std::unique_ptr<VisitorRegistry>> LoadVisitors(
 
   auto status = visitors->RegisterVisitor(std::make_unique<DefaultVisitors<>>());
   if (status.is_error()) {
-    FDF_LOG(ERROR, "DefaultVisitors registration failed: %s", status.status_string());
+    fdf::error("DefaultVisitors registration failed: {}", status.status_string());
     return status.take_error();
   }
 
@@ -34,25 +34,24 @@ zx::result<std::unique_ptr<VisitorRegistry>> LoadVisitors(
     auto registration = fdf_internal::GetSymbol<const VisitorRegistration*>(
         symbols, module_name, "__devicetree_visitor_registration__");
     if (registration == nullptr) {
-      FDF_LOG(ERROR, "Symbol __devicetree_visitor_registration__ not found in visitor: '%s'",
-              module_name.c_str());
+      fdf::error("Symbol __devicetree_visitor_registration__ not found in visitor: '{}'",
+                 module_name);
       continue;
     }
 
     auto visitor = registration->v1.create_visitor(fdf::Logger::GlobalInstance());
     if (!visitor) {
-      FDF_LOG(ERROR, "visitor '%s' creation failed", module_name.c_str());
+      fdf::error("visitor '{}' creation failed", module_name);
       continue;
     }
 
     status = visitors->RegisterVisitor(std::move(visitor));
     if (status.is_error()) {
-      FDF_LOG(ERROR, "visitor '%s' registration failed: %s", module_name.c_str(),
-              status.status_string());
+      fdf::error("visitor '{}' registration failed: {}", module_name, status.status_string());
       continue;
     }
 
-    FDF_LOG(DEBUG, "visitor '%s' registered", module_name.c_str());
+    fdf::debug("visitor '{}' registered", module_name);
   }
   return zx::ok(std::move(visitors));
 }

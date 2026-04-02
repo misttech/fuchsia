@@ -20,14 +20,16 @@ zx::result<ParsedProperties> PropertyParser::Parse(Node& node) {
     if (status.is_error()) {
       if (status.status_value() == ZX_ERR_NOT_FOUND) {
         if (property->required()) {
-          FDF_LOG(ERROR, "Node '%s' does not include the required property '%s'",
-                  node.name().c_str(), property->name().c_str());
+          fdf::error("Node '{}' does not include the required property '{}'", node.name(),
+                     property->name());
+
           return status.take_error();
         }
         continue;
       }
-      FDF_LOG(ERROR, "Failed to parse property '%s' for node '%s - %d", property->name().c_str(),
-              node.name().c_str(), status.status_value());
+      fdf::error("Failed to parse property '{}' for node '{}' - {}", property->name(), node.name(),
+                 status.status_value());
+
       return status.take_error();
     }
   }
@@ -37,7 +39,8 @@ zx::result<ParsedProperties> PropertyParser::Parse(Node& node) {
 void ParsedProperties::AddProperty(const PropertyName& name, std::any value) {
   auto [it, inserted] = properties_.emplace(name, std::move(value));
   if (!inserted) {
-    FDF_LOG(WARNING, "Property '%s' is being overwritten.", name.c_str());
+    fdf::warn("Property '{}' is being overwritten.", name);
+
     it->second = std::move(value);
   }
 }
@@ -113,8 +116,9 @@ zx::result<> ReferenceProperty::Parse(Node& node, std::map<PropertyName, std::an
     auto phandle = cells[cell_offset];
     auto reference = node.GetReferenceNode(phandle);
     if (reference.is_error()) {
-      FDF_LOG(ERROR, "Node '%s' has invalid reference in '%s' property to %d.", node.name().c_str(),
-              name().c_str(), phandle);
+      fdf::error("Node '{}' has invalid reference in '{}' property to {}.", node.name(), name(),
+                 phandle);
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
@@ -125,8 +129,9 @@ zx::result<> ReferenceProperty::Parse(Node& node, std::map<PropertyName, std::an
       auto cells_prop_name = std::get<PropertyName>(cell_specifier_);
       auto cell_specifier = reference->GetProperty<uint32_t>(cells_prop_name);
       if (cell_specifier.is_error()) {
-        FDF_LOG(ERROR, "Failed to parse reference with %s cells. reference node: %s. error: %d",
-                reference->name().c_str(), cells_prop_name.c_str(), cell_specifier.status_value());
+        fdf::error("Failed to parse reference with {} cells. reference node: {}. error: {}",
+                   reference->name(), cells_prop_name, cell_specifier.status_value());
+
         return cell_specifier.take_error();
       }
       cell_count = *cell_specifier;
@@ -139,10 +144,10 @@ zx::result<> ReferenceProperty::Parse(Node& node, std::map<PropertyName, std::an
     cell_offset += cell_count;
 
     if (byteview_offset > bytes.size() || (width_in_bytes > bytes.size() - byteview_offset)) {
-      FDF_LOG(
-          ERROR,
-          "Reference node '%s' has less data than expected. Expected %zu bytes, remaining %zu bytes",
-          reference->name().c_str(), width_in_bytes, bytes.size() - byteview_offset);
+      fdf::error(
+          "Reference node '{}' has less data than expected. Expected {} bytes, remaining {} bytes",
+          reference->name(), width_in_bytes, bytes.size() - byteview_offset);
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 

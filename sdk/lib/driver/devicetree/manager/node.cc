@@ -60,8 +60,7 @@ Node::Node(Node *parent, const std::string_view name, devicetree::Properties pro
   if (phandle.is_ok()) {
     phandle_ = phandle.value();
   } else if (phandle.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(WARNING, "Node '%s' has invalid phandle property: %d", name_.c_str(),
-            phandle.status_value());
+    fdf::warn("Node '{}' has invalid phandle property: {}", name_, phandle.status_value());
   }
 }
 
@@ -177,7 +176,7 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
       return result.take_error();
     }
   } else if (add_board_child) {
-    FDF_LOG(DEBUG, "Adding node '%s' as board driver child.", fdf_name().c_str());
+    fdf::debug("Adding node '{}' as board driver child.", fdf_name());
 
     auto result = publisher.AddBoardChildNode(
         {.name = fdf_name(),
@@ -230,8 +229,7 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
     parents_.insert(parents_.begin(), std::move(board_child_node));
   }
 
-  FDF_LOG(DEBUG, "Adding composite node spec to '%s' with %zu parents.", fdf_name().data(),
-          parents_.size());
+  fdf::debug("Adding composite node spec to '{}' with {} parents.", fdf_name(), parents_.size());
 
   zx::result<> result = publisher.AddCompositeNodeSpec(
       fdf_name(), std::move(parents_),

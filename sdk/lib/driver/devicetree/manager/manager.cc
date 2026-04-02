@@ -62,8 +62,7 @@ namespace fdf_devicetree {
 zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
   zx::result client = ns.Connect<fhpb::Service::Firmware>();
   if (client.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to fuchsia.hardware.platform.bus.Firmware: %d",
-            client.status_value());
+    fdf::error("Failed to connect to fuchsia.hardware.platform.bus.Firmware: {}", client);
     return client.take_error();
   }
 
@@ -72,11 +71,11 @@ zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
       fdf::WireCall(*client).buffer(arena)->GetFirmware(fhpb::wire::FirmwareType::kDeviceTree);
 
   if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send GetFirmware request: %s", result.FormatDescription().data());
+    fdf::error("Failed to send GetFirmware request: {}", result.FormatDescription());
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    FDF_LOG(ERROR, "Failed to GetFirmware: %d", result->error_value());
+    fdf::error("Failed to GetFirmware: {}", result->error_value());
     return zx::error(result->error_value());
   }
 
@@ -86,7 +85,7 @@ zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
 
   zx_status_t status = vmo.read(data.data(), 0, length);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to read %lu bytes from the devicetree: %d", length, status);
+    fdf::error("Failed to read {} bytes from the devicetree: {}", length, status);
     return zx::error(status);
   }
 
@@ -97,45 +96,46 @@ zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
 zx::result<> Manager::Walk(Visitor& visitor) {
   // Walk the tree and create all nodes before calling the visitor. This is required for
   // |GetReferenceNode| method to work properly.
-  tree_.Walk([&, this](const devicetree::NodePath& path,
-                       const devicetree::PropertyDecoder& decoder) {
-    FDF_LOG(DEBUG, "Found node - %.*s", static_cast<int>(path.back().length()), path.back().data());
+  tree_.Walk(
+      [&, this](const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
+        fdf::debug("Found node - {}", static_cast<std::string_view>(path.back()));
 
-    Node* parent = nullptr;
-    if (path != "/") {
-      parent = nodes_by_path_[GetParentPath(path)];
-    }
+        Node* parent = nullptr;
+        if (path != "/") {
+          parent = nodes_by_path_[GetParentPath(path)];
+        }
 
-    // Create a node.
-    const devicetree::Properties& properties = decoder.properties();
-    auto node = std::make_unique<Node>(parent, path.back(), properties, node_id_++, this);
-    Node* ptr = node.get();
-    nodes_publish_order_.emplace_back(std::move(node));
-    FDF_LOG(DEBUG, "Node[%d] - %s added for publishing", node_id_, path.back().data());
+        // Create a node.
+        const devicetree::Properties& properties = decoder.properties();
+        auto node = std::make_unique<Node>(parent, path.back(), properties, node_id_++, this);
+        Node* ptr = node.get();
+        nodes_publish_order_.emplace_back(std::move(node));
+        fdf::debug("Node[{}] - {} added for publishing", node_id_,
+                   static_cast<std::string_view>(path.back()));
 
-    if (ptr->phandle()) {
-      nodes_by_phandle_.emplace(*(ptr->phandle()), ptr);
-    }
-    nodes_by_path_.emplace(GetPath(path), ptr);
-    return true;
-  });
+        if (ptr->phandle()) {
+          nodes_by_phandle_.emplace(*(ptr->phandle()), ptr);
+        }
+        nodes_by_path_.emplace(GetPath(path), ptr);
+        return true;
+      });
 
   zx::result<> visit_status = zx::ok();
-  tree_.Walk([&, this](const devicetree::NodePath& path,
-                       const devicetree::PropertyDecoder& decoder) {
-    FDF_LOG(DEBUG, "Visit node - %.*s", static_cast<int>(path.back().length()), path.back().data());
-    auto node = nodes_by_path_[GetPath(path)];
-    zx::result<> status = visitor.Visit(*node, decoder);
-    if (status.is_error()) {
-      FDF_LOG(ERROR, "Node visit failed. node_name: %s, status_str: %d", node->name().c_str(),
-              status.status_value());
-      visit_status = status;
-    }
-    return true;
-  });
+  tree_.Walk(
+      [&, this](const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
+        fdf::debug("Visit node - {}", static_cast<std::string_view>(path.back()));
+        auto node = nodes_by_path_[GetPath(path)];
+        zx::result<> status = visitor.Visit(*node, decoder);
+        if (status.is_error()) {
+          fdf::error("Node visit failed. node_name: {}, status_str: {}", node->name(),
+                     status.status_value());
+          visit_status = status;
+        }
+        return true;
+      });
 
   if (visit_status.is_error()) {
-    FDF_LOG(ERROR, "Devicetree walk failed. status_str: %d", visit_status.status_value());
+    fdf::error("Devicetree walk failed. status_str: {}", visit_status.status_value());
     return visit_status;
   }
 
@@ -143,11 +143,11 @@ zx::result<> Manager::Walk(Visitor& visitor) {
   // all references to the node is known and so the visitor can use that information to update any
   // Node properties if needed.
   for (auto& node : nodes_publish_order_) {
-    FDF_LOG(DEBUG, "Finalize node - %s", node->name().c_str());
+    fdf::debug("Finalize node - {}", node->name());
     zx::result finalize_status = visitor.FinalizeNode(*node);
     if (finalize_status.is_error()) {
-      FDF_LOG(ERROR, "Node finalize failed. node_name: %s, status_str: %d", node->name().c_str(),
-              finalize_status.status_value());
+      fdf::error("Node finalize failed. node_name: {}, status_str: {}", node->name(),
+                 finalize_status.status_value());
       return finalize_status;
     }
   }
@@ -159,15 +159,14 @@ zx::result<> Manager::PublishDevices(PublisherInterface& publisher) {
   for (const auto& [iommu_id, iommu] : iommus_) {
     zx::result<> result = publisher.RegisterIommu(iommu_id, iommu);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to register IOMMU for node ID %d: %d", iommu_id, result.error_value());
+      fdf::error("Failed to register IOMMU for node ID {}: {}", iommu_id, result.status_value());
     }
   }
 
   for (auto& node : nodes_publish_order_) {
     zx::result<> status = node->Publish(publisher);
     if (status.is_error()) {
-      FDF_LOG(ERROR, "Failed to publish device for node ID %d: %d", node->id(),
-              status.status_value());
+      fdf::error("Failed to publish device for node ID {}: {}", node->id(), status.status_value());
     }
   }
   return zx::ok();
@@ -194,9 +193,8 @@ uint32_t Manager::GetPublishIndex(uint32_t node_id) {
 
 zx::result<> Manager::ChangePublishOrder(uint32_t node_id, uint32_t new_index) {
   if (new_index >= nodes_publish_order_.size()) {
-    FDF_LOG(
-        ERROR,
-        "The change publish order request index (%d) is out of range. The list only contains %zu items.",
+    fdf::error(
+        "The change publish order request index ({}) is out of range. The list only contains {} items.",
         new_index, nodes_publish_order_.size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }

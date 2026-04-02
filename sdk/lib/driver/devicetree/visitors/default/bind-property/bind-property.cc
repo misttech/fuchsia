@@ -20,21 +20,23 @@ constexpr const char kCompatibleProp[] = "compatible";
 zx::result<> BindPropertyVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
   auto compatible = node.GetProperty<std::vector<std::string>>(kCompatibleProp);
   if (compatible.is_error() && compatible.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(WARNING, "Node has invalid compatible property. node_name: %s, status: %d",
-            node.name().c_str(), compatible.status_value());
+    fdf::warn("Node has invalid compatible property. node_name: {}, status: {}", node.name(),
+              compatible.status_value());
+
     return compatible.take_error();
   }
 
   if (!compatible.is_ok() || compatible->empty()) {
-    FDF_LOG(DEBUG, "Node '%s' has no compatible property.", node.name().data());
+    fdf::debug("Node '{}' has no compatible property.", node.name());
+
     return zx::ok();
   }
 
   fdf::NodeProperty2 prop(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
                           fdf::NodePropertyValue::WithStringValue(compatible->front()));
 
-  FDF_LOG(DEBUG, "Added property %s to node '%s'", compatible->front().c_str(),
-          node.name().c_str());
+  fdf::debug("Added property {} to node '{}'", compatible->front(), node.name());
+
   node.AddBindProperty(std::move(prop));
 
   return zx::ok();

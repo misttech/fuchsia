@@ -49,7 +49,8 @@ BtiVisitor::BtiVisitor() {
 zx::result<> BtiVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
   zx::result parser_output = reference_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Failed to parse reference for node '%s'", node.name().c_str());
+    fdf::error("Failed to parse reference for node '{}'", node.name());
+
     return parser_output.take_error();
   }
 
@@ -60,8 +61,9 @@ zx::result<> BtiVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
 
   auto iommu_names = parser_output->Get<std::vector<std::string>>(kBtiNameProp);
   if (iommu_names && iommu_names->size() > btis->size()) {
-    FDF_LOG(ERROR, "Node '%s' has %zu iommu entries but has %zu iommmu names.", node.name().c_str(),
-            btis->size(), iommu_names->size());
+    fdf::error("Node '{}' has {} iommu entries but has {} iommu names.", node.name(), btis->size(),
+               iommu_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -78,8 +80,8 @@ zx::result<> BtiVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
         return result.take_error();
       }
     } else {
-      FDF_LOG(WARNING, "Node %s iommu references illegal parent: %s", node.name().c_str(),
-              reference.reference_node().name().c_str());
+      fdf::warn("Node {} iommu references illegal parent: {}", node.name(),
+                reference.reference_node().name());
     }
   }
 
@@ -109,9 +111,9 @@ zx::result<> BtiVisitor::ReferenceChildVisit(Node& child, ReferenceNode& parent,
       .bti_id = iommu_cell.bti_id(),
       .name = std::move(iommu_name),
   }};
-  FDF_LOG(DEBUG, "BTI %s index: 0x%0x, id: 0x%0x, added to node '%s'.",
-          bti.name().has_value() ? bti.name()->c_str() : "(no name)", *bti.iommu_id(),
-          *bti.bti_id(), child.name().c_str());
+  fdf::debug("BTI {} index: {:#x}, id: {:#x}, added to node '{}'.",
+             bti.name().value_or("(no name)"), *bti.iommu_id(), *bti.bti_id(), child.name());
+
   child.AddBti(bti);
 
   return zx::ok();

@@ -18,8 +18,7 @@ bool DriverVisitor::is_match(
   const devicetree::PropertyValue& compat_pv = properties.at(kCompatibleProp);
   std::optional compat_string = compat_pv.AsStringList();
   if (!compat_string.has_value()) {
-    FDF_LOG(WARNING, "Node has invalid compatible property. prop_len: %zu",
-            compat_pv.AsBytes().size());
+    fdf::warn("Node has invalid compatible property. prop_len: {}", compat_pv.AsBytes().size());
     return false;
   }
 

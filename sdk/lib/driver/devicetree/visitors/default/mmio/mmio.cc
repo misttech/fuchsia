@@ -34,21 +34,24 @@ zx::result<> MmioVisitor::RegPropertyParser(Node& node,
                                             const devicetree::PropertyDecoder& decoder) {
   auto property = node.properties().find(kMmioProp);
   if (property == node.properties().end()) {
-    FDF_LOG(DEBUG, "Node '%s' has no reg properties.", node.name().c_str());
+    fdf::debug("Node '{}' has no reg properties.", node.name());
+
     return zx::ok();
   }
 
   // Make sure value is a register array.
   auto reg_props = property->second.AsReg(decoder);
   if (reg_props == std::nullopt) {
-    FDF_LOG(WARNING, "Node '%s' has invalid reg property.", node.name().c_str());
+    fdf::warn("Node '{}' has invalid reg property.", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto mmio_names = parsed_props.Get<std::vector<std::string>>(kMmioNamesProp);
   if (mmio_names && mmio_names->size() > reg_props->size()) {
-    FDF_LOG(ERROR, "Node '%s' has %zu reg entries but has %zu reg names.", node.name().c_str(),
-            reg_props->size(), mmio_names->size());
+    fdf::error("Node '{}' has {} reg entries but has {} reg names.", node.name(), reg_props->size(),
+               mmio_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -62,7 +65,8 @@ zx::result<> MmioVisitor::RegPropertyParser(Node& node,
       }
       node_mmios_[node.id()].push_back(std::move(mmio));
     } else {
-      FDF_LOG(DEBUG, "Node '%s' reg is not mmio.", node.name().data());
+      fdf::debug("Node '{}' reg is not mmio.", node.name());
+
       break;
     }
   }
@@ -79,8 +83,9 @@ zx::result<> MmioVisitor::MemoryRegionParser(Node& node,
 
   auto memory_region_names = parsed_props.Get<std::vector<std::string>>(kMemoryRegionNamesProp);
   if (memory_region_names && memory_region_names->size() > memory_regions->size()) {
-    FDF_LOG(ERROR, "Node '%s' has %zu memory-region entries but has %zu memory-region names.",
-            node.name().c_str(), memory_regions->size(), memory_region_names->size());
+    fdf::error("Node '{}' has {} memory-region entries but has {} memory-region names.",
+               node.name(), memory_regions->size(), memory_region_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -100,8 +105,8 @@ zx::result<> MmioVisitor::MemoryRegionParser(Node& node,
 zx::result<> MmioVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
   auto parser_output = mmio_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Mmio visitor failed for node '%s' : %d", node.name().c_str(),
-            parser_output.status_value());
+    fdf::error("Mmio visitor failed for node '{}' : {}", node.name(), parser_output.status_value());
+
     return parser_output.take_error();
   }
 
@@ -128,8 +133,9 @@ zx::result<> MmioVisitor::FinalizeNode(Node& node) {
     for (auto& memory_region : memory_region_nodes_[node.id()]) {
       fdf_devicetree::Node* referee = memory_region.first;
       for (auto&& mmio : node_mmios_[node.id()]) {
-        FDF_LOG(DEBUG, "Memory region [0x%0lx, 0x%lx) added to node '%s'.", *mmio.base(),
-                *mmio.base() + *mmio.length(), referee->name().data());
+        fdf::debug("Memory region [{:#x}, {:#x}) added to node '{}'.", *mmio.base(),
+                   *mmio.base() + *mmio.length(), referee->name());
+
         fuchsia_hardware_platform_bus::Mmio referee_mmio = mmio;
         if (memory_region.second) {
           referee_mmio.name() = *memory_region.second;
@@ -140,8 +146,9 @@ zx::result<> MmioVisitor::FinalizeNode(Node& node) {
     }
   } else {
     for (auto&& mmio : node_mmios_[node.id()]) {
-      FDF_LOG(DEBUG, "MMIO [0x%0lx, 0x%lx) added to node '%s'.", *mmio.base(),
-              *mmio.base() + *mmio.length(), node.name().data());
+      fdf::debug("MMIO [{:#x}, {:#x}) added to node '{}'.", *mmio.base(),
+                 *mmio.base() + *mmio.length(), node.name());
+
       node.AddMmio(std::move(mmio));
     }
   }
