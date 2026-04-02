@@ -20,14 +20,14 @@ void CollectMetadataFrom(fidl::VectorView<fuchsia_driver_compat::wire::Metadata>
       zx_status_t status =
           metadata.data.get_property(ZX_PROP_VMO_CONTENT_SIZE, &size, sizeof(size));
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to get metadata vmo size: %s", zx_status_get_string(status));
+        fdf::error("Failed to get metadata vmo size: {}", zx_status_get_string(status));
         continue;
       }
 
       Metadata data(size);
       status = metadata.data.read(data.data(), 0, data.size());
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to read metadata vmo: %s", zx_status_get_string(status));
+        fdf::error("Failed to read metadata vmo: {}", zx_status_get_string(status));
         continue;
       }
 
@@ -260,7 +260,7 @@ zx::result<> SyncInitializedDeviceServer::Initialize(
   // First connect to all the parents.
   auto parent_devices = ConnectToParentDevices(incoming.get());
   if (parent_devices.is_error()) {
-    FDF_LOG(DEBUG, "Failed to get parent devices: %s.", parent_devices.status_string());
+    fdf::debug("Failed to get parent devices: {}.", parent_devices);
 
     // No parents if we are the root node.
     return CreateAndServe(outgoing, child_node_name_str, std::move(banjo_config));
@@ -288,7 +288,7 @@ zx::result<> SyncInitializedDeviceServer::Initialize(
 
   // No default parent found.
   if (!default_parent_client.is_valid()) {
-    FDF_LOG(DEBUG, "Failed to find the default parent.");
+    fdf::debug("Failed to find the default parent.");
 
     // No parents if we are the root node.
     return CreateAndServe(outgoing, child_node_name_str, std::move(banjo_config));
@@ -304,11 +304,10 @@ zx::result<> SyncInitializedDeviceServer::Initialize(
   if (parent_clients.empty()) {
     fidl::WireResult metadata_result = default_parent_client->GetMetadata();
     if (!metadata_result.ok()) {
-      FDF_LOG(WARNING, "Failed to get metadata from default parent. %s",
-              metadata_result.status_string());
+      fdf::warn("Failed to get metadata from default parent. {}", metadata_result.status_string());
     } else if (metadata_result.value().is_error()) {
-      FDF_LOG(WARNING, "Failed to get metadata from default parent. %s",
-              zx_status_get_string(metadata_result.value().error_value()));
+      fdf::warn("Failed to get metadata from default parent. {}",
+                zx_status_get_string(metadata_result.value().error_value()));
       return zx::ok();
     } else {
       CollectMetadataFrom(metadata_result->value()->metadata, forward_metadata,
@@ -318,11 +317,11 @@ zx::result<> SyncInitializedDeviceServer::Initialize(
     for (auto& [parent_name, parent_client] : parent_clients) {
       fidl::WireResult metadata_result = parent_client->GetMetadata();
       if (!metadata_result.ok()) {
-        FDF_LOG(WARNING, "Failed to get metadata from parent %s. %s", parent_name.c_str(),
-                metadata_result.status_string());
+        fdf::warn("Failed to get metadata from parent {}. {}", parent_name,
+                  metadata_result.status_string());
       } else if (metadata_result.value().is_error()) {
-        FDF_LOG(WARNING, "Failed to get metadata from parent %s. %s", parent_name.c_str(),
-                zx_status_get_string(metadata_result.value().error_value()));
+        fdf::warn("Failed to get metadata from parent {}. {}", parent_name,
+                  zx_status_get_string(metadata_result.value().error_value()));
       } else {
         CollectMetadataFrom(metadata_result->value()->metadata, forward_metadata,
                             &device_server_.value());
@@ -344,7 +343,7 @@ zx::result<> SyncInitializedDeviceServer::CreateAndServe(
   zx_status_t serve_result =
       device_server_->Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), outgoing.get());
   if (serve_result != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to serve: %s", zx_status_get_string(serve_result));
+    fdf::error("Failed to serve: {}", zx_status_get_string(serve_result));
     device_server_.reset();
     return zx::error(serve_result);
   }
@@ -395,7 +394,7 @@ void AsyncInitializedDeviceServer::OnParentDevices(
   }
 
   if (parent_devices.is_error()) {
-    FDF_LOG(DEBUG, "Failed to get parent devices: %s.", parent_devices.status_string());
+    fdf::debug("Failed to get parent devices: {}.", parent_devices);
 
     // No parents if we are the root node.
     zx::result result = CreateAndServe();
@@ -426,7 +425,7 @@ void AsyncInitializedDeviceServer::OnParentDevices(
   }
 
   if (!default_parent_client_.is_valid()) {
-    FDF_LOG(DEBUG, "Failed to find the default parent.");
+    fdf::debug("Failed to find the default parent.");
 
     // No parents if we are the root node.
     zx::result result = CreateAndServe();
@@ -470,10 +469,9 @@ void AsyncInitializedDeviceServer::OnMetadataResult(
   }
 
   if (!result.ok()) {
-    FDF_LOG(WARNING, "Failed to get metadata: %s", result.status_string());
+    fdf::warn("Failed to get metadata: {}", result.status_string());
   } else if (result.value().is_error()) {
-    FDF_LOG(WARNING, "Failed to get metadata: %s",
-            zx_status_get_string(result.value().error_value()));
+    fdf::warn("Failed to get metadata: {}", zx_status_get_string(result.value().error_value()));
 
   } else {
     CollectMetadataFrom(result.value().value()->metadata, storage_->forward_metadata,
@@ -500,7 +498,7 @@ zx::result<> AsyncInitializedDeviceServer::CreateAndServe() {
   zx_status_t serve_result = device_server_->Serve(
       fdf::Dispatcher::GetCurrent()->async_dispatcher(), storage_->outgoing.get());
   if (serve_result != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to serve: %s", zx_status_get_string(serve_result));
+    fdf::error("Failed to serve: {}", zx_status_get_string(serve_result));
     device_server_.reset();
     return zx::error(serve_result);
   }

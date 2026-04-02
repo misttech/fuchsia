@@ -24,8 +24,8 @@ zx::result<OwnedChildNode> AddOwnedChild(
       {std::move(args), std::move(node_controller_server_end), std::move(node_server_end)});
 
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger, "Failed to add owned child %s. Error: %s",
-             std::string(node_name).c_str(), result.error_value().FormatDescription().c_str());
+    logger.log(fdf::LogSeverity::ERROR, "Failed to add owned child {}. Error: {}", node_name,
+               result.error_value().FormatDescription());
     return zx::error(result.error_value().is_framework_error()
                          ? result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -55,8 +55,8 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
       fidl::Call(parent)->AddChild({std::move(args), std::move(node_controller_server_end), {}});
 
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger, "Failed to add child %s. Error: %s", std::string(node_name).c_str(),
-             result.error_value().FormatDescription().c_str());
+    logger.log(fdf::LogSeverity::ERROR, "Failed to add child {}. Error: {}", node_name,
+               result.error_value().FormatDescription());
     return zx::error(result.error_value().is_framework_error()
                          ? result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -83,8 +83,8 @@ zx::result<OwnedChildNode> AddOwnedChild(
       {std::move(args), std::move(node_controller_server_end), std::move(node_server_end)});
 
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger, "Failed to add owned devfs child %s. Error: %s",
-             std::string(node_name).c_str(), result.error_value().FormatDescription().c_str());
+    logger.log(fdf::LogSeverity::ERROR, "Failed to add owned devfs child {}. Error: {}", node_name,
+               result.error_value().FormatDescription());
     return zx::error(result.error_value().is_framework_error()
                          ? result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -115,8 +115,8 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
       fidl::Call(parent)->AddChild({std::move(args), std::move(node_controller_server_end), {}});
 
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger, "Failed to add devfs child %s. Error: %s",
-             std::string(node_name).c_str(), result.error_value().FormatDescription().c_str());
+    logger.log(fdf::LogSeverity::ERROR, "Failed to add devfs child {}. Error: {}", node_name,
+               result.error_value().FormatDescription());
     return zx::error(result.error_value().is_framework_error()
                          ? result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -146,8 +146,8 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
       fidl::Call(parent)->AddChild({std::move(args), std::move(node_controller_server_end), {}});
 
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger, "Failed to add child %s. Error: %s", std::string(node_name).c_str(),
-             result.error_value().FormatDescription().c_str());
+    logger.log(fdf::LogSeverity::ERROR, "Failed to add child {}. Error: {}", node_name,
+               result.error_value().FormatDescription());
     return zx::error(result.error_value().is_framework_error()
                          ? result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);
@@ -178,8 +178,8 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
       fidl::Call(parent)->AddChild({std::move(args), std::move(node_controller_server_end), {}});
 
   if (result.is_error()) {
-    FDF_LOGL(ERROR, logger, "Failed to add devfs child %s. Error: %s",
-             std::string(node_name).c_str(), result.error_value().FormatDescription().c_str());
+    logger.log(fdf::LogSeverity::ERROR, "Failed to add devfs child {}. Error: {}", node_name,
+               result.error_value().FormatDescription());
     return zx::error(result.error_value().is_framework_error()
                          ? result.error_value().framework_error().status()
                          : ZX_ERR_INTERNAL);

@@ -121,7 +121,8 @@ void DriverBase::EnableServiceValidator() {
     incoming_->SetServiceValidator(
         std::make_optional<ServiceValidator>(start_args_.node_offers().value()));
   } else {
-    FDF_LOGL(INFO, *logger_, "No node_offers available, not able to enable service validation.");
+    logger_->log(fdf::LogSeverity::INFO,
+                 "No node_offers available, not able to enable service validation.");
   }
 }
 

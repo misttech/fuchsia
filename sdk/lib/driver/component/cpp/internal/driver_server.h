@@ -42,8 +42,8 @@ class DriverServer final : public fdf::WireServer<fuchsia_driver_framework::Driv
   virtual ~DriverServer() {
     if (driver_) {
       if (!complete_start_call_) {
-        FDF_LOGL(WARNING, driver_->logger(),
-                 "Driver server invoking Stop() hook before Start() is complete");
+        driver_->logger().log(fdf::LogSeverity::WARN,
+                              "Driver server invoking Stop() hook before Start() is complete");
       }
       driver_->Stop();
     }
@@ -81,7 +81,7 @@ class DriverServer final : public fdf::WireServer<fuchsia_driver_framework::Driv
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Driver> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     if (driver_) {
-      FDF_LOGL(INFO, driver_->logger(), "fdf::Driver server received unknown method.");
+      driver_->logger().log(fdf::LogSeverity::INFO, "fdf::Driver server received unknown method.");
     }
   }
 

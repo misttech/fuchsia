@@ -57,7 +57,7 @@ zx::result<> TestDriver::ExportDevfsNodeSync() {
       args, std::move(controller_endpoints.server), std::move(node_endpoints.server));
 
   if (!result.ok()) {
-    FDF_SLOG(ERROR, "Failed to add child", KV("status", result.status_string()));
+    fdf::error("Failed to add child: status={}", result.status_string());
     return zx::error(result.status());
   }
 
@@ -90,7 +90,7 @@ zx::result<> TestDriver::ValidateIncomingDriverService(std::string_view instance
   zx::result driver_connect_result =
       incoming()->Connect<fuchsia_driver_component_test::DriverService::Device>(instance);
   if (driver_connect_result.is_error()) {
-    FDF_LOG(WARNING, "Couldn't connect to DriverService.");
+    fdf::warn("Couldn't connect to DriverService.");
     return driver_connect_result.take_error();
   }
 
@@ -99,16 +99,15 @@ zx::result<> TestDriver::ValidateIncomingDriverService(std::string_view instance
       fdf::WireCall(driver_connect_result.value()).buffer(arena)->DriverMethod();
   if (!wire_result.ok()) {
     if (instance != component::kDefaultInstance) {
-      FDF_LOG(WARNING, "Failed to call DriverMethod %s", wire_result.status_string());
+      fdf::warn("Failed to call DriverMethod {}", wire_result.status_string());
     } else {
-      FDF_LOG(ERROR, "Failed to call DriverMethod %s", wire_result.status_string());
+      fdf::error("Failed to call DriverMethod {}", wire_result.status_string());
     }
     return zx::error(wire_result.status());
   }
 
   if (wire_result->is_error()) {
-    FDF_LOG(ERROR, "DriverMethod error %s",
-            zx_status_get_string(wire_result.value().error_value()));
+    fdf::error("DriverMethod error {}", zx_status_get_string(wire_result.value().error_value()));
     return wire_result.value().take_error();
   }
 
@@ -119,30 +118,29 @@ zx::result<> TestDriver::ValidateIncomingZirconService(std::string_view instance
   zx::result zircon_connect_result =
       incoming()->Connect<fuchsia_driver_component_test::ZirconService::Device>(instance);
   if (zircon_connect_result.is_error()) {
-    FDF_LOG(WARNING, "Couldn't connect to ZirconService.");
+    fdf::warn("Couldn't connect to ZirconService.");
     return zircon_connect_result.take_error();
   }
 
   fidl::WireResult wire_result = fidl::WireCall(zircon_connect_result.value())->ZirconMethod();
   if (!wire_result.ok()) {
     if (instance != component::kDefaultInstance) {
-      FDF_LOG(WARNING, "Failed to call ZirconMethod %s", wire_result.status_string());
+      fdf::warn("Failed to call ZirconMethod {}", wire_result.status_string());
     } else {
-      FDF_LOG(ERROR, "Failed to call ZirconMethod %s", wire_result.status_string());
+      fdf::error("Failed to call ZirconMethod {}", wire_result.status_string());
     }
     return zx::error(wire_result.status());
   }
 
   if (wire_result->is_error()) {
-    FDF_LOG(ERROR, "ZirconMethod error %s",
-            zx_status_get_string(wire_result.value().error_value()));
+    fdf::error("ZirconMethod error {}", zx_status_get_string(wire_result.value().error_value()));
     return wire_result.value().take_error();
   }
 
   // Validate the compat service which is a zircon service.
   zx::result<> result = InitSyncCompat();
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to sync init the compat server. %s", result.status_string());
+    fdf::error("Failed to sync init the compat server. {}", result);
     return result.take_error();
   }
 
@@ -220,7 +218,7 @@ void TestDriver::CreateChildNodeAsync() {
 
 void TestDriver::on_fidl_error(fidl::UnbindInfo error) {
   if (error.status() != ZX_OK) {
-    FDF_LOG(ERROR, "Child controller binding closed with error: %s", error.status_string());
+    fdf::error("Child controller binding closed with error: {}", error.status_string());
   }
 
   if (stop_completer_.has_value()) {
