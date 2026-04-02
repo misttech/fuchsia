@@ -21,6 +21,7 @@
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/driver/power/cpp/wake-lease.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 
 #include "packets.h"
@@ -30,7 +31,7 @@ namespace bt_hci_broadcom {
 class HciEventHandler
     : public fidl::WireSyncEventHandler<fuchsia_hardware_bluetooth::HciTransport> {
  public:
-  HciEventHandler(fit::function<void(std::vector<uint8_t>&)> on_receive_callback);
+  explicit HciEventHandler(fit::function<void(std::vector<uint8_t>&)> on_receive_callback);
 
   void OnReceive(fuchsia_hardware_bluetooth::wire::ReceivedPacket*) override;
   void handle_unknown_event(
@@ -52,8 +53,12 @@ class BtHciBroadcom final
       public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
+  using fdf::DriverBase::inspector;
+
   explicit BtHciBroadcom(fdf::DriverStartArgs start_args,
                          fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+
+  void set_test_dispatcher(async_dispatcher_t* dispatcher) { dispatcher_ = dispatcher; }
 
   void Start(fdf::StartCompleter completer) override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
@@ -141,6 +146,9 @@ class BtHciBroadcom final
   // states.
   void NoteActivity(ActivityType activity);
 
+  // Called when a core dump HCI event is received.
+  void NoteCoreDump();
+
   fpromise::promise<void, zx_status_t> LoadFirmware();
 
   // Adds a client which passes through the given client, managing power states.
@@ -178,6 +186,8 @@ class BtHciBroadcom final
 
   std::vector<fidl::ServerBindingRef<fuchsia_hardware_bluetooth::HciTransport>> active_clients_;
 
+  async_dispatcher_t* dispatcher_ = nullptr;
+
   fdf::WireSyncClient<fuchsia_hardware_serialimpl::Device> serial_client_;
 
   fidl::WireClient<fuchsia_driver_framework::Node> node_;
@@ -198,6 +208,9 @@ class BtHciBroadcom final
   // It's kept at Boot level until we are done initializing the controller, then
   // asserted at On when we are transmitting or expecting to receive.
   std::optional<fidl::WireClient<fuchsia_power_broker::LeaseControl>> level_lease_client_;
+
+  inspect::UintProperty core_dump_count_;
+  std::optional<zx::time> last_core_dump_time_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor> vendor_binding_group_;
   driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;

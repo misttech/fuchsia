@@ -11,6 +11,7 @@
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
+#include <lib/async/cpp/time.h>
 #include <lib/async/default.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/driver.h>
@@ -100,10 +101,15 @@ constexpr zx::duration kFirmwareDownloadDelay = zx::msec(50);
 // firmware load.
 constexpr zx::duration kBaudRateSwitchDelay = zx::msec(200);
 
+constexpr zx::duration kCoreDumpCooldown = zx::min(20);
+
+constexpr uint8_t kVendorSpecificEventCode = 0xFF;
+
 // 0x1B = DBFW subevent code, 0x03 = the dump type is "core dump"
 constexpr std::array<uint8_t, 2> kCrashVendorSubeventPrefix = {0x1B, 0x03};
 constexpr char kCrashProgramName[] = "bt-hci-broadcom";
 constexpr char kCrashSignature[] = "bt-hci-broadcom-core-dump";
+constexpr char kCoreDumpCountInspectPropertyName[] = "core_dump_count";
 
 }  // namespace
 
@@ -133,19 +139,23 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
                                     public fidl::AsyncEventHandler<fhbt::HciTransport> {
  public:
   using ActivityCallback = fit::function<void(ActivityType)>;
+  using CoreDumpCallback = fit::function<void()>;
 
   explicit HciTransportPassthroughImpl(fidl::ClientEnd<fhbt::HciTransport> upstream_client_end,
-                                       ActivityCallback activity_cb, async_dispatcher_t* dispatcher)
+                                       ActivityCallback activity_cb, CoreDumpCallback core_dump_cb,
+                                       async_dispatcher_t* dispatcher)
       : activity_cb_(std::move(activity_cb)),
+        core_dump_cb_(std::move(core_dump_cb)),
         upstream_client_(std::move(upstream_client_end), dispatcher, this) {}
 
   static fidl::ServerBindingRef<fhbt::HciTransport> BindServer(
       async_dispatcher_t* dispatcher,
       fidl::ServerEnd<fuchsia_hardware_bluetooth::HciTransport> server_end,
       fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> upstream_client_end,
-      ActivityCallback activity_cb) {
+      ActivityCallback activity_cb, CoreDumpCallback core_dump_cb) {
     std::unique_ptr impl = std::make_unique<HciTransportPassthroughImpl>(
-        std::move(upstream_client_end), std::move(activity_cb), dispatcher);
+        std::move(upstream_client_end), std::move(activity_cb), std::move(core_dump_cb),
+        dispatcher);
     HciTransportPassthroughImpl* impl_ptr = impl.get();
 
     fidl::ServerBindingRef binding_ref =
@@ -170,6 +180,16 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
 
   void OnReceive(fidl::Event<fhbt::HciTransport::OnReceive>& event) override {
     activity_cb_(ActivityType::kReceivePacket);
+
+    // Check if it is a core dump event.
+    if (event.Which() == fhbt::ReceivedPacket::Tag::kEvent) {
+      const std::vector<uint8_t>& bytes = event.event().value();
+      if (bytes.size() >= 4 && bytes[0] == kVendorSpecificEventCode &&
+          bytes[2] == kCrashVendorSubeventPrefix[0] && bytes[3] == kCrashVendorSubeventPrefix[1]) {
+        core_dump_cb_();
+      }
+    }
+
     if (!binding_ref_.has_value()) {
       fdf::warn("OnReceive with no server?!?");
     }
@@ -209,7 +229,9 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
 
  private:
   ActivityCallback activity_cb_;
+  CoreDumpCallback core_dump_cb_;
   fidl::Client<fhbt::HciTransport> upstream_client_;
+
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_bluetooth::HciTransport>> binding_ref_;
 };
 
@@ -217,6 +239,7 @@ BtHciBroadcom::BtHciBroadcom(fdf::DriverStartArgs start_args,
                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : DriverBase("bt-hci-broadcom", std::move(start_args), std::move(driver_dispatcher)),
       hci_event_handler_([this](std::vector<uint8_t>& packet) { OnReceivePacket(packet); }),
+      dispatcher_(dispatcher()),
       node_(fidl::WireClient(std::move(node()), dispatcher())),
       devfs_connector_(fit::bind_member<&BtHciBroadcom::Connect>(this)) {}
 
@@ -283,6 +306,8 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
     }
   }
 
+  core_dump_count_ = inspector().root().CreateUint(kCoreDumpCountInspectPropertyName, 0);
+
   // Continue initialization through the fpromise executor.
   start_completer_.emplace(std::move(completer));
   executor_.emplace(dispatcher());
@@ -332,7 +357,9 @@ fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> BtHciBroadcom::AddHciT
   auto [client_end, server_end] = fidl::Endpoints<fhbt::HciTransport>::Create();
   auto binding_ref = HciTransportPassthroughImpl::BindServer(
       executor_->dispatcher(), std::move(server_end), std::move(upstream_client_end),
-      fit::bind_member<&BtHciBroadcom::NoteActivity>(this));
+      fit::bind_member<&BtHciBroadcom::NoteActivity>(this),
+      fit::bind_member<&BtHciBroadcom::NoteCoreDump>(this));
+
   active_clients_.push_back(binding_ref);
   return std::move(client_end);
 }
@@ -810,6 +837,14 @@ void BtHciBroadcom::NoteActivity(ActivityType activity) {
   drop_level_task_.Cancel();
   drop_level_task_.PostDelayed(dispatcher(), 2 * kDefaultHostIdleThreshold);
   executor_->schedule_task(AssertLevel(PowerLevel::kOn));
+}
+
+void BtHciBroadcom::NoteCoreDump() {
+  zx::time now = async::Now(dispatcher_);
+  if (!last_core_dump_time_.has_value() || (now - *last_core_dump_time_) >= kCoreDumpCooldown) {
+    core_dump_count_.Add(1);
+    last_core_dump_time_ = now;
+  }
 }
 
 constexpr auto kOpenFlags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flags::kProtocolFile;

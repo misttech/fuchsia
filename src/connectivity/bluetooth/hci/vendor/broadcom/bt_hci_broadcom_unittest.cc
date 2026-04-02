@@ -19,6 +19,7 @@
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/inspect/cpp/reader.h>
 #include <lib/sync/cpp/completion.h>
 
 #include <algorithm>
@@ -32,6 +33,7 @@
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.emb.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
+#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
 #include "src/storage/lib/vfs/cpp/vmo_file.h"
@@ -253,6 +255,15 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
         });
     completer.Reply();
   }
+
+  void SendEvent(std::vector<uint8_t> event_data) {
+    hci_transport_binding_group_.ForEachBinding(
+        [&](const fidl::ServerBinding<fhbt::HciTransport>& binding) {
+          auto event = fhbt::ReceivedPacket::WithEvent(event_data);
+          fit::result<fidl::OneWayError> result = fidl::SendEvent(binding)->OnReceive(event);
+          ASSERT_FALSE(result.is_error());
+        });
+  }
   void AckReceive(AckReceiveCompleter::Sync& completer) override {}
   void ConfigureSco(
       fidl::Server<fhbt::HciTransport>::ConfigureScoRequest& request,
@@ -323,6 +334,12 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
   fdf::ServerBindingGroup<fuchsia_hardware_serialimpl::Device> serial_binding_group_;
   fidl::ServerBindingGroup<fhbt::HciTransport> hci_transport_binding_group_;
   fidl::ServerBindingGroup<fhbt::Snoop> snoop_binding_group_;
+};
+
+class NoOpEventHandler final : public fidl::WireSyncEventHandler<fhbt::HciTransport> {
+ public:
+  void OnReceive(fidl::WireEvent<fhbt::HciTransport::OnReceive>* event) override {}
+  void handle_unknown_event(fidl::UnknownEventMetadata<fhbt::HciTransport> metadata) override {}
 };
 
 class TestEnvironment : fdf_testing::Environment {
@@ -421,7 +438,8 @@ class FixtureConfig final {
   using DriverType = BtHciBroadcom;
   using EnvironmentType = TestEnvironment;
 };
-class BtHciBroadcomTest : public ::testing::Test {
+
+class BtHciBroadcomTest : public ::gtest::TestLoopFixture {
  public:
   BtHciBroadcomTest() = default;
 
@@ -430,11 +448,20 @@ class BtHciBroadcomTest : public ::testing::Test {
   void SetUp(bool enable_suspend) { enable_suspend_ = enable_suspend; }
 
   zx::result<> StartDriver() {
-    return driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+    auto result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
       bt_hci_broadcom_config::Config config;
       config.enable_suspend() = enable_suspend_;
       args.config(config.ToVmo());
     });
+    if (result.is_ok()) {
+      // We can't set the dispatcher in the constructor because the driver is initialized by
+      // the test harness in the blocking StartDriver call above, which would deadlock if the test
+      // dispatcher were used. The driver framework currently does not support fake time so this
+      // appears to be the best way to inject the test dispatcher.
+      driver_test().RunInDriverContext(
+          [this](BtHciBroadcom& driver) { driver.set_test_dispatcher(dispatcher()); });
+    }
+    return result;
   }
 
   void TearDown() override {
@@ -492,6 +519,19 @@ class BtHciBroadcomTest : public ::testing::Test {
   const fidl::WireSyncClient<fhbt::Vendor>& vendor_client() { return vendor_client_; }
   const fidl::WireSyncClient<fhbt::HciTransport>& hci_transport_client() {
     return hci_transport_client_;
+  }
+
+  uint64_t GetCoreDumpCount() {
+    return driver_test().RunInDriverContext<uint64_t>([](BtHciBroadcom& driver) {
+      auto vmo = driver.inspector().inspector().DuplicateVmo();
+      auto hierarchy_res = inspect::ReadFromVmo(std::move(vmo));
+      if (hierarchy_res.is_error())
+        return static_cast<uint64_t>(0);
+      auto hierarchy = std::move(hierarchy_res.value());
+      const auto* prop =
+          hierarchy.node().get_property<inspect::UintPropertyValue>("core_dump_count");
+      return prop ? prop->value() : static_cast<uint64_t>(0);
+    });
   }
 
  private:
@@ -787,6 +827,47 @@ TEST_F(BtHciBroadcomInitializedTest, HciTransportPassthrough) {
   event_handler.SetExpected(kExpectedResponse);
   fidl::Status status = hci_transport_client().HandleOneEvent(event_handler);
   EXPECT_TRUE(status.ok());
+}
+
+TEST_F(BtHciBroadcomInitializedTest, HciTransportPassthroughCoreDumpCooldown) {
+  OpenHciTransportClient();
+
+  EXPECT_EQ(GetCoreDumpCount(), 0ull);
+
+  const std::vector<uint8_t> kCoreDumpEvent = {0xFF, 0x02, 0x1B, 0x03};
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](TestEnvironment& env) { env.transport_device_.SendEvent(kCoreDumpEvent); });
+
+  NoOpEventHandler event_handler;
+  // Wait for the event to be forwarded to ensure the background driver thread has finished
+  // processing it before checking Inspect metrics.
+  fidl::Status status = hci_transport_client().HandleOneEvent(event_handler);
+  EXPECT_TRUE(status.ok());
+
+  EXPECT_EQ(GetCoreDumpCount(), 1ull);
+
+  // Send another dump event.
+  driver_test().RunInEnvironmentTypeContext(
+      [&](TestEnvironment& env) { env.transport_device_.SendEvent(kCoreDumpEvent); });
+
+  status = hci_transport_client().HandleOneEvent(event_handler);
+  EXPECT_TRUE(status.ok());
+
+  EXPECT_EQ(GetCoreDumpCount(), 1ull);  // Cooldown! Still 1.
+
+  // Advance time past the default cooldown (20 minutes) in the driver context.
+  driver_test().RunInDriverContext<void>(
+      [this](BtHciBroadcom& driver) { RunLoopFor(zx::min(21)); });
+
+  // Send another dump event.
+  driver_test().RunInEnvironmentTypeContext(
+      [&](TestEnvironment& env) { env.transport_device_.SendEvent(kCoreDumpEvent); });
+
+  status = hci_transport_client().HandleOneEvent(event_handler);
+  EXPECT_TRUE(status.ok());
+
+  EXPECT_EQ(GetCoreDumpCount(), 2ull);  // Cooldown expired! Now 2.
 }
 
 TEST_F(BtHciBroadcomInitializedWithPowerTest, InitPowerManagement) {
