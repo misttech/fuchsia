@@ -43,13 +43,14 @@ If you want to see exactly what's in the compiled binary devicetree blob (.dtb):
 ### 3. Driver Binding Issues
 
 If a driver is not binding to a node created from devicetree:
-- **Tool**: `ffx driver doctor`, `ffx driver list-devices`, and
-  `ffx driver list-composite-node-specs`.
-- **Action**: Check if the node exists (use `ffx driver list-devices`) and what
-  its properties are (use `ffx driver show <device>`). For composite nodes, use
-  `ffx driver list-composite-node-specs` to see the fragments and bind rules.
-- **Check Device Tree**: Use `ffx driver dump` to see the current device tree
-  on the running target.
+- **Tool**: `ffx driver doctor`, `ffx driver node list`, and
+  `ffx driver composite list`.
+- **Action**: Check if the node exists (use `ffx driver node list`) and what
+  its properties are (use `ffx driver node show <device>`). For composite nodes,
+  use `ffx driver composite list` or `ffx driver composite show -v` to see
+  the parent specs and bind rules.
+- **Check Node Topology**: Use `ffx driver node list --only ancestors:<node>` to
+  see the current node topology on the running target.
 
 ### 4. Manager Logs
 
@@ -76,6 +77,8 @@ isolated environment.
 - **Missing `FIRST_COMPATIBLE`**: Ensure your visitor correctly sets the bind
   property, or that the driver's bind rules match the compatible string.
 - **Composite Binding Failure**:
+  - Detailed debugging of composite binding can be found in the
+    [`debug_driver_binding`](/src/devices/skills/debug_driver_binding/SKILL.md) skill.
   - **How it becomes composite**: A node becomes composite when it depends on
     other nodes (e.g., GPIO, PWM, Clocks). Visitors for these dependencies
     (e.g., `gpio-visitor`) will add bind properties to the dependent node so it
@@ -83,9 +86,9 @@ isolated environment.
     node A uses a GPIO, the `gpio-visitor` adds bind rules to node A so it can
     bind to that specific GPIO pin. Because it now depends on another node to
     bind, it becomes a composite node.
-  - **Why it fails**: If any single fragment of a composite node fails to bind,
-    the entire composite device will not be created. Use
-    `ffx driver list-composite-node-specs` to check the requirements.
+  - **Why it fails**: If any single parent spec of a composite node fails to
+    bind, the entire composite device will not be created. Use
+    `ffx driver composite show -v` to check the requirements.
 - **Phandle Resolution**: phandles in the DTS must be correctly resolved by the
   compiler. Avoid setting phandles manually; let the compiler handle it.
 - **Node Ordering**: Devicetree does not guarantee the order of peer nodes in the
