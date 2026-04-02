@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use crate::graph::{NodeGraph, NodeId, Path, PathId};
+use fdf_component::inspect_publisher::ContentPublisher;
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
 use fidl_next::{Client, FlexibleResult, FrameworkError, ServerEnd};
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::{Inspector, Property, UintProperty};
+use fuchsia_inspect::Inspector;
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use log::{debug, error, info};
@@ -25,7 +26,6 @@ mod graph;
 struct InterconnectDriver {
     #[expect(unused)]
     node: Node,
-    inspector: Inspector,
     scope: fasync::Scope,
 }
 
@@ -38,10 +38,8 @@ struct Child {
     #[expect(unused)]
     controller: NodeControllerProxy,
     device: fidl_next::Client<icc::Device>,
-    #[expect(unused)]
-    inspect: fuchsia_inspect::Node,
-    average_bandwidth_bps: UintProperty,
-    peak_bandwidth_bps: UintProperty,
+    average_bandwidth_bps: Cell<u64>,
+    peak_bandwidth_bps: Cell<u64>,
 }
 
 impl Child {
@@ -101,6 +99,14 @@ impl Child {
 
         Ok(())
     }
+
+    fn record_inspect(&self, node: &fuchsia_inspect::Node) {
+        node.record_child(self.path.name(), |child| {
+            child.record_uint("average_bandwidth_bps", self.average_bandwidth_bps.get());
+            child.record_uint("peak_bandwidth_bps", self.peak_bandwidth_bps.get());
+            self.path.record_inspect(&child);
+        });
+    }
 }
 
 struct ChildHandler<'a> {
@@ -152,36 +158,40 @@ impl icc::PathServiceHandler for PathService {
 impl InterconnectDriver {
     async fn run_graph_service(
         self,
+        mut inspect_publisher: ContentPublisher,
         device: Client<Device>,
         children: BTreeMap<String, Child>,
         graph: NodeGraph,
         sync_complete_rx: oneshot::Receiver<()>,
         conn_rx: mpsc::UnboundedReceiver<(ServerEnd<icc::Path>, String)>,
     ) -> Result<Self, Status> {
-        let sync_state = Rc::new(Cell::new(false));
-        let sync_state_clone = sync_state.clone();
-        self.inspector.root().record_lazy_child_with_thread_local("sync_state", move || {
-            Box::pin({
-                let sync_state = sync_state_clone.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    inspector.root().record_bool("sync_state", sync_state.get());
-                    Ok(inspector)
-                }
-            })
-        });
-
         let graph = Rc::new(RefCell::new(graph));
+        let children = Rc::new(children);
+        let sync_state = Rc::new(Cell::new(false));
+
         let graph_clone = graph.clone();
-        self.inspector.root().record_lazy_child_with_thread_local("nodes", move || {
-            Box::pin({
-                let graph = graph_clone.clone();
-                async move {
-                    let inspector = Inspector::default();
-                    graph.borrow().record_inspect(inspector.root());
-                    Ok(inspector)
+        let sync_state_clone = sync_state.clone();
+        let children_clone = children.clone();
+        self.scope.spawn_local(async move {
+            while let Some(responder) = inspect_publisher.next().await {
+                let inspector = Inspector::default();
+                let root = inspector.root();
+                let sync_state_child = root.create_child("sync_state");
+                sync_state_child.record_bool("sync_state", sync_state_clone.get());
+                root.record(sync_state_child);
+
+                let nodes_child = root.create_child("nodes");
+                graph_clone.borrow().record_inspect(&nodes_child);
+                root.record(nodes_child);
+
+                let paths_child = root.create_child("paths");
+                for child in children_clone.values() {
+                    child.record_inspect(&paths_child);
                 }
-            })
+                root.record(paths_child);
+
+                responder.send(inspector).ok();
+            }
         });
 
         let sync_graph = graph.clone();
@@ -247,8 +257,7 @@ impl Driver for InterconnectDriver {
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         let node = context.take_node()?;
 
-        let inspector = Inspector::default();
-        context.publish_inspect(&inspector, fasync::Scope::current())?;
+        let inspect_publisher = context.inspect_content_publisher()?;
 
         let device_service: fdf_component::ServiceInstance<icc::Service> =
             context.incoming.service().connect_next()?;
@@ -290,8 +299,6 @@ impl Driver for InterconnectDriver {
 
         let mut outgoing = ServiceFs::new();
 
-        let paths_inspect = inspector.root().create_child("paths");
-
         let (conn_tx, conn_rx) = mpsc::unbounded();
         let scope = fasync::Scope::new_with_name("driver");
         let mut children = BTreeMap::new();
@@ -317,10 +324,8 @@ impl Driver for InterconnectDriver {
                 .build();
             let controller = node.add_child(node_args).await?.into_proxy();
             let device = device.clone();
-            let inspect = paths_inspect.create_child(path.name());
-            let average_bandwidth_bps = inspect.create_uint("average_bandwidth_bps", 0);
-            let peak_bandwidth_bps = inspect.create_uint("peak_bandwidth_bps", 0);
-            path.record_inspect(&inspect);
+            let average_bandwidth_bps = Cell::new(0);
+            let peak_bandwidth_bps = Cell::new(0);
 
             let controller_clone = controller.clone();
             let path_name = path.name().to_string();
@@ -338,18 +343,9 @@ impl Driver for InterconnectDriver {
 
             children.insert(
                 name.clone(),
-                Child {
-                    path,
-                    controller,
-                    device,
-                    inspect,
-                    average_bandwidth_bps,
-                    peak_bandwidth_bps,
-                    tag,
-                },
+                Child { path, controller, device, average_bandwidth_bps, peak_bandwidth_bps, tag },
             );
         }
-        inspector.root().record(paths_inspect);
 
         context.serve_outgoing(&mut outgoing)?;
         scope.spawn(outgoing.collect());
@@ -365,8 +361,9 @@ impl Driver for InterconnectDriver {
             sync_complete_tx.send(()).ok();
         });
 
-        let driver = InterconnectDriver { node, inspector, scope };
+        let driver = InterconnectDriver { node, scope };
         fasync::Task::spawn(driver.run_graph_service(
+            inspect_publisher,
             device,
             children,
             graph,

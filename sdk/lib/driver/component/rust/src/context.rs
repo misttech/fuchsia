@@ -15,6 +15,8 @@ use zx::Status;
 use fdf::DispatcherRef;
 use fidl_fuchsia_driver_framework::DriverStartArgs;
 
+pub use fuchsia_inspect_contrib::content_publisher as inspect_publisher;
+
 /// The context arguments passed to the driver in its start arguments.
 #[non_exhaustive]
 pub struct DriverContext {
@@ -94,6 +96,20 @@ impl DriverContext {
         scope.spawn_local(task);
 
         Ok(())
+    }
+
+    /// Returns an inspect content publisher that acts as a stream for requests for inspect data.
+    pub fn inspect_content_publisher(&self) -> Result<inspect_publisher::ContentPublisher, Status> {
+        let inspect_sink_client = self.incoming.connect_protocol().map_err(|err| {
+            error!("Error connecting to inspect : {err}");
+            Status::INTERNAL
+        })?;
+
+        let options = inspect_publisher::PublishOptions { inspect_sink_client };
+        inspect_publisher::content_publisher(options).map_err(|err| {
+            error!("Error creating inspect content publisher: {err}");
+            Status::INTERNAL
+        })
     }
 
     /// Returns the VMAR which the driver can use to map memory.
