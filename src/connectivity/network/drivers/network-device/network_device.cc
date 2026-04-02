@@ -6,6 +6,7 @@
 
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/env.h>
 
 #include <fbl/alloc_checker.h>
@@ -34,21 +35,21 @@ void NetworkDevice::Start(fdf::StartCompleter completer) {
   zx::result<> result = [&]() -> zx::result<> {
     zx::result dispatchers = OwnedDeviceInterfaceDispatchers::Create();
     if (dispatchers.is_error()) {
-      FDF_LOG(ERROR, "failed to create owned dispatchers: %s", dispatchers.status_string());
+      fdf::error("failed to create owned dispatchers: {}", dispatchers);
       return dispatchers.take_error();
     }
     dispatchers_ = std::move(dispatchers.value());
 
     zx::result<std::unique_ptr<NetworkDeviceImplBinder>> binder = CreateImplBinder();
     if (binder.is_error()) {
-      FDF_LOG(ERROR, "failed to create network device binder: %s", binder.status_string());
+      fdf::error("failed to create network device binder: {}", binder);
       return binder.take_error();
     }
 
     zx::result device =
         NetworkDeviceInterface::Create(dispatchers_->Unowned(), std::move(binder.value()));
     if (device.is_error()) {
-      FDF_LOG(ERROR, "failed to create inner device %s", device.status_string());
+      fdf::error("failed to create inner device {}", device);
       return device.take_error();
     }
     device_ = std::move(device.value());
@@ -56,7 +57,7 @@ void NetworkDevice::Start(fdf::StartCompleter completer) {
     // Create a devfs connector and child node for netcfg to discover and connect to.
     zx::result connector = devfs_connector_.Bind(dispatcher());
     if (connector.is_error()) {
-      FDF_LOG(ERROR, "failed to bind devfs connector: %s", connector.status_string());
+      fdf::error("failed to bind devfs connector: {}", connector);
       return connector.take_error();
     }
 
@@ -69,7 +70,7 @@ void NetworkDevice::Start(fdf::StartCompleter completer) {
     // netcfg to discover and connect to, no other drivers are involved.
     zx::result child = AddOwnedChild(kDevFsChildNodeName, devfs_args);
     if (child.is_error()) {
-      FDF_LOG(ERROR, "failed to add child node: %s", child.status_string());
+      fdf::error("failed to add child node: {}", child);
       return child.take_error();
     }
 
@@ -87,9 +88,9 @@ void NetworkDevice::Start(fdf::StartCompleter completer) {
 }
 
 void NetworkDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
-  FDF_LOG(INFO, "%p PrepareStop", this);
+  fdf::info("{:p} PrepareStop", static_cast<const void*>(this));
   device_->Teardown([completer = std::move(completer), this]() mutable {
-    FDF_LOG(INFO, "%p PrepareStop Done", this);
+    fdf::info("{:p} PrepareStop Done", static_cast<const void*>(this));
     completer(zx::ok());
   });
 }
@@ -108,7 +109,7 @@ zx::result<std::unique_ptr<NetworkDeviceImplBinder>> NetworkDevice::CreateImplBi
 
   std::unique_ptr fidl = fbl::make_unique_checked<FidlNetworkDeviceImplBinder>(&ac, incoming());
   if (!ac.check()) {
-    FDF_LOG(ERROR, "no memory");
+    fdf::error("no memory");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -124,7 +125,7 @@ FidlNetworkDeviceImplBinder::Bind() {
   zx::result client_end =
       incoming->Connect<fuchsia_hardware_network_driver::Service::NetworkDeviceImpl>();
   if (client_end.is_error()) {
-    FDF_LOG(ERROR, "failed to connect to parent device: %s", client_end.status_string());
+    fdf::error("failed to connect to parent device: {}", client_end);
     return client_end;
   }
   return client_end;

@@ -28,6 +28,7 @@ source_set("src") {
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
 }
