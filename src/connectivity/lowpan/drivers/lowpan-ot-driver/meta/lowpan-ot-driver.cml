@@ -16,6 +16,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.buildinfo.Provider",
                 "fuchsia.factory.lowpan.FactoryRegister",
                 "fuchsia.feedback.CrashReporter",
                 "fuchsia.hwinfo.Product",

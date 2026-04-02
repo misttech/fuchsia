@@ -46,6 +46,11 @@
             to: "#lowpan-ot-driver",
         },
         {
+            protocol: "fuchsia.buildinfo.Provider",
+            from: "#build-info",
+            to: [ "#lowpan-ot-driver" ],
+        },
+        {
             protocol: [
                 "fuchsia.hwinfo.Device",
                 "fuchsia.hwinfo.Product",

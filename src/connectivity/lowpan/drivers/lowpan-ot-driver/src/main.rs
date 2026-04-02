@@ -6,6 +6,7 @@
 #![warn(rust_2018_idioms)]
 
 use anyhow::Error;
+use fidl_fuchsia_buildinfo::{BuildInfo, ProviderMarker};
 use fidl_fuchsia_factory_lowpan::{FactoryRegisterMarker, FactoryRegisterProxyInterface};
 use fidl_fuchsia_lowpan_driver::{RegisterMarker, RegisterProxyInterface};
 use fidl_fuchsia_lowpan_spinel::{
@@ -43,6 +44,8 @@ mod prelude {
     pub use crate::convert_ext::{FromExt as _, IntoExt as _};
     pub use anyhow::{Context as _, bail, format_err};
     pub use fasync::TimeoutExt as _;
+    pub use fidl_fuchsia_net_ext as fnet_ext;
+    pub use fuchsia_async as fasync;
     pub use futures::future::BoxFuture;
     pub use futures::stream::BoxStream;
     pub use log::{debug, error, info, trace, warn};
@@ -51,8 +54,8 @@ mod prelude {
     pub use net_declare::{fidl_ip, fidl_ip_v6};
     pub use std::convert::TryInto;
     pub use std::fmt::Debug;
+    pub use zx as fz;
     pub use zx_status::Status as ZxStatus;
-    pub use {fidl_fuchsia_net_ext as fnet_ext, fuchsia_async as fasync, zx as fz};
 
     pub use futures::prelude::*;
     pub use openthread::prelude::*;
@@ -194,6 +197,12 @@ impl Config {
         }
     }
 
+    async fn get_build_info(&self) -> Result<BuildInfo, Error> {
+        let provider = connect_to_protocol::<ProviderMarker>()?;
+        let build_info = provider.get_build_info().await?;
+        Ok(build_info)
+    }
+
     /// Async method which returns the future that runs the driver.
     async fn prepare_to_run(&self) -> Result<impl Future<Output = Result<(), Error>>, Error> {
         let spinel_device_proxy = self.open_spinel_device_proxy().await?;
@@ -260,7 +269,16 @@ impl Config {
         if let Err(e) = ot_instance.set_vendor_model(&product_metadata.product()) {
             warn!("Failed to set the vendor model {:?}", e);
         }
-        if let Err(e) = ot_instance.set_vendor_sw_version(&product_metadata.build_name()) {
+
+        let build_info = self.get_build_info().await;
+        let version = match &build_info {
+            Ok(info) => info.version.as_deref().unwrap_or("unknown"),
+            Err(e) => {
+                warn!("Failed to get build info: {:?}. Using default version 'unknown'.", e);
+                "unknown"
+            }
+        };
+        if let Err(e) = ot_instance.set_vendor_sw_version(version) {
             warn!("Failed to set the vendor sw version {:?}", e);
         }
 
