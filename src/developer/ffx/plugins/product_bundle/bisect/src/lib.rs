@@ -35,7 +35,6 @@ use assembly::assemble;
 use controller::Controller;
 use mos::get_search_space;
 use search_space::SearchSpace;
-use strategy::StrategyState;
 use testing::{prompt_for_manual_test, run_automated_test};
 
 /// The ffx tool for bisecting product bundles.
@@ -255,28 +254,10 @@ async fn run_bisection<'a>(
         let _ = writer_clone_ctrl.borrow_mut().line(msg);
     };
 
-    let mut controller = Controller::new(space, plan_file, slot, test_fn, &mut print_fn)?;
+    let mut controller =
+        Controller::new(space, plan_file, slot, test_fn, &mut print_fn, Some(client))?;
 
-    let final_state = controller.run().await?;
-
-    // If the bisection successfully identified the bad artifact, print its details.
-    if let StrategyState::Resolved { dim_idx, high_idx, .. } = final_state {
-        let bad_artifact = controller.space.dimensions[dim_idx].get_mos_identifier(high_idx, slot);
-        let writer_clone_res = shared_writer.clone();
-        let print = move |msg: &str| {
-            let _ = writer_clone_res.borrow_mut().line(msg);
-        };
-
-        let client = assembly_artifact_cache::mos::MOSClient::new(cache.gcs_client().clone());
-        if let Ok(info) = client.get_artifact_release_info(&bad_artifact).await {
-            if let Some(cipd) = info.cipd {
-                print(&format!(
-                    "  CIPD URL: https://chrome-infra-packages.appspot.com/p/{}/+/{}",
-                    cipd.path, cipd.tag
-                ));
-            }
-        }
-    }
+    controller.run().await?;
 
     Ok(())
 }

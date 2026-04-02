@@ -5,6 +5,7 @@
 use crate::search_space::SearchSpace;
 use crate::strategy::{SearchStrategy, StrategyState};
 use anyhow::{Context, Result};
+use assembly_artifact_cache::mos::MOSClient;
 use assembly_artifact_cache::{MOSIdentifier, Slot};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,8 @@ pub struct Controller<TestFn, PrintFn> {
     slot: Slot,
     /// The number of bisection steps taken so far.
     pub step_count: usize,
+    /// The MOS client used for querying artifact release info.
+    mos_client: Option<MOSClient>,
 }
 
 const COLOR_GRAY: &str = "\x1b[90m";
@@ -61,6 +64,7 @@ where
         slot: Slot,
         test_fn: TestFn,
         print_fn: PrintFn,
+        mos_client: Option<MOSClient>,
     ) -> Result<Self> {
         let mut strategy = SearchStrategy::new();
         let mut step_count = 0;
@@ -84,7 +88,8 @@ where
             }
         }
 
-        let controller = Self { space, strategy, plan, test_fn, print_fn, slot, step_count };
+        let controller =
+            Self { space, strategy, plan, test_fn, print_fn, slot, step_count, mos_client };
 
         // Ensure the initial state (or freshly loaded state) is saved.
         controller.save_plan().context("Failed to save initial bisection plan")?;
@@ -134,9 +139,25 @@ where
         match self.strategy.state {
             StrategyState::Resolved { dim_idx, low_idx, high_idx } => {
                 let dim = &self.space.dimensions[dim_idx];
-                summary.push_str(&format!("Root cause isolated to dimension: {}\n", dim.name));
-                summary.push_str(&format!("Last known good version: {}\n", dim.versions[low_idx]));
-                summary.push_str(&format!("First known bad version: {}\n", dim.versions[high_idx]));
+                let bad_artifact = dim.get_mos_identifier(high_idx, self.slot);
+
+                summary.push_str("Root cause isolated:\n\n");
+                summary.push_str(&format!("  Dimension:     {}\n", dim.name));
+                summary.push_str(&format!("  Artifact Type: {}\n", dim.artifact_type));
+                summary.push_str(&format!("  Repository:    {}\n", dim.repository));
+                summary.push_str(&format!("  Good Version:  {}\n", dim.versions[low_idx]));
+                summary.push_str(&format!("  Bad Version:   {}\n", dim.versions[high_idx]));
+
+                if let Some(client) = &self.mos_client {
+                    if let Ok(info) = client.get_artifact_release_info(&bad_artifact).await {
+                        if let Some(cipd) = info.cipd {
+                            summary.push_str(&format!(
+                                "  CIPD URL:      https://chrome-infra-packages.appspot.com/p/{}/+/{}\n",
+                                cipd.path, cipd.tag
+                            ));
+                        }
+                    }
+                }
             }
             StrategyState::Unresolved => {
                 summary.push_str("Could not isolate a single root cause.\n");
@@ -353,7 +374,7 @@ mod tests {
         };
 
         let test_fn = |_| async move { Ok(true) };
-        let mut controller = Controller::new(space, plan, Slot::A, test_fn, print_fn).unwrap();
+        let mut controller = Controller::new(space, plan, Slot::A, test_fn, print_fn, None).unwrap();
 
         // 1. Test Initial Phase 1 State
         controller.print_status();
@@ -420,7 +441,7 @@ mod tests {
                 };
 
                 let mut controller =
-                    Controller::new(space.clone(), plan.clone(), Slot::A, test_fn, |_| {}).unwrap();
+                    Controller::new(space.clone(), plan.clone(), Slot::A, test_fn, |_| {}, None).unwrap();
 
                 // Manually simulate exactly one step of the run loop
                 let indices = controller.strategy.next_combination(&controller.space).unwrap();
@@ -448,7 +469,7 @@ mod tests {
                 };
 
                 let mut controller =
-                    Controller::new(space, plan.clone(), Slot::A, test_fn, |_| {}).unwrap();
+                    Controller::new(space, plan.clone(), Slot::A, test_fn, |_| {}, None).unwrap();
 
                 // The platform should have been narrowed to the UPPER half
                 // (low=1) because the first test PASSED
