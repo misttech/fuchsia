@@ -7,12 +7,14 @@ import("//build/images/args.gni")
 import("//build/images/filesystem_limits.gni")
 import("//build/python/python_action.gni")
 import("//build/tools/json_merge/json_merge.gni")
-import("//products/core/core_bazel_inputs.gni")
 import("//src/developer/ffx/build/ffx_action.gni")
 
 assert(!bootfs_only)
 
 declare_args() {
+  # Enables the size checks of core products
+  enable_core_size_check = false
+
   # How much the size of Update Package can be increased in one CL.
   # Deprecated
   update_package_size_creep_limit = 90112  # 0.085 MiB

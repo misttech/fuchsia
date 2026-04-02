@@ -3,9 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/assembly/product_assembly_configuration.gni")
-import("//build/bazel/assembly/bazel_product_bundle.gni")
 import("//build/info/info.gni")
-import("//products/core/core_bazel_inputs.gni")
 
 assert(
     is_fuchsia,
@@ -118,78 +116,20 @@ _cache_packages = [
     package_target = "//src/chromium:web_engine_pkg"
   },
 ]
-_bazel_inputs = core_bazel_inputs
 
-if (current_cpu == "x64") {
-  bazel_product_bundle("product_bundle.x64") {
-    testonly = true
-    product_bundle_name = "core.x64"
-    allow_eng_platform_bundle_use = true
-    bazel_product_bundle_target = ":product_bundle.x64"
-    bazel_product_image_target = ":image.x64"
-    bazel_product_config_target = ":product_config"
-    bazel_product_config_name = "core"
-    bazel_recovery_image_target = "//products/zedboot:x64"
-    bazel_elf_sizes_target = ":elf_sizes.x64"
-    bazel_inputs_from_gn = _bazel_inputs + [ "//boards/x64:x64.bazel_input" ]
+product_assembly_configuration("core") {
+  testonly = true
+  platform = {
+    forward_variables_from(_platform_configuration_base, "*")
+  }
+  product = {
+    build_info = default_product_build_info
   }
 
-  bazel_product_bundle("product_bundle.x64_reduced_perf_variation") {
-    testonly = true
-    product_bundle_name = "core.x64-reduced-perf-variation"
-    allow_eng_platform_bundle_use = true
-    bazel_product_bundle_target = ":product_bundle.x64_reduced_perf_variation"
-    bazel_product_image_target = ":image.x64_reduced_perf_variation"
-    bazel_recovery_image_target =
-        "//products/zedboot:x64_reduced_perf_variation"
-    bazel_elf_sizes_target = ":elf_sizes.x64_reduced_perf_variation"
-    bazel_inputs_from_gn =
-        _bazel_inputs + [ "//boards/x64:reduced_perf_variation.bazel_input" ]
-  }
-}
-
-if (current_cpu == "arm64") {
-  bazel_product_bundle("product_bundle.arm64") {
-    testonly = true
-    product_bundle_name = "core.arm64"
-    allow_eng_platform_bundle_use = true
-    bazel_product_bundle_target = ":product_bundle.arm64"
-    bazel_product_image_target = ":image.arm64"
-    bazel_product_config_target = ":product_config"
-    bazel_product_config_name = "core"
-    bazel_recovery_image_target = "//products/zedboot:arm64"
-    bazel_elf_sizes_target = ":elf_sizes.arm64"
-    bazel_inputs_from_gn =
-        _bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
-  }
-
-  bazel_product_bundle("product_bundle.qemu-arm64") {
-    testonly = true
-    product_bundle_name = "core.qemu-arm64"
-    allow_eng_platform_bundle_use = true
-    bazel_product_bundle_target = ":product_bundle.qemu-arm64"
-    bazel_product_image_target = ":image.qemu-arm64"
-    bazel_product_config_target = ":product_config"
-    bazel_product_config_name = "core"
-    bazel_recovery_image_target = "//products/zedboot:qemu-arm64"
-    bazel_elf_sizes_target = ":elf_sizes.qemu-arm64"
-    bazel_inputs_from_gn =
-        _bazel_inputs + [ "//boards/qemu-arm64:qemu-arm64.bazel_input" ]
-    image_use_vbmeta = false
-  }
-
-  bazel_product_bundle("product_bundle.vim3") {
-    testonly = true
-    product_bundle_name = "core.vim3"
-    allow_eng_platform_bundle_use = true
-    bazel_product_bundle_target = ":product_bundle.vim3"
-    bazel_product_image_target = ":image.vim3"
-    bazel_product_config_target = ":product_config"
-    bazel_product_config_name = "core"
-    bazel_recovery_image_target = "//products/zedboot:vim3_recovery"
-    bazel_elf_sizes_target = ":elf_sizes.vim3"
-    bazel_inputs_from_gn = _bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
-  }
+  base_packages = _base_packages
+  cache_packages = _cache_packages
+  deps = [ "//build/info:build_info_files" ]
+  version = build_info_version
 }
 
 product_assembly_configuration("core_with_f2fs") {

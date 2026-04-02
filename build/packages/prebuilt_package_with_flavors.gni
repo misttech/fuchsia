@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/packages/package_metadata.gni")
 import("//build/packages/prebuilt_package.gni")
 
@@ -175,11 +174,6 @@ template("prebuilt_package_with_flavors") {
                              "repository",
                            ])
 
-    if (!defined(visibility)) {
-      visibility = []
-    }
-    visibility += [ ":${target_name}.bazel_input.archive" ]
-
     # setup the non-production-safe status of the package
     if (!production_safe) {
       if (!defined(deps)) {
@@ -211,10 +205,5 @@ template("prebuilt_package_with_flavors") {
         },
       ]
     }
-  }
-
-  export_fuchsia_package_to_bazel(pkg_name + ".bazel_input") {
-    forward_variables_from(invoker, [ "testonly" ])
-    package = ":${pkg_name}"
   }
 }

@@ -7,7 +7,6 @@ import("//build/assembly/product_bundle.gni")
 import("//build/images/args.gni")
 import("//build/images/paths.gni")
 import("//build/product.gni")
-import("//products/core/core_bazel_inputs.gni")
 
 assert(current_toolchain == default_toolchain,
        "//build/images/* are only valid in the Fuchsia toolchain")
@@ -24,19 +23,12 @@ assert(
 # it should directly use it (//build/images/fuchsia).
 group("main_assembly") {
   testonly = true
-  if (defined(labels.images)) {
-    public_deps = [ labels.images ]
-  }
+  public_deps = [ labels.images ]
 }
 
-default_image_deps = [ "//build/images/tools:board_tools" ]
-
-if (defined(labels.images)) {
-  default_image_deps += [ labels.images ]
-}
-if (defined(labels.recovery_images)) {
-  default_image_deps += [ labels.recovery_images ]
-}
+# Dependencies for all image targets referenced by paver_targets, i.e., the
+# images needed by the generated pave scripts.
+default_image_deps = [ labels.images ]
 
 board_name_file = "$root_build_dir/board_name"
 write_file(board_name_file, "${board_name}")
@@ -47,47 +39,65 @@ write_file(board_name_file, "${board_name}")
 
 default_image_deps += [ labels.qemu_kernel ]
 
-if (defined(labels.images)) {
-  # This action runs a script that checks all vtables in fuchsia binaries are
-  # in readonly data.
-  action("check_vtables_in_rodata") {
-    testonly = true
-    hermetic_deps = false
-    script = "//scripts/clang/check_vtable_rodata.py"
-    outputs = [ "$root_build_dir/$target_name" ]
-    depfile = "$root_build_dir/$target_name.d"
+# This action runs a script that checks all vtables in fuchsia binaries are
+# in readonly data.
+action("check_vtables_in_rodata") {
+  testonly = true
+  hermetic_deps = false
+  script = "//scripts/clang/check_vtable_rodata.py"
+  outputs = [ "$root_build_dir/$target_name" ]
+  depfile = "$root_build_dir/$target_name.d"
 
-    # Ensure that all fuchsia binaries listed in `binaries.json` are created
-    # first.
-    deps = [ labels.images ]
+  # Ensure that all fuchsia binaries listed in `binaries.json` are created
+  # first.
+  deps = [ labels.images ]
 
-    args = [
-      # Ignore these specific libunwind symbols for now because these are from
-      # the libwundind prebuilts used by rust which we do not currently build
-      # with relative vtables.
-      "--exclude",
-      "vtable for libunwind::UnwindCursor<libunwind::LocalAddressSpace, libunwind::Registers_x86_64>",
-      "--exclude",
-      "vtable for libunwind::UnwindCursor<libunwind::LocalAddressSpace, libunwind::Registers_arm64>",
+  args = [
+    # Ignore these specific libunwind symbols for now because these are from
+    # the libwundind prebuilts used by rust which we do not currently build
+    # with relative vtables.
+    "--exclude",
+    "vtable for libunwind::UnwindCursor<libunwind::LocalAddressSpace, libunwind::Registers_x86_64>",
+    "--exclude",
+    "vtable for libunwind::UnwindCursor<libunwind::LocalAddressSpace, libunwind::Registers_arm64>",
 
-      "--readelf",
-      "$rebased_clang_prefix/llvm-readelf",
+    "--readelf",
+    "$rebased_clang_prefix/llvm-readelf",
 
-      # Write to a file.
-      "-o",
-      rebase_path(outputs[0], root_build_dir),
+    # Write to a file.
+    "-o",
+    rebase_path(outputs[0], root_build_dir),
 
-      # Run in `fuchsia` mode, which looks for `binaries.json` in the provided
-      # output directory.
-      "fuchsia",
+    # Run in `fuchsia` mode, which looks for `binaries.json` in the provided
+    # output directory.
+    "fuchsia",
 
-      # Point to the output directory.
-      rebase_path("$root_build_dir", root_build_dir),
+    # Point to the output directory.
+    rebase_path("$root_build_dir", root_build_dir),
 
-      "--depfile",
-      rebase_path(depfile, root_build_dir),
-    ]
-  }
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+  ]
+}
+
+group("fvm.sparse.blk") {
+  testonly = true
+  public_deps = [ labels.images ]
+}
+
+group("fvm.fastboot.blk") {
+  testonly = true
+  public_deps = [ labels.images ]
+}
+
+group("fuchsia") {
+  testonly = true
+  public_deps = [ labels.images ]
+}
+
+group("fuchsia.vbmeta") {
+  testonly = true
+  public_deps = [ labels.images ]
 }
 
 # Pseudo-target to record information about the sizes of filesystems assembled
@@ -129,6 +139,10 @@ if (gpt_image != "") {
 
   default_image_deps += [ ":gpt" ]
 }
+
+default_image_deps += [ "//build/images/tools:board_tools" ]
+
+default_image_deps += [ labels.recovery_images ]
 
 # Build the UEFI disk image.
 # GCE, a consumer of this image, requires it to be named disk.raw
@@ -233,9 +247,7 @@ group("default-images") {
     deps += [ ":uefi-disk" ]
   }
 
-  if (enable_core_size_check) {
-    deps += [ "size_checker:size_report.json" ]
-  } else if (use_bazel_images_only) {
+  if (use_bazel_images_only) {
     if (bazel_product_bundle_target != "") {
       deps += [
         # Needed so that 'gerrit_size_reports' and 'detailed_size_checker_data' metadata
@@ -243,6 +255,8 @@ group("default-images") {
         "${bazel_product_bundle_target}_size_targets",
       ]
     }
+  } else if (!bootfs_only) {
+    deps += [ "size_checker:size_report.json" ]
   }
 
   if (!bootfs_only) {

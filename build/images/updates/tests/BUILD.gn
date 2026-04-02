@@ -59,7 +59,6 @@ if (is_fuchsia) {
     bazel_inputs_from_gn = []
     image_use_vbmeta = false
     image_has_fxfs_blob = true
-    generate_image_metadata = false
   }
 
   packages_from_product_assembler("gn_assembly_cache_packages.list") {
