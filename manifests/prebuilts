@@ -119,8 +119,8 @@
     <!-- bloaty from
          https://fuchsia.googlesource.com/third_party/bloaty/+/{{.git_revision}}
     -->
-    <package name="fuchsia/third_party/bloaty/${platform}"
-             version="git_revision:c057ba4f43db0506d4ba8c096925b054b02a8bd3"
+    <package name="fuchsia/third_party/3pp/bloaty/${platform}"
+             version="version:2@e2fef510fcdc3334ed05fee495b11c7bb8e80b71"
              platforms="linux-amd64"
              path="prebuilt/third_party/bloaty/{{.OS}}-{{.Arch}}"/>
 
