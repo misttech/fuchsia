@@ -62,10 +62,10 @@ impl CopyDirection {
     fn log_closed(&self) {
         match self {
             CopyDirection::StdIn => {
-                log::debug!("Stream from the host toward RCS terminated normally")
+                log::info!("Stream from the host toward RCS terminated normally")
             }
             CopyDirection::StdOut => {
-                log::debug!("Stream from RCS toward the host terminated normally")
+                log::info!("Stream from RCS toward the host terminated normally")
             }
         }
     }
