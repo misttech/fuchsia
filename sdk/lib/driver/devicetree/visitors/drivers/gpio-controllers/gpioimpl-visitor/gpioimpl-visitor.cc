@@ -84,8 +84,7 @@ zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
     // construct gpio init step metadata.
     auto result = ParseGpioHogChild(node);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Gpio visitor failed for node '%s' : %s", node.name().c_str(),
-              result.status_string());
+      fdf::error("Gpio visitor failed for node '{}' : {}", node.name(), result);
     }
   } else {
     auto gpio_props = gpio_parser_->Parse(node);
@@ -98,8 +97,8 @@ zx::result<> GpioImplVisitor::Visit(fdf_devicetree::Node& node,
       auto gpio_names = gpio_props->Get<std::vector<std::string>>(kGpioNames);
       if (!gpio_names || gpio_names->size() != gpios->size()) {
         // We need a gpio names to generate bind rules.
-        FDF_LOG(ERROR, "Gpio reference '%s' does not have valid gpio names field.",
-                node.name().c_str());
+        fdf::error("Gpio reference '{}' does not have valid gpio names field.", node.name());
+
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
 
@@ -212,13 +211,14 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   auto& controller = GetController(gpio_node.id());
   auto pins = cfg_node.GetProperty<std::vector<uint32_t>>(kPins);
   if (pins.is_error()) {
-    FDF_LOG(ERROR, "Pin controller config '%s' does not have pins property: %s",
-            cfg_node.name().c_str(), pins.status_string());
+    fdf::error("Pin controller config '{}' does not have pins property: {}", cfg_node.name(), pins);
+
     return pins.take_error();
   }
 
   if (pins->empty()) {
-    FDF_LOG(ERROR, "No pins found in pin controller config '%s'", cfg_node.name().c_str());
+    fdf::error("No pins found in pin controller config '{}'", cfg_node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -227,10 +227,10 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   std::optional<Pull> pull;
   auto save_pull = [&](Pull val) -> zx::result<> {
     if (pull.has_value()) {
-      FDF_LOG(
-          ERROR,
-          "Pin controller config '%s' can only support one pull direction. Previously already set with %d, now trying to set as %d",
-          cfg_node.name().c_str(), static_cast<uint32_t>(*pull), static_cast<uint32_t>(val));
+      fdf::error(
+          "Pin controller config '{}' can only support one pull direction. Previously already set with {}, now trying to set as {}",
+          cfg_node.name(), static_cast<uint32_t>(*pull), static_cast<uint32_t>(val));
+
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     pull = val;
@@ -261,8 +261,8 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   if (function.is_ok()) {
     config.function(function.value());
   } else if (function.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(ERROR, "Pin controller config '%s' has invalid function: %s.", cfg_node.name().c_str(),
-            function.status_string());
+    fdf::error("Pin controller config '{}' has invalid function: {}.", cfg_node.name(), function);
+
     return function.take_error();
   }
 
@@ -270,18 +270,19 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   if (drive_strength_ua.is_ok()) {
     config.drive_strength_ua(drive_strength_ua.value());
   } else if (drive_strength_ua.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(ERROR, "Pin controller config '%s' has invalid drive strength: %s.",
-            cfg_node.name().c_str(), drive_strength_ua.status_string());
+    fdf::error("Pin controller config '{}' has invalid drive strength: {}.", cfg_node.name(),
+               drive_strength_ua);
+
     return drive_strength_ua.take_error();
   }
 
   std::optional<DriveType> drive_type;
   auto save_drive_type = [&](DriveType val) -> zx::result<> {
     if (drive_type.has_value()) {
-      FDF_LOG(
-          ERROR,
-          "Pin controller config '%s' can only support one drive typ. Previously already set with %d, now trying to set as %d",
-          cfg_node.name().c_str(), static_cast<uint32_t>(*drive_type), static_cast<uint32_t>(val));
+      fdf::error(
+          "Pin controller config '{}' can only support one drive type. Previously already set with {}, now trying to set as {}",
+          cfg_node.name(), static_cast<uint32_t>(*drive_type), static_cast<uint32_t>(val));
+
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     drive_type = val;
@@ -313,8 +314,9 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   if (power_source.is_ok()) {
     config.power_source(*power_source);
   } else if (power_source.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(ERROR, "Pin controller config '%s' has invalid power source: %s.",
-            cfg_node.name().c_str(), power_source.status_string());
+    fdf::error("Pin controller config '{}' has invalid power source: {}.", cfg_node.name(),
+               power_source);
+
     return power_source.take_error();
   }
 
@@ -328,20 +330,20 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   }
   if (cfg_node.GetProperty<bool>(kPinOutputLow)) {
     if (buffer_mode) {
-      FDF_LOG(
-          ERROR,
-          "Multiple values for InitCall defined in pin config '%s'. Property 'output-low' clashes with another property.",
-          cfg_node.name().c_str());
+      fdf::error(
+          "Multiple values for InitCall defined in pin config '{}'. Property 'output-low' clashes with another property.",
+          cfg_node.name());
+
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
     buffer_mode = BufferMode::kOutputLow;
   }
   if (cfg_node.GetProperty<bool>(kPinOutputHigh)) {
     if (buffer_mode) {
-      FDF_LOG(
-          ERROR,
-          "Multiple values for InitCall defined in pin config '%s'. Property 'output-high' clashes with another property.",
-          cfg_node.name().c_str());
+      fdf::error(
+          "Multiple values for InitCall defined in pin config '{}'. Property 'output-high' clashes with another property.",
+          cfg_node.name());
+
       return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
     buffer_mode = BufferMode::kOutputHigh;
@@ -355,16 +357,16 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     init_calls.emplace_back(InitCall::WithBufferMode(*buffer_mode));
   }
   if (init_calls.empty()) {
-    FDF_LOG(ERROR, "Pin controller config '%s' does not have a valid config.",
-            cfg_node.name().c_str());
+    fdf::error("Pin controller config '{}' does not have a valid config.", cfg_node.name());
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   // Add the init steps for all the pins in the config.
   for (size_t i = 0; i < pins->size(); i++) {
-    FDF_LOG(DEBUG,
-            "Gpio init steps (count: %zu) for child '%s' (pin 0x%x) added to controller '%s'",
-            init_calls.size(), child.name().c_str(), (*pins)[i], gpio_node.name().c_str());
+    fdf::debug("Gpio init steps (count: {}) for child '{}' (pin {:#x}) added to controller '{}'",
+               init_calls.size(), child.name(), (*pins)[i], gpio_node.name());
+
     for (auto& init_call : init_calls) {
       auto step = fuchsia_hardware_pinimpl::InitStep::WithCall({{(*pins)[i], init_call}});
       controller.metadata.init_steps()->emplace_back(step);
@@ -384,7 +386,8 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
   auto& controller = GetController(parent.id());
   auto gpios = child.properties().find("gpios");
   if (gpios == child.properties().end()) {
-    FDF_LOG(ERROR, "Gpio init hog '%s' does not have gpios property", child.name().c_str());
+    fdf::error("Gpio init hog '{}' does not have gpios property", child.name());
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -395,8 +398,9 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
   }
   if (child.GetProperty<bool>("output-low")) {
     if (buffer_mode) {
-      FDF_LOG(ERROR, "Gpio init hog '%s' has more than one buffer mode property defined.",
-              child.name().c_str());
+      fdf::error("Gpio init hog '{}' has more than one buffer mode property defined.",
+                 child.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
     buffer_mode = fuchsia_hardware_gpio::BufferMode::kOutputLow;
@@ -404,22 +408,25 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
 
   if (child.GetProperty<bool>("output-high")) {
     if (buffer_mode) {
-      FDF_LOG(ERROR, "Gpio init hog '%s' has more than one buffer mode property defined.",
-              child.name().c_str());
+      fdf::error("Gpio init hog '{}' has more than one buffer mode property defined.",
+                 child.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
     buffer_mode = fuchsia_hardware_gpio::BufferMode::kOutputHigh;
   }
 
   if (!buffer_mode) {
-    FDF_LOG(ERROR, "Gpio init hog '%s' does not have a buffer_mode", child.name().c_str());
+    fdf::error("Gpio init hog '{}' does not have a buffer_mode", child.name());
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
   auto gpio_cell_size = parent.GetProperty<uint32_t>("#gpio-cells");
   if (gpio_cell_size.is_error()) {
-    FDF_LOG(ERROR, "Gpio controller '%s' does not have '#gpio-cells' property: %s",
-            parent.name().c_str(), gpio_cell_size.status_string());
+    fdf::error("Gpio controller '{}' does not have '#gpio-cells' property: {}", parent.name(),
+               gpio_cell_size);
+
     return gpio_cell_size.take_error();
   }
 
@@ -427,10 +434,10 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
   size_t entry_size = (*gpio_cell_size) * sizeof(uint32_t);
 
   if (gpios_bytes.size_bytes() % *gpio_cell_size != 0) {
-    FDF_LOG(
-        ERROR,
-        "Gpio init hog '%s' has incorrect number of gpio cells (%lu) - expected multiple of %d cells.",
-        child.name().c_str(), gpios_bytes.size_bytes() / sizeof(uint32_t), *gpio_cell_size);
+    fdf::error(
+        "Gpio init hog '{}' has incorrect number of gpio cells ({}) - expected multiple of {} cells.",
+        child.name(), gpios_bytes.size_bytes() / sizeof(uint32_t), *gpio_cell_size);
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -438,8 +445,9 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
     auto gpio = GpioCells(gpios->second.AsBytes().subspan(byte_idx, entry_size));
     zx::result flags = gpio.flags();
     if (flags.is_error()) {
-      FDF_LOG(ERROR, "Failed to get input flags for gpio init hog '%s' with gpio pin %d : %s",
-              child.name().c_str(), gpio.pin(), flags.status_string());
+      fdf::error("Failed to get input flags for gpio init hog '{}' with gpio pin {} : {}",
+                 child.name(), gpio.pin(), flags);
+
       return flags.take_error();
     }
 
@@ -452,8 +460,7 @@ zx::result<> GpioImplVisitor::ParseGpioHogChild(fdf_devicetree::Node& child) {
         .call = InitCall::WithBufferMode(*buffer_mode),
     }}));
 
-    FDF_LOG(DEBUG, "Gpio init step (pin 0x%x) added to controller '%s'", gpio.pin(),
-            parent.name().c_str());
+    fdf::debug("Gpio init step (pin {:#x}) added to controller '{}'", gpio.pin(), parent.name());
   }
 
   return zx::ok();
@@ -471,16 +478,17 @@ zx::result<> GpioImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                                   fdf_devicetree::PropertyCells specifiers,
                                                   std::optional<std::string_view> gpio_name) {
   if (!gpio_name) {
-    FDF_LOG(ERROR, "Gpio reference '%s' does not have a name", child.name().c_str());
+    fdf::error("Gpio reference '{}' does not have a name", child.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   auto reference_name = std::string(*gpio_name);
   auto& controller = GetController(parent.id());
 
   if (specifiers.size_bytes() != 2 * sizeof(uint32_t)) {
-    FDF_LOG(ERROR,
-            "Gpio reference '%s' has incorrect number of gpio specifiers (%lu) - expected 2.",
-            child.name().c_str(), specifiers.size_bytes() / sizeof(uint32_t));
+    fdf::error("Gpio reference '{}' has incorrect number of gpio specifiers ({}) - expected 2.",
+               child.name(), specifiers.size_bytes() / sizeof(uint32_t));
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -490,8 +498,8 @@ zx::result<> GpioImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
       .name = reference_name,
   }};
 
-  FDF_LOG(DEBUG, "Gpio pin added - pin 0x%x name '%s' to controller '%s'", cells.pin(),
-          reference_name.c_str(), parent.name().c_str());
+  fdf::debug("Gpio pin added - pin {:#x} name '{}' to controller '{}'", cells.pin(), reference_name,
+             parent.name());
 
   // Insert if the pin is not already present.
   auto it = std::find_if(
@@ -512,8 +520,9 @@ zx::result<> GpioImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   auto controller = gpio_controllers_.find(node.id());
   if (controller == gpio_controllers_.end()) {
-    FDF_LOG(INFO, "Gpio controller '%s' is not being used. Not adding any metadata for it.",
-            node.name().c_str());
+    fdf::info("Gpio controller '{}' is not being used. Not adding any metadata for it.",
+              node.name());
+
     return zx::ok();
   }
 
@@ -528,8 +537,9 @@ zx::result<> GpioImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
     const fit::result persisted_pin_metadata = fidl::Persist(metadata);
     if (!persisted_pin_metadata.is_ok()) {
-      FDF_LOG(ERROR, "Failed to encode pin metadata for node %s: %s", node.name().c_str(),
-              persisted_pin_metadata.error_value().FormatDescription().c_str());
+      fdf::error("Failed to encode pin metadata for node {}: {}", node.name(),
+                 persisted_pin_metadata.error_value().FormatDescription());
+
       return zx::error(persisted_pin_metadata.error_value().status());
     }
 
@@ -539,7 +549,7 @@ zx::result<> GpioImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     }};
     node.AddMetadata(std::move(pin_metadata));
 
-    FDF_LOG(DEBUG, "Gpio metadata added to node '%s'", node.name().c_str());
+    fdf::debug("Gpio metadata added to node '{}'", node.name());
   }
 
   return zx::ok();

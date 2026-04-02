@@ -29,8 +29,8 @@ zx::result<> EthPhyVisitor::Visit(fdf_devicetree::Node& node,
                                   const devicetree::PropertyDecoder& decoder) {
   auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Ethernet phy visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Ethernet phy visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -68,7 +68,8 @@ zx::result<> EthPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child) {
 
   child.AddNodeSpec(phy_node);
 
-  FDF_LOG(DEBUG, "Added ethernet phy bind rules to node '%s'.", child.name().c_str());
+  fdf::debug("Added ethernet phy bind rules to node '{}'.", child.name());
+
   return zx::ok();
 }
 

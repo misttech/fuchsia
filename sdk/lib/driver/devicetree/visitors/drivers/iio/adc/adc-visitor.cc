@@ -46,8 +46,8 @@ void AdcVisitor::AdcController::AddChannel(uint32_t chan_idx, const std::string&
   fuchsia_hardware_adcimpl::AdcChannel channel;
   channel.idx() = chan_idx;
   channel.name() = name;
-  FDF_LOG(DEBUG, "Adc channel added - channel 0x%x name '%s' to controller '%s'", *channel.idx(),
-          channel.name()->c_str(), parent_name.c_str());
+  fdf::debug("Adc channel added - channel {:#x} name '{}' to controller '{}'", *channel.idx(),
+             *channel.name(), parent_name);
 
   // Insert if the channel is not already present.
   auto it = std::find_if(channels.begin(), channels.end(),
@@ -94,14 +94,16 @@ zx::result<> AdcVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                              fdf_devicetree::PropertyCells specifiers,
                                              std::optional<std::string_view> name) {
   if (!name) {
-    FDF_LOG(ERROR, "Adc reference '%s' does not have a name", child.name().c_str());
+    fdf::error("Adc reference '{}' does not have a name", child.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   auto reference_name = std::string(*name);
 
   if (specifiers.size_bytes() != 1 * sizeof(uint32_t)) {
-    FDF_LOG(ERROR, "Adc reference '%s' has incorrect number of adc specifiers (%lu) - expected 1.",
-            child.name().c_str(), specifiers.size_bytes() / sizeof(uint32_t));
+    fdf::error("Adc reference '{}' has incorrect number of adc specifiers ({}) - expected 1.",
+               child.name(), specifiers.size_bytes() / sizeof(uint32_t));
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
   const auto chan_idx = AdcCells(specifiers).channel();
@@ -119,8 +121,9 @@ zx::result<> AdcVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   auto controller = controllers_.find(node.id());
   if (controller == controllers_.end()) {
-    FDF_LOG(INFO, "ADC controller '%s' is not being used. Not adding any metadata for it.",
-            node.name().c_str());
+    fdf::info("ADC controller '{}' is not being used. Not adding any metadata for it.",
+              node.name());
+
     return zx::ok();
   }
 
@@ -130,9 +133,9 @@ zx::result<> AdcVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
     const fit::result encoded_controller_metadata = fidl::Persist(metadata);
     if (!encoded_controller_metadata.is_ok()) {
-      FDF_LOG(ERROR, "Failed to encode ADC controller metadata for node %s: %s",
-              node.name().c_str(),
-              encoded_controller_metadata.error_value().FormatDescription().c_str());
+      fdf::error("Failed to encode ADC controller metadata for node {}: {}", node.name(),
+                 encoded_controller_metadata.error_value().FormatDescription());
+
       return zx::error(encoded_controller_metadata.error_value().status());
     }
     fuchsia_hardware_platform_bus::Metadata controller_metadata = {{
@@ -140,7 +143,7 @@ zx::result<> AdcVisitor::FinalizeNode(fdf_devicetree::Node& node) {
         .data = encoded_controller_metadata.value(),
     }};
     node.AddMetadata(std::move(controller_metadata));
-    FDF_LOG(DEBUG, "ADC controller metadata added to node '%s'", node.name().c_str());
+    fdf::debug("ADC controller metadata added to node '{}'", node.name());
   }
 
   return zx::ok();

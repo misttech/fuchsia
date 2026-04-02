@@ -8,6 +8,7 @@
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/registration.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
@@ -26,7 +27,7 @@ zx::result<> AmlogicCanvasVisitor::AddChildNodeSpec(fdf_devicetree::Node& child)
   auto amlogic_canvas_node = fuchsia_driver_framework::ParentSpec2{{bind_rules, bind_properties}};
 
   child.AddNodeSpec(amlogic_canvas_node);
-  FDF_LOG(DEBUG, "Added amlogic canvas node spec of to '%s'.", child.name().c_str());
+  fdf::debug("Added amlogic canvas node spec of to '{}'.", child.name());
 
   return zx::ok();
 }

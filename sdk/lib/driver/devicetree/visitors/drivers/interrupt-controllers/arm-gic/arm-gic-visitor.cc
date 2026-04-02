@@ -107,7 +107,8 @@ class InterruptPropertyV2 {
         return zx::ok(fuchsia_hardware_platform_bus::ZirconInterruptMode::kEdgeHigh);
       case GIC_IRQ_MODE_EDGE_FALLING:
         if (is_spi()) {
-          FDF_LOG(ERROR, "Edge low mode not supported for SPI interrupt");
+          fdf::error("Edge low mode not supported for SPI interrupt");
+
           return zx::error(ZX_ERR_INVALID_ARGS);
         }
         return zx::ok(fuchsia_hardware_platform_bus::ZirconInterruptMode::kEdgeLow);
@@ -115,7 +116,8 @@ class InterruptPropertyV2 {
         return zx::ok(fuchsia_hardware_platform_bus::ZirconInterruptMode::kLevelHigh);
       case GIC_IRQ_MODE_LEVEL_LOW:
         if (is_spi()) {
-          FDF_LOG(ERROR, "Level low mode not supported for SPI interrupt");
+          fdf::error("Level low mode not supported for SPI interrupt");
+
           return zx::error(ZX_ERR_INVALID_ARGS);
         }
         return zx::ok(fuchsia_hardware_platform_bus::ZirconInterruptMode::kLevelLow);
@@ -123,7 +125,8 @@ class InterruptPropertyV2 {
         break;
     }
 
-    FDF_LOG(ERROR, "Invalid mode %lu", mode & kModeMask);
+    fdf::error("Invalid mode {}", mode & kModeMask);
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -158,8 +161,9 @@ zx::result<> ArmGicVisitor::Visit(fdf_devicetree::Node& node,
     // If `interrupt-names` property is present in the dts then we require that
     // it be the same size as the number of interrupts specified in the
     // `interrupts` property.
-    FDF_LOG(ERROR, "Node '%s' has %zu interrupts but %zu interrupt names.", node.name().c_str(),
-            interrupts->size(), interrupt_names->size());
+    fdf::error("Node '{}' has {} interrupts but {} interrupt names.", node.name(),
+               interrupts->size(), interrupt_names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -207,8 +211,9 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
   if (IsArmGicV1V2(compatible_strings) &&
       (interrupt_cells.size_bytes() != (3 * sizeof(uint32_t)))) {
     // For GIC v2 3 cells are expected.
-    FDF_LOG(ERROR, "Incorrect number of cells (expected %zu, found %zu) for interrupt in node '%s",
-            3 * sizeof(uint32_t), interrupt_cells.size_bytes(), node_name.c_str());
+    fdf::error("Incorrect number of cells (expected {}, found {}) for interrupt in node '{}'",
+               3 * sizeof(uint32_t), interrupt_cells.size_bytes(), node_name);
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -217,10 +222,10 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
     // node that defines the CPU affinity for PPIs. This is not used in Fuchsia currently to
     // configure interrupts. 5th and above cells if present are reserved for future use and should
     // be ignored.
-    FDF_LOG(
-        ERROR,
-        "Incorrect number of cells (expected at least %zu, found %zu) for interrupt in node '%s",
-        3 * sizeof(uint32_t), interrupt_cells.size_bytes(), node_name.c_str());
+    fdf::error(
+        "Incorrect number of cells (expected at least {}, found {}) for interrupt in node '{}'",
+        3 * sizeof(uint32_t), interrupt_cells.size_bytes(), node_name);
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -229,8 +234,9 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
 
   zx::result mode = interrupt.mode();
   if (mode.is_error()) {
-    FDF_LOG(ERROR, "Failed to parse mode for interrupt %d of node '%s - %s", interrupt.irq(),
-            node_name.c_str(), mode.status_string());
+    fdf::error("Failed to parse mode for interrupt {} of node '{}' - {}", interrupt.irq(),
+               node_name, mode);
+
     return mode.take_error();
   }
 
@@ -240,9 +246,9 @@ zx::result<fpbus::Irq> ArmGicVisitor::ParseInterrupt(const std::string& node_nam
       .name = std::move(interrupt_name),
       .wake_vector = false,
   }};
-  FDF_LOG(DEBUG, "IRQ 0x%0x named '%s' with mode 0x%0x added to node '%s'.", *irq.irq(),
-          irq.name().has_value() ? irq.name()->c_str() : "(no name)", *irq.mode(),
-          node_name.c_str());
+  fdf::debug("IRQ {:#x} named '{}' with mode {:#x} added to node '{}'.", *irq.irq(),
+             irq.name().value_or("(no name)"), static_cast<uint32_t>(*irq.mode()), node_name);
+
   return zx::ok(irq);
 }
 

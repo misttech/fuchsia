@@ -52,8 +52,9 @@ zx::result<> PerformanceDomainVisitor::Visit(fdf_devicetree::Node& node,
       return performance_domain.take_error();
     }
 
-    FDF_LOG(DEBUG, "Added performance domain '%s' to node '%s'.",
-            performance_domain->name().c_str(), device_node->name().c_str());
+    fdf::debug("Added performance domain '{}' to node '{}'.", performance_domain->name(),
+               device_node->name());
+
     performance_domains.push_back(std::move(performance_domain.value()));
   }
 
@@ -64,8 +65,9 @@ zx::result<> PerformanceDomainVisitor::Visit(fdf_devicetree::Node& node,
 
     fit::result persisted_metadata = fidl::Persist(cpu_metadata);
     if (!persisted_metadata.is_ok()) {
-      FDF_LOG(ERROR, "Failed to persist metadata: %s",
-              persisted_metadata.error_value().FormatDescription().c_str());
+      fdf::error("Failed to persist metadata: {}",
+                 persisted_metadata.error_value().FormatDescription());
+
       return zx::error(persisted_metadata.error_value().status());
     }
 
@@ -98,8 +100,8 @@ PerformanceDomainVisitor::ParsePerformanceDomain(
     std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>& opp_tables) {
   auto parser_output = performance_domain_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Performance domain visitor failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Performance domain visitor failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -112,8 +114,8 @@ PerformanceDomainVisitor::ParsePerformanceDomain(
 
   auto operating_points = parser_output->Get<fdf_devicetree::References>(kOperatingPoints);
   if (operating_points->size() > 1) {
-    FDF_LOG(WARNING, "Node '%s' has %zu operating points, but only the first will be used.",
-            node.name().c_str(), operating_points->size());
+    fdf::warn("Node '{}' has {} operating points, but only the first will be used.", node.name(),
+              operating_points->size());
   }
 
   auto opp_table =
@@ -126,7 +128,8 @@ PerformanceDomainVisitor::ParsePerformanceDomain(
   const std::optional domain_name = GetDomainName(node.name());
 
   if (!domain_name) {
-    FDF_LOG(ERROR, "Performance domain has invalid node name '%s'.", node.name().c_str());
+    fdf::error("Performance domain has invalid node name '{}'.", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
   performance_domain.name() = domain_name.value();
@@ -139,8 +142,8 @@ PerformanceDomainVisitor::ParseOppTable(fdf_devicetree::Node& node, uint32_t dom
   for (auto& child : node.children()) {
     auto parser_output = opp_parser_->Parse(*child.GetNode());
     if (parser_output.is_error()) {
-      FDF_LOG(ERROR, "Operating point visitor failed for node '%s' : %s", child.name().c_str(),
-              parser_output.status_string());
+      fdf::error("Operating point visitor failed for node '{}' : {}", child.name(), parser_output);
+
       return parser_output.take_error();
     }
 

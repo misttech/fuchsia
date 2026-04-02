@@ -26,8 +26,8 @@ zx::result<> FocaltechVisitor::DriverVisit(fdf_devicetree::Node& node,
                                            const devicetree::PropertyDecoder& decoder) {
   auto parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Focaltech visitor failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Focaltech visitor failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -42,8 +42,9 @@ zx::result<> FocaltechVisitor::DriverVisit(fdf_devicetree::Node& node,
   } else if (*compatible == "focaltech,ft5336") {
     device_info.device_id() = fuchsia_hardware_input_focaltech::DeviceId::kFt5336;
   } else {
-    FDF_LOG(INFO, "Unsupported device type '%s' in node '%s'. Not adding focaltech metadata.",
-            compatible->c_str(), node.name().c_str());
+    fdf::info("Unsupported device type '{}' in node '{}'. Not adding focaltech metadata.",
+              *compatible, node.name());
+
     return zx::ok();
   }
 
@@ -51,8 +52,9 @@ zx::result<> FocaltechVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   fit::result persisted_metadata = fidl::Persist(device_info);
   if (persisted_metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to persist focaltech metadata: %s",
-            persisted_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist focaltech metadata: {}",
+               persisted_metadata.error_value().FormatDescription());
+
     return zx::error(persisted_metadata.error_value().status());
   }
 
@@ -62,7 +64,7 @@ zx::result<> FocaltechVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   node.AddMetadata(std::move(focaltech_metadata));
 
-  FDF_LOG(DEBUG, "Added focaltech metadata to node '%s'", node.name().c_str());
+  fdf::debug("Added focaltech metadata to node '{}'", node.name());
 
   return zx::ok();
 }

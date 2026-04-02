@@ -41,8 +41,8 @@ zx::result<> IioVisitor::Visit(fdf_devicetree::Node& node,
     auto iio_channel_names = iio_props->Get<std::vector<std::string>>(kIioChannelNames);
     if (!iio_channel_names || iio_channel_names->size() != iio_channels->size()) {
       // We need a iio names to generate bind rules.
-      FDF_LOG(ERROR, "IIO reference '%s' does not have valid IIO names field.",
-              node.name().c_str());
+      fdf::error("IIO reference '{}' does not have valid IIO names field.", node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 

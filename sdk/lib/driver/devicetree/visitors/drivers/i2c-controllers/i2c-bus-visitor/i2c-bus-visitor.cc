@@ -65,9 +65,9 @@ zx::result<> I2cBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, u
 
 zx::result<> I2cBusVisitor::CreateController(std::string node_name) {
   if (i2c_controllers_.contains(node_name)) {
-    FDF_LOG(ERROR,
-            "Failed to create I2C Controller. An I2C controller with name '%s' already exists.",
-            node_name.c_str());
+    fdf::error("Failed to create I2C Controller. An I2C controller with name '{}' already exists.",
+               node_name);
+
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
   i2c_controllers_[node_name] = I2cController();
@@ -80,13 +80,14 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
   // Parse reg to get the address.
   auto reg = child.GetProperty<std::vector<uint32_t>>("reg");
   if (reg.is_error()) {
-    FDF_LOG(ERROR, "I2C child '%s' has no reg property: %s.", child.name().c_str(),
-            reg.status_string());
+    fdf::error("I2C child '{}' has no reg property: {}.", child.name(), reg);
+
     return reg.take_error();
   }
 
   if (reg->empty()) {
-    FDF_LOG(ERROR, "I2C child '%s' has an empty reg property.", child.name().c_str());
+    fdf::error("I2C child '{}' has an empty reg property.", child.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -113,14 +114,15 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
       channel.did() = PDEV_DID_PCF8563_RTC;
     }
     controller.channels.emplace_back(channel);
-    FDF_LOG(DEBUG, "I2c channel '%s' added at address 0x%x to controller '%s'",
-            channel.name()->c_str(), address, parent.name().c_str());
+    fdf::debug("I2c channel '{}' added at address {:#x} to controller '{}'", *channel.name(),
+               address, parent.name());
 
     if (!is_nxp_pcf8563) {
       zx::result<> add_child_result = AddChildNodeSpec(child, controller.bus_id, address);
       if (add_child_result.is_error()) {
-        FDF_LOG(ERROR, "Failed to add I2c node at address 0x%x to controller '%s': %s", address,
-                parent.name().c_str(), add_child_result.status_string());
+        fdf::error("Failed to add I2c node at address {:#x} to controller '{}': {}", address,
+                   parent.name(), add_child_result);
+
         return add_child_result.take_error();
       }
     }
@@ -153,8 +155,8 @@ zx::result<> I2cBusVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   for (auto& child : node.children()) {
     auto result = ParseChild(controller->second, node, child);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to parse i2c child '%s' : %s", child.name().c_str(),
-              result.status_string());
+      fdf::error("Failed to parse i2c child '{}' : {}", child.name(), result);
+
       return result.take_error();
     }
   }
@@ -166,15 +168,16 @@ zx::result<> I2cBusVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     }};
     auto encoded_bus_metadata = fidl::Persist(bus_metadata);
     if (encoded_bus_metadata.is_error()) {
-      FDF_LOG(INFO, "Failed to persist fidl metadata for i2c controller '%s': %s",
-              node.name().c_str(), encoded_bus_metadata.error_value().status_string());
+      fdf::info("Failed to persist fidl metadata for i2c controller '{}': {}", node.name(),
+                encoded_bus_metadata.error_value().FormatDescription());
+
       return zx::ok();
     }
     node.AddMetadata({{
         .id = fuchsia_hardware_i2c_businfo::I2CBusMetadata::kSerializableName,
         .data = std::move(encoded_bus_metadata.value()),
     }});
-    FDF_LOG(DEBUG, "I2C channels metadata added to node '%s'", node.name().c_str());
+    fdf::debug("I2C channels metadata added to node '{}'", node.name());
   }
 
   return zx::ok();

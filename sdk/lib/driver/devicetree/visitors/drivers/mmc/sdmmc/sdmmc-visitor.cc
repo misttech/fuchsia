@@ -49,8 +49,8 @@ zx::result<> SdmmcVisitor::Visit(fdf_devicetree::Node& node,
 
   zx::result parser_output = sdmmc_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "SDMMC visitor failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("SDMMC visitor failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -83,14 +83,15 @@ zx::result<> SdmmcVisitor::Visit(fdf_devicetree::Node& node,
 
   fit::result encoded_metadata = fidl::Persist(sdmmc_metadata);
   if (!encoded_metadata.is_ok()) {
-    FDF_LOG(ERROR, "Failed to encode SDMMC metadata for node %s: %s", node.name().c_str(),
-            encoded_metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to encode SDMMC metadata for node {}: {}", node.name(),
+               encoded_metadata.error_value().FormatDescription());
+
     return zx::error(encoded_metadata.error_value().status());
   }
 
   node.AddMetadata({{.id = fuchsia_hardware_sdmmc::SdmmcMetadata::kSerializableName,
                      .data = encoded_metadata.value()}});
-  FDF_LOG(DEBUG, "SDMMC metadata added to node '%s'", node.name().c_str());
+  fdf::debug("SDMMC metadata added to node '{}'", node.name());
 
   return zx::ok();
 }

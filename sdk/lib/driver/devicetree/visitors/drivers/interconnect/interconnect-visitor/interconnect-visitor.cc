@@ -141,8 +141,8 @@ zx::result<> InterconnectVisitor::Visit(fdf_devicetree::Node& node,
                                         const devicetree::PropertyDecoder& decoder) {
   zx::result<fdf_devicetree::ParsedProperties> parse_result = parser_.Parse(node);
   if (parse_result.is_error()) {
-    FDF_LOG(ERROR, "Interconnect visitor failed for node '%s' : %s", node.name().c_str(),
-            parse_result.status_string());
+    fdf::error("Interconnect visitor failed for node '{}' : {}", node.name(), parse_result);
+
     return parse_result.take_error();
   }
 
@@ -151,31 +151,31 @@ zx::result<> InterconnectVisitor::Visit(fdf_devicetree::Node& node,
     return zx::ok();
   }
 
-  FDF_LOG(DEBUG, "Found node with interconnect reference: %s", node.name().c_str());
+  fdf::debug("Found node with interconnect reference: {}", node.name());
 
   auto names = parse_result->Get<std::vector<std::string>>(kInterconnectNames);
   if (!names) {
-    FDF_LOG(ERROR,
-            "Interconnect reference '%s' does not have valid interconnect names property. "
-            "Name is required to generate bind rules.",
-            node.name().c_str());
+    fdf::error(
+        "Interconnect reference '{}' does not have valid interconnect names property. Name is required to generate bind rules.",
+        node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   if (references->size() != names->size()) {
-    FDF_LOG(ERROR,
-            "Interconnect reference '%s' does not have valid number of interconnect names. "
-            "%zu interconnects found, and %zu interconnect names found, they must be equal.",
-            node.name().c_str(), references->size(), names->size());
+    fdf::error(
+        "Interconnect reference '{}' does not have valid number of interconnect names. {} interconnects found, and {} interconnect names found, they must be equal.",
+        node.name(), references->size(), names->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto tags = parse_result->Get<std::vector<uint32_t>>(kInterconnectTags);
   if (tags && references->size() != tags->size()) {
-    FDF_LOG(ERROR,
-            "Interconnect reference '%s' does not have valid number of interconnect tags. "
-            "%zu interconnects found, and %zu interconnect tags found, they must be equal.",
-            node.name().c_str(), references->size(), tags->size());
+    fdf::error(
+        "Interconnect reference '{}' does not have valid number of interconnect tags. {} interconnects found, and {} interconnect tags found, they must be equal.",
+        node.name(), references->size(), tags->size());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 

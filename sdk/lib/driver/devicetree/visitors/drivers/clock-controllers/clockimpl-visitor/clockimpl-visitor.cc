@@ -72,8 +72,8 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
                                      const devicetree::PropertyDecoder& decoder) {
   zx::result parser_output = clock_parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Clock visitor failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Clock visitor failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -81,10 +81,10 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
   if (auto clocks = parser_output->Get<fdf_devicetree::References>(kClockReference)) {
     auto clock_names = parser_output->Get<std::vector<std::string>>(kClockNames);
     if (!clock_names && clocks->size() != 1u) {
-      FDF_LOG(
-          ERROR,
-          "Clock reference '%s' does not have valid clock names property. Name is required to generate bind rules, especially when more than one clock is referenced.",
-          node.name().c_str());
+      fdf::error(
+          "Clock reference '{}' does not have valid clock names property. Name is required to generate bind rules, especially when more than one clock is referenced.",
+          node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
@@ -108,15 +108,17 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
   if (auto assigned_clocks = parser_output->Get<fdf_devicetree::References>(kAssignedClocks)) {
     auto clock_parents = parser_output->Get<fdf_devicetree::References>(kAssignedClockParents);
     if (clock_parents && clock_parents->size() > assigned_clocks->size()) {
-      FDF_LOG(ERROR, "Assigned clock parents in '%s' has more entries than assigned clocks.",
-              node.name().c_str());
+      fdf::error("Assigned clock parents in '{}' has more entries than assigned clocks.",
+                 node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
     auto clock_rates = parser_output->Get<std::vector<uint32_t>>(kAssignedClockRates);
     if (clock_rates && clock_rates->size() > assigned_clocks->size()) {
-      FDF_LOG(ERROR, "Assigned clock rates in '%s' has more entries than assigned clocks.",
-              node.name().c_str());
+      fdf::error("Assigned clock rates in '{}' has more entries than assigned clocks.",
+                 node.name());
+
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
 
@@ -210,9 +212,9 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   auto& controller = GetController(*parent.phandle());
 
   if (specifiers.size_bytes() != 1 * sizeof(uint32_t)) {
-    FDF_LOG(ERROR,
-            "Clock reference '%s' has incorrect number of clock specifiers (%lu) - expected 1.",
-            child.name().c_str(), specifiers.size_bytes() / sizeof(uint32_t));
+    fdf::error("Clock reference '{}' has incorrect number of clock specifiers ({}) - expected 1.",
+               child.name(), specifiers.size_bytes() / sizeof(uint32_t));
+
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -221,8 +223,8 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   const uint32_t node_id = GetNextUniqueId();
   const std::string name_string = clock_name ? std::string(*clock_name) : "<anonymous>";
 
-  FDF_LOG(DEBUG, "Clock ID added - Unique ID %u, Clock ID 0x%x name '%s' to controller '%s'",
-          node_id, clock_id, name_string.c_str(), parent.name().c_str());
+  fdf::debug("Clock ID added - Unique ID {}, Clock ID {:#x} name '{}' to controller '{}'", node_id,
+             clock_id, name_string, parent.name());
 
   auto& clock_nodes = controller.clock_nodes_metadata.clock_nodes();
   if (!clock_nodes.has_value()) {
@@ -252,8 +254,8 @@ zx::result<> ClockImplVisitor::ParseInitChild(
     auto parent_clock = ClockCells(clock_parent->property_cells());
     controller.init_metadata.steps().push_back(
         {{clock.id(), InitCall::WithInputIdx(parent_clock.id())}});
-    FDF_LOG(DEBUG, "Clock parent set to %d for clock ID %d by '%s'.", parent_clock.id(), clock.id(),
-            child.name().c_str());
+    fdf::debug("Clock parent set to {} for clock ID {} by '{}'.", parent_clock.id(), clock.id(),
+               child.name());
   }
 
   if (clock_rate) {
@@ -261,8 +263,8 @@ zx::result<> ClockImplVisitor::ParseInitChild(
     if (*clock_rate != 0) {
       controller.init_metadata.steps().push_back({{clock.id(), InitCall::WithRateHz(*clock_rate)}});
 
-      FDF_LOG(DEBUG, "Clock initial rate set to %d for clock ID %d by '%s'.", *clock_rate,
-              clock.id(), child.name().c_str());
+      fdf::debug("Clock initial rate set to {} for clock ID {} by '{}'.", *clock_rate, clock.id(),
+                 child.name());
     }
   }
 
@@ -280,16 +282,18 @@ zx::result<> ClockImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   if (node.phandle()) {
     auto controller = clock_controllers_.find(*node.phandle());
     if (controller == clock_controllers_.end()) {
-      FDF_LOG(INFO, "Clock controller '%s' is not being used. Not adding any metadata for it.",
-              node.name().c_str());
+      fdf::info("Clock controller '{}' is not being used. Not adding any metadata for it.",
+                node.name());
+
       return zx::ok();
     }
 
     if (!controller->second.init_metadata.steps().empty()) {
       const fit::result encoded_metadata = fidl::Persist(controller->second.init_metadata);
       if (!encoded_metadata.is_ok()) {
-        FDF_LOG(ERROR, "Failed to encode clock init metadata: %s",
-                encoded_metadata.error_value().FormatDescription().c_str());
+        fdf::error("Failed to encode clock init metadata: {}",
+                   encoded_metadata.error_value().FormatDescription());
+
         return zx::error(encoded_metadata.error_value().status());
       }
 
@@ -298,7 +302,7 @@ zx::result<> ClockImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
           .data = std::move(encoded_metadata.value()),
       }});
 
-      FDF_LOG(DEBUG, "Clock init steps metadata added to node '%s'", node.name().c_str());
+      fdf::debug("Clock init steps metadata added to node '{}'", node.name());
     }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
@@ -307,8 +311,9 @@ zx::result<> ClockImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
       const fit::result encoded_clock_id_metadata =
           fidl::Persist(controller->second.clock_nodes_metadata);
       if (!encoded_clock_id_metadata.is_ok()) {
-        FDF_LOG(ERROR, "Failed to encode clock ID's: %s",
-                encoded_clock_id_metadata.error_value().FormatDescription().c_str());
+        fdf::error("Failed to encode clock ID's: {}",
+                   encoded_clock_id_metadata.error_value().FormatDescription());
+
         return zx::error(encoded_clock_id_metadata.error_value().status());
       }
       fuchsia_hardware_platform_bus::Metadata metadata = {{
@@ -317,7 +322,7 @@ zx::result<> ClockImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
       }};
       node.AddMetadata(std::move(metadata));
 
-      FDF_LOG(DEBUG, "Clock ID's metadata added to node '%s'", node.name().c_str());
+      fdf::debug("Clock ID's metadata added to node '{}'", node.name());
     }
 #endif
   }

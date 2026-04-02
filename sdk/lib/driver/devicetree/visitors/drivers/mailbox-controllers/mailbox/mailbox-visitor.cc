@@ -7,6 +7,7 @@
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/common-types.h>
 #include <lib/driver/devicetree/visitors/registration.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/hardware/mailbox/cpp/bind.h>
 #include <bind/fuchsia/mailbox/cpp/bind.h>
@@ -41,7 +42,8 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
                                    const devicetree::PropertyDecoder& decoder) {
   auto properties = mailbox_parser_->Parse(node);
   if (properties.is_error()) {
-    FDF_LOG(ERROR, "Failed to parse node \"%s\"", node.name().c_str());
+    fdf::error("Failed to parse node \"{}\"", node.name());
+
     return properties.take_error();
   }
   auto channels = properties->Get<fdf_devicetree::References>(kMailboxesProperty);
@@ -57,13 +59,15 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
       channel_names.push_back(name);
     }
   } else if (channel_names_property.status_value() != ZX_ERR_NOT_FOUND) {
-    FDF_LOG(ERROR, "Failed to parse mbox-names property for node \"%s\": %s", node.name().c_str(),
-            channel_names_property.status_string());
+    fdf::error("Failed to parse mbox-names property for node \"{}\": {}", node.name(),
+               channel_names_property);
+
     return channel_names_property.take_error();
   }
 
   if (!channel_names.empty() && channels->size() != channel_names.size()) {
-    FDF_LOG(ERROR, "mboxes and mbox-names mismatch for node \"%s\"", node.name().c_str());
+    fdf::error("mboxes and mbox-names mismatch for node \"{}\"", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -75,8 +79,8 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
   for (auto& reference : *channels) {
     zx::result<uint32_t> channel = ParseChannel(reference);
     if (channel.is_error()) {
-      FDF_LOG(ERROR, "Failed to parse mailbox channel reference for node \"%s\"",
-              node.name().c_str());
+      fdf::error("Failed to parse mailbox channel reference for node \"{}\"", node.name());
+
       return channel.take_error();
     }
 
@@ -129,13 +133,14 @@ zx::result<> MailboxVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   auto mbox_cells = node.GetProperty<uint32_t>(kMailboxCellsProperty);
   if (mbox_cells.is_error()) {
-    FDF_LOG(ERROR, "Missing #mbox-cells property for node \"%s\": %s", node.name().c_str(),
-            mbox_cells.status_string());
+    fdf::error("Missing #mbox-cells property for node \"{}\": {}", node.name(), mbox_cells);
+
     return mbox_cells.take_error();
   }
 
   if (*mbox_cells != 1) {
-    FDF_LOG(ERROR, "Invalid #mbox-cells property for node \"%s\"", node.name().c_str());
+    fdf::error("Invalid #mbox-cells property for node \"{}\"", node.name());
+
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -146,8 +151,9 @@ zx::result<> MailboxVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   fit::result<fidl::Error, std::vector<uint8_t>> metadata = fidl::Persist(controller);
   if (metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to persist mailbox controller metadata: %s",
-            metadata.error_value().FormatDescription().c_str());
+    fdf::error("Failed to persist mailbox controller metadata: {}",
+               metadata.error_value().FormatDescription());
+
     return zx::error(metadata.error_value().status());
   }
 

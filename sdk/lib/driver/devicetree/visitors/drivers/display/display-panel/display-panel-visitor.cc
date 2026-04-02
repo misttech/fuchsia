@@ -35,8 +35,8 @@ zx::result<> DisplayPanelVisitor::Visit(fdf_devicetree::Node& node,
 
   zx::result parser_output = parser_->Parse(node);
   if (parser_output.is_error()) {
-    FDF_LOG(ERROR, "Display panel visitor parse failed for node '%s' : %s", node.name().c_str(),
-            parser_output.status_string());
+    fdf::error("Display panel visitor parse failed for node '{}' : {}", node.name(), parser_output);
+
     return parser_output.take_error();
   }
 
@@ -56,8 +56,8 @@ zx::result<> DisplayPanelVisitor::Visit(fdf_devicetree::Node& node,
 
   node.AddMetadata(display_panel_metadata);
 
-  FDF_LOG(DEBUG, "Display panel info - type(%" PRIu32 ") added to node '%s'",
-          static_cast<uint32_t>(panel_type), node.name().c_str());
+  fdf::debug("Display panel info - type({}) added to node '{}'", static_cast<uint32_t>(panel_type),
+             node.name());
 
   return zx::ok();
 }
