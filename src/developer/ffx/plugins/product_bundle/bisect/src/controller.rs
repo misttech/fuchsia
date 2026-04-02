@@ -9,7 +9,7 @@ use assembly_artifact_cache::{MOSIdentifier, Slot};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::BufReader;
+use std::io::{BufReader, IsTerminal};
 
 /// A struct that holds the serialized state of the bisection process.
 #[derive(Serialize, Deserialize)]
@@ -45,6 +45,7 @@ const SYMBOL_CULPRIT: &str = "\x1b[31;1m*\x1b[0m";
 const SYMBOL_CURRENT: &str = "\x1b[32;5mO\x1b[0m";
 const SYMBOL_GOOD: &str = "\x1b[32m✓\x1b[0m";
 const SYMBOL_BAD: &str = "\x1b[31m✗\x1b[0m";
+const CLEAR_SCREEN: &str = "\x1B[2J\x1B[1;1H";
 
 impl<TestFn, TestFut, PrintFn> Controller<TestFn, PrintFn>
 where
@@ -154,6 +155,10 @@ where
     /// Formats and prints the current status of the bisection state machine.
     pub fn print_status(&mut self) {
         let mut message = String::new();
+
+        if std::io::stdout().is_terminal() {
+            message.push_str(CLEAR_SCREEN);
+        }
 
         // 1. Determine the overall status and current phase of the strategy
         let phase_str = match &self.strategy.state {
