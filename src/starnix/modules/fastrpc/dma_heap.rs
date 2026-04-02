@@ -12,7 +12,7 @@ use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_s
 use starnix_logging::log_debug;
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
@@ -94,7 +94,7 @@ impl<A: Alloc> DeviceOps for DmaHeapDevice<A> {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

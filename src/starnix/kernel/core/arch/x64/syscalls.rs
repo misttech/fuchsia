@@ -20,7 +20,7 @@ use starnix_logging::track_stub;
 use starnix_types::time::{
     duration_from_poll_timeout, duration_from_timeval, timeval_from_duration,
 };
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, ErrnoResultExt};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -317,7 +317,7 @@ pub fn sys_mknod(
     current_task: &CurrentTask,
     user_path: UserCString,
     mode: FileMode,
-    dev: DeviceType,
+    dev: DeviceId,
 ) -> Result<(), Errno> {
     sys_mknodat(locked, current_task, FdNumber::AT_FDCWD, user_path, mode, dev)
 }

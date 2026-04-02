@@ -7,6 +7,11 @@
 mod server;
 
 use crate::server::{FramebufferServer, init_viewport_scene, start_presentation_loop};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_math as fmath;
+use fidl_fuchsia_ui_composition as fuicomposition;
+use fidl_fuchsia_ui_display_singleton as fuidisplay;
+use fidl_fuchsia_ui_views as fuiviews;
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::{DeviceMode, DeviceOps};
@@ -19,7 +24,7 @@ use starnix_core::vfs::{
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserAddress};
@@ -30,11 +35,6 @@ use starnix_uapi::{
 };
 use std::sync::Arc;
 use zerocopy::IntoBytes;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_math as fmath,
-    fidl_fuchsia_ui_composition as fuicomposition, fidl_fuchsia_ui_display_singleton as fuidisplay,
-    fidl_fuchsia_ui_views as fuiviews,
-};
 
 fn get_display_size() -> Result<fmath::SizeU, Errno> {
     let singleton_display_info =
@@ -99,7 +99,7 @@ impl Framebuffer {
             locked,
             system_task,
             "fb0".into(),
-            DeviceMetadata::new("fb0".into(), DeviceType::FB0, DeviceMode::Char),
+            DeviceMetadata::new("fb0".into(), DeviceId::FB0, DeviceMode::Char),
             graphics_class,
             FramebufferDevice { framebuffer: framebuffer.clone() },
         )?;
@@ -256,7 +256,7 @@ impl DeviceOps for FramebufferDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        dev: DeviceType,
+        dev: DeviceId,
         node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

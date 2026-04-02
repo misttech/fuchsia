@@ -28,7 +28,7 @@ use starnix_sync::{
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::UserAndOrGroupId;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
@@ -1081,7 +1081,7 @@ impl NamespaceNode {
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         flags: OpenFlags,
     ) -> Result<NamespaceNode, Errno>
     where
@@ -1120,7 +1120,7 @@ impl NamespaceNode {
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
     ) -> Result<NamespaceNode, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
@@ -1236,7 +1236,7 @@ impl NamespaceNode {
                     mount,
                     name,
                     mode,
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                     current_task.current_fscred(),
                 )?;
                 if let Some(unix_socket) = socket.downcast_socket::<UnixSocket>() {
@@ -1960,7 +1960,7 @@ impl Borrow<ArcKey<DirEntry>> for Submount {
 mod test {
     use crate::fs::tmpfs::TmpFs;
     use crate::testing::spawn_kernel_and_run;
-    use crate::vfs::namespace::DeviceType;
+    use crate::vfs::namespace::DeviceId;
     use crate::vfs::{
         CallbackSymlinkNode, FsNodeInfo, LookupContext, MountInfo, Namespace, NamespaceNode,
         RenameFlags, SymlinkMode, SymlinkTarget, UnlinkKind, WhatToMount,
@@ -2330,7 +2330,7 @@ mod test {
                     &current_task,
                     "real_file".into(),
                     mode!(IFREG, 0o777),
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .expect("failed to create real_file");
             first_subdir

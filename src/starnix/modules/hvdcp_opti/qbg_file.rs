@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use super::utils::connect_to_device_channel;
+use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
+use fidl_fuchsia_power_system as fpower;
 use futures::channel::oneshot;
 use futures_util::{FutureExt, select};
 use starnix_core::mm::MemoryAccessorExt;
@@ -18,7 +20,7 @@ use starnix_core::vfs::{
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -26,7 +28,6 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::sync::Arc;
-use {fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti, fidl_fuchsia_power_system as fpower};
 
 pub const QBGIOCXCFG: u32 = 0x80684201;
 pub const QBGIOCXEPR: u32 = 0x80304202;
@@ -36,7 +37,7 @@ pub const QBGIOCXSTEPCHGCFG: u32 = 0xC0F74204;
 pub fn create_qbg_device(
     _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {

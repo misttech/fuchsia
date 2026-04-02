@@ -27,7 +27,7 @@ use starnix_sync::{
     RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_uapi::auth::{Credentials, FsCred};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EEXIST, ENOENT, Errno};
 use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -195,7 +195,7 @@ impl ActiveEntry {
                 mount,
                 name,
                 FileMode::IFCHR,
-                DeviceType::NONE,
+                DeviceId::NONE,
                 FsCred::root(),
             )
         })
@@ -204,7 +204,7 @@ impl ActiveEntry {
     /// Returns `true` if this is a "whiteout".
     fn is_whiteout(&self) -> bool {
         let info = self.entry().node.info();
-        info.mode.is_chr() && info.rdev == DeviceType::NONE
+        info.mode.is_chr() && info.rdev == DeviceId::NONE
     }
 
     /// Checks whether the child of this entry represented by `info` is a "whiteout".
@@ -384,7 +384,7 @@ impl OverlayNode {
                                         mount,
                                         name,
                                         info.mode,
-                                        DeviceType::NONE,
+                                        DeviceId::NONE,
                                         cred,
                                     )
                                 },
@@ -667,7 +667,7 @@ impl FsNodeOps for OverlayNodeOps {
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let mut creds = Credentials::clone(&self.node.stack.mounter);
@@ -730,7 +730,7 @@ impl FsNodeOps for OverlayNodeOps {
                                 mount,
                                 name,
                                 mode,
-                                DeviceType::NONE,
+                                DeviceId::NONE,
                                 owner.clone(),
                             )
                         },

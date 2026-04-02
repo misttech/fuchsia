@@ -35,7 +35,7 @@ use starnix_uapi::auth::{
     CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, CAP_LEASE, CAP_SYS_ADMIN, CAP_WAKE_ALARM, Credentials,
     PTRACE_MODE_ATTACH_REALCREDS,
 };
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{
     EFAULT, EINTR, ENAMETOOLONG, ENOTSUP, ETIMEDOUT, Errno, ErrnoResultExt,
 };
@@ -1047,7 +1047,7 @@ type StatPtr = MultiArchUserRef<uapi::stat, uapi::arch32::stat64>;
 fn get_fake_ion_stat() -> uapi::stat {
     uapi::stat {
         st_mode: uapi::S_IFCHR | 0o666,
-        st_rdev: DeviceType::new(10, 59).bits(),
+        st_rdev: DeviceId::new(10, 59).bits(),
         st_nlink: 1,
         st_blksize: 4096,
         ..Default::default()
@@ -1215,7 +1215,7 @@ pub fn sys_mkdirat(
         current_task,
         basename,
         mode.with_type(FileMode::IFDIR),
-        DeviceType::NONE,
+        DeviceId::NONE,
     )?;
     Ok(())
 }
@@ -1226,7 +1226,7 @@ pub fn sys_mknodat(
     dir_fd: FdNumber,
     user_path: UserCString,
     mode: FileMode,
-    dev: DeviceType,
+    dev: DeviceId,
 ) -> Result<(), Errno> {
     let file_type = match mode.fmt() {
         FileMode::IFREG
@@ -4258,7 +4258,7 @@ mod tests {
                 let stat_result: uapi::stat =
                     current_task.read_object(stat_addr.into()).expect("failed to read stat");
                 assert_eq!(stat_result.st_mode, uapi::S_IFCHR | 0o666);
-                assert_eq!(stat_result.st_rdev, DeviceType::new(10, 59).bits());
+                assert_eq!(stat_result.st_rdev, DeviceId::new(10, 59).bits());
 
                 // Test statx as well.
                 let statx_addr =

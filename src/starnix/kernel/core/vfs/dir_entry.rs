@@ -507,7 +507,7 @@ impl DirEntry {
                     mount,
                     name,
                     starnix_uapi::file_mode::mode!(IFDIR, 0o777),
-                    starnix_uapi::device_type::DeviceType::NONE,
+                    starnix_uapi::device_id::DeviceId::NONE,
                     FsCred::root(),
                 )
             },

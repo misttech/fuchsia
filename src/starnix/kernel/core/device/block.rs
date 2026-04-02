@@ -9,7 +9,7 @@ use crate::task::CurrentTask;
 use crate::vfs::{FileOps, FsString, NamespaceNode};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::ArchSpecific;
@@ -39,7 +39,7 @@ impl BlockDeviceInfo for MmcBlockDevice {
 fn open_mmc_block_device(
     _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
@@ -62,7 +62,7 @@ pub fn add_mmc_block_device(
         locked,
         current_task,
         name.as_ref(),
-        DeviceMetadata::new(name.clone(), DeviceType::MMCBLK0, DeviceMode::Block),
+        DeviceMetadata::new(name.clone(), DeviceId::MMCBLK0, DeviceMode::Block),
         class,
         |device, dir| build_block_device_directory(device, device_weak, dir),
         open_mmc_block_device,

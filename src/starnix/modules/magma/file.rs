@@ -148,7 +148,7 @@ use starnix_logging::{impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -280,7 +280,7 @@ impl MagmaFile {
 
     pub fn new_file(
         _current_task: &CurrentTask,
-        _dev: DeviceType,
+        _dev: DeviceId,
         _node: &FsNode,
         _flags: OpenFlags,
         supported_vendors: Vec<u16>,

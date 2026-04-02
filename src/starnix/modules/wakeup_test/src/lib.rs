@@ -24,7 +24,7 @@ use starnix_core::device::DeviceMode;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::task::CurrentTask;
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 
 mod device;
@@ -46,7 +46,7 @@ pub fn register_wakeup_test_device(
         locked,
         system_task,
         "wakeup_test0".into(),
-        DeviceMetadata::new("wakeup_test0".into(), DeviceType::new(0, 0), DeviceMode::Char),
+        DeviceMetadata::new("wakeup_test0".into(), DeviceId::new(0, 0), DeviceMode::Char),
         misc_class,
         device,
     )?;

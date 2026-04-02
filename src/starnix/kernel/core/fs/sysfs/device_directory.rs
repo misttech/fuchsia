@@ -19,7 +19,7 @@ pub fn build_device_directory(device: &Device, dir: &SimpleDirectoryMutator) {
     if let Some(metadata) = &device.metadata {
         dir.entry(
             "dev",
-            BytesFile::new_node(format!("{}\n", metadata.device_type).into_bytes()),
+            BytesFile::new_node(format!("{}\n", metadata.devt).into_bytes()),
             mode!(IFREG, 0o444),
         );
     }

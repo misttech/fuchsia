@@ -28,7 +28,7 @@ use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::math::round_up_to_increment;
@@ -412,7 +412,7 @@ impl FsNodeOps for BpfFsDir {
         _current_task: &CurrentTask,
         _name: &FsStr,
         _mode: FileMode,
-        _dev: DeviceType,
+        _dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         error!(EPERM)

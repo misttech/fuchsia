@@ -16,7 +16,7 @@ use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::CurrentTask;
 use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ where
         locked,
         current_task,
         "qbg".into(),
-        DeviceMetadata::new("qbg".into(), DeviceType::new(484, 0), DeviceMode::Char),
+        DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
         qdb_class,
         create_qbg_device,
     )?;
@@ -60,7 +60,7 @@ where
         locked,
         current_task,
         "qbg_battery".into(),
-        DeviceMetadata::new("qbg_battery".into(), DeviceType::new(485, 0), DeviceMode::Char),
+        DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),
         registry.objects.get_or_create_class("qbg_battery".into(), registry.objects.virtual_bus()),
         create_battery_profile_device,
     )?;

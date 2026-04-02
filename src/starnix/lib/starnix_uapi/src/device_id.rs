@@ -35,44 +35,44 @@ pub const DEVICE_MAPPER_MAJOR: u32 = 254;
 pub const BLOCK_EXTENDED_MAJOR: u32 = 259;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct DeviceType(u64);
+pub struct DeviceId(u64);
 
-impl DeviceType {
-    pub const NONE: DeviceType = DeviceType(0);
+impl DeviceId {
+    pub const NONE: DeviceId = DeviceId(0);
 
     // MEM
-    pub const NULL: DeviceType = DeviceType::new(MEM_MAJOR, 3);
-    pub const ZERO: DeviceType = DeviceType::new(MEM_MAJOR, 5);
-    pub const FULL: DeviceType = DeviceType::new(MEM_MAJOR, 7);
-    pub const RANDOM: DeviceType = DeviceType::new(MEM_MAJOR, 8);
-    pub const URANDOM: DeviceType = DeviceType::new(MEM_MAJOR, 9);
-    pub const KMSG: DeviceType = DeviceType::new(MEM_MAJOR, 11);
+    pub const NULL: DeviceId = DeviceId::new(MEM_MAJOR, 3);
+    pub const ZERO: DeviceId = DeviceId::new(MEM_MAJOR, 5);
+    pub const FULL: DeviceId = DeviceId::new(MEM_MAJOR, 7);
+    pub const RANDOM: DeviceId = DeviceId::new(MEM_MAJOR, 8);
+    pub const URANDOM: DeviceId = DeviceId::new(MEM_MAJOR, 9);
+    pub const KMSG: DeviceId = DeviceId::new(MEM_MAJOR, 11);
 
     // TTY_ALT
-    pub const TTY: DeviceType = DeviceType::new(TTY_ALT_MAJOR, 0);
-    pub const PTMX: DeviceType = DeviceType::new(TTY_ALT_MAJOR, 2);
+    pub const TTY: DeviceId = DeviceId::new(TTY_ALT_MAJOR, 0);
+    pub const PTMX: DeviceId = DeviceId::new(TTY_ALT_MAJOR, 2);
 
     // MISC
-    pub const HW_RANDOM: DeviceType = DeviceType::new(MISC_MAJOR, 183);
-    pub const UINPUT: DeviceType = DeviceType::new(MISC_MAJOR, 223);
-    pub const FUSE: DeviceType = DeviceType::new(MISC_MAJOR, 229);
-    pub const DEVICE_MAPPER: DeviceType = DeviceType::new(MISC_MAJOR, 236);
-    pub const LOOP_CONTROL: DeviceType = DeviceType::new(MISC_MAJOR, 237);
+    pub const HW_RANDOM: DeviceId = DeviceId::new(MISC_MAJOR, 183);
+    pub const UINPUT: DeviceId = DeviceId::new(MISC_MAJOR, 223);
+    pub const FUSE: DeviceId = DeviceId::new(MISC_MAJOR, 229);
+    pub const DEVICE_MAPPER: DeviceId = DeviceId::new(MISC_MAJOR, 236);
+    pub const LOOP_CONTROL: DeviceId = DeviceId::new(MISC_MAJOR, 237);
 
     // Frame buffer
-    pub const FB0: DeviceType = DeviceType::new(FB_MAJOR, 0);
+    pub const FB0: DeviceId = DeviceId::new(FB_MAJOR, 0);
 
     // TUN
-    pub const TUN: DeviceType = DeviceType::new(MISC_MAJOR, 200);
+    pub const TUN: DeviceId = DeviceId::new(MISC_MAJOR, 200);
 
     // Block Devices
-    pub const MMCBLK0: DeviceType = DeviceType::new(MMC_BLOCK_DEVICE_MAJOR, 0);
+    pub const MMCBLK0: DeviceId = DeviceId::new(MMC_BLOCK_DEVICE_MAJOR, 0);
 
-    pub const fn new(major: u32, minor: u32) -> DeviceType {
+    pub const fn new(major: u32, minor: u32) -> DeviceId {
         // This encoding is part of the Linux UAPI. The encoded value is
         // returned to userspace in the stat struct.
         // See <https://man7.org/linux/man-pages/man3/makedev.3.html>.
-        DeviceType(
+        DeviceId(
             (((major & 0xfffff000) as u64) << 32)
                 | (((major & 0xfff) as u64) << 8)
                 | (((minor & 0xffffff00) as u64) << 12)
@@ -80,20 +80,20 @@ impl DeviceType {
         )
     }
 
-    pub const fn new_range(major: u32, minor: Range<u32>) -> Range<DeviceType> {
+    pub const fn new_range(major: u32, minor: Range<u32>) -> Range<DeviceId> {
         Self::new(major, minor.start)..Self::new(major, minor.end)
     }
 
-    pub const fn from_bits(dev: u64) -> DeviceType {
-        DeviceType(dev)
+    pub const fn from_bits(dev: u64) -> DeviceId {
+        DeviceId(dev)
     }
 
     pub const fn bits(&self) -> u64 {
         self.0
     }
 
-    pub fn next_minor(&self) -> Option<DeviceType> {
-        self.minor().checked_add(1).map(|minor| DeviceType::new(self.major(), minor))
+    pub fn next_minor(&self) -> Option<DeviceId> {
+        self.minor().checked_add(1).map(|minor| DeviceId::new(self.major(), minor))
     }
 
     pub const fn major(&self) -> u32 {
@@ -105,19 +105,19 @@ impl DeviceType {
     }
 }
 
-impl fmt::Display for DeviceType {
+impl fmt::Display for DeviceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}:{}", self.major(), self.minor())
     }
 }
 
-impl std::cmp::PartialOrd for DeviceType {
+impl std::cmp::PartialOrd for DeviceId {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl std::cmp::Ord for DeviceType {
+impl std::cmp::Ord for DeviceId {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.major(), self.minor()).cmp(&(other.major(), other.minor()))
     }
@@ -129,11 +129,11 @@ mod tests {
 
     #[::fuchsia::test]
     fn test_device_type() {
-        let dev = DeviceType::new(21, 17);
+        let dev = DeviceId::new(21, 17);
         assert_eq!(dev.major(), 21);
         assert_eq!(dev.minor(), 17);
 
-        let dev = DeviceType::new(0x83af83fe, 0xf98ecba1);
+        let dev = DeviceId::new(0x83af83fe, 0xf98ecba1);
         assert_eq!(dev.major(), 0x83af83fe);
         assert_eq!(dev.minor(), 0xf98ecba1);
     }

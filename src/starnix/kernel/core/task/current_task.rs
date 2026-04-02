@@ -36,7 +36,7 @@ use starnix_uapi::auth::{
     CAP_KILL, CAP_SYS_ADMIN, CAP_SYS_PTRACE, Credentials, FsCred, PTRACE_MODE_FSCREDS,
     PTRACE_MODE_REALCREDS, PtraceAccessMode, UserAndOrGroupId,
 };
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -729,7 +729,7 @@ impl CurrentTask {
                         self,
                         basename,
                         mode.with_type(FileMode::IFREG),
-                        DeviceType::NONE,
+                        DeviceId::NONE,
                         flags,
                     )?,
                     true,

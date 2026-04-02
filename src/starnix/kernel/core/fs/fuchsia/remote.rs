@@ -38,7 +38,7 @@ use starnix_sync::{
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::{Credentials, FsCred};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::FileSystemFlags;
@@ -378,7 +378,7 @@ impl<'a> LookupFactory<'a> {
             let uid = mutable.uid.unwrap_or(0);
             let gid = mutable.gid.unwrap_or(0);
             let owner = FsCred { uid, gid };
-            let rdev = DeviceType::from_bits(mutable.rdev.unwrap_or(0));
+            let rdev = DeviceId::from_bits(mutable.rdev.unwrap_or(0));
             let fsverity_enabled = immutable.verity_enabled.unwrap_or(false);
             let protocols = immutable.protocols.unwrap_or(fio::NodeProtocolKinds::empty());
             // fsverity should not be enabled for non-file nodes.
@@ -1062,7 +1062,7 @@ impl FsNodeOps for RemoteNode {
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         node.fail_if_locked(current_task)?;
@@ -2717,13 +2717,13 @@ mod test {
             let ns = Namespace::new(fs);
             current_task.fs().set_umask(FileMode::from_bits(0));
             ns.root()
-                .create_node(locked, &current_task, "file".into(), FILE_MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), FILE_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             ns.root()
-                .create_node(locked, &current_task, "dir".into(), DIR_MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "dir".into(), DIR_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             ns.root()
-                .create_node(locked, &current_task, "dev".into(), BLK_MODE, DeviceType::RANDOM)
+                .create_node(locked, &current_task, "dev".into(), BLK_MODE, DeviceId::RANDOM)
                 .expect("create_node failed");
         })
         .await;
@@ -2757,7 +2757,7 @@ mod test {
                 .expect("lookup_child failed");
             assert_matches!(
                 &*child.entry.node.info(),
-                FsNodeInfo { mode: FILE_MODE, uid: 1, gid: 2, rdev: DeviceType::NONE, .. }
+                FsNodeInfo { mode: FILE_MODE, uid: 1, gid: 2, rdev: DeviceId::NONE, .. }
             );
             let child = ns
                 .root()
@@ -2765,7 +2765,7 @@ mod test {
                 .expect("lookup_child failed");
             assert_matches!(
                 &*child.entry.node.info(),
-                FsNodeInfo { mode: DIR_MODE, uid: 1, gid: 2, rdev: DeviceType::NONE, .. }
+                FsNodeInfo { mode: DIR_MODE, uid: 1, gid: 2, rdev: DeviceId::NONE, .. }
             );
             let child = ns
                 .root()
@@ -2773,7 +2773,7 @@ mod test {
                 .expect("lookup_child failed");
             assert_matches!(
                 &*child.entry.node.info(),
-                FsNodeInfo { mode: BLK_MODE, uid: 1, gid: 2, rdev: DeviceType::RANDOM, .. }
+                FsNodeInfo { mode: BLK_MODE, uid: 1, gid: 2, rdev: DeviceId::RANDOM, .. }
             );
         })
         .await;
@@ -2803,10 +2803,10 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let sub_dir1 = ns
                 .root()
-                .create_node(locked, &current_task, "dir".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "dir".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let sub_dir2 = sub_dir1
-                .create_node(locked, &current_task, "dir".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "dir".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
 
             let dir_handle = ns
@@ -2894,7 +2894,7 @@ mod test {
             let root = ns.root();
 
             // Create RemoteSpecialNode (e.g. FIFO)
-            root.create_node(locked, &current_task, "fifo".into(), FIFO_MODE, DeviceType::NONE)
+            root.create_node(locked, &current_task, "fifo".into(), FIFO_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let fifo_node = root
@@ -2914,7 +2914,7 @@ mod test {
             };
 
             // Create regular RemoteNode
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
@@ -2954,7 +2954,7 @@ mod test {
                     &current_task,
                     "file1".into(),
                     mode!(IFREG, 0o666),
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .expect("create_node failed");
             ns.root()
@@ -3024,7 +3024,7 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let file = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Enable verity on the file.
             let desc = fsverity_descriptor {
@@ -3096,7 +3096,7 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let file = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Change the mode, this change should persist
             file.entry
@@ -3194,7 +3194,7 @@ mod test {
             let root = ns.root();
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
@@ -3233,7 +3233,7 @@ mod test {
             let root = ns.root();
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
@@ -3279,7 +3279,7 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let child = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Write to file (this should update mtime (time_modify))
             let file = child
@@ -3372,7 +3372,7 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let child = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
 
             let info_original = child
@@ -3449,7 +3449,7 @@ mod test {
             current_task.fs().set_umask(FileMode::from_bits(0));
             let child = ns
                 .root()
-                .create_node(locked, &current_task, "file".into(), MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let file = child
                 .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())
@@ -3525,7 +3525,7 @@ mod test {
                     &current_task,
                     "dir".into(),
                     FileMode::ALLOW_ALL.with_type(FileMode::IFDIR),
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .expect("create_node failed");
             child
@@ -3613,7 +3613,7 @@ mod test {
                         &current_task,
                         TEST_FILE.into(),
                         FileMode::ALLOW_ALL.with_type(FileMode::IFREG),
-                        DeviceType::NONE,
+                        DeviceId::NONE,
                         OpenFlags::empty(),
                     )
                     .expect("create_node failed");
@@ -4718,7 +4718,7 @@ mod test {
             let root = ns.root();
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
-            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+            root.create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
             let reg_node = root
@@ -4788,7 +4788,7 @@ mod test {
                     &current_task,
                     "test_file".into(),
                     mode!(IFREG, 0o666),
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .expect("create_node");
             let file_handle = node
@@ -4864,7 +4864,7 @@ mod test {
 
             const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o666);
             let node = root
-                .create_node(locked, &current_task, "file".into(), REG_MODE, DeviceType::NONE)
+                .create_node(locked, &current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
             let file = node
                 .open(locked, &current_task, OpenFlags::RDWR, AccessCheck::default())

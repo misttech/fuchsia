@@ -16,7 +16,7 @@ use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -294,7 +294,7 @@ impl TmpFsDirectory {
 fn create_child_node(
     parent: &FsNode,
     mode: FileMode,
-    dev: DeviceType,
+    dev: DeviceId,
     owner: FsCred,
 ) -> Result<FsNodeHandle, Errno> {
     let ops: Box<dyn FsNodeOps> = match mode.fmt() {
@@ -354,7 +354,7 @@ impl FsNodeOps for TmpFsDirectory {
         _current_task: &CurrentTask,
         _name: &FsStr,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let child = create_child_node(node, mode, dev, owner)?;
@@ -383,7 +383,7 @@ impl FsNodeOps for TmpFsDirectory {
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         assert!(mode.is_reg());
-        create_child_node(node, mode, DeviceType::NONE, owner)
+        create_child_node(node, mode, DeviceId::NONE, owner)
     }
 
     fn link(
@@ -498,7 +498,7 @@ mod test {
                     &current_task,
                     path.into(),
                     mode!(IFREG, 0o777),
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .unwrap();
 
@@ -533,7 +533,7 @@ mod test {
                     &current_task,
                     path.into(),
                     mode!(IFREG, 0o777),
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .unwrap();
             let rd_file = current_task.open_file(locked, path.into(), OpenFlags::RDONLY).unwrap();

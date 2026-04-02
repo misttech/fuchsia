@@ -17,7 +17,7 @@ use starnix_core::vfs::{
 };
 use starnix_logging::{bug_ref, log_error};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
-use starnix_uapi::device_type::{DeviceType, ZRAM_MAJOR};
+use starnix_uapi::device_id::{DeviceId, ZRAM_MAJOR};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -40,7 +40,7 @@ impl DeviceOps for ZramDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
@@ -62,7 +62,7 @@ pub fn zram_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Resul
         locked,
         kernel,
         "zram0".into(),
-        DeviceMetadata::new("zram0".into(), DeviceType::new(ZRAM_MAJOR, 0), DeviceMode::Block),
+        DeviceMetadata::new("zram0".into(), DeviceId::new(ZRAM_MAJOR, 0), DeviceMode::Block),
         registry.objects.virtual_block_class(),
         |device, dir| build_zram_device_directory(device, zram_device_clone, dir),
         zram_device,

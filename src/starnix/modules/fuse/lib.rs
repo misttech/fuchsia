@@ -37,7 +37,7 @@ use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_types::time::{NANOS_PER_SECOND, duration_from_timespec, time_from_timespec};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EINTR, EINVAL, ENOENT, ENOSYS, Errno};
 use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::math::round_up_to_increment;
@@ -102,7 +102,7 @@ struct DevFuse {
 pub fn open_fuse_device(
     _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
@@ -711,7 +711,7 @@ impl FuseNode {
             tv_sec: attributes.mtime as i64,
             tv_nsec: attributes.mtimensec as i64,
         })?;
-        info.rdev = DeviceType::from_bits(attributes.rdev as u64);
+        info.rdev = DeviceId::from_bits(attributes.rdev as u64);
 
         node_attributes_valid_until
             .store(zx::MonotonicInstant::after(attr_valid_duration), Ordering::Relaxed);
@@ -1306,14 +1306,14 @@ impl FsNodeOps for FuseNode {
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let get_entry = |locked: &mut Locked<FileOpsCore>| {
             let umask = current_task.fs().umask().bits();
             let mut connection = self.connection.lock();
 
-            if dev == DeviceType::NONE && !connection.no_create {
+            if dev == DeviceId::NONE && !connection.no_create {
                 match connection.execute_operation(
                     locked,
                     current_task,

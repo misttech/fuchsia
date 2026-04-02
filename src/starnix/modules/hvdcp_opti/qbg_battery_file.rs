@@ -13,7 +13,7 @@ use starnix_core::vfs::{
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -26,7 +26,7 @@ pub const BPIOCXBPTABLE: u32 = 0xC00C4202;
 pub fn create_battery_profile_device(
     _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {

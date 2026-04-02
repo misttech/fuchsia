@@ -22,7 +22,7 @@ use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl
 use starnix_logging::{log_error, log_info, log_warn, track_stub};
 use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -153,7 +153,7 @@ impl KgslFile {
 
     pub fn new_file(
         _current_task: &CurrentTask,
-        _dev: DeviceType,
+        _dev: DeviceId,
         _node: &FsNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

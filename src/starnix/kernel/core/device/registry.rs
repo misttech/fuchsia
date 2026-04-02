@@ -16,9 +16,7 @@ use starnix_logging::log_error;
 use starnix_sync::{InterruptibleEvent, LockBefore, LockEqualOrBefore, OrderedMutex};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
-use starnix_uapi::device_type::{
-    DYN_MAJOR_RANGE, DeviceType, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR,
-};
+use starnix_uapi::device_id::{DYN_MAJOR_RANGE, DeviceId, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -61,13 +59,13 @@ impl DeviceMode {
 pub trait DeviceOps: DynClone + Send + Sync + AsAny + 'static {
     /// Instantiate a FileOps for this device.
     ///
-    /// This function is called when userspace opens a file with a `DeviceType`
+    /// This function is called when userspace opens a file with a `DeviceId`
     /// assigned to this device.
     fn open(
         &self,
         locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        device_type: DeviceType,
+        devt: DeviceId,
         node: &NamespaceNode,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno>;
@@ -86,7 +84,7 @@ where
         + Fn(
             &mut Locked<FileOpsCore>,
             &CurrentTask,
-            DeviceType,
+            DeviceId,
             &NamespaceNode,
             OpenFlags,
         ) -> Result<Box<dyn FileOps>, Errno>
@@ -96,7 +94,7 @@ where
         &self,
         locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        id: DeviceType,
+        id: DeviceId,
         node: &NamespaceNode,
         flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
@@ -108,7 +106,7 @@ where
 pub fn simple_device_ops<T: Default + FileOps + 'static>(
     _locked: &mut Locked<FileOpsCore>,
     _current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
@@ -179,7 +177,7 @@ struct RegisteredDevices {
     /// Individually registered minor devices.
     ///
     /// These devices are registered using the `register_device` function on `DeviceRegistry`.
-    minors: BTreeMap<DeviceType, DeviceEntry>,
+    minors: BTreeMap<DeviceId, DeviceEntry>,
 }
 
 impl RegisteredDevices {
@@ -197,21 +195,21 @@ impl RegisteredDevices {
 
     /// Register a minor device.
     ///
-    /// Overwrites any existing minor device registered with the given `DeviceType`.
-    fn register_minor(&mut self, device_type: DeviceType, entry: DeviceEntry) {
-        self.minors.insert(device_type, entry);
+    /// Overwrites any existing minor device registered with the given `DeviceId`.
+    fn register_minor(&mut self, devt: DeviceId, entry: DeviceEntry) {
+        self.minors.insert(devt, entry);
     }
 
-    /// Get the ops for a given `DeviceType`.
+    /// Get the ops for a given `DeviceId`.
     ///
     /// If there is a major device registered with the major device number of the
-    /// `DeviceType`, the ops for that major device will be returned. Otherwise,
+    /// `DeviceId`, the ops for that major device will be returned. Otherwise,
     /// if there is a minor device registered, the ops for that minor device will be
     /// returned. Otherwise, returns `ENODEV`.
-    fn get(&self, device_type: DeviceType) -> Result<DeviceHandle, Errno> {
-        if let Some(major_device) = self.majors.get(&device_type.major()) {
+    fn get(&self, devt: DeviceId) -> Result<DeviceHandle, Errno> {
+        if let Some(major_device) = self.majors.get(&devt.major()) {
             Ok(Arc::clone(&major_device.ops))
-        } else if let Some(minor_device) = self.minors.get(&device_type) {
+        } else if let Some(minor_device) = self.minors.get(&devt) {
             Ok(Arc::clone(&minor_device.ops))
         } else {
             error!(ENODEV)
@@ -224,18 +222,15 @@ impl RegisteredDevices {
     }
 
     /// Returns a list of the registered minor devices and their names.
-    fn list_minor_devices(&self, range: Range<DeviceType>) -> Vec<(DeviceType, FsString)> {
-        self.minors
-            .range(range)
-            .map(|(device_type, entry)| (device_type.clone(), entry.name.clone()))
-            .collect()
+    fn list_minor_devices(&self, range: Range<DeviceId>) -> Vec<(DeviceId, FsString)> {
+        self.minors.range(range).map(|(devt, entry)| (devt.clone(), entry.name.clone())).collect()
     }
 }
 
 /// The registry for devices.
 ///
 /// Devices are specified in file systems with major and minor device numbers, together referred to
-/// as a `DeviceType`. When userspace opens one of those files, we look up the `DeviceType` in the
+/// as a `DeviceId`. When userspace opens one of those files, we look up the `DeviceId` in the
 /// device registry to instantiate a file for that device.
 ///
 /// The `DeviceRegistry` also manages the `KObjectStore`, which provides metadata for devices via
@@ -257,12 +252,12 @@ struct DeviceRegistryState {
     /// Some of the misc devices (devices with the `MISC_MAJOR` major number) are dynamically
     /// allocated. This allocator keeps track of which device numbers have been allocated to
     /// such devices.
-    misc_chardev_allocator: DeviceTypeAllocator,
+    misc_chardev_allocator: DeviceIdAllocator,
 
     /// A range of large major device numbers are reserved for other dynamically allocated
     /// devices. This allocator keeps track of which device numbers have been allocated to
     /// such devices.
-    dyn_chardev_allocator: DeviceTypeAllocator,
+    dyn_chardev_allocator: DeviceIdAllocator,
 
     /// The next anonymous device number to assign to a file system.
     next_anon_minor: u32,
@@ -384,7 +379,7 @@ impl DeviceRegistry {
     {
         let locked = locked.cast_locked::<FileOpsCore>();
         let entry = DeviceEntry::new(name.into(), dev_ops);
-        self.devices(locked, metadata.mode).register_minor(metadata.device_type, entry);
+        self.devices(locked, metadata.mode).register_minor(metadata.devt, entry);
         self.add_device(locked, kernel_or_task, name, metadata, class, build_directory)
     }
 
@@ -405,9 +400,8 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let device_type =
-            self.state.lock(locked.cast_locked()).misc_chardev_allocator.allocate()?;
-        let metadata = DeviceMetadata::new(name.into(), device_type, DeviceMode::Char);
+        let devt = self.state.lock(locked.cast_locked()).misc_chardev_allocator.allocate()?;
+        let metadata = DeviceMetadata::new(name.into(), devt, DeviceMode::Char);
         Ok(self.register_device(
             locked,
             kernel_or_task,
@@ -498,8 +492,8 @@ impl DeviceRegistry {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let device_type = self.state.lock(locked.cast_locked()).dyn_chardev_allocator.allocate()?;
-        let metadata = DeviceMetadata::new(devname.into(), device_type, DeviceMode::Char);
+        let devt = self.state.lock(locked.cast_locked()).dyn_chardev_allocator.allocate()?;
+        let metadata = DeviceMetadata::new(devname.into(), devt, DeviceMode::Char);
         Ok(self.register_device_with_dir(
             locked,
             kernel_or_task,
@@ -527,10 +521,10 @@ impl DeviceRegistry {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let locked = locked.cast_locked::<FileOpsCore>();
-        let device_type = self.state.lock(locked).dyn_chardev_allocator.allocate()?;
-        let metadata = DeviceMetadata::new(name.into(), device_type, DeviceMode::Char);
+        let devt = self.state.lock(locked).dyn_chardev_allocator.allocate()?;
+        let metadata = DeviceMetadata::new(name.into(), devt, DeviceMode::Char);
         let entry = DeviceEntry::new(name.into(), dev_ops);
-        self.devices(locked, metadata.mode).register_minor(metadata.device_type, entry);
+        self.devices(locked, metadata.mode).register_minor(metadata.devt, entry);
         Ok(metadata)
     }
 
@@ -554,7 +548,7 @@ impl DeviceRegistry {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         self.devices(locked.cast_locked(), metadata.mode)
-            .get(metadata.device_type)
+            .get(metadata.devt)
             .expect("device is registered");
         let device = self.objects.create_device(name, Some(metadata), class, build_directory);
 
@@ -648,8 +642,8 @@ impl DeviceRegistry {
         &self,
         locked: &mut Locked<L>,
         mode: DeviceMode,
-        range: Range<DeviceType>,
-    ) -> Vec<(DeviceType, FsString)>
+        range: Range<DeviceId>,
+    ) -> Vec<(DeviceId, FsString)>
     where
         L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
@@ -693,13 +687,13 @@ impl DeviceRegistry {
     }
 
     /// Allocate an anonymous device identifier.
-    pub fn next_anonymous_dev_id<'a, L>(&self, locked: &mut Locked<L>) -> DeviceType
+    pub fn next_anonymous_dev_id<'a, L>(&self, locked: &mut Locked<L>) -> DeviceId
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let locked = locked.cast_locked::<FileOpsCore>();
         let mut state = self.state.lock(locked);
-        let id = DeviceType::new(0, state.next_anon_minor);
+        let id = DeviceId::new(0, state.next_anon_minor);
         state.next_anon_minor += 1;
         id
     }
@@ -750,49 +744,49 @@ impl DeviceRegistry {
 
     /// Instantiate a file for the specified device.
     ///
-    /// The device will be looked up in the device registry by `DeviceMode` and `DeviceType`.
+    /// The device will be looked up in the device registry by `DeviceMode` and `DeviceId`.
     pub fn open_device<L>(
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
         node: &NamespaceNode,
         flags: OpenFlags,
-        device_type: DeviceType,
+        devt: DeviceId,
         mode: DeviceMode,
     ) -> Result<Box<dyn FileOps>, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let locked = locked.cast_locked::<FileOpsCore>();
-        let dev_ops = self.devices(locked, mode).get(device_type)?;
-        dev_ops.open(locked, current_task, device_type, node, flags)
+        let dev_ops = self.devices(locked, mode).get(devt)?;
+        dev_ops.open(locked, current_task, devt, node, flags)
     }
 
     pub fn get_device<L>(
         &self,
         locked: &mut Locked<L>,
-        device_type: DeviceType,
+        devt: DeviceId,
         mode: DeviceMode,
     ) -> Result<DeviceHandle, Errno>
     where
         L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
-        self.devices(locked, mode).get(device_type)
+        self.devices(locked, mode).get(devt)
     }
 }
 
 impl Default for DeviceRegistry {
     fn default() -> Self {
-        let misc_available = vec![DeviceType::new_range(MISC_MAJOR, MISC_DYNANIC_MINOR_RANGE)];
+        let misc_available = vec![DeviceId::new_range(MISC_MAJOR, MISC_DYNANIC_MINOR_RANGE)];
         let dyn_available = DYN_MAJOR_RANGE
-            .map(|major| DeviceType::new_range(major, DeviceMode::Char.minor_range()))
+            .map(|major| DeviceId::new_range(major, DeviceMode::Char.minor_range()))
             .rev()
             .collect();
         let state = DeviceRegistryState {
             char_devices: Default::default(),
             block_devices: Default::default(),
-            misc_chardev_allocator: DeviceTypeAllocator::new(misc_available),
-            dyn_chardev_allocator: DeviceTypeAllocator::new(dyn_available),
+            misc_chardev_allocator: DeviceIdAllocator::new(misc_available),
+            dyn_chardev_allocator: DeviceIdAllocator::new(dyn_available),
             next_anon_minor: 1,
             listeners: Default::default(),
             next_listener_id: 0,
@@ -802,27 +796,27 @@ impl Default for DeviceRegistry {
     }
 }
 
-/// An allocator for `DeviceType`
-struct DeviceTypeAllocator {
+/// An allocator for `DeviceId`
+struct DeviceIdAllocator {
     /// The available ranges of device types to allocate.
     ///
     /// Devices will be allocated from the back of the vector first.
-    freelist: Vec<Range<DeviceType>>,
+    freelist: Vec<Range<DeviceId>>,
 }
 
-impl DeviceTypeAllocator {
+impl DeviceIdAllocator {
     /// Create an allocator for the given ranges of device types.
     ///
     /// The devices will be allocated from the front of the vector first.
-    fn new(mut available: Vec<Range<DeviceType>>) -> Self {
+    fn new(mut available: Vec<Range<DeviceId>>) -> Self {
         available.reverse();
         Self { freelist: available }
     }
 
-    /// Allocate a `DeviceType`.
+    /// Allocate a `DeviceId`.
     ///
-    /// Once allocated, there is no mechanism for freeing a `DeviceType`.
-    fn allocate(&mut self) -> Result<DeviceType, Errno> {
+    /// Once allocated, there is no mechanism for freeing a `DeviceId`.
+    fn allocate(&mut self) -> Result<DeviceId, Errno> {
         let Some(range) = self.freelist.pop() else {
             return error!(ENOMEM);
         };
@@ -861,7 +855,7 @@ mod tests {
     use crate::device::mem::DevNull;
     use crate::testing::*;
     use crate::vfs::*;
-    use starnix_uapi::device_type::{INPUT_MAJOR, MEM_MAJOR};
+    use starnix_uapi::device_id::{INPUT_MAJOR, MEM_MAJOR};
 
     #[::fuchsia::test]
     async fn registry_fails_to_add_duplicate_device() {
@@ -924,7 +918,7 @@ mod tests {
                         &current_task,
                         &node,
                         OpenFlags::RDONLY,
-                        DeviceType::NONE,
+                        DeviceId::NONE,
                         DeviceMode::Char
                     )
                     .is_err()
@@ -938,7 +932,7 @@ mod tests {
                         &current_task,
                         &node,
                         OpenFlags::RDONLY,
-                        DeviceType::NULL,
+                        DeviceId::NULL,
                         DeviceMode::Block
                     )
                     .is_err()
@@ -951,7 +945,7 @@ mod tests {
                     &current_task,
                     &node,
                     OpenFlags::RDONLY,
-                    DeviceType::NULL,
+                    DeviceId::NULL,
                     DeviceMode::Char,
                 )
                 .expect("opens device");
@@ -966,7 +960,7 @@ mod tests {
             fn create_test_device(
                 _locked: &mut Locked<FileOpsCore>,
                 _current_task: &CurrentTask,
-                _id: DeviceType,
+                _id: DeviceId,
                 _node: &NamespaceNode,
                 _flags: OpenFlags,
             ) -> Result<Box<dyn FileOps>, Errno> {
@@ -983,8 +977,8 @@ mod tests {
                     create_test_device,
                 )
                 .unwrap();
-            let device_type = device.metadata.expect("has metadata").device_type;
-            assert!(DYN_MAJOR_RANGE.contains(&device_type.major()));
+            let devt = device.metadata.expect("has metadata").devt;
+            assert!(DYN_MAJOR_RANGE.contains(&devt.major()));
 
             let fs = create_testfs(locked, &kernel);
             let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
@@ -994,7 +988,7 @@ mod tests {
                     &current_task,
                     &node,
                     OpenFlags::RDONLY,
-                    device_type,
+                    devt,
                     DeviceMode::Char,
                 )
                 .expect("opens device");
@@ -1027,7 +1021,7 @@ mod tests {
                     "mouse".into(),
                     DeviceMetadata::new(
                         "mouse".into(),
-                        DeviceType::new(INPUT_MAJOR, 0),
+                        DeviceId::new(INPUT_MAJOR, 0),
                         DeviceMode::Char,
                     ),
                     input_class,
@@ -1064,7 +1058,7 @@ mod tests {
                     "my-device".into(),
                     DeviceMetadata::new(
                         "my-device".into(),
-                        DeviceType::new(INPUT_MAJOR, 0),
+                        DeviceId::new(INPUT_MAJOR, 0),
                         DeviceMode::Char,
                     ),
                     class,
@@ -1104,7 +1098,7 @@ mod tests {
                     "mouse".into(),
                     DeviceMetadata::new(
                         "mouse".into(),
-                        DeviceType::new(INPUT_MAJOR, 0),
+                        DeviceId::new(INPUT_MAJOR, 0),
                         DeviceMode::Char,
                     ),
                     input_class.clone(),

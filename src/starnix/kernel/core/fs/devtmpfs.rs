@@ -15,7 +15,7 @@ use crate::vfs::{
 use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use std::collections::BTreeMap;
@@ -137,7 +137,7 @@ fn devtmpfs_create_device_internal(
         parent_dir,
         device_name.into(),
         device_metadata.mode,
-        device_metadata.device_type,
+        device_metadata.devt,
     )
 }
 
@@ -162,7 +162,7 @@ where
                 mount,
                 name,
                 mode!(IFDIR, 0o755),
-                DeviceType::NONE,
+                DeviceId::NONE,
                 FsCred::root(),
             )
         },
@@ -175,7 +175,7 @@ fn devtmpfs_create_device_node(
     parent_dir: DirEntryHandle,
     device_name: &FsStr,
     device_mode: DeviceMode,
-    device_type: DeviceType,
+    devt: DeviceId,
 ) -> Result<(), Errno> {
     let mode = match device_mode {
         DeviceMode::Char => mode!(IFCHR, 0o666),
@@ -189,7 +189,7 @@ fn devtmpfs_create_device_node(
         &MountInfo::detached(),
         device_name,
         |locked, dir, mount, name| {
-            dir.create_node(locked, current_task, mount, name, mode, device_type, FsCred::root())
+            dir.create_node(locked, current_task, mount, name, mode, devt, FsCred::root())
         },
     )?;
     Ok(())

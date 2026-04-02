@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use crate::nanohub_firmware_file::NanohubFirmwareFile;
 use crate::nanohub_socket_file::NanohubSocketFile;
-use fidl_fuchsia_hardware_sockettunnel::{DeviceMarker, DeviceRegisterSocketRequest};
+use fidl_fuchsia_hardware_sockettunnel::{self, DeviceMarker, DeviceRegisterSocketRequest};
+use fuchsia_component as fcomponent;
 use starnix_core::device::DeviceOps;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::fuchsia::new_remote_file_ops;
@@ -18,11 +19,10 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileOps, FsNode, FsNodeOps, FsStr, FsString};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::auth::Credentials;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use {fidl_fuchsia_hardware_sockettunnel, fuchsia_component as fcomponent};
 
 #[derive(Clone)]
 pub struct SocketTunnelFile {
@@ -98,7 +98,7 @@ impl DeviceOps for SocketTunnelFile {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

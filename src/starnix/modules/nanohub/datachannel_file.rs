@@ -13,7 +13,7 @@ use starnix_core::vfs::{FileObject, FileObjectState, FileOps, InputBufferExt, Na
 use starnix_core::{fileops_impl_noop_sync, fileops_impl_seekable};
 use starnix_logging::{impossible_error, log_error, log_warn};
 use starnix_sync::{FileOpsCore, Locked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::{EIO, Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
@@ -41,7 +41,7 @@ impl DeviceOps for DataChannelDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

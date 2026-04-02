@@ -47,7 +47,7 @@ pub mod tests {
     use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
     use starnix_uapi::auth::Credentials;
-    use starnix_uapi::device_type::DeviceType;
+    use starnix_uapi::device_id::DeviceId;
     use starnix_uapi::errors::{EBADF, EINVAL, Errno};
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::union::struct_with_union_into_bytes;
@@ -2592,7 +2592,7 @@ pub mod tests {
 
         let locked = locked.cast_locked::<FileOpsCore>();
         let binder = binder_driver
-            .open(locked, &current_task, DeviceType::NONE, &node, OpenFlags::RDWR)
+            .open(locked, &current_task, DeviceId::NONE, &node, OpenFlags::RDWR)
             .expect("binder dev open failed");
         FileObject::new_anonymous(
             locked,

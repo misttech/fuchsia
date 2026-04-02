@@ -32,7 +32,7 @@ use starnix_logging::{
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex, MutexGuard, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EAGAIN, EINTR, Errno, ErrnoCode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserCStringPtr, UserRef};
@@ -85,7 +85,7 @@ impl DeviceOps for RemoteBinderDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
@@ -1183,7 +1183,7 @@ mod tests {
                             &current_task,
                             "dev".into(),
                             mode!(IFDIR, 0o755),
-                            DeviceType::NONE,
+                            DeviceId::NONE,
                         )
                         .expect("mkdir dev");
                     let dev = current_task

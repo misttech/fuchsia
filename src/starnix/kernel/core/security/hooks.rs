@@ -37,7 +37,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{Credentials, PtraceAccessMode};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::mount_flags::MountFlags;
@@ -702,7 +702,7 @@ pub fn check_fs_node_mknod_access(
     parent: &FsNode,
     mode: FileMode,
     name: &FsStr,
-    device_id: DeviceType,
+    device_id: DeviceId,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.check_fs_node_mknod_access");
     assert!(!mode.is_reg());
@@ -3080,7 +3080,7 @@ mod tests {
                                 &current_task,
                                 "test_file2".into(),
                                 FileMode::IFREG,
-                                DeviceType::NONE,
+                                DeviceId::NONE,
                             )
                             .unwrap()
                     })

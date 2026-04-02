@@ -13,7 +13,7 @@ use macro_rules_attribute::apply;
 use line_discipline::{LineDiscipline, PendingSignals};
 use starnix_sync::{LockBefore, Locked, Mutex, ProcessGroupState, RwLock};
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{error, uapi};
@@ -260,7 +260,7 @@ impl Terminal {
         }
     }
 
-    pub fn device(&self) -> DeviceType {
+    pub fn device(&self) -> DeviceId {
         get_device_type_for_pts(self.id)
     }
 

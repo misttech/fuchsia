@@ -21,7 +21,7 @@ use futures::channel::oneshot;
 use futures::executor::block_on;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::{BLOCK_EXTENDED_MAJOR, DeviceType};
+use starnix_uapi::device_id::{BLOCK_EXTENDED_MAJOR, DeviceId};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
@@ -65,7 +65,7 @@ impl RemoteBlockDevice {
             device_name.as_ref(),
             DeviceMetadata::new(
                 device_name.clone(),
-                DeviceType::new(BLOCK_EXTENDED_MAJOR, minor),
+                DeviceId::new(BLOCK_EXTENDED_MAJOR, minor),
                 DeviceMode::Block,
             ),
             virtual_block_class,
@@ -375,7 +375,7 @@ impl FileOps for RemoteBlockDeviceFile {
 fn open_remote_block_device(
     _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    id: DeviceType,
+    id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {

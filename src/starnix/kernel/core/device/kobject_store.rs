@@ -171,7 +171,7 @@ impl KObjectStore {
     /// part of the registration process.
     ///
     /// If you create the device yourself, userspace will not be able to instantiate the
-    /// device because the `DeviceType` will not be registered with the `DeviceRegistry`.
+    /// device because the `DeviceId` will not be registered with the `DeviceRegistry`.
     pub(super) fn create_device(
         &self,
         name: &FsStr,
@@ -202,7 +202,7 @@ impl KObjectStore {
         });
 
         if let Some(metadata) = &device.metadata {
-            let device_number = FsString::from(metadata.device_type.to_string());
+            let device_number = FsString::from(metadata.devt.to_string());
             match metadata.mode {
                 DeviceMode::Block => {
                     self.block(|dir| dir.symlink(name, up_device.as_ref()));
@@ -238,7 +238,7 @@ impl KObjectStore {
             bus_collection.remove(name);
         }
         if let Some(metadata) = &device.metadata {
-            let device_number: FsString = metadata.device_type.to_string().into();
+            let device_number: FsString = metadata.devt.to_string().into();
             match metadata.mode {
                 DeviceMode::Block => {
                     self.dev_block(|dir| dir.remove(device_number.as_ref()));

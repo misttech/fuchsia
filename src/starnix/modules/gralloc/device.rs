@@ -7,7 +7,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileOps, NamespaceNode};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 
@@ -19,7 +19,7 @@ impl DeviceOps for GrallocDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

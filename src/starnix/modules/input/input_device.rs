@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::InputFile;
-use crate::input_event_relay::{DeviceId, OpenedFiles};
+use crate::input_event_relay::OpenedFiles;
 use futures::FutureExt;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::{DeviceMode, DeviceOps};
@@ -12,7 +12,7 @@ use starnix_core::vfs::{FileOps, FsString, NamespaceNode};
 #[cfg(test)]
 use starnix_sync::Unlocked;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
-use starnix_uapi::device_type::{DeviceType, INPUT_MAJOR};
+use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{BUS_VIRTUAL, input_id};
@@ -79,7 +79,7 @@ const MOUSE_INPUT_ID: input_id = input_id {
 };
 
 #[derive(Clone)]
-enum InputDeviceType {
+enum InputDeviceId {
     // A touch device, containing (display width, display height).
     Touch(i32, i32),
 
@@ -241,7 +241,7 @@ impl InputDeviceStatus {
 
 #[derive(Clone)]
 pub struct InputDevice {
-    device_type: InputDeviceType,
+    device_type: InputDeviceId,
 
     pub open_files: OpenedFiles,
 
@@ -256,7 +256,7 @@ impl InputDevice {
     ) -> Self {
         let node = inspect_node.create_child("touch_device");
         InputDevice {
-            device_type: InputDeviceType::Touch(display_width, display_height),
+            device_type: InputDeviceId::Touch(display_width, display_height),
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
         }
@@ -265,7 +265,7 @@ impl InputDevice {
     pub fn new_keyboard(inspect_node: &fuchsia_inspect::Node) -> Self {
         let node = inspect_node.create_child("keyboard_device");
         InputDevice {
-            device_type: InputDeviceType::Keyboard,
+            device_type: InputDeviceId::Keyboard,
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
         }
@@ -274,7 +274,7 @@ impl InputDevice {
     pub fn new_mouse(inspect_node: &fuchsia_inspect::Node) -> Self {
         let node = inspect_node.create_child("mouse_device");
         InputDevice {
-            device_type: InputDeviceType::Mouse,
+            device_type: InputDeviceId::Mouse,
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
         }
@@ -284,7 +284,7 @@ impl InputDevice {
         self,
         locked: &mut Locked<L>,
         system_task: &CurrentTask,
-        device_id: DeviceId,
+        device_id: u32,
     ) -> Result<(), Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
@@ -299,7 +299,7 @@ impl InputDevice {
             FsString::from(format!("event{}", device_id)).as_ref(),
             DeviceMetadata::new(
                 format!("input/event{}", device_id).into(),
-                DeviceType::new(INPUT_MAJOR, device_id),
+                StarnixDeviceId::new(INPUT_MAJOR, device_id),
                 DeviceMode::Char,
             ),
             input_class,
@@ -310,7 +310,7 @@ impl InputDevice {
 
     pub fn open_internal(&self) -> Box<dyn FileOps> {
         let input_file = match self.device_type {
-            InputDeviceType::Touch(display_width, display_height) => {
+            InputDeviceId::Touch(display_width, display_height) => {
                 let mut file_nodes = self.inspect_status.file_nodes.lock();
                 let child_node = self
                     .inspect_status
@@ -325,7 +325,7 @@ impl InputDevice {
                 file_nodes.push(child_node);
                 file
             }
-            InputDeviceType::Keyboard => {
+            InputDeviceId::Keyboard => {
                 let mut file_nodes = self.inspect_status.file_nodes.lock();
                 let child_node = self
                     .inspect_status
@@ -335,7 +335,7 @@ impl InputDevice {
                 file_nodes.push(child_node);
                 file
             }
-            InputDeviceType::Mouse => {
+            InputDeviceId::Mouse => {
                 let mut file_nodes = self.inspect_status.file_nodes.lock();
                 let child_node = self
                     .inspect_status
@@ -378,7 +378,7 @@ impl DeviceOps for InputDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: StarnixDeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

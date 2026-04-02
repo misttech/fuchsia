@@ -24,7 +24,7 @@ use starnix_core::vfs::{
 use starnix_logging::bug_ref;
 use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -264,7 +264,7 @@ impl FsNodeOps for CgroupDirectoryHandle {
         _current_task: &CurrentTask,
         _name: &FsStr,
         _mode: FileMode,
-        _dev: DeviceType,
+        _dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         error!(EACCES)

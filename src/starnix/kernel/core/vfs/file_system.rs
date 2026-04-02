@@ -18,7 +18,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::mount_flags::FileSystemFlags;
@@ -39,7 +39,7 @@ pub struct FileSystem {
 
     /// The device ID of this filesystem. Returned in the st_dev field when stating an inode in
     /// this filesystem.
-    pub dev_id: DeviceType,
+    pub dev_id: DeviceId,
 
     /// A file-system global mutex to serialize rename operations.
     ///

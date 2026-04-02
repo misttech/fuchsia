@@ -33,7 +33,7 @@ use starnix_modules_tracefs::trace_fs;
 use starnix_modules_tun::DevTun;
 use starnix_modules_zram::zram_device_init;
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 
 fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<(), Errno> {
@@ -44,7 +44,7 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         kernel,
         // TODO(https://fxbug.dev/322365477) consider making this configurable
         "hw_random".into(),
-        DeviceMetadata::new("hwrng".into(), DeviceType::HW_RANDOM, DeviceMode::Char),
+        DeviceMetadata::new("hwrng".into(), DeviceId::HW_RANDOM, DeviceMode::Char),
         misc_class.clone(),
         simple_device_ops::<DevRandom>,
     )?;
@@ -52,7 +52,7 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         locked,
         kernel,
         "fuse".into(),
-        DeviceMetadata::new("fuse".into(), DeviceType::FUSE, DeviceMode::Char),
+        DeviceMetadata::new("fuse".into(), DeviceId::FUSE, DeviceMode::Char),
         misc_class.clone(),
         open_fuse_device,
     )?;
@@ -60,7 +60,7 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         locked,
         kernel,
         "device-mapper".into(),
-        DeviceMetadata::new("mapper/control".into(), DeviceType::DEVICE_MAPPER, DeviceMode::Char),
+        DeviceMetadata::new("mapper/control".into(), DeviceId::DEVICE_MAPPER, DeviceMode::Char),
         misc_class.clone(),
         create_device_mapper,
     )?;
@@ -68,7 +68,7 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         locked,
         kernel,
         "loop-control".into(),
-        DeviceMetadata::new("loop-control".into(), DeviceType::LOOP_CONTROL, DeviceMode::Char),
+        DeviceMetadata::new("loop-control".into(), DeviceId::LOOP_CONTROL, DeviceMode::Char),
         misc_class.clone(),
         create_loop_control_device,
     )?;
@@ -76,7 +76,7 @@ fn misc_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<()
         locked,
         kernel,
         "tun".into(),
-        DeviceMetadata::new("tun".into(), DeviceType::TUN, DeviceMode::Char),
+        DeviceMetadata::new("tun".into(), DeviceId::TUN, DeviceMode::Char),
         misc_class,
         simple_device_ops::<DevTun>,
     )?;

@@ -11,7 +11,7 @@ use crate::vfs::{
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
@@ -45,7 +45,7 @@ impl SimpleDirectoryMutator {
         name: FsString,
         ops: impl Into<Box<dyn FsNodeOps>>,
         mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         creds: FsCred,
     ) {
         let mut info = FsNodeInfo::new(mode, creds);

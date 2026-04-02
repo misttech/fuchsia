@@ -22,7 +22,7 @@ use starnix_logging::{log_debug, log_error, log_warn};
 use starnix_sync::{FastrpcInnerState, FileOpsCore, Locked, OrderedMutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserCString, UserRef};
@@ -954,7 +954,7 @@ impl DeviceOps for FastRPCDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

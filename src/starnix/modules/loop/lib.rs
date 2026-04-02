@@ -25,7 +25,7 @@ use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
-use starnix_uapi::device_type::{DeviceType, LOOP_MAJOR};
+use starnix_uapi::device_id::{DeviceId, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
@@ -185,7 +185,7 @@ impl LoopDevice {
             loop_device_name.as_ref(),
             DeviceMetadata::new(
                 loop_device_name.clone(),
-                DeviceType::new(LOOP_MAJOR, minor),
+                DeviceId::new(LOOP_MAJOR, minor),
                 DeviceMode::Block,
             ),
             virtual_block_class,
@@ -757,7 +757,7 @@ impl LoopDeviceRegistry {
 pub fn create_loop_control_device(
     _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
@@ -824,7 +824,7 @@ impl FileOps for LoopControlDevice {
 fn get_or_create_loop_device(
     locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    id: DeviceType,
+    id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {

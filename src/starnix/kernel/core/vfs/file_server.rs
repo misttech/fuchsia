@@ -20,7 +20,7 @@ use starnix_logging::{log_error, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_types::convert::IntoFidl as _;
 use starnix_uapi::auth::Credentials;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -557,7 +557,7 @@ impl StarnixNodeConnection {
                                 &current_task,
                                 name.as_ref(),
                                 mode,
-                                DeviceType::NONE,
+                                DeviceId::NONE,
                             )?;
                             name.open(
                                 locked,
@@ -663,7 +663,7 @@ impl StarnixNodeConnection {
                     info.gid = gid;
                 }
                 if let Some(rdev) = attributes.rdev {
-                    info.rdev = DeviceType::from_bits(rdev);
+                    info.rdev = DeviceId::from_bits(rdev);
                 }
             });
             Ok(())
@@ -1113,7 +1113,7 @@ mod tests {
                     current_task,
                     b"test".into(),
                     FileMode::IFREG | FileMode::ALLOW_ALL,
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .expect("create_node");
 
@@ -1180,7 +1180,7 @@ mod tests {
                     current_task,
                     "test".into(),
                     FileMode::IFREG | FileMode::IRWXU,
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                 )
                 .expect("create_node");
 
@@ -1325,7 +1325,7 @@ mod tests {
                     current_task,
                     "test".into(),
                     FileMode::from_bits(0o600) | FileMode::IFREG,
-                    DeviceType::NONE,
+                    DeviceId::NONE,
                     OpenFlags::empty(),
                 )
                 .expect("open_create_node failed");

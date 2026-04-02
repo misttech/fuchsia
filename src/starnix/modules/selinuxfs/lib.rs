@@ -37,7 +37,7 @@ use starnix_logging::{
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -237,7 +237,7 @@ impl SeLinuxFs {
         // "/dev/null" equivalent used for file descriptors redirected by SELinux.
         let null_ops: Box<dyn FsNodeOps> = (NullFileNode).into();
         let mut info = FsNodeInfo::new(mode!(IFCHR, 0o666), FsCred::root());
-        info.rdev = DeviceType::NULL;
+        info.rdev = DeviceId::NULL;
         let null_fs_node = fs.create_node_and_allocate_node_id(null_ops, info);
         dir.node("null".into(), null_fs_node.clone());
 

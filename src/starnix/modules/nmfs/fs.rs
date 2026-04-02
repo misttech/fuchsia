@@ -20,7 +20,7 @@ use starnix_logging::{log_error, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -231,7 +231,7 @@ impl FsNodeOps for NetworkDirectoryNode {
         current_task: &CurrentTask,
         name: &FsStr,
         mode: FileMode,
-        _dev: DeviceType,
+        _dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         if !mode.is_reg() {

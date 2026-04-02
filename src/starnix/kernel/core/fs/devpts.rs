@@ -23,7 +23,7 @@ use starnix_sync::{
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::{DeviceType, TTY_ALT_MAJOR};
+use starnix_uapi::device_id::{DeviceId, TTY_ALT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -163,7 +163,7 @@ where
         locked,
         kernel_or_task,
         "tty".into(),
-        DeviceMetadata::new("tty".into(), DeviceType::TTY, DeviceMode::Char),
+        DeviceMetadata::new("tty".into(), DeviceId::TTY, DeviceMode::Char),
         tty_class.clone(),
         build_device_directory,
     )?;
@@ -171,7 +171,7 @@ where
         locked,
         kernel_or_task,
         "ptmx".into(),
-        DeviceMetadata::new("ptmx".into(), DeviceType::PTMX, DeviceMode::Char),
+        DeviceMetadata::new("ptmx".into(), DeviceId::PTMX, DeviceMode::Char),
         tty_class,
         build_device_directory,
     )?;
@@ -213,9 +213,9 @@ impl DevPtsFs {
     }
 }
 
-// Construct the DeviceType associated with the given pts replicas.
-pub fn get_device_type_for_pts(id: u32) -> DeviceType {
-    DeviceType::new(DEVPTS_FIRST_MAJOR + id / 256, id % 256)
+// Construct the DeviceId associated with the given pts replicas.
+pub fn get_device_type_for_pts(id: u32) -> DeviceId {
+    DeviceId::new(DEVPTS_FIRST_MAJOR + id / 256, id % 256)
 }
 
 struct DevPtsRootDir {
@@ -265,7 +265,7 @@ impl FsNodeOps for DevPtsRootDir {
         let name = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
         if name == "ptmx" {
             let mut info = FsNodeInfo::new(mode!(IFCHR, devptsfs.ptmxmode), FsCred::root());
-            info.rdev = DeviceType::PTMX;
+            info.rdev = DeviceId::PTMX;
             info.blksize = BLOCK_SIZE;
             let node = fs.create_node(PTMX_NODE_ID, SpecialNode, info);
             return Ok(node);
@@ -291,13 +291,13 @@ impl FsNodeOps for DevPtsRootDir {
 fn open_dev_pts_device(
     locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    id: DeviceType,
+    id: DeviceId,
     node: &NamespaceNode,
     flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
     match id {
         // /dev/ptmx and /dev/pts/ptmx
-        DeviceType::PTMX => {
+        DeviceId::PTMX => {
             let fs = node.entry.node.fs();
             let Some(devpts_fs) = fs.downcast_ops::<DevPtsFs>() else {
                 // The device is not in ptmx, let try to find something at pts/ptmx relative to
@@ -319,7 +319,7 @@ fn open_dev_pts_device(
             Ok(Box::new(DevPtmxFile::new(terminal)))
         }
         // /dev/tty
-        DeviceType::TTY => {
+        DeviceId::TTY => {
             let controlling_terminal = current_task
                 .thread_group()
                 .read()
@@ -1128,7 +1128,7 @@ mod tests {
                             mount,
                             name,
                             mode!(IFCHR, 0o666),
-                            DeviceType::new(DEVPTS_FIRST_MAJOR, 0),
+                            DeviceId::new(DEVPTS_FIRST_MAJOR, 0),
                             FsCred::root(),
                         )
                     },

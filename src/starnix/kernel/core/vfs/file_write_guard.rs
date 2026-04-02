@@ -132,7 +132,7 @@ mod tests {
     use super::*;
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::FsNodeHandle;
-    use starnix_uapi::device_type::DeviceType;
+    use starnix_uapi::device_id::DeviceId;
     use starnix_uapi::file_mode::FileMode;
 
     fn create_fs_node(
@@ -142,7 +142,7 @@ mod tests {
         current_task
             .fs()
             .root()
-            .create_node(locked, current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+            .create_node(locked, current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
             .expect("create_node")
             .entry
             .node

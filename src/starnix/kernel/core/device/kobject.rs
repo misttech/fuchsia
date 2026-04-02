@@ -12,7 +12,7 @@ use crate::vfs::{
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, Locked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
@@ -112,8 +112,8 @@ impl Device {
                             MINOR={minor}{separator}",
             name = metadata.devname,
             subsystem = self.class.name,
-            major = metadata.device_type.major(),
-            minor = metadata.device_type.minor(),
+            major = metadata.devt.major(),
+            minor = metadata.devt.minor(),
         )
     }
 }
@@ -124,13 +124,13 @@ pub struct DeviceMetadata {
     ///
     /// Also appears in sysfs via uevent.
     pub devname: FsString,
-    pub device_type: DeviceType,
+    pub devt: DeviceId,
     pub mode: DeviceMode,
 }
 
 impl DeviceMetadata {
-    pub fn new(devname: FsString, device_type: DeviceType, mode: DeviceMode) -> Self {
-        Self { devname, device_type, mode }
+    pub fn new(devname: FsString, devt: DeviceId, mode: DeviceMode) -> Self {
+        Self { devname, devt, mode }
     }
 }
 

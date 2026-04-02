@@ -17,7 +17,7 @@ rustc_library("starnix_uapi") {
     "src/arc_key.rs",
     "src/as_any.rs",
     "src/auth.rs",
-    "src/device_type.rs",
+    "src/device_id.rs",
     "src/elf.rs",
     "src/errors.rs",
     "src/file_lease.rs",

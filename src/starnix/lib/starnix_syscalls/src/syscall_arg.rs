@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::signals::UncheckedSignal;
 use starnix_uapi::user_address::{MappingMultiArchUserRef, MultiArchFrom, UserAddress, UserRef};
@@ -85,7 +85,7 @@ impl_from_syscall_arg! { for UserValue<u64>: arg => Self::from_raw(arg.raw() as 
 impl_from_syscall_arg! { for UserAddress: arg => Self::from(arg.raw()) }
 
 impl_from_syscall_arg! { for FileMode: arg => Self::from_bits(arg.raw() as u32) }
-impl_from_syscall_arg! { for DeviceType: arg => Self::from_bits(arg.raw()) }
+impl_from_syscall_arg! { for DeviceId: arg => Self::from_bits(arg.raw()) }
 impl_from_syscall_arg! { for UncheckedSignal: arg => Self::new(arg.raw()) }
 
 impl<T> From<SyscallArg> for UserRef<T> {

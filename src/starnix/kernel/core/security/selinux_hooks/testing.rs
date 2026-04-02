@@ -11,7 +11,7 @@ use crate::vfs::{FsStr, NamespaceNode};
 use selinux::TaskAttrs;
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::auth::Credentials;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::file_mode::FileMode;
 use std::future::Future;
 use std::sync::Arc;
@@ -29,13 +29,7 @@ pub(in crate::security) fn create_test_file(
     current_task
         .fs()
         .root()
-        .create_node(
-            locked,
-            &current_task,
-            TEST_FILE_NAME.into(),
-            FileMode::IFREG,
-            DeviceType::NONE,
-        )
+        .create_node(locked, &current_task, TEST_FILE_NAME.into(), FileMode::IFREG, DeviceId::NONE)
         .expect("create_node(file)")
 }
 
@@ -50,7 +44,7 @@ pub(in crate::security) fn create_directory_with_parents(
     let mut current_dir = current_task.fs().root();
     for dir_name in dir_names {
         current_dir = current_dir
-            .create_node(locked, &current_task, dir_name, FileMode::IFDIR, DeviceType::NONE)
+            .create_node(locked, &current_task, dir_name, FileMode::IFDIR, DeviceId::NONE)
             .expect("create_node(file)");
     }
     current_dir
@@ -102,7 +96,7 @@ pub(in crate::security) fn create_test_executable(
                 &current_task,
                 "executable".into(),
                 FileMode::IFREG,
-                DeviceType::NONE,
+                DeviceId::NONE,
             )
             .expect("create_node(file)")
     })

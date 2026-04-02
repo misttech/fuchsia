@@ -21,7 +21,7 @@ use crate::vfs::{
 use starnix_logging::{Level, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
@@ -251,7 +251,7 @@ impl FileOps for DevRandom {
 pub fn open_kmsg(
     _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
@@ -448,7 +448,7 @@ where
         locked,
         kernel_or_task,
         "null".into(),
-        DeviceMetadata::new("null".into(), DeviceType::NULL, DeviceMode::Char),
+        DeviceMetadata::new("null".into(), DeviceId::NULL, DeviceMode::Char),
         mem_class.clone(),
         simple_device_ops::<DevNull>,
     )?;
@@ -456,7 +456,7 @@ where
         locked,
         kernel_or_task,
         "zero".into(),
-        DeviceMetadata::new("zero".into(), DeviceType::ZERO, DeviceMode::Char),
+        DeviceMetadata::new("zero".into(), DeviceId::ZERO, DeviceMode::Char),
         mem_class.clone(),
         simple_device_ops::<DevZero>,
     )?;
@@ -464,7 +464,7 @@ where
         locked,
         kernel_or_task,
         "full".into(),
-        DeviceMetadata::new("full".into(), DeviceType::FULL, DeviceMode::Char),
+        DeviceMetadata::new("full".into(), DeviceId::FULL, DeviceMode::Char),
         mem_class.clone(),
         simple_device_ops::<DevFull>,
     )?;
@@ -472,7 +472,7 @@ where
         locked,
         kernel_or_task,
         "random".into(),
-        DeviceMetadata::new("random".into(), DeviceType::RANDOM, DeviceMode::Char),
+        DeviceMetadata::new("random".into(), DeviceId::RANDOM, DeviceMode::Char),
         mem_class.clone(),
         simple_device_ops::<DevRandom>,
     )?;
@@ -480,7 +480,7 @@ where
         locked,
         kernel_or_task,
         "urandom".into(),
-        DeviceMetadata::new("urandom".into(), DeviceType::URANDOM, DeviceMode::Char),
+        DeviceMetadata::new("urandom".into(), DeviceId::URANDOM, DeviceMode::Char),
         mem_class.clone(),
         simple_device_ops::<DevRandom>,
     )?;
@@ -488,7 +488,7 @@ where
         locked,
         kernel_or_task,
         "kmsg".into(),
-        DeviceMetadata::new("kmsg".into(), DeviceType::KMSG, DeviceMode::Char),
+        DeviceMetadata::new("kmsg".into(), DeviceId::KMSG, DeviceMode::Char),
         mem_class,
         open_kmsg,
     )?;

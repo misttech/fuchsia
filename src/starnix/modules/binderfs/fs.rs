@@ -19,7 +19,7 @@ use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, error};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
@@ -52,25 +52,25 @@ const RESERVED_NAMES: [&str; 2] = [FEATURES_DIR, BINDER_CONTROL_DEVICE];
 
 #[derive(Debug)]
 pub struct BinderFsDir {
-    control_device: DeviceType,
+    control_device: DeviceId,
     state: Arc<BinderFsState>,
 }
 
 #[derive(Debug)]
 pub struct BinderFsState {
-    devices: Mutex<BTreeMap<FsString, DeviceType>>,
+    devices: Mutex<BTreeMap<FsString, DeviceId>>,
 }
 
 impl BinderFsDir {
     pub fn new(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<Self, Errno> {
         let registry = &kernel.device_registry;
-        let mut devices = BTreeMap::<FsString, DeviceType>::default();
+        let mut devices = BTreeMap::<FsString, DeviceId>::default();
         let remote_device = registry.register_silent_dyn_device(
             locked,
             "remote-binder".into(),
             RemoteBinderDevice {},
         )?;
-        devices.insert("remote".into(), remote_device.device_type);
+        devices.insert("remote".into(), remote_device.devt);
 
         for name in DEFAULT_BINDERS {
             let device_metadata = registry.register_silent_dyn_device(
@@ -78,7 +78,7 @@ impl BinderFsDir {
                 name.into(),
                 BinderDevice::default(),
             )?;
-            devices.insert(name.into(), device_metadata.device_type);
+            devices.insert(name.into(), device_metadata.devt);
         }
         let state = Arc::new(BinderFsState { devices: devices.into() });
 
@@ -88,7 +88,7 @@ impl BinderFsDir {
                 BINDER_CONTROL_DEVICE.into(),
                 BinderControlDevice { state: state.clone() },
             )?
-            .device_type;
+            .devt;
 
         Ok(Self { control_device, state })
     }
@@ -180,7 +180,7 @@ impl DeviceOps for BinderControlDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _device_type: DeviceType,
+        _devt: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
@@ -233,9 +233,9 @@ impl FileOps for BinderControlDevice {
                         (*name).into(),
                         BinderDevice::default(),
                     )?;
-                    entry.insert(device_metadata.device_type);
-                    request.major = device_metadata.device_type.major();
-                    request.minor = device_metadata.device_type.minor();
+                    entry.insert(device_metadata.devt);
+                    request.major = device_metadata.devt.major();
+                    request.minor = device_metadata.devt.minor();
                     current_task.write_object(user_ref, &request)?;
                     Ok(SUCCESS)
                 }

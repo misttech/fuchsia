@@ -37,7 +37,7 @@ use starnix_uapi::auth::{
     CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH, CAP_FOWNER, CAP_FSETID, CAP_MKNOD,
     CAP_SYS_ADMIN, CAP_SYS_RESOURCE, FsCred, UserAndOrGroupId,
 };
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EACCES, ENOTSUP, EPERM, Errno};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
@@ -216,7 +216,7 @@ pub struct FsNodeInfo {
     pub link_count: usize,
     pub uid: uid_t,
     pub gid: gid_t,
-    pub rdev: DeviceType,
+    pub rdev: DeviceId,
     pub size: usize,
     pub blksize: usize,
     pub blocks: usize,
@@ -677,7 +677,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _current_task: &CurrentTask,
         _name: &FsStr,
         _mode: FileMode,
-        _dev: DeviceType,
+        _dev: DeviceId,
         _owner: FsCred,
     ) -> Result<FsNodeHandle, Errno>;
 
@@ -1026,7 +1026,7 @@ macro_rules! fs_node_impl_dir_readonly {
             _current_task: &$crate::task::CurrentTask,
             name: &$crate::vfs::FsStr,
             _mode: starnix_uapi::file_mode::FileMode,
-            _dev: starnix_uapi::device_type::DeviceType,
+            _dev: starnix_uapi::device_id::DeviceId,
             _owner: starnix_uapi::auth::FsCred,
         ) -> Result<$crate::vfs::FsNodeHandle, starnix_uapi::errors::Errno> {
             starnix_uapi::error!(EROFS, format!("mknod failed: {:?}", name))
@@ -1182,7 +1182,7 @@ macro_rules! fs_node_impl_not_dir {
             _current_task: &$crate::task::CurrentTask,
             _name: &$crate::vfs::FsStr,
             _mode: starnix_uapi::file_mode::FileMode,
-            _dev: starnix_uapi::device_type::DeviceType,
+            _dev: starnix_uapi::device_id::DeviceId,
             _owner: starnix_uapi::auth::FsCred,
         ) -> Result<$crate::vfs::FsNodeHandle, starnix_uapi::errors::Errno> {
             starnix_uapi::error!(ENOTDIR)
@@ -1510,7 +1510,7 @@ impl FsNode {
         mount: &MountInfo,
         name: &FsStr,
         mut mode: FileMode,
-        dev: DeviceType,
+        dev: DeviceId,
         mut owner: FsCred,
     ) -> Result<FsNodeHandle, Errno>
     where
@@ -2317,7 +2317,7 @@ impl FsNode {
         self.info().mode.is_lnk()
     }
 
-    pub fn dev(&self) -> DeviceType {
+    pub fn dev(&self) -> DeviceId {
         self.fs().dev_id
     }
 
@@ -2943,7 +2943,7 @@ mod tests {
                     &current_task,
                     "zero".into(),
                     mode!(IFCHR, 0o666),
-                    DeviceType::ZERO,
+                    DeviceId::ZERO,
                 )
                 .expect("create_node");
 
@@ -2969,13 +2969,7 @@ mod tests {
             let node = &current_task
                 .fs()
                 .root()
-                .create_node(
-                    locked,
-                    &current_task,
-                    "zero".into(),
-                    FileMode::IFCHR,
-                    DeviceType::ZERO,
-                )
+                .create_node(locked, &current_task, "zero".into(), FileMode::IFCHR, DeviceId::ZERO)
                 .expect("create_node")
                 .entry
                 .node;
@@ -2990,7 +2984,7 @@ mod tests {
                 info.time_status_change = UtcInstant::from_nanos(1);
                 info.time_access = UtcInstant::from_nanos(2);
                 info.time_modify = UtcInstant::from_nanos(3);
-                info.rdev = DeviceType::new(13, 13);
+                info.rdev = DeviceId::new(13, 13);
             });
             let stat = node.stat(locked, &current_task).expect("stat");
 
@@ -3007,7 +3001,7 @@ mod tests {
             assert_eq!(stat.st_atime_nsec, 2);
             assert_eq!(stat.st_mtime, 0);
             assert_eq!(stat.st_mtime_nsec, 3);
-            assert_eq!(stat.st_rdev, DeviceType::new(13, 13).bits());
+            assert_eq!(stat.st_rdev, DeviceId::new(13, 13).bits());
         })
         .await;
     }
@@ -3044,7 +3038,7 @@ mod tests {
             let node = &current_task
                 .fs()
                 .root()
-                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
                 .expect("create_node")
                 .entry
                 .node;
@@ -3122,7 +3116,7 @@ mod tests {
             let node = &current_task
                 .fs()
                 .root()
-                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
                 .expect("create_node")
                 .entry
                 .node;
@@ -3158,7 +3152,7 @@ mod tests {
             let node = &current_task
                 .fs()
                 .root()
-                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
                 .expect("create_node")
                 .entry
                 .node;
@@ -3194,7 +3188,7 @@ mod tests {
             let node = &current_task
                 .fs()
                 .root()
-                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceType::NONE)
+                .create_node(locked, &current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
                 .expect("create_node")
                 .entry
                 .node;

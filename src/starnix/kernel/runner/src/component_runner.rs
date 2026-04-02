@@ -34,7 +34,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::auth::{Capabilities, Credentials};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
 use starnix_uapi::errors::{EEXIST, ENOTDIR, Errno};
 use starnix_uapi::file_mode::mode;
@@ -419,7 +419,7 @@ where
             system_task,
             random_string.as_str().into(),
             mode!(IFDIR, 0o755),
-            DeviceType::NONE,
+            DeviceId::NONE,
         ) {
             Ok(_) => break format!("/container/component/{random_string}"),
             Err(errno) if errno == EEXIST => {}
@@ -515,7 +515,7 @@ impl MountRecord {
                 system_task,
                 sub_dir_bytes.into(),
                 mode!(IFDIR, 0o755),
-                DeviceType::NONE,
+                DeviceId::NONE,
             ) {
                 Ok(node) => node,
                 Err(errno) if errno == EEXIST || errno == ENOTDIR => current_node

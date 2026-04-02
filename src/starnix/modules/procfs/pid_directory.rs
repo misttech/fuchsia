@@ -37,7 +37,7 @@ use starnix_uapi::auth::{
     CAP_SYS_NICE, CAP_SYS_RESOURCE, Capabilities, PTRACE_MODE_ATTACH_REALCREDS,
     PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ_FSCREDS, PtraceAccessMode,
 };
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -237,7 +237,7 @@ impl FsNodeOps for TaskDirectoryNode {
                             name.into(),
                             AttrNode::new(task_weak.clone(), attr),
                             mode!(IFREG, 0o666),
-                            DeviceType::NONE,
+                            DeviceId::NONE,
                             creds,
                         );
                     }
@@ -245,7 +245,7 @@ impl FsNodeOps for TaskDirectoryNode {
                         "prev".into(),
                         AttrNode::new(task_weak, security::ProcAttr::Previous),
                         mode!(IFREG, 0o444),
-                        DeviceType::NONE,
+                        DeviceId::NONE,
                         creds,
                     );
                 });

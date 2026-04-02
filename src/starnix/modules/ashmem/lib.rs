@@ -27,7 +27,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
-use starnix_uapi::{ASHMEM_NAME_LEN, ashmem_pin, device_type, errno, error, off_t, uapi};
+use starnix_uapi::{ASHMEM_NAME_LEN, ashmem_pin, device_id, errno, error, off_t, uapi};
 use std::sync::Arc;
 
 /// Initializes the ashmem device.
@@ -69,7 +69,7 @@ impl DeviceOps for AshmemDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: device_type::DeviceType,
+        _id: device_id::DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

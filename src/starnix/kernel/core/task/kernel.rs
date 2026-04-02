@@ -36,7 +36,10 @@ use fidl::endpoints::{
 };
 use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentStopInfo};
 use fidl_fuchsia_feedback::CrashReporterProxy;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
 use fidl_fuchsia_time_external::AdjustSynchronousProxy;
+use fuchsia_async as fasync;
 use fuchsia_inspect::ArrayProperty;
 use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
@@ -48,7 +51,7 @@ use starnix_sync::{
     FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
 };
 use starnix_types::ownership::TempRef;
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{VMADDR_CID_HOST, from_status_like_fdio};
@@ -59,10 +62,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::CpuFeatureFlags;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
-    fuchsia_async as fasync,
-};
 
 /// Kernel features are specified in the component manifest of the starnix container
 /// or explicitly provided to the kernel constructor in tests.
@@ -709,7 +708,7 @@ impl Kernel {
         current_task: &CurrentTask,
         node: &NamespaceNode,
         flags: OpenFlags,
-        dev: DeviceType,
+        dev: DeviceId,
         mode: DeviceMode,
     ) -> Result<Box<dyn FileOps>, Errno>
     where

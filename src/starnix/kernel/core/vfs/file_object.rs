@@ -2378,7 +2378,7 @@ mod tests {
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::auth::FsCred;
-    use starnix_uapi::device_type::DeviceType;
+    use starnix_uapi::device_id::DeviceId;
     use starnix_uapi::file_mode::FileMode;
     use starnix_uapi::open_flags::OpenFlags;
     use std::sync::Arc;
@@ -2405,7 +2405,7 @@ mod tests {
                             mount,
                             name,
                             FileMode::IFREG | FileMode::ALLOW_ALL,
-                            DeviceType::NONE,
+                            DeviceId::NONE,
                             FsCred::root(),
                         )
                     },

@@ -27,7 +27,7 @@ use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, trace_dura
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{CAP_FOWNER, Credentials};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{ENODATA, Errno};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::{XATTR_NAME_SELINUX, errno, error};
@@ -805,7 +805,7 @@ pub(in crate::security) fn check_fs_node_mknod_access(
     parent: &FsNode,
     mode: FileMode,
     name: &FsStr,
-    _device_id: DeviceType,
+    _device_id: DeviceId,
 ) -> Result<(), Errno> {
     may_create(security_server, current_task, parent, mode, name)
 }

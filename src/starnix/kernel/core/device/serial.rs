@@ -13,7 +13,7 @@ use anyhow::Error;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_hardware_serial as fserial;
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
-use starnix_uapi::device_type::{DeviceType, TTY_MAJOR};
+use starnix_uapi::device_id::{DeviceId, TTY_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::from_status_like_fdio;
 use starnix_uapi::open_flags::OpenFlags;
@@ -135,7 +135,7 @@ impl DeviceOps for Arc<SerialDevice> {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: DeviceType,
+        _id: DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
@@ -167,7 +167,7 @@ pub fn register_serial_device(
         name.as_ref(),
         DeviceMetadata::new(
             name.clone(),
-            DeviceType::new(TTY_MAJOR, SERIAL_MINOR_BASE + index),
+            DeviceId::new(TTY_MAJOR, SERIAL_MINOR_BASE + index),
             DeviceMode::Char,
         ),
         registry.objects.tty_class(),

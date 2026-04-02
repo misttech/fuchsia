@@ -24,7 +24,7 @@ use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::{DEVICE_MAPPER_MAJOR, DeviceType, LOOP_MAJOR};
+use starnix_uapi::device_id::{DEVICE_MAPPER_MAJOR, DeviceId, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserCString, UserRef};
@@ -193,7 +193,7 @@ impl DeviceMapperRegistry {
 }
 #[derive(Debug, Default)]
 pub struct DmDevice {
-    number: DeviceType,
+    number: DeviceId,
     state: Mutex<DmDeviceState>,
 }
 
@@ -211,7 +211,7 @@ impl DmDevice {
         let dm_device_name = FsString::from(format!("dm-{minor}"));
         let virtual_block_class = registry.objects.virtual_block_class();
         let device = Arc::new(Self {
-            number: DeviceType::new(DEVICE_MAPPER_MAJOR, minor),
+            number: DeviceId::new(DEVICE_MAPPER_MAJOR, minor),
             ..Default::default()
         });
         let device_weak = Arc::<DmDevice>::downgrade(&device);
@@ -221,7 +221,7 @@ impl DmDevice {
             dm_device_name.as_ref(),
             DeviceMetadata::new(
                 dm_device_name.clone(),
-                DeviceType::new(DEVICE_MAPPER_MAJOR, minor),
+                DeviceId::new(DEVICE_MAPPER_MAJOR, minor),
                 DeviceMode::Block,
             ),
             virtual_block_class,
@@ -1184,7 +1184,7 @@ impl FileOps for DeviceMapper {
 pub fn create_device_mapper(
     _locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    _id: DeviceType,
+    _id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {
@@ -1194,7 +1194,7 @@ pub fn create_device_mapper(
 fn get_or_create_dm_device(
     locked: &mut Locked<FileOpsCore>,
     current_task: &CurrentTask,
-    id: DeviceType,
+    id: DeviceId,
     _node: &NamespaceNode,
     _flags: OpenFlags,
 ) -> Result<Box<dyn FileOps>, Errno> {

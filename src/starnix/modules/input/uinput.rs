@@ -23,11 +23,11 @@ use starnix_modules_input_event_conversion::key_linux_to_fuchsia::LinuxKeyboardE
 use starnix_modules_input_event_conversion::touch_linux_to_fuchsia::LinuxTouchEventParser;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_uapi::device_type::INPUT_MAJOR;
+use starnix_uapi::device_id::INPUT_MAJOR;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
-use starnix_uapi::{device_type, errno, error, uapi};
+use starnix_uapi::{device_id, errno, error, uapi};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -38,7 +38,7 @@ const UINPUT_VERSION: u32 = 5;
 type InputEventPtr = MultiArchUserRef<uapi::input_event, uapi::arch32::input_event>;
 
 #[derive(Clone)]
-enum DeviceType {
+enum DeviceId {
     Keyboard,
     Touchscreen(i32, i32),
 }
@@ -56,7 +56,7 @@ pub fn register_uinput_device(
         locked,
         system_task,
         "uinput".into(),
-        DeviceMetadata::new("uinput".into(), device_type::DeviceType::UINPUT, DeviceMode::Char),
+        DeviceMetadata::new("uinput".into(), device_id::DeviceId::UINPUT, DeviceMode::Char),
         misc_class,
         device,
     )?;
@@ -83,7 +83,7 @@ where
         FsString::from(format!("event{}", device_id)).as_ref(),
         DeviceMetadata::new(
             format!("input/event{}", device_id).into(),
-            starnix_uapi::device_type::DeviceType::new(INPUT_MAJOR, device_id),
+            starnix_uapi::device_id::DeviceId::new(INPUT_MAJOR, device_id),
             DeviceMode::Char,
         ),
         input_class,
@@ -107,7 +107,7 @@ impl DeviceOps for UinputDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: device_type::DeviceType,
+        _id: device_id::DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
@@ -137,7 +137,7 @@ struct UinputDeviceMutableState {
 }
 
 impl UinputDeviceMutableState {
-    fn get_id_and_device_type(&self) -> Option<(uapi::input_id, DeviceType)> {
+    fn get_id_and_device_type(&self) -> Option<(uapi::input_id, DeviceId)> {
         let input_id = match self.input_id {
             Some(input_id) => input_id,
             None => return None,
@@ -157,9 +157,9 @@ impl UinputDeviceMutableState {
                     touchscreen_width = x_range.max - x_range.min;
                     touchscreen_height = y_range.max - y_range.min;
                 }
-                DeviceType::Touchscreen(touchscreen_width, touchscreen_height)
+                DeviceId::Touchscreen(touchscreen_width, touchscreen_height)
             }
-            Some(false) | None => DeviceType::Keyboard,
+            Some(false) | None => DeviceId::Keyboard,
         };
 
         Some((input_id, device_type))
@@ -297,7 +297,7 @@ impl UinputDeviceFile {
                 let open_files: OpenedFiles = Default::default();
 
                 let registered_device_id = match device_type {
-                    DeviceType::Keyboard => {
+                    DeviceId::Keyboard => {
                         let (key_client, key_server) =
                             fidl::endpoints::create_sync_proxy::<futinput::KeyboardMarker>();
                         inner.created_device =
@@ -339,7 +339,7 @@ impl UinputDeviceFile {
                             }
                         }
                     }
-                    DeviceType::Touchscreen(_width, _height) => {
+                    DeviceId::Touchscreen(_width, _height) => {
                         let (touch_client, touch_server) =
                             fidl::endpoints::create_sync_proxy::<futinput::TouchScreenMarker>();
                         inner.created_device = CreatedDevice::Touchscreen(
@@ -403,7 +403,7 @@ impl UinputDeviceFile {
                 let device = add_and_register_input_device(
                     locked,
                     current_task,
-                    VirtualDevice { input_id, device_type, open_files },
+                    VirtualDevice { input_id, devt: device_type, open_files },
                     registered_device_id,
                 )?;
                 inner.k_device = Some(device);
@@ -584,7 +584,7 @@ impl FileOps for UinputDeviceFile {
 #[derive(Clone)]
 pub struct VirtualDevice {
     input_id: uapi::input_id,
-    device_type: DeviceType,
+    devt: DeviceId,
     open_files: OpenedFiles,
 }
 
@@ -593,13 +593,13 @@ impl DeviceOps for VirtualDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _id: device_type::DeviceType,
+        _id: device_id::DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let input_file = match &self.device_type {
-            DeviceType::Keyboard => Arc::new(InputFile::new_keyboard(self.input_id, None)),
-            DeviceType::Touchscreen(width, height) => {
+        let input_file = match &self.devt {
+            DeviceId::Keyboard => Arc::new(InputFile::new_keyboard(self.input_id, None)),
+            DeviceId::Touchscreen(width, height) => {
                 Arc::new(InputFile::new_touch(self.input_id, width.clone(), height.clone(), None))
             }
         };

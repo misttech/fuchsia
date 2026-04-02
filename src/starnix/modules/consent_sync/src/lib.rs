@@ -9,7 +9,7 @@ use starnix_core::vfs::FileOps;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::log_error;
 use starnix_sync::{FileOpsCore, Locked};
-use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -26,7 +26,7 @@ impl DeviceOps for ConsentSyncHandle {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _current_task: &CurrentTask,
-        _device_type: DeviceType,
+        _device_id: DeviceId,
         _node: &starnix_core::vfs::NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {

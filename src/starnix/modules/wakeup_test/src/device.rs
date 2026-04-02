@@ -18,7 +18,7 @@ use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
-use starnix_uapi::{device_type, error};
+use starnix_uapi::{device_id, error};
 use std::sync::{Arc, Weak};
 use zx;
 
@@ -45,7 +45,7 @@ impl DeviceOps for WakeupTestDevice {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         current_task: &CurrentTask,
-        _id: device_type::DeviceType,
+        _id: device_id::DeviceId,
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
