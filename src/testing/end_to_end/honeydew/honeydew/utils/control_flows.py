@@ -5,6 +5,7 @@
 """Control flow utilities: retries, timeouts, complex try-catch, etc"""
 
 import asyncio
+import inspect
 import logging
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
@@ -130,7 +131,7 @@ async def async_retry_until_deadline(
 
     while True:
         try:
-            if asyncio.iscoroutinefunction(task):
+            if inspect.iscoroutinefunction(task):
                 return await task()
             else:
                 return task()
@@ -258,7 +259,7 @@ async def async_retry(
     task_name: str = _pretty_func_name(task)
     while True:
         try:
-            if asyncio.iscoroutinefunction(task):
+            if inspect.iscoroutinefunction(task):
                 return await task()
             else:
                 return task()
@@ -384,7 +385,7 @@ async def async_repeat_until_deadline(
         _LOGGER.debug(
             "Repeating %s for the %s time", _pretty_func_name(task), count
         )
-        if asyncio.iscoroutinefunction(task):
+        if inspect.iscoroutinefunction(task):
             await task()
         else:
             task()

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Common utils used across Honeydew."""
 import asyncio
+import inspect
 import logging
 import signal
 import time
@@ -122,7 +123,7 @@ async def async_wait_for_state(
     while _retry_condition(end_time):
         _LOGGER.debug("calling %s", state_fn.__qualname__)
         try:
-            if asyncio.iscoroutinefunction(state_fn):
+            if inspect.iscoroutinefunction(state_fn):
                 current_state = await state_fn()
             else:
                 current_state = state_fn()
@@ -246,7 +247,7 @@ async def async_retry(
     while _retry_condition(end_time):
         _LOGGER.debug("calling %s", fn.__qualname__)
         try:
-            if asyncio.iscoroutinefunction(fn):
+            if inspect.iscoroutinefunction(fn):
                 ret_value: object = await fn()
             else:
                 ret_value = fn()

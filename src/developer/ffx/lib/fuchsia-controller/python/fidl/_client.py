@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import asyncio
+import inspect
 import logging
 from abc import abstractmethod
 from inspect import getframeinfo, stack
@@ -368,5 +369,5 @@ class EventHandlerBase(
             res = method_lambda(request_obj)
         else:
             res = method_lambda()
-        if asyncio.iscoroutine(res) or asyncio.isfuture(res):
+        if inspect.isawaitable(res):
             await res

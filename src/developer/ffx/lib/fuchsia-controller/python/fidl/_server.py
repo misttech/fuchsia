@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import asyncio
+import inspect
 import logging
 from abc import abstractmethod
 from inspect import getframeinfo, stack
@@ -145,7 +145,7 @@ class ServerBase(
             res = method(msg)
         else:
             res = method()
-        if asyncio.iscoroutine(res) or asyncio.isfuture(res):
+        if inspect.isawaitable(res):
             res = await res
         if res is not None and not info.requires_response:
             raise ServerError(

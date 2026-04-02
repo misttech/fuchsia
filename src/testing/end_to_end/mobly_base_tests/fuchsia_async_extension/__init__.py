@@ -229,7 +229,7 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
         res = super().register_controller(module, required, min_number)
         if res:
             for i, obj in enumerate(res):
-                if inspect.iscoroutine(obj):
+                if inspect.isawaitable(obj):
                     res[i] = await obj
         # Patch module.destroy and module.get_info to run synchronously for Mobly teardown.
         # Mobly only allows registering each module once (it raises a ControllerError otherwise),

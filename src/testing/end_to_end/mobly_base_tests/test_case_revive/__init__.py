@@ -255,7 +255,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     pre_test_execution_fn_kwargs,
                 )
                 res = pre_test_execution_fn(**pre_test_execution_fn_kwargs)
-                if inspect.iscoroutine(res):
+                if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
                 _LOGGER.info(
@@ -263,7 +263,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     pre_test_execution_fn.__qualname__,
                 )
                 res = pre_test_execution_fn()
-                if inspect.iscoroutine(res):
+                if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if test_method_execution_frequency in [
@@ -276,7 +276,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                 fuchsia_device_operation,
             )
             res = getattr(self, test_case)()
-            if inspect.iscoroutine(res):
+            if inspect.isawaitable(res):
                 fuchsia_async_extension.get_loop().run_until_complete(res)
 
         _LOGGER.info(
@@ -287,7 +287,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
         res = self._perform_op(
             fuchsia_device_operation=fuchsia_device_operation
         )
-        if inspect.iscoroutine(res):
+        if inspect.isawaitable(res):
             fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if test_method_execution_frequency in [
@@ -300,7 +300,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                 fuchsia_device_operation,
             )
             res = getattr(self, test_case)()
-            if inspect.iscoroutine(res):
+            if inspect.isawaitable(res):
                 fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if post_test_execution_fn:
@@ -311,7 +311,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     post_test_execution_fn_kwargs,
                 )
                 res = post_test_execution_fn(**post_test_execution_fn_kwargs)
-                if inspect.iscoroutine(res):
+                if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
                 _LOGGER.info(
@@ -319,7 +319,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     post_test_execution_fn.__qualname__,
                 )
                 res = post_test_execution_fn()
-                if inspect.iscoroutine(res):
+                if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
 
     def _revived_test_case_name_func(
