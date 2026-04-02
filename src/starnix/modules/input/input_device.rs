@@ -134,6 +134,12 @@ pub struct InputDeviceStatus {
 
     /// The event time of the last generated uapi::input_event by one of this device's InputFiles.
     pub last_generated_uapi_event_timestamp_ns: AtomicI64,
+
+    /// The number of events that entered with wake leases.
+    pub total_events_with_wake_lease_count: AtomicU64,
+
+    /// The number of active incoming wake leases.
+    pub active_wake_leases_count: AtomicU64,
 }
 
 impl InputDeviceStatus {
@@ -147,6 +153,8 @@ impl InputDeviceStatus {
             total_fidl_events_converted_count: AtomicU64::new(0),
             total_uapi_events_generated_count: AtomicU64::new(0),
             last_generated_uapi_event_timestamp_ns: AtomicI64::new(0),
+            total_events_with_wake_lease_count: AtomicU64::new(0),
+            active_wake_leases_count: AtomicU64::new(0),
         });
 
         let weak_status = Arc::downgrade(&status);
@@ -180,6 +188,14 @@ impl InputDeviceStatus {
                         "last_generated_uapi_event_timestamp_ns",
                         status.last_generated_uapi_event_timestamp_ns.load(Ordering::Relaxed),
                     );
+                    root.record_uint(
+                        "total_events_with_wake_lease_count",
+                        status.total_events_with_wake_lease_count.load(Ordering::Relaxed),
+                    );
+                    root.record_uint(
+                        "active_wake_leases_count",
+                        status.active_wake_leases_count.load(Ordering::Relaxed),
+                    );
                 }
                 Ok(inspector)
             }
@@ -191,6 +207,18 @@ impl InputDeviceStatus {
 
     pub fn count_total_received_events(&self, count: u64) {
         self.total_fidl_events_received_count.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn count_events_with_wake_lease(&self, count: u64) {
+        self.total_events_with_wake_lease_count.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn increment_active_wake_leases(&self, count: u64) {
+        self.active_wake_leases_count.fetch_add(count, Ordering::Relaxed);
+    }
+
+    pub fn decrement_active_wake_leases(&self, count: u64) {
+        self.active_wake_leases_count.fetch_sub(count, Ordering::Relaxed);
     }
 
     pub fn count_total_ignored_events(&self, count: u64) {
@@ -1146,6 +1174,8 @@ mod test {
         assert_eq!(events, vec![]);
         assert_data_tree!(inspector, root: {
             touch_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 3u64,
                 total_fidl_events_ignored_count: 2u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -1214,6 +1244,8 @@ mod test {
         assert_eq!(events, vec![]);
         assert_data_tree!(inspector, root: {
             touch_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 3u64,
                 total_fidl_events_ignored_count: 1u64,
                 total_fidl_events_unexpected_count: 1u64,
@@ -1902,6 +1934,8 @@ mod test {
 
         assert_data_tree!(inspector, root: {
             touch_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 0u64,
                 total_fidl_events_ignored_count: 0u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -1998,6 +2032,8 @@ mod test {
         let _events = read_uapi_events(locked, &input_file, &current_task);
         assert_data_tree!(inspector, root: {
             touch_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 7u64,
                 total_fidl_events_ignored_count: 2u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -2155,6 +2191,8 @@ mod test {
 
         assert_data_tree!(inspector, root: {
             touch_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 7u64,
                 total_fidl_events_ignored_count: 2u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -2195,6 +2233,8 @@ mod test {
 
         assert_data_tree!(inspector, root: {
             keyboard_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 0u64,
                 total_fidl_events_ignored_count: 0u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -2259,6 +2299,8 @@ mod test {
 
         assert_data_tree!(inspector, root: {
             keyboard_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 2u64,
                 total_fidl_events_ignored_count: 0u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -2291,6 +2333,8 @@ mod test {
 
         assert_data_tree!(inspector, root: {
             mouse_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 0u64,
                 total_fidl_events_ignored_count: 0u64,
                 total_fidl_events_unexpected_count: 0u64,
@@ -2371,6 +2415,8 @@ mod test {
         let _events = read_uapi_events(locked, &input_file, &current_task);
         assert_data_tree!(inspector, root: {
             mouse_device: {
+                active_wake_leases_count: 0u64,
+                total_events_with_wake_lease_count: 0u64,
                 total_fidl_events_received_count: 8u64,
                 total_fidl_events_ignored_count: 2u64,
                 total_fidl_events_unexpected_count: 0u64,

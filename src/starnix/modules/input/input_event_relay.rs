@@ -79,6 +79,25 @@ pub struct DeviceState {
     inspect_status: Option<Arc<InputDeviceStatus>>,
 }
 
+pub struct TrackedWakeLease {
+    _lease: fidl::EventPair,
+    device_status: Arc<InputDeviceStatus>,
+}
+
+impl TrackedWakeLease {
+    pub fn new(lease: fidl::EventPair, device_status: Arc<InputDeviceStatus>) -> Self {
+        device_status.increment_active_wake_leases(1);
+        device_status.count_events_with_wake_lease(1);
+        Self { _lease: lease, device_status }
+    }
+}
+
+impl Drop for TrackedWakeLease {
+    fn drop(&mut self) {
+        self.device_status.decrement_active_wake_leases(1);
+    }
+}
+
 pub type DeviceId = u32;
 
 pub const DEFAULT_TOUCH_DEVICE_ID: DeviceId = 0;
@@ -357,7 +376,7 @@ impl InputEventsRelay {
         let (events_by_device, ignored_events) = group_touch_events_by_device_id(touch_events);
         num_ignored_events += ignored_events;
 
-        for (device_id, events) in events_by_device {
+        for (device_id, mut events) in events_by_device {
             trace_duration_begin!("input", "starnix_process_per_device_touch_event");
 
             let dev = self.devices.get_mut(&device_id).unwrap_or(default_touch_device);
@@ -365,6 +384,16 @@ impl InputEventsRelay {
             let mut num_converted_events: u64 = 0;
             let mut num_unexpected_events: u64 = 0;
             let mut new_events: VecDeque<uapi::input_event> = VecDeque::new();
+
+            #[allow(clippy::collection_is_never_read)]
+            let mut tracked_leases = vec![];
+            for event in &mut events {
+                if let Some(lease) = event.wake_lease.take() {
+                    if let Some(status) = &dev.inspect_status {
+                        tracked_leases.push(TrackedWakeLease::new(lease, status.clone()));
+                    }
+                }
+            }
 
             let last_event_time_ns: i64;
             if let InputDeviceType::Touch(ref mut converter) = dev.device_type {
@@ -495,7 +524,7 @@ impl InputEventsRelay {
         let mut power_was_pressed_after = false;
         let mut function_was_pressed_after = false;
         match button_event {
-            fuipolicy::MediaButtonsListenerRequest::OnEvent { event, responder } => {
+            fuipolicy::MediaButtonsListenerRequest::OnEvent { mut event, responder } => {
                 if let Some(trace_flow_id) = event.trace_flow_id {
                     trace_flow_end!(
                         "input",
@@ -531,6 +560,14 @@ impl InputEventsRelay {
                     }
                     None => default_button_device,
                 };
+
+                #[allow(clippy::collection_is_never_read)]
+                let mut tracked_leases = vec![];
+                if let Some(lease) = event.wake_lease.take() {
+                    if let Some(status) = &dev.inspect_status {
+                        tracked_leases.push(TrackedWakeLease::new(lease, status.clone()));
+                    }
+                }
 
                 if let Some(dev_inspect_status) = &dev.inspect_status {
                     dev_inspect_status.count_total_received_events(1);
@@ -592,7 +629,7 @@ impl InputEventsRelay {
     ) -> bit_vec::BitVec {
         trace_duration!("input", "starnix_process_touch_button_event");
         match button_event {
-            fuipolicy::TouchButtonsListenerRequest::OnEvent { event, responder } => {
+            fuipolicy::TouchButtonsListenerRequest::OnEvent { mut event, responder } => {
                 if let Some(trace_flow_id) = event.trace_flow_id {
                     trace_flow_end!(
                         "input",
@@ -616,12 +653,23 @@ impl InputEventsRelay {
                     }
                 };
 
-                let dev = match event.device_info {
-                    Some(TouchDeviceInfo { id: Some(device_id), .. }) => {
-                        self.devices.get_mut(&device_id).unwrap_or(default_touch_device)
-                    }
-                    _ => default_touch_device,
+                let device_id = match &event.device_info {
+                    Some(TouchDeviceInfo { id: Some(id), .. }) => Some(*id),
+                    _ => None,
                 };
+
+                let dev = match device_id {
+                    Some(id) => self.devices.get_mut(&id).unwrap_or(default_touch_device),
+                    None => default_touch_device,
+                };
+
+                #[allow(clippy::collection_is_never_read)]
+                let mut tracked_leases = vec![];
+                if let Some(lease) = event.wake_lease.take() {
+                    if let Some(status) = &dev.inspect_status {
+                        tracked_leases.push(TrackedWakeLease::new(lease, status.clone()));
+                    }
+                }
 
                 if let Some(dev_inspect_status) = &dev.inspect_status {
                     dev_inspect_status.count_total_received_events(1);
@@ -689,7 +737,14 @@ impl InputEventsRelay {
         let mut num_unexpected_events: u64 = 0;
         let mut new_events: VecDeque<uapi::input_event> = VecDeque::new();
         let mut last_event_time_ns = zx::MonotonicInstant::get();
-        for event in mouse_events {
+        #[allow(clippy::collection_is_never_read)]
+        let mut tracked_leases = vec![];
+        for mut event in mouse_events {
+            if let Some(lease) = event.wake_lease.take() {
+                if let Some(status) = &default_mouse_device.inspect_status {
+                    tracked_leases.push(TrackedWakeLease::new(lease, status.clone()));
+                }
+            }
             match event {
                 FidlMouseEvent {
                     timestamp: Some(time),
@@ -1356,6 +1411,47 @@ mod test {
         let events = read_uapi_events(locked, &device_id_10_file, &current_task);
         // file of device id 10 should receive events.
         assert_ne!(events.len(), 0);
+    }
+
+    #[::fuchsia::test]
+    async fn route_touch_event_with_wake_lease() {
+        #[allow(deprecated, reason = "pre-existing usage")]
+        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let (
+            _input_relay,
+            touch_device,
+            _keyboard_device,
+            _mouse_device,
+            _input_file,
+            _keyboard_file,
+            _mouse_file,
+            mut touch_source_stream,
+            _mouse_source_stream,
+            _keyboard_listener,
+            _media_buttons_listener,
+            _touch_buttons_listener,
+        ) = start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
+
+        const DEVICE_ID: u32 = 10;
+        let mut event = make_touch_event_with_phase_device_id(EventPhase::Add, 1, DEVICE_ID);
+        let (p1, _p2) = fidl::EventPair::create();
+        event.wake_lease = Some(p1);
+
+        answer_next_touch_watch_request(&mut touch_source_stream, vec![event]).await;
+
+        // Wait for another `Watch` to ensure input_file done processing the first reply.
+        answer_next_touch_watch_request(
+            &mut touch_source_stream,
+            vec![make_empty_touch_event(DEVICE_ID)],
+        )
+        .await;
+
+        let status = &touch_device.inspect_status;
+        assert_eq!(
+            status.total_events_with_wake_lease_count.load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+        assert_eq!(status.active_wake_leases_count.load(std::sync::atomic::Ordering::Relaxed), 0);
     }
 
     #[::fuchsia::test]
