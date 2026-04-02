@@ -4,6 +4,7 @@
 
 #include "examples/drivers/transport/driver/v2/child-driver.h"
 
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <gtest/gtest.h>
@@ -40,8 +41,7 @@ class TestI2cImplServer : public fdf::WireServer<fuchsia_hardware_i2cimpl::Devic
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_i2cimpl::Device> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
-    FDF_LOG(
-        ERROR,
+    fdf::error(
         "Unknown method in fuchsia.hardware.i2cimpl Device protocol, closing with ZX_ERR_NOT_SUPPORTED");
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }

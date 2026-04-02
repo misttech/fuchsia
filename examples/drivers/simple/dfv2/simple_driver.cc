@@ -57,17 +57,17 @@ zx::result<> SimpleDriver::Start() {
 }
 
 void SimpleDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
-  FDF_LOG(INFO,
-          "SimpleDriver::PrepareStop() invoked. This is called before "
-          "the driver dispatchers are shutdown. Only implement this function "
-          "if you need to manually clearn up objects (ex/ unique_ptrs) in the driver dispatchers");
+  fdf::info(
+      "SimpleDriver::PrepareStop() invoked. This is called before "
+      "the driver dispatchers are shutdown. Only implement this function "
+      "if you need to manually clearn up objects (ex/ unique_ptrs) in the driver dispatchers");
   completer(zx::ok());
 }
 
 void SimpleDriver::Stop() {
-  FDF_LOG(INFO,
-          "SimpleDriver::Stop() invoked. This is called after all driver dispatchers are "
-          "shutdown. Use this function to perform any remaining teardowns");
+  fdf::info(
+      "SimpleDriver::Stop() invoked. This is called after all driver dispatchers are "
+      "shutdown. Use this function to perform any remaining teardowns");
 }
 
 }  // namespace simple

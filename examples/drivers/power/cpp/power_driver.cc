@@ -45,30 +45,30 @@ zx::result<> PowerDriver::Start() {
 }
 
 void PowerDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
-  FDF_LOG(INFO,
-          "PowerDriver::PrepareStop() invoked. This is called before "
-          "the driver dispatchers are shutdown. Only implement this function "
-          "if you need to manually clearn up objects (ex/ unique_ptrs) in the driver dispatchers");
+  fdf::info(
+      "PowerDriver::PrepareStop() invoked. This is called before "
+      "the driver dispatchers are shutdown. Only implement this function "
+      "if you need to manually clearn up objects (ex/ unique_ptrs) in the driver dispatchers");
   completer(zx::ok());
 }
 
 void PowerDriver::Stop() {
-  FDF_LOG(INFO,
-          "PowerDriver::Stop() invoked. This is called after all driver dispatchers are "
-          "shutdown. Use this function to perform any remaining teardowns");
+  fdf::info(
+      "PowerDriver::Stop() invoked. This is called after all driver dispatchers are "
+      "shutdown. Use this function to perform any remaining teardowns");
 }
 
 void PowerDriver::Suspend(fdf_power::SuspendCompleter cb) {
-  FDF_LOG(INFO,
-          "PowerDriver::Suspend() invoked. Use this function to perform work required before "
-          "going into suspend.");
+  fdf::info(
+      "PowerDriver::Suspend() invoked. Use this function to perform work required before "
+      "going into suspend.");
   cb();
 }
 
 void PowerDriver::Resume(fdf_power::ResumeCompleter cb) {
-  FDF_LOG(INFO,
-          "PowerDriver::Resume() invoked. Use this function to perform any work required "
-          "after exiting suspend.");
+  fdf::info(
+      "PowerDriver::Resume() invoked. Use this function to perform any work required "
+      "after exiting suspend.");
   cb();
 }
 
