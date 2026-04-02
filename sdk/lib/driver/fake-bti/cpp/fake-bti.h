@@ -41,7 +41,7 @@ struct FakeBtiPinnedVmoInfo {
 
 // Fake BTI stores all pinned VMOs for testing purposes. Tests can call this method to get
 // duplicates of all pinned VMO handles, as well as the pinned pages size and offset for each VMO.
-// It's the caller's repsonsibility to close all the returned VMO handles.
+// It's the caller's responsibility to close all the returned VMO handles.
 zx::result<std::vector<FakeBtiPinnedVmoInfo>> GetPinnedVmo(zx::unowned_bti bti);
 
 // Fake BTI stores all the fake physical addresses that is returned by |zx_bti_pin|.

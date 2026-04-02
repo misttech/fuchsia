@@ -12,7 +12,11 @@ use async_trait::async_trait;
 use block_server::RequestId;
 use event_listener::{Event, Listener as _};
 use fdf_fidl::DriverChannel;
+use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
+use fidl_next_fuchsia_hardware_rpmb as rpmb;
+use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use log::{debug, error, info, trace, warn};
 use mmio::Mmio;
@@ -43,10 +47,6 @@ use sdmmc_spec::{
     SdhciInterruptStatusRegister,
 };
 use zx::HandleBased as _;
-use {
-    fidl_fuchsia_storage_block as fblock, fidl_next_fuchsia_hardware_rpmb as rpmb,
-    fidl_next_fuchsia_hardware_sdmmc as sdmmc, fuchsia_async as fasync,
-};
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
 use crate::transfer_manager::{Transfer, TransferManager, TransferOptions, TransferSlot};
@@ -79,10 +79,6 @@ pub trait CommandQueueHost: Send + Sync {
     /// Disables command queueing.  Must not be called before [`Self::enable`].  The queue can be
     /// later re-enabled by calling [`Self::enable`] again.
     async fn disable(&self) -> Result<(), zx::Status>;
-
-    /// A side-channel used to send information about submitted tasks to a test harness.
-    /// This simplifies testing, so we don't have to sniff the TDL.
-    fn on_task_submitted(&self, _task: SubmittedTaskForTesting<'_>) {}
 }
 
 #[async_trait]
@@ -195,12 +191,6 @@ fn complete_request(
     if let Some(receiver) = receiver {
         receiver.complete(request_id, status);
     }
-}
-
-#[allow(dead_code)]
-pub enum SubmittedTaskForTesting<'a> {
-    Transfer(EmmcPartitionId, &'a Transfer),
-    DirectCmd,
 }
 
 #[derive(Debug)]
@@ -468,14 +458,13 @@ impl Inner {
     }
 
     /// Submits a transfer to hardware.
-    fn submit_transfer(&mut self, tdl_slot: u8, task: PendingTask, host: &dyn CommandQueueHost) {
+    fn submit_transfer(&mut self, tdl_slot: u8, task: PendingTask) {
         debug_assert!(self.state.enabled);
         trace!("Submitting transfer {tdl_slot}");
         // Execute a write barrier, so the transfer descriptor's contents are visible *before* we
         // ring the doorbell.
         self.cqhci_mmio.write_barrier();
         self.cqhci_mmio.store32(CQHCI_CQ_TDBR_OFFSET, 1u32 << tdl_slot);
-        host.on_task_submitted(SubmittedTaskForTesting::Transfer(task.partition, &task.transfer));
         self.pending_tasks.add_task(tdl_slot, task);
     }
 
@@ -603,7 +592,7 @@ impl AsyncTask for SwitchAndSubmitTask {
             inner.active_partition = Some(self.partition);
             let task = self.task.take().unwrap();
             let tdl = task.transfer.tdl_slot();
-            inner.submit_transfer(tdl, task, cq.host.as_ref());
+            inner.submit_transfer(tdl, task);
         } else {
             let Some(receiver) = inner.partition_status_receivers.get(&self.partition) else {
                 panic!("No receiver was registered for partition {:?}", self.partition);
@@ -846,7 +835,6 @@ impl CommandQueueExcl {
                                 1u32 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT,
                             );
                             inner.pending_tasks.dcmd_status = None;
-                            self.host.on_task_submitted(SubmittedTaskForTesting::DirectCmd);
                         }
                         inner.event.listen()
                     }
@@ -1294,7 +1282,7 @@ impl CommandQueue {
         partition: EmmcPartitionId,
         request_id: RequestId,
         direction: Direction,
-        block_offset: u64,
+        block_offset: u32,
         block_count: u32,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
@@ -1355,7 +1343,7 @@ impl CommandQueue {
         let tdl = task.transfer.tdl_slot();
         if inner.active_partition == Some(partition) {
             // Fast path, we can immediately submit.
-            inner.submit_transfer(tdl, task, self.host.as_ref());
+            inner.submit_transfer(tdl, task);
             SubmitResult::Done(zx::Status::OK)
         } else {
             // Slow path, we have to switch partitions before we can submit.
@@ -1379,7 +1367,9 @@ impl CommandQueue {
     ) -> Result<(), zx::Status> {
         fuchsia_trace::duration!("sdmmc", "cqhci::submit_transfer",
             "op" => direction.as_str(),
-            "blocks" => block_count as u64);
+            "blocks" => block_count as u64
+        );
+        let block_offset = block_offset.try_into().map_err(|_| zx::Status::INVALID_ARGS)?;
         let res: Result<(), zx::Status> = loop {
             match self.try_submit_transfer(
                 partition,

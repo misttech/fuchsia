@@ -64,7 +64,14 @@ impl MmcCommand {
     }
 }
 
-// Necessary for bitfield
+impl TryFrom<u8> for MmcCommand {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, ()> {
+        Self::n(value).ok_or(())
+    }
+}
+
 impl From<MmcCommand> for u8 {
     fn from(value: MmcCommand) -> Self {
         value as u8
@@ -82,7 +89,6 @@ pub enum EmmcPartitionIndex {
     BootPartition2 = 2,
 }
 
-// Necessary for bitfield
 impl From<EmmcPartitionIndex> for u8 {
     fn from(value: EmmcPartitionIndex) -> Self {
         value as u8
@@ -100,7 +106,7 @@ bitfield! {
     u8, task_id, set_task_id: 20, 16;
     u8, dms, set_dms: 22, 21;
     // 23..=24 reserved
-    u8, from into EmmcPartitionIndex, _, set_partition: 28, 25;
+    u8, from EmmcPartitionIndex, _, set_partition: 28, 25;
     // 29..=31 reserved
 }
 
@@ -125,7 +131,6 @@ pub enum DeviceManagementOpcode {
     Discard = 8,
 }
 
-// Necessary for bitfield
 impl From<DeviceManagementOpcode> for u8 {
     fn from(value: DeviceManagementOpcode) -> Self {
         value as u8
@@ -205,26 +210,26 @@ bitfield! {
     /// A task descriptor in the CQHCI Task Descriptor List (JESD84-B51A, B.2.1)
     pub struct CommandQueueTaskDescriptor(u128);
     impl Debug;
-    bool, valid, set_valid: 0;
-    bool, end, set_end: 1;
-    bool, int, set_int: 2;
-    u8, act, set_act: 5, 3;
-    bool, forced_programming, set_forced_programming: 6;
-    u8, context_id, set_context_id: 10, 7;
-    bool, tag_request, set_tag_request: 11;
-    bool, data_direction, set_data_direction: 12;
-    bool, priority, set_priority: 13;
-    bool, qbr, set_qbr: 14;
-    bool, reliable_write, set_reliable_write: 15;
-    u16, block_count, set_block_count: 31, 16;
-    u64, block_offset, set_block_offset: 95, 32;
-    // 96..=127 reserved
+    pub bool, valid, set_valid: 0;
+    pub bool, end, set_end: 1;
+    pub bool, int, set_int: 2;
+    pub u8, act, set_act: 5, 3;
+    pub bool, forced_programming, set_forced_programming: 6;
+    pub u8, context_id, set_context_id: 10, 7;
+    pub bool, tag_request, set_tag_request: 11;
+    pub bool, data_direction, set_data_direction: 12;
+    pub bool, priority, set_priority: 13;
+    pub bool, qbr, set_qbr: 14;
+    pub bool, reliable_write, set_reliable_write: 15;
+    pub u16, block_count, set_block_count: 31, 16;
+    pub u32, block_offset, set_block_offset: 63, 32;
+    // 64..=127 reserved
 }
 
 impl CommandQueueTaskDescriptor {
     fn new(
         direction: Direction,
-        block_offset: u64,
+        block_offset: u32,
         block_count: NonZeroU16,
         queue_barrier: bool,
     ) -> Self {
@@ -252,7 +257,6 @@ pub enum DcmdResponseType {
     R1B = 0b11,
 }
 
-// Necessary for bitfield
 impl From<DcmdResponseType> for u8 {
     fn from(value: DcmdResponseType) -> Self {
         value as u8
@@ -271,7 +275,7 @@ bitfield! {
     pub bool, int, set_int: 2;
     pub u8, act, set_act: 5, 3;
     pub bool, qbr, set_qbr: 14;
-    pub u8, from into MmcCommand, _, set_cmd_index: 21, 16;
+    pub u8, from try_into MmcCommand, cmd_index, set_cmd_index: 21, 16;
     pub bool, cmd_timing, set_cmd_timing: 22;
     pub u8, from into DcmdResponseType, _, set_response_type: 24, 23;
     pub u32, cmd_arg, set_cmd_arg: 63, 32;
@@ -336,16 +340,23 @@ impl TryFrom<usize> for TransferBytes {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, enumn::N)]
 #[repr(u8)]
-enum TransferAct {
+pub enum TransferAct {
     /// The transfer descriptor points to a data region to read/write to.
     Tran = 0b100,
     /// The transfer descriptor points to a list of transfer descriptors.
     Link = 0b110,
 }
 
-// Necessary for bitfield
+impl TryFrom<u8> for TransferAct {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, ()> {
+        Self::n(value).ok_or(())
+    }
+}
+
 impl From<TransferAct> for u8 {
     fn from(value: TransferAct) -> Self {
         value as u8
@@ -359,13 +370,13 @@ bitfield! {
     /// A transfer descriptor in the CQHCI Task Descriptor List (JESD84-B51A, B.2.2).
     pub struct CommandQueueTransferDescriptor(u128);
     impl Debug;
-    bool, valid, set_valid: 0;
-    bool, end, set_end: 1;
-    bool, int, set_int: 2;
-    u8, from into TransferAct, _, set_act: 5, 3;
+    pub bool, valid, set_valid: 0;
+    pub bool, end, set_end: 1;
+    pub bool, int, set_int: 2;
+    pub u8, from try_into TransferAct, act, set_act: 5, 3;
     // 6..=15 reserved
-    u16, length, set_length: 31, 16;
-    u64, address, set_address: 95, 32;
+    pub u16, length, set_length: 31, 16;
+    pub u64, address, set_address: 95, 32;
     // 96..=127 reserved
 }
 
@@ -402,8 +413,8 @@ impl CommandQueueTransferDescriptor {
 ///
 /// Note that this assumes 16-byte descriptors.
 pub struct CommandQueueTDLEntry {
-    task: CommandQueueTaskDescriptor,
-    transfer: CommandQueueTransferDescriptor,
+    pub task: CommandQueueTaskDescriptor,
+    pub transfer: CommandQueueTransferDescriptor,
 }
 
 impl CommandQueueTDLEntry {
@@ -414,7 +425,7 @@ impl CommandQueueTDLEntry {
     /// [`TransferBytes::MAX_BLOCKS`], otherwise an error is returned.
     pub fn single_buffer(
         direction: Direction,
-        block_offset: u64,
+        block_offset: u32,
         block_count: NonZeroU16,
         phys_address: u64,
         queue_barrier: bool,
@@ -440,7 +451,7 @@ impl CommandQueueTDLEntry {
     /// address before submitting the task.
     pub fn scatter_gather_buffers(
         direction: Direction,
-        block_offset: u64,
+        block_offset: u32,
         block_count: NonZeroU16,
         descriptors_phys_address: u64,
         queue_barrier: bool,
@@ -472,7 +483,7 @@ impl CommandQueueTDLEntry {
 /// Should only be written into the DCMD slot in the TDL; regular transfers must be of type
 /// [`CommandQueueTDLEntry`].
 pub struct CommandQueueTDLDirectCmdEntry {
-    task: CommandQueueDirectCmdTaskDescriptor,
+    pub task: CommandQueueDirectCmdTaskDescriptor,
     _transfer: u128,
 }
 

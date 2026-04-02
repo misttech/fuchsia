@@ -147,6 +147,7 @@ impl<'a> Iterator for ContiguousPagesIter<'a> {
 }
 
 /// An RAII guard for a transfer slot in the TDL.
+#[derive(Debug)]
 pub struct TransferSlot {
     manager: Arc<TransferManager>,
     tdl_slot: u8,
@@ -309,7 +310,7 @@ impl TransferManager {
         slot: TransferSlot,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
-        block_offset: u64,
+        block_offset: u32,
         block_count: u32,
         data_direction: Direction,
         transfer_options: TransferOptions,
@@ -331,7 +332,7 @@ impl TransferManager {
             slot,
             vmo: vmo.clone(),
             vmo_offset,
-            offset: block_offset * MMC_BLOCK_SIZE,
+            offset: block_offset as u64 * MMC_BLOCK_SIZE,
             length,
             pmt: None,
             buffers: TransferBuffers::None,
@@ -394,7 +395,7 @@ impl TransferManager {
     fn commit_transfer_task(
         &self,
         transfer: &mut Transfer,
-        block_offset: u64,
+        block_offset: u32,
         block_count: NonZeroU16,
         contig_regions: ContiguousPagesIter<'_>,
         transfer_options: TransferOptions,
@@ -719,7 +720,7 @@ mod tests {
                     .prepare_transfer(
                         manager.acquire_transfer_slot().unwrap(),
                         vmo.clone(),
-                        off * 512,
+                        off as u64 * 512,
                         off,
                         1,
                         Direction::Read,

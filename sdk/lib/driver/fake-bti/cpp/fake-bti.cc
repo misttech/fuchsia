@@ -93,7 +93,49 @@ class FakeBti final : public fake_object::FakeObject {
              offset, size);
   }
 
-  const auto& pinned_vmos() const { return pinned_vmos_; }
+  zx::result<std::vector<FakeBtiPinnedVmoInfo>> GetPinnedVmo() const {
+    std::vector<FakeBtiPinnedVmoInfo> info_list;
+    std::lock_guard guard(lock_);
+    info_list.reserve(pinned_vmos_.size());
+
+    for (const auto& vmo_info : pinned_vmos_) {
+      zx::vmo vmo_dup;
+      zx_status_t status = vmo_info.vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_dup);
+      if (status != ZX_OK) {
+        return zx::error(status);
+      }
+      info_list.emplace_back(FakeBtiPinnedVmoInfo{
+          .vmo = zx::vmo(vmo_dup.release()),
+          .size = vmo_info.size,
+          .offset = vmo_info.offset,
+      });
+    }
+    return zx::ok(std::move(info_list));
+  }
+
+  zx::result<std::vector<zx_paddr_t>> GetVmoPhysAddress(FakeBtiPinnedVmoInfo& vmo_info) const {
+    zx_info_handle_basic_t target_info;
+    if (zx_status_t status =
+            zx_object_get_info(vmo_info.vmo.get(), ZX_INFO_HANDLE_BASIC, &target_info,
+                               sizeof(target_info), nullptr, nullptr);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    std::lock_guard guard(lock_);
+    for (const auto& pinned_vmo : pinned_vmos_) {
+      if (pinned_vmo.size == vmo_info.size && pinned_vmo.offset == vmo_info.offset &&
+          pinned_vmo.koid == target_info.koid) {
+        std::vector<zx_paddr_t> paddr_list;
+        paddr_list.reserve(pinned_vmo.paddrs.size());
+        for (auto& paddr : pinned_vmo.paddrs) {
+          paddr_list.emplace_back(paddr);
+        }
+        return zx::ok(std::move(paddr_list));
+      }
+    }
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
 
  private:
   struct PinnedVmoInfo {
@@ -109,7 +151,7 @@ class FakeBti final : public fake_object::FakeObject {
     }
   };
 
-  std::mutex lock_;
+  mutable std::mutex lock_;
   std::vector<PinnedVmoInfo> pinned_vmos_ __TA_GUARDED(lock_);
   std::vector<zx_paddr_t> paddrs_;
   size_t paddrs_index_ = 0;
@@ -229,22 +271,7 @@ zx::result<std::vector<FakeBtiPinnedVmoInfo>> GetPinnedVmo(zx::unowned_bti bti) 
   }
 
   std::shared_ptr<FakeBti> bti_obj = std::static_pointer_cast<FakeBti>(result.value());
-  std::vector<FakeBtiPinnedVmoInfo> info_list;
-  info_list.reserve(bti_obj->pinned_vmos().size());
-
-  for (const auto& vmo_info : bti_obj->pinned_vmos()) {
-    zx::vmo vmo_dup;
-    zx_status_t status = vmo_info.vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_dup);
-    if (status != ZX_OK) {
-      return zx::error(status);
-    }
-    info_list.emplace_back(FakeBtiPinnedVmoInfo{
-        .vmo = zx::vmo(vmo_dup.release()),
-        .size = vmo_info.size,
-        .offset = vmo_info.offset,
-    });
-  }
-  return zx::ok(std::move(info_list));
+  return bti_obj->GetPinnedVmo();
 }
 
 zx::result<std::vector<zx_paddr_t>> GetVmoPhysAddress(zx::unowned_bti bti,
@@ -258,26 +285,7 @@ zx::result<std::vector<zx_paddr_t>> GetVmoPhysAddress(zx::unowned_bti bti,
   }
   auto* bti_obj = static_cast<FakeBti*>(obj_result.value().get());
 
-  zx_info_handle_basic_t target_info;
-  if (zx_status_t status = zx_object_get_info(vmo_info.vmo.get(), ZX_INFO_HANDLE_BASIC,
-                                              &target_info, sizeof(target_info), nullptr, nullptr);
-      status != ZX_OK) {
-    return zx::error(status);
-  }
-
-  const auto& vmos = bti_obj->pinned_vmos();
-  for (const auto& pinned_vmo : vmos) {
-    if (pinned_vmo.size == vmo_info.size && pinned_vmo.offset == vmo_info.offset &&
-        pinned_vmo.koid == target_info.koid) {
-      std::vector<zx_paddr_t> paddr_list;
-      paddr_list.reserve(pinned_vmo.paddrs.size());
-      for (auto& paddr : pinned_vmo.paddrs) {
-        paddr_list.emplace_back(paddr);
-      }
-      return zx::ok(std::move(paddr_list));
-    }
-  }
-  return zx::error(ZX_ERR_NOT_FOUND);
+  return bti_obj->GetVmoPhysAddress(vmo_info);
 }
 
 }  // namespace fake_bti

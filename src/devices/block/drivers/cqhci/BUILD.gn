@@ -25,6 +25,7 @@ fuchsia_rust_driver("driver") {
     "src/lib.rs",
     "src/partition.rs",
     "src/tests.rs",
+    "src/tests/fake_cqhci.rs",
     "src/transfer_manager.rs",
   ]
   deps = [

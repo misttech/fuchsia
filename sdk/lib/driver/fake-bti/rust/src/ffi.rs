@@ -6,6 +6,13 @@ use zx::sys::{zx_handle_t, zx_paddr_t, zx_status_t};
 
 // LINT.IfChange
 
+#[repr(C)]
+pub struct FakeBtiPinnedVmoInfo {
+    pub vmo: zx_handle_t,
+    pub size: u64,
+    pub offset: u64,
+}
+
 unsafe extern "C" {
     /// All physical addresses returned by zx_bti_pin with a fake BTI will be set to this value.
     pub static g_fake_bti_phys_addr: usize;
@@ -33,6 +40,34 @@ unsafe extern "C" {
         bti: zx_handle_t,
         paddrs: *const zx_paddr_t,
         count: usize,
+    ) -> zx_status_t;
+
+    /// Fake BTI stores all pinned VMOs for testing purposes. Tests can call this method to get
+    /// duplicates of all pinned VMO handles, as well as the pinned pages size and offset for each
+    /// VMO.  It's the caller's responsibility to close all the returned VMO handles.
+    ///
+    /// # Safety
+    ///
+    /// `out_vmo_info` must point to `out_vmo_info_count` elements.
+    pub fn fake_bti_get_pinned_vmo(
+        bti: zx_handle_t,
+        out_vmo_info: *mut FakeBtiPinnedVmoInfo,
+        out_vmo_info_count: usize,
+        out_actual: *mut usize,
+    ) -> zx_status_t;
+
+    /// Fake BTI stores all the fake physical addresses that is returned by |zx_bti_pin|.
+    /// Tests can call this method to get the fake physical addresses corresponding to |vmo_info|.
+    ///
+    /// # Safety
+    ///
+    /// `out_paddrs` must point to `out_paddrs_count` elements.
+    pub fn fake_bti_get_vmo_phys_address(
+        bti: zx_handle_t,
+        vmo_info: *const FakeBtiPinnedVmoInfo,
+        out_paddrs: *mut zx_paddr_t,
+        out_paddrs_count: usize,
+        out_actual: *mut usize,
     ) -> zx_status_t;
 }
 
