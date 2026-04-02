@@ -5,10 +5,10 @@
 //! Representation of the virtual device manifest.
 
 use crate::VirtualDevice;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 
 /// A Virtual Device Manifest contains metadata about the virtual
@@ -26,7 +26,7 @@ pub struct VirtualDeviceManifest {
     /// the virtual device specification file for that device, relative to the
     /// base of the product bundle.
     #[serde(default)]
-    pub device_paths: HashMap<String, Utf8PathBuf>,
+    pub device_paths: BTreeMap<String, Utf8PathBuf>,
 
     /// Path to the parent of the manifest file, since all virtual device file
     /// paths are relative to that file.
@@ -38,7 +38,7 @@ impl Default for VirtualDeviceManifest {
     fn default() -> Self {
         Self {
             recommended: None,
-            device_paths: HashMap::new(),
+            device_paths: BTreeMap::new(),
             parent_dir_path: Utf8PathBuf::new(),
         }
     }
@@ -73,11 +73,7 @@ impl VirtualDeviceManifest {
             let mut devices = vec![];
             devices.push(recommended_device.clone());
             devices.extend(self.device_paths.keys().into_iter().filter_map(|name| {
-                if name != recommended_device {
-                    Some(name.clone())
-                } else {
-                    None
-                }
+                if name != recommended_device { Some(name.clone()) } else { None }
             }));
             devices[1..].sort_unstable();
             devices
@@ -142,7 +138,7 @@ mod tests {
     fn test_get_device_names_empty() -> Result<()> {
         let manifest = VirtualDeviceManifest {
             recommended: None,
-            device_paths: HashMap::new(),
+            device_paths: BTreeMap::new(),
             parent_dir_path: Utf8PathBuf::from(""),
         };
         let result = manifest.device_names();
@@ -197,7 +193,7 @@ mod tests {
     fn test_get_device_none() -> Result<()> {
         let manifest = VirtualDeviceManifest {
             recommended: None,
-            device_paths: HashMap::new(),
+            device_paths: BTreeMap::new(),
             parent_dir_path: Utf8PathBuf::from(""),
         };
         let result = manifest.device("device");
@@ -383,7 +379,7 @@ mod tests {
     fn test_get_default_none() -> Result<()> {
         let manifest = VirtualDeviceManifest {
             recommended: None,
-            device_paths: HashMap::new(),
+            device_paths: BTreeMap::new(),
             parent_dir_path: Utf8PathBuf::new(),
         };
         let result = manifest.default_device();
