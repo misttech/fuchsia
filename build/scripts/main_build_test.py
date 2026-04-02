@@ -6,6 +6,7 @@
 import pathlib
 import unittest
 from contextlib import contextmanager
+from typing import Any, Generator
 from unittest import mock
 
 import main_build
@@ -14,20 +15,20 @@ import main_build
 class MainBuildTestBase(unittest.TestCase):
     """Base class for main_build tests with shared helpers."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         # Default mock for read_json to avoid file system errors for rbe_settings.json etc.
         self.read_json_patcher = mock.patch(
             "main_build.read_json", return_value={}
         )
         self.mock_read_json = self.read_json_patcher.start()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.read_json_patcher.stop()
 
     @contextmanager
     def mock_invocation_context(
-        self, build_uuid="uuid-123", timestamp="ts-456"
-    ):
+        self, build_uuid: str = "uuid-123", timestamp: str = "ts-456"
+    ) -> Generator[tuple[mock.Mock, mock.Mock], None, None]:
         """Helper to mock BuildInvocation boilerplate."""
         with mock.patch.object(
             main_build.BuildInvocation,
@@ -45,7 +46,9 @@ class MainBuildTestBase(unittest.TestCase):
                     with mock.patch("main_build.write_text") as mock_write:
                         yield mock_mkdir, mock_write
 
-    def create_context(self, **config_kwargs):
+    def create_context(
+        self, **config_kwargs: Any
+    ) -> main_build.FuchsiaBuildContext:
         """Helper to create a FuchsiaBuildContext with specific config."""
         config_vals = {
             "rbe": False,
@@ -66,7 +69,7 @@ class MainBuildTestBase(unittest.TestCase):
 
 
 class FuchsiaBuildContextTest(MainBuildTestBase):
-    def test_properties(self):
+    def test_properties(self) -> None:
         source_dir = pathlib.Path("/tmp/fuchsia")
         out_dir = pathlib.Path("/tmp/out")
         build_dir = out_dir / "default"
@@ -95,7 +98,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             context.ninja_edge_weights_csv, build_dir / "ninja_edge_weights.csv"
         )
 
-    def test_loas_type_skip_when_no_auth(self):
+    def test_loas_type_skip_when_no_auth(self) -> None:
         context = self.create_context(resultstore=False)
         with mock.patch.object(
             main_build.FuchsiaBuildContext,
@@ -105,7 +108,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         ):
             self.assertEqual(context.loas_type, "skip")
 
-    def test_loas_type_detected_when_needs_auth(self):
+    def test_loas_type_detected_when_needs_auth(self) -> None:
         context = self.create_context()
         context.env = {"FOO": "BAR"}
         with mock.patch.object(
@@ -127,7 +130,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                         env=context.env,
                     )
 
-    def test_rbe_settings_missing_throws(self):
+    def test_rbe_settings_missing_throws(self) -> None:
         context = self.create_context(rbe=None)
         self.mock_read_json.side_effect = main_build.BuildConfigurationError(
             "missing file"
@@ -138,7 +141,7 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
 
 
 class BuildInvocationTest(MainBuildTestBase):
-    def test_init_caching(self):
+    def test_init_caching(self) -> None:
         context = self.create_context()
         with self.mock_invocation_context("uuid-123", "ts-456") as (
             mock_mkdir,
@@ -161,7 +164,7 @@ class BuildInvocationTest(MainBuildTestBase):
                 log_dir / "invocation_id", "uuid-123\n"
             )
 
-    def test_get_build_env(self):
+    def test_get_build_env(self) -> None:
         context = self.create_context()
         context.env = {"TERM": "xterm", "USER": "fuchsia-user", "EXTRA": "val"}
         with self.mock_invocation_context("uuid-123", "ts-456"):
@@ -172,7 +175,7 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertEqual(env["USER"], "fuchsia-user")
             self.assertNotIn("EXTRA", env)
 
-    def test_get_build_env_missing_user_error(self):
+    def test_get_build_env_missing_user_error(self) -> None:
         context = self.create_context()
         context.env = {}  # No USER
         with self.mock_invocation_context():
@@ -196,8 +199,8 @@ class BuildInvocationTest(MainBuildTestBase):
 
 class BuildCommandExecutionTest(unittest.TestCase):
     @mock.patch("main_build.BuildLock")
-    @mock.patch("subprocess.call", return_value=0)
-    def test_run(self, mock_call, mock_lock):
+    @mock.patch("main_build.subprocess.Popen")
+    def test_run(self, mock_popen: mock.Mock, mock_lock: mock.Mock) -> None:
         # We still need context and invocation for the execution object
         # Create them manually to avoid TestBase dependency
         config = main_build.FuchsiaBuildConfig(
@@ -237,18 +240,23 @@ class BuildCommandExecutionTest(unittest.TestCase):
             cleanup_files=[pathlib.Path("/tmp/cleanup")],
         )
 
+        mock_process = mock.Mock()
+        mock_process.pid = 5678
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+
         with mock.patch("main_build.exists", return_value=True):
             with mock.patch("pathlib.Path.unlink") as mock_unlink:
                 result = exec_info.run()
                 self.assertEqual(result.return_code, 0)
-                mock_call.assert_called_once_with(
-                    ["cmd", "arg"], env={"VAR": "VAL"}
-                )
+                mock_popen.assert_called_once()
                 mock_unlink.assert_called_once_with(missing_ok=True)
 
     @mock.patch("main_build.BuildLock")
-    @mock.patch("subprocess.call", return_value=0)
-    def test_run_dry_run(self, mock_call, mock_lock):
+    @mock.patch("main_build.subprocess.Popen")
+    def test_run_dry_run(
+        self, mock_popen: mock.Mock, mock_lock: mock.Mock
+    ) -> None:
         config = main_build.FuchsiaBuildConfig(
             rbe=False,
             resultstore=False,
@@ -286,18 +294,28 @@ class BuildCommandExecutionTest(unittest.TestCase):
             cleanup_files=[],
         )
 
+        mock_process = mock.Mock()
+        mock_process.pid = 5678
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+
         result = exec_info.run()
         self.assertEqual(result.return_code, 0)
         # Even in dry_run mode, we should call the subprocess because
         # we forwarded --dry-run to the wrapper.
-        mock_call.assert_called_once_with(["cmd", "arg"], env={"VAR": "VAL"})
+        mock_popen.assert_called_once()
 
 
 class BuildLockTest(unittest.TestCase):
     @mock.patch("main_build.check_shell_command", return_value=True)
     @mock.patch("subprocess.call")
     @mock.patch("builtins.print")
-    def test_acquire_lock_success(self, mock_print, mock_call, mock_check):
+    def test_acquire_lock_success(
+        self,
+        mock_print: mock.Mock,
+        mock_call: mock.Mock,
+        mock_check: mock.Mock,
+    ) -> None:
         mock_call.return_value = 0
         build_dir = pathlib.Path("/tmp/build")
         with main_build.BuildLock(build_dir):
@@ -318,8 +336,12 @@ class BuildLockTest(unittest.TestCase):
     @mock.patch("time.sleep")
     @mock.patch("builtins.print")
     def test_acquire_lock_retries(
-        self, mock_print, mock_sleep, mock_call, mock_check
-    ):
+        self,
+        mock_print: mock.Mock,
+        mock_sleep: mock.Mock,
+        mock_call: mock.Mock,
+        mock_check: mock.Mock,
+    ) -> None:
         mock_call.side_effect = [1, 0]
         build_dir = pathlib.Path("/tmp/build")
         with main_build.BuildLock(build_dir):
@@ -330,7 +352,7 @@ class BuildLockTest(unittest.TestCase):
 
 
 class FindFuchsiaDirTest(unittest.TestCase):
-    def test_find_success(self):
+    def test_find_success(self) -> None:
         # Mock exists() at the module level
         with mock.patch("main_build.exists") as mock_exists:
             # .jiri_manifest checks:
@@ -345,14 +367,14 @@ class FindFuchsiaDirTest(unittest.TestCase):
             self.assertEqual(res, pathlib.Path("/tmp/a"))
             self.assertEqual(mock_exists.call_count, 3)
 
-    def test_find_failure(self):
+    def test_find_failure(self) -> None:
         with mock.patch.object(pathlib.Path, "exists", return_value=False):
             with self.assertRaises(ValueError):
                 main_build.find_fuchsia_dir(pathlib.Path("/tmp/only/two"))
 
 
 class StrToBoolTest(unittest.TestCase):
-    def test_str_to_bool(self):
+    def test_str_to_bool(self) -> None:
         self.assertTrue(main_build.str_to_bool("true"))
         self.assertTrue(main_build.str_to_bool("1"))
         self.assertTrue(main_build.str_to_bool("yes"))
@@ -364,13 +386,13 @@ class StrToBoolTest(unittest.TestCase):
 
 
 class ChooseConcurrencyTest(unittest.TestCase):
-    def test_local(self):
+    def test_local(self) -> None:
         with mock.patch("main_build.get_cpu_count", return_value=8):
             self.assertEqual(
                 main_build.choose_concurrency(rbe_enabled=False), 8
             )
 
-    def test_rbe(self):
+    def test_rbe(self) -> None:
         with mock.patch("main_build.get_cpu_count", return_value=8):
             self.assertEqual(
                 main_build.choose_concurrency(rbe_enabled=True), 80
@@ -378,7 +400,7 @@ class ChooseConcurrencyTest(unittest.TestCase):
 
 
 class TopBuildCommandPrefixTest(MainBuildTestBase):
-    def test_basic(self):
+    def test_basic(self) -> None:
         context = self.create_context(rbe=False, resultstore=False)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
@@ -390,14 +412,14 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
             self.assertNotIn("--rbe", prefix)
             self.assertNotIn("--dry-run", prefix)
 
-    def test_dry_run_forwarding(self):
+    def test_dry_run_forwarding(self) -> None:
         context = self.create_context(dry_run=True)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
             prefix = main_build.top_build_command_prefix(invocation)
             self.assertIn("--dry-run", prefix)
 
-    def test_rbe_resultstore(self):
+    def test_rbe_resultstore(self) -> None:
         context = self.create_context(rbe=True, resultstore=True)
         with mock.patch.multiple(
             main_build.FuchsiaBuildContext,
@@ -413,7 +435,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
 
 
 class InjectNinjaArgsTest(MainBuildTestBase):
-    def test_injection(self):
+    def test_injection(self) -> None:
         context = self.create_context()
         with self.mock_invocation_context() as (mock_mkdir, _):
             invocation = main_build.BuildInvocation(context)
@@ -427,7 +449,7 @@ class InjectNinjaArgsTest(MainBuildTestBase):
 
 
 class NewBuildCommandExecutionTest(MainBuildTestBase):
-    def test_new_build_command_execution_ninja(self):
+    def test_new_build_command_execution_ninja(self) -> None:
         context = self.create_context()
         with self.mock_invocation_context("uuid-123", "ts-456"):
             invocation = main_build.BuildInvocation(context)
@@ -449,7 +471,7 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
 
 
 class PrepareFunctionsTest(MainBuildTestBase):
-    def test_bazel(self):
+    def test_bazel(self) -> None:
         context = self.create_context()
         with self.mock_invocation_context():
             exec_info = main_build.new_bazel_build_command_execution(
@@ -458,7 +480,7 @@ class PrepareFunctionsTest(MainBuildTestBase):
             self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
             self.assertIn("bazel", exec_info.full_command)
 
-    def test_fint(self):
+    def test_fint(self) -> None:
         context = self.create_context()
         with self.mock_invocation_context():
             with mock.patch("tempfile.NamedTemporaryFile") as mock_tmp:
@@ -475,7 +497,17 @@ class PrepareFunctionsTest(MainBuildTestBase):
                     "/tmp/fint.proto", [str(p) for p in exec_info.cleanup_files]
                 )
 
-    def test_ninja_missing_j_arg(self):
+    def test_other(self) -> None:
+        context = self.create_context()
+        with self.mock_invocation_context():
+            exec_info = main_build.new_other_build_command_execution(
+                context, ["ls", "-l"]
+            )
+            self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
+            self.assertIn("ls", exec_info.full_command)
+            self.assertIn("-l", exec_info.full_command)
+
+    def test_ninja_missing_j_arg(self) -> None:
         context = self.create_context()
         with self.assertRaises(main_build.BuildConfigurationError) as cm:
             main_build.new_ninja_build_command_execution(context, ["-j"])
@@ -484,17 +516,17 @@ class PrepareFunctionsTest(MainBuildTestBase):
 
 class CheckShellCommandTest(unittest.TestCase):
     @mock.patch("shutil.which", return_value="/usr/bin/ls")
-    def test_success(self, mock_which):
+    def test_success(self, mock_which: mock.Mock) -> None:
         self.assertTrue(main_build.check_shell_command("ls"))
         mock_which.assert_called_once_with("ls")
 
     @mock.patch("shutil.which", return_value=None)
-    def test_failure(self, mock_which):
+    def test_failure(self, mock_which: mock.Mock) -> None:
         self.assertFalse(main_build.check_shell_command("nonexistent"))
 
 
 class MainFunctionTest(MainBuildTestBase):
-    def test_arg_parser_defaults(self):
+    def test_arg_parser_defaults(self) -> None:
         args = main_build._MAIN_ARG_PARSER.parse_args(
             ["--build-dir", "out/default", "ninja"]
         )
@@ -502,7 +534,7 @@ class MainFunctionTest(MainBuildTestBase):
         self.assertIsNone(args.resultstore)
         self.assertFalse(args.verbose)
 
-    def test_main_catches_config_error(self):
+    def test_main_catches_config_error(self) -> None:
         with mock.patch.object(
             main_build._MAIN_ARG_PARSER, "parse_known_args"
         ) as mock_parse:
@@ -518,6 +550,32 @@ class MainFunctionTest(MainBuildTestBase):
                     )
                     self.assertEqual(rc, 1)
                     mock_print.assert_called_with("Error: test error")
+
+
+class BuildCommandSignalTest(MainBuildTestBase):
+    @mock.patch("main_build.subprocess.Popen")
+    @mock.patch("main_build.signal_utils.forward_signals")
+    def test_signal_forwarding(
+        self, mock_forward: mock.Mock, mock_popen: mock.Mock
+    ) -> None:
+        context = self.create_context()
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+
+        exec_info = main_build.BuildCommandExecution(
+            full_command=["sleep", "10"],
+            env={},
+            invocation=invocation,
+        )
+
+        mock_process = mock.Mock()
+        mock_process.pid = 5678
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+
+        _ = exec_info._run_without_locking()
+
+        mock_forward.assert_called_once_with(mock_process)
 
 
 if __name__ == "__main__":

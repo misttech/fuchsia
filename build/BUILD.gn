@@ -28,6 +28,7 @@ group("tests") {
     "python:tests",
     "rbe:tests",
     "rust:tests",
+    "scripts:tests",
     "sdk:tests",
     "tools:tests",
     "tracer:tests",

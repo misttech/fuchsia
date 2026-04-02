@@ -33,6 +33,8 @@ import time
 import uuid
 from typing import Any, Iterable, Sequence
 
+import signal_utils
+
 _SCRIPT = pathlib.Path(__file__)
 
 
@@ -88,17 +90,19 @@ def is_executable(path: pathlib.Path) -> bool:
     return path.exists() and os.access(path, os.X_OK)
 
 
-def write_text(path: pathlib.Path, text: str):
+def write_text(path: pathlib.Path, text: str) -> None:
     """Writes text to a file."""
     path.write_text(text)
 
 
-def mkdir(path: pathlib.Path, parents: bool = True, exist_ok: bool = True):
+def mkdir(
+    path: pathlib.Path, parents: bool = True, exist_ok: bool = True
+) -> None:
     """Creates a directory."""
     path.mkdir(parents=parents, exist_ok=exist_ok)
 
 
-def read_json(path: pathlib.Path) -> dict[str, Any]:
+def read_json(path: pathlib.Path) -> Any:
     """Reads and parses a JSON file, raising BuildConfigurationError on failure."""
     if not exists(path):
         raise BuildConfigurationError(
@@ -125,7 +129,7 @@ def choose_concurrency(rbe_enabled: bool) -> int:
     return cpus
 
 
-def ensure_file_descriptor_limit(limit: int):
+def ensure_file_descriptor_limit(limit: int) -> None:
     """Ensures the soft limit for file descriptors is at least 'limit'."""
     try:
         import resource
@@ -163,7 +167,7 @@ class BuildLock:
         # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_lock)
         self._has_shlock = check_shell_command("shlock")
 
-    def __enter__(self):
+    def __enter__(self) -> "BuildLock":
         if self._has_shlock:
             while (
                 subprocess.call(
@@ -184,7 +188,7 @@ class BuildLock:
             print("Lock acquired, proceeding with build.")
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if self._has_shlock:
             self.build_lock_file.unlink(missing_ok=True)
 
@@ -273,9 +277,12 @@ class FuchsiaBuildContext(object):
             yield self.build_dir / cfg["path"]
 
     @functools.cached_property
-    def _rbe_config_data(self) -> dict[str, Any]:
+    def _rbe_config_data(self) -> Iterable[dict[str, Any]]:
         """Read and parse RBE config data."""
-        return read_json(self.rbe_config_json)
+        data = read_json(self.rbe_config_json)
+        if isinstance(data, list):
+            return data
+        return []
 
     @functools.cached_property
     def _rbe_settings(self) -> dict[str, Any]:
@@ -481,7 +488,17 @@ class BuildCommandExecution(object):
         # will skip the actual build execution. This allows for high-fidelity
         # verification of the entire wrapper orchestration stack.
 
-        rc = subprocess.call(self.full_command, env=self.env)
+        # Run the command in a new process group to allow sending signals to it
+        # and its descendants.
+        process = subprocess.Popen(
+            self.full_command, env=self.env, preexec_fn=os.setpgrp
+        )
+
+        # Forward signals like SIGINT, SIGHUP, SIGTERM to the subprocess group
+        # while it is running.
+        with signal_utils.forward_signals(process):
+            rc = process.wait()
+
         return BuildResult(return_code=rc)
 
     def run(self) -> BuildResult:
@@ -622,8 +639,8 @@ def new_ninja_build_command_execution(
     - Adds '--edge_weights_list' to track build performance.
     """
     # Ninja argument massage logic
-    concurrency = None
-    load = None
+    concurrency: str | None = None
+    load: str | None = None
     remaining = []
 
     # If the first argument looks like a ninja path, we'll use it.
@@ -660,12 +677,13 @@ def new_ninja_build_command_execution(
             remaining.append(opt)
 
     if load is None and sys.platform == "darwin":
-        load = get_cpu_count() * 20
+        load = str(get_cpu_count() * 20)
 
     if concurrency is None:
-        concurrency = context.concurrency
+        concurrency = str(context.concurrency)
         # Check ulimit for file descriptors
-        ensure_file_descriptor_limit(int(concurrency) * 2)
+        if concurrency:
+            ensure_file_descriptor_limit(int(concurrency) * 2)
 
     ninja_args_list = ["-j", str(concurrency)]
     if load:
@@ -751,6 +769,25 @@ job_count: {concurrency}
     return exec_info
 
 
+def new_other_build_command_execution(
+    context: FuchsiaBuildContext,
+    other_args: list[str],
+) -> BuildCommandExecution:
+    """Construct an arbitrary build command.
+
+    Args:
+        context: FuchsiaBuildContext.
+        other_args: list of arguments for the command.
+    """
+    if not other_args:
+        raise BuildConfigurationError(
+            "other command requires at least one argument."
+        )
+
+    invocation = BuildInvocation(context)
+    return new_build_command_execution(invocation, "other", other_args)
+
+
 def _main_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=pathlib.Path, required=True)
@@ -790,6 +827,11 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         help="Execute a fint build.",
         description="Expects [fint_bin, build, -static=...] to be passed after 'fint'.",
     ).set_defaults(func=new_fint_build_command_execution)
+    subparsers.add_parser(
+        "other",
+        help="Execute an arbitrary command.",
+        description="Expects arbitrary arguments to be passed after 'other'.",
+    ).set_defaults(func=new_other_build_command_execution)
     return parser
 
 
@@ -799,15 +841,20 @@ _MAIN_ARG_PARSER = _main_arg_parser()
 def main(argv: list[str]) -> int:
     args, unknown = _MAIN_ARG_PARSER.parse_known_args(argv)
 
-    context = FuchsiaBuildContext.from_args(args, os.environ)
+    context = FuchsiaBuildContext.from_args(args, dict(os.environ))
 
     try:
         exec_info = args.func(context, unknown)
+        return exec_info.run().return_code
     except BuildConfigurationError as e:
         print(f"Error: {e}")
         return 1
-
-    return exec_info.run().return_code
+    except KeyboardInterrupt:
+        # forward_signals() will intercept Ctrl-C so this is not
+        # expected to be reached, but is here just to cover any paths
+        # that don't use forward_signals(), and avoid a stacktrace.
+        print("received KeyboardInterrupt, exiting")
+        return 130
 
 
 if __name__ == "__main__":

@@ -164,6 +164,7 @@ host_script_test_data("fx_bash_tests") {
         "//build/api/client",
         "//build/regenerator",
         "//build/scripts/main_build.py",
+        "//build/scripts/signal_utils.py",
         "//build/force_clean/force_clean_if_needed.py",
         "//build/scripts/top_build_wrap.sh",
         "//build/profile/profile_wrap.sh",
