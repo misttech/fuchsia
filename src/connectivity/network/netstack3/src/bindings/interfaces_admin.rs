@@ -61,13 +61,13 @@ use netstack3_core::ip::{
 use thiserror::Error;
 use zx::{self as zx, HandleBased, Rights};
 
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_resources as fnet_resources, fuchsia_async as fasync,
-};
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fuchsia_async as fasync;
 
 use crate::bindings::devices::{
     self, BlackholeDeviceInfo, DynamicCommonInfo, EthernetInfo, LoopbackInfo,
@@ -1641,9 +1641,16 @@ async fn run_address_state_provider(
             }
             Err(NotFoundError) => {
                 // We *must* have raced here with a core-initiated removal.
-                // Wait to get the real reason.
-                removal_reason =
-                    Some(stop_receiver.await.expect("address disappeared without removal reason"));
+                //
+                // If the address state provider was cancelled with a reason
+                // (which may have come from core or bindings) then we use that
+                // one for the removal event. Otherwise we wait for the reason
+                // from core.
+                removal_reason = Some(if stop_receiver.is_terminated() {
+                    removal_reason.expect("missing a removal reason")
+                } else {
+                    stop_receiver.await.expect("address disappeared without removal reason")
+                });
             }
         }
     }

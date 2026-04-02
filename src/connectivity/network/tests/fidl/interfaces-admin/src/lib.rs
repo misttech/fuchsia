@@ -4279,7 +4279,7 @@ async fn dad_failure_race_with_user_removal(name: &str) {
                         *ns.target_address() == ipv6_addr
                     },
                 );
-            futures::future::ready(if is_dad { Some(()) } else { None })
+            futures::future::ready(is_dad.then_some(()))
         })
         .fuse();
 
@@ -4332,5 +4332,92 @@ async fn dad_failure_race_with_user_removal(name: &str) {
             finterfaces_admin::AddressRemovalReason::DadFailed
                 | finterfaces_admin::AddressRemovalReason::UserRemoved
         );
+    }
+}
+
+// Regression test for https://fxbug.dev/498241018. Racing a user address
+// removal in NS3 using the interface `Control` after ASP detach with a
+// network-initiated address removal caused a panic.
+#[netstack_test]
+async fn dad_failure_race_with_user_removal_detached(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    // We run this test only against NS3 because it's the stack that we're
+    // keeping from regressing.
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    // Create a new network, new iface, and new fake-ep for each run to
+    // prevent frame contamination from each loop.
+    let network = sandbox.create_network(name).await.expect("create network");
+    let iface = realm
+        .join_network_with_if_config(
+            &network,
+            "client",
+            netemul::InterfaceConfig { ipv6_dad_transmits: Some(u16::MAX), ..Default::default() },
+        )
+        .await
+        .expect("join network");
+    let fake_ep = network.create_fake_endpoint().expect("create fake endpoint");
+
+    let ipv6_addr = netstack_testing_common::constants::ipv6::LINK_LOCAL_ADDR;
+
+    // Wait for DAD NS.
+    let mut stream = fake_ep
+        .frame_stream()
+        .map(|r| r.expect("frame error").0)
+        .filter_map(|data| {
+            let is_dad =
+                packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame::<
+                    net_types::ip::Ipv6,
+                    _,
+                    packet_formats::icmp::ndp::NeighborSolicitation,
+                    _,
+                >(
+                    &data, packet_formats::ethernet::EthernetFrameLengthCheck::NoCheck, |_| {}
+                )
+                .map_or(
+                    false,
+                    |(_src_mac, _dst_mac, _src_ip, _dst_ip, _ttl, ns, _code)| {
+                        *ns.target_address() == ipv6_addr
+                    },
+                );
+            futures::future::ready(is_dad.then_some(()))
+        })
+        .fuse();
+
+    // Loop this a number of times so we exercise the racy condition.
+    for _ in 0..30 {
+        let (asp, asp_server_end) =
+            fidl::endpoints::create_proxy::<finterfaces_admin::AddressStateProviderMarker>();
+        asp.detach().expect("calling detach ASP");
+        drop(asp);
+
+        iface
+            .control()
+            .add_address(
+                &fnet::Subnet { addr: IpAddr::V6(ipv6_addr).into_ext(), prefix_len: 64 },
+                &finterfaces_admin::AddressParameters {
+                    perform_dad: Some(true),
+                    ..Default::default()
+                },
+                asp_server_end,
+            )
+            .expect("add address");
+
+        stream.next().await.expect("wait for DAD NS");
+
+        // Race a reply that causes DAD to fail with a remove request.
+        netstack_testing_common::ndp::fail_dad_with_na(&fake_ep).await;
+        let removed = iface
+            .control()
+            .remove_address(&fnet::Subnet {
+                addr: IpAddr::V6(ipv6_addr).into_ext(),
+                prefix_len: 64,
+            })
+            .await
+            .expect("remove address");
+
+        // Don't check the inner value because it differs depending on which arm
+        // of the race wins.
+        assert_matches!(removed, Ok(_));
     }
 }
