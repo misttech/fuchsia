@@ -14,6 +14,7 @@ use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
 use fidl_next_fuchsia_driver_framework::{Driver as NextDriver, DriverStartArgs};
+use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use std::marker::PhantomData;
 use std::sync::{Arc, mpsc};
@@ -184,7 +185,8 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
         if self.started {
             // Sometimes the channel closes earlier than we get the stop result.
             let _stop_res = self.client.stop().await;
-            self.client_exit_rx.take().expect("exit rx").recv().unwrap();
+            let client_exit_rx = self.client_exit_rx.take().expect("exit rx");
+            fasync::unblock(move || client_exit_rx.recv().unwrap()).await;
         }
     }
 }

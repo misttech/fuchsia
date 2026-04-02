@@ -414,18 +414,28 @@ async fn test_shutdown_with_active_dcmd() {
     blocker.block(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT);
 
     let flush0_task = fixture.scope.spawn(async move {
-        block_client0.flush().await.expect_err("flush should fail");
-    });
-    let flush1_task = fixture.scope.spawn(async move {
-        block_client1.flush().await.expect_err("flush should fail");
+        // The first flush might or might not succeed.
+        let _ = block_client0.flush().await;
     });
 
     // Wait for the DCMD to start.
     let unblock = blocker.next().await;
 
-    started_driver.stop_driver().await;
+    // Issue another flush which should fail.
+    let flush1_task = fixture.scope.spawn(async move {
+        block_client1.flush().await.expect_err("flush should fail");
+    });
 
-    drop(unblock);
+    // Make sure no future DCMDs block.
+    blocker.block(0);
+
+    // Unblock the DCMD in 10ms.
+    let _unblock_task = fixture.scope.spawn(async move {
+        fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+        drop(unblock);
+    });
+
+    started_driver.stop_driver().await;
 
     futures::join!(flush0_task, flush1_task);
 }

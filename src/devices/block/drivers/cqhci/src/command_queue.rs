@@ -265,43 +265,13 @@ impl PendingTasks {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct State {
-    /// Whether the CQE is enabled.  This is a prerequisite for submitting any task to hardware.
-    /// Note that this state can change transitively during an async task.  The caller should ALWAYS
-    /// check `blocked` first (see [`Self::should_reject_tasks`]).
-    enabled: bool,
-    /// Whether the driver is currently blocked.  New tasks must block until this is false, and then
-    /// they must re-check `enabled`.
-    blocked: bool,
-    /// Whether the CQE is running recovery due to a hardware error.
-    running_recovery: bool,
-    /// Whether the CQE is shutting down.  All in-flight tasks will be canceled and no new requests
-    /// shall be submitted.
-    shutting_down: bool,
-}
+enum State {
+    /// CQE is enabled.  This is a prerequisite for submitting any task to hardware.
+    Enabled,
 
-impl State {
-    /// If `true`, then new tasks should be rejected.
-    ///
-    /// Note that returning true doesn't mean that the task can be submitted yet.  The caller must
-    /// also check [`Self::should_wait_to_submit_tasks`].
-    fn should_reject_tasks(&self) -> bool {
-        self.shutting_down || (!self.blocked && !self.running_recovery && !self.enabled)
-    }
-
-    /// If `true`, then the caller should wait before attempting to submit the new task.
-    fn should_wait_to_submit_tasks(&self) -> bool {
-        self.running_recovery || self.blocked
-    }
-
-    /// If `true`, then any ongoing async task should immediately fail.
-    ///
-    /// This is distinct from [`Self::should_reject_tasks`] in that it does not check whether the
-    /// queue is blocked (because usually this is called within an async task which is itself
-    /// blocking the queue).
-    fn should_fail_tasks(&self) -> bool {
-        self.shutting_down || self.running_recovery || !self.enabled
-    }
+    /// CQE is disabled, a.k.a. shut-down.  This is not the same as when the command queuing engine
+    /// is disabled whilst processing RPMB requests (in that case, the state will be `Enabled`).
+    Disabled,
 }
 
 /// AsyncTask encapsulates asynchronous tasks that need to run with exclusive access
@@ -349,6 +319,14 @@ fn into_async_task<Fut: Future<Output = Result<(), zx::Status>> + Send + 'static
 
 struct Inner {
     state: State,
+    /// Whether recovery is required due to a hardware error.
+    needs_recovery: bool,
+    /// Whether the CQE is shutting down.  All in-flight tasks will be canceled and no new requests
+    /// shall be submitted.
+    shutting_down: bool,
+    /// Whether requests are blocked (typically because an async task is currently running).
+    blocked: bool,
+    /// The queue of asynchronous tasks.
     async_task_queue: VecDeque<Box<dyn AsyncTask>>,
     /// An event which is used to wake up various tasks when the queue state changes.
     /// Specifically, the event is fired in all of the following scenarios (and possibly more):
@@ -375,6 +353,19 @@ struct Inner {
 }
 
 impl Inner {
+    /// If `true`, then new tasks should be rejected.
+    ///
+    /// Note that returning true doesn't mean that the task can be submitted yet.  The caller must
+    /// also check [`Self::should_wait_to_submit_tasks`].
+    fn should_reject_tasks(&self) -> bool {
+        self.shutting_down || self.state == State::Disabled
+    }
+
+    /// If `true`, then the caller should wait before attempting to submit the new task.
+    fn should_wait_to_submit_tasks(&self) -> bool {
+        !self.async_task_queue.is_empty() || self.state != State::Enabled || self.blocked
+    }
+
     fn snapshot_regs(&self, capabilities: &CqhciCqCapsRegister) -> CqhciRegisterSnapshot {
         let cqhci_mmio = &self.cqhci_mmio;
         CqhciRegisterSnapshot {
@@ -459,7 +450,7 @@ impl Inner {
 
     /// Submits a transfer to hardware.
     fn submit_transfer(&mut self, tdl_slot: u8, task: PendingTask) {
-        debug_assert!(self.state.enabled);
+        debug_assert_eq!(self.state, State::Enabled);
         trace!("Submitting transfer {tdl_slot}");
         // Execute a write barrier, so the transfer descriptor's contents are visible *before* we
         // ring the doorbell.
@@ -504,7 +495,7 @@ impl Inner {
 
     /// Submits an async task to the command queue.
     fn submit_async_task(&mut self, task: impl AsyncTask) {
-        if self.state.should_reject_tasks() {
+        if self.should_reject_tasks() {
             // Tasks need to handle drop to return errors as needed.
             return;
         }
@@ -640,12 +631,8 @@ struct CommandQueueExcl {
 }
 
 impl CommandQueueExcl {
-    fn new(queue: Arc<CommandQueue>, inner: &mut Inner, block_transfers: bool) -> Self {
-        if block_transfers {
-            debug!("queue blocked");
-        }
-        inner.state.blocked = block_transfers;
-        inner.event.notify(usize::MAX);
+    fn new(queue: Arc<CommandQueue>, inner: &mut Inner) -> Self {
+        inner.blocked = true;
         Self { queue }
     }
 }
@@ -661,17 +648,13 @@ impl std::ops::Deref for CommandQueueExcl {
 impl Drop for CommandQueueExcl {
     fn drop(&mut self) {
         let mut inner = self.inner.lock();
-        if inner.state.blocked {
-            debug!("queue unblocked");
-        }
-        // It's OK to always set blocked to false, since nothing else other than [`Self::new`] sets
-        // blocked.
-        inner.state.blocked = false;
+        inner.blocked = false;
         inner.event.notify(usize::MAX);
     }
 }
 
 impl CommandQueueExcl {
+    /// Enables the hardware.  NOTE: This does *not* change `state`.
     async fn enable(&mut self) -> Result<(), zx::Status> {
         self.host.enable().await?;
         {
@@ -731,13 +714,13 @@ impl CommandQueueExcl {
             cqcfg.insert(CqhciCqCfgRegister::CQE_ENABLE);
             inner.cqhci_mmio.store32(CQHCI_CQ_CFG_OFFSET, cqcfg.bits());
             inner.unhalt();
-            inner.state.enabled = true;
             inner.event.notify(usize::MAX);
         }
         debug!("CQHCI enabled");
         Ok(())
     }
 
+    /// Disables the hardware.  NOTE: This does *not* change `state`.
     async fn disable(&mut self) {
         self.halt().await;
         {
@@ -750,7 +733,6 @@ impl CommandQueueExcl {
             // Issue a write barrier so the CQE is disabled before we issue the commands to disable
             // command queueing mode in the underlying driver.
             inner.cqhci_mmio.write_barrier();
-            inner.state.enabled = false;
             inner.event.notify(usize::MAX);
         }
         let _ = self.host.disable().await;
@@ -800,9 +782,6 @@ impl CommandQueueExcl {
         loop {
             let listener = {
                 let mut inner = self.inner.lock();
-                if inner.state.should_fail_tasks() {
-                    return Err(zx::Status::UNAVAILABLE);
-                }
 
                 // The queue must be empty for CMD6 (see JESD84-B51B 6.6.39.1).
                 assert!(command != MmcCommand::Switch || inner.pending_tasks.is_empty());
@@ -1036,26 +1015,31 @@ impl CommandQueueExcl {
         self.disable().await;
         {
             let mut completed_tasks = CompletedTasks::default();
-            self.inner.lock().take_complete(u32::MAX, zx::Status::IO, &mut completed_tasks);
+            let mut inner = self.inner.lock();
+            inner.take_complete(u32::MAX, zx::Status::IO, &mut completed_tasks);
             // SAFETY: CQE is disabled.
             unsafe {
                 completed_tasks.complete();
             }
+            // Reset `needs_recovery` now in case the interrupt handler finds another error.
+            inner.needs_recovery = false;
         }
         let res = match self.enable().await {
             Ok(_) => {
                 info!("Recovery complete");
                 Ok(())
             }
-            Err(err) => {
-                error!(err:?; "Failed to re-enable CQE!");
+            Err(error) => {
+                error!(error:?; "Failed to re-enable CQE!");
                 Err(zx::Status::BAD_STATE)
             }
         };
         {
             // Whether we succeeded or not, notify other tasks that we're done.
             let mut inner = self.inner.lock();
-            inner.state.running_recovery = false;
+            if res.is_err() {
+                inner.state = State::Disabled;
+            }
             inner.event.notify(usize::MAX);
         }
         res
@@ -1154,12 +1138,10 @@ impl CommandQueue {
 
         let this = Arc::new(Self {
             inner: Mutex::new(Inner {
-                state: State {
-                    enabled: false,
-                    blocked: false,
-                    running_recovery: false,
-                    shutting_down: false,
-                },
+                state: State::Disabled,
+                needs_recovery: false,
+                shutting_down: false,
+                blocked: false,
                 async_task_queue: VecDeque::new(),
                 event: Event::new(),
                 active_partition: None,
@@ -1217,13 +1199,18 @@ impl CommandQueue {
         let mut this_excl = {
             let mut inner = this.inner.lock();
             inner.irq_thread = Some(irq_thread);
-            CommandQueueExcl::new(this.clone(), &mut inner, true)
+            CommandQueueExcl::new(this.clone(), &mut inner)
         };
         this_excl.initialize().await.context("Failed to initialize CQE")?;
         let this_clone = this.clone();
-        this.inner.lock().async_task_loop = Some(fasync::Task::spawn(async move {
-            this_clone.async_task_loop().await;
-        }));
+        {
+            let mut inner = this.inner.lock();
+            inner.async_task_loop = Some(fasync::Task::spawn(async move {
+                this_clone.async_task_loop().await;
+            }));
+            inner.state = State::Enabled;
+            inner.event.notify(usize::MAX);
+        }
         Ok(this)
     }
 
@@ -1233,7 +1220,7 @@ impl CommandQueue {
     pub async fn shutdown(self: &Arc<Self>) {
         let async_task_loop = {
             let mut inner = self.inner.lock();
-            inner.state.shutting_down = true;
+            inner.shutting_down = true;
             inner.event.notify(usize::MAX);
             inner.async_task_loop.take()
         };
@@ -1249,7 +1236,7 @@ impl CommandQueue {
     /// references to the CommandQueue.
     pub fn unpin_buffers(self: Arc<Self>) {
         assert!(
-            !self.inner.lock().state.enabled,
+            self.inner.lock().state == State::Disabled,
             "CommandQueue must be shutdown before unpinning buffers"
         );
         if let Ok(manager) = Arc::try_unwrap(self)
@@ -1300,7 +1287,7 @@ impl CommandQueue {
             Some(s) => s,
             None => {
                 let inner = self.inner.lock();
-                if inner.state.should_reject_tasks() {
+                if inner.should_reject_tasks() {
                     return SubmitResult::Done(zx::Status::UNAVAILABLE);
                 } else {
                     return SubmitResult::ShouldWait(inner.event.listen());
@@ -1328,9 +1315,9 @@ impl CommandQueue {
         };
 
         let mut inner = self.inner.lock();
-        if inner.state.should_reject_tasks() {
+        if inner.should_reject_tasks() {
             return SubmitResult::Done(zx::Status::UNAVAILABLE);
-        } else if inner.state.should_wait_to_submit_tasks() {
+        } else if inner.should_wait_to_submit_tasks() {
             return SubmitResult::ShouldWait(inner.event.listen());
         }
 
@@ -1521,7 +1508,7 @@ impl CommandQueue {
             let listener = {
                 let mut inner = self.inner.lock();
                 let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-                if inner.state.should_reject_tasks() {
+                if inner.should_reject_tasks() {
                     complete_request(receiver.upgrade(), request_id, zx::Status::UNAVAILABLE);
                     break;
                 }
@@ -1573,22 +1560,20 @@ impl CommandQueue {
             let listener = {
                 let mut inner = self.inner.lock();
 
-                if inner.state.shutting_down {
+                if inner.shutting_down {
                     return None;
                 }
 
-                if inner.state.running_recovery {
+                if inner.needs_recovery {
                     // NB: We don't need to block transfers since we're about to run recovery and
                     // cancel all in-flight transfers.
                     return Some((
                         Box::new(RecoveryTask),
-                        excl.unwrap_or_else(|| {
-                            CommandQueueExcl::new(self.clone(), &mut inner, false)
-                        }),
+                        excl.unwrap_or_else(|| CommandQueueExcl::new(self.clone(), &mut inner)),
                     ));
                 }
 
-                if inner.state.should_reject_tasks() {
+                if inner.should_reject_tasks() {
                     return None;
                 }
 
@@ -1596,9 +1581,7 @@ impl CommandQueue {
                     excl = None;
                 } else {
                     // Block the queue.
-                    excl.get_or_insert_with(|| {
-                        CommandQueueExcl::new(self.clone(), &mut inner, true)
-                    });
+                    excl.get_or_insert_with(|| CommandQueueExcl::new(self.clone(), &mut inner));
 
                     // Return if there are no pending tasks.
                     if inner.pending_tasks.is_empty() {
@@ -1623,7 +1606,10 @@ impl CommandQueue {
 
         let _ = CommandQueueExcl { queue: self.clone() }.shutdown().await;
 
-        self.inner.lock().async_task_queue.clear();
+        let mut inner = self.inner.lock();
+        inner.async_task_queue.clear();
+        inner.state = State::Disabled;
+
         debug!("async_task_loop completed");
     }
 
@@ -1673,11 +1659,11 @@ impl CommandQueue {
                     inner.take_complete(mask, zx::Status::IO, &mut completed_tasks);
 
                     // Per JESD84-B51A B.2.8, we need to run recovery on error.
-                    if inner.state.running_recovery {
+                    if inner.needs_recovery {
                         info!("Not running recovery (shutting down or recovery already running)");
                     } else {
                         warn!("CQE needs recovery!");
-                        inner.state.running_recovery = true;
+                        inner.needs_recovery = true;
                         inner.event.notify(usize::MAX);
                     }
                 }
