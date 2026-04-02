@@ -31,7 +31,6 @@
 #include "src/media/audio/lib/clock/real_clock.h"
 #include "src/media/audio/lib/timeline/timeline_rate.h"
 #include "src/media/audio/services/device_registry/basic_types.h"
-#include "src/media/audio/services/device_registry/common.h"
 #include "src/media/audio/services/device_registry/device_presence_watcher.h"
 #include "src/media/audio/services/device_registry/format_utils.h"
 #include "src/media/audio/services/device_registry/logging.h"

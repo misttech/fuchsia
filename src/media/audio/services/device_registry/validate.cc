@@ -40,7 +40,6 @@ size_t CountChannelMatches(const std::vector<fha::ChannelSet>& channel_sets,
                        });
 }
 
-
 }  // namespace
 
 bool ClientIsValidForDeviceType(const fad::DeviceType& device_type,

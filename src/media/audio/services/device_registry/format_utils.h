@@ -11,6 +11,8 @@
 
 #include <optional>
 
+#include "src/media/audio/services/device_registry/basic_types.h"
+
 namespace media_audio {
 
 // Maps fuchsia_audio::SampleType to driver-level PCM format details.
@@ -42,6 +44,23 @@ size_t CountFormatMatches(const std::vector<fuchsia_hardware_audio::SampleFormat
                           fuchsia_hardware_audio::SampleFormat format_to_match);
 
 size_t CountUcharMatches(const std::vector<uint8_t>& uchars, size_t uchar_to_match);
+
+bool DaiFormatIsSupported(
+    ElementId element_id,
+    const std::vector<fuchsia_audio_device::ElementDaiFormatSet>& element_dai_format_sets,
+    const fuchsia_hardware_audio::DaiFormat& format);
+
+bool RingBufferFormatIsSupported(
+    ElementId element_id,
+    const std::vector<fuchsia_audio_device::ElementRingBufferFormatSet>&
+        element_ring_buffer_format_sets,
+    const fuchsia_hardware_audio::Format2& format);
+
+bool PacketStreamFormatIsSupported(
+    ElementId element_id,
+    const std::vector<fuchsia_audio_device::ElementPacketStreamFormatSet>&
+        element_packet_stream_format_sets,
+    const fuchsia_hardware_audio::Format2& format);
 
 }  // namespace media_audio
 

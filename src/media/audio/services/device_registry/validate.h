@@ -36,7 +36,6 @@ constexpr zx_rights_t kRequiredOutgoingVmoRights = kRequiredIncomingVmoRights | 
 bool ClientIsValidForDeviceType(const fuchsia_audio_device::DeviceType& device_type,
                                 const fuchsia_audio_device::DriverClient& driver_client);
 
-
 bool ValidatePlugState(const fuchsia_hardware_audio::PlugState& plug_state,
                        std::optional<fuchsia_hardware_audio::PlugDetectCapabilities>
                            plug_detect_capabilities = std::nullopt);

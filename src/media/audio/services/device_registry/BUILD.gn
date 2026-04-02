@@ -154,8 +154,6 @@ source_set("device_registry_lib") {
   sources = [
     "audio_device_registry.cc",
     "audio_device_registry.h",
-    "common.cc",
-    "common.h",
     "control_creator_server.cc",
     "control_creator_server.h",
     "control_notify.h",
