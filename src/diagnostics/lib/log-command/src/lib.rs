@@ -462,6 +462,32 @@ impl LogError {
 
         Self::FuzzyMatchTooManyMatches(result)
     }
+
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            LogError::IOError(error) => error.kind() == std::io::ErrorKind::BrokenPipe,
+            LogError::FormatterError(formatter_error) => formatter_error.is_broken_pipe(),
+            LogError::UnknownError(err) => {
+                if let Some(writer_err) = err.downcast_ref::<writer::Error>() {
+                    writer_err.is_broken_pipe()
+                } else if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
+                    io_err.kind() == std::io::ErrorKind::BrokenPipe
+                } else {
+                    false
+                }
+            }
+
+            LogError::NoBootTimestamp
+            | LogError::DumpWithSinceNow
+            | LogError::NoSymbolizerConfig
+            | LogError::FfxError(_)
+            | LogError::Utf8Error(_)
+            | LogError::FidlError(_)
+            | LogError::DeprecatedFlag { .. }
+            | LogError::FuzzyMatchTooManyMatches(_)
+            | LogError::SearchParameterNotFound(_) => false,
+        }
+    }
 }
 
 /// Trait used to get available instances given a moniker query.
@@ -1029,5 +1055,22 @@ ffx log --force-set-severity.
             res.date_naive(),
             parse_date_string(date_string, Local::now(), Dialect::Us).unwrap().date_naive()
         );
+    }
+
+    #[test]
+    fn test_log_error_is_broken_pipe() {
+        assert!(
+            LogError::IOError(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"))
+                .is_broken_pipe()
+        );
+        assert!(
+            LogError::UnknownError(anyhow::Error::new(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "broken pipe"
+            )))
+            .is_broken_pipe()
+        );
+        assert!(!LogError::IOError(std::io::Error::other("other")).is_broken_pipe());
+        assert!(!LogError::NoBootTimestamp.is_broken_pipe());
     }
 }

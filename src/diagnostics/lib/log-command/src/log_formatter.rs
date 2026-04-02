@@ -232,6 +232,15 @@ pub enum FormatterError {
     IO(#[from] std::io::Error),
 }
 
+impl FormatterError {
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            FormatterError::IO(error) => error.kind() == std::io::ErrorKind::BrokenPipe,
+            FormatterError::Other(_) => false,
+        }
+    }
+}
+
 /// Default formatter implementation
 pub struct DefaultLogFormatter<W>
 where
@@ -254,7 +263,9 @@ where
     W: Write + ToolIO<OutputItem = LogEntry>,
 {
     async fn push_log(&mut self, log_entry: LogEntry) -> Result<LogProcessingResult, LogError> {
-        self.push_log_internal(log_entry, true).await
+        self.push_log_internal(log_entry, true).await.or_else(|err| {
+            if err.is_broken_pipe() { Ok(LogProcessingResult::Exit) } else { Err(err) }
+        })
     }
 
     fn is_utc_time_format(&self) -> bool {
@@ -1013,5 +1024,54 @@ mod test {
     #[test]
     fn test_device_or_local_timestamp_returns_none_if_now_is_passed() {
         assert_matches!(DeviceOrLocalTimestamp::new(Some(&parse_time("now").unwrap()), None), None);
+    }
+
+    struct BrokenPipeWriter;
+    impl std::io::Write for BrokenPipeWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"))
+        }
+    }
+
+    impl ToolIO for BrokenPipeWriter {
+        type OutputItem = LogEntry;
+        fn is_machine(&self) -> bool {
+            false
+        }
+
+        fn stderr(&mut self) -> &mut dyn std::io::Write {
+            self
+        }
+
+        fn item(&mut self, _value: &Self::OutputItem) -> writer::Result<()> {
+            Err(writer::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "broken pipe",
+            )))
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_exits_on_broken_pipe() {
+        let stdout = BrokenPipeWriter;
+        let options = LogFormatterOptions::default();
+        let mut formatter =
+            DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options.clone());
+        let result = formatter.push_log(log_entry()).await;
+        assert_matches!(result, Ok(LogProcessingResult::Exit));
+    }
+
+    #[test]
+    fn test_formatter_error_is_broken_pipe() {
+        assert!(
+            FormatterError::IO(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"))
+                .is_broken_pipe()
+        );
+        assert!(!FormatterError::IO(std::io::Error::other("other")).is_broken_pipe());
+        assert!(!FormatterError::Other(anyhow::anyhow!("other")).is_broken_pipe());
     }
 }

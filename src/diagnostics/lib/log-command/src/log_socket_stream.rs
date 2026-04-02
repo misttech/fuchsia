@@ -199,6 +199,17 @@ pub enum JsonDeserializeError {
     NoMoreData,
 }
 
+impl JsonDeserializeError {
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            JsonDeserializeError::IO { error } => error.kind() == std::io::ErrorKind::BrokenPipe,
+            JsonDeserializeError::LogError(log_error) => log_error.is_broken_pipe(),
+
+            JsonDeserializeError::Other { .. } | JsonDeserializeError::NoMoreData => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -413,5 +424,19 @@ mod test {
             }
             None => {} // Stream ended.
         }
+    }
+
+    #[test]
+    fn test_json_deserialize_error_is_broken_pipe() {
+        assert!(
+            JsonDeserializeError::IO {
+                error: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe")
+            }
+            .is_broken_pipe()
+        );
+        assert!(
+            !JsonDeserializeError::IO { error: std::io::Error::other("other") }.is_broken_pipe()
+        );
+        assert!(!JsonDeserializeError::NoMoreData.is_broken_pipe());
     }
 }

@@ -48,6 +48,15 @@ pub enum Error {
     SchemaFailure(String),
 }
 
+impl Error {
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            Error::Io(e) => e.kind() == std::io::ErrorKind::BrokenPipe,
+            _ => false,
+        }
+    }
+}
+
 pub type Result<O, E = Error> = std::result::Result<O, E>;
 
 impl From<Error> for ffx_command_error::Error {

@@ -319,8 +319,11 @@ where
                 break;
             }
             Ok(LogProcessingResult::Continue) => {}
-            Err(value) => {
-                writeln!(formatter.writer().stderr(), "{value}")?;
+            Err(err) => {
+                if err.is_broken_pipe() {
+                    break;
+                }
+                writeln!(formatter.writer().stderr(), "{err}")?;
             }
         }
     }
@@ -1086,6 +1089,48 @@ ffx log --force-set-severity.
                 ..LogCommand::default()
             }),
             Ok(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
+        );
+    }
+
+    struct BrokenPipeWriter;
+    impl std::io::Write for BrokenPipeWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"))
+        }
+    }
+
+    impl ToolIO for BrokenPipeWriter {
+        type OutputItem = LogEntry;
+        fn is_machine(&self) -> bool {
+            false
+        }
+        fn stderr(&mut self) -> &mut dyn std::io::Write {
+            self
+        }
+        fn item(&mut self, _value: &Self::OutputItem) -> ffx_writer::Result<()> {
+            Err(ffx_writer::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "broken pipe",
+            )))
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_log_impl_exits_on_broken_pipe() {
+        let environment = TestEnvironment::new(TestEnvironmentConfig::default()).await;
+        let rcs_connector = environment.rcs_connector().await;
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            symbolize: SymbolizeMode::Off,
+            ..LogCommand::default()
+        };
+        let writer = BrokenPipeWriter;
+        assert_matches!(
+            log_impl(writer, &environment.environment_context(), cmd, rcs_connector, false).await,
+            Ok(())
         );
     }
 }
