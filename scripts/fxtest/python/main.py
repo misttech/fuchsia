@@ -1106,6 +1106,19 @@ class AsyncMain:
                 + "\n ".join([str(m) for m in missing_groups])
             )
 
+        if flags.selection and not flags.e2e:
+            e2e_tests = [
+                test.name()
+                for test in selections.selected
+                if test.is_e2e_test()
+            ]
+            if e2e_tests:
+                tests_str = ", ".join(e2e_tests)
+                raise self._SelectionValidationError(
+                    f"The following tests are e2e tests, but the --e2e flag was not provided:\n  {tests_str}\n"
+                    "Please pass --e2e to run e2e tests."
+                )
+
     async def _do_build(
         self,
         tests: selection_types.TestSelections,
