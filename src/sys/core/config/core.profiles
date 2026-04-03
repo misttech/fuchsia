@@ -41,6 +41,7 @@
         "capacity": "2300us",
         "deadline": "8ms",
         "period": "8ms",
+        "critical": true,
         "output_parameters": { "max_readout_time": 2300000, "poll_period": 10000000 }
     },
   },
