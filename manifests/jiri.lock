@@ -1,48 +1,48 @@
 [
     {
         "package": "chromium/fuchsia/host_tools/linux/amd64/chromedriver",
-        "version": "version:148.0.7769.0",
-        "instance_id": "tXDE_s5U6GDsXaEmWPo34ESjci_ltSRCi7LYEDvI2YoC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "ziBP3yJj0b5gZa4QYkLnciRvB5SZG0v-yfrP0TDIpQQC"
     },
     {
         "package": "chromium/fuchsia/web_engine/amd64/debug-symbols",
-        "version": "version:148.0.7769.0",
-        "instance_id": "J7D_rOkQ60qVIzBbaRimYEHVWURfIfO7TFr6cOBpG2QC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "-IxI2EncIQhxxmtezeBRvGueCV_cRTaQ5u2EcfQBKtUC"
     },
     {
         "package": "chromium/fuchsia/web_engine/amd64/tests",
-        "version": "version:148.0.7769.0",
-        "instance_id": "okBSaFL1GO7nuDZwclKyr7NHHI6ekMX7Xqv23gr4OZ8C"
+        "version": "version:148.0.7770.0",
+        "instance_id": "6bFEgCzO8c2E5XfgcF2IJimKYoltFV5y94j7__TAxk0C"
     },
     {
         "package": "chromium/fuchsia/web_engine/amd64/web_engine",
-        "version": "version:148.0.7769.0",
-        "instance_id": "N3UBYSWAroDzBjvgYFU_yNC11JfH0dxt6dX0SfIzhzIC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "O52mdH309dy8QKylyQ_ooxZNDb9g4h1OzuajsUEBXO0C"
     },
     {
         "package": "chromium/fuchsia/web_engine/amd64/web_engine_shell",
-        "version": "version:148.0.7769.0",
-        "instance_id": "oSt_U38lVxRJYu1GRRbkVC7_HkAJCeVi6OHZy6EWHsIC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "-VefyMuc2vEgjw8jqMsfq2abNIwk6stILP71N_Sr4YoC"
     },
     {
         "package": "chromium/fuchsia/web_engine/arm64/debug-symbols",
-        "version": "version:148.0.7769.0",
-        "instance_id": "Sc_-kbpVmrW7XJES_AOK4CSdpM64Z2lSxaJub_MQLAkC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "5pqWEiZA3prXhMTDIIox7dQsKkuQSkFy3SvmdpLejrEC"
     },
     {
         "package": "chromium/fuchsia/web_engine/arm64/tests",
-        "version": "version:148.0.7769.0",
-        "instance_id": "1mpK94n-tHWO-wWGORuPZRgsNNz6Cdfdpa2PpMv2sEAC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "a2149o4E-7-Fmf6n7E6H0gooDmpDZlOImgBK5KOC7lwC"
     },
     {
         "package": "chromium/fuchsia/web_engine/arm64/web_engine",
-        "version": "version:148.0.7769.0",
-        "instance_id": "73ItmyK-lSVKgq8kew7vq6XbovZfxSGsSXEeGfw5RwsC"
+        "version": "version:148.0.7770.0",
+        "instance_id": "QPO6SOVwe4YRkQ0N2SUXkkPiuQx5J-8Eu6LJK42cXy4C"
     },
     {
         "package": "chromium/fuchsia/web_engine/arm64/web_engine_shell",
-        "version": "version:148.0.7769.0",
-        "instance_id": "Y2lUN8-uWeEHLp0r9qavHej2JCZaDh-nAhNMRW87v_4C"
+        "version": "version:148.0.7770.0",
+        "instance_id": "1_soUgw7sM0wX5ueD-O6l5K06dGj9vlfDj1-tlhFWU8C"
     },
     {
         "package": "fuchsia/cts/linux-amd64",
