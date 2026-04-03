@@ -842,7 +842,7 @@ impl ResolvedInstanceState {
     }
 
     /// Returns the resolved structured configuration of this instance, if any.
-    pub fn config(&self) -> Option<&ConfigFields> {
+    pub fn config(&self) -> Option<&Arc<ConfigFields>> {
         self.resolved_component.config.as_ref()
     }
 
@@ -876,8 +876,7 @@ impl ResolvedInstanceState {
         }
 
         // Delete any dynamic offers whose source or target matches the component we're deleting.
-        self.resolved_component
-            .dependencies
+        Arc::make_mut(&mut self.resolved_component.dependencies)
             .retain(|a, b| !matches(a, moniker) && !matches(b, moniker))
     }
 
@@ -969,7 +968,7 @@ impl ResolvedInstanceState {
         .await;
         self.children.insert(child_name, child.clone());
 
-        self.resolved_component.dependencies.extend(
+        Arc::make_mut(&mut self.resolved_component.dependencies).extend(
             dynamic_offers.into_iter().map(NativeIntoFidl::native_into_fidl).filter_map(|o| {
                 let (a, b) = cm_graph::get_dependency_from_offer(&o);
                 let a = a?;
@@ -1043,7 +1042,7 @@ impl ResolvedInstanceState {
             all_dynamic_children,
             dependencies,
             &new_dynamic_offers,
-            &self.resolved_component.decl.clone().native_into_fidl(),
+            &(*self.resolved_component.decl).clone().native_into_fidl(),
         )
         .map_err(|err| {
             if err.errs.iter().all(|e| matches!(e, ValidatorError::DependencyCycle(_))) {
@@ -1083,7 +1082,7 @@ impl ResolvedInstanceState {
         // error, but it's slightly awkward. See if there's a better way -- can we decouple
         // `validate_dynamic_component` from having to depend on `self`?
         let mut dependencies =
-            mem::replace(&mut self.resolved_component.dependencies, DirectedGraph::new());
+            mem::replace(&mut self.resolved_component.dependencies, Arc::new(DirectedGraph::new()));
 
         let mut all_dynamic_children: Vec<_> = self
             .children()
@@ -1097,7 +1096,7 @@ impl ResolvedInstanceState {
             .collect();
         all_dynamic_children.push((child.name.as_str(), collection.name.as_str()));
         self.validate_dynamic_component(
-            &mut dependencies,
+            Arc::make_mut(&mut dependencies),
             all_dynamic_children,
             dynamic_offers.clone(),
         )?;

@@ -15,7 +15,8 @@ use std::sync::Arc;
 
 use cm_graph::DependencyNode;
 use directed_graph::DirectedGraph;
-use {fidl_fuchsia_component_decl as fdecl, fuchsia_async as fasync};
+use fidl_fuchsia_component_decl as fdecl;
+use fuchsia_async as fasync;
 
 /// Shuts down all component instances in this component (stops them and guarantees they will never
 /// be started again).
@@ -100,7 +101,7 @@ struct ShutdownJob {
     /// A map of the live children of the `instance`.
     children: HashMap<ChildName, WeakComponentInstance>,
     /// The component's capability graph, which determines the shutdown order.
-    dependencies: DirectedGraph<DependencyNode>,
+    dependencies: Arc<DirectedGraph<DependencyNode>>,
 }
 
 /// ShutdownJob encapsulates the logic and state require to shutdown a component.
@@ -137,7 +138,11 @@ impl ShutdownJob {
             .keys()
             .filter_map(|key| key.collection().map(|coll| (key.name().as_str(), coll.as_str())))
             .collect();
-        process_deps(&self.component_decl, &dynamic_children, &mut self.dependencies);
+        process_deps(
+            &self.component_decl,
+            &dynamic_children,
+            Arc::make_mut(&mut self.dependencies),
+        );
 
         let sorted_map = self
             .dependencies
@@ -296,14 +301,14 @@ mod tests {
     use cm_types::AllowedOffers;
     use errors::StopActionError;
     use fidl::endpoints::RequestStream;
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_component_runner as fcrunner;
+    use fuchsia_async as fasync;
     use maplit::btreeset;
     use moniker::Moniker;
     use std::collections::BTreeSet;
     use test_case::test_case;
-    use {
-        fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-        fidl_fuchsia_component_runner as fcrunner, fuchsia_async as fasync,
-    };
 
     fn process_deps_test(
         decl: &fdecl::Component,

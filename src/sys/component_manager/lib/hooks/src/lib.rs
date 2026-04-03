@@ -7,6 +7,9 @@ use async_trait::async_trait;
 use cm_rust::ComponentDecl;
 use cm_types::{Name, Url};
 use errors::ModelError;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use log::warn;
@@ -15,10 +18,6 @@ use sandbox::{Connector, Receiver, WeakInstanceToken};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio,
-};
 
 pub trait HasEventType {
     fn event_type(&self) -> EventType;
@@ -227,7 +226,7 @@ pub enum EventPayload {
     Destroyed,
     Resolved {
         component: WeakInstanceToken,
-        decl: Box<ComponentDecl>,
+        decl: Arc<ComponentDecl>,
     },
     Unresolved,
     Started {

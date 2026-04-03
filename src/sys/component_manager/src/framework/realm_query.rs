@@ -306,14 +306,14 @@ async fn get_structured_config(
         .map_err(|_| fsys::GetStructuredConfigError::InstanceNotFound)?;
 
     let state = instance.lock_state().await;
-    let config = state
+
+    let arc_config = state
         .get_resolved_state()
         .ok_or(fsys::GetStructuredConfigError::InstanceNotResolved)?
         .config()
-        .ok_or(fsys::GetStructuredConfigError::NoConfig)?
-        .clone()
-        .into();
+        .ok_or(fsys::GetStructuredConfigError::NoConfig)?;
 
+    let config = (**arc_config).clone().into();
     Ok(config)
 }
 

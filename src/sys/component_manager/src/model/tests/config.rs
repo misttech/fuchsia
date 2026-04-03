@@ -9,11 +9,12 @@ mod tests {
     use cm_rust::*;
     use cm_rust_testing::*;
     use moniker::Moniker;
+    use std::sync::Arc;
 
     async fn start_component_get_config(
         test: &RoutingTest,
         component_moniker: &str,
-    ) -> config_encoder::ConfigFields {
+    ) -> Arc<config_encoder::ConfigFields> {
         let test_moniker = Moniker::parse_str(component_moniker).unwrap();
         let root =
             test.start_and_get_instance(&test_moniker, StartReason::Eager, true).await.unwrap().0;

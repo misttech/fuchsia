@@ -186,11 +186,11 @@ mod tests {
         .await;
         let resolved_component = Component {
             context_to_resolve_children: None,
-            decl,
+            decl: Arc::new(decl),
             package: None,
             config: None,
             abi_revision: None,
-            dependencies: DirectedGraph::new(),
+            dependencies: Arc::new(DirectedGraph::new()),
         };
         let resolved_state = ResolvedInstanceState::new(
             &instance,

@@ -5,12 +5,13 @@
 use crate::sandbox_util::take_handle_as_stream;
 use cm_rust::FidlIntoNative;
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_component_decl as fcdecl;
+use fidl_fuchsia_sys2 as fsys;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
 use log::warn;
 use moniker::Moniker;
 use routing::component_instance::ComponentInstanceInterface;
-use {fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_sys2 as fsys};
 
 use crate::model::component::WeakComponentInstance;
 
@@ -66,13 +67,15 @@ async fn set_structured_config(
         .map_err(|_| fsys::ConfigOverrideError::InstanceNotFound)?;
 
     let state = instance.lock_state().await;
-    let config: fcdecl::ResolvedConfig = state
+
+    let arc_config = state
         .get_resolved_state()
         .ok_or(fsys::ConfigOverrideError::InstanceNotResolved)?
         .config()
-        .ok_or(fsys::ConfigOverrideError::NoConfig)?
-        .clone()
-        .into();
+        .ok_or(fsys::ConfigOverrideError::NoConfig)?;
+
+    let config: fcdecl::ResolvedConfig = (**arc_config).clone().into();
+
     for field in fields {
         // Verify a field with this key has been declared for the component.
         config

@@ -147,17 +147,17 @@ pub struct Component {
     /// If `None`, the resolver cannot resolve relative path component URLs.
     pub context_to_resolve_children: Option<ComponentResolutionContext>,
     /// The declaration of the resolved manifest.
-    pub decl: ComponentDecl,
+    pub decl: Arc<ComponentDecl>,
     /// The package info, if the component came from a package.
     pub package: Option<Package>,
     /// The component's validated configuration. If None, no configuration was provided.
-    pub config: Option<ConfigFields>,
+    pub config: Option<Arc<ConfigFields>>,
     /// The component's target ABI revision, if available.
     pub abi_revision: Option<AbiRevision>,
     /// Dependency graph for the component. This is not part of the fidl type, but is derived
     /// from `decl`. As part of a component's resolved state, this should be kept up to date to
     /// reflect any dynamic offers.
-    pub dependencies: DirectedGraph<DependencyNode>,
+    pub dependencies: Arc<DirectedGraph<DependencyNode>>,
 }
 
 impl Component {
@@ -183,7 +183,7 @@ impl Component {
                     let config =
                         ConfigFields::resolve(config_decl, values, config_parent_overrides)
                             .map_err(StructuredConfigError::ConfigResolutionFailed)?;
-                    Some(config)
+                    Some(Arc::new(config))
                 }
             }
         } else {
@@ -191,7 +191,14 @@ impl Component {
         };
 
         let package = package.map(|p| p.try_into()).transpose()?;
-        Ok(Self { context_to_resolve_children, decl, package, config, abi_revision, dependencies })
+        Ok(Self {
+            context_to_resolve_children,
+            decl: Arc::new(decl),
+            package,
+            config,
+            abi_revision,
+            dependencies: Arc::new(dependencies),
+        })
     }
 }
 
@@ -203,7 +210,7 @@ impl From<&Component> for fresolution::Component {
             fmem::Data::Buffer(fmem::Buffer { vmo, size: bytes.len() as u64 })
         };
         let decl = Some(bytes_to_fmem_data(
-            &fidl::persist(&component.decl.clone().native_into_fidl()).expect(
+            &fidl::persist(&(*component.decl).clone().native_into_fidl()).expect(
                 "we should always be able to persist a manifest that we got by unpersisting it",
             ),
         ));
@@ -220,7 +227,7 @@ impl From<&Component> for fresolution::Component {
             config_values: component
                 .config
                 .as_ref()
-                .map(|config| bytes_to_fmem_data(&config.clone().encode_as_fidl_struct())),
+                .map(|config| bytes_to_fmem_data(&(**config).clone().encode_as_fidl_struct())),
             resolution_context: component.context_to_resolve_children.as_ref().map(Into::into),
             abi_revision: component.abi_revision.as_ref().map(|abi_revision| abi_revision.as_u64()),
             ..Default::default()
@@ -1992,7 +1999,7 @@ pub mod tests {
                 &*children
             );
 
-            let expected_deps = DirectedGraph::from([
+            let expected_deps = Arc::new(DirectedGraph::from([
                 (
                     DependencyNode::Environment("env_a".into()),
                     DependencyNode::Child("a".into(), None),
@@ -2010,7 +2017,7 @@ pub mod tests {
                     DependencyNode::Child("a".into(), Some("coll_1".into())),
                     DependencyNode::Child("b".into(), Some("coll_1".into())),
                 ),
-            ]);
+            ]));
 
             pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
             pretty_assertions::assert_eq!(
@@ -2043,7 +2050,7 @@ pub mod tests {
                 &*children
             );
 
-            let expected_deps = DirectedGraph::from([
+            let expected_deps = Arc::new(DirectedGraph::from([
                 (
                     DependencyNode::Environment("env_a".into()),
                     DependencyNode::Child("a".into(), None),
@@ -2057,7 +2064,7 @@ pub mod tests {
                     DependencyNode::Child("a".into(), Some("coll_2".into())),
                 ),
                 (DependencyNode::Child("a".into(), None), DependencyNode::Child("b".into(), None)),
-            ]);
+            ]));
 
             pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
             pretty_assertions::assert_eq!(
@@ -2107,7 +2114,7 @@ pub mod tests {
                 &*children
             );
 
-            let expected_deps = DirectedGraph::from([
+            let expected_deps = Arc::new(DirectedGraph::from([
                 (
                     DependencyNode::Environment("env_a".into()),
                     DependencyNode::Child("a".into(), None),
@@ -2125,7 +2132,7 @@ pub mod tests {
                     DependencyNode::Child("a".into(), Some("coll_2".into())),
                     DependencyNode::Child("b".into(), Some("coll_1".into())),
                 ),
-            ]);
+            ]));
 
             pretty_assertions::assert_eq!(&[example_offer.clone()], &*root_resolved.offers());
             pretty_assertions::assert_eq!(
@@ -2326,11 +2333,11 @@ pub mod tests {
         let decl = ComponentDeclBuilder::new().build();
         let resolved_component = Component {
             context_to_resolve_children: None,
-            decl,
+            decl: Arc::new(decl),
             package: None,
             config: None,
             abi_revision: None,
-            dependencies: DirectedGraph::new(),
+            dependencies: Arc::new(DirectedGraph::new()),
         };
         let ris = ResolvedInstanceState::new(
             &comp,

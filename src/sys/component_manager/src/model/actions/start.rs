@@ -23,6 +23,11 @@ use config_encoder::ConfigFields;
 use errors::{ActionError, CreateNamespaceError, StartActionError, StructuredConfigError};
 use fidl::Vmo;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_process as fprocess;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::channel::oneshot;
 use hooks::{EventPayload, RuntimeInfo};
@@ -36,10 +41,6 @@ use sandbox::{
 };
 use serve_processargs::NamespaceBuilder;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_mem as fmem, fidl_fuchsia_process as fprocess,
-};
 
 /// Starts a component instance.
 pub struct StartAction {
@@ -285,7 +286,7 @@ async fn do_start(
                         err: StructuredConfigError::ConfigValuesMissing,
                     });
                 };
-                update_config_fields(&mut config, decl, &component)
+                update_config_fields(Arc::make_mut(&mut config), decl, &component)
                     .with(&abortable_scope)
                     .await
                     .map_err(abort_error)??;
@@ -299,8 +300,9 @@ async fn do_start(
                     .map_err(abort_error)??;
                 match config {
                     Some(c) => {
-                        update_component_config(&component, c.clone()).await?;
-                        Some(encode_config(c, &component.moniker).await?)
+                        let arc_config = Arc::new(c);
+                        update_component_config(&component, Arc::clone(&arc_config)).await?;
+                        Some(encode_config(arc_config, &component.moniker).await?)
                     }
                     None => None,
                 }
@@ -360,7 +362,7 @@ fn dict_merge(dict1: &Dict, dict2: Dict) {
 /// `Component`.
 async fn start_component(
     component: &Arc<ComponentInstance>,
-    decl: ComponentDecl,
+    decl: Arc<ComponentDecl>,
     start_context: StartContext,
 ) -> Result<(), StartActionError> {
     let runtime_info;
@@ -544,7 +546,7 @@ fn has_config_capabilities(decl: &cm_rust::ComponentDecl) -> bool {
 /// Update the component's configuration fields.
 async fn update_component_config(
     component: &Arc<ComponentInstance>,
-    config: ConfigFields,
+    config: Arc<ConfigFields>,
 ) -> Result<(), StartActionError> {
     let mut resolved_state = component.lock_resolved_state().await.unwrap();
     resolved_state.resolved_component.config = Some(config);
@@ -653,11 +655,11 @@ async fn update_config_fields(
 
 /// Encode the configuration into a VMO.
 async fn encode_config(
-    config: ConfigFields,
+    config: Arc<ConfigFields>,
     moniker: &Moniker,
 ) -> Result<fmem::Data, StartActionError> {
     let (vmo, size) = (|| {
-        let encoded = config.encode_as_fidl_struct();
+        let encoded = (*config).clone().encode_as_fidl_struct();
         let size = encoded.len() as u64;
         let vmo = Vmo::create(size)?;
         vmo.write(&encoded, 0)?;
@@ -1093,11 +1095,11 @@ mod tests {
         let decl = ComponentDeclBuilder::new().child_default(TEST_CHILD_NAME).build();
         let resolved_component = Component {
             context_to_resolve_children: None,
-            decl,
+            decl: Arc::new(decl),
             package: None,
             config: None,
             abi_revision: None,
-            dependencies: DirectedGraph::new(),
+            dependencies: Arc::new(DirectedGraph::new()),
         };
         let ris = ResolvedInstanceState::new(
             &child,
