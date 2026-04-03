@@ -114,7 +114,7 @@ VK_TEST_F(BatchGpuDownloaderTest, SupportAllCommandBufferTypes) {
     const auto command_buffer_type = kCommandBufferTypes[i];
     std::unique_ptr<BatchGpuDownloader> downloader =
         BatchGpuDownloader::New(escher, command_buffer_type);
-    downloader->Submit([done_ptr = &downloaders_done[i]]() { *done_ptr = true; });
+    downloader->Submit([&downloaders_done, i]() { downloaders_done[i] = true; });
   }
 
   EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
