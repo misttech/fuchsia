@@ -25,4 +25,5 @@ go_binary_host_tool(
     name = "fidl_api_diff",
     embed = [":gopkg"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//build/bazel/rules/fidl:__subpackages__"],
 )

@@ -754,6 +754,9 @@ idk_molecule(
     testonly = True,
     deps = [
         ":test_submolecule",
+        # Tests compatibility testing with different expectations per API level.
+        # As of F30+, this library has elements added at 28, 29, and NEXT.
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
         # This tests direct FIDL library dependencies.
         "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
         "//sdk/lib/fidl/cpp:cpp_idk",

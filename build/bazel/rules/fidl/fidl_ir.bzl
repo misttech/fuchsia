@@ -30,8 +30,11 @@ def _get_available(ctx):
 def _fidlc_impl(ctx):
     library_name = ctx.attr.library_name
 
-    response_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".args")
-    libraries_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".libraries")
+    file_prefix = "%s/" % (ctx.attr.subdirectory) if ctx.attr.subdirectory else ""
+    file_basename = file_prefix + ctx.attr.fidl_library_target_name
+    response_file = ctx.actions.declare_file("%s.args" % file_basename)
+    libraries_file = ctx.actions.declare_file("%s.libraries" % file_basename)
+    json_representation = ctx.actions.declare_file("%s.fidl.json" % file_basename)
 
     dep_libraries = [dep[FidlLibraryInfo].libraries_file for dep in ctx.attr.deps]
     srcs_depset = depset(
@@ -46,7 +49,7 @@ def _fidlc_impl(ctx):
         "--out-libraries",
         libraries_file.path,
         "--json",
-        ctx.outputs.json_representation.path,
+        json_representation.path,
         "--name",
         library_name,
     ])
@@ -76,11 +79,12 @@ def _fidlc_impl(ctx):
         executable = ctx.executable._fidlc,
         arguments = ["@" + response_file.path],
         inputs = [response_file] + srcs_depset.to_list(),
-        outputs = [ctx.outputs.json_representation],
+        outputs = [json_representation],
         mnemonic = "Fidlc",
     )
 
     return [
+        DefaultInfo(files = depset([json_representation])),
         FidlLibraryInfo(
             name = library_name,
             srcs_depset = srcs_depset,
@@ -111,10 +115,6 @@ _fidlc = rule(
             mandatory = False,
             providers = [FidlLibraryInfo],
         ),
-        "json_representation": attr.output(
-            doc = "Where to generate the FIDL IR.",
-            mandatory = True,
-        ),
         "available": attr.string_list(
             doc = "See `fidl_library()`.",
             mandatory = True,
@@ -124,6 +124,9 @@ _fidlc = rule(
         ),
         "experimental_flags": attr.string_list(
             doc = "A list of experimental fidlc features to enable.",
+        ),
+        "subdirectory": attr.string(
+            doc = "Optional subdirectory for the output files.",
         ),
         "_fidlc": attr.label(
             doc = "The FIDL compiler.",
@@ -298,24 +301,38 @@ _validated_ir_file = rule(
     },
 )
 
-def fidl_ir(name, fidl_library_target_name, srcs, deps, testonly, visibility, experimental_checks, excluded_checks, **kwargs):
+def fidl_ir(
+        name,
+        fidl_library_target_name,
+        srcs,
+        deps,
+        experimental_checks,
+        excluded_checks,
+        testonly,
+        visibility,
+        subdirectory = None,
+        skip_linting_and_validation = False,
+        **kwargs):
     """Compiles a FIDL library to IR and returns the validated IR JSON file.
 
     Args:
-      name: Standard meaning.
-      srcs: List of `.fidl` source files.
-      deps: List of labels of other FIDL libraries on which this library depends.
-      experimental_checks: List of `fidl-lint` check IDs to include (by passing
-                  the command line flag `-x some-check-id` for each value)
-      excluded_checks: List of `fidl-lint` check IDs to ignore (by passing
-                  the command line flag `-e some-check-id` for each value)
-      testonly: Standard meaning.
-      visibility: Standard meaning.
+        name: Standard meaning.
+        fidl_library_target_name: Name of the `fidl_library()` target.
+                    Used in the name of some generated files.
+        srcs: List of `.fidl` source files.
+        deps: List of labels of other FIDL libraries on which this library depends.
+        experimental_checks: List of `fidl-lint` check IDs to include (by passing
+                    the command line flag `-x some-check-id` for each value)
+        excluded_checks: List of `fidl-lint` check IDs to ignore (by passing
+                    the command line flag `-e some-check-id` for each value)
+        skip_linting_and_validation: Whether to skip linting and JSON validation.
+        testonly: Standard meaning.
+        visibility: Standard meaning.
+        subdirectory: Optional subdirectory for the output files.
 
-      **kwargs: Arguments to pass to the underlying `fidlc` rule.
+        **kwargs: Arguments to pass to the underlying `_fidlc()` rule.
     """
     fidlc_target_name = "%s_fidlc" % name
-
     _fidlc(
         name = fidlc_target_name,
         fidl_library_target_name = fidl_library_target_name,
@@ -332,39 +349,48 @@ def fidl_ir(name, fidl_library_target_name, srcs, deps, testonly, visibility, ex
         # target regardless of the `visibility` passed to `fidl_library()`.
         # See https://fxbug.dev/446911800.
         deps = deps,
-        json_representation = "%s.fidl.json" % name,
+        subdirectory = subdirectory,
         testonly = testonly,
         visibility = ["//visibility:private"],
         **kwargs
     )
 
-    lint_target_name = "%s_lint_source_files" % name
-    _fidl_lint(
-        name = lint_target_name,
-        fidl_library_target_name = fidl_library_target_name,
-        srcs = srcs,
-        experimental_checks = experimental_checks,
-        excluded_checks = excluded_checks,
-        testonly = testonly,
-        visibility = ["//visibility:private"],
-    )
+    if skip_linting_and_validation:
+        # Declare a target named `name` that just wraps the `fidlc` target.
+        native.filegroup(
+            name = name,
+            srcs = [fidlc_target_name],
+            testonly = testonly,
+            visibility = visibility,
+        )
+    else:
+        lint_target_name = "%s_lint_source_files" % name
+        _fidl_lint(
+            name = lint_target_name,
+            fidl_library_target_name = fidl_library_target_name,
+            srcs = srcs,
+            experimental_checks = experimental_checks,
+            excluded_checks = excluded_checks,
+            testonly = testonly,
+            visibility = ["//visibility:private"],
+        )
 
-    validate_json_target_name = "%s_validate_ir_json" % name
-    validate_json(
-        name = validate_json_target_name,
-        data = fidlc_target_name,
-        schema = "//tools/fidl/fidlc:schema.json",
-        testonly = testonly,
-        visibility = ["//visibility:private"],
-    )
+        validate_json_target_name = "%s_validate_ir_json" % name
+        validate_json(
+            name = validate_json_target_name,
+            data = fidlc_target_name,
+            schema = "//tools/fidl/fidlc:schema.json",
+            testonly = testonly,
+            visibility = ["//visibility:private"],
+        )
 
-    # IMPORTANT: The name of this target must be the the same as the name that
-    # will be used in the `deps` of other FIDL libraries so that `deps` can be
-    # used unmodified as explained above.
-    _validated_ir_file(
-        name = name,
-        unvalidated_file = fidlc_target_name,
-        validation_targets = [lint_target_name, validate_json_target_name],
-        testonly = testonly,
-        visibility = visibility,
-    )
+        # IMPORTANT: The name of this target must be the the same as the name that
+        # will be used in the `deps` of other FIDL libraries so that `deps` can be
+        # used unmodified as explained above.
+        _validated_ir_file(
+            name = name,
+            unvalidated_file = fidlc_target_name,
+            validation_targets = [lint_target_name, validate_json_target_name],
+            testonly = testonly,
+            visibility = visibility,
+        )

@@ -4,6 +4,7 @@
 
 """Rule for declaring a FIDL library"""
 
+load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
 load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load(
     "//build/bazel/bazel_idk/private:idk_common.bzl",
@@ -15,6 +16,7 @@ load(
 )
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 load(":fidl_cc_library.bzl", "fidl_cpp_family")
+load(":fidl_compatibility_test.bzl", "fidl_compatibility_test")
 load(":fidl_ir.bzl", "fidl_ir")
 load(":fidl_summary.bzl", "fidl_summary")
 
@@ -300,6 +302,8 @@ def _fidl_library_impl(
     )
     # LINT.ThenChange(//build/fidl/fidl_library.gni:ir_compilation)
 
+    idk_atom_build_deps = [fidl_ir_target_name]
+
     fidl_summary(
         name = "%s_summary_json" % name,
         input = fidl_ir_target_name,
@@ -308,12 +312,38 @@ def _fidl_library_impl(
         visibility = ["//visibility:private"],
     )
 
-    # TODO(https://fxbug.dev/417306131): Implement PlaSA support.
+    # TODO(https://fxbug.dev/417306131): Implement PlaSA support and append the
+    # target to `idk_atom_build_deps`.
 
     # LINT.IfChange(compatibility_tests)
     if requires_compatibility_tests:
-        # TODO(https://fxbug.dev/428285014): Implement compatibility tests.
-        pass
+        if not ((fidlc_versioned_arg == "fuchsia" and stable) or
+                (fidlc_versioned_arg == "fuchsia:HEAD" and not stable)):
+            fail("Library '%s' has an unexpected combination of stability ('%s'), versioned arg value ('%s')." % (
+                library_name,
+                stable,
+                fidlc_versioned_arg,
+            ))
+
+        # Run compatibility tests for all API levels supported by the platform.
+        for api_level in runtime_supported_api_levels:
+            target_name = "%s_compatibility_test_%s" % (name, api_level)
+            fidl_compatibility_test(
+                name = target_name,
+                library_name = library_name,
+                fidl_library_target_name = name,
+                api_level = api_level,
+                srcs = srcs,
+                deps = deps,
+                goldens_dir = goldens_dir,
+                fidlc_versioned_arg = fidlc_versioned_arg,
+                experimental_flags = experimental_flags,
+                experimental_checks = experimental_checks,
+                excluded_checks = excluded_checks,
+                testonly = testonly,
+                visibility = ["//visibility:private"],
+            )
+            idk_atom_build_deps.append(target_name)
 
     # LINT.ThenChange(//build/fidl/fidl_library.gni:compatibility_tests)
 
@@ -407,8 +437,7 @@ def _fidl_library_impl(
             api_contents_map = api_contents_map,
             files_map = idk_files_map,
             idk_deps = get_idk_deps(deps),
-            # TODO(https://fxbug.dev/428285014): Add additional targets if necessary.
-            atom_build_deps = [fidl_ir_target_name],
+            atom_build_deps = idk_atom_build_deps,
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
             allowlist = allowlist,
             testonly = testonly,

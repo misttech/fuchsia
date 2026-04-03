@@ -185,7 +185,7 @@ template("fidl_library") {
   # All stable libraries must be included in an SDK [category] and require
   # compatibility tests, but the inverse is not always true.
   # For unstable libraries with `requires_compatibility_tests=true`, although
-  # the build targets are created, the resulting API summery file will be empty.
+  # the build targets are created, the resulting API summary file will be empty.
   assert(!stable || requires_compatibility_tests)
 
   assert(
@@ -556,7 +556,7 @@ template("fidl_library") {
     }
   }
 
-  # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:compatibility_tests)
+  # LINT.ThenChange(//build/bazel/rules/fidl/fidl_compatibility_test.bzl:compatibility_test, //build/bazel/rules/fidl/fidl_library.bzl:compatibility_tests)
 
   validate_json(verification_target_name) {
     forward_variables_from(invoker, [ "applicable_licenses" ])

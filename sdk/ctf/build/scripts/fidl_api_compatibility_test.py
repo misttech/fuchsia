@@ -117,7 +117,7 @@ def main():
         choices=list(Policy),
     )
     parser.add_argument(
-        "--depfile", help="Where to write the depfile", required=True
+        "--depfile", help="Where to write the depfile", required=False
     )
     parser.add_argument(
         "--api-level", help="The API level being tested", required=True
@@ -162,8 +162,9 @@ def main():
     else:
         raise ValueError("unknown policy: {}".format(args.policy))
 
-    with open(args.depfile, "w") as f:
-        f.write("{}: {}\n".format(args.stamp, " ".join(dependencies)))
+    if args.depfile:
+        with open(args.depfile, "w") as f:
+            f.write("{}: {}\n".format(args.stamp, " ".join(dependencies)))
 
     with open(args.stamp, "w") as stamp_file:
         stamp_file.write("Golden!\n")

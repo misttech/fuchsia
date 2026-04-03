@@ -111,8 +111,11 @@ idk_molecule(
                        _partner_idk_unstable_fidl_libraries_targets_list)
     ],
 )
-# TODO(https://fxbug.dev/428285014): Ensure libraries in the following lists are built and
-# validated, possibly using something like the GN target "compatibility_tests":
+
+# TODO(https://fxbug.dev/428285014): Ensure libraries in the following lists
+# are built and validated, possibly using something like the GN target
+# "compatibility_tests". The dependency must be on the "_idk" target because
+# that depends on the compatibility test targets.
 #   * `_prebuilt_fidl_libraries_targets_list`
 #   * `_host_tool_fidl_libraries_targets_list`
 #   * `_compat_test_fidl_libraries_targets_list`

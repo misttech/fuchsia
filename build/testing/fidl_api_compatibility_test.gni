@@ -4,6 +4,8 @@
 import("//build/fidl/fidl_ir.gni")
 import("//build/fidl/fidl_summary.gni")
 
+# LINT.IfChange(run_compatibility_test)
+
 template("fidl_api_compatibility_test") {
   assert(defined(invoker.target_api_level), "target_api_level is required")
   assert(defined(invoker.golden), "golden is required")
@@ -50,3 +52,4 @@ template("fidl_api_compatibility_test") {
     deps += [ fidl_api_diff_tool_target ]
   }
 }
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_compatibility_test.bzl:run_compatibility_test)
