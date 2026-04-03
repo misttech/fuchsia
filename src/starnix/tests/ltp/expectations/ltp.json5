@@ -234,9 +234,6 @@
                 // non-trivial.
                 "unlink09",
 
-                // TODO(https://fxbug.dev/399386298): fix and re-enable
-                "ioctl_ficlone02",
-
                 // TODO(https://fxbug.dev/399387742): fix invocation path and re-enable
                 "vma05",
 

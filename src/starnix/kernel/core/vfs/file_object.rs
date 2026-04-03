@@ -1161,6 +1161,9 @@ pub fn default_ioctl(
             crypt_service.forget_wrapping_key(identifier, user_id)?;
             Ok(SUCCESS)
         }
+        linux_uapi::FICLONE | linux_uapi::FICLONERANGE | linux_uapi::FIDEDUPERANGE => {
+            error!(EOPNOTSUPP)
+        }
         _ => {
             track_stub!(TODO("https://fxbug.dev/322874917"), "ioctl fallthrough", request);
             error!(ENOTTY)
