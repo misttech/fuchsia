@@ -68,6 +68,12 @@ pub struct InputFileStatus {
 
     /// The event time of the last uapi::input_event read by external process.
     pub last_read_uapi_event_timestamp_ns: AtomicI64,
+
+    /// Number of read calls.
+    pub fd_read_count: AtomicU64,
+
+    /// Number of notify calls.
+    pub fd_notify_count: AtomicU64,
 }
 
 impl InputFileStatus {
@@ -81,6 +87,8 @@ impl InputFileStatus {
             last_generated_uapi_event_timestamp_ns: AtomicI64::new(0),
             uapi_events_read_count: AtomicU64::new(0),
             last_read_uapi_event_timestamp_ns: AtomicI64::new(0),
+            fd_read_count: AtomicU64::new(0),
+            fd_notify_count: AtomicU64::new(0),
         });
 
         let weak_status = Arc::downgrade(&status);
@@ -90,6 +98,11 @@ impl InputFileStatus {
                 let inspector = Inspector::default();
                 if let Some(status) = status {
                     let root = inspector.root();
+                    root.record_uint("fd_read_count", status.fd_read_count.load(Ordering::Relaxed));
+                    root.record_uint(
+                        "fd_notify_count",
+                        status.fd_notify_count.load(Ordering::Relaxed),
+                    );
                     root.record_uint(
                         "fidl_events_received_count",
                         status.fidl_events_received_count.load(Ordering::Relaxed),
@@ -156,6 +169,14 @@ impl InputFileStatus {
         self.uapi_events_read_count.fetch_add(count, Ordering::Relaxed);
         self.last_read_uapi_event_timestamp_ns.store(event_time_ns, Ordering::Relaxed);
     }
+
+    pub fn count_fd_read_calls(&self) {
+        self.fd_read_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn count_fd_notify_calls(&self) {
+        self.fd_notify_count.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 pub struct InputFile {
@@ -174,7 +195,7 @@ pub struct InputFile {
     mt_tracking_id_axis_info: uapi::input_absinfo,
     x_axis_info: uapi::input_absinfo,
     y_axis_info: uapi::input_absinfo,
-    pub inner: Mutex<InputFileMutableState>,
+    inner: Mutex<InputFileMutableState>,
     // InputFile will be initialized with an InputFileStatus that holds Inspect data
     // `None` for Uinput InputFiles
     pub inspect_status: Option<Arc<InputFileStatus>>,
@@ -205,9 +226,9 @@ impl LinuxEventWithTraceId {
 }
 
 // Mutable state of `InputFile`
-pub struct InputFileMutableState {
-    pub events: VecDeque<LinuxEventWithTraceId>,
-    pub waiters: WaitQueue,
+struct InputFileMutableState {
+    pub(super) events: VecDeque<LinuxEventWithTraceId>,
+    pub(super) waiters: WaitQueue,
 }
 
 /// Returns the minimum number of bytes required to store `n_bits` bits.
@@ -413,6 +434,39 @@ impl InputFile {
             device_name,
         }
     }
+
+    pub fn add_events(&self, events: Vec<uapi::input_event>) {
+        if events.is_empty() {
+            return;
+        }
+        if let Some(inspect) = &self.inspect_status {
+            inspect.count_fd_notify_calls();
+        }
+        let mut inner = self.inner.lock();
+        inner.events.extend(events.into_iter().map(LinuxEventWithTraceId::new));
+        inner.waiters.notify_fd_events(FdEvents::POLLIN);
+    }
+
+    pub fn read_events(&self, limit: usize) -> Vec<LinuxEventWithTraceId> {
+        if let Some(inspect) = &self.inspect_status {
+            inspect.count_fd_read_calls();
+        }
+        let mut inner = self.inner.lock();
+        let num_events = inner.events.len();
+        let limit = std::cmp::min(limit, num_events);
+        if num_events > limit {
+            log_info!(
+                "There was only space in the given buffer to read {} of the {} queued events. Sending a notification to prompt another read.",
+                limit,
+                num_events
+            );
+            if let Some(inspect) = &self.inspect_status {
+                inspect.count_fd_notify_calls();
+            }
+            inner.waiters.notify_fd_events(FdEvents::POLLIN);
+        }
+        inner.events.drain(..limit).collect()
+    }
 }
 
 // The bit-mask that removes the variable parts of the EVIOCGNAME ioctl
@@ -573,31 +627,18 @@ impl FileOps for InputFile {
     ) -> Result<usize, Errno> {
         trace_duration!("input", "InputFile::read");
         debug_assert!(offset == 0);
-        let mut inner = self.inner.lock();
-        let num_events = inner.events.len();
-        if num_events == 0 {
-            // TODO(https://fxbug.dev/42075445): `EAGAIN` is only permitted if the file is opened
-            // with `O_NONBLOCK`. Figure out what to do if the file is opened without that flag.
-            log_info!("read() returning EAGAIN");
-            return error!(EAGAIN);
-        }
-
         let input_event_size = InputEventPtr::size_of_object_for(current_task);
 
         // The limit of the buffer is determined by taking the available bytes
         // and using integer division on the size of uapi::input_event in bytes.
-        // This is how many events we can write at a time, up to the amount of
-        // events queued to be written.
-        let limit = std::cmp::min(data.available() / input_event_size, num_events);
-        if num_events > limit {
-            log_info!(
-                "There was only space in the given buffer to read {} of the {} queued events. Sending a notification to prompt another read.",
-                limit,
-                num_events
-            );
-            inner.waiters.notify_fd_events(FdEvents::POLLIN);
+        let limit = data.available() / input_event_size;
+        let events = self.read_events(limit);
+        if events.is_empty() {
+            // TODO: b/498956542 - ensure this is the correct behavior for input files
+            log_info!("read() returning EAGAIN");
+            return error!(EAGAIN);
         }
-        let events: Vec<LinuxEventWithTraceId> = inner.events.drain(..limit).collect::<Vec<_>>();
+
         let last_event_timeval = events.last().expect("events is nonempty").event.time;
         let last_event_time_ns = duration_from_timeval::<zx::MonotonicTimeline>(last_event_timeval)
             .unwrap()

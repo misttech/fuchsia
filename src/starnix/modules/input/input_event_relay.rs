@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{InputDeviceStatus, InputFile, LinuxEventWithTraceId, uinput};
+use crate::{InputDeviceStatus, InputFile, uinput};
 use fidl::endpoints::{ClientEnd, RequestStream};
 use fidl_fuchsia_ui_input::TouchDeviceInfo;
 use fidl_fuchsia_ui_input3::{
@@ -36,7 +36,6 @@ use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouch
 use starnix_sync::Mutex;
 use starnix_types::time::timeval_from_time;
 use starnix_uapi::uapi;
-use starnix_uapi::vfs::FdEvents;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
@@ -457,11 +456,7 @@ impl InputEventsRelay {
                             last_event_time_ns,
                         );
                     }
-                    let mut inner = file.inner.lock();
-                    inner
-                        .events
-                        .extend(new_events.clone().into_iter().map(LinuxEventWithTraceId::new));
-                    inner.waiters.notify_fd_events(FdEvents::POLLIN);
+                    file.add_events(new_events.clone().into_iter().collect());
                 }
 
                 true
@@ -497,13 +492,8 @@ impl InputEventsRelay {
                         log_warn!("Dropping input file for keyboard that failed to upgrade");
                         return false;
                     };
-                    let mut inner = file.inner.lock();
-
                     if !new_events.is_empty() {
-                        inner
-                            .events
-                            .extend(new_events.clone().into_iter().map(LinuxEventWithTraceId::new));
-                        inner.waiters.notify_fd_events(FdEvents::POLLIN);
+                        file.add_events(new_events.clone().into_iter().collect());
                     }
 
                     true
@@ -603,11 +593,7 @@ impl InputEventsRelay {
                                 batch.event_time.into_nanos().try_into().unwrap(),
                             );
                         }
-                        let mut inner = file.inner.lock();
-                        inner.events.extend(
-                            batch.events.clone().into_iter().map(LinuxEventWithTraceId::new),
-                        );
-                        inner.waiters.notify_fd_events(FdEvents::POLLIN);
+                        file.add_events(batch.events.clone());
                     }
 
                     true
@@ -705,11 +691,7 @@ impl InputEventsRelay {
                                 batch.event_time.into_nanos().try_into().unwrap(),
                             );
                         }
-                        let mut inner = file.inner.lock();
-                        inner.events.extend(
-                            batch.events.clone().into_iter().map(LinuxEventWithTraceId::new),
-                        );
-                        inner.waiters.notify_fd_events(FdEvents::POLLIN);
+                        file.add_events(batch.events.clone());
                     }
 
                     true
@@ -818,9 +800,7 @@ impl InputEventsRelay {
                         last_event_time_ns.into_nanos().try_into().unwrap(),
                     );
                 }
-                let mut inner = file.inner.lock();
-                inner.events.extend(new_events.clone().into_iter().map(LinuxEventWithTraceId::new));
-                inner.waiters.notify_fd_events(FdEvents::POLLIN);
+                file.add_events(new_events.clone().into_iter().collect());
             }
             true
         });
