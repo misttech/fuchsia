@@ -12,8 +12,7 @@ import("//src/developer/ffx/lib/version/build/ffx_apply_version.gni")
 if (is_host && target_cpu == "x64") {
   ffx = "${ffx_test_host_tools_out_dir}/ffx"
   emu_dir = "//prebuilt/third_party/qemu/${host_platform}"
-  product_bundle =
-      get_label_info(labels.images, "target_out_dir") + "/product_bundle"
+  product_bundle = files.product_bundle_dir
   bootloader = "${product_bundle}/partitions/bootloader_partitions/0/image/fuchsia.esp.blk"
   run_zircon = "//zircon/scripts/run-zircon"
 
@@ -62,7 +61,6 @@ if (is_host && target_cpu == "x64") {
     sources = [
       "//prebuilt/third_party/edk2/qemu-x64/OVMF_CODE.fd",
       "//prebuilt/third_party/edk2/qemu-x64/OVMF_VARS.fd",
-      bootloader,
       product_bundle,
       run_zircon,
     ]

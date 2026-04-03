@@ -202,8 +202,6 @@ function diff_file_relpath() {
       diff_text "$left" "$right"
       ;;
 
-    *.vbmeta) expect=unknown; diff_binary "$left" "$right" ;;
-
     memory_metrics_registry.cb.h)
       expect="diff"; diff_text "$left" "$right" ;;  # ordering diff
 
@@ -223,6 +221,9 @@ function diff_file_relpath() {
       case "$common_path" in
         gen/gopaths/*) expect="match"; diff_json "$left" "$right"  ;;
         amber-files/repository/targets.json) expect=skip ;; # too big right now
+        */recovery_repository/targets.json) expect=skip ;;
+        */repository/targets.json) expect=skip ;;
+        */keys/targets.json) expect="match"; diff_json "$left" "$right"  ;;
         *) expect="diff" ;;  # diffs: many hashes
       esac
       ;;
@@ -236,7 +237,23 @@ function diff_file_relpath() {
     elf_sizes.json) expect="diff"; diff_json "$left" "$right" ;;  # diffs: build_id
     recovery-eng_blobs.json) expect="diff"; diff_json "$left" "$right" ;;  # diffs: bytes, merkle, size (ordering)
     *.zbi.json) expect=unknown; diff_json "$left" "$right" ;;  # diffs: crc32, size
+    *.vbmeta) expect="skip" ;; # Always timestamped in the digital signature
+    product_bundle.json) expect="diff"; diff_json "$left" "$right" ;;  # update package hash, due to vbmeta
     update_packages.manifest.json) expect="diff"; diff_json "$left" "$right" ;;  # hashes
+    root.json)
+      case "$common_path" in
+        */repository/root.json) expect=skip ;; # diffs: sig, expires
+        */recovery_repository/root.json) expect=skip ;; # diffs: sig, expires
+        *) expect="match"; diff_json "$left" "$right"  ;;
+      esac
+      ;;
+    # These files are known to have non-deterministic json field ordering due to a Bazel issue
+    x64-emu-extra-large.json) expect=skip ;; # field ordering
+    x64-emu-min.json) expect=skip ;; # field ordering
+    x64-emu-recommended.json) expect=skip ;; # field ordering
+    arm64-emu-extra-large.json) expect=skip ;; # field ordering
+    arm64-emu-min.json) expect=skip ;; # field ordering
+    arm64-emu-recommended.json) expect=skip ;; # field ordering
 
     images.json) expect=skip ;;  # too many diffs
 
