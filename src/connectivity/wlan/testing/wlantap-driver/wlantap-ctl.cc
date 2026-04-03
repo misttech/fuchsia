@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.wlan.tap/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.tap/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <wlan/drivers/log.h>
 
@@ -27,7 +28,7 @@ void WlantapCtlServer::CreatePhy(CreatePhyRequestView request,
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "Failed to create endpoints: %s", endpoints.status_string());
+    fdf::error("Failed to create endpoints: {}", endpoints);
     completer.Reply(endpoints.error_value());
   }
 
@@ -36,14 +37,14 @@ void WlantapCtlServer::CreatePhy(CreatePhyRequestView request,
 
   zx_status_t status = ServeWlanPhyImplProtocol(instance_name, std::move(impl));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "ServeWlanPhyImplProtocol failed: %s", zx_status_get_string(status));
+    fdf::error("ServeWlanPhyImplProtocol failed: {}", zx_status_get_string(status));
     completer.Reply(status);
     return;
   }
 
   status = AddWlanPhyImplChild(instance_name, std::move(endpoints->server));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "AddWlanPhyImplChild failed: %s", zx_status_get_string(status));
+    fdf::error("AddWlanPhyImplChild failed: {}", zx_status_get_string(status));
     completer.Reply(status);
     return;
   }
@@ -64,7 +65,7 @@ zx_status_t WlantapCtlServer::AddWlanPhyImplChild(
 
   auto res = driver_context_->node_client()->AddChild(args, std::move(server), {});
   if (!res.ok()) {
-    FDF_LOG(ERROR, "Failed to add WlanPhyImpl child: %s", res.status_string());
+    fdf::error("Failed to add WlanPhyImpl child: {}", res.status_string());
     return res.status();
   }
   return ZX_OK;
@@ -85,7 +86,7 @@ zx_status_t WlantapCtlServer::ServeWlanPhyImplProtocol(std::string_view name,
       std::move(handler), name);
 
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service: %s", result.status_string());
+    fdf::error("Failed to add service: {}", result);
     return result.error_value();
   }
 

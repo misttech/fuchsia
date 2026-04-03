@@ -5,6 +5,7 @@
 #include "wlantap-phy-impl.h"
 
 #include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -48,7 +49,7 @@ void WlanPhyImplDevice::Init(
         // should only be called once, and |self| is reset() upon completion
         // to drop its reference.
         if (self == nullptr) {
-          FDF_LOG(ERROR, "%s: shutdown callback called more than once", name.c_str());
+          fdf::error("{}: shutdown callback called more than once", name);
           return fit::error(ZX_ERR_INTERNAL);
         }
 
@@ -59,8 +60,8 @@ void WlanPhyImplDevice::Init(
         auto phy_removal_status = self->phy_controller_->Remove();
         fit::result<zx_status_t> result = fit::ok();
         if (phy_removal_status.is_error()) {
-          FDF_LOG(ERROR, "%s: Could not remove phy: %s", name.c_str(),
-                  phy_removal_status.error_value().status_string());
+          fdf::error("{}: Could not remove phy: {}", name,
+                     phy_removal_status.error_value().status_string());
           self->ShutdownComplete();
 
           result = fit::error(phy_removal_status.error_value().status());
@@ -81,15 +82,14 @@ void WlanPhyImplDevice::Init(
 
       // TODO(https://fxbug.dev/307809104): Determine which FIDL errors are normal
       // during shutdown.
-      FDF_LOG(INFO, "%s: phy node unbound: %s", device_->name_.c_str(),
-              error.FormatDescription().c_str());
+      fdf::info("{}: phy node unbound: {}", device_->name_, error.FormatDescription());
 
       // If an iface exists, then iface destruction will call ShutdownComplete().
       if (device_->IfaceExists()) {
         auto status = device_->iface_controller_->Remove();
         if (status.is_error()) {
-          FDF_LOG(ERROR, "%s: Could not remove iface: %s", device_->name_.c_str(),
-                  status.error_value().status_string());
+          fdf::error("{}: Could not remove iface: {}", device_->name_,
+                     status.error_value().status_string());
           device_->ShutdownComplete();
         }
       } else {
@@ -119,8 +119,8 @@ void WlanPhyImplDevice::GetSupportedMacRoles(fdf::Arena& arena,
   wlan_common::WlanMacRole supported[1] = {phy_config_->mac_role};
   auto reply_vec = fidl::VectorView<wlan_common::WlanMacRole>::FromExternal(supported, 1);
 
-  FDF_LOG(INFO, "%s: received a 'GetSupportedMacRoles' DDK request. Responding with roles = {%u}",
-          name_.c_str(), static_cast<uint32_t>(phy_config_->mac_role));
+  fdf::info("{}: received a 'GetSupportedMacRoles' DDK request. Responding with roles = {{{}}}",
+            name_, static_cast<uint32_t>(phy_config_->mac_role));
 
   auto response =
       fuchsia_wlan_phyimpl::wire::WlanPhyImplGetSupportedMacRolesResponse::Builder(arena)
@@ -132,35 +132,34 @@ void WlanPhyImplDevice::GetSupportedMacRoles(fdf::Arena& arena,
 void WlanPhyImplDevice::CreateIface(CreateIfaceRequestView request, fdf::Arena& arena,
                                     CreateIfaceCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: received a 'CreateIface' request", name_.c_str());
+  fdf::info("{}: received a 'CreateIface' request", name_);
 
   std::string role_str = RoleToString(request->role());
-  FDF_LOG(INFO, "%s: received a 'CreateIface' for role: %s", name_.c_str(), role_str.c_str());
+  fdf::info("{}: received a 'CreateIface' for role: {}", name_, role_str);
   if (phy_config_->mac_role != request->role()) {
-    FDF_LOG(ERROR, "%s: CreateIface(%s): role not supported", name_.c_str(), role_str.c_str());
+    fdf::error("{}: CreateIface({}): role not supported", name_, role_str);
     completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
 
   if (IfaceExists()) {
-    FDF_LOG(ERROR,
-            "%s: CreateIface(%s): Failed to create iface. wlantap only supports at most one iface.",
-            name_.c_str(), role_str.c_str());
+    fdf::error(
+        "{}: CreateIface({}): Failed to create iface. wlantap only supports at most one iface.",
+        name_, role_str);
     completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_EXISTS);
     return;
   }
 
   if (!request->mlme_channel().is_valid()) {
-    FDF_LOG(ERROR, "%s: CreateIface(%s): MLME channel in request is invalid", name_.c_str(),
-            role_str.c_str());
+    fdf::error("{}: CreateIface({}): MLME channel in request is invalid", name_, role_str);
     completer.buffer(arena).ReplyError(ZX_ERR_IO_INVALID);
     return;
   }
 
   zx_status_t status = CreateWlanSoftmac(request->role(), std::move(request->mlme_channel()));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: CreateIface(%s): Could not create softmac: %s", name_.c_str(),
-            role_str.c_str(), zx_status_get_string(status));
+    fdf::error("{}: CreateIface({}): Could not create softmac: {}", name_, role_str,
+               zx_status_get_string(status));
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -180,14 +179,13 @@ bool WlanPhyImplDevice::IfaceExists() {
 fit::result<zx_status_t> WlanPhyImplDevice::DestroyIface() {
   WLAN_TRACE_DURATION();
   if (!IfaceExists()) {
-    FDF_LOG(ERROR, "%s: Iface doesn't exist", name_.c_str());
+    fdf::error("{}: Iface doesn't exist", name_);
     return fit::error(ZX_ERR_NOT_FOUND);
   }
 
   auto status = iface_controller_->Remove();
   if (status.is_error()) {
-    FDF_LOG(ERROR, "%s: Failed to destroy iface: %s", name_.c_str(),
-            status.error_value().status_string());
+    fdf::error("{}: Failed to destroy iface: {}", name_, status.error_value().status_string());
     return fit::error(status.error_value().status());
   }
 
@@ -207,20 +205,20 @@ void WlanPhyImplDevice::ShutdownComplete() {
 void WlanPhyImplDevice::DestroyIface(DestroyIfaceRequestView request, fdf::Arena& arena,
                                      DestroyIfaceCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: received a 'DestroyIface' DDK request", name_.c_str());
+  fdf::info("{}: received a 'DestroyIface' DDK request", name_);
   completer.buffer(arena).Reply(DestroyIface());
 }
 
 void WlanPhyImplDevice::SetCountry(SetCountryRequestView request, fdf::Arena& arena,
                                    SetCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: SetCountry() to [%s] received", name_.c_str(),
-          wlan::common::Alpha2ToStr(request->alpha2()).c_str());
+  fdf::info("{}: SetCountry() to [{}] received", name_,
+            wlan::common::Alpha2ToStr(request->alpha2()));
 
   wlan_tap::SetCountryArgs args{.alpha2 = request->alpha2()};
   zx_status_t status = wlantap_phy_->SetCountry(args);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: SetCountry() failed: %s", name_.c_str(), zx_status_get_string(status));
+    fdf::error("{}: SetCountry() failed: {}", name_, zx_status_get_string(status));
     completer.buffer(arena).ReplyError(status);
     return;
   }
@@ -229,49 +227,49 @@ void WlanPhyImplDevice::SetCountry(SetCountryRequestView request, fdf::Arena& ar
 
 void WlanPhyImplDevice::ClearCountry(fdf::Arena& arena, ClearCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: ClearCountry() not supported", name_.c_str());
+  fdf::warn("{}: ClearCountry() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void WlanPhyImplDevice::GetCountry(fdf::Arena& arena, GetCountryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: GetCountry() not supported", name_.c_str());
+  fdf::warn("{}: GetCountry() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void WlanPhyImplDevice::SetPowerSaveMode(SetPowerSaveModeRequestView request, fdf::Arena& arena,
                                          SetPowerSaveModeCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: SetPowerSaveMode() not supported", name_.c_str());
+  fdf::warn("{}: SetPowerSaveMode() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void WlanPhyImplDevice::GetPowerSaveMode(fdf::Arena& arena,
                                          GetPowerSaveModeCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: GetPowerSaveMode() not supported", name_.c_str());
+  fdf::warn("{}: GetPowerSaveMode() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void WlanPhyImplDevice::PowerDown(fdf::Arena& arena, PowerDownCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: PowerDown() not supported", name_.c_str());
+  fdf::warn("{}: PowerDown() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 void WlanPhyImplDevice::PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: PowerUp() not supported", name_.c_str());
+  fdf::warn("{}: PowerUp() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void WlanPhyImplDevice::Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: Reset() not supported", name_.c_str());
+  fdf::warn("{}: Reset() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 void WlanPhyImplDevice::GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: GetPowerState() not supported", name_.c_str());
+  fdf::warn("{}: GetPowerState() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -279,26 +277,26 @@ void WlanPhyImplDevice::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView req
                                              fdf::Arena& arena,
                                              SetBtCoexistenceModeCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: SetBtCoexistenceMode() not supported", name_.c_str());
+  fdf::warn("{}: SetBtCoexistenceMode() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
 void WlanPhyImplDevice::SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
                                            SetTxPowerScenarioCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: SetTxPowerScenario() not supported", name_.c_str());
+  fdf::warn("{}: SetTxPowerScenario() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 void WlanPhyImplDevice::ResetTxPowerScenario(fdf::Arena& arena,
                                              ResetTxPowerScenarioCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: ResetTxPowerScenario() not supported", name_.c_str());
+  fdf::warn("{}: ResetTxPowerScenario() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 void WlanPhyImplDevice::GetTxPowerScenario(fdf::Arena& arena,
                                            GetTxPowerScenarioCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(WARNING, "%s: GetTxPowerScenario() not supported", name_.c_str());
+  fdf::warn("{}: GetTxPowerScenario() not supported", name_);
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -311,20 +309,19 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR, "%s: Failed to create endpoints: %s", name_.c_str(), endpoints.status_string());
+    fdf::error("{}: Failed to create endpoints: {}", name_, endpoints);
     return endpoints.status_value();
   }
 
   zx_status_t status = ServeWlanSoftmac(name, role, std::move(mlme_channel));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: ServeWlanSoftmac failed: %s", name_.c_str(), zx_status_get_string(status));
+    fdf::error("{}: ServeWlanSoftmac failed: {}", name_, zx_status_get_string(status));
     return status;
   }
 
   status = AddWlanSoftmacChild(name, std::move(endpoints->server));
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "%s: AddWlanSoftmacChild failed: %s", name_.c_str(),
-            zx_status_get_string(status));
+    fdf::error("{}: AddWlanSoftmacChild failed: {}", name_, zx_status_get_string(status));
     return status;
   }
 
@@ -338,8 +335,7 @@ zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
     void on_fidl_error(::fidl::UnbindInfo error) override {
       // TODO(b/307809104): Determine which FIDL errors are
       // normal during shutdown and iface destruction.
-      FDF_LOG(INFO, "%s: Iface node unbound: %s", device_->name_.c_str(),
-              error.FormatDescription().c_str());
+      fdf::info("{}: Iface node unbound: {}", device_->name_, error.FormatDescription());
       if (device_->wlantap_phy_shutdown_completer_.has_value()) {
         device_->ShutdownComplete();
       }
@@ -363,7 +359,7 @@ zx_status_t WlanPhyImplDevice::AddWlanSoftmacChild(
   fidl::Arena arena;
 
   auto offers = std::vector{fdf::MakeOffer2<fuchsia_wlan_softmac::Service>(arena, name)};
-  FDF_LOG(INFO, "%s: Creating Child node", name_.c_str());
+  fdf::info("{}: Creating Child node", name_);
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                   .name(name)
                   .offers2(offers)
@@ -371,7 +367,7 @@ zx_status_t WlanPhyImplDevice::AddWlanSoftmacChild(
 
   auto res = driver_context_->node_client()->AddChild(args, std::move(server), {});
   if (!res.ok()) {
-    FDF_LOG(ERROR, "%s: Failed to add child: %s", name_.c_str(), res.status_string());
+    fdf::error("{}: Failed to add child: {}", name_, res.status_string());
     return res.status();
   }
 
@@ -383,14 +379,14 @@ zx_status_t WlanPhyImplDevice::ServeWlanSoftmac(std::string_view name,
                                                 zx::channel mlme_channel) {
   WLAN_TRACE_DURATION();
   if (wlantap_mac_) {
-    FDF_LOG(ERROR, "%s: Softmac already exists, only one allowed", name_.c_str());
+    fdf::error("{}: Softmac already exists, only one allowed", name_);
     return ZX_ERR_ALREADY_EXISTS;
   }
 
   wlantap_mac_ =
       std::make_unique<WlantapMac>(wlantap_phy_.get(), role, phy_config_, std::move(mlme_channel));
 
-  FDF_LOG(INFO, "%s: Adding softmac outgoing service", name_.c_str());
+  fdf::info("{}: Adding softmac outgoing service", name_);
   fuchsia_wlan_softmac::Service::InstanceHandler handler(
       {.wlan_softmac = wlantap_mac_->ProtocolHandler()});
 
@@ -398,8 +394,7 @@ zx_status_t WlanPhyImplDevice::ServeWlanSoftmac(std::string_view name,
       std::move(handler), name);
 
   if (result.is_error()) {
-    FDF_LOG(ERROR, "%s: Failed To add WlanSoftmac service: %s", name_.c_str(),
-            result.status_string());
+    fdf::error("{}: Failed To add WlanSoftmac service: {}", name_, result);
     return result.status_value();
   }
 

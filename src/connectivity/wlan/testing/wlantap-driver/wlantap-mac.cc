@@ -4,6 +4,8 @@
 
 #include "wlantap-mac.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 #include <wlan/common/channel.h>
 #include <wlan/drivers/log.h>
 
@@ -25,7 +27,7 @@ WlantapMac::WlantapMac(Listener* listener, wlan_common::WlanMacRole role,
 
 void WlantapMac::Query(fdf::Arena& arena, QueryCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "Query(): %u", phy_config_->hardware_capability);
+  fdf::info("Query(): {}", phy_config_->hardware_capability);
   fidl::Arena<kWlanSoftmacQueryResponseBufferSize> table_arena;
   wlan_softmac::WlanSoftmacQueryResponse resp;
   ConvertTapPhyConfig(&resp, *phy_config_, table_arena);
@@ -65,7 +67,7 @@ void WlantapMac::QuerySpectrumManagementSupport(
 void WlantapMac::Start(StartRequestView request, fdf::Arena& arena,
                        StartCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "Calling Start()");
+  fdf::info("Calling Start()");
   if (!sme_channel_.is_valid()) {
     completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_BOUND);
     return;

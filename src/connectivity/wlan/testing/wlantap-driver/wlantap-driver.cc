@@ -4,6 +4,7 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/logging/cpp/logger.h>
 
 #include <wlan/drivers/log.h>
 
@@ -50,7 +51,7 @@ class WlantapDriver : public fdf::DriverBase {
 
     auto result = node_->AddChild(args, std::move(controller_endpoints->server), {});
     if (!result.ok()) {
-      FDF_LOG(ERROR, "Failed to add child: %s", result.status_string());
+      fdf::error("Failed to add child: {}", result.status_string());
       return zx::error(result.status());
     }
 

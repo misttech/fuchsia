@@ -5,6 +5,7 @@
 #include "wlantap-phy.h"
 
 #include <fidl/fuchsia.wlan.common/cpp/fidl.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl_driver/cpp/wire_messaging_declarations.h>
 #include <zircon/types.h>
@@ -82,7 +83,7 @@ zx_status_t WlantapPhy::SetCountry(wlan_tap::SetCountryArgs args) {
   WLAN_TRACE_DURATION();
   fidl::Status status = fidl::WireSendEvent(user_binding_)->SetCountry(args);
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: SetCountry() failed: user_binding not bound", status.status_string());
+    fdf::error("{}: SetCountry() failed: user_binding not bound", status.status_string());
 
     return status.status();
   }
@@ -97,21 +98,21 @@ zx_status_t WlantapPhy::SetCountry(wlan_tap::SetCountryArgs args) {
 // no longer exists.
 void WlantapPhy::Shutdown(ShutdownCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: Shutdown", name_.c_str());
-  FDF_LOG(INFO, "%s: PHY device shutdown initiated.", name_.c_str());
+  fdf::info("{}: Shutdown", name_);
+  fdf::info("{}: PHY device shutdown initiated.", name_);
 
   auto phy_impl_shutdown_status = phy_impl_shutdown_callback_(completer.ToAsync());
   if (phy_impl_shutdown_status.is_error()) {
-    FDF_LOG(ERROR, "%s: Failed to shutdown the PHY: %s", name_.c_str(),
-            zx_status_get_string(phy_impl_shutdown_status.error_value()));
+    fdf::error("{}: Failed to shutdown the PHY: {}", name_,
+               zx_status_get_string(phy_impl_shutdown_status.error_value()));
   }
 }
 
 void WlantapPhy::Rx(RxRequestView request, RxCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: Rx(%zu bytes)", name_.c_str(), request->data.size());
+  fdf::info("{}: Rx({} bytes)", name_, request->data.size());
   if (!wlan_softmac_ifc_client_.is_valid()) {
-    FDF_LOG(ERROR, "%s: No WlantapMac present.", name_.c_str());
+    fdf::error("{}: No WlantapMac present.", name_);
     return;
   }
   auto rx_flags = wlan_softmac::WlanRxInfoFlags::TruncatingUnknown(request->info.rx_flags);
@@ -130,20 +131,20 @@ void WlantapPhy::Rx(RxRequestView request, RxCompleter::Sync& completer) {
   wlan_softmac_ifc_client_.buffer(*arena)->Recv(rx_packet).ThenExactlyOnce(
       [completer = completer.ToAsync(),
        name = name_](fdf::WireUnownedResult<fuchsia_wlan_softmac::WlanSoftmacIfc::Recv>& result) {
-        FDF_LOG(INFO, "%s: Recv completed", name.c_str());
+        fdf::info("{}: Recv completed", name);
       });
-  FDF_LOG(DEBUG, "%s: Rx done", name_.c_str());
+  fdf::debug("{}: Rx done", name_);
 }
 
 void WlantapPhy::ReportTxResult(ReportTxResultRequestView request,
                                 ReportTxResultCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
   if (!phy_config_->quiet || report_tx_status_count_ < 32) {
-    FDF_LOG(INFO, "%s: ReportTxResult %zu", name_.c_str(), report_tx_status_count_);
+    fdf::info("{}: ReportTxResult {}", name_, report_tx_status_count_);
   }
 
   if (!wlan_softmac_ifc_client_.is_valid()) {
-    FDF_LOG(ERROR, "%s: WlantapMacStart() not called.", name_.c_str());
+    fdf::error("{}: WlantapMacStart() not called.", name_);
     return;
   }
 
@@ -156,14 +157,14 @@ void WlantapPhy::ReportTxResult(ReportTxResultRequestView request,
           [this](fdf::WireUnownedResult<fuchsia_wlan_softmac::WlanSoftmacIfc::ReportTxResult>&
                      result) {
             if (!result.ok()) {
-              FDF_LOG(ERROR, "%s: Failed to report tx status up. Status: %s", name_.c_str(),
-                      zx_status_get_string(result.status()));
+              fdf::error("{}: Failed to report tx status up. Status: {}", name_,
+                         zx_status_get_string(result.status()));
               return;
             }
 
-            FDF_LOG(DEBUG, "%s: ScanComplete done", name_.c_str());
+            fdf::debug("{}: ScanComplete done", name_);
             if (!phy_config_->quiet || report_tx_status_count_ <= 32) {
-              FDF_LOG(DEBUG, "%s: ReportTxResult %zu done", name_.c_str(), report_tx_status_count_);
+              fdf::debug("{}: ReportTxResult {} done", name_, report_tx_status_count_);
             }
           });
 }
@@ -171,9 +172,9 @@ void WlantapPhy::ReportTxResult(ReportTxResultRequestView request,
 void WlantapPhy::ScanComplete(ScanCompleteRequestView request,
                               ScanCompleteCompleter::Sync& completer) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: ScanComplete(%u)", name_.c_str(), request->status);
+  fdf::info("{}: ScanComplete({})", name_, request->status);
   if (!wlan_softmac_ifc_client_.is_valid()) {
-    FDF_LOG(ERROR, "%s: WlantapMacStart() not called.", name_.c_str());
+    fdf::error("{}: WlantapMacStart() not called.", name_);
     return;
   }
 
@@ -191,10 +192,10 @@ void WlantapPhy::ScanComplete(ScanCompleteRequestView request,
               fdf::WireUnownedResult<fuchsia_wlan_softmac::WlanSoftmacIfc::NotifyScanComplete>&
                   result) {
             if (!result.ok()) {
-              FDF_LOG(ERROR, "%s: Failed to send scan complete notification up. Status: %s",
-                      name.c_str(), zx_status_get_string(result.status()));
+              fdf::error("{}: Failed to send scan complete notification up. Status: {}", name,
+                         zx_status_get_string(result.status()));
             } else {
-              FDF_LOG(INFO, "%s: ScanComplete done", name.c_str());
+              fdf::info("{}: ScanComplete done", name);
             }
           });
 }
@@ -203,99 +204,99 @@ void WlantapPhy::ScanComplete(ScanCompleteRequestView request,
 
 void WlantapPhy::WlantapMacStart(fdf::ClientEnd<fuchsia_wlan_softmac::WlanSoftmacIfc> ifc_client) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: WlantapMacStart", name_.c_str());
+  fdf::info("{}: WlantapMacStart", name_);
   wlan_softmac_ifc_client_ = fdf::WireSharedClient<fuchsia_wlan_softmac::WlanSoftmacIfc>(
       std::move(ifc_client), fdf::Dispatcher::GetCurrent()->get());
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->WlanSoftmacStart();
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: WlanSoftmacStart() failed", status.status_string());
+    fdf::error("{}: WlanSoftmacStart() failed", status.status_string());
     return;
   }
 
-  FDF_LOG(INFO, "%s: WlantapMacStart done", name_.c_str());
+  fdf::info("{}: WlantapMacStart done", name_);
 }
 
 void WlantapPhy::WlantapMacStop() {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: WlantapMacStop", name_.c_str());
+  fdf::info("{}: WlantapMacStop", name_);
 }
 
 void WlantapPhy::WlantapMacQueueTx(const fuchsia_wlan_softmac::wire::WlanTxPacket& pkt) {
   WLAN_TRACE_DURATION();
   size_t pkt_size = pkt.mac_frame.size();
   if (!phy_config_->quiet || report_tx_status_count_ < 32) {
-    FDF_LOG(INFO, "%s: WlantapMacQueueTx, size=%zu, tx_report_count=%zu", name_.c_str(), pkt_size,
-            report_tx_status_count_);
+    fdf::info("{}: WlantapMacQueueTx, size={}, tx_report_count={}", name_, pkt_size,
+              report_tx_status_count_);
   }
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->Tx(ToTxArgs(pkt));
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: Tx() failed", status.status_string());
+    fdf::error("{}: Tx() failed", status.status_string());
     return;
   }
   if (!phy_config_->quiet || report_tx_status_count_ < 32) {
-    FDF_LOG(DEBUG, "%s: WlantapMacQueueTx done(%zu bytes), tx_report_count=%zu", name_.c_str(),
-            pkt_size, report_tx_status_count_);
+    fdf::debug("{}: WlantapMacQueueTx done({} bytes), tx_report_count={}", name_, pkt_size,
+               report_tx_status_count_);
   }
 }
 
 void WlantapPhy::WlantapMacSetChannel(const fuchsia_wlan_ieee80211::wire::WlanChannel& channel) {
   WLAN_TRACE_DURATION();
   if (!phy_config_->quiet) {
-    FDF_LOG(INFO, "%s: WlantapMacSetChannel channel=%u", name_.c_str(), channel.primary);
+    fdf::info("{}: WlantapMacSetChannel channel={}", name_, channel.primary);
   }
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->SetChannel({.channel = channel});
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: SetChannel() failed", status.status_string());
+    fdf::error("{}: SetChannel() failed", status.status_string());
     return;
   }
 
   if (!phy_config_->quiet) {
-    FDF_LOG(DEBUG, "%s: WlantapMacSetChannel done", name_.c_str());
+    fdf::debug("{}: WlantapMacSetChannel done", name_);
   }
 }
 
 void WlantapPhy::WlantapMacJoinBss(const wlan_common::JoinBssRequest& config) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: WlantapMacJoinBss", name_.c_str());
+  fdf::info("{}: WlantapMacJoinBss", name_);
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->JoinBss({.config = config});
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: JoinBss() failed", status.status_string());
+    fdf::error("{}: JoinBss() failed", status.status_string());
     return;
   }
 
-  FDF_LOG(DEBUG, "%s: WlantapMacJoinBss done", name_.c_str());
+  fdf::debug("{}: WlantapMacJoinBss done", name_);
 }
 
 void WlantapPhy::WlantapMacStartScan(const uint64_t scan_id) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: WlantapMacStartScan", name_.c_str());
+  fdf::info("{}: WlantapMacStartScan", name_);
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)
                             ->StartScan({
                                 .scan_id = scan_id,
                             });
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: StartScan() failed", status.status_string());
+    fdf::error("{}: StartScan() failed", status.status_string());
     return;
   }
-  FDF_LOG(INFO, "%s: WlantapMacStartScan done", name_.c_str());
+  fdf::info("{}: WlantapMacStartScan done", name_);
 }
 
 void WlantapPhy::WlantapMacSetKey(const wlan_softmac::WlanKeyConfiguration& key_config) {
   WLAN_TRACE_DURATION();
-  FDF_LOG(INFO, "%s: WlantapMacSetKey", name_.c_str());
+  fdf::info("{}: WlantapMacSetKey", name_);
 
   fidl::Status status = fidl::WireSendEvent(user_binding_)->SetKey(ToSetKeyArgs(key_config));
   if (!status.ok()) {
-    FDF_LOG(ERROR, "%s: SetKey() failed", status.status_string());
+    fdf::error("{}: SetKey() failed", status.status_string());
     return;
   }
 
-  FDF_LOG(DEBUG, "%s: WlantapMacSetKey done", name_.c_str());
+  fdf::debug("{}: WlantapMacSetKey done", name_);
 }
 
 }  // namespace wlan
