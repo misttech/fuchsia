@@ -11,7 +11,7 @@ library_headers("headers") {
   headers = [ "lib/persistent-debuglog.h" ]
   public_configs = [
     ":config",
-    "//zircon/kernel:persistent_ram_config",
+    "//zircon/kernel/switch:persistent_ram_config",
   ]
 }
 

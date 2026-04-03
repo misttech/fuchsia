@@ -97,7 +97,7 @@ if (is_kernel) {
       "//zircon/kernel/object",
       "//zircon/kernel/vm:headers",
     ]
-    public_configs = [ "//zircon/kernel:kernel_memory_profiler" ]
+    public_configs = [ "//zircon/kernel/switch:kernel_memory_profiler" ]
   }
 
   source_set("sancov") {

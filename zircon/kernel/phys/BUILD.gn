@@ -76,8 +76,8 @@ if (current_toolchain == default_toolchain) {
 } else if (toolchain_environment == "kernel.phys") {
   config("phys_config") {
     configs = [
-      "//zircon/kernel:standalone",
-      "//zircon/kernel:warnings",
+      "//zircon/kernel/switch:standalone",
+      "//zircon/kernel/switch:warnings",
       "//zircon/kernel/arch/$zircon_cpu:abi",
       ":defines",
 
@@ -1035,7 +1035,7 @@ if (is_kernel) {
     ]
 
     # Defines the maximum support kernel image size.
-    configs += [ "//zircon/kernel:kernel_image_max_size" ]
+    configs += [ "//zircon/kernel/switch:kernel_image_max_size" ]
   }
 
   physload_module("physboot.module") {
@@ -1062,7 +1062,7 @@ if (is_kernel) {
     ]
 
     # Defines the maximum support kernel image size.
-    configs += [ "//zircon/kernel:kernel_image_max_size" ]
+    configs += [ "//zircon/kernel/switch:kernel_image_max_size" ]
   }
 
   # A physboot-compatible ELF kernel depends on this.

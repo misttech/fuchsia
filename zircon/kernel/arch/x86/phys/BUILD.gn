@@ -62,8 +62,8 @@ if (current_toolchain == default_toolchain) {
 
     variant("phys32_config") {
       configs = [
-        "//zircon/kernel:standalone",
-        "//zircon/kernel:warnings",
+        "//zircon/kernel/switch:standalone",
+        "//zircon/kernel/switch:warnings",
         "//zircon/kernel/arch/x86:abi",
         "//zircon/kernel/phys:defines",
 

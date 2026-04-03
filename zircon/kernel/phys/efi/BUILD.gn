@@ -52,8 +52,8 @@ if (current_toolchain == default_toolchain) {
 } else if (toolchain_environment == "kernel.efi") {
   variant("efi_config") {
     configs = [
-      "//zircon/kernel:standalone",
-      "//zircon/kernel:warnings",
+      "//zircon/kernel/switch:standalone",
+      "//zircon/kernel/switch:warnings",
 
       # Don't emit extra code making static initializers thread-safe (we don't
       # have threads or any of the corresponding library support.)

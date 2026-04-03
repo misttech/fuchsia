@@ -58,7 +58,7 @@ static_library("libc") {
 config("headers.after") {
   visibility = [
     ":*",
-    "//zircon/kernel:headers",
+    "//zircon/kernel/switch:headers",
   ]
 
   # libc/include is before toolchain headers because it needs to be able to

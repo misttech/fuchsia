@@ -8,7 +8,7 @@ config("includes") {
   include_dirs = [ "." ]
 
   # sys/types.h
-  configs = [ "//zircon/kernel:headers" ]
+  configs = [ "//zircon/kernel/switch:headers" ]
 }
 
 config("legacy_includes") {

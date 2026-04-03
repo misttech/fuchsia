@@ -20,7 +20,7 @@ assert(
 # kernel_switchset(name) must be instantiated in
 # //zircon/kernel/switch/set/$name/BUILD.gn. The associated cpu-specific
 # toolchain is then defined as
-# //zircon/kernel/switchset/$name:kernel_$cpu.$name.
+# //zircon/kernel/switch/set/$name:kernel_$cpu.$name.
 #
 # # Parameters
 #
@@ -54,7 +54,7 @@ template("kernel_switchset") {
       ]
 
       prefix_configs = [
-        "//zircon/kernel:headers",
+        "//zircon/kernel/switch:headers",
 
         # TODO(https://fxbug.dev/42121444): Many include/ headers use <ktl/*.h> headers.
         "//zircon/kernel/lib/ktl:headers.config",
@@ -160,7 +160,7 @@ template("kernel_switchset") {
         "//zircon/kernel/lib/page-map:headers.config",
       ]
 
-      configs = [ "//zircon/kernel:kernel_config" ]
+      configs = [ "//zircon/kernel/switch:kernel_config" ]
 
       # NOTE: kernel artifacts currently do not build under fuzzer
       # variants. This was also true with the Zircon build, but
