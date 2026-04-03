@@ -4,26 +4,21 @@
 
 import("//build/config/zircon/levels.gni")
 import("//build/test.gni")
-import("../git_revisions.gni")
 import("../libc.gni")
 
 group("scudo") {
-  deps = []
-
   if (!variant_replaces_allocator) {
     # If we are using a sanitizer that replaces the allocator, do not include
     # scudo in libc so we can use the sanitizer allocator. Stubs are provided
     # that replace scudo's definitions.
-    deps += [ ":scudo-allocator" ]
+    deps = [ ":scudo-allocator" ]
   }
 
-  # Note: This can become a simple else branch to the if above once Scudo rolls.
-  if (variant_replaces_allocator ||
-      libc_git_revisions.scudo == "6a714fe82eb97c10eba15001671432b3b61f3cc1") {
+  if (variant_replaces_allocator) {
     # TODO(https://fxbug.dev/495371178): Until sanitizer runtimes that export
     # free_sized and free_aligned_sized roll in, build a local wrapper around
     # them.
-    deps += [ ":free_sized" ]
+    deps = [ ":free_sized" ]
   }
 }
 
