@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/zbi/zbi.gni")
+import("//zircon/kernel/kernel_package.gni")
+import("//zircon/kernel/params.gni")
+
+assert(
+    current_toolchain == default_toolchain,
+    "Kernel image definitions should be evaluated only in the default toolchain, not $current_toolchain")
+
+kernel_package("zircon") {
+  deps = [ "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)" ]
+
+  # Embed userboot, the vDSO, and the version-string.txt file in the package
+  # subdirectory.
+  deps += [
+    "//zircon/kernel/lib/userabi/userboot",
+    "//zircon/kernel/lib/userabi/vdso",
+    "//zircon/kernel/lib/version:version-string.txt",
+  ]
+}
+
+# The final kernel ZBI combines physboot with that kernel storage payload.
+zbi("legacy") {
+  output_name = "kernel"
+
+  deps = kernel_zbi_extra_deps
+  deps += [
+    ":zircon",
+    "//zircon/kernel/phys:physboot",
+  ]
+  compress = "zstd.max"
+
+  output_dir = root_out_dir
+  output_extension = "zbi"
+  output_path =
+      rebase_path("$output_dir/$target_name.$output_extension", root_build_dir)
+  metadata = {
+    # For the //:images build_api_module().
+    images = [
+      {
+        label = get_label_info(":$target_name", "label_with_toolchain")
+        name = "kernel"
+        tags = [ "incomplete" ]
+        type = "zbi"
+        path = output_path
+        cpu = current_cpu
+      },
+    ]
+  }
+}

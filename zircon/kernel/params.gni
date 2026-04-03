@@ -82,6 +82,19 @@ declare_args() {
   #   2 - SPEW
   kernel_debug_print_level = 2
 
+  # A list of GN labels reaching zbi_input()-style targets to include in the
+  # kernel ZBI.  These targets can be zbi_input(), kernel_cmdline(), etc. to
+  # inject ZBI items or resource(), etc. to inject items into the filesystem
+  # image that physboot decodes.
+  #
+  # These are injected first, so an item that's itself a zbi_executable() or
+  # the like can be listed here to be used as a ZBI-to-ZBI boot shim
+  # (e.g. //zircon/kernel/arch/x86/phys/boot-shim:x86-legacy-zbi-boot-shim)
+  #
+  # TODO(https://fxbug.dev/498633118): Revisit the need for this in a
+  # many-kernel-capable build.
+  kernel_zbi_extra_deps = []
+
   # Controls the granularity of allocation of the global pool of persistent RAM.
   # All features which wish to use persistent RAM to preserve data across reboot
   # must operate in allocations which are a multiple of this value.  The value

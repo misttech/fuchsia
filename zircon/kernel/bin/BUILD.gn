@@ -1,0 +1,91 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/toolchain/toolchain_environment.gni")
+import("//build/zircon/c_utils.gni")
+import("//zircon/kernel/phys/kernel_elf_binary.gni")
+
+#
+# Kernel executable definitions, which should only be evaluated by kernel
+# switchsets.
+#
+
+assert(toolchain_environment == "kernel")
+
+declare_args() {
+  # A list of GN labels comprising additional dependencies of the kernel
+  # proper. This can be useful - in a prototyping or 'vendor' capacity - for
+  # injecting new instances of subsystems that the kernel has defined modularly
+  # (e.g., pdev drivers or k commands).
+  #
+  # TODO(https://fxbug.dev/498633118): Revisit the need for this in a
+  # many-kernel-capable build.
+  kernel_extra_deps = []
+}
+
+kernel_elf_binary("vmzircon") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/image/*",
+    "//zircon/kernel/lib/userabi/trivial-test-userboot:*",
+  ]
+
+  configs += [ "//zircon/kernel/switch:kernel.config" ]
+  deps = [
+    ":zircon-main",
+    "//zircon/kernel/phys:physboot.kernel",
+  ]
+
+  validations = [ ":validate-kernel-symbols" ]
+}
+
+group("zircon-main") {
+  deps =
+      [
+        ":test",  # TODO: make optional, add testonly taint
+        "//zircon/kernel/top",
+
+        # Ensures that //docs/gen/boot-options.md is never stale.
+        "//zircon/kernel/lib/boot-options:check-markdown($default_toolchain)",
+      ] + kernel_extra_deps
+  if (current_cpu == "arm64") {
+    deps += [ "//zircon/kernel/platform/generic-arm" ]
+  } else if (current_cpu == "riscv64") {
+    deps += [ "//zircon/kernel/platform/generic-riscv64" ]
+  } else if (current_cpu == "x64") {
+    deps += [ "//zircon/kernel/platform/pc" ]
+  }
+}
+
+group("test") {
+  #TODO: testonly = true
+  visibility = [ ":*" ]
+  deps = [
+    "//zircon/kernel/debugcommands",
+    "//zircon/kernel/tests:kernel-tests",
+  ]
+}
+
+vmzircon_rspfile = "$target_gen_dir/vmzircon.rsp"
+link_output_rspfile("vmzircon.rsp") {
+  visibility = [ ":*" ]
+  deps = [ ":vmzircon.binary" ]
+  outputs = [ vmzircon_rspfile ]
+}
+
+toolchain_utils_action("validate-kernel-symbols") {
+  visibility = [ ":*" ]
+  outputs = [ "$target_gen_dir/$target_name.stamp" ]
+  script = "//zircon/kernel/scripts/validate-kernel-symbols.py"
+  utils = [ "nm" ]
+  deps = [
+    ":vmzircon.binary",
+    ":vmzircon.rsp",
+  ]
+  sources = [ vmzircon_rspfile ]
+  depfile = "$target_gen_dir/$target_name.d"
+  args = rebase_path(sources + outputs + [ depfile ], root_build_dir)
+}

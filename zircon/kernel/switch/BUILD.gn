@@ -335,7 +335,7 @@ if (is_kernel) {
   }
 
   config("kernel.config") {
-    visibility = [ "//zircon/kernel:*" ]
+    visibility = [ "//zircon/kernel/bin/*" ]
 
     inputs = [ "//zircon/kernel/kernel.ld" ]
 
