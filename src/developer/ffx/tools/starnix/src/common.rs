@@ -4,52 +4,30 @@
 
 use anyhow::{Context, Result, bail};
 use component_debug::cli;
+use component_debug_fdomain as component_debug;
+use fdomain_fuchsia_developer_remotecontrol as rc;
 use fdomain_fuchsia_starnix_container::{ControllerMarker, ControllerProxy};
-use regex::Regex;
-use std::sync::LazyLock;
+use rcs_fdomain as rcs;
 use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
-use {
-    component_debug_fdomain as component_debug, fdomain_fuchsia_developer_remotecontrol as rc,
-    rcs_fdomain as rcs,
-};
 
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const SESSION_CONTAINER: &str = "core/session-manager/session:session/container";
 
 /// Returns the moniker for the container in the session, if there is one.
 async fn find_session_container(rcs_proxy: &rc::RemoteControlProxy) -> Result<String> {
-    // Example: core/session-manager/session:session/elements:5udqa81zlypamvgu/container
-    static SESSION_CONTAINER: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"^core/session-manager/session:session/elements:\w+/container$").unwrap()
-    });
-
     let query_proxy =
         rcs::root_realm_query(&rcs_proxy, TIMEOUT).await.context("opening realm query")?;
     let instances = cli::list::get_instances_matching_filter(None, &query_proxy).await?;
-    let containers: Vec<_> = instances
-        .into_iter()
-        .filter(|i| {
-            let moniker = i.moniker.to_string();
-            (*SESSION_CONTAINER).is_match(&moniker)
-        })
-        .collect();
+    let container = instances.into_iter().find(|i| i.moniker.to_string() == SESSION_CONTAINER);
 
-    if containers.is_empty() {
+    if let Some(c) = container {
+        Ok(c.moniker.to_string())
+    } else {
         println!("Unable to find Starnix container in the session.");
         println!("Please specify a container with --moniker");
         bail!("cannot find container")
     }
-
-    if containers.len() > 1 {
-        println!("Found multiple Starnix containers in the session:");
-        for container in containers.iter() {
-            println!("  {}", container.moniker)
-        }
-        println!("Please specify a container with --moniker");
-        bail!("too many containers")
-    }
-
-    Ok(containers[0].moniker.to_string())
 }
 
 async fn find_moniker(
