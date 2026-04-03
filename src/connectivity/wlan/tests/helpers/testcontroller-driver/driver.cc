@@ -8,6 +8,7 @@
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fidl/cpp/wire/channel.h>
@@ -189,8 +190,7 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
     // which cannot use the fdf::ClientEnd.
     zx::result endpoints = fidl::CreateEndpoints<fuchsia_wlan_fullmac::WlanFullmacImplIfc>();
     if (endpoints.is_error()) {
-      FDF_LOG(ERROR, "Could not create WlanFullmacImplIfc endpoints: %s",
-              endpoints.status_string());
+      fdf::error("Could not create WlanFullmacImplIfc endpoints: {}", endpoints);
       completer.Reply(endpoints.take_error());
       return;
     }
@@ -503,7 +503,7 @@ class TestController : public fdf::DriverBase,
     zx::result result =
         outgoing()->AddService<fuchsia_wlan_fullmac::Service>(std::move(handler), child_name);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to add fullmac service: %s", result.status_string());
+      fdf::error("Failed to add fullmac service: {}", result);
       async_completer->Reply(result.take_error());
       async_completer.reset();
       return;

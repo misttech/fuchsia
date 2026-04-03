@@ -22,6 +22,7 @@ fuchsia_cc_driver("testcontroller_driver-driver") {
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/logging/cpp",
     "//src/connectivity/wlan/drivers/lib/fidl-bridge/cpp:dfv2",
     "//src/devices/lib/driver:driver_runtime",
     "//zircon/system/ulib/sync:sync-cpp",
