@@ -120,7 +120,9 @@ pub async fn suspend_container(
                 }
             });
         }
+        log::info!("Pre-drop wake lease");
         kernels.drop_wake_lease(&container_job)?;
+        log::info!("Post-drop wake lease");
 
         let wake_sources = suspend_context.wake_sources.lock();
         let mut wait_items: Vec<zx::WaitItem<'_>> =
@@ -162,7 +164,9 @@ pub async fn suspend_container(
         resume_reason
     };
 
+    log::info!("Pre-acquire wake lease");
     kernels.acquire_wake_lease(&container_job).await?;
+    log::info!("Post-acquire wake lease");
 
     log::info!("Notifying wake watchers of container wakeup.");
     let mut watchers = suspend_context.wake_watchers.lock();

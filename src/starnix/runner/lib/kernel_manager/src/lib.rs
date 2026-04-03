@@ -182,22 +182,46 @@ async fn open_exposed_directory(
     Ok(directory_proxy)
 }
 
+pub struct SuspendMessage {
+    pub payload: fstarnixrunner::ManagerSuspendContainerRequest,
+    pub responder: fstarnixrunner::ManagerSuspendContainerResponder,
+}
+
+pub async fn run_suspend_worker(
+    receiver: async_channel::Receiver<SuspendMessage>,
+    suspend_context: Arc<SuspendContext>,
+    kernels: &Kernels,
+) {
+    while let Ok(msg) = receiver.recv().await {
+        match suspend_container(msg.payload, &suspend_context, &kernels).await {
+            Ok(response) => {
+                if let Err(e) = match response {
+                    Ok(o) => msg.responder.send(Ok(&o)),
+                    Err(e) => msg.responder.send(Err(e)),
+                } {
+                    warn!("error replying to suspend request: {e}");
+                }
+            }
+            Err(e) => {
+                warn!("error executing suspend: {e}");
+                let _ = msg.responder.send(Err(fstarnixrunner::SuspendError::SuspendFailure));
+            }
+        }
+    }
+}
+
 pub async fn serve_starnix_manager(
     mut stream: fstarnixrunner::ManagerRequestStream,
     suspend_context: Arc<SuspendContext>,
-    kernels: &Kernels,
     sender: &async_channel::Sender<(ChannelProxy, Arc<Mutex<WakeSources>>)>,
     pager: Arc<Pager>,
+    suspend_sender: &async_channel::Sender<SuspendMessage>,
 ) -> Result<(), Error> {
     while let Some(event) = stream.try_next().await? {
         match event {
             fstarnixrunner::ManagerRequest::SuspendContainer { payload, responder, .. } => {
-                let response = suspend_container(payload, &suspend_context, kernels).await?;
-                if let Err(e) = match response {
-                    Ok(o) => responder.send(Ok(&o)),
-                    Err(e) => responder.send(Err(e)),
-                } {
-                    warn!("error replying to suspend request: {e}");
+                if let Err(e) = suspend_sender.try_send(SuspendMessage { payload, responder }) {
+                    warn!("failed to send suspend request to worker: {e}");
                 }
             }
             fstarnixrunner::ManagerRequest::ProxyWakeChannel { payload, .. } => {

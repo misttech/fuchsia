@@ -51,38 +51,53 @@ async fn main() -> Result<(), Error> {
     let kernels = Kernels::new();
     let mut fs = ServiceFs::new_local();
 
-    let (sender, receiver) = async_channel::unbounded();
-    run_proxy_thread(receiver);
+    let (proxy_sender, proxy_receiver) = async_channel::unbounded();
+    run_proxy_thread(proxy_receiver);
 
     fs.dir("svc").add_fidl_service(Services::ComponentRunner);
     fs.dir("svc").add_fidl_service(Services::StarnixManager);
     fs.take_and_serve_directory_handle()?;
     let suspend_context = Arc::new(SuspendContext::default());
+    let (suspend_sender, suspend_receiver) = async_channel::unbounded();
     let pager = Arc::new(kernel_manager::pager::Pager::new()?);
     pager.start_threads();
-    fs.for_each_concurrent(None, |request: Services| async {
-        match request {
-            Services::ComponentRunner(stream) => {
-                if let Err(e) = serve_component_runner(stream, &kernels).await {
-                    error!(e:%; "failed to serve component runner");
+
+    let suspend_context_for_loop = suspend_context.clone();
+    let kernels_ref = &kernels;
+    let fs_loop = fs.for_each_concurrent(None, move |request: Services| {
+        let proxy_sender = proxy_sender.clone();
+        let suspend_sender = suspend_sender.clone();
+        let pager = pager.clone();
+        let suspend_context = suspend_context_for_loop.clone();
+        let kernels = kernels_ref;
+        async move {
+            match request {
+                Services::ComponentRunner(stream) => {
+                    if let Err(e) = serve_component_runner(stream, kernels).await {
+                        error!(e:%; "failed to serve component runner");
+                    }
                 }
-            }
-            Services::StarnixManager(stream) => {
-                if let Err(e) = serve_starnix_manager(
-                    stream,
-                    suspend_context.clone(),
-                    &kernels,
-                    &sender,
-                    pager.clone(),
-                )
-                .await
-                {
-                    error!(e:%; "failed to serve starnix manager");
+                Services::StarnixManager(stream) => {
+                    if let Err(e) = serve_starnix_manager(
+                        stream,
+                        suspend_context,
+                        &proxy_sender,
+                        pager.clone(),
+                        &suspend_sender,
+                    )
+                    .await
+                    {
+                        error!(e:%; "failed to serve starnix manager");
+                    }
                 }
             }
         }
-    })
-    .await;
+    });
+
+    let suspend_worker =
+        kernel_manager::run_suspend_worker(suspend_receiver, suspend_context.clone(), &kernels);
+
+    futures::future::join(fs_loop, suspend_worker).await;
     Ok(())
 }
 
