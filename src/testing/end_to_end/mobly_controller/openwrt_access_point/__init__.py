@@ -11,11 +11,10 @@ import time
 from enum import StrEnum
 from typing import Dict, List
 
-from antlion import utils
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
-from mobly import logger
+from mobly import logger, utils
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
