@@ -4,9 +4,27 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/zircon/build_args.gni")
 import("//zircon/kernel/kernel_switchset.gni")
+import("//zircon/kernel/params.gni")
+
+# TODO(https://fxbug.dev/42146261): Get rid of zircon_kernel_disable_asserts
+_kernel_debug_level = zx_assert_level
+if (zircon_kernel_disable_asserts) {
+  _kernel_debug_level = 0
+}
+
+declare_args() {
+  # Enables various kernel debugging and diagnostic features.  Valid
+  # values are between 0-2.  The higher the value, the more that are
+  # enabled.  A value of 0 disables all of them.
+  #
+  # TODO(https://fxbug.dev/42117912): Delete alongside the legacy image.
+  kernel_debug_level = _kernel_debug_level
+}
 
 # TODO(https://fxbug.dev/371568912): Legacy kernel switchset. Delete me in
 # favour of the new ones!
 kernel_switchset("legacy") {
+  lk_debug_level = kernel_debug_level
 }

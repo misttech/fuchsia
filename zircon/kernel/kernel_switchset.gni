@@ -7,7 +7,6 @@
 import("//build/config/zircon/standard.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
 import("//build/zircon/zircon_cpu.gni")
-import("//zircon/kernel/params.gni")
 
 assert(
     current_toolchain == default_toolchain,
@@ -24,6 +23,28 @@ assert(
 #
 # # Parameters
 #
+#   * lk_debug_level
+#     - Required: A general knob parameterizing the `LK_DEBUGLEVEL` macro, which
+#       itself parameterizes a host of "debug" features in the kernel:
+#         * the print levels enabled for dprintf() (see <kernel/debug.h>);
+#         * whether ZX_DEBUG_ASSERT() is enabled;
+#         * whether the kernel serial console is enabled;
+#         * whether tests are compiled in (and runnable via the console).
+#
+#       More specifically, we have the features by level as follows:
+#
+#       +-------------------+------------------+-----------+-----------+
+#       | Feature \ Level   | 0                | 1         | 2         |
+#       +-------------------+------------------+-----------+-----------+
+#       | Print levels      | CRITICAL, ALWAYS | ..., INFO | ..., SPEW |
+#       | Debug asserts     | N                | N         | Y         |
+#       | Console           | N                | Y         | Y         |
+#       | Tests             | N                | Y         | Y         |
+#       +-------------------+------------------+-----------+-----------+
+#
+#       # TODO(https://fxbug.dev/42117912): Break this up into individual knobs.
+#     - Type: int
+#
 # TODO(https://fxbug.dev/371568912): Nothing to parameterize just yet.
 template("kernel_switchset") {
   _dir = get_label_info(":$target_name", "dir")
@@ -31,8 +52,18 @@ template("kernel_switchset") {
   assert(_dir == _expected_dir,
          "This switchset must be instantiated in ${_expected_dir}/BUILD.gn")
 
-  # TODO(https://fxbug.dev/371568912): Remove once there are parameters
-  not_needed(invoker, "*")
+  assert(defined(invoker.lk_debug_level),
+         "kernel_switchset($target_name) must define lk_debug_level")
+
+  _lk_debug_level = invoker.lk_debug_level
+  _allowed_levels = [
+    0,
+    1,
+    2,
+  ]
+  assert(_allowed_levels + [ _lk_debug_level ] - [ _lk_debug_level ] !=
+             _allowed_levels,
+         "lk_debug_level must be <= 2")
 
   foreach(cpu, standard_fuchsia_cpus) {
     zircon_toolchain_suite("kernel_${cpu}.${target_name}") {
@@ -193,19 +224,12 @@ template("kernel_switchset") {
         configs += [ "//build/config:linker_gc" ]
       }
 
-      # As a special case, kernel assertions are controlled by the kernel_debug_level
-      # variable, and not zx_assert_level (though it defaults to the same value, but
-      # some product configurations may decide to change it).
-      remove_common_configs += [ "//build/config/zircon:default_assert_level" ]
+      configs += [ "//zircon/kernel/switch:lk_debug_level_${_lk_debug_level}" ]
 
-      # Map kernel_debug_level above 2 to an assert_level of 2, as that is the
-      # highest valid assertion level.
-      if (kernel_debug_level > 2) {
-        kernel_assert_level = 2
-      } else {
-        kernel_assert_level = kernel_debug_level
-      }
-      configs += [ "//build/config/zircon:assert_level_$kernel_assert_level" ]
+      # TODO(https://fxbug.dev/42117912): Map debug level to assert level for
+      # now.
+      remove_common_configs += [ "//build/config/zircon:default_assert_level" ]
+      configs += [ "//build/config/zircon:assert_level_${_lk_debug_level}" ]
 
       # TODO(https://fxbug.dev/42150661): the kernel crashes on boot if built with -O0.
       _optimize_none = [ "//build/config:optimize_none" ]
