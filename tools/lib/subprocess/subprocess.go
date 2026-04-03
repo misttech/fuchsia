@@ -157,23 +157,27 @@ func logRunningProcesses(ctx context.Context) {
 	for _, file := range files {
 		// Check if the directory name is a PID, ignore "self".
 		if _, err := strconv.Atoi(file); err == nil {
-			cmdlinePath := fmt.Sprintf("/proc/%s/cmdline", file)
-			cmdline, err := os.ReadFile(cmdlinePath)
-			if err == nil {
-				ppid := "unknown"
-				statusPath := fmt.Sprintf("/proc/%s/status", file)
-				status, err := os.ReadFile(statusPath)
+			logFunc := func(target string) {
+				str, err := os.ReadFile(fmt.Sprintf("/proc/%s/%s", file, target))
 				if err == nil {
-					for _, line := range strings.Split(string(status), "\n") {
-						if strings.HasPrefix(line, "PPid:") {
-							ppid = strings.TrimSpace(strings.TrimPrefix(line, "PPid:"))
-							break
-						}
+					logger.Warningf(ctx, "PID: %s, %s: %s", file, target, strings.TrimSpace(strings.ReplaceAll(string(str), "\x00", " ")))
+				} else {
+					logger.Warningf(ctx, "failed to read %s for PID %s: %v", target, file, err)
+				}
+			}
+			logFunc("cmdline")
+			logFunc("comm")
+
+			status, err := os.ReadFile(fmt.Sprintf("/proc/%s/status", file))
+			if err == nil {
+				for _, line := range strings.Split(string(status), "\n") {
+					if strings.HasPrefix(line, "PPid:") {
+						logger.Warningf(ctx, "PID: %s, PPID: %s", file, strings.TrimSpace(strings.TrimPrefix(line, "PPid:")))
+						break
 					}
 				}
-				logger.Warningf(ctx, "PID: %s, PPID: %s, Command: %s", file, ppid, strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " ")))
 			} else {
-				logger.Warningf(ctx, "failed to read cmdline for PID %s: %v", file, err)
+				logger.Warningf(ctx, "failed to read status for PID %s: %v", file, err)
 			}
 		}
 	}
