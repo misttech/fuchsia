@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+#
+# Any targets common to multiple images may be put here.
+#
+
+# The current set of kernel package items common to all images: userboot, the
+# vDSO, and the version-string.txt file.
+group("common-package-items") {
+  visibility = [ "./*" ]
+  public_deps = [
+    "//zircon/kernel/lib/userabi/userboot",
+    "//zircon/kernel/lib/userabi/vdso",
+    "//zircon/kernel/lib/version:version-string.txt",
+  ]
+}
