@@ -16,6 +16,7 @@ use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 /// A Class is a higher-level view of a device.
@@ -103,10 +104,18 @@ impl Device {
         // TODO(https://fxbug.dev/42078277): Pass the synthetic UUID when available.
         // Otherwise, default as "0".
         let path = self.path_from_depth(0);
+
+        let devtype_uevent = if let Some(devtype) = &metadata.devtype {
+            format!("DEVTYPE={}{separator}", devtype)
+        } else {
+            String::new()
+        };
+
         format!(
             "DEVPATH=/{path}{separator}\
                             DEVNAME={name}{separator}\
                             SUBSYSTEM={subsystem}{separator}\
+                            {devtype_uevent}\
                             SYNTH_UUID=0{separator}\
                             MAJOR={major}{separator}\
                             MINOR={minor}{separator}",
@@ -126,11 +135,17 @@ pub struct DeviceMetadata {
     pub devname: FsString,
     pub devt: DeviceId,
     pub mode: DeviceMode,
+    pub devtype: Option<Cow<'static, str>>,
 }
 
 impl DeviceMetadata {
     pub fn new(devname: FsString, devt: DeviceId, mode: DeviceMode) -> Self {
-        Self { devname, devt, mode }
+        Self { devname, devt, mode, devtype: None }
+    }
+
+    pub fn with_devtype(mut self, devtype: impl Into<Cow<'static, str>>) -> Self {
+        self.devtype = Some(devtype.into());
+        self
     }
 }
 
@@ -270,4 +285,61 @@ impl TryFrom<&[u8]> for UEventAction {
 #[derive(Copy, Clone)]
 pub struct UEventContext {
     pub seqnum: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vfs::pseudo::simple_directory::SimpleDirectory;
+    use starnix_uapi::device_id::DeviceId;
+
+    #[test]
+    fn test_uevent_properties() {
+        let dir = SimpleDirectory::new();
+        let collection = SimpleDirectory::new();
+        let bus = Bus::new("bus".into(), dir.clone(), Some(collection.clone()));
+        let class = Class::new("class".into(), dir.clone(), bus, collection);
+        let device = Device::new(
+            "device".into(),
+            class,
+            Some(
+                DeviceMetadata::new("devname".into(), DeviceId::new(1, 2), DeviceMode::Char)
+                    .with_devtype("disk"),
+            ),
+        );
+
+        assert_eq!(
+            device.uevent_properties('\n'),
+            "DEVPATH=/devices/bus/class/device\n\
+             DEVNAME=devname\n\
+             SUBSYSTEM=class\n\
+             DEVTYPE=disk\n\
+             SYNTH_UUID=0\n\
+             MAJOR=1\n\
+             MINOR=2\n"
+        );
+    }
+
+    #[test]
+    fn test_uevent_properties_no_devtype() {
+        let dir = SimpleDirectory::new();
+        let collection = SimpleDirectory::new();
+        let bus = Bus::new("bus".into(), dir.clone(), Some(collection.clone()));
+        let class = Class::new("class".into(), dir.clone(), bus, collection);
+        let device = Device::new(
+            "device".into(),
+            class,
+            Some(DeviceMetadata::new("devname".into(), DeviceId::new(1, 2), DeviceMode::Char)),
+        );
+
+        assert_eq!(
+            device.uevent_properties('\n'),
+            "DEVPATH=/devices/bus/class/device\n\
+             DEVNAME=devname\n\
+             SUBSYSTEM=class\n\
+             SYNTH_UUID=0\n\
+             MAJOR=1\n\
+             MINOR=2\n"
+        );
+    }
 }
