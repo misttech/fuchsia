@@ -130,10 +130,13 @@ if (current_cpu == "riscv64") {
   # TODO(https://fxbug.dev/42072732): Provide riscv64 Chromium prebuilts
   # Alternatively, move this check up in the dependency chain.
   template("generate_test_targets") {
-    visibility = [ ":*" ]
     not_needed([ "target_name" ])
     not_needed(invoker, "*")
     group("tests") {
+      visibility = [
+        ":*",
+        "//src:*",
+      ]
     }
   }
 } else {

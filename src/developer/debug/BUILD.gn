@@ -17,7 +17,9 @@ group("tests") {
 
   deps = [
     "debug_agent:tests",
-    "e2e_tests:tests",
     "zxdb:tests",
   ]
+  if (target_cpu != "riscv64") {
+    deps += [ "e2e_tests:tests" ]
+  }
 }

@@ -10,8 +10,8 @@ assert(current_toolchain == default_toolchain,
 group("docs_roller") {
   testonly = true
   public_deps = [
-    "//bundles/tests",
     "//examples",
+    "//src:tests_no_e2e",
     "//src/camera",
     "//src/graphics/examples",
     "//src/lib/ui/carnelian:examples",
