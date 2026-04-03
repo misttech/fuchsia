@@ -243,8 +243,13 @@ impl std::fmt::Display for TargetIpAddr {
 /// Represents an address associated with a target, network or otherwise.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum TargetAddr {
+    /// IPv6 connection, for example CDC Ethernet.
     Net(SocketAddr),
+
+    /// Direct connection to a VM guest using virtio-vsock.
     VSockCtx(u32),
+
+    /// VSOCK bridged over USB.
     UsbCtx(u32),
 }
 

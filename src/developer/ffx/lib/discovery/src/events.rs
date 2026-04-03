@@ -424,6 +424,45 @@ mod test {
     }
 
     #[test]
+    fn test_from_usb_event_for_targetevent() -> Result<()> {
+        let node_name = Some("test_node".to_string());
+
+        {
+            let e =
+                usb_driver_api::DeviceEvent::Added { cid: 123, serial: Some("1234".to_string()) };
+            let t = TargetEvent::from_usb_event(e, node_name.clone());
+            assert_eq!(
+                t,
+                TargetEvent::Added(TargetHandle {
+                    node_name: node_name.clone(),
+                    state: TargetState::Product {
+                        addrs: vec![TargetAddr::UsbCtx(123)],
+                        serial: Some("1234".to_string()),
+                    },
+                    manual: false,
+                })
+            );
+        }
+
+        {
+            let e = usb_driver_api::DeviceEvent::Removed { cid: 123 };
+            let t = TargetEvent::from_usb_event(e, node_name.clone());
+            assert_eq!(
+                t,
+                TargetEvent::Removed(TargetHandle {
+                    node_name: node_name.clone(),
+                    state: TargetState::Product {
+                        addrs: vec![TargetAddr::UsbCtx(123)],
+                        serial: None,
+                    },
+                    manual: false,
+                })
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_try_from_targetinfo_for_targethandle() -> Result<()> {
         {
             let info: ffx::TargetInfo = Default::default();

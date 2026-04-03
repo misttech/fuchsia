@@ -781,6 +781,23 @@ mod test {
     }
 
     #[test]
+    fn test_matches_addr_type() {
+        let ipv4 = TargetAddr::new(std_ip!("127.0.0.1"), 0, 0);
+        let ipv6 = TargetAddr::new(std_ip!("fe80::1"), 0, 0);
+        let usb = TargetAddr::UsbCtx(1);
+        let vsock = TargetAddr::VSockCtx(2);
+
+        assert!(matches_addr_type(&ipv4, AddressTypes::IPV4));
+        assert!(!matches_addr_type(&ipv4, AddressTypes::IPV6));
+        assert!(matches_addr_type(&ipv6, AddressTypes::IPV6));
+        assert!(!matches_addr_type(&ipv6, AddressTypes::IPV4));
+        assert!(matches_addr_type(&usb, AddressTypes::VSOCK));
+        assert!(!matches_addr_type(&usb, AddressTypes::USB));
+        assert!(matches_addr_type(&vsock, AddressTypes::USB));
+        assert!(!matches_addr_type(&vsock, AddressTypes::VSOCK));
+    }
+
+    #[test]
     fn test_empty_formatter() {
         let formatter = TabularTargetFormatter::try_from(Vec::<TargetInfo>::new()).unwrap();
         let lines = formatter.lines().unwrap();

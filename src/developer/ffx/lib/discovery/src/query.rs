@@ -107,11 +107,14 @@ impl TargetInfoQuery {
                 DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::EMULATOR
             }
             TargetInfoQuery::Serial(_) => DiscoverySources::USB_FASTBOOT,
+            TargetInfoQuery::VSock(_) => DiscoverySources::EMULATOR,
+            TargetInfoQuery::Usb(_) => DiscoverySources::USB_VSOCK,
             _ => {
                 DiscoverySources::MDNS
                     | DiscoverySources::MANUAL
                     | DiscoverySources::EMULATOR
                     | DiscoverySources::USB_FASTBOOT
+                    | DiscoverySources::USB_VSOCK
             }
         }
     }
@@ -253,6 +256,7 @@ mod test {
                 | DiscoverySources::MANUAL
                 | DiscoverySources::EMULATOR
                 | DiscoverySources::USB_FASTBOOT
+                | DiscoverySources::USB_VSOCK
         );
 
         // IP Address shouldn't use USB source
