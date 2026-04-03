@@ -945,6 +945,16 @@
         "instance_id": "ArloyGWzYTEydPwV_UtasYfuwjtJPjILqml-cFXrIV8C"
     },
     {
+        "package": "infra/tools/rdb/linux-amd64",
+        "version": "git_revision:f769e04338c2db24c3697f00ede9cadbd3ee7582",
+        "instance_id": "sx64eFlNQHTEPbbhmaCpdmRAgv7YNPYsZwZIWHHtOWcC"
+    },
+    {
+        "package": "infra/tools/rdb/linux-arm64",
+        "version": "git_revision:f769e04338c2db24c3697f00ede9cadbd3ee7582",
+        "instance_id": "uC_ADZ5L_1bPBlvcjo7LFnZhJ8kC2EM1XjH6ReUz_8oC"
+    },
+    {
         "package": "perfetto/trace_processor_shell/linux-amd64",
         "version": "git_tag:v54.0",
         "instance_id": "ISU42NDoqmScfBWWPskfet2I8OCGONZV0XlbO1q68tcC"
