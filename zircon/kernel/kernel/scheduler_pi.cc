@@ -749,16 +749,23 @@ inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() 
       if (disposition == Disposition::Associated || disposition == Disposition::Enqueued) {
         SchedWeight weight_delta{0};
         SchedUtilization utilization_delta{0};
+        SchedUtilization critical_utilization_delta{0};
 
         if (old_ep.IsFair()) {
           weight_delta -= old_ep.weight();
         } else {
           utilization_delta -= old_ep.deadline().utilization;
+          if (old_ep.is_critical()) {
+            critical_utilization_delta -= old_ep.deadline().utilization;
+          }
         }
         if (new_ep.IsFair()) {
           weight_delta += new_ep.weight();
         } else {
           utilization_delta += new_ep.deadline().utilization;
+          if (new_ep.is_critical()) {
+            critical_utilization_delta += new_ep.deadline().utilization;
+          }
         }
 
         if (weight_delta != 0) {
@@ -770,9 +777,11 @@ inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() 
           bandwidth_demand_changed = true;
           scheduler.UpdateTotalDeadlineUtilization(utilization_delta);
         }
+        scheduler.critical_deadline_utilization_ += critical_utilization_delta;
       }
 
       DEBUG_ASSERT(scheduler.weight_total_ >= SchedWeight{0});
+      DEBUG_ASSERT(scheduler.critical_deadline_utilization_ >= SchedUtilization{0});
       DEBUG_ASSERT(scheduler.power_level_control_.normalized_utilization() >= SchedUtilization{0});
 
       static_cast<Op*>(this)->UpdateDynamicParams(old_ep, new_ep, now.mono_time);

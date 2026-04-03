@@ -171,6 +171,7 @@ class ThreadEffectiveProfileObserver {
     } else {
       SchedUtilization effective_utilization = eep.ipvs.uncapped_utilization;
       SchedDuration effective_deadline = eep.ipvs.min_deadline;
+      bool effective_critical = eep.ipvs.critical_count > 0;
 
       if (eep.base.discipline == SchedDiscipline::Deadline) {
         effective_utilization += eep.base.deadline.utilization;
@@ -196,6 +197,7 @@ class ThreadEffectiveProfileObserver {
                 observed_profile_.deadline().deadline_ns.raw_value());
       EXPECT_EQ(expected.utilization.raw_value(),
                 observed_profile_.deadline().utilization.raw_value());
+      EXPECT_EQ(effective_critical, observed_profile_.is_critical());
     }
 
     END_TEST;
@@ -264,10 +266,11 @@ class FairProfile : public Profile {
 
 class DeadlineProfile : public Profile {
  public:
-  static fbl::RefPtr<Profile> Create(zx_duration_mono_t capacity, zx_duration_mono_t deadline) {
+  static fbl::RefPtr<Profile> Create(zx_duration_mono_t capacity, zx_duration_mono_t deadline,
+                                     bool critical = false) {
     fbl::AllocChecker ac;
     DeadlineProfile* profile =
-        new (&ac) DeadlineProfile(SchedDuration{capacity}, SchedDuration{deadline});
+        new (&ac) DeadlineProfile(SchedDuration{capacity}, SchedDuration{deadline}, critical);
     if (ac.check()) {
       return fbl::AdoptRef(profile);
     }
@@ -275,7 +278,7 @@ class DeadlineProfile : public Profile {
   }
 
   void Apply(Thread& thread) override {
-    thread.SetBaseProfile(SchedulerState::BaseProfile{sched_params_});
+    thread.SetBaseProfile(SchedulerState::BaseProfile{sched_params_, critical_});
   }
 
   void SetExpectedBaseProfile(ExpectedEffectiveProfile& eep) override {
@@ -287,23 +290,27 @@ class DeadlineProfile : public Profile {
   void AccumulateExpectedPressure(ExpectedEffectiveProfile& eep) override {
     eep.ipvs.uncapped_utilization += sched_params_.utilization;
     eep.ipvs.min_deadline = ktl::min(eep.ipvs.min_deadline, sched_params_.deadline_ns);
+    if (critical_) {
+      eep.ipvs.critical_count++;
+    }
   }
 
   size_t DebugPrint(char* buf, size_t space) override {
-    return snprintf(buf, space, "[capacity %ld deadline %ld utilization %ld]",
+    return snprintf(buf, space, "[capacity %ld deadline %ld utilization %ld critical %d]",
                     sched_params_.capacity_ns.raw_value(), sched_params_.deadline_ns.raw_value(),
-                    sched_params_.utilization.raw_value());
+                    sched_params_.utilization.raw_value(), critical_);
   }
 
   const SchedDeadlineParams& sched_params() const { return sched_params_; }
 
  private:
-  DeadlineProfile(SchedDuration capacity, SchedDuration deadline)
-      : sched_params_(capacity, deadline) {
+  DeadlineProfile(SchedDuration capacity, SchedDuration deadline, bool critical)
+      : sched_params_(capacity, deadline), critical_(critical) {
     DEBUG_ASSERT(capacity <= deadline);
   }
 
   const SchedDeadlineParams sched_params_;
+  const bool critical_;
 };
 
 // Helper wrapper for an owned wait queue which manages grabbing and releasing
@@ -391,8 +398,23 @@ class TestThread {
 
   enum class Condition : uint32_t {
     BLOCKED,
+    STARTED,
     WAITING_FOR_SHUTDOWN,
   };
+
+  // Test threads in the various tests use lambdas in order to store their
+  // customized test operations.  In order to allow these lambda's to capture
+  // context from their local scope, but not need to use the heap in order to
+  // allocate the storage for the scope, we need to know the worst case
+  // capture storage requirements across all of these tests.  Armed with this
+  // knowledge, we can use a fit::inline_function to pre-allocate storage in
+  // the TestThread object for the worst case lambda we will encounter in the
+  // test suite.
+  //
+  // Currently, this bound is 6 pointer's worth of storage.  If this grows in
+  // the future, this constexpr bound should be updated to match the new worst
+  // case storage requirement.
+  static constexpr size_t kMaxOpLambdaCaptureStorageBytes = sizeof(void*) * 6;
 
   TestThread() = default;
   ~TestThread() { Reset(); }
@@ -424,8 +446,8 @@ class TestThread {
   bool BlockOnOwnedWaitQueue(OwnedWaitQueue* owned_wq, TestThread* owner,
                              zx::duration relative_timeout = zx::duration::infinite());
 
-  // Directly take ownership of the specified wait queue using AssignOwner.
-  bool TakeOwnership(OwnedWaitQueue* owned_wq);
+  // Start the thread and run a custom lambda.
+  bool RunOp(fit::inline_function<void(void), kMaxOpLambdaCaptureStorageBytes> op);
 
   // Reset the thread back to its initial state.  If |explicit_kill| is true,
   // then do not wait for the thread to exit normally if it has been started.
@@ -453,20 +475,6 @@ class TestThread {
   bool WaitFor();
 
  private:
-  // Test threads in the various tests use lambdas in order to store their
-  // customized test operations.  In order to allow these lambda's to capture
-  // context from their local scope, but not need to use the heap in order to
-  // allocate the storage for the scope, we need to know the worst case
-  // capture storage requirements across all of these tests.  Armed with this
-  // knowledge, we can use a fit::inline_function to pre-allocate storage in
-  // the TestThread object for the worst case lambda we will encounter in the
-  // test suite.
-  //
-  // Currently, this bound is 6 pointer's worth of storage.  If this grows in
-  // the future, this constexpr bound should be updated to match the new worst
-  // case storage requirement.
-  static constexpr size_t kMaxOpLambdaCaptureStorageBytes = sizeof(void*) * 6;
-
   friend class LockedOwnedWaitQueue;
 
   int ThreadEntry();
@@ -575,6 +583,21 @@ bool TestThread::BlockOnOwnedWaitQueue(OwnedWaitQueue* owned_wq, TestThread* own
   END_TEST;
 }
 
+bool TestThread::RunOp(fit::inline_function<void(void), kMaxOpLambdaCaptureStorageBytes> op) {
+  BEGIN_TEST;
+  ASSERT_EQ(state(), State::CREATED);
+  ASSERT_FALSE(static_cast<bool>(op_));
+
+  op_ = ktl::move(op);
+
+  state_.store(State::WAITING_TO_START);
+  thread_->Resume();
+
+  ASSERT_TRUE(WaitFor<Condition::STARTED>());
+
+  END_TEST;
+}
+
 bool TestThread::Reset(bool explicit_kill) {
   BEGIN_TEST;
 
@@ -674,6 +697,10 @@ bool TestThread::WaitFor() {
 
       if (cur_state != THREAD_RUNNING) {
         ASSERT_EQ(THREAD_READY, cur_state);
+      }
+    } else if constexpr (condition == Condition::STARTED) {
+      if (state() == State::STARTED) {
+        break;
       }
     } else {
       static_assert(condition == Condition::WAITING_FOR_SHUTDOWN);
@@ -1728,10 +1755,70 @@ bool bug_42182770_regression() {
   END_TEST;
 }
 
+bool pi_test_critical_active() {
+  BEGIN_TEST;
+
+  AutoProfileBooster pboost;
+
+  const fbl::RefPtr<Profile> fair_profile =
+      FairProfile::Create(TEST_DEFAULT_WEIGHT, InheritableProfile::Yes);
+  const fbl::RefPtr<Profile> critical_profile =
+      DeadlineProfile::Create(ZX_MSEC(2), ZX_MSEC(5), true);  // true for critical
+
+  ASSERT_NONNULL(fair_profile);
+  ASSERT_NONNULL(critical_profile);
+
+  LockedOwnedWaitQueue owq;
+  TestThread active_thread;
+  TestThread pressure_thread;
+
+  auto cleanup = fit::defer([&]() {
+    TestThread::ClearShutdownBarrier();
+    owq.ReleaseAllThreads();
+    pressure_thread.Reset();
+    active_thread.Reset();
+  });
+
+  TestThread::ResetShutdownBarrier();
+
+  ASSERT_TRUE(active_thread.Create(fair_profile));
+  ASSERT_TRUE(pressure_thread.Create(critical_profile));
+
+  // Run the active thread in a soft-yield loop
+  ktl::atomic<bool> stop_loop = false;
+  ASSERT_TRUE(active_thread.RunOp([&stop_loop]() {
+    while (!stop_loop.load()) {
+      Thread::Current::Yield();
+    }
+  }));
+
+  // Have the pressure thread block on the owq owned by active_thread.
+  ASSERT_TRUE(pressure_thread.BlockOnOwnedWaitQueue(&owq, &active_thread));
+
+  // Verify that active_thread inherited criticality.
+  unittest::ThreadEffectiveProfileObserver observer;
+  observer.Observe(active_thread.thread());
+  ExpectedEffectiveProfile expected_profile;
+  fair_profile->SetExpectedBaseProfile(expected_profile);
+  critical_profile->AccumulateExpectedPressure(expected_profile);
+  ASSERT_TRUE(observer.VerifyExpectedEffectiveProfile(expected_profile));
+
+  // Release the pressure
+  owq.ReleaseAllThreads();
+  ASSERT_TRUE(pressure_thread.WaitFor<TestThread::Condition::WAITING_FOR_SHUTDOWN>());
+
+  // Stop the active loop
+  stop_loop = true;
+  ASSERT_TRUE(active_thread.WaitFor<TestThread::Condition::WAITING_FOR_SHUTDOWN>());
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(pi_tests)
 UNITTEST("basic", pi_test_basic)
+UNITTEST("critical active", pi_test_critical_active)
 UNITTEST("changing priority", pi_test_changing_priority)
 UNITTEST("changing priority in WaitQueue", pi_test_changing_priority_in_wait_queue)
 UNITTEST("chains", pi_test_chain)
