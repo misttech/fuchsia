@@ -133,7 +133,7 @@ class AsyncDeviceKnobs(abc.ABC):
     # List all the transports
     @properties.Transport
     @abc.abstractmethod
-    def fastboot(self) -> fastboot_transport.Fastboot:
+    def fastboot(self) -> fastboot_transport.AsyncFastboot:
         """Returns the Fastboot transport object.
 
         Returns:
@@ -193,7 +193,7 @@ class AsyncDeviceKnobs(abc.ABC):
     # List all the affordances
     @properties.Affordance
     @abc.abstractmethod
-    def bluetooth_avrcp(self) -> avrcp.Avrcp:
+    def bluetooth_avrcp(self) -> avrcp.AsyncAvrcp:
         """Returns a Bluetooth Avrcp affordance object.
 
         Returns:
@@ -202,7 +202,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def bluetooth_gap(self) -> gap.Gap:
+    def bluetooth_gap(self) -> gap.AsyncGap:
         """Returns a Bluetooth Gap affordance object.
 
         Returns:
@@ -211,7 +211,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def bluetooth_le(self) -> le.LE:
+    def bluetooth_le(self) -> le.AsyncLE:
         """Returns a Bluetooth LE affordance object.
 
         Returns:
@@ -229,7 +229,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def rtc(self) -> rtc.Rtc:
+    def rtc(self) -> rtc.AsyncRtc:
         """Returns an RTC affordance object.
 
         Returns:
@@ -247,7 +247,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def virtual_audio(self) -> audio.VirtualAudio:
+    def virtual_audio(self) -> audio.AsyncVirtualAudio:
         """Returns an audio affordance object.
 
         Returns:
@@ -265,7 +265,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def starnix(self) -> starnix.Starnix:
+    def starnix(self) -> starnix.AsyncStarnix:
         """Returns a starnix affordance object.
 
         Returns:
@@ -276,7 +276,7 @@ class AsyncDeviceKnobs(abc.ABC):
     @abc.abstractmethod
     def system_power_state_controller(
         self,
-    ) -> system_power_state_controller.SystemPowerStateController:
+    ) -> system_power_state_controller.AsyncSystemPowerStateController:
         """Returns a SystemPowerStateController affordance object.
 
         Returns:
@@ -288,7 +288,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def tracing(self) -> tracing.Tracing:
+    def tracing(self) -> tracing.AsyncTracing:
         """Returns a tracing affordance object.
 
         Returns:
@@ -297,7 +297,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def user_input(self) -> user_input.UserInput:
+    def user_input(self) -> user_input.AsyncUserInput:
         """Returns a user_input affordance object.
 
         Returns:
@@ -306,7 +306,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_policy(self) -> wlan_policy.WlanPolicy:
+    def wlan_policy(self) -> wlan_policy.AsyncWlanPolicy:
         """Returns a WlanPolicy affordance object.
 
         Returns:
@@ -315,7 +315,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_policy_ap(self) -> wlan_policy_ap.WlanPolicyAp:
+    def wlan_policy_ap(self) -> wlan_policy_ap.AsyncWlanPolicyAp:
         """Returns a WlanPolicyAp affordance object.
 
         Returns:
@@ -324,7 +324,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def wlan_core(self) -> wlan_core.WlanCore:
+    def wlan_core(self) -> wlan_core.AsyncWlanCore:
         """Returns a Wlan affordance object.
 
         Returns:
@@ -333,7 +333,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def netstack(self) -> netstack.Netstack:
+    def netstack(self) -> netstack.AsyncNetstack:
         """Returns a netstack affordance object.
 
         Returns:
@@ -342,7 +342,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def location(self) -> location.Location:
+    def location(self) -> location.AsyncLocation:
         """Returns a Location affordance object.
 
         Returns:

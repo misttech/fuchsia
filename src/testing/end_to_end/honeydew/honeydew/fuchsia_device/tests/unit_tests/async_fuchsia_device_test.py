@@ -442,7 +442,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             )
             ffx_obj = fd_obj.ffx
             self.assertIsInstance(ffx_obj, ffx_transport.FFX)
-            self.assertEqual(ffx_obj._shared_data, shared_data)
+            self.assertEqual(ffx_obj.shared_data, shared_data)
             mock_ffx_check_connection.assert_called()
 
     def test_sl4f_impl(self) -> None:

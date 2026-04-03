@@ -5,7 +5,10 @@
 
 import functools
 from collections.abc import Callable
-from typing import Any
+from functools import cached_property
+from typing import Any, TypeVar
+
+R = TypeVar("R")
 
 
 class DynamicProperty(property):
@@ -24,31 +27,31 @@ class DynamicProperty(property):
         self.name: str = fget.__name__
 
 
-class PersistentProperty(property):
+class PersistentProperty(cached_property[R]):
     """A property that is persistent throughout device interaction.
 
     Value is queried only once and cached.
     """
 
-    def __init__(self, fget: Callable[[Any], Any]) -> None:
-        super().__init__(functools.lru_cache()(fget), doc=fget.__doc__)
-        self.name: str = fget.__name__
+    def __init__(self, func: Callable[[Any], R]) -> None:
+        super().__init__(func)
+        self.name: str = func.__name__
 
 
-class Affordance(property):
+class Affordance(cached_property[R]):
     """A property that represents an affordance."""
 
-    def __init__(self, fget: Callable[[Any], Any]) -> None:
-        super().__init__(functools.lru_cache()(fget), doc=fget.__doc__)
-        self.name: str = fget.__name__
+    def __init__(self, func: Callable[[Any], R]) -> None:
+        super().__init__(func)
+        self.name: str = func.__name__
 
 
-class Transport(property):
-    """A property that represents an transport."""
+class Transport(cached_property[R]):
+    """A property that represents a transport."""
 
-    def __init__(self, fget: Callable[[Any], Any]) -> None:
-        super().__init__(functools.lru_cache()(fget), doc=fget.__doc__)
-        self.name: str = fget.__name__
+    def __init__(self, func: Callable[[Any], R]) -> None:
+        super().__init__(func)
+        self.name: str = func.__name__
 
 
 def async_persistent_method(func: Callable[..., Any]) -> Callable[..., Any]:

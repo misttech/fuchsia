@@ -42,7 +42,7 @@ class RebootReasonTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
                 "component",
                 "copy",
                 "core/feedback::/data/boot_id.txt",
-                boot_id_before_reboot_file,
+                str(boot_id_before_reboot_file),
             ],
             machine=ffx_types.MachineFormat.RAW,
         )
@@ -59,7 +59,7 @@ class RebootReasonTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
                 "component",
                 "copy",
                 "core/feedback::/tmp/boot_id.txt",
-                previous_boot_id_after_reboot_file,
+                str(previous_boot_id_after_reboot_file),
             ],
             machine=ffx_types.MachineFormat.RAW,
         )

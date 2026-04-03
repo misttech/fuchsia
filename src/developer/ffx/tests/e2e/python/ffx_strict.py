@@ -37,6 +37,7 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
+        assert self.dut_ssh_address is not None
         self.dut_name = self.dut.ffx.get_target_name()
         self.ssh_private_key: Optional[str] = None
 

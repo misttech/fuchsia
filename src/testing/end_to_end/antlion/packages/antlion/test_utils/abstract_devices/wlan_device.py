@@ -499,7 +499,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
         )
 
     def get_wlan_interface_id_list(self) -> list[int]:
-        return self.device.honeydew_fd.wlan_core.get_iface_id_list()
+        return list(self.device.honeydew_fd.wlan_core.get_iface_id_list())
 
     def get_default_wlan_test_interface(self) -> str:
         if self.device.wlan_client_test_interface_name is None:

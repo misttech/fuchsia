@@ -34,6 +34,10 @@ class AsyncMedia(affordance.Affordance):
             MediaError: On FIDL communication failure.
         """
 
+    @abc.abstractmethod
+    def as_sync(self) -> "Media":
+        """Returns the synchronous version of this affordance."""
+
 
 class Media(affordance.Affordance):
     """Abstract base class for Media affordance."""

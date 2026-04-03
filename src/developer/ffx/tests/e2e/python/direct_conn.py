@@ -33,6 +33,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         await super().setup_class()
         self.isolate_dir = self.dut.ffx.config.isolate_dir.directory()
         self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
+        assert self.dut_ssh_address is not None
 
     async def teardown_test(self) -> None:
         # Verify that we did not start the daemon

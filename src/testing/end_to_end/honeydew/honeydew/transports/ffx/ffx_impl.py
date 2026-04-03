@@ -134,6 +134,11 @@ class FfxImpl(ffx_interface.FFX):
         return self._name if self._name else self._query
 
     @properties.PersistentProperty
+    def shared_data(self) -> str:
+        """Returns the shared_data used when running FFX commands."""
+        return self._shared_data
+
+    @properties.PersistentProperty
     def config(self) -> ffx_config.FfxConfigData:
         """Returns the FFX configuration associated with this instance of FFX
         object.
@@ -718,7 +723,7 @@ class FfxImpl(ffx_interface.FFX):
         ffx_args.extend(self.config.get_config_args())
 
         # "-c shared_data=<dir>" will be required, once ffx-strict is being used.
-        ffx_args.extend(["-c", f"shared_data={self._shared_data}"])
+        ffx_args.extend(["-c", f"shared_data={self.shared_data}"])
 
         return [self.config.binary_path] + ffx_args + cmd
 

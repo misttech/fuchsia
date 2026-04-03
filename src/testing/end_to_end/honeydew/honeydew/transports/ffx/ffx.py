@@ -26,6 +26,11 @@ class FFX(abc.ABC):
             FfxConfigData
         """
 
+    @properties.PersistentProperty
+    @abc.abstractmethod
+    def shared_data(self) -> str:
+        """Returns the shared_data used when running FFX commands."""
+
     @abc.abstractmethod
     def check_connection(self) -> None:
         """Checks the FFX connection from host to Fuchsia device.

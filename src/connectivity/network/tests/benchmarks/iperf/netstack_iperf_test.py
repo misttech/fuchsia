@@ -379,13 +379,15 @@ class NetstackIperfTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         self, dir: pathlib.Path, message_size: int, flows: int
     ) -> list[str]:
         asserts.assert_equal(flows, 1)
+        ssh_address = self._device.ffx.get_target_ssh_address()
+        assert ssh_address is not None
         return [
             await self._execute_iperf3_commands(
                 # NOTE(https://fxbug.dev/42124566): Currently, we are using the link used for
                 # ssh to also inject data traffic. This is prone to interference to ssh and to
                 # the tests. Ideally we would use a separate usb-ethernet interface for the test
                 # traffic.
-                self._device.ffx.get_target_ssh_address().ip,
+                ssh_address.ip,
                 message_size,
                 dir,
             )

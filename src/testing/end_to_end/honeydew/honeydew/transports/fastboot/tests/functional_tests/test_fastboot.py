@@ -84,7 +84,7 @@ class FastbootTransportTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
 
         await self.device.fastboot.boot_to_fuchsia_mode()
 
-        self.device.fastboot.wait_for_fuchsia_mode()
+        await self.device.fastboot.wait_for_fuchsia_mode()
 
         asserts.assert_false(
             await self.device.fastboot.is_in_fastboot_mode(),

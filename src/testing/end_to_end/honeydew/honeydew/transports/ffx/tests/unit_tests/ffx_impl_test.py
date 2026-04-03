@@ -296,7 +296,7 @@ class FfxImplTests(unittest.TestCase):
 
     def test_ffx_init_shared_data_default(self) -> None:
         """Verify shared_data defaults to logs_dir in __init__."""
-        self.assertEqual(self.ffx_obj_wo_ip._shared_data, _LOGS_DIR)
+        self.assertEqual(self.ffx_obj_wo_ip.shared_data, _LOGS_DIR)
 
     def test_ffx_init_shared_data_custom(self) -> None:
         """Verify shared_data is set to custom value in __init__."""
@@ -311,7 +311,7 @@ class FfxImplTests(unittest.TestCase):
                 config_data=_INPUT_ARGS["ffx_config_data"],
                 shared_data=shared_data,
             )
-        self.assertEqual(ffx_obj._shared_data, shared_data)
+        self.assertEqual(ffx_obj.shared_data, shared_data)
 
     @mock.patch.object(
         ffx_impl.FfxImpl, "wait_for_rcs_connection", autospec=True
