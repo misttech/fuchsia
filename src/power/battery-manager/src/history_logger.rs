@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fuchsia_feedback as fidl_feedback;
 use fidl_fuchsia_power_battery::ChargeStatus;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::StreamExt;
@@ -21,7 +23,6 @@ use std::io::Write as OtherWrite;
 use std::rc::Rc;
 use std::str::FromStr;
 use strum_macros::{Display, EnumIter, FromRepr};
-use {fidl_fuchsia_feedback as fidl_feedback, fuchsia_async as fasync};
 
 static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
@@ -38,6 +39,7 @@ const STALE_DATA_TIMER: zx::Duration<zx::MonotonicTimeline> = zx::Duration::from
 pub enum FaultState {
     None = 0,
     NoUpdate = 1,
+    DriverDisconnected = 2,
 }
 
 impl From<FaultState> for u64 {
@@ -244,6 +246,11 @@ impl FaultDetector {
         }));
     }
 
+    pub fn record_disconnected(&self) -> FaultRecoveryEvent {
+        self.state.borrow_mut().watchdog_task = None;
+        self.record_fault_change(FaultState::DriverDisconnected)
+    }
+
     /// Synchronous method to update internal state and Inspect recorder only on change.
     /// Returns FaultRecoveryEvent.
     fn record_fault_change(&self, new_fault: FaultState) -> FaultRecoveryEvent {
@@ -257,7 +264,7 @@ impl FaultDetector {
             state.fault_state_recorder.record(new_fault);
         }
 
-        if old_fault == FaultState::NoUpdate && new_fault == FaultState::None {
+        if old_fault != FaultState::None && new_fault == FaultState::None {
             FaultRecoveryEvent::Recovered
         } else {
             FaultRecoveryEvent::None
@@ -547,6 +554,10 @@ impl BatteryInfoRecorders {
         new_charge_status: Option<ChargeStatus>,
     ) -> FaultRecoveryEvent {
         self.fault_detector.update(new_raw_level, new_charge_status)
+    }
+
+    pub fn record_disconnected(&self) -> FaultRecoveryEvent {
+        self.fault_detector.record_disconnected()
     }
 }
 
@@ -1173,6 +1184,18 @@ mod tests {
             FaultRecoveryEvent::Recovered
         );
         assert_eq!(detector.state.borrow().current_fault, FaultState::None);
+    }
+
+    #[fuchsia::test]
+    fn test_fault_detector_driver_disconnected() {
+        let _executor = fasync::TestExecutor::new_with_fake_time();
+        let timeout = zx::Duration::from_minutes(5);
+        let (_dir, detector) = create_detector(timeout);
+
+        assert_eq!(get_fault_state(&detector), FaultState::None);
+
+        detector.record_disconnected();
+        assert_eq!(get_fault_state(&detector), FaultState::DriverDisconnected);
     }
 
     fn create_config(

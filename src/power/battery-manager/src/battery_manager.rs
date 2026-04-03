@@ -9,15 +9,14 @@ use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_power_battery as fpower;
+use fidl_fuchsia_power_system as fsystem;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt, stream};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_system as fsystem,
-    fuchsia_async as fasync,
-};
 
 pub(crate) trait BatterySimulationStateObserver {
     fn update_simulation(&self, new_state: bool);
@@ -135,7 +134,7 @@ impl BatteryManager {
                             if let Err(e) =
                                 w.on_change_battery_info(&info_clone.into(), wake_lease_dup).await
                             {
-                                log::warn!("failed to send battery info to watcher {:?}", e);
+                                warn!("failed to send battery info to watcher {:?}", e);
                             }
                         }
                     })
@@ -356,7 +355,12 @@ impl BatteryManager {
         proxy.watch(client_end)?;
 
         info!("Waiting on updates from driver");
-        self.wait_on_updates(server_end, sag).await
+        let res = self.wait_on_updates(server_end, sag).await;
+        warn!("Driver disconnected");
+
+        self.info_recorders.record_disconnected();
+
+        res
     }
 
     fn publish_battery_level(&self, percent: f32) {
@@ -865,5 +869,34 @@ mod tests {
                 },
             }
         });
+    }
+
+    #[fuchsia::test]
+    async fn test_start_watching_battery_info_driver_disconnected() -> Result<(), Error> {
+        use diagnostics_assertions::assert_data_tree;
+
+        let (_dir, battery_manager) = create_manager();
+
+        let (proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::BatteryInfoProviderMarker>();
+
+        // Drop the stream immediately to simulate driver disconnect
+        drop(stream);
+
+        let _ = battery_manager.start_watching_battery_info(proxy, None).await;
+
+        let global_inspector = inspect::component::inspector();
+        assert_data_tree!(global_inspector, root: contains {
+            power_observability_state_recorders: contains {
+                battery_level_fault: contains {
+                    history: contains {
+                        "1": contains {
+                            value: "DriverDisconnected",
+                        }
+                    }
+                }
+            }
+        });
+        Ok(())
     }
 }
