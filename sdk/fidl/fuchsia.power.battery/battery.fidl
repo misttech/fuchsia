@@ -163,7 +163,11 @@ closed protocol BatteryInfoWatcher {
     strict OnChangeBatteryInfo(resource struct {
         info BatteryInfo;
 
-        /// Optional wake lease for power baton passing.
+        /// Optional wake lease to prevent system suspension during power state transitions.
+        ///   Provided: When charge_source changes (device placed on or removed from charger).
+        ///   Not Provided: For the initial status update, battery level changes, or charging
+        ///                 current updates, etc.
+        /// This lease is intended for short-term 'baton passing' and should be released quickly.
         wake_lease fuchsia.power.system.LeaseToken:optional;
     }) -> ();
 };
