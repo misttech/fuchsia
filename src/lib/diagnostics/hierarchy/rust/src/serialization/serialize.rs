@@ -5,6 +5,8 @@
 use crate::{ArrayContent, DiagnosticsHierarchy, ExponentialHistogram, LinearHistogram, Property};
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use either::Either;
+use log;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
 impl<Key> Serialize for DiagnosticsHierarchy<Key>
@@ -23,6 +25,15 @@ pub struct SerializableHierarchyFields<'a, Key> {
     pub(crate) hierarchy: &'a DiagnosticsHierarchy<Key>,
 }
 
+fn get_name<'a, K: AsRef<str>>(
+    a: &'a Either<&'a Property<K>, &'a DiagnosticsHierarchy<K>>,
+) -> &'a str {
+    match a {
+        Either::Left(property) => property.name(),
+        Either::Right(node) => &node.name,
+    }
+}
+
 impl<Key> Serialize for SerializableHierarchyFields<'_, Key>
 where
     Key: AsRef<str>,
@@ -30,43 +41,64 @@ where
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let items = self.hierarchy.properties.len() + self.hierarchy.children.len();
         let mut s = serializer.serialize_map(Some(items))?;
-        for property in self.hierarchy.properties.iter() {
-            let name = property.name();
-            match property {
-                Property::String(_, value) => s.serialize_entry(name, &value)?,
-                Property::Int(_, value) => s.serialize_entry(name, &value)?,
-                Property::Uint(_, value) => s.serialize_entry(name, &value)?,
-                Property::Double(_, value) => {
-                    let value =
-                        if value.is_nan() || (value.is_infinite() && value.is_sign_positive()) {
-                            f64::MAX
-                        } else if value.is_infinite() && value.is_sign_negative() {
-                            f64::MIN
-                        } else {
-                            *value
-                        };
-                    s.serialize_entry(name, &value)?;
-                }
-                Property::Bool(_, value) => s.serialize_entry(name, &value)?,
-                Property::Bytes(_, array) => {
-                    s.serialize_entry(name, &format!("b64:{}", BASE64_STANDARD.encode(array)))?
-                }
-                Property::DoubleArray(_, array) => {
-                    s.serialize_entry(name, &array)?;
-                }
-                Property::IntArray(_, array) => {
-                    s.serialize_entry(name, &array)?;
-                }
-                Property::UintArray(_, array) => {
-                    s.serialize_entry(name, &array)?;
-                }
-                Property::StringList(_, list) => {
-                    s.serialize_entry(name, &list)?;
-                }
+        let mut it = self
+            .hierarchy
+            .properties
+            .iter()
+            .map(Either::Left)
+            .chain(self.hierarchy.children.iter().map(Either::Right));
+        while let Some(val) = it.next() {
+            if it.clone().any(|a| get_name(&a) == get_name(&val)) {
+                let name = get_name(&val);
+                log::warn!(
+                    name:?;
+                    "Encountered duplicate names while serializing Inspect"
+                );
             }
-        }
-        for child in self.hierarchy.children.iter() {
-            s.serialize_entry(&child.name, &SerializableHierarchyFields { hierarchy: child })?;
+
+            match val {
+                Either::Left(property) => {
+                    let name = property.name();
+                    match property {
+                        Property::String(_, value) => s.serialize_entry(name, &value)?,
+                        Property::Int(_, value) => s.serialize_entry(name, &value)?,
+                        Property::Uint(_, value) => s.serialize_entry(name, &value)?,
+                        Property::Double(_, value) => {
+                            let value = if value.is_nan()
+                                || (value.is_infinite() && value.is_sign_positive())
+                            {
+                                f64::MAX
+                            } else if value.is_infinite() && value.is_sign_negative() {
+                                f64::MIN
+                            } else {
+                                *value
+                            };
+                            s.serialize_entry(name, &value)?;
+                        }
+                        Property::Bool(_, value) => s.serialize_entry(name, &value)?,
+                        Property::Bytes(_, array) => s.serialize_entry(
+                            name,
+                            &format!("b64:{}", BASE64_STANDARD.encode(array)),
+                        )?,
+                        Property::DoubleArray(_, array) => {
+                            s.serialize_entry(name, &array)?;
+                        }
+                        Property::IntArray(_, array) => {
+                            s.serialize_entry(name, &array)?;
+                        }
+                        Property::UintArray(_, array) => {
+                            s.serialize_entry(name, &array)?;
+                        }
+                        Property::StringList(_, list) => {
+                            s.serialize_entry(name, &list)?;
+                        }
+                    }
+                }
+                Either::Right(child) => s.serialize_entry(
+                    &child.name,
+                    &SerializableHierarchyFields { hierarchy: child },
+                )?,
+            }
         }
         s.end()
     }
