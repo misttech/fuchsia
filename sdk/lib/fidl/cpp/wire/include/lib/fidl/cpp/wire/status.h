@@ -206,12 +206,17 @@ fidl::OneWayStatus OneWayErrorFromUnbindInfo(fidl::UnbindInfo);
 
 }  // namespace internal
 
-// |Status| represents the result of an operation.
+// |Status| represents the result of an IPC transport operation.
 //
-// If the operation was successful:
+// If the transport operation was successful (i.e. bytes sent and/or received):
 // - `ok()` returns true.
 // - `status()` returns ZX_OK.
 // - `reason()` should not be used.
+//
+// Note: For FIDL methods using the `error` syntax (e.g. `-> () error zx.Status`),
+// application-level errors are transmitted as part of the response payload.
+// Therefore, `ok()` will still return true if the server successfully replies
+// with an application error over an open channel.
 //
 // If the operation failed:
 // - `ok()` returns false.
@@ -385,7 +390,7 @@ class [[nodiscard]] Status {
   // unable to take a string or output stream.
   [[nodiscard]] const char* lossy_description() const;
 
-  // If the operation was successful.
+  // If the IPC transport operation was successful.
   [[nodiscard]] constexpr bool ok() const { return status_ == ZX_OK; }
 
   // If the operation failed, returns information about the error.
