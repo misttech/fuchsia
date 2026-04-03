@@ -104,6 +104,7 @@ struct PerfMetadataValue {
 unsafe impl SeqLockable for PerfMetadataValue {
     const WRITE_SIZE: WriteSize = WriteSize::Eight;
     const HAS_INLINE_SEQUENCE: bool = true;
+    const VMO_NAME: &'static [u8] = b"starnix:perf_event";
 }
 
 struct PerfState {

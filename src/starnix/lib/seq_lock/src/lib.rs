@@ -41,6 +41,9 @@ pub unsafe trait SeqLockable: IntoBytes + Immutable {
 
     /// Indicates whether the type includes the u32 sequence as its first field.
     const HAS_INLINE_SEQUENCE: bool;
+
+    /// Name used to identify the VMO for debugging.
+    const VMO_NAME: &'static [u8];
 }
 
 /// Declare an instance of [`SeqLock`] by supplying header([`H`]) and value([`T`]) types,
@@ -105,7 +108,7 @@ impl<H: IntoBytes + Immutable, T: SeqLockable> SeqLock<H, T> {
     pub fn new(header: H, value: T) -> Result<Self, zx::Status> {
         // Create a VMO sized to hold the header H, value T, and sequence number.
         let vmo_size = Self::vmo_size();
-        let writable_vmo = with_zx_name(zx::Vmo::create(vmo_size as u64)?, b"starnix:selinux");
+        let writable_vmo = with_zx_name(zx::Vmo::create(vmo_size as u64)?, T::VMO_NAME);
 
         // SAFETY: This is ok because there are no other references to this memory.
         return unsafe { Self::new_from_vmo(header, value, writable_vmo) };

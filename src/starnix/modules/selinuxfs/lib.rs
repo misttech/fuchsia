@@ -89,6 +89,7 @@ struct SeLinuxStatusValue {
 unsafe impl SeqLockable for SeLinuxStatusValue {
     const WRITE_SIZE: WriteSize = WriteSize::Four;
     const HAS_INLINE_SEQUENCE: bool = false;
+    const VMO_NAME: &'static [u8] = b"starnix:selinux";
 }
 
 type StatusSeqLock = SeqLock<SeLinuxStatusHeader, SeLinuxStatusValue>;
