@@ -74,9 +74,9 @@ struct TestRealm {
 
 impl TestRealm {
     /// Starts test realm.
-    async fn new() -> Self {
+    async fn new(name: &str) -> Self {
         let builder = RealmBuilder::with_params(
-            RealmBuilderParams::new().from_relative_url("#meta/realm.cm"),
+            RealmBuilderParams::new().realm_name(name).from_relative_url("#meta/realm.cm"),
         )
         .await
         .expect("create realm builder");
@@ -596,84 +596,96 @@ impl Ip {
     Ip::V4,
     "filter",
     FILTER_TABLE_WITH_CUSTOM_CHAIN,
-    filter_table_with_custom_chain_resources;
+    filter_table_with_custom_chain_resources,
+    "filter_ipv4";
     "filter chain ipv4"
 )]
 #[test_case(
     Ip::V6,
     "filter",
     FILTER_TABLE_WITH_CUSTOM_CHAIN,
-    filter_table_with_custom_chain_resources;
+    filter_table_with_custom_chain_resources,
+    "filter_ipv6";
     "filter chain ipv6"
 )]
 #[test_case(
     Ip::V4,
     "nat",
     NAT_TABLE_WITH_CUSTOM_CHAIN,
-    nat_table_with_custom_chain_resources;
+    nat_table_with_custom_chain_resources,
+    "nat_ipv4";
     "nat chain ipv4"
 )]
 #[test_case(
     Ip::V6,
     "nat",
     NAT_TABLE_WITH_CUSTOM_CHAIN,
-    nat_table_with_custom_chain_resources;
+    nat_table_with_custom_chain_resources,
+    "nat_ipv6";
     "nat chain ipv6"
 )]
 #[test_case(
     Ip::V4,
     "mangle",
     MANGLE_TABLE_WITH_CUSTOM_CHAIN,
-    mangle_table_with_custom_chain_resources;
+    mangle_table_with_custom_chain_resources,
+    "mangle_ipv4";
     "mangle chain ipv4"
 )]
 #[test_case(
     Ip::V6,
     "mangle",
     MANGLE_TABLE_WITH_CUSTOM_CHAIN,
-    mangle_table_with_custom_chain_resources;
+    mangle_table_with_custom_chain_resources,
+    "mangle_ipv6";
     "mangle chain ipv6"
 )]
 #[test_case(
     Ip::V4,
     "mangle",
     MANGLE_TABLE_WITH_MARK_TARGET,
-    mangle_table_with_input_marking;
+    mangle_table_with_input_marking,
+    "mangle_mark_ipv4";
     "mangle chain mark ipv4"
 )]
 #[test_case(
     Ip::V6,
     "mangle",
     MANGLE_TABLE_WITH_MARK_TARGET,
-    mangle_table_with_input_marking;
+    mangle_table_with_input_marking,
+    "mangle_mark_ipv6";
     "mangle chain mark ipv6"
 )]
 #[test_case(
     Ip::V4,
     "mangle",
     MANGLE_TABLE_WITH_NOOP_TARGET,
-    mangle_table_with_noop_target;
+    mangle_table_with_noop_target,
+    "mangle_noop_ipv4";
     "mangle chain noop ipv4"
 )]
 #[test_case(
     Ip::V6,
     "mangle",
     MANGLE_TABLE_WITH_NOOP_TARGET,
-    mangle_table_with_noop_target;
+    mangle_table_with_noop_target,
+    "mangle_noop_ipv6";
     "mangle chain noop ipv6"
 )]
 #[test_case(
     Ip::V4,
     "filter",
     FILTER_TABLE_WITH_REJECT_IPV4,
-    filter_table_with_reject_ipv4_resources;
+    filter_table_with_reject_ipv4_resources,
+    "filter_reject_ipv4";
     "filter chain reject ipv4"
 )]
 #[test_case(
     Ip::V6,
     "filter",
     FILTER_TABLE_WITH_REJECT_IPV6,
-    filter_table_with_reject_ipv6_resources;
+    filter_table_with_reject_ipv6_resources,
+    "filter_reject_ipv6";
     "filter chain reject ipv6"
 )]
 #[fuchsia::test]
@@ -682,8 +694,10 @@ async fn create_chain(
     table_name: &str,
     table_spec: &[&'static str],
     expected_resources_fn: fn(Namespace) -> Vec<Resource>,
+    case_name: &str,
 ) {
-    let realm = TestRealm::new().await;
+    let realm_name = format!("create_chain_{}", case_name);
+    let realm = TestRealm::new(&realm_name).await;
     realm.run_with_input(protocol.iptables_restore(), table_spec).await;
     let starnix = realm.fetch_starnix_filter_state().await;
 
@@ -696,11 +710,12 @@ async fn create_chain(
     }
 }
 
-#[test_case(Ip::V6, FILTER_TABLE_WITH_BPF_MATCHER; "filter chain bpf matcher ipv6")]
-#[test_case(Ip::V4, FILTER_TABLE_WITH_BPF_MATCHER; "filter chain bpf matcher ipv4")]
+#[test_case(Ip::V6, FILTER_TABLE_WITH_BPF_MATCHER, "ipv6"; "filter chain ipv6")]
+#[test_case(Ip::V4, FILTER_TABLE_WITH_BPF_MATCHER, "ipv4"; "filter chain ipv4")]
 #[fuchsia::test]
-async fn create_chain_with_bpf_matcher(protocol: Ip, table_spec: &[&'static str]) {
-    let realm = TestRealm::new().await;
+async fn create_chain_with_bpf_matcher(protocol: Ip, table_spec: &[&'static str], case_name: &str) {
+    let realm_name = format!("create_chain_with_bpf_matcher_{}", case_name);
+    let realm = TestRealm::new(&realm_name).await;
     realm.run_with_input(EBPF_LOADER, &[EBPF_PROGRAM_PIN_PATH]).await;
     realm.run_with_input(protocol.iptables_restore(), table_spec).await;
     let starnix = realm.fetch_starnix_filter_state().await;
