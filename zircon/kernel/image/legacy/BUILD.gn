@@ -38,7 +38,7 @@ zbi("legacy") {
   output_dir = root_out_dir
   output_extension = "zbi"
   output_path =
-      rebase_path("$output_dir/$target_name.$output_extension", root_build_dir)
+      rebase_path("$output_dir/$output_name.$output_extension", root_build_dir)
   metadata = {
     # For the //:images build_api_module().
     images = [

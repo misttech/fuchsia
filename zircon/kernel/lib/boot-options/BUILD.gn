@@ -28,6 +28,7 @@ if (current_toolchain == default_toolchain) {
                 "postamble.md",
               ]
     args = rebase_path(outputs + sources, root_build_dir)
+    validations = [ ":check-markdown" ]
   }
 
   golden_files("check-markdown") {
