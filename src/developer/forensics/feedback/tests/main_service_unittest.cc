@@ -40,13 +40,12 @@ class MainServiceTest : public UnitTestFixture {
                           "",
                           LastReboot::Options{
                               .is_first_instance = kIsFirstInstance,
-                              .reboot_log = RebootLog(
-                                  std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kCold),
-                                  "reboot log",
-                                  /*dlog=*/std::nullopt,
-                                  /*last_boot_uptime=*/zx::sec(100),
-                                  /*last_boot_runtime=*/zx::sec(90),
-                                  /*critical_process=*/std::nullopt),
+                              .reboot_log = RebootLog(FinalShutdownInfo(FinalShutdownReason::kCold),
+                                                      "reboot log",
+                                                      /*dlog=*/std::nullopt,
+                                                      /*last_boot_uptime=*/zx::sec(100),
+                                                      /*last_boot_runtime=*/zx::sec(90),
+                                                      /*critical_process=*/std::nullopt),
                               .oom_crash_reporting_delay = zx::sec(1),
                           },
                           CrashReports::Options{

@@ -7,7 +7,6 @@
 
 #include <fuchsia/feedback/cpp/fidl.h>
 
-#include <memory>
 #include <optional>
 #include <string>
 
@@ -64,7 +63,7 @@ enum class FinalShutdownReason : std::uint8_t {
 // Zircon's shutdown information or shutdown information from userspace.
 class FinalShutdownInfo {
  public:
-  static std::unique_ptr<FinalShutdownInfo> MakeFinalShutdownInfo(
+  static FinalShutdownInfo MakeFinalShutdownInfo(
       const HwShutdownReason hw_reason, const ZirconShutdownReason zircon_reason,
       std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr,
       bool supports_user_initiated_poweroffs);

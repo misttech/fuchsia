@@ -357,23 +357,22 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   const std::optional<GracefulShutdownInfo> graceful_info =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+  FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       hw_reason, zircon_reason, graceful_info, not_a_fdr, supports_user_initiated_poweroffs);
   const auto reboot_log =
-      MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info->ToRebootReasonString(),
+      MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info.ToRebootReasonString(),
                     fallback_uptime, fallback_runtime);
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
 
-  return RebootLog(std::move(final_shutdown_info), reboot_log, dlog, last_boot_uptime,
-                   last_boot_runtime, critical_process);
+  return RebootLog(final_shutdown_info, reboot_log, dlog, last_boot_uptime, last_boot_runtime,
+                   critical_process);
 }
 
-RebootLog::RebootLog(std::unique_ptr<FinalShutdownInfo> final_shutdown_info,
-                     std::string reboot_log_str, std::optional<std::string> dlog,
-                     std::optional<zx::duration> last_boot_uptime,
+RebootLog::RebootLog(FinalShutdownInfo final_shutdown_info, std::string reboot_log_str,
+                     std::optional<std::string> dlog, std::optional<zx::duration> last_boot_uptime,
                      std::optional<zx::duration> last_boot_runtime,
                      std::optional<std::string> critical_process)
-    : final_shutdown_info_(std::move(final_shutdown_info)),
+    : final_shutdown_info_(final_shutdown_info),
       reboot_log_str_(reboot_log_str),
       dlog_(std::move(dlog)),
       last_boot_uptime_(last_boot_uptime),

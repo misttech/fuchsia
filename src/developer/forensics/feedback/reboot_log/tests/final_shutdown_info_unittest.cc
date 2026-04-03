@@ -280,14 +280,14 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulNoReportTe
 
 TEST_P(FinalShutdownInfoGracefulNoReportTest, CheckProperties) {
   const GracefulNoReportTestParams& params = GetParam();
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kNotParseable, params.reasons},
       /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false);
 
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), params.expected_fidl_reboot_reason);
+  EXPECT_FALSE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(), params.expected_cobalt_reason);
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(), params.expected_fidl_reboot_reason);
 }
 
 struct GracefulTestParams {
@@ -408,47 +408,47 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulTest,
 
 TEST_P(FinalShutdownInfoGracefulTest, CheckProperties) {
   const GracefulTestParams& params = GetParam();
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kReboot, params.reasons},
       /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false);
 
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), params.expected_cobalt_reason);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), params.expected_fidl_reboot_reason);
+  EXPECT_TRUE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(), params.expected_cobalt_reason);
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(), params.expected_fidl_reboot_reason);
 
   EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
+      final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
       params.expected_crash_signature);
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
             params.expected_crash_signature);
 
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), params.expected_crash_program_name);
+  EXPECT_EQ(final_shutdown_info.ToCrashProgramName(), params.expected_crash_program_name);
 }
 
 TEST(FinalShutdownInfoGracefulTest, InferredFdr) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       /*graceful_shutdown_info=*/std::nullopt,
       /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false);
 
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
+  EXPECT_FALSE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kFactoryDataReset);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(),
             fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
 }
 
 TEST(FinalShutdownInfoTest, InferredFdr_Cold) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
       /*graceful_shutdown_info=*/std::nullopt,
       /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false);
 
-  EXPECT_FALSE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
+  EXPECT_FALSE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kFactoryDataReset);
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(),
             fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
 }
 

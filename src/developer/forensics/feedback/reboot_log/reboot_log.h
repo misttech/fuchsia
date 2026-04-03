@@ -7,7 +7,6 @@
 
 #include <lib/zx/time.h>
 
-#include <memory>
 #include <optional>
 #include <string>
 
@@ -27,19 +26,19 @@ class RebootLog {
 
   const std::string& RebootLogStr() const { return reboot_log_str_; }
   const std::optional<std::string>& Dlog() const { return dlog_; }
-  const FinalShutdownInfo& GetFinalShutdownInfo() const { return *final_shutdown_info_; }
+  const FinalShutdownInfo& GetFinalShutdownInfo() const { return final_shutdown_info_; }
   const std::optional<zx::duration>& Uptime() const { return last_boot_uptime_; }
   const std::optional<zx::duration>& Runtime() const { return last_boot_runtime_; }
   const std::optional<std::string>& CriticalProcess() const { return critical_process_; }
 
   // Exposed for testing purposes.
-  RebootLog(std::unique_ptr<FinalShutdownInfo> final_shutdown_info, std::string reboot_log_str,
+  RebootLog(FinalShutdownInfo final_shutdown_info, std::string reboot_log_str,
             std::optional<std::string> dlog, std::optional<zx::duration> last_boot_uptime,
             std::optional<zx::duration> last_boot_runtime,
             std::optional<std::string> critical_process);
 
  private:
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info_;
+  FinalShutdownInfo final_shutdown_info_;
   std::string reboot_log_str_;
   std::optional<std::string> dlog_;
   std::optional<zx::duration> last_boot_uptime_;

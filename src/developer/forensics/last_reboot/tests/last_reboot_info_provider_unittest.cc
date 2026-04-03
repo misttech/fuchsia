@@ -22,8 +22,8 @@ using feedback::FinalShutdownReason;
 fuchsia::feedback::LastReboot MakeLastReboot(
     const FinalShutdownReason reason, const std::optional<zx::duration> uptime = std::nullopt,
     const std::optional<zx::duration> runtime = std::nullopt) {
-  auto final_shutdown_info = std::make_unique<feedback::FinalShutdownInfo>(reason);
-  const feedback::RebootLog reboot_log(std::move(final_shutdown_info), "",
+  const feedback::FinalShutdownInfo final_shutdown_info(reason);
+  const feedback::RebootLog reboot_log(final_shutdown_info, "",
                                        /*dlog=*/std::nullopt, uptime, runtime,
                                        /*critical_process=*/std::nullopt);
 
