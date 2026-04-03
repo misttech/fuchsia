@@ -7,6 +7,7 @@
 
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/node/cpp/add_child.h>
 
 namespace simple {
 
@@ -42,6 +43,9 @@ class SimpleDriver : public fdf::DriverBase {
 
   // Client for controller the child node.
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_controller_;
+
+  // Owned child node.
+  fdf::OwnedChildNode owned_child_;
 };
 
 }  // namespace simple

@@ -59,8 +59,9 @@ TEST_F(SimpleDriverBackgroundTest, VerifyNameAndChildNode) {
 
   // Access the driver's bound node and check that it's parenting one child node.
   driver_test.RunInNodeContext([](fdf_testing::TestNode& node) {
-    EXPECT_EQ(1u, node.children().size());
+    EXPECT_EQ(2u, node.children().size());
     EXPECT_TRUE(node.children().count("simple_child"));
+    EXPECT_TRUE(node.children().count("owned_child"));
   });
 }
 

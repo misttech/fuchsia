@@ -53,6 +53,16 @@ zx::result<> SimpleDriver::Start() {
 
   child_controller_.Bind(std::move(child_result.value()));
   // [END add_child]
+
+  // [START add_owned_child]
+  // Add an owned child node.
+  zx::result owned_child_result = AddOwnedChild("owned_child");
+  if (owned_child_result.is_error()) {
+    fdf::error("Failed to add owned child: {}", owned_child_result);
+    return owned_child_result.take_error();
+  }
+  owned_child_ = std::move(owned_child_result.value());
+  // [END add_owned_child]
   return zx::ok();
 }
 

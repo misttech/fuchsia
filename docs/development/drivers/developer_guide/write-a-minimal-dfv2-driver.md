@@ -428,10 +428,10 @@ framework to remove the node.
 The example code below creates an owned node:
 
 ```cpp
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/metadata/retriever/retriever-driver.cc" adjust_indentation="auto" region_tag="add_child" %}
+{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/simple/dfv2/simple_driver.cc" adjust_indentation="auto" region_tag="add_owned_child" %}
 ```
 
-(Source: [`retriever-driver.cc`][retriever-example])
+(Source: [`simple_driver.cc`][simple-example])
 
 ### Clean up the driver {:#clean-up-the-driver}
 
@@ -487,7 +487,6 @@ guide.
 [bind-rules-tutorial]: /docs/development/drivers/tutorials/bind-rules-tutorial.md
 [set-up-compat-device-server]: /docs/development/drivers/migration/set-up-compat-device-server.md
 [simple-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/simple/dfv2/simple_driver.cc
-[retriever-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/metadata/retriever/retriever-driver.cc
 [driver-base-add-child]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base.h;l=225-258
 [fdf-add-child]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/node/cpp/add_child.h
 [driver-matching]: /docs/concepts/drivers/driver_binding.md
