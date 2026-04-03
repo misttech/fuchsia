@@ -9,10 +9,7 @@ import("params.gni")
 
 library_headers("headers") {
   headers = [ "lib/persistent-debuglog.h" ]
-  public_configs = [
-    ":config",
-    "//zircon/kernel/switch:persistent_ram_config",
-  ]
+  public_configs = [ ":config" ]
 }
 
 static_library("persistent-debuglog") {

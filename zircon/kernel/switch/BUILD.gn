@@ -128,6 +128,8 @@ if (is_kernel) {
       ":lock_dep",
       ":scheduler",
       ":standalone",
+      ":persistent_ram_config",
+      ":kernel_memory_profiler",
       ":warnings",
       "//zircon/kernel/arch/$zircon_cpu:abi",
       "//zircon/kernel/arch/$zircon_cpu:kernel",
@@ -239,15 +241,8 @@ if (is_kernel) {
     ]
   }
 
-  # TODO(https://fxbug.dev/371568912): Replace distributed uses of this with one
-  # one use above.
   config("persistent_ram_config") {
-    visibility = [
-      ":*",
-      "//zircon/kernel/lib/crashlog/*",
-      "//zircon/kernel/lib/jtrace/*",
-      "//zircon/kernel/lib/persistent-debuglog/*",
-    ]
+    visibility = [ ":*" ]
     defines = [ "PERSISTENT_RAM_ALLOCATION_GRANULARITY=$persistent_ram_allocation_granularity" ]
   }
 
@@ -276,14 +271,8 @@ if (is_kernel) {
     defines = [ "KERNEL_IMAGE_MAX_SIZE=$kernel_image_max_size" ]
   }
 
-  # TODO(https://fxbug.dev/371568912): Replace distributed uses of this with one
-  # one use above.
   config("kernel_memory_profiler") {
-    visibility = [
-      ":*",
-      "//zircon/kernel/lib/heap",
-      "//zircon/kernel/lib/instrumentation:memory-profile",
-    ]
+    visibility = [ ":*" ]
     defines = [ "KERNEL_MEMORY_PROFILER=$kernel_memory_profiler" ]
   }
 
