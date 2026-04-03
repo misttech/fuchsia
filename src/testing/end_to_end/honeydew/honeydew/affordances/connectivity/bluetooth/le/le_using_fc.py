@@ -133,7 +133,10 @@ class AsyncLEUsingFc(
             self._peripheral_advertisement_server = None
         self._peripheral_connection = None
         self._le_session_initialized = False
-        await super().reset_state()
+        # Explicitly call the common reset to bypass the interface's abstract method shadowing
+        await bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc.reset_state(
+            self
+        )
 
     def init_le_sys(self) -> None:
         """Initializes BLE stack.
@@ -291,8 +294,8 @@ class AsyncLEUsingFc(
             parameters=params, advertised_peripheral=client.take()
         )
 
-    async def run_advertise_connection(self) -> None:
-        """Function to run Advertised Peripheral server calls"""
+    async def wait_for_connection(self) -> None:
+        """Function to run Advertised Peripheral server calls and wait for connection."""
         if self._peripheral_advertisement_server is None:
             raise bt_errors.BluetoothError(
                 "No Peripheral Advertisement server active on "
@@ -534,6 +537,16 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
             self._inner.connect(identifier)
         )
 
+    def wait_for_connection(self) -> None:
+        """Wait for the peripheral to realize it has been connected to by a central.
+
+        Raises:
+            BluetoothError: If it fails to wait for connection.
+        """
+        fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_for_connection()
+        )
+
     def advertise(
         self, appearance: bt_types.BluetoothLEAppearance, name: str
     ) -> None:
@@ -545,12 +558,6 @@ class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
         """
         fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.advertise(appearance, name)
-        )
-
-    def run_advertise_connection(self) -> None:
-        """Function to run Advertised Peripheral server calls"""
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.run_advertise_connection()
         )
 
     def publish_service(self) -> f_bt.Uuid:

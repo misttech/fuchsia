@@ -82,13 +82,12 @@ class BluetoothGapTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         )
         await asyncio.sleep(5)
 
-        known_device = (
+        known_devices = (
             await self.initiator.bluetooth_gap.get_known_remote_devices()
         )
-        _LOGGER.info(known_device)
-        identifier = bluetooth_utils.retrieve_device_id(
-            data=known_device, reverse_hex_address=receiver_address
-        )
+        _LOGGER.info(known_devices)
+        peer = known_devices[receiver_address]
+        identifier = peer.id
         _LOGGER.info("Identifier: %s", identifier)
         _LOGGER.info("Attempting to initiate pairing")
         await self.initiator.bluetooth_gap.pair_device(
@@ -100,7 +99,7 @@ class BluetoothGapTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             identifier=identifier,
             connection_type=BluetoothConnectionType.CLASSIC,
         )
-        await self.receiver.bluetooth_gap.run_pairing_delegate()
+        await self.receiver.bluetooth_gap.run_pairing_delegate(None)
         await asyncio.sleep(5)
 
         _LOGGER.info("Attempting to start connection")
@@ -133,8 +132,6 @@ class BluetoothGapTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         # bluetooth_utils.forget_all_bt_devices(self.initiator)
         await self.initiator.bluetooth_gap.set_discoverable(False)
         await self.receiver.bluetooth_gap.set_discoverable(False)
-        await self.initiator.bluetooth_gap.reset_state()
-        await self.receiver.bluetooth_gap.reset_state()
         return await super().teardown_class()
 
     def _name_func(self, iteration: int) -> str:

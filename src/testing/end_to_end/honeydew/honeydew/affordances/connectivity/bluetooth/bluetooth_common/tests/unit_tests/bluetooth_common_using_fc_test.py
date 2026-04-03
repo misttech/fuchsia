@@ -29,6 +29,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from honeydew.typing.custom_types import MacAddress
 
 BluetoothAcceptPairing = bluetooth_types.BluetoothAcceptPairing
 BluetoothConnectionType = bluetooth_types.BluetoothConnectionType
@@ -53,18 +54,18 @@ _SAMPLE_KNOWN_DEVICES_OUTPUT = f_btsys_controller.AccessWatchPeersResponse(
 )
 
 _ACTUAL_KNOWN_DEVICE_OUTPUT = {
-    "16085008211800713200": {
-        "address": [88, 111, 107, 249, 15, 248],
-        "appearance": None,
-        "bonded": True,
-        "connected": True,
-        "id": 16085008211800713200,
-        "name": "fuchsia-f80f-f96b-6f59",
-        "rssi": 17,
-        "services": None,
-        "technology": 2,
-        "tx_power": None,
-    }
+    MacAddress("58:6f:6b:f9:0f:f8"): bluetooth_types.BluetoothPeerInfo(
+        id=f_bt.PeerId(value=16085008211800713200),
+        address=[88, 111, 107, 249, 15, 248],
+        connected=True,
+        bonded=True,
+        name="fuchsia-f80f-f96b-6f59",
+        appearance=None,
+        rssi=17,
+        services=None,
+        technology=2,
+        tx_power=None,
+    )
 }
 
 
@@ -202,32 +203,30 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Test for BluetoothGap.connect_device() method."""
         self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
-        dummy_identifier = 0
+        fake_identifier = f_bt.PeerId(value=0)
         with mock.patch(
             "asyncio.sleep", new_callable=mock.AsyncMock
         ) as mock_sleep:
             await self.bluetooth_common_fc_obj.connect_device(
-                identifier=dummy_identifier,
+                identifier=fake_identifier,
                 connection_type=parameterized_dict["transport"],
             )
             mock_sleep.assert_called_once_with(10)
 
-        dummy_peer_id = f_bt.PeerId(value=dummy_identifier)
         self.bluetooth_common_fc_obj._access_controller_proxy.connect.assert_called_with(
-            id_=dummy_peer_id
+            id_=fake_identifier
         )
         self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 2)
 
     async def test_forget_device(self) -> None:
         """Test for BluetoothGap.forget_device() method."""
         self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
-        dummy_identifier = 0
+        fake_identifier = f_bt.PeerId(value=0)
         await self.bluetooth_common_fc_obj.forget_device(
-            identifier=dummy_identifier,
+            identifier=fake_identifier,
         )
-        dummy_peer_id = f_bt.PeerId(value=dummy_identifier)
         self.bluetooth_common_fc_obj._access_controller_proxy.forget.assert_called_with(
-            id_=dummy_peer_id
+            id_=fake_identifier
         )
         self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 1)
 
@@ -237,12 +236,12 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
             self.bluetooth_common_fc_obj,
             "_get_active_address",
             new_callable=mock.AsyncMock,
-            return_value="1",
+            return_value=MacAddress("01:23:45:67:89:ab"),
         ):
-            dummy_address = (
+            fake_address = (
                 await self.bluetooth_common_fc_obj.get_active_adapter_address()
             )
-            self.assertEqual(dummy_address, "1")
+            self.assertEqual(str(fake_address), "01:23:45:67:89:ab")
 
     async def test_async_get_active_adapter_address(self) -> None:
         """Test for BluetoothGap.get_active_adapter_address() async method."""
@@ -264,7 +263,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
             mock.AsyncMock(return_value=test)
         )
         res = await self.bluetooth_common_fc_obj._get_active_address()
-        self.assertEqual(res, [88, 111, 107, 249, 15, 248])
+        self.assertEqual(str(res), "58:6f:6b:f9:0f:f8")
 
     async def test_get_known_remote_devices(self) -> None:
         """Test for BluetoothGap.get_known_remote_devices() method."""
@@ -283,7 +282,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
             mock.AsyncMock(return_value=_SAMPLE_KNOWN_DEVICES_OUTPUT)
         )
         data = await self.bluetooth_common_fc_obj.get_connected_devices()
-        self.assertEqual(data, [16085008211800713200])
+        self.assertEqual(data, ["16085008211800713200"])
 
     @parameterized.expand(
         [
@@ -307,22 +306,21 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Test for BluetoothGap.pair_device() method."""
         self.bluetooth_common_fc_obj._access_controller_proxy = mock.AsyncMock()
-        dummy_identifier = 0
+        fake_identifier = f_bt.PeerId(value=0)
         with mock.patch(
             "asyncio.sleep", new_callable=mock.AsyncMock
         ) as mock_sleep:
             await self.bluetooth_common_fc_obj.pair_device(
-                identifier=dummy_identifier,
+                identifier=fake_identifier,
                 connection_type=parameterized_dict["transport"],
             )
             mock_sleep.assert_called_once_with(10)
 
-        dummy_peer_id = f_bt.PeerId(value=dummy_identifier)
-        dummy_options = f_btsys_controller.PairingOptions(
+        fake_options = f_btsys_controller.PairingOptions(
             le_security_level=None, bondable_mode=None, transport=None
         )
         self.bluetooth_common_fc_obj._access_controller_proxy.pair.assert_called_with(
-            id_=dummy_peer_id, options=dummy_options
+            id_=fake_identifier, options=fake_options
         )
         self.assertEqual(self.bluetooth_common_fc_obj._async_op_count, 2)
 

@@ -5,6 +5,7 @@
 
 import logging
 
+import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_base_test
 from mobly import asserts, test_runner
 
@@ -39,14 +40,14 @@ class BluetoothGapAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     async def test_bluetooth_connect_device(self) -> None:
         """Test case for bluetooth.connect_device()"""
 
-        identifier = 000000000
+        identifier = f_bt.PeerId(value=0)
         transport = BluetoothConnectionType.CLASSIC
         await self.device.bluetooth_gap.connect_device(identifier, transport)
 
     async def test_bluetooth_forget_device(self) -> None:
         """Test case for bluetooth.forget_device()"""
 
-        identifier = 000000000
+        identifier = f_bt.PeerId(value=0)
 
         await self.device.bluetooth_gap.forget_device(identifier)
 
@@ -68,7 +69,7 @@ class BluetoothGapAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
     async def test_bluetooth_pair_device(self) -> None:
         """Test case for bluetooth.pair_device()"""
 
-        identifier = 000000000
+        identifier = f_bt.PeerId(value=0)
         transport = BluetoothConnectionType.CLASSIC
 
         await self.device.bluetooth_gap.pair_device(identifier, transport)

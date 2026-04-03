@@ -5,13 +5,13 @@
 will depend on."""
 
 import abc
-from typing import Any
 
 import fidl_fuchsia_bluetooth as f_bt
 
 from honeydew.affordances.connectivity.bluetooth.utils import (
     types as bluetooth_types,
 )
+from honeydew.typing.custom_types import MacAddress
 
 
 class BluetoothCommon(abc.ABC):
@@ -77,7 +77,9 @@ class BluetoothCommon(abc.ABC):
         """
 
     @abc.abstractmethod
-    def get_active_adapter_address(self, timeout_sec: float | None) -> str:
+    def get_active_adapter_address(
+        self, timeout_sec: float | None = None
+    ) -> MacAddress:
         """Retrieves the device's active BT adapter address.
 
         Args:
@@ -105,14 +107,14 @@ class BluetoothCommon(abc.ABC):
     def get_known_remote_devices(
         self,
         timeout_sec: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[MacAddress, bluetooth_types.BluetoothPeerInfo]:
         """Retrieves all known remote devices received by device.
 
         Args:
             timeout_sec: timeout duration in seconds
 
         Returns:
-            A dict of all known remote devices.
+            A dict of all known remote devices keyed by MacAddress.
 
         Raises:
             BluetoothError: On failure.
@@ -235,8 +237,8 @@ class AsyncBluetoothCommon(abc.ABC):
 
     @abc.abstractmethod
     async def get_active_adapter_address(
-        self, timeout_sec: float | None
-    ) -> str:
+        self, timeout_sec: float | None = None
+    ) -> MacAddress:
         """Retrieves the device's active BT adapter address.
 
         Args:
@@ -264,14 +266,14 @@ class AsyncBluetoothCommon(abc.ABC):
     async def get_known_remote_devices(
         self,
         timeout_sec: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[MacAddress, bluetooth_types.BluetoothPeerInfo]:
         """Retrieves all known remote devices received by device.
 
         Args:
             timeout_sec: timeout duration in seconds
 
         Returns:
-            A dict of all known remote devices.
+            A dict of all known remote devices keyed by MacAddress.
 
         Raises:
             BluetoothError: On failure.

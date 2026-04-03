@@ -3,7 +3,10 @@
 # found in the LICENSE file.
 """Data types used by Bluetooth affordance."""
 
+import dataclasses
 import enum
+
+import fidl_fuchsia_bluetooth as f_bt
 
 
 class Implementation(enum.StrEnum):
@@ -93,3 +96,17 @@ class BluetoothLEAppearance(enum.IntEnum):
     SPORTS_ACTIVITY_LOCATION_AND_NAV_DISPLAY = 5186
     SPORTS_ACTIVITY_LOCATION_POD = 5187
     SPORTS_ACTIVITY_LOCATION_AND_NAV_POD = 5188
+
+
+@dataclasses.dataclass
+class BluetoothPeerInfo:
+    id: f_bt.PeerId
+    address: list[int]
+    connected: bool
+    bonded: bool
+    name: str | None = None
+    appearance: int | None = None
+    rssi: int | None = None
+    services: list[f_bt.Uuid] | None = None
+    technology: int | None = None
+    tx_power: int | None = None

@@ -5,7 +5,7 @@
 
 import unittest
 
-from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
+from honeydew.typing.custom_types import MacAddress
 
 _VALID_MAC_ADDRESS = "01:23:45:67:89:ab"
 _VALID_MAC_ADDRESS_BYTES = bytes([1, 35, 69, 103, 137, 171])

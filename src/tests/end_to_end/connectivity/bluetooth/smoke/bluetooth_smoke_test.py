@@ -64,7 +64,6 @@ class BluetoothSmokeTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
 
         await self.device.bluetooth_gap.set_discoverable(False)
         await self.device.bluetooth_gap.request_discovery(False)
-        await self.device.bluetooth_gap.reset_state()
         return await super().teardown_test()
 
     def _name_func(self, iteration: int) -> str:

@@ -5,6 +5,7 @@
 
 import logging
 
+import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_base_test
 from mobly import asserts, test_runner
 
@@ -32,7 +33,9 @@ class BluetoothAvrcpAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
 
     async def test_avrcp_init(self) -> None:
         """Test for Bluetooth.avrcp_init() method."""
-        await self.device.bluetooth_avrcp.init_avrcp(target_id="0")
+        await self.device.bluetooth_avrcp.init_avrcp(
+            target_id=f_bt.PeerId(value=0)
+        )
 
     async def test_list_received_requests(self) -> None:
         """Test for Bluetooth.list_received_requests() method."""

@@ -273,13 +273,13 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
         ],
         name_func=_custom_test_name_func,
     )
-    async def test_run_advertise_connection(
+    async def test_wait_for_connection(
         self, parameterized_dict: dict[str, Any]
     ) -> None:
-        """Test for BluetoothLE.run_advertise_connection()."""
+        """Test for BluetoothLE.wait_for_connection()."""
         if not parameterized_dict.get("server"):
             with self.assertRaises(bluetooth_errors.BluetoothError):
-                await self.bluetooth_le_obj.run_advertise_connection()
+                await self.bluetooth_le_obj.wait_for_connection()
         else:
 
             async def no_op() -> None:
@@ -288,7 +288,7 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
             self.bluetooth_le_obj._peripheral_advertisement_server = (
                 asyncio.create_task(no_op())
             )
-            await self.bluetooth_le_obj.run_advertise_connection()
+            await self.bluetooth_le_obj.wait_for_connection()
 
     async def test_request_gatt_client(self) -> None:
         """Test for BluetoothLE.request_gatt_client()."""

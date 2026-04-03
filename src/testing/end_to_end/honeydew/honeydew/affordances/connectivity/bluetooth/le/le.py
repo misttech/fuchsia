@@ -21,7 +21,10 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
     """Abstract base class for an async Bluetooth LE Profile affordance."""
 
     # TODO(b/352584355): Add functional tests for BLE affordance
-    # List all the public methods
+    @abc.abstractmethod
+    async def reset_state(self) -> None:
+        """Reset the internal state tracking variables to correspond to an inactive BLE State."""
+
     @abc.abstractmethod
     async def advertise(
         self, appearance: bt_types.BluetoothLEAppearance, name: str
@@ -132,6 +135,14 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
         """Stop advertising the peripheral."""
 
     @abc.abstractmethod
+    async def wait_for_connection(self) -> None:
+        """Wait for the peripheral to realize it has been connected to by a central.
+
+        Raises:
+            BluetoothError: If it fails to wait for connection.
+        """
+
+    @abc.abstractmethod
     async def scan(self) -> list[f_ble_controller.Peer]:
         """Perform an LE scan on central device.
 
@@ -144,10 +155,10 @@ class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
 
 
 class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
-    """Abstract base class for Bluetooth LE Profile affordance."""
+    @abc.abstractmethod
+    def reset_state(self) -> None:
+        """Reset the internal state tracking variables to correspond to an inactive BLE State."""
 
-    # TODO(b/352584355): Add functional tests for BLE affordance
-    # List all the public methods
     @abc.abstractmethod
     def advertise(
         self, appearance: bt_types.BluetoothLEAppearance, name: str
@@ -171,6 +182,14 @@ class LE(affordance.Affordance, bluetooth_common.BluetoothCommon):
 
         Raises:
             BluetoothError: If the peripheral fails to connect to central device.
+        """
+
+    @abc.abstractmethod
+    def wait_for_connection(self) -> None:
+        """Wait for the peripheral to realize it has been connected to by a central.
+
+        Raises:
+            BluetoothError: If it fails to wait for connection.
         """
 
     @abc.abstractmethod

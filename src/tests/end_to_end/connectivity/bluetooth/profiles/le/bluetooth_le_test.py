@@ -5,8 +5,6 @@
 """Sample test that demonstrates the usage of 2 Fuchsia devices in one test"""
 import asyncio
 import logging
-import re
-from typing import Any, List
 
 import fuchsia_base_test
 from honeydew.affordances.connectivity.bluetooth.utils.types import (
@@ -73,13 +71,14 @@ class MultiDeviceSampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             appearance=BluetoothLEAppearance.GLUCOSE_MONITOR,
             name=self.peripheral.device_name,
         )
-        known_device = await self.central.bluetooth_le.scan()
-        _LOGGER.info(known_device)
+        known_devices = await self.central.bluetooth_le.scan()
+        _LOGGER.info(known_devices)
         _LOGGER.info("Finished scanning, now going to connect.")
-        for k in known_device.keys():
-            await self.central.bluetooth_le.connect(k)
+        for k in known_devices:
+            assert k.id_ is not None
+            await self.central.bluetooth_le.connect(k.id_)
             _LOGGER.info("Finished attempting to connect")
-            await self.peripheral.bluetooth_le.run_advertise_connection()
+            await self.peripheral.bluetooth_le.wait_for_connection()
         await asyncio.sleep(5)
         print(await self.central.bluetooth_le.get_known_remote_devices())
 
@@ -90,69 +89,12 @@ class MultiDeviceSampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         await self.peripheral.bluetooth_le.reset_state()
         return await super().teardown_test()
 
-    def _sl4f_bt_mac_address(self, mac_address: str) -> list[int]:
-        """Converts BT mac addresses to reversed BT byte lists.
-        Args:
-            mac_address: mac address of device
-            Ex. "00:11:22:33:FF:EE"
-
-        Returns:
-            Mac address to reverse hex in form of a list
-            Ex. [88, 111, 107, 249, 15, 248]
-        """
-        if ":" in mac_address:
-            return self._convert_reverse_hex(mac_address.split(":"))
-        return self._convert_reverse_hex(re.findall("..", mac_address))
-
-    def _convert_reverse_hex(self, address: list[str]) -> list[int]:
-        """Reverses ASCII mac address to 64-bit byte lists.
-        Args:
-            address: Mac address of device
-            Ex. "00112233FFEE"
-
-        Returns:
-            Mac address to reverse hex in form of a list
-            Ex. [88, 111, 107, 249, 15, 248]
-        """
-        res = []
-        for x in reversed(address):
-            res.append(int(x, 16))
-        return res
-
-    def _verify_peripheral_is_discovered(
-        self, data: dict[str, dict[str, Any]], reverse_hex_address: List[int]
-    ) -> bool:
-        """Verify if we have seen the reciever via the Bluetooth data
-        Args:
-            data: All known discoverable devices via Bluetooth
-                and information
-            reverse_hex_address: BT address to look for
-        Returns:
-            True: If we found the broadcasting bluetooth address
-        """
-        for value in data.values():
-            if value["address"] == reverse_hex_address:
-                return True
-        return False
-
     async def _set_discoverability_on(self) -> None:
         """Turns on discoverability for the devices."""
         _LOGGER.info("TRYING TO SET DISCOVERABLE")
         await self.central.bluetooth_le.request_discovery(True)
         await self.central.bluetooth_le.set_discoverable(True)
         await self.peripheral.bluetooth_le.set_discoverable(True)
-
-    async def _forget_all_bt_devices(self, device: Any, id: Any = None) -> None:
-        """Unpairs and deletes any BT peer pairing data from the device."""
-        if id is None:
-            data = await device.bluetooth_le.get_known_remote_devices()
-            _LOGGER.info(data)
-            for device_id in data.keys():
-                await device.bluetooth_le.forget_device(
-                    identifier=data[device_id]["id"]
-                )
-        else:
-            await device.bluetooth_le.forget_device(identifier=id)
 
 
 if __name__ == "__main__":

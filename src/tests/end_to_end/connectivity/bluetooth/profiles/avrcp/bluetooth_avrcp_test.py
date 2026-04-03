@@ -7,6 +7,7 @@ import asyncio
 import logging
 from typing import List, Tuple
 
+import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_base_test
 from bluetooth_utils_lib import bluetooth_utils
 from honeydew.affordances.connectivity.bluetooth.utils.types import (
@@ -94,15 +95,11 @@ class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         )
         await asyncio.sleep(5)
 
-        known_device = (
+        known_devices = (
             await self.initiator.bluetooth_avrcp.get_known_remote_devices()
         )
-        receiver_address_converted = bluetooth_utils.sl4f_bt_mac_address(
-            mac_address=receiver_address
-        )
-        identifier = bluetooth_utils.retrieve_device_id(
-            data=known_device, reverse_hex_address=receiver_address_converted
-        )
+        peer = known_devices[receiver_address]
+        identifier = peer.id
         _LOGGER.info("Identifier: %s", identifier)
         _LOGGER.info("Attempting to initiate pairing")
         await self.initiator.bluetooth_avrcp.pair_device(
@@ -142,7 +139,9 @@ class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
 
         connected = await self.receiver.bluetooth_avrcp.get_connected_devices()
         _LOGGER.info("Initializing AVRCP service to ID: %s", connected[-1])
-        await self.receiver.bluetooth_avrcp.init_avrcp(target_id=connected[-1])
+        await self.receiver.bluetooth_avrcp.init_avrcp(
+            target_id=f_bt.PeerId(value=int(connected[-1]))
+        )
         await asyncio.sleep(5)
         await self.initiator.bluetooth_avrcp.publish_mock_player()
         await asyncio.sleep(5)

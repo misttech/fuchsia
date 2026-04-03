@@ -4,7 +4,6 @@
 """Bluetooth Common affordance implementation using SL4F."""
 
 from enum import StrEnum
-from typing import Any
 
 import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_async_extension
@@ -21,6 +20,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 )
 from honeydew.transports.sl4f import errors as sl4f_errors
 from honeydew.transports.sl4f import sl4f as sl4f_transport
+from honeydew.typing.custom_types import MacAddress
 
 
 class Sl4fMethods(StrEnum):
@@ -128,7 +128,7 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
 
     def get_active_adapter_address(
         self, timeout_sec: float | None = None
-    ) -> str:
+    ) -> MacAddress:
         """Retrieves the active adapter mac address
 
         Args:
@@ -165,17 +165,16 @@ class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
 
     def get_known_remote_devices(
         self, timeout_sec: float | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[MacAddress, bluetooth_types.BluetoothPeerInfo]:
         """Retrieves all known remote devices received by device.
         Args:
             timeout_sec: timeout duration in seconds
 
         Returns:
-            A dict of all known remote devices.
+            A dict of all known remote devices keyed by MacAddress.
 
         Raises:
             BluetoothError: On failure.
-            KeyError: If the Sl4f call returns no "result".
         """
         return fuchsia_async_extension.get_loop().run_until_complete(
             self.__inner.get_known_remote_devices(timeout_sec)
@@ -366,7 +365,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
 
     async def get_active_adapter_address(
         self, timeout_sec: float | None = None
-    ) -> str:
+    ) -> MacAddress:
         """Retrieves the active adapter mac address
 
         Args:
@@ -391,7 +390,7 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
                 "Failed to complete get_active_adapter_address SL4F call on "
                 f"{self._name}."
             ) from e
-        return mac_address[2]
+        return MacAddress(mac_address[2])
 
     async def get_connected_devices(self) -> list[str]:
         """Retrieves all connected remote devices.
@@ -403,42 +402,55 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
         Raises:
             BluetoothError: On failure.
         """
-        try:
-            data = self._sl4f.run(method=Sl4fMethods.GET_KNOWN_REMOTE_DEVICES)
-            connected_devices = []
-            for value in data.get("result", {}).values():
-                if value["bonded"]:
-                    connected_devices.append(value["id"])
-        except sl4f_errors.Sl4fError as e:
-            raise bluetooth_errors.BluetoothError(
-                f"Failed to complete get_connected_devices SL4F call on {self._name}."
-            ) from e
+        data = await self.get_known_remote_devices()
+        connected_devices = []
+        for peer in data.values():
+            if peer.bonded:
+                connected_devices.append(str(peer.id.value))
         return connected_devices
 
     async def get_known_remote_devices(
         self, timeout_sec: float | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[MacAddress, bluetooth_types.BluetoothPeerInfo]:
         """Retrieves all known remote devices received by device.
         Args:
             timeout_sec: timeout duration in seconds
 
         Returns:
-            A dict of all known remote devices.
+            A dict of all known remote devices keyed by MacAddress.
 
         Raises:
             BluetoothError: On failure.
-            KeyError: If the Sl4f call returns no "result".
         """
         try:
             known_devices = self._sl4f.run(
                 method=Sl4fMethods.GET_KNOWN_REMOTE_DEVICES
             )
+            result = {}
+            for value in known_devices.get("result", {}).values():
+                address = value["address"]
+                if isinstance(address, str):
+                    mac_address = address
+                    address_bytes = [int(x, 16) for x in address.split(":")]
+                else:
+                    address_bytes = address
+                    mac_address = ":".join(f"{b:02X}" for b in address)
+
+                result[
+                    MacAddress(mac_address)
+                ] = bluetooth_types.BluetoothPeerInfo(
+                    id=f_bt.PeerId(value=int(value["id"])),
+                    address=address_bytes,
+                    connected=value["connected"],
+                    bonded=value["bonded"],
+                    name=value.get("name"),
+                )
+            return result
         except sl4f_errors.Sl4fError as e:
             raise bluetooth_errors.BluetoothError(
                 "Failed to complete get_known_remote_devices SL4F call on "
                 f"{self._name}."
             ) from e
-        return known_devices["result"]
 
     async def pair_device(
         self,

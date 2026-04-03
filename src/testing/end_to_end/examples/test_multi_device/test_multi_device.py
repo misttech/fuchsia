@@ -4,8 +4,6 @@
 """Sample test that demonstrates the usage of 2 Fuchsia devices in one test"""
 import asyncio
 import logging
-import re
-from typing import Any
 
 import fuchsia_base_test
 from mobly import asserts, test_runner
@@ -63,20 +61,14 @@ class MultiDeviceSampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         address = await self.receiver.bluetooth_gap.get_active_adapter_address()
 
         _LOGGER.info(
-            "Sleep for 5 seconds to wait for dut to listen for receiever"
+            "Sleep for 5 seconds to wait for dut to listen for receiver"
         )
         await asyncio.sleep(5)
-        known_device = (
+        known_devices = (
             await self.initiator.bluetooth_gap.get_known_remote_devices()
         )
-        receiver_address_converted = self._sl4f_bt_mac_address(
-            mac_address=address
-        )
         asserts.assert_true(
-            self._verify_receiver_is_discovered(
-                data=known_device,
-                reverse_hex_address=receiver_address_converted,
-            ),
+            address in known_devices,
             msg="Receiver was not discovered.",
         )
 
@@ -87,51 +79,6 @@ class MultiDeviceSampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         await self.receiver.bluetooth_gap.set_discoverable(False)
 
         return await super().teardown_test()
-
-    def _sl4f_bt_mac_address(self, mac_address: str) -> list[int]:
-        """Converts BT mac addresses to reversed BT byte lists.
-        Args:
-            mac_address: mac address of device
-            Ex. "00:11:22:33:FF:EE"
-
-        Returns:
-            Mac address to reverse hex in form of a list
-            Ex. [88, 111, 107, 249, 15, 248]
-        """
-        if ":" in mac_address:
-            return self._convert_reverse_hex(mac_address.split(":"))
-        return self._convert_reverse_hex(re.findall("..", mac_address))
-
-    def _convert_reverse_hex(self, address: list[str]) -> list[int]:
-        """Reverses ASCII mac address to 64-bit byte lists.
-        Args:
-            address: Mac address of device
-            Ex. "00112233FFEE"
-
-        Returns:
-            Mac address to reverse hex in form of a list
-            Ex. [88, 111, 107, 249, 15, 248]
-        """
-        res = []
-        for x in reversed(address):
-            res.append(int(x, 16))
-        return res
-
-    def _verify_receiver_is_discovered(
-        self, data: dict[str, dict[str, Any]], reverse_hex_address: list[int]
-    ) -> bool:
-        """Verify if we have seen the reciever via the Bluetooth data
-        Args:
-            data: All known discoverable devices via Bluetooth
-                and information
-            reverse_hex_address: BT address to look for
-        Returns:
-            True: If we found the broadcasting bluetooth address
-        """
-        for value in data.values():
-            if value["address"] == reverse_hex_address:
-                return True
-        return False
 
     async def _set_discoverability_on(self) -> None:
         """Turns on discoverability for the devices."""

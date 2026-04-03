@@ -18,13 +18,12 @@ from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
 )
 from honeydew.affordances.connectivity.netstack.types import InterfaceProperties
-from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
-from honeydew.typing.custom_types import FidlEndpoint
+from honeydew.typing.custom_types import FidlEndpoint, MacAddress
 
 # List of required FIDLs for this affordance.
 _REQUIRED_CAPABILITIES = [

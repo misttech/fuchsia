@@ -6,8 +6,9 @@
 import asyncio
 import logging
 import re
-from typing import Any, List
+from typing import List
 
+import fidl_fuchsia_bluetooth as f_bt
 import fuchsia_async_extension
 from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
 
@@ -31,27 +32,15 @@ def _convert_reverse_hex(address: List[str]) -> List[int]:
     return [int(x, 16) for x in reversed(address)]
 
 
-def retrieve_device_id(
-    data: dict[str, Any], reverse_hex_address: list[int]
-) -> str:
-    """Retrieve ID based on reversed address."""
-    for value in data.values():
-        if value["address"] == reverse_hex_address:
-            return value["id"]
-    raise FileNotFoundError
-
-
 async def forget_all_bt_devices_async(
     device: async_fuchsia_device.AsyncFuchsiaDevice,
 ) -> None:
     """Unpairs and deletes any BT peer pairing data from the device."""
     data = await device.bluetooth_gap.get_known_remote_devices()
     _LOGGER.info(data)
-    for identifier in data.keys():
-        if data[str(identifier)]["connected"]:
-            await device.bluetooth_gap.forget_device(
-                identifier=data[identifier]["id"]
-            )
+    for peer in data.values():
+        if peer.connected:
+            await device.bluetooth_gap.forget_device(identifier=peer.id)
 
 
 def forget_all_bt_devices(device: fuchsia_device.FuchsiaDevice) -> None:
@@ -62,7 +51,7 @@ def forget_all_bt_devices(device: fuchsia_device.FuchsiaDevice) -> None:
 
 
 async def verify_bt_connection_async(
-    identifier: str,
+    identifier: f_bt.PeerId,
     device: async_fuchsia_device.AsyncFuchsiaDevice,
     wait_secs: int = DEFAULT_WAITING_SECS,
     num_retries: int = DEFAULT_RETRIES_ATTEMPT,
@@ -72,9 +61,10 @@ async def verify_bt_connection_async(
     for _ in range(num_retries):
         data = await device.bluetooth_gap.get_known_remote_devices()
         _LOGGER.info(data)
-        if data[str(identifier)]["connected"]:
-            _LOGGER.info("Connection is active")
-            return True
+        for peer in data.values():
+            if peer.id.value == identifier.value and peer.connected:
+                _LOGGER.info("Connection is active")
+                return True
         _LOGGER.info("Connection is not active, Checking in 10 seconds")
         await asyncio.sleep(wait_secs)
     return False
@@ -89,13 +79,16 @@ def verify_bt_connection(
     """Verifies BT connection between peer identifier and device."""
     return fuchsia_async_extension.get_loop().run_until_complete(
         verify_bt_connection_async(
-            identifier, device.as_async(), wait_secs, num_retries
+            f_bt.PeerId(value=int(identifier)),
+            device.as_async(),
+            wait_secs,
+            num_retries,
         )
     )
 
 
 async def verify_bt_pairing_async(
-    identifier: str,
+    identifier: f_bt.PeerId,
     device: async_fuchsia_device.AsyncFuchsiaDevice,
     wait_secs: int = DEFAULT_WAITING_SECS,
     num_retries: int = DEFAULT_RETRIES_ATTEMPT,
@@ -104,9 +97,10 @@ async def verify_bt_pairing_async(
     _LOGGER.info("Checking if device is paired to %s", identifier)
     for _ in range(num_retries):
         data = await device.bluetooth_gap.get_known_remote_devices()
-        if data[str(identifier)]["bonded"]:
-            _LOGGER.info("Pairing is complete")
-            return True
+        for peer in data.values():
+            if peer.id.value == identifier.value and peer.bonded:
+                _LOGGER.info("Pairing is complete")
+                return True
         _LOGGER.info("Pairing is not completed, Checking in 10 seconds")
         await asyncio.sleep(wait_secs)
     return False
@@ -121,6 +115,9 @@ def verify_bt_pairing(
     """Verifies BT pairing between peer identifier and device"""
     return fuchsia_async_extension.get_loop().run_until_complete(
         verify_bt_pairing_async(
-            identifier, device.as_async(), wait_secs, num_retries
+            f_bt.PeerId(value=int(identifier)),
+            device.as_async(),
+            wait_secs,
+            num_retries,
         )
     )

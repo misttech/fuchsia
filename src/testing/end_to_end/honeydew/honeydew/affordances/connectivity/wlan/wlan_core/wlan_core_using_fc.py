@@ -24,7 +24,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
     ClientStatusResponse,
     CountryCode,
-    MacAddress,
     WlanInterfaces,
 )
 from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core
@@ -33,7 +32,7 @@ from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
-from honeydew.typing.custom_types import FidlEndpoint
+from honeydew.typing.custom_types import FidlEndpoint, MacAddress
 
 # List of required FIDLs for the WLAN Fuchsia Controller affordance.
 _REQUIRED_CAPABILITIES = [

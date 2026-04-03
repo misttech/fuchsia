@@ -23,6 +23,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 )
 from honeydew.transports.sl4f import errors as sl4f_errors
 from honeydew.transports.sl4f import sl4f as sl4f_transport
+from honeydew.typing.custom_types import MacAddress
 
 _SAMPLE_ADDRESS_OUTPUT: dict[str, Any] = {
     "id": "",
@@ -130,9 +131,9 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         """Test for Bluetooth.connect_device() method."""
         self.sl4f_obj.run.side_effect = sl4f_errors.Sl4fError("fail")
         with self.assertRaises(bluetooth_errors.BluetoothError):
-            dummy_identifier = f_bt.PeerId(value=0)
+            fake_identifier = f_bt.PeerId(value=0)
             await self.bluetooth_common_sl4f_obj.connect_device(
-                identifier=dummy_identifier,
+                identifier=fake_identifier,
                 connection_type=parameterized_dict["transport"],
             )
         self.sl4f_obj.run.assert_called()
@@ -141,8 +142,8 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         """Test for Bluetooth.forget_device() method."""
         self.sl4f_obj.run.side_effect = sl4f_errors.Sl4fError("fail")
         with self.assertRaises(bluetooth_errors.BluetoothError):
-            dummy_identifier = f_bt.PeerId(value=0)
-            await self.bluetooth_common_sl4f_obj.forget_device(dummy_identifier)
+            fake_identifier = f_bt.PeerId(value=0)
+            await self.bluetooth_common_sl4f_obj.forget_device(fake_identifier)
         self.sl4f_obj.run.assert_called()
 
     async def test_get_active_adapter_address_success(self) -> None:
@@ -150,7 +151,7 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         self.sl4f_obj.run.return_value = _SAMPLE_ADDRESS_OUTPUT
         res = await self.bluetooth_common_sl4f_obj.get_active_adapter_address()
         self.sl4f_obj.run.assert_called()
-        self.assertEqual(res, "20:1F:3B:62:E9:D2")
+        self.assertEqual(str(res), "20:1F:3B:62:E9:D2")
 
     async def test_get_active_adapter_address_fail(self) -> None:
         """Test for Bluetooth.get_active_adapter_address() method."""
@@ -186,10 +187,12 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         res = await self.bluetooth_common_sl4f_obj.get_known_remote_devices()
         self.sl4f_obj.run.assert_called()
         self.assertEqual(
-            res["16085008211800713200"]["id"],
-            _SAMPLE_KNOWN_DEVICES_OUTPUT["result"]["16085008211800713200"][
-                "id"
-            ],
+            res[MacAddress("58:6F:6B:F9:0F:F8")].id.value,
+            int(
+                _SAMPLE_KNOWN_DEVICES_OUTPUT["result"]["16085008211800713200"][
+                    "id"
+                ]
+            ),
         )
 
     async def test_get_known_remote_devices_fail(self) -> None:
@@ -222,9 +225,9 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
         """Test for Bluetooth.pair_device() method."""
         self.sl4f_obj.run.side_effect = sl4f_errors.Sl4fError("fail")
         with self.assertRaises(bluetooth_errors.BluetoothError):
-            dummy_identifier = f_bt.PeerId(value=0)
+            fake_identifier = f_bt.PeerId(value=0)
             await self.bluetooth_common_sl4f_obj.pair_device(
-                identifier=dummy_identifier,
+                identifier=fake_identifier,
                 connection_type=parameterized_dict["transport"],
             )
         self.sl4f_obj.run.assert_called()
