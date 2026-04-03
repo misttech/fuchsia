@@ -20,20 +20,38 @@
 #include <zircon/assert.h>
 #include <zircon/listnode.h>
 
+#include <optional>
+
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 #include <usb/usb.h>
 
 #include "asix-88179-regs.h"
 
-static constexpr uint8_t kMediaMode[6][2] = {
-    {0x30, 0x01},  // 10 Mbps, half-duplex
-    {0x32, 0x01},  // 10 Mbps, full-duplex
-    {0x30, 0x03},  // 100 Mbps, half-duplex
-    {0x32, 0x03},  // 100 Mbps, full-duplex
-    {0, 0},        // unused
-    {0x33, 0x01},  // 1000Mbps, full-duplex
+struct PhysrModeConfig {
+  uint16_t media_mode;
+  uint8_t link_speed;
 };
+
+// Maps raw PHYSR register value to the MAC media mode and PLSR-equivalent link speed.
+static constexpr std::optional<PhysrModeConfig> PhysrModeToConfig(uint16_t physr) {
+  unsigned int mode = (physr & (AX88179_PHYSR_SPEED | AX88179_PHYSR_DUPLEX)) >> 13;
+  switch (mode) {
+    case 0:  // 10 Mbps, half-duplex
+      return PhysrModeConfig{.media_mode = 0x0130, .link_speed = AX88179_PLSR_EPHY_10};
+    case 1:  // 10 Mbps, full-duplex
+      return PhysrModeConfig{.media_mode = 0x0132, .link_speed = AX88179_PLSR_EPHY_10};
+    case 2:  // 100 Mbps, half-duplex
+      return PhysrModeConfig{.media_mode = 0x0330, .link_speed = AX88179_PLSR_EPHY_100};
+    // case 4: mode 4 (1G half) is invalid/unused
+    case 3:  // 100 Mbps, full-duplex
+      return PhysrModeConfig{.media_mode = 0x0332, .link_speed = AX88179_PLSR_EPHY_100};
+    case 5:  // 1000 Mbps, full-duplex
+      return PhysrModeConfig{.media_mode = 0x0133, .link_speed = AX88179_PLSR_EPHY_1000};
+    default:
+      return std::nullopt;
+  }
+}
 
 // The array indices here correspond to the bit positions in the AX88179 MAC
 // PLSR register.
@@ -144,20 +162,18 @@ zx_status_t Asix88179Ethernet::WritePhy(uint8_t register_address, uint16_t data)
                          reinterpret_cast<uint8_t*>(&data), sizeof(data));
 }
 
-zx_status_t Asix88179Ethernet::ConfigureBulkIn(uint8_t plsr) {
-  uint8_t usb_mode = plsr & AX88179_PLSR_USB_MASK;
+zx_status_t Asix88179Ethernet::ConfigureBulkIn(uint8_t usb_mode, uint8_t link_speed) {
   if (usb_mode & (usb_mode - 1)) {
     zxlogf(ERROR, "ax88179: invalid usb mode: %#x", usb_mode);
     return ZX_ERR_INVALID_ARGS;
   }
 
-  uint8_t speed = plsr & AX88179_PLSR_EPHY_MASK;
-  if (speed & (speed - 1)) {
-    zxlogf(ERROR, "ax88179: invalid eth speed: %#x", speed);
+  if (link_speed & (link_speed - 1)) {
+    zxlogf(ERROR, "ax88179: invalid eth speed: %#x", link_speed);
     return ZX_ERR_INVALID_ARGS;
   }
 
-  zx_status_t status = WriteMac(AX88179_MAC_RQCR, kBulkInConfig[usb_mode][speed >> 4]);
+  zx_status_t status = WriteMac(AX88179_MAC_RQCR, kBulkInConfig[usb_mode][link_speed >> 4]);
   if (status != ZX_OK) {
     zxlogf(ERROR, "ax88179: WriteMac to %#x failed: %d", AX88179_MAC_RQCR, status);
   }
@@ -172,13 +188,14 @@ zx_status_t Asix88179Ethernet::ConfigureMediumMode() {
     return status;
   }
 
-  unsigned int mode = (data & (AX88179_PHYSR_SPEED | AX88179_PHYSR_DUPLEX)) >> 13;
-  zxlogf(DEBUG, "ax88179: medium mode: %#x", mode);
-  if (mode == 4 || mode > 5) {
-    zxlogf(ERROR, "ax88179: mode invalid (mode=%u)", mode);
+  auto config = PhysrModeToConfig(data);
+  zxlogf(DEBUG, "ax88179: PHYSR=%#x", data);
+  if (!config) {
+    zxlogf(ERROR, "ax88179: PHYSR mode invalid (physr=%#x)", data);
     return ZX_ERR_NOT_SUPPORTED;
   }
-  status = WriteMac(AX88179_MAC_MSR, kMediaMode[mode]);
+
+  status = WriteMac(AX88179_MAC_MSR, config->media_mode);
   if (status != ZX_OK) {
     zxlogf(ERROR, "ax88179: WriteMac to %#x failed: %d", AX88179_MAC_MSR, status);
     return status;
@@ -190,8 +207,18 @@ zx_status_t Asix88179Ethernet::ConfigureMediumMode() {
     zxlogf(ERROR, "ax88179: ReadMac to %#x failed: %d", AX88179_MAC_PLSR, status);
     return status;
   }
-  status = ConfigureBulkIn(PLSR_value);
 
+  uint8_t usb_mode = PLSR_value & AX88179_PLSR_USB_MASK;
+  uint8_t link_speed = PLSR_value & AX88179_PLSR_EPHY_MASK;
+
+  // PLSR EPHY speed bits may not be populated on some devices, so fall back to deriving speed from
+  // the PHYSR register. For reference, ASIX's version 4.0.0 ax88179_178a Linux driver reads PHYSR
+  // exclusively for ethernet speed so this is a valid fallback.
+  if (link_speed == 0) {
+    link_speed = config->link_speed;
+  }
+
+  status = ConfigureBulkIn(usb_mode, link_speed);
   return status;
 }
 
@@ -236,7 +263,7 @@ zx_status_t Asix88179Ethernet::Receive(usb::Request<>& request) {
     }
     uint16_t packet_length = le16toh((*packet_header & AX88179_RX_PKTLEN) >> 16);
     if (packet_length < 2) {
-      zxlogf(ERROR, "ax88179: %s short packet (len=%u)", __func__, packet_length);
+      zxlogf(DEBUG, "ax88179: %s short packet (len=%u)", __func__, packet_length);
       return ZX_ERR_IO_DATA_INTEGRITY;
     }
     if (offset + packet_length > header->packet_header_offset) {
@@ -719,7 +746,7 @@ zx_status_t Asix88179Ethernet::InitializeRegisters() {
   }
 
   // Set RX Bulk-in sizes -- use USB 3.0/1000Mbps at this point
-  status = ConfigureBulkIn(AX88179_PLSR_USB_SS | AX88179_PLSR_EPHY_1000);
+  status = ConfigureBulkIn(AX88179_PLSR_USB_SS, AX88179_PLSR_EPHY_1000);
   if (status != ZX_OK) {
     zxlogf(ERROR, "ax88179: WriteMac to %#x failed: %d", AX88179_MAC_RQCR, status);
     return status;

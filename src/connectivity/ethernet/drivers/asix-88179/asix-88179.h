@@ -69,7 +69,7 @@ class Asix88179Ethernet : public DeviceType,
 
   zx_status_t WritePhy(uint8_t register_address, uint16_t data) TA_REQ(lock_);
 
-  zx_status_t ConfigureBulkIn(uint8_t plsr) TA_REQ(lock_);
+  zx_status_t ConfigureBulkIn(uint8_t usb_mode, uint8_t link_speed) TA_REQ(lock_);
 
   zx_status_t ConfigureMediumMode() TA_REQ(lock_);
 
