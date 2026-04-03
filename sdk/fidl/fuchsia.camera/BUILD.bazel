@@ -23,6 +23,5 @@ fidl_library(
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.sysmem",
-        "//sdk/fidl/fuchsia.sysmem2",
     ],
 )
