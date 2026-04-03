@@ -78,7 +78,7 @@ impl RebootController {
         // move the impl(s) here that rely on remote control to use init_remote_proxy
         // instead.
         self.remote_proxy
-            .get_or_try_init(self.target.init_remote_proxy(&self.overnet_node))
+            .get_or_try_init(|| self.target.init_remote_proxy(&self.overnet_node))
             .await
             .map(|proxy| proxy.clone())
     }
@@ -92,7 +92,7 @@ impl RebootController {
     }
 
     async fn get_admin_proxy(&self) -> Result<AdminProxy> {
-        self.admin_proxy.get_or_try_init(self.init_admin_proxy()).await.map(|p| p.clone())
+        self.admin_proxy.get_or_try_init(|| self.init_admin_proxy()).await.map(|p| p.clone())
     }
 
     async fn init_admin_proxy(&self) -> Result<AdminProxy> {
@@ -455,7 +455,7 @@ mod tests {
     ) -> (Rc<Target>, TargetProxy) {
         let overnet_node = overnet_core::Router::new(None).unwrap();
         let remote_proxy = Once::new();
-        let _ = remote_proxy.get_or_init(setup_remote()).await;
+        let _ = remote_proxy.get_or_init(setup_remote).await;
         let admin_proxy = Once::new();
         let (_, connection_builder) = setup_connection_factory();
         let rc = RebootController {

@@ -352,7 +352,7 @@ impl AudioFacade {
 
     async fn get_audio_input<'a>(&'a self) -> &'a VirtualInput {
         self.audio_input
-            .get_or_init(async {
+            .get_or_init(async || {
                 let mut input =
                     VirtualInput::new(INPUT_SAMPLE_FORMAT, INPUT_CHANNELS, INPUT_FRAMES_PER_SECOND);
                 input.start_input(&self.vad_control).await.expect("Failed to start audio input");
@@ -363,7 +363,7 @@ impl AudioFacade {
 
     async fn get_audio_output<'a>(&'a self) -> &'a VirtualOutput {
         self.audio_output
-            .get_or_init(async {
+            .get_or_init(async || {
                 let mut output = VirtualOutput::new(
                     OUTPUT_SAMPLE_FORMAT,
                     OUTPUT_CHANNELS,

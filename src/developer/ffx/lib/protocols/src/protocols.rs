@@ -227,7 +227,7 @@ where
         #[allow(clippy::async_yields_async)]
         let fut = self
             .start_fut
-            .get_or_init(async move {
+            .get_or_init(async move || {
                 self.protocol.write().await.replace(F::default());
                 self.make_start_fut(cx)
             })
@@ -294,8 +294,9 @@ mod tests {
     use super::*;
     use crate::testing::FakeDaemonBuilder;
     use anyhow::anyhow;
+    use fidl_fuchsia_developer_ffx as ffx;
+    use fidl_fuchsia_ffx_test as ffx_test;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_ffx_test as ffx_test};
 
     fn noop_protocol_closure() -> impl Fn(&Context, ffx_test::NoopRequest) -> Result<()> {
         |_, req| match req {

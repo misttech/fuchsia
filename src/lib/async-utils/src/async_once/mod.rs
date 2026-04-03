@@ -6,7 +6,6 @@
 
 use async_lock::Mutex;
 use once_cell::sync::OnceCell;
-use std::future::Future;
 
 /// Wrapper presenting an async interface to a OnceCell.
 #[derive(Debug)]
@@ -28,9 +27,9 @@ impl<T> Once<T> {
     }
 
     /// Async wrapper around OnceCell's `get_or_init`.
-    pub async fn get_or_init<'a, F>(&'a self, fut: F) -> &'a T
+    pub async fn get_or_init<'a, F>(&'a self, f: F) -> &'a T
     where
-        F: Future<Output = T>,
+        F: AsyncFnOnce() -> T,
     {
         if let Some(t) = self.value.get() {
             t
@@ -40,7 +39,7 @@ impl<T> Once<T> {
             if let Some(t) = self.value.get() {
                 t
             } else {
-                let t = fut.await;
+                let t = f().await;
                 self.value.set(t).unwrap_or_else(|_| panic!("race in async-cell!"));
                 self.value.get().unwrap()
             }
@@ -48,9 +47,9 @@ impl<T> Once<T> {
     }
 
     /// Async wrapper around OnceCell's `get_or_try_init`.
-    pub async fn get_or_try_init<'a, F, E>(&'a self, fut: F) -> Result<&'a T, E>
+    pub async fn get_or_try_init<'a, F, E>(&'a self, f: F) -> Result<&'a T, E>
     where
-        F: Future<Output = Result<T, E>>,
+        F: AsyncFnOnce() -> Result<T, E>,
     {
         if let Some(t) = self.value.get() {
             Ok(t)
@@ -60,7 +59,7 @@ impl<T> Once<T> {
             if let Some(t) = self.value.get() {
                 Ok(t)
             } else {
-                let r = fut.await;
+                let r = f().await;
                 match r {
                     Ok(t) => {
                         self.value.set(t).unwrap_or_else(|_| panic!("race in async-cell!"));
@@ -85,7 +84,7 @@ mod test {
 
     #[test]
     fn test_get_or_init() {
-        let val = block_on(ONCE.get_or_init(async {
+        let val = block_on(ONCE.get_or_init(async || {
             let _: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
             true
         }));
@@ -93,7 +92,7 @@ mod test {
         assert_eq!(*val, true);
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
 
-        let val = block_on(ONCE.get_or_init(async {
+        let val = block_on(ONCE.get_or_init(async || {
             let _: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
             false
         }));
@@ -104,7 +103,7 @@ mod test {
 
     #[test]
     fn test_get_or_init_default_initializer() {
-        let val = block_on(ONCE.get_or_init(async {
+        let val = block_on(ONCE.get_or_init(async || {
             let _: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
             true
         }));
@@ -112,7 +111,7 @@ mod test {
         assert_eq!(*val, true);
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
 
-        let val = block_on(ONCE.get_or_init(async {
+        let val = block_on(ONCE.get_or_init(async || {
             let _: usize = COUNTER.fetch_add(1, Ordering::SeqCst);
             false
         }));
@@ -123,23 +122,23 @@ mod test {
 
     #[test]
     fn test_get_or_try_init() {
-        let initializer = || async {
+        let initializer = async || {
             let val = COUNTER.fetch_add(1, Ordering::SeqCst);
             if val == 0 { Err(std::io::Error::other("first attempt fails")) } else { Ok(true) }
         };
 
-        let val = block_on(ONCE.get_or_try_init(initializer()));
+        let val = block_on(ONCE.get_or_try_init(initializer));
 
         assert!(val.is_err());
         assert_eq!(COUNTER.load(Ordering::SeqCst), 1);
 
         // The initializer gets another chance to run because the first attempt failed.
-        let val = block_on(ONCE.get_or_try_init(initializer()));
+        let val = block_on(ONCE.get_or_try_init(initializer));
         assert_eq!(*val.unwrap(), true);
         assert_eq!(COUNTER.load(Ordering::SeqCst), 2);
 
         // The initializer never runs again...
-        let val = block_on(ONCE.get_or_try_init(initializer()));
+        let val = block_on(ONCE.get_or_try_init(initializer));
         assert_eq!(*val.unwrap(), true);
         assert_eq!(COUNTER.load(Ordering::SeqCst), 2);
     }

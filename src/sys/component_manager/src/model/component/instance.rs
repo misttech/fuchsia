@@ -741,7 +741,7 @@ impl ResolvedInstanceState {
     /// This may not exactly match the namespace when the component is started since StartAction
     /// may add additional entries.
     pub async fn namespace_dir(&self) -> Result<Arc<pfs::Simple>, CreateNamespaceError> {
-        let create_namespace_dir = async {
+        let create_namespace_dir = async || {
             let component = self
                 .weak_component
                 .upgrade()
@@ -815,7 +815,7 @@ impl ResolvedInstanceState {
     /// Returns a [`Dict`] with contents similar to `component_output_dict`, but adds capabilities
     /// backed by legacy routing. This [`Dict`] is used to generate the `exposed_dir`.
     pub async fn get_exposed_dict(&self) -> &Dict {
-        let create_exposed_dict = async {
+        let create_exposed_dict = async || {
             let dict = Dict::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
                 let Ok(value) = value else {
@@ -832,7 +832,7 @@ impl ResolvedInstanceState {
     }
 
     pub async fn get_exposed_dir(&self, self_target: WeakInstanceToken) -> Arc<dyn DirectoryEntry> {
-        let create_exposed_dir = async {
+        let create_exposed_dir = async || {
             let exposed_dict = self.get_exposed_dict().await.clone();
             exposed_dict
                 .try_into_directory_entry(self.execution_scope.clone(), self_target)
