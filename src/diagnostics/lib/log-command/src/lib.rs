@@ -216,6 +216,10 @@ pub struct LogCommand {
     #[argh(subcommand)]
     pub sub_command: Option<LogSubCommand>,
 
+    /// dumps all logs and exits.
+    #[argh(switch)]
+    pub dump: bool,
+
     /// filter for a string in either the message, component or url.
     /// May be repeated.
     #[argh(option)]
@@ -384,6 +388,7 @@ impl Default for LogCommand {
             case_sensitive: false,
             until_boot: None,
             sub_command: None,
+            dump: false,
             set_severity: vec![],
             show_full_moniker: false,
             prefer_url_component_name: false,

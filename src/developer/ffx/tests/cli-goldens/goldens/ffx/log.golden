@@ -14,6 +14,14 @@
       "hidden": false
     },
     {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--dump",
+      "short": null,
+      "description": "dumps all logs and exits.",
+      "hidden": false
+    },
+    {
       "kind": {
         "Option": {
           "arg_name": "filter"

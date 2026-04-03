@@ -17,7 +17,7 @@ use fho::{FfxMain, FfxTool};
 use futures::{FutureExt, select};
 use log_command_fdomain::{
     BootTimeAccessor, DefaultLogFormatter, LogData, LogEntry, LogProcessingResult, LogSubCommand,
-    Symbolize, Timestamp, WatchCommand, WriterContainer, dump_logs_from_socket,
+    Symbolize, Timestamp, WriterContainer, dump_logs_from_socket,
 };
 use std::io::Write;
 use target_connector::Connector;
@@ -331,8 +331,8 @@ where
 }
 
 fn get_stream_mode(cmd: LogCommand) -> Result<fdomain_fuchsia_diagnostics::StreamMode, LogError> {
-    let sub_command = cmd.sub_command.unwrap_or(LogSubCommand::Watch(WatchCommand {}));
-    let stream_mode = if matches!(sub_command, LogSubCommand::Dump(..)) {
+    let is_dump = cmd.dump || matches!(cmd.sub_command, Some(LogSubCommand::Dump(..)));
+    let stream_mode = if is_dump {
         if cmd.since.map(|value| value.is_now).unwrap_or(false) {
             return Err(LogError::DumpWithSinceNow);
         }
@@ -365,7 +365,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use log_command_fdomain::{
-        DumpCommand, LogData, OneOrMany, SymbolizeMode, TIMESTAMP_FORMAT, TimeFormat,
+        DumpCommand, LogData, OneOrMany, SymbolizeMode, TIMESTAMP_FORMAT, TimeFormat, WatchCommand,
         parse_seconds_string_as_duration, parse_time, parse_utc_time,
     };
     use moniker::Moniker;
