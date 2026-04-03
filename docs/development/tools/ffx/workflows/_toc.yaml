@@ -82,3 +82,5 @@ toc:
   section:
   - title: Run tests on a device
     path: /docs/development/tools/ffx/workflows/run-device-tests.md
+  - title: Bisect product bundles
+    path: /docs/development/tools/ffx/workflows/product-bundle-bisect.md
