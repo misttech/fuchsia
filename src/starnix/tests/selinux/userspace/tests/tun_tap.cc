@@ -6,6 +6,7 @@
 #include <net/if.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/mount.h>
 #include <sys/sysmacros.h>
 
 #include <filesystem>
@@ -19,7 +20,12 @@
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-extern std::string DoPrePolicyLoadWork() { return "tun_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() {
+  EXPECT_THAT(
+      mount("devtmpfs", "/dev", "devtmpfs", MS_NOEXEC | MS_NOSUID | MS_STRICTATIME, nullptr),
+      SyscallSucceeds());
+  return "tun_policy.pp";
+}
 
 namespace {
 

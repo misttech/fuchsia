@@ -2,18 +2,100 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <lib/fit/defer.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/reboot.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <string>
+#include <vector>
+
+#include <fbl/unique_fd.h>
+
+// Returns true if all modules were loaded successfully.
+bool LoadModules(const std::string& modules_dir) {
+  DIR* dir = opendir(modules_dir.c_str());
+  if (!dir) {
+    return true;
+  }
+
+  std::vector<std::string> modules;
+  struct dirent* entry;
+  while ((entry = readdir(dir)) != nullptr) {
+    std::string name = entry->d_name;
+    if (name.size() > 3 && name.substr(name.size() - 3) == ".ko") {
+      modules.push_back(modules_dir + "/" + name);
+    }
+  }
+  closedir(dir);
+
+  // We need to load modules in topological order of their dependencies.
+  // Since we don't have the dependency information, we load modules in passes.
+  // In each pass we try to load all modules that haven't been loaded yet.
+  // If we manage to load at least one module in a pass, we continue to the next pass.
+  // If we don't manage to load any module in a pass, we stop.
+  bool loaded_any = true;
+  while (loaded_any && !modules.empty()) {
+    loaded_any = false;
+    std::vector<std::string> remaining;
+    for (auto& mod : modules) {
+      fbl::unique_fd fd(open(mod.c_str(), O_RDONLY | O_CLOEXEC));
+      if (!fd.is_valid()) {
+        continue;
+      }
+      long res = syscall(SYS_finit_module, fd.get(), "", 0);
+      if (res >= 0) {
+        // The module was loaded successfully.
+        loaded_any = true;
+      } else if (errno != EEXIST) {
+        // The module was not already loaded, but still failed to load.
+        // Lets try loading it again in the next pass.
+        remaining.push_back(std::move(mod));
+      }
+    }
+    modules = std::move(remaining);
+  }
+  return modules.empty();
+}
 
 int main(int argc, char** argv) {
   auto reboot_before_exit = fit::defer([] { reboot(RB_POWER_OFF); });
+
+  bool modules_loaded = LoadModules("lib/modules");
+  if (!modules_loaded) {
+    perror("Failed to load all modules");
+    return 1;
+  }
+
+  // Create /dev/hvc0 if it doesn't exist.
+  if (mknod("/dev/hvc0", S_IFCHR | 0600, makedev(229, 0)) < 0) {
+    if (errno != EEXIST) {
+      perror("mknod /dev/hvc0 failed");
+    }
+  }
+
+  // Redirect stdout/stderr to /dev/hvc0
+  int fd = open("/dev/hvc0", O_RDWR);
+
+  if (fd >= 0) {
+    dup2(fd, STDOUT_FILENO);
+    dup2(fd, STDERR_FILENO);
+    close(fd);
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+  } else {
+    perror("open /dev/hvc0 failed");
+  }
 
   pid_t child_pid = fork();
   if (child_pid == -1) {

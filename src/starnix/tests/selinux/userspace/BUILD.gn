@@ -48,7 +48,10 @@ if (is_linux) {
 
   executable("init_for_linux") {
     sources = [ "init_for_linux.cc" ]
-    deps = [ "//sdk/lib/fit" ]
+    deps = [
+      "//sdk/lib/fit",
+      "//zircon/system/ulib/fbl",
+    ]
     configs += [ ":rpath_config" ]
   }
 }
