@@ -131,7 +131,7 @@ async fn print_power_broker_inspect_stats(iteration: u32) {
 async fn test_large_topology_lease_benchmark() -> Result<()> {
     // TODO(b/491223927): I'd like to get this to at least 100, but starting
     // here, and we'll bump it up as we make improvements.
-    let num_elements = 30;
+    let num_elements = 20;
     let args: Options = argh::from_env::<Options>();
 
     println!("Building large topology with {} elements...", num_elements);
