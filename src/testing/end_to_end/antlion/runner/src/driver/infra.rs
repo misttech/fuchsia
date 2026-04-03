@@ -120,6 +120,7 @@ impl InfraDriver {
     ) -> Result<Config, InfraDriverError> {
         let mut fuchsia_devices: Vec<config::Fuchsia> = vec![];
         let mut access_points: Vec<config::AccessPoint> = vec![];
+        let mut openwrt_aps: Vec<config::AccessPoint> = vec![];
         let mut attenuators: HashMap<IpAddr, config::Attenuator> = HashMap::new();
         let mut pdus: HashMap<IpAddr, config::Pdu> = HashMap::new();
         let mut iperf_servers: Vec<config::IPerfServer> = vec![];
@@ -234,8 +235,8 @@ impl InfraDriver {
                     register_pdu(pdu)?;
                     merge_test_params(test_params);
                 }
-                InfraTarget::AccessPoint { ip, attenuator, pdu, ssh_key } => {
-                    access_points.push(config::AccessPoint {
+                InfraTarget::AccessPoint { ip, model, attenuator, pdu, ssh_key } => {
+                    let ap = config::AccessPoint {
                         wan_interface: "eth0".to_string(),
                         ssh_config: config::SshConfig {
                             ssh_binary_path: ssh_binary.clone(),
@@ -252,7 +253,17 @@ impl InfraDriver {
                                 ports_5g: vec![1, 2, 3],
                             }]
                         }),
-                    });
+                    };
+
+                    if let Some(m) = model.as_deref() {
+                        if m == "OpenWrtOne" {
+                            openwrt_aps.push(ap);
+                        } else {
+                            access_points.push(ap);
+                        }
+                    } else {
+                        access_points.push(ap);
+                    };
 
                     register_ip(ip)?;
                     register_pdu(pdu)?;
@@ -284,6 +295,7 @@ impl InfraDriver {
                 controllers: config::Controllers {
                     fuchsia_devices: fuchsia_devices,
                     access_points: access_points,
+                    openwrt_aps: openwrt_aps,
                     attenuators: attenuators
                         .into_values()
                         .sorted_by_key(|a| a.address.clone())
@@ -370,6 +382,7 @@ enum InfraTarget {
     },
     AccessPoint {
         ip: IpAddr,
+        model: Option<String>,
         ssh_key: PathBuf,
         attenuator: Option<AttenuatorRef>,
         pdu: Option<PduRef>,
@@ -823,6 +836,87 @@ mod test {
               port: 5201
               test_interface: eth0
               use_killall: true
+        MoblyParams:
+          LogPath: {out_path}
+        "#};
+
+        assert_eq!(got, want);
+    }
+    #[test]
+    fn infra_with_openwrt_ap() {
+        let ssh = NamedTempFile::new().unwrap();
+        let ssh_key = NamedTempFile::new().unwrap();
+        let ffx_subtools = TempDir::new().unwrap();
+        let ffx = NamedTempFile::new().unwrap();
+        let out_dir = TempDir::new().unwrap();
+
+        let testbed_config = NamedTempFile::new().unwrap();
+        serde_json::to_writer_pretty(
+            testbed_config.as_file(),
+            &json!([{
+                "type": "FuchsiaDevice",
+                "nodename": FUCHSIA_NAME,
+                "ipv4": "",
+                "ipv6": FUCHSIA_ADDR,
+                "ssh_key": ssh_key.path(),
+            }, {
+                "type": "AccessPoint",
+                "ip": "192.168.42.11",
+                "ssh_key": ssh_key.path(),
+                "model": "OpenWrtOne",
+            }]),
+        )
+        .unwrap();
+
+        let runner = MockRunner::new(out_dir.path().to_path_buf());
+        let env = MockEnvironment {
+            config: Some(testbed_config.path().to_path_buf()),
+            out_dir: Some(out_dir.path().to_path_buf()),
+        };
+        let driver = InfraDriver::new(
+            env,
+            ssh.path().to_path_buf(),
+            ffx.path().to_path_buf(),
+            Some(ffx_subtools.path().to_path_buf()),
+        )
+        .unwrap();
+        generate_config_and_run(runner, driver, None).unwrap();
+
+        let got = std::fs::read_to_string(out_dir.path().join("config.yaml")).unwrap();
+
+        let ssh_path = ssh.path().display().to_string();
+        let ssh_key_path = ssh_key.path().display().to_string();
+        let ffx_path = ffx.path().display().to_string();
+        let ffx_subtools_path = ffx_subtools.path().display();
+        let out_path = out_dir.path().display();
+        let want = formatdoc! {r#"
+        TestBeds:
+        - Name: {TESTBED_NAME}
+          Controllers:
+            FuchsiaDevice:
+            - name: {FUCHSIA_NAME}
+              ip: {FUCHSIA_ADDR}
+              device_ip_port: {FUCHSIA_ADDR}
+              take_bug_report_on_fail: true
+              ssh_binary_path: {ssh_path}
+              ffx_binary_path: {ffx_path}
+              ffx_subtools_search_path: {ffx_subtools_path}
+              ssh_priv_key: {ssh_key_path}
+              hard_reboot_on_fail: true
+              honeydew_config:
+                transports:
+                  ffx:
+                    path: {ffx_path}
+                affordances:
+                  bluetooth:
+                    implementation: fuchsia-controller
+            OpenWrtAP:
+            - wan_interface: eth0
+              ssh_config:
+                ssh_binary_path: {ssh_path}
+                host: 192.168.42.11
+                user: root
+                identity_file: {ssh_key_path}
         MoblyParams:
           LogPath: {out_path}
         "#};

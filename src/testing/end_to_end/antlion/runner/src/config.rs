@@ -54,6 +54,8 @@ pub(crate) struct Controllers {
     pub fuchsia_devices: Vec<Fuchsia>,
     #[serde(rename = "AccessPoint", skip_serializing_if = "Vec::is_empty")]
     pub access_points: Vec<AccessPoint>,
+    #[serde(rename = "OpenWrtAP", skip_serializing_if = "Vec::is_empty")]
+    pub openwrt_aps: Vec<AccessPoint>,
     #[serde(rename = "Attenuator", skip_serializing_if = "Vec::is_empty")]
     pub attenuators: Vec<Attenuator>,
     #[serde(rename = "PduDevice", skip_serializing_if = "Vec::is_empty")]
