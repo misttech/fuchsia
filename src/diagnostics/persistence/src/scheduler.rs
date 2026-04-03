@@ -12,11 +12,12 @@ use hashbrown::HashMap;
 use itertools::Itertools;
 use log::{debug, error, warn};
 
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fuchsia_async as fasync;
 use persistence_config::{Config, ServiceName, Tag};
 use std::collections::VecDeque;
 use std::pin::pin;
 use std::sync::Arc;
-use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
 // This contains the logic to configure the Archivist to sample diagnostics data based on the
 // persistence configuration. It handles the `fuchsia.diagnostics.SampleSink` protocol to receive
@@ -196,7 +197,14 @@ impl Scheduler {
             }
         }
 
-        let mut current_data = file_handler::current_data().await?.unwrap_or_default();
+        let mut current_data = match file_handler::current_data().await {
+            Ok(Some(data)) => data,
+            Ok(None) => PersistenceData::default(),
+            Err(e) => {
+                error!("Current data corrupted, starting fresh: {e:?}");
+                PersistenceData::default()
+            }
+        };
 
         for tag_info in self.tag_info.iter() {
             for data in snapshot.clone() {

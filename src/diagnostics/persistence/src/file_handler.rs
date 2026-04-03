@@ -111,7 +111,14 @@ pub async fn forget_old_data(config: &Config) -> Result<(), Error> {
         bail!("Failed to swap current data with previous: {e}");
     }
 
-    let mut data = previous_data().await?.context("Data not found; filesystem inconsistency")?;
+    let mut data = match previous_data().await {
+        Ok(Some(data)) => data,
+        Ok(None) => bail!("Data not found; filesystem inconsistency"),
+        Err(e) => {
+            log::error!("Previous data corrupted, starting fresh: {e:?}");
+            PersistenceData::default()
+        }
+    };
 
     remove_tags_without_persist_across_boot(&mut data, config)
         .context("Failed to remove tags without persist_across_boot")?;
@@ -147,8 +154,10 @@ fn remove_tags_without_persist_across_boot(
 
 async fn read_data(path: &str) -> Result<Option<PersistenceData>, Error> {
     match fuchsia_fs::file::read_in_namespace(path).await {
-        Ok(bytes) => Ok(serde_json::from_slice(&bytes)
-            .with_context(|| format!("Failed to deserialize Persistence data from {path}"))?),
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes).with_context(|| {
+            let s = String::from_utf8_lossy(&bytes);
+            format!("Failed to deserialize Persistence data from {path}: \"{s}\"")
+        })?),
         Err(e) if e.is_not_found_error() => Ok(None),
         Err(e) => {
             bail!("Failed to read Persistence data from \"{path}\": {e:?}")
@@ -167,7 +176,9 @@ pub(crate) async fn previous_data() -> Result<Option<PersistenceData>, Error> {
 pub(crate) async fn write_current_data(data: &PersistenceData) -> Result<(), Error> {
     let file = fuchsia_fs::file::open_in_namespace(
         CURRENT_DATA,
-        fuchsia_fs::Flags::FLAG_MAYBE_CREATE | fuchsia_fs::Flags::PERM_WRITE_BYTES,
+        fuchsia_fs::Flags::FLAG_MAYBE_CREATE
+            | fuchsia_fs::Flags::FILE_TRUNCATE
+            | fuchsia_fs::Flags::PERM_WRITE_BYTES,
     )
     .context("Failed to open current Persistence data for writing")?;
     let buf = serde_json::to_vec(data).context("Failed to serialize Persistence data")?;
