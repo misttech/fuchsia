@@ -8,7 +8,7 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::simple_file::{SimpleFileNode, parse_unsigned_file, serialize_for_file};
-use crate::vfs::{FileObject, FileOps, FsNodeOps, fileops_impl_noop_sync, fileops_impl_seekable};
+use crate::vfs::{FileObject, FileOps, FsNodeOps, fileops_impl_noop_sync, fileops_impl_seekless};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -39,7 +39,7 @@ impl PowerWakeupCountFile {
 }
 
 impl FileOps for PowerWakeupCountFile {
-    fileops_impl_seekable!();
+    fileops_impl_seekless!();
     fileops_impl_noop_sync!();
 
     fn write(
