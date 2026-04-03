@@ -12,10 +12,6 @@ fidl("fuchsia.hardware.block.volume") {
     "//sdk/fidl/fuchsia.storage.block",
   ]
 
-  # TODO(https://fxbug.dev/42169676): Remove this dependency since this target does
-  # not directly depend on these libraries.
-  public_deps += [ "//sdk/fidl/fuchsia.unknown" ]
-
   enable_hlcpp = true
 
   sdk_category = "partner"
