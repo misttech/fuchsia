@@ -487,6 +487,43 @@ TEST(ZbiTests, ZbiTestForEachTestZbiItemsCallbackError) {
   free(zbi);
 }
 
+TEST(ZbiTests, ZbiTestForEachTruncatedHeader) {
+  // Each zbi container consists of a header and a list of items as its
+  // payload.  Each item itself has a header and a payload.
+
+  // zbi_for_each will invoke our callback for every item in the container,
+  // supplying to us a reference to the item's header.
+
+  // In this test, we only allocate space for the container's header,
+  // and then leave 1 byte to serve as a truncated "first item's header".
+
+  // Since this is an invalid representation of an item, we should expect
+  // the callback to be invoked zero times.  Otherwise, the supplied reference
+  // to the item's header will point to memory we do not own.
+
+  alignas(ZBI_ALIGNMENT) uint8_t buffer[sizeof(zbi_header_t) + 1];
+  memset(buffer, 0, sizeof(buffer));
+
+  zbi_header_t* container = reinterpret_cast<zbi_header_t*>(buffer);
+  container->type = ZBI_TYPE_CONTAINER;
+  container->magic = ZBI_ITEM_MAGIC;
+  container->extra = ZBI_CONTAINER_MAGIC;
+  container->flags = ZBI_FLAGS_VERSION;
+  container->crc32 = ZBI_ITEM_NO_CRC32;
+  container->length = 1;
+
+  bool callback_called = false;
+  auto callback = [](zbi_header_t* hdr, void* payload, void* cookie) {
+    *reinterpret_cast<bool*>(cookie) = true;
+    return ZBI_RESULT_OK;
+  };
+
+  zbi_result_t result = zbi_for_each(buffer, callback, &callback_called);
+
+  EXPECT_EQ(result, ZBI_RESULT_ERR_TRUNCATED);
+  EXPECT_FALSE(callback_called);
+}
+
 TEST(ZbiTests, ZbiTestCreateEntryTestZbi) {
   // The ZBI has space for the container and an entry with an 8-byte payload.
   single_entry_test_zbi_t zbi;

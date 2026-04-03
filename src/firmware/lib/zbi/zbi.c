@@ -139,6 +139,10 @@ zbi_result_t zbi_for_each(const void* base, const zbi_foreach_cb_t callback, voi
   const uint32_t totalSize = (uint32_t)sizeof(zbi_header_t) + header->length;
   uint32_t offset = sizeof(zbi_header_t);
   while (offset < totalSize) {
+    if (offset + sizeof(zbi_header_t) > totalSize) {
+      return ZBI_RESULT_ERR_TRUNCATED;
+    }
+
     zbi_header_t* entryHeader = (zbi_header_t*)(base + offset);
 
     zbi_result_t result = callback(entryHeader, entryHeader + 1, cookie);
