@@ -419,7 +419,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         collection_inputs.insert(collection.name.clone(), input).ok();
     }
 
-    let mut dictionary_use_bundles = vec![];
+    let mut dictionary_use_bundles = Vec::with_capacity(decl.uses.len());
     for use_bundle in group_use_aggregates(&decl.uses).into_iter() {
         let first_use = *use_bundle.first().unwrap();
         match first_use {
@@ -560,7 +560,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         )
     }
 
-    for offer_bundle in group_offer_aggregates(&decl.offers).into_iter() {
+    for offer_bundle in group_offer_aggregates(&decl.offers) {
         let first_offer = offer_bundle.first().unwrap();
         let get_target_dict = || match first_offer.target() {
             cm_rust::OfferTarget::Child(child_ref) => {
@@ -961,41 +961,50 @@ fn new_aggregate_capability_source(
 /// Groups together a set of offers into sub-sets of those that have the same target and target
 /// name. This is useful for identifying which offers are part of an aggregation of capabilities,
 /// and which are for standalone routes.
-fn group_use_aggregates(uses: &[cm_rust::UseDecl]) -> Vec<Vec<&cm_rust::UseDecl>> {
-    let mut groupings = HashMap::new();
-    let mut ungroupable_uses = vec![];
+fn group_use_aggregates<'a>(
+    uses: &'a [cm_rust::UseDecl],
+) -> impl Iterator<Item = Vec<&'a cm_rust::UseDecl>> + 'a {
+    let mut groupings = HashMap::with_capacity(uses.len());
+    let mut ungroupable_uses = Vec::new();
     for use_ in uses.iter() {
         if let Some(target_path) = use_.path() {
-            groupings.entry(target_path).or_insert(vec![]).push(use_);
+            groupings.entry(target_path).or_insert_with(|| Vec::with_capacity(1)).push(use_);
         } else {
-            ungroupable_uses.push(vec![use_]);
+            ungroupable_uses.push(use_);
         }
     }
-    groupings
-        .into_iter()
-        .map(|(_key, grouping)| grouping)
-        .chain(ungroupable_uses.into_iter())
-        .collect()
+    groupings.into_values().chain(ungroupable_uses.into_iter().map(|u| vec![u]))
 }
 
 /// Groups together a set of offers into sub-sets of those that have the same target and target
 /// name. This is useful for identifying which offers are part of an aggregation of capabilities,
 /// and which are for standalone routes.
-fn group_offer_aggregates(offers: &[cm_rust::OfferDecl]) -> Vec<Vec<&cm_rust::OfferDecl>> {
-    let mut groupings = HashMap::new();
+fn group_offer_aggregates<'a>(
+    offers: &'a [cm_rust::OfferDecl],
+) -> impl Iterator<Item = Vec<&'a cm_rust::OfferDecl>> + 'a {
+    let mut groupings = HashMap::with_capacity(offers.len());
+
     for offer in offers {
-        groupings.entry((offer.target(), offer.target_name())).or_insert(vec![]).push(offer);
+        groupings
+            .entry((offer.target(), offer.target_name()))
+            .or_insert_with(|| Vec::with_capacity(1))
+            .push(offer);
     }
-    groupings.into_iter().map(|(_key, grouping)| grouping).collect()
+    groupings.into_values()
 }
 
 /// Identical to `group_offer_aggregates`, but for exposes.
-fn group_expose_aggregates(exposes: &[cm_rust::ExposeDecl]) -> Vec<Vec<&cm_rust::ExposeDecl>> {
-    let mut groupings = HashMap::new();
+fn group_expose_aggregates<'a>(
+    exposes: &'a [cm_rust::ExposeDecl],
+) -> impl Iterator<Item = Vec<&'a cm_rust::ExposeDecl>> + 'a {
+    let mut groupings = HashMap::with_capacity(exposes.len());
     for expose in exposes {
-        groupings.entry((expose.target(), expose.target_name())).or_insert(vec![]).push(expose);
+        groupings
+            .entry((expose.target(), expose.target_name()))
+            .or_insert_with(|| Vec::with_capacity(1))
+            .push(expose);
     }
-    groupings.into_iter().map(|(_key, grouping)| grouping).collect()
+    groupings.into_values()
 }
 
 fn build_environment<C: ComponentInstanceInterface + 'static>(
