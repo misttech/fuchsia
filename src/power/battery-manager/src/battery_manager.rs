@@ -6,7 +6,7 @@ use crate::history_logger::{
     BatteryInfoRecorders, FaultRecoveryEvent, HistoryLogger, RecorderConfig,
 };
 use crate::polisher::Polisher;
-use anyhow::{Context, Error};
+use anyhow::Error;
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_power_battery as fpower;
@@ -193,20 +193,20 @@ impl BatteryManager {
         };
 
         if is_charging && self.charge_wake_lease.borrow().is_none() {
-            let res = sag
-                .take_wake_lease("charging_block_suspension")
-                .await
-                .context("failed to take wake lease");
+            let res = sag.acquire_long_wake_lease("charging_block_suspension").await;
 
             match res {
-                Ok(token) => {
-                    info!("Acquired wake lock to block suspension while charging");
+                Ok(Ok(token)) => {
+                    info!("Acquired wake lock to block suspension while charging.");
                     *self.charge_wake_lease.borrow_mut() = Some(token);
                 }
-                Err(e) => {
-                    error!("Can't block suspension due to error: {e}");
+                Ok(Err(e)) => {
+                    error!("Can't block suspension due to error: {:?}", e);
                 }
-            };
+                Err(e) => {
+                    error!("Can't block suspension due to FIDL error {:?}", e);
+                }
+            }
         }
 
         if !is_charging && self.charge_wake_lease.borrow().is_some() {
@@ -748,10 +748,13 @@ mod tests {
         fasync::Task::local(async move {
             while let Ok(req) = stream.try_next().await {
                 match req {
-                    Some(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, .. }) => {
+                    Some(fsystem::ActivityGovernorRequest::AcquireLongWakeLease {
+                        responder,
+                        ..
+                    }) => {
                         let mut queue = lease_sequence.borrow_mut();
                         let result = queue.pop_front().unwrap();
-                        responder.send(result).unwrap();
+                        responder.send(Ok(result)).unwrap();
                     }
                     e => panic!("Unexpected request: {:?}", e),
                 }
