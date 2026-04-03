@@ -14,6 +14,7 @@ mod interface;
 mod masquerade;
 pub mod network;
 mod socketproxy;
+pub mod telemetry;
 mod virtualization;
 
 use ::dhcpv4::protocol::FromFidlExt as _;
@@ -719,6 +720,7 @@ pub struct NetCfg<'a> {
     netpol_networks_service: network::NetpolNetworksService,
 
     enable_socket_proxy: bool,
+    inspector: fuchsia_inspect::Inspector,
 }
 
 /// Returns a [`fnet_name::DnsServer_`] with a static source from a [`std::net::IpAddr`].
@@ -955,6 +957,7 @@ impl<'a> NetCfg<'a> {
         interface_naming_policy: Vec<interface::NamingRule>,
         interface_provisioning_policy: Vec<interface::ProvisioningRule>,
         enable_socket_proxy: bool,
+        inspector: fuchsia_inspect::Inspector,
     ) -> Result<NetCfg<'a>, anyhow::Error> {
         let svc_dir = clone_namespace_svc().context("error cloning svc directory handle")?;
         let stack = svc_connect::<fnet_stack::StackMarker>(&svc_dir)
@@ -1050,6 +1053,7 @@ impl<'a> NetCfg<'a> {
             interface_provisioning_policy,
             netpol_networks_service: Default::default(),
             enable_socket_proxy,
+            inspector,
         })
     }
 
@@ -1274,6 +1278,11 @@ impl<'a> NetCfg<'a> {
             .add_fidl_service(RequestStream::NetworkAttributes)
             .add_fidl_service(RequestStream::DelegatedNetworks)
             .add_fidl_service(RequestStream::NetworkTokenResolver);
+
+        let _inspect_server_task =
+            inspect_runtime::publish(&self.inspector, inspect_runtime::PublishOptions::default())
+                .expect("publish Inspect task");
+
         let _: &mut ServiceFs<_> =
             fs.take_and_serve_directory_handle().context("take and serve directory handle")?;
         let mut fs = fs.fuse();
@@ -1298,6 +1307,12 @@ impl<'a> NetCfg<'a> {
 
         let mut delegated_networks_stream =
             DelegatedNetworksStream::Right(futures_util::stream::empty());
+
+        let inspector = self.inspector.clone();
+        // TODO(https://fxbug.dev/423457677): Pass the telemetry sender to the time series modules.
+        let (_telemetry_sender, telemetry_fut) = crate::telemetry::serve_telemetry(&inspector);
+        let telemetry_fut = telemetry_fut.fuse();
+        let mut telemetry_fut = pin!(telemetry_fut);
 
         // Lifecycle handle takes no args, must be set to zero.
         // See zircon/processargs.h.
@@ -1424,6 +1439,10 @@ impl<'a> NetCfg<'a> {
                 }
                 delegated_networks_update = delegated_networks_stream.select_next_some() => {
                     Event::DelegatedNetworksUpdate(delegated_networks_update)
+                }
+                _telemetry_res = telemetry_fut => {
+                    error!("unexpectedly stopped serving telemetry");
+                    continue;
                 }
                 complete => return Err(anyhow::anyhow!("eventloop ended unexpectedly")),
             };
@@ -3736,6 +3755,11 @@ pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
     info!("using naming policy: {interface_naming_policy:?}");
     info!("using provisioning policy: {interface_provisioning_policy:?}");
 
+    let inspector = fuchsia_inspect::component::inspector();
+    // Report data on the size of the inspect VMO, and the number of allocation
+    // failures encountered. (Allocation failures can lead to missing data.)
+    fuchsia_inspect::component::serve_inspect_stats();
+
     let mut netcfg = NetCfg::new(
         filter_enabled_interface_types,
         interface_metrics,
@@ -3745,6 +3769,7 @@ pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
         interface_naming_policy,
         interface_provisioning_policy,
         enable_socket_proxy,
+        inspector.clone(),
     )
     .await
     .context("error creating new netcfg instance")?;
@@ -4099,6 +4124,7 @@ mod tests {
                 interface_provisioning_policy: Default::default(),
                 netpol_networks_service: Default::default(),
                 enable_socket_proxy: false,
+                inspector: fuchsia_inspect::Inspector::default(),
             },
             ServerEnds {
                 lookup_admin: lookup_admin_server.into_stream(),
