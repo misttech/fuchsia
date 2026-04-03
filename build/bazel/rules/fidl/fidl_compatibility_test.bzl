@@ -9,17 +9,35 @@ load(":fidl_ir.bzl", "fidl_ir")
 load(":fidl_summary.bzl", "fidl_summary")
 
 # LINT.IfChange(run_compatibility_test)
-
-# Currently, the `golden_file` must always already exist, which is inconvenient
-# when adding a new FIDL library to a category.
-# TODO(https://fxbug.dev/428285014): Find a way to support creating golden files
-# that do not already exist when `ctx.attr.policy == "update_golden"`.
 def _fidl_api_compatibility_check_impl(ctx):
+    inputs = [ctx.file.current_file]
+
+    if bool(ctx.attr.golden_file) == bool(ctx.attr.golden_file_source_path):
+        fail("Exactly one of `golden_file` and `golden_file_source_path` must be set.")
+
+    if ctx.attr.golden_file:
+        inputs.append(ctx.file.golden_file)
+        golden_file_path = ctx.file.golden_file.path
+    else:
+        if ctx.attr.policy != "update_golden":
+            fail("`golden_file_source_path` can only be set when `policy` is 'update_golden'.")
+
+        # `golden_file_source_path` is a string rather than a Bazel Target, so
+        # it cannot be an input. As a result, this target will not be rebuilt if
+        # the golden file changes.
+
+        # `golden_file_source_path` must be an absolute path so there is no ambiguity.
+        if not ctx.attr.golden_file_source_path.startswith("//"):
+            fail("`golden_file_source_path` must start with '//'")
+
+        # The path must be relative to the source directory.
+        golden_file_path = ctx.attr.golden_file_source_path.removeprefix("//")
+
     stamp_file = ctx.actions.declare_file(ctx.label.name + ".verified")
 
     args = ctx.actions.args()
     args.add("--api-level", ctx.attr.target_api_level)
-    args.add("--golden", ctx.file.golden_file.path)
+    args.add("--golden", golden_file_path)
     args.add("--current", ctx.file.current_file.path)
     args.add("--stamp", stamp_file.path)
     args.add("--fidl_api_diff_path", ctx.executable._fidl_api_diff.path)
@@ -31,8 +49,6 @@ def _fidl_api_compatibility_check_impl(ctx):
         execution_requirements["no-sandbox"] = "1"
         execution_requirements["no-remote"] = "1"
         execution_requirements["no-cache"] = "1"
-
-    inputs = [ctx.file.current_file, ctx.file.golden_file]
 
     ctx.actions.run(
         outputs = [stamp_file],
@@ -48,7 +64,14 @@ def _fidl_api_compatibility_check_impl(ctx):
 
 # The name of non-test rules cannot end in `_test`.
 _fidl_api_compatibility_check = rule(
-    doc = "Compares the `current_file` and `golden_file` API summary JSON files using `fidl_api_diff`.",
+    doc = """Compares the `current_file` and `golden_file` API summary JSON files using `fidl_api_diff`.
+
+    When using the "update_golden" `policy` and potentially generating new
+    golden files, use 'golden_file_source_path' instead of 'golden_file'. For
+    all other use cases, use 'golden_files' exclusively.
+    This is a work-around for the fact that Bazel does not support labels
+    pointing to nonexistent files.
+    """,
     implementation = _fidl_api_compatibility_check_impl,
     attrs = {
         "target_api_level": attr.string(
@@ -61,9 +84,22 @@ _fidl_api_compatibility_check = rule(
             allow_single_file = True,
         ),
         "golden_file": attr.label(
-            doc = "The expected API summary JSON file.",
-            mandatory = True,
+            doc = "The expected API summary JSON file." +
+                  "Exactly one of this or `golden_file_source_path` must be set.",
+            mandatory = False,
             allow_single_file = True,
+        ),
+        "golden_file_source_path": attr.string(
+            doc = """The absolute source path of the expected API summary JSON file.
+
+            Use this to allow a new golden file to be written if it does not exist.
+            Since the string is not converted to a Target, it cannot be an
+            input, and changes to it will not cause a rebuild.
+
+            May only be set when `policy == 'update_golden'`. Exactly one of
+            this or `golden_file` must be set.
+            """,
+            mandatory = False,
         ),
         "policy": attr.string(
             doc = "The policy to apply.",
@@ -173,13 +209,24 @@ def fidl_compatibility_test(
         else:
             policy = "no_changes"
 
-        golden_path = "%s/%s:%s.api_summary.json" % (goldens_dir, api_level, library_name)
+        # The golden path is passed differently depending on the value of
+        # `update_goldens`. See `_fidl_api_compatibility_check()` for details.
+        # Build a file path or a Label as appropriate then pass it as the
+        # appropriate attribute.
+        file_separator = "/" if update_goldens else ":"
+        golden_path = "%s/%s%s%s.api_summary.json" % (
+            goldens_dir,
+            api_level,
+            file_separator,
+            library_name,
+        )
 
         _fidl_api_compatibility_check(
             name = name,
             target_api_level = api_level,
             current_file = summary_target_name,
-            golden_file = golden_path,
+            golden_file = None if update_goldens else golden_path,
+            golden_file_source_path = golden_path if update_goldens else None,
             policy = policy,
             testonly = testonly,
             visibility = visibility,
