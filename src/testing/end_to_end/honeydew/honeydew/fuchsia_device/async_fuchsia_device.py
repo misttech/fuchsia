@@ -1048,6 +1048,7 @@ class AsyncFuchsiaDevice(
             level=custom_types.LEVEL.INFO,
         )
 
+        self.ffx.notify_intentional_disconnect()
         await self._send_reboot_command()
 
         self.wait_for_offline()

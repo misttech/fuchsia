@@ -304,3 +304,7 @@ class FFX(abc.ABC):
         Raises:
             FfxTargetStatusError: In case of HostCmdError.
         """
+
+    @abc.abstractmethod
+    def notify_intentional_disconnect(self) -> None:
+        """Notifies the FFX monitor of an upcoming intentional disconnect."""

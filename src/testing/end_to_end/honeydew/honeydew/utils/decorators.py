@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Utility module that contains some useful decorators."""
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -10,10 +12,30 @@ import multiprocessing
 import time
 from collections.abc import Callable, Coroutine
 from timeit import default_timer as timer
-from typing import Any, ParamSpec, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Concatenate,
+    ParamSpec,
+    Protocol,
+    TypeVar,
+    overload,
+    runtime_checkable,
+)
+
+if TYPE_CHECKING:
+    from honeydew.transports.ffx import ffx as ffx_transport
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+@runtime_checkable
+class FfxProvider(Protocol):
+    """Protocol that provides an FFX transport via 'ffx' attribute."""
+
+    ffx: ffx_transport.FFX
+
 
 _LIVENESS_CHECK_SLEEP_TIMER: float = 10.0
 
@@ -173,3 +195,65 @@ async def _async_liveness_check_logger(
 
 
 # LINT.ThenChange(:liveness_check)
+
+
+T = TypeVar("T", bound="FfxProvider")
+
+
+@overload
+def notify_intentional_disconnect(
+    func: Callable[Concatenate[T, P], Coroutine[Any, Any, R]]
+) -> Callable[Concatenate[T, P], Coroutine[Any, Any, R]]:
+    ...
+
+
+@overload
+def notify_intentional_disconnect(
+    func: Callable[Concatenate[T, P], R]
+) -> Callable[Concatenate[T, P], R]:
+    ...
+
+
+def notify_intentional_disconnect(
+    func: Callable[Concatenate[T, P], Any]
+) -> Callable[Concatenate[T, P], Any]:
+    """Decorator that notifies the FFX monitor of an upcoming intentional
+    disconnect.
+
+    It expects the decorated method to be a member of a class that has
+    `ffx` attribute.
+    """
+
+    if asyncio.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def async_wrapper(
+            self: T, /, *args: P.args, **kwargs: P.kwargs
+        ) -> Any:
+            _notify_ffx_intentional_disconnect(self)
+            return await func(self, *args, **kwargs)
+
+        return async_wrapper
+
+    @functools.wraps(func)
+    def wrapper(self: T, /, *args: P.args, **kwargs: P.kwargs) -> Any:
+        _notify_ffx_intentional_disconnect(self)
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+def _notify_ffx_intentional_disconnect(
+    obj: FfxProvider,
+) -> None:
+    """Helper method to notify FFX monitor of an upcoming intentional
+    disconnect."""
+    ffx = getattr(obj, "ffx", None)
+    if ffx:
+        ffx.notify_intentional_disconnect()
+    else:
+        _LOGGER.debug(
+            "Skipping notify_intentional_disconnect as '%s' does not have "
+            "'ffx' attribute.",
+            obj,
+        )

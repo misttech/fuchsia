@@ -44,6 +44,9 @@ from honeydew.affordances.virtual_audio import audio_using_fuchsia_controller
 from honeydew.auxiliary_devices.power_switch import (
     power_switch as power_switch_interface,
 )
+from honeydew.auxiliary_devices.usb_power_hub import (
+    usb_power_hub as usb_power_hub_interface,
+)
 from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
 from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import config as ffx_config
@@ -1346,6 +1349,11 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_on_device_boot.assert_called()
 
     @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "notify_intentional_disconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
         async_fuchsia_device.AsyncFuchsiaDevice,
         "on_device_boot",
         autospec=True,
@@ -1377,6 +1385,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_wait_for_offline: mock.Mock,
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
+        mock_ffx_notify_intentional_disconnect: mock.Mock,
     ) -> None:
         """Testcase for AsyncFuchsiaDevice.reboot()"""
         await self.fd_fc_obj.reboot()
@@ -1386,6 +1395,118 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_wait_for_offline.assert_called()
         mock_wait_for_online.assert_called()
         mock_on_device_boot.assert_called()
+        mock_ffx_notify_intentional_disconnect.assert_called()
+
+    async def test_suspend_error(self) -> None:
+        """Testcase for AsyncFuchsiaDevice.suspend() raising NotSupportedError."""
+        with self.assertRaises(errors.NotSupportedError):
+            await self.fd_fc_obj.suspend()
+
+    @mock.patch.object(
+        async_fuchsia_device.AsyncFuchsiaDevice,
+        "boot_id",
+        autospec=True,
+        return_value="1",
+    )
+    @mock.patch.object(
+        fuchsia_controller_impl.FuchsiaControllerImpl,
+        "before_usb_disconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
+        async_fuchsia_device.AsyncFuchsiaDevice,
+        "wait_for_offline",
+        autospec=True,
+    )
+    async def test_suspend(
+        self,
+        mock_wait_for_offline: mock.Mock,
+        mock_before_usb_disconnect: mock.Mock,
+        mock_boot_id: mock.Mock,
+    ) -> None:
+        """Testcase for AsyncFuchsiaDevice.suspend()"""
+        mock_usb_power_hub = mock.MagicMock(
+            spec=usb_power_hub_interface.UsbPowerHub
+        )
+        self.fd_fc_obj.set_usb_power_hub(
+            usb_power_hub=mock_usb_power_hub, port=1
+        )
+        await self.fd_fc_obj.suspend()
+
+        mock_boot_id.assert_called()
+        mock_before_usb_disconnect.assert_called()
+        mock_usb_power_hub.power_off.assert_called_with(1)
+        mock_wait_for_offline.assert_called()
+
+    @mock.patch.object(
+        async_fuchsia_device.AsyncFuchsiaDevice,
+        "boot_id",
+        autospec=True,
+        side_effect=["1", "1"],
+    )
+    @mock.patch.object(
+        fuchsia_controller_impl.FuchsiaControllerImpl,
+        "after_usb_reconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
+        async_fuchsia_device.AsyncFuchsiaDevice,
+        "wait_for_online",
+        autospec=True,
+    )
+    async def test_resume(
+        self,
+        mock_wait_for_online: mock.Mock,
+        mock_after_usb_reconnect: mock.Mock,
+        mock_boot_id: mock.Mock,
+    ) -> None:
+        """Testcase for AsyncFuchsiaDevice.resume()"""
+        mock_usb_power_hub = mock.MagicMock(
+            spec=usb_power_hub_interface.UsbPowerHub
+        )
+        self.fd_fc_obj.set_usb_power_hub(
+            usb_power_hub=mock_usb_power_hub, port=1
+        )
+        self.fd_fc_obj._pre_suspend_boot_id = "1"
+        await self.fd_fc_obj.resume()
+
+        mock_boot_id.assert_called()
+        mock_after_usb_reconnect.assert_called()
+        mock_usb_power_hub.power_on.assert_called_with(1)
+        mock_wait_for_online.assert_called()
+
+    @mock.patch.object(
+        async_fuchsia_device.AsyncFuchsiaDevice,
+        "boot_id",
+        autospec=True,
+        return_value="2",
+    )
+    @mock.patch.object(
+        fuchsia_controller_impl.FuchsiaControllerImpl,
+        "after_usb_reconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
+        async_fuchsia_device.AsyncFuchsiaDevice,
+        "wait_for_online",
+        autospec=True,
+    )
+    async def test_resume_error(
+        self,
+        mock_wait_for_online: mock.Mock,
+        mock_after_usb_reconnect: mock.Mock,
+        mock_boot_id: mock.Mock,
+    ) -> None:
+        """Testcase for AsyncFuchsiaDevice.resume() raising FuchsiaDeviceError."""
+        mock_usb_power_hub = mock.MagicMock(
+            spec=usb_power_hub_interface.UsbPowerHub
+        )
+        self.fd_fc_obj.set_usb_power_hub(
+            usb_power_hub=mock_usb_power_hub, port=1
+        )
+        self.fd_fc_obj._pre_suspend_boot_id = "1"
+        with self.assertRaises(errors.FuchsiaDeviceError):
+            await self.fd_fc_obj.resume()
 
     def test_register_for_on_device_boot(self) -> None:
         """Testcase for AsyncFuchsiaDevice.register_for_on_device_boot()"""

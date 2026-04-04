@@ -36,8 +36,8 @@ const CONFIG_PORT_FILE: &str = "monitor.port_file";
 const LOCAL_SERVER_IP_ADDRESS: &str = "127.0.0.1";
 const LOCAL_SERVER_IP_ADDRESS_ARRAY: [u8; 4] = [127, 0, 0, 1];
 const DEFAULT_MONITOR_PORT: u16 = 8080;
-const LOG_VERSION: u16 = 2;
-const AGGREGATIONS_VERSION: u16 = 1;
+const LOG_VERSION: u16 = 3;
+const AGGREGATIONS_VERSION: u16 = 2;
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -55,6 +55,12 @@ struct LogContext {
     sender: LogSender,
     log_path: Option<Arc<PathBuf>>,
     aggregations_path: Option<Arc<PathBuf>>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+struct IntentionalDisconnectRecord {
+    nodename: String,
+    timestamp: u64,
 }
 
 #[derive(Serialize, Debug)]
@@ -99,6 +105,23 @@ struct DeviceMetricsOutput {
     disconnected_ms: u64,
     rcs_dropouts: u64,
     target_vanished_count: u64,
+    intentional_target_vanished_count: u64,
+    unexpected_target_vanished_count: u64,
+    intentional_disconnected_ms: u64,
+    unexpected_disconnected_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DisconnectType {
+    Intentional,
+    Unexpected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DeviceState {
+    Active,
+    Inactive,
+    Disconnected,
 }
 
 #[derive(Debug, Clone)]
@@ -108,7 +131,12 @@ struct DeviceMetrics {
     disconnected_ms: u64,
     rcs_dropouts: u64,
     target_vanished_count: u64,
-    last_seen_state: Option<String>,
+    intentional_target_vanished_count: u64,
+    unexpected_target_vanished_count: u64,
+    intentional_disconnected_ms: u64,
+    unexpected_disconnected_ms: u64,
+    last_seen_state: Option<DeviceState>,
+    last_disconnect_type: Option<DisconnectType>,
     target_type: String,
 }
 #[derive(Serialize, Debug, Clone)]
@@ -125,6 +153,8 @@ struct AggregationsState {
     latencies: Vec<u64>,
     devices: HashMap<String, DeviceMetrics>,
     prev_time: u64,
+    /// A set of target nodenames that are expected to disconnect intentionally.
+    pending_intentional_disconnects: HashSet<String>,
 }
 
 impl AggregationsState {
@@ -139,11 +169,22 @@ impl AggregationsState {
         let delta = entry.timestamp.saturating_sub(self.prev_time);
 
         for dev_metrics in self.devices.values_mut() {
-            match dev_metrics.last_seen_state.as_deref() {
-                Some("active") => dev_metrics.active_ms += delta,
-                Some("inactive") => dev_metrics.inactive_ms += delta,
-                Some("disconnected") => dev_metrics.disconnected_ms += delta,
-                _ => {}
+            match dev_metrics.last_seen_state {
+                Some(DeviceState::Active) => dev_metrics.active_ms += delta,
+                Some(DeviceState::Inactive) => dev_metrics.inactive_ms += delta,
+                Some(DeviceState::Disconnected) => {
+                    dev_metrics.disconnected_ms += delta;
+                    match dev_metrics.last_disconnect_type {
+                        Some(DisconnectType::Intentional) => {
+                            dev_metrics.intentional_disconnected_ms += delta
+                        }
+                        Some(DisconnectType::Unexpected) => {
+                            dev_metrics.unexpected_disconnected_ms += delta
+                        }
+                        None => {}
+                    }
+                }
+                None => {}
             }
         }
 
@@ -164,25 +205,38 @@ impl AggregationsState {
                     disconnected_ms: 0,
                     rcs_dropouts: 0,
                     target_vanished_count: 0,
+                    intentional_target_vanished_count: 0,
+                    unexpected_target_vanished_count: 0,
+                    intentional_disconnected_ms: 0,
+                    unexpected_disconnected_ms: 0,
                     last_seen_state: None,
+                    last_disconnect_type: None,
                     target_type,
                 }
             });
 
-            if dev_metrics.last_seen_state.as_deref() == Some("active") && !is_active {
+            if dev_metrics.last_seen_state == Some(DeviceState::Active) && !is_active {
                 dev_metrics.rcs_dropouts += 1;
             }
 
             dev_metrics.last_seen_state =
-                Some(if is_active { "active".to_string() } else { "inactive".to_string() });
+                Some(if is_active { DeviceState::Active } else { DeviceState::Inactive });
+            dev_metrics.last_disconnect_type = None;
         }
 
         for (name, dev_metrics) in self.devices.iter_mut() {
             if !current_nodenames.contains(name) {
-                match dev_metrics.last_seen_state.as_deref() {
-                    Some("active") | Some("inactive") => {
+                match dev_metrics.last_seen_state {
+                    Some(DeviceState::Active) | Some(DeviceState::Inactive) => {
                         dev_metrics.target_vanished_count += 1;
-                        dev_metrics.last_seen_state = Some("disconnected".to_string());
+                        if self.pending_intentional_disconnects.remove(name) {
+                            dev_metrics.intentional_target_vanished_count += 1;
+                            dev_metrics.last_disconnect_type = Some(DisconnectType::Intentional);
+                        } else {
+                            dev_metrics.unexpected_target_vanished_count += 1;
+                            dev_metrics.last_disconnect_type = Some(DisconnectType::Unexpected);
+                        }
+                        dev_metrics.last_seen_state = Some(DeviceState::Disconnected);
                     }
                     _ => {}
                 }
@@ -233,6 +287,10 @@ impl AggregationsState {
                     disconnected_ms: metrics.disconnected_ms,
                     rcs_dropouts: metrics.rcs_dropouts,
                     target_vanished_count: metrics.target_vanished_count,
+                    intentional_target_vanished_count: metrics.intentional_target_vanished_count,
+                    unexpected_target_vanished_count: metrics.unexpected_target_vanished_count,
+                    intentional_disconnected_ms: metrics.intentional_disconnected_ms,
+                    unexpected_disconnected_ms: metrics.unexpected_disconnected_ms,
                 },
             });
         }
@@ -254,6 +312,7 @@ impl AggregationsState {
 enum LogMessage {
     Log(LogEntry),
     Flush(Option<Arc<PathBuf>>, Option<Arc<PathBuf>>, oneshot::Sender<anyhow::Result<()>>),
+    IntentionalDisconnect(String, u64),
 }
 
 /// Resolves a log file path.
@@ -451,6 +510,43 @@ async fn handle_request(
 ) -> std::result::Result<Response<Body>, Infallible> {
     let mut response = Response::new("".into());
     match req.uri().path() {
+        "/intentional_disconnect" => {
+            if req.method() == hyper::Method::POST {
+                let body = hyper::body::to_bytes(req.into_body()).await;
+                match body {
+                    Ok(bytes) => {
+                        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(nodename) = json["nodename"].as_str() {
+                                if let Some(ctx) = log_context {
+                                    let timestamp = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis()
+                                        as u64;
+                                    let _ = ctx.sender.send(LogMessage::IntentionalDisconnect(
+                                        nodename.to_string(),
+                                        timestamp,
+                                    ));
+                                }
+                                *response.body_mut() = "OK".into();
+                            } else {
+                                *response.status_mut() = StatusCode::BAD_REQUEST;
+                                *response.body_mut() = "Missing nodename".into();
+                            }
+                        } else {
+                            *response.status_mut() = StatusCode::BAD_REQUEST;
+                            *response.body_mut() = "Invalid JSON".into();
+                        }
+                    }
+                    Err(e) => {
+                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        *response.body_mut() = format!("Failed to read body: {}", e).into();
+                    }
+                }
+            } else {
+                *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+            }
+        }
         "/status" => {
             let statuses = cache.lock().await;
             match serde_json::to_string(&*statuses) {
@@ -576,6 +672,29 @@ impl FfxMain for MonitorTool {
                 }
                 Ok(())
             }
+            SubCommand::IntentionalDisconnect(cmd) => {
+                let port_str = fs::read_to_string(&port_file_path).context("reading port file")?;
+                let port: u16 = port_str.trim().parse().context("parsing port")?;
+
+                let url =
+                    format!("http://{}:{}/intentional_disconnect", LOCAL_SERVER_IP_ADDRESS, port);
+                let client = fuchsia_hyper::new_client();
+                let body = serde_json::json!({ "nodename": cmd.nodename }).to_string();
+                let req = Request::builder()
+                    .method(hyper::Method::POST)
+                    .uri(url.parse::<hyper::Uri>().context("parsing uri")?)
+                    .header(hyper::header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap();
+
+                if let Err(e) = client.request(req).await {
+                    log::warn!("Failed to send disconnect request to server: {}", e);
+                } else {
+                    writeln!(writer, "Successfully sent disconnect request to server")
+                        .context("send disconnect request")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -588,6 +707,7 @@ impl FfxMain for MonitorTool {
 ///   overwriting any existing file. The in-memory buffer is cleared after flushing.
 async fn run_log_manager(mut log_receiver: mpsc::UnboundedReceiver<LogMessage>) {
     let mut logs: Vec<LogEntry> = Vec::new();
+    let mut intentional_disconnect_records: Vec<IntentionalDisconnectRecord> = Vec::new();
     let mut state = AggregationsState::default();
     while let Some(msg) = log_receiver.recv().await {
         match msg {
@@ -595,13 +715,20 @@ async fn run_log_manager(mut log_receiver: mpsc::UnboundedReceiver<LogMessage>) 
                 state.update(&entry);
                 logs.push(entry);
             }
+            LogMessage::IntentionalDisconnect(nodename, timestamp) => {
+                intentional_disconnect_records
+                    .push(IntentionalDisconnectRecord { nodename: nodename.clone(), timestamp });
+                state.pending_intentional_disconnects.insert(nodename);
+            }
             LogMessage::Flush(log_path, aggregations_path, reply) => {
                 let logs_to_write = logs.clone();
+                let intentional_disconnects_to_write = intentional_disconnect_records.clone();
                 let current_state = state.clone();
                 let res = spawn_blocking(move || {
                     if let Some(path) = log_path {
                         let json = serde_json::json!({
                             "data": logs_to_write,
+                            "intentional_disconnects": intentional_disconnects_to_write,
                             "version": LOG_VERSION,
                         });
                         let json_str = serde_json::to_string_pretty(&json)?;
@@ -673,6 +800,9 @@ mod tests {
             vec![make_target("fuchsia-1234-5678-abcd", "Y")],
         )))?;
 
+        // Send intentional disconnect request
+        tx.send(LogMessage::IntentionalDisconnect("fuchsia-1234-5678-abcd".to_string(), 2500))?;
+
         let (flush_tx, flush_rx) = oneshot::channel();
         let aggregations_path = dir.path().join("aggregations.json");
         tx.send(LogMessage::Flush(
@@ -694,6 +824,12 @@ mod tests {
 
         assert_eq!(data[1]["timestamp"], 2000);
         assert_eq!(data[1]["targets"][0]["nodename"], "fuchsia-1234-5678-abcd");
+
+        // Verify intentional disconnects record in log.json
+        let intentional_disconnects = json["intentional_disconnects"].as_array().unwrap();
+        assert_eq!(intentional_disconnects.len(), 1);
+        assert_eq!(intentional_disconnects[0]["nodename"], "fuchsia-1234-5678-abcd");
+        assert_eq!(intentional_disconnects[0]["timestamp"], 2500);
 
         // Verify aggregations
         let aggs_content = fs::read_to_string(&aggregations_path)?;
@@ -774,6 +910,240 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_aggregations_intentional_disconnect() {
+        let mut state = AggregationsState::default();
+        let mut intentional_disconnect_records = Vec::new();
+
+        // Time 0: A is active
+        state.update(&make_entry(0, 100, vec![make_target("A", "Y")]));
+
+        // Time 1000: A drops unexpectedly
+        state.update(&make_entry(1000, 100, vec![]));
+
+        // Time 1500: A still dropped (Unexpected persistence)
+        state.update(&make_entry(1500, 100, vec![]));
+
+        // Time 2000: A recovers
+        state.update(&make_entry(2000, 100, vec![make_target("A", "N")]));
+
+        // Time 2500: Intentional disconnect requested (Record 1)
+        intentional_disconnect_records
+            .push(IntentionalDisconnectRecord { nodename: "A".to_string(), timestamp: 2500 });
+        state.pending_intentional_disconnects.insert("A".to_string());
+
+        // Time 2600: Redundant Intentional disconnect requested (Record 2)
+        intentional_disconnect_records
+            .push(IntentionalDisconnectRecord { nodename: "A".to_string(), timestamp: 2600 });
+        state.pending_intentional_disconnects.insert("A".to_string());
+
+        // Time 3000: A drops intentionally
+        state.update(&make_entry(3000, 100, vec![]));
+
+        // Time 3500: A still dropped (Intentional persistence)
+        state.update(&make_entry(3500, 100, vec![]));
+
+        // Time 4000: A recovers
+        state.update(&make_entry(4000, 100, vec![make_target("A", "Y")]));
+
+        // Time 5000: A drops unexpectedly
+        state.update(&make_entry(5000, 100, vec![]));
+
+        // Time 6000: A recovers
+        state.update(&make_entry(6000, 100, vec![make_target("A", "Y")]));
+
+        // Time 6500: Intentional disconnect requested (Record 3)
+        intentional_disconnect_records
+            .push(IntentionalDisconnectRecord { nodename: "A".to_string(), timestamp: 6500 });
+        state.pending_intentional_disconnects.insert("A".to_string());
+
+        // Time 7000: A drops intentionally
+        state.update(&make_entry(7000, 100, vec![]));
+
+        // Time 8000: A recovers
+        state.update(&make_entry(8000, 100, vec![make_target("A", "N")]));
+
+        // Time 9000: A drops unexpectedly
+        state.update(&make_entry(9000, 100, vec![]));
+
+        // Time 10000: End
+        state.update(&make_entry(10000, 100, vec![]));
+
+        let result = state.finalize();
+        let dev_a = &result.device_aggregations[0];
+        assert_eq!(dev_a.nodename, "A");
+        assert_eq!(dev_a.metrics.target_vanished_count, 5);
+        assert_eq!(dev_a.metrics.intentional_target_vanished_count, 2);
+        assert_eq!(dev_a.metrics.unexpected_target_vanished_count, 3);
+
+        // Expected Disconnected Durations:
+        // 1000-2000: Unexpected (1000ms)
+        // 3000-4000: Intentional (1000ms)
+        // 5000-6000: Unexpected (1000ms)
+        // 7000-8000: Intentional (1000ms)
+        // 9000-10000: Unexpected (1000ms)
+        assert_eq!(dev_a.metrics.disconnected_ms, 5000);
+        assert_eq!(dev_a.metrics.unexpected_disconnected_ms, 3000);
+        assert_eq!(dev_a.metrics.intentional_disconnected_ms, 2000);
+        assert_eq!(
+            dev_a.metrics.disconnected_ms,
+            dev_a.metrics.unexpected_disconnected_ms + dev_a.metrics.intentional_disconnected_ms
+        );
+
+        // Verify intentional disconnect records (3 total, including redundant ones)
+        assert_eq!(intentional_disconnect_records.len(), 3);
+        assert_eq!(intentional_disconnect_records[0].timestamp, 2500);
+        assert_eq!(intentional_disconnect_records[1].timestamp, 2600);
+        assert_eq!(intentional_disconnect_records[2].timestamp, 6500);
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_handle_request() -> anyhow::Result<()> {
+        let cache = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let log_context =
+            Some(Arc::new(LogContext { sender: tx, log_path: None, aggregations_path: None }));
+
+        // Test /status
+        {
+            let mut cache_lock = cache.lock().await;
+            cache_lock.insert("targets".to_string(), serde_json::json!([]));
+            drop(cache_lock);
+
+            let req = Request::builder().uri("/status").body(Body::empty()).unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert_eq!(
+                resp.headers().get(hyper::header::CONTENT_TYPE).unwrap(),
+                "application/json"
+            );
+        }
+
+        // Test /intentional_disconnect
+        {
+            let body = serde_json::json!({ "nodename": "test-device" }).to_string();
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/intentional_disconnect")
+                .body(Body::from(body))
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let msg = rx.recv().await.unwrap();
+            if let LogMessage::IntentionalDisconnect(nodename, _) = msg {
+                assert_eq!(nodename, "test-device");
+            } else {
+                panic!("Expected IntentionalDisconnect message");
+            }
+        }
+
+        // Test /intentional_disconnect - Missing nodename
+        {
+            let body = serde_json::json!({ "wrong_key": "test-device" }).to_string();
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/intentional_disconnect")
+                .body(Body::from(body))
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        }
+
+        // Test /intentional_disconnect - Invalid JSON
+        {
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/intentional_disconnect")
+                .body(Body::from("not json"))
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        }
+
+        // Test /intentional_disconnect - Wrong method
+        {
+            let req = Request::builder()
+                .method(hyper::Method::GET)
+                .uri("/intentional_disconnect")
+                .body(Body::empty())
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+        }
+
+        // Test /stop
+        {
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/stop")
+                .body(Body::empty())
+                .unwrap();
+            let log_context_clone = log_context.clone();
+            let cache_clone = cache.clone();
+
+            let (resp, _) =
+                futures::future::join(handle_request(req, cache_clone, log_context_clone), async {
+                    match rx.recv().await {
+                        Some(LogMessage::Flush(_, _, reply)) => {
+                            reply.send(Ok(())).unwrap();
+                        }
+                        _ => panic!("Expected Flush message"),
+                    }
+                })
+                .await;
+
+            assert_eq!(resp.unwrap().status(), StatusCode::OK);
+        }
+
+        // Test /intentional_disconnect - Failed to read body
+        {
+            let (sender, body) = Body::channel();
+            sender.abort();
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/intentional_disconnect")
+                .body(body)
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            let body_bytes = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+            assert!(std::str::from_utf8(&body_bytes).unwrap().contains("Failed to read body"));
+        }
+
+        // Test Not Found
+        {
+            let req = Request::builder().uri("/unknown").body(Body::empty()).unwrap();
+            let resp = handle_request(req, cache.clone(), log_context.clone()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        }
+
+        // Test with log_context = None
+        {
+            let req = Request::builder().uri("/status").body(Body::empty()).unwrap();
+            let resp = handle_request(req, cache.clone(), None).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+
+            let body = serde_json::json!({ "nodename": "test-device" }).to_string();
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/intentional_disconnect")
+                .body(Body::from(body))
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), None).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+
+            let req = Request::builder()
+                .method(hyper::Method::POST)
+                .uri("/stop")
+                .body(Body::empty())
+                .unwrap();
+            let resp = handle_request(req, cache.clone(), None).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_compute_aggregations() {
         let mut state = AggregationsState::default();
         state.update(&make_entry(0, 100, vec![make_target("A", "Y"), make_target("B", "Y")]));
@@ -811,11 +1181,19 @@ mod tests {
         assert_eq!(dev_b.metrics.rcs_dropouts, 1);
         assert_eq!(dev_b.metrics.target_vanished_count, 1);
         assert_eq!(dev_b.metrics.disconnected_ms, 1000);
+        assert_eq!(
+            dev_b.metrics.disconnected_ms,
+            dev_b.metrics.unexpected_disconnected_ms + dev_b.metrics.intentional_disconnected_ms
+        );
 
         let dev_c = &result.device_aggregations[2];
         assert_eq!(dev_c.nodename, "C");
         assert_eq!(dev_c.metrics.active_ms, 0);
         assert_eq!(dev_c.metrics.rcs_dropouts, 0);
+        assert_eq!(
+            dev_c.metrics.disconnected_ms,
+            dev_c.metrics.unexpected_disconnected_ms + dev_c.metrics.intentional_disconnected_ms
+        );
     }
 
     #[test]

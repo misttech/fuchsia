@@ -22,6 +22,7 @@ pub enum SubCommand {
     Start(StartCommand),
     Stop(StopCommand),
     Status(StatusCommand),
+    IntentionalDisconnect(IntentionalDisconnectCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -69,3 +70,15 @@ pub struct StopCommand {}
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "status", description = "Check the statuses")]
 pub struct StatusCommand {}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(
+    subcommand,
+    name = "intentional-disconnect",
+    description = "Notify monitor of an intentional disconnect"
+)]
+pub struct IntentionalDisconnectCommand {
+    #[argh(option)]
+    /// specify the device nodename
+    pub nodename: String,
+}

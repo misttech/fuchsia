@@ -10,7 +10,8 @@ import platform
 
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import power_switch
-from honeydew.utils import host_shell
+from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.utils import decorators, host_shell
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -40,9 +41,11 @@ class PowerSwitchUsingDmc(power_switch.PowerSwitch):
 
     Args:
         device_name: Device name returned by `ffx target list`.
+        ffx: FFX transport.
     """
 
-    def __init__(self, device_name: str) -> None:
+    def __init__(self, device_name: str, ffx: ffx_transport.FFX) -> None:
+        super().__init__(ffx=ffx)
         self._name: str = device_name
 
         try:
@@ -54,6 +57,7 @@ class PowerSwitchUsingDmc(power_switch.PowerSwitch):
             ) from error
 
     # List all the public methods
+    @decorators.notify_intentional_disconnect
     def power_off(self, outlet: int | None = None) -> None:
         """Turns off the power of the Fuchsia device.
 

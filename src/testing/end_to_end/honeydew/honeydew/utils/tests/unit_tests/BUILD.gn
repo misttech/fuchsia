@@ -48,11 +48,19 @@ python_host_test("control_flows_test") {
   ]
 }
 
+python_host_test("decorators_test") {
+  main_source = "decorators_test.py"
+  libraries = [ "//src/testing/end_to_end/honeydew" ]
+  main_callable = "unittest.main"
+  extra_args = [ "-v" ]
+}
+
 group("tests") {
   testonly = true
   public_deps = [
     ":control_flows_test",
     ":deadline_test",
+    ":decorators_test",
     ":inspect_test",
     ":power_test",
     ":screenshot_test",

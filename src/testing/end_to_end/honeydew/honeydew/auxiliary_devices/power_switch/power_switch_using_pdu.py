@@ -10,7 +10,8 @@ import shlex
 
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import power_switch
-from honeydew.utils import host_shell
+from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.utils import decorators, host_shell
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -42,11 +43,17 @@ class PowerSwitchUsingPdu(power_switch.PowerSwitch):
         pdu_host: The IP address or hostname of the PDU.
         pdu_username: The username for SSH connection to the PDU.
         priv_key_path: The absolute path to the SSH private key file.
+        ffx: FFX transport.
     """
 
     def __init__(
-        self, pdu_host: str, pdu_username: str, priv_key_path: str
+        self,
+        pdu_host: str,
+        pdu_username: str,
+        priv_key_path: str,
+        ffx: ffx_transport.FFX,
     ) -> None:
+        super().__init__(ffx=ffx)
         self._host: str = pdu_host
         self._username: str = pdu_username
         self._priv_key_path: str = priv_key_path
@@ -63,6 +70,7 @@ class PowerSwitchUsingPdu(power_switch.PowerSwitch):
             self._priv_key_path,
         )
 
+    @decorators.notify_intentional_disconnect
     def power_off(self, outlet: int | None = None) -> None:
         """Turns off the power at the specified outlet on the PDU.
 

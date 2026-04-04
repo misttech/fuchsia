@@ -29,6 +29,7 @@ class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
         """Test case for FFX.wait_for_rcs_connection()."""
         self.device.ffx.wait_for_rcs_connection()
 
+        self.device.ffx.notify_intentional_disconnect()
         self.device.ffx.run(_REBOOT)
 
         self.device.ffx.wait_for_rcs_disconnection()

@@ -16,6 +16,7 @@ from honeydew.auxiliary_devices.power_switch import (
     power_switch,
     power_switch_using_dmc,
 )
+from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
 
 _MOCK_OS_ENVIRON: dict[str, str] = {"DMC_PATH": "/tmp/foo/bar"}
@@ -39,10 +40,13 @@ class PowerSwitchUsingDmcTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
+        self.mock_ffx = mock.MagicMock(spec=ffx_transport.FFX)
         with mock.patch.dict(os.environ, _MOCK_OS_ENVIRON, clear=True):
             self.power_switch_using_dmc_obj: (
                 power_switch_using_dmc.PowerSwitchUsingDmc
-            ) = power_switch_using_dmc.PowerSwitchUsingDmc(device_name="fx-emu")
+            ) = power_switch_using_dmc.PowerSwitchUsingDmc(
+                device_name="fx-emu", ffx=self.mock_ffx
+            )
 
     def test_instantiate_power_switch_using_dmc_when_dmc_path_not_set(
         self,
@@ -53,7 +57,9 @@ class PowerSwitchUsingDmcTests(unittest.TestCase):
             power_switch_using_dmc.PowerSwitchDmcError,
             "environmental variable is not set",
         ):
-            power_switch_using_dmc.PowerSwitchUsingDmc(device_name="fx-emu")
+            power_switch_using_dmc.PowerSwitchUsingDmc(
+                device_name="fx-emu", ffx=self.mock_ffx
+            )
 
     def test_power_switch_using_dmc_is_a_power_switch(self) -> None:
         """Test case to make sure PowerSwitchUsingDmc is PowerSwitch."""
@@ -72,6 +78,7 @@ class PowerSwitchUsingDmcTests(unittest.TestCase):
         """Test case for PowerSwitchUsingDmc.power_off()."""
         self.power_switch_using_dmc_obj.power_off()
         mock_power_switch_using_dmc_run.assert_called_once()
+        self.mock_ffx.notify_intentional_disconnect.assert_called_once()
 
     @mock.patch.object(
         power_switch_using_dmc.PowerSwitchUsingDmc,

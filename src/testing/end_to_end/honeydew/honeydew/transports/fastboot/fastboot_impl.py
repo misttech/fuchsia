@@ -160,7 +160,7 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
         self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
             reboot_affordance
         )
-        self._ffx_transport: ffx_interface.FFX = ffx_transport
+        self.ffx: ffx_interface.FFX = ffx_transport
         self._fastboot_binary: str = _get_fastboot_binary()
         self._fastboot_node_id = fastboot_node_id
 
@@ -246,6 +246,7 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
             )
 
         try:
+            self.ffx.notify_intentional_disconnect()
             await self.run(cmd=_FASTBOOT_CMDS["BOOT_TO_FUCHSIA_MODE"])
             await self.wait_for_fuchsia_mode()
             await self._reboot_affordance.wait_for_online()
@@ -351,7 +352,7 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
     async def wait_for_fuchsia_mode(self) -> None:
         """Wait for Fuchsia device to go to fuchsia mode."""
         _LOGGER.info("Waiting for %s to go fuchsia mode...", self._device_name)
-        self._ffx_transport.wait_for_rcs_connection()
+        self.ffx.wait_for_rcs_connection()
         _LOGGER.info("%s is in fuchsia mode...", self._device_name)
 
     # List all the private methods
@@ -361,8 +362,9 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
             "Lacewing is booting the following device to fastboot mode: %s",
             self._device_name,
         )
+        self.ffx.notify_intentional_disconnect()
         try:
-            self._ffx_transport.run(cmd=_FFX_CMDS["BOOT_TO_FASTBOOT_MODE"])
+            self.ffx.run(cmd=_FFX_CMDS["BOOT_TO_FASTBOOT_MODE"])
         except ffx_errors.FfxCommandError:
             # Command is expected to fail as device reboots immediately
             pass
@@ -393,6 +395,8 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
 
         # Note: Rebooting the device into fastboot mode using serial is mostly used when device is
         # in bad state. So Do not check if device is in Fuchsia mode and directly perform the operation
+
+        self.ffx.notify_intentional_disconnect()
 
         _LOGGER.info("Powering off %s...", self._device_name)
         power_switch.power_off(outlet)
@@ -427,9 +431,7 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
             return
 
         try:
-            target: dict[
-                str, Any
-            ] = self._ffx_transport.get_target_info_from_target_list()
+            target: dict[str, Any] = self.ffx.get_target_info_from_target_list()
 
             # USB based fastboot connection
             if target.get("serial", _NO_SERIAL) != _NO_SERIAL:
@@ -440,7 +442,7 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
 
                 await self._wait_for_valid_tcp_address()
 
-                target = self._ffx_transport.get_target_info_from_target_list()
+                target = self.ffx.get_target_info_from_target_list()
                 target_address: str = target["addresses"][0]
                 tcp_address: str = f"tcp:{target_address}"
 
@@ -463,9 +465,7 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
             True if "address" field of `ffx target show` has one ip address,
             False otherwise.
         """
-        target: dict[
-            str, Any
-        ] = self._ffx_transport.get_target_info_from_target_list()
+        target: dict[str, Any] = self.ffx.get_target_info_from_target_list()
         return len(target["addresses"]) == 1
 
     async def _wait_for_valid_tcp_address(self) -> None:

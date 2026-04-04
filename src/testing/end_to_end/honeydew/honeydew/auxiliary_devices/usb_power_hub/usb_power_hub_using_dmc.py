@@ -10,7 +10,8 @@ import platform
 
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
-from honeydew.utils import host_shell
+from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.utils import decorators, host_shell
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -39,9 +40,11 @@ class UsbPowerHubUsingDmc(usb_power_hub.UsbPowerHub):
 
     Args:
         device_name: Device name returned by `ffx target list`.
+        ffx: FFX transport.
     """
 
-    def __init__(self, device_name: str) -> None:
+    def __init__(self, device_name: str, ffx: ffx_transport.FFX) -> None:
+        super().__init__(ffx=ffx)
         self._name: str = device_name
 
         try:
@@ -53,6 +56,7 @@ class UsbPowerHubUsingDmc(usb_power_hub.UsbPowerHub):
             ) from error
 
     # List all the public methods
+    @decorators.notify_intentional_disconnect
     def power_off(self, port: int | None = None) -> None:
         """Turns off the usb power to the Fuchsia device.
 

@@ -34,7 +34,7 @@ class UsbPowerHubUsingDmcTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         _LOGGER.debug("Instantiating UsbPowerDmc module")
         self._usb_power_hub: usb_power_hub.UsbPowerHub = (
             usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
-                device_name=self.dut.device_name
+                device_name=self.dut.device_name, ffx=self.dut.ffx
             )
         )
 

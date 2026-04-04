@@ -72,7 +72,7 @@ class FastbootUsingSerialTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
 
         try:
             power_switch = power_switch_using_dmc.PowerSwitchUsingDmc(
-                device_name=self.device.device_name
+                device_name=self.device.device_name, ffx=self.device.ffx
             )
         except power_switch_using_dmc.PowerSwitchDmcError:
             asserts.fail(

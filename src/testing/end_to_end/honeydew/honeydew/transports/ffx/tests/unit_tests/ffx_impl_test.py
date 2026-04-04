@@ -931,3 +931,33 @@ class FfxImplTests(unittest.TestCase):
             self.ffx_obj_wo_ip.run(cmd=["test", "cmd"])
 
         mock_triage.assert_called_once()
+
+    @mock.patch.object(ffx_impl.FfxImpl, "run")
+    def test_notify_intentional_disconnect(self, mock_run: mock.Mock) -> None:
+        """Test case for ffx_impl.notify_intentional_disconnect()"""
+        self.ffx_obj_with_ip_and_monitor.notify_intentional_disconnect()
+        mock_run.assert_called_once_with(
+            cmd=[
+                "monitor",
+                "intentional-disconnect",
+                "--nodename",
+                _TARGET_NAME,
+            ],
+            include_target=False,
+        )
+
+    @mock.patch.object(ffx_impl.FfxImpl, "run")
+    def test_notify_intentional_disconnect_no_monitor(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Test case for ffx_impl.notify_intentional_disconnect() when monitor is not used"""
+        self.ffx_obj_with_ip.notify_intentional_disconnect()
+        mock_run.assert_called_once_with(
+            cmd=[
+                "monitor",
+                "intentional-disconnect",
+                "--nodename",
+                _TARGET_NAME,
+            ],
+            include_target=False,
+        )

@@ -14,6 +14,7 @@ from honeydew.auxiliary_devices.power_switch import (
     power_switch,
     power_switch_using_pdu,
 )
+from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
 
 _MOCK_PDU_HOST: str = "pdu-host-123"
@@ -28,11 +29,13 @@ class PowerSwitchUsingPduTests(unittest.TestCase):
     def setUp(self, _: mock.Mock) -> None:
         """Set up for PDU tests by creating a PDU object."""
         super().setUp()
+        self.mock_ffx = mock.MagicMock(spec=ffx_transport.FFX)
         self.pdu_obj: power_switch_using_pdu.PowerSwitchUsingPdu = (
             power_switch_using_pdu.PowerSwitchUsingPdu(
                 pdu_host=_MOCK_PDU_HOST,
                 pdu_username=_MOCK_PDU_USERNAME,
                 priv_key_path=_MOCK_PRIV_KEY_PATH,
+                ffx=self.mock_ffx,
             )
         )
         self.outlet_num: int = 7
@@ -50,6 +53,7 @@ class PowerSwitchUsingPduTests(unittest.TestCase):
                 pdu_host=_MOCK_PDU_HOST,
                 pdu_username=_MOCK_PDU_USERNAME,
                 priv_key_path=_MOCK_PRIV_KEY_PATH,
+                ffx=self.mock_ffx,
             )
         mock_exists.assert_called_once_with(_MOCK_PRIV_KEY_PATH)
 
@@ -99,6 +103,9 @@ class PowerSwitchUsingPduTests(unittest.TestCase):
 
         self.assertIn(expected_cmd_start, command_string)
         self.assertIn(expected_remote_cmd, command_string)
+
+        if test_data["method"] == "power_off":
+            self.mock_ffx.notify_intentional_disconnect.assert_called_once()
 
     @parameterized.expand(
         [

@@ -45,6 +45,7 @@ _FFX_CMDS: dict[str, list[str]] = {
         "get",
         "monitor.pid_file",
     ],
+    "MONITOR_INTENTIONAL_DISCONNECT": ["monitor", "intentional-disconnect"],
 }
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -386,6 +387,23 @@ class FfxImpl(ffx_interface.FFX):
             )
         except errors.HostCmdError as err:
             raise ffx_errors.FfxTargetStatusError(err) from err
+
+    def notify_intentional_disconnect(self) -> None:
+        """Notifies the FFX monitor of an upcoming intentional disconnect."""
+        nodename = self._name if self._name else self._query
+        cmd = _FFX_CMDS["MONITOR_INTENTIONAL_DISCONNECT"][:]
+        cmd.extend(["--nodename", nodename])
+
+        try:
+            self.run(
+                cmd=cmd,
+                include_target=False,
+            )
+        except ffx_errors.FfxCommandError as err:
+            _LOGGER.warning(
+                "Failed to notify intentional disconnect to FFX monitor: %s",
+                err,
+            )
 
     def run(
         self,

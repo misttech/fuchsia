@@ -491,11 +491,15 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 importlib.import_module(power_switch_impl["module"]),
                 power_switch_impl["class"],
             )
-            return power_switch_class(**power_switch_hw), power_switch_outlet
+            return (
+                power_switch_class(ffx=fx_device.ffx, **power_switch_hw),
+                power_switch_outlet,
+            )
         else:
             return (
                 power_switch_using_dmc.PowerSwitchUsingDmc(
                     device_name=fx_device.device_name,
+                    ffx=fx_device.ffx,
                 ),
                 None,
             )
@@ -522,11 +526,15 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 importlib.import_module(usb_power_hub_impl["module"]),
                 usb_power_hub_impl["class"],
             )
-            return usb_power_hub_class(**usb_power_hub_hw), usb_power_hub_port
+            return (
+                usb_power_hub_class(ffx=fx_device.ffx, **usb_power_hub_hw),
+                usb_power_hub_port,
+            )
         else:
             return (
                 usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
                     device_name=fx_device.device_name,
+                    ffx=fx_device.ffx,
                 ),
                 None,
             )

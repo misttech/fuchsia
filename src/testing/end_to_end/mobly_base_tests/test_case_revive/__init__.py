@@ -198,7 +198,10 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     _DMC_CLASS,
                 )
                 self._power_switch: power_switch.PowerSwitch = (
-                    power_switch_class(device_name=fuchsia_device.device_name)
+                    power_switch_class(
+                        device_name=fuchsia_device.device_name,
+                        ffx=fuchsia_device.ffx,
+                    )
                 )
 
                 fuchsia_async_extension.get_loop().run_until_complete(

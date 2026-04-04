@@ -523,7 +523,9 @@ class FuchsiaDevice:
             dmc: PowerSwitchUsingDmc | None = None
             if self.name:
                 try:
-                    dmc = PowerSwitchUsingDmc(device_name=self.name)
+                    dmc = PowerSwitchUsingDmc(
+                        device_name=self.name, ffx=self.ffx
+                    )
                 except PowerSwitchDmcError:
                     self.log.info("dmc not found, falling back to using PDU")
 

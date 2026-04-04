@@ -8,6 +8,8 @@ from __future__ import annotations
 import abc
 import logging
 
+from honeydew.transports.ffx import ffx as ffx_transport
+
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -28,6 +30,11 @@ class UsbPowerHubError(Exception):
 
 class UsbPowerHub(abc.ABC):
     """Abstract base class for usb power hub hardware."""
+
+    ffx: ffx_transport.FFX
+
+    def __init__(self, ffx: ffx_transport.FFX) -> None:
+        self.ffx: ffx_transport.FFX = ffx
 
     # List all the public methods
     @abc.abstractmethod

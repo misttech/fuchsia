@@ -321,6 +321,7 @@ class AsyncFastbootTests(unittest.IsolatedAsyncioTestCase):
         await self.fastboot_obj.boot_to_fuchsia_mode()
 
         mock_is_in_fastboot_mode.assert_called()
+        self.ffx_obj.notify_intentional_disconnect.assert_called_once()
         mock_fastboot_run.assert_called()
         mock_wait_for_fuchsia_mode.assert_called()
 
@@ -625,6 +626,7 @@ class AsyncFastbootTests(unittest.IsolatedAsyncioTestCase):
             serial_transport=serial_transport, power_switch=power_switch
         )
 
+        self.ffx_obj.notify_intentional_disconnect.assert_called_once()
         mock_time.assert_called()
         mock_sleep.assert_called()
 
@@ -652,6 +654,8 @@ class AsyncFastbootTests(unittest.IsolatedAsyncioTestCase):
         self.ffx_obj.run.side_effect = ffx_errors.FfxCommandError("error")
 
         self.fastboot_obj._boot_to_fastboot_mode_using_ffx()
+
+        self.ffx_obj.notify_intentional_disconnect.assert_called_once()
 
 
 class FastbootImplTests(unittest.TestCase):

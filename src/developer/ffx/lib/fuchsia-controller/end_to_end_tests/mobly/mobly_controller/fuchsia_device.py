@@ -7,6 +7,7 @@ import ipaddress
 import logging
 import os
 import os.path
+import subprocess
 import time
 from typing import Any, Tuple
 
@@ -36,6 +37,7 @@ class FuchsiaDevice(object):
         self.target = target
         self.config = config
         self.ctx: Context | None = None
+        self.isolate: IsolateDir | None = None
 
     def set_ctx(self, test: base_test.BaseTestClass) -> None:
         log_dir = test.log_path
@@ -47,7 +49,7 @@ class FuchsiaDevice(object):
         if log_dir:
             isolation_path = os.path.join(log_dir, "isolate")
             ctx_config["log.dir"] = log_dir
-        isolate = IsolateDir(dir=isolation_path)
+        self.isolate = IsolateDir(dir=isolation_path)
         logging.info(
             f"Loading context, isolate_dir={isolation_path}, log_dir={log_dir}, target={self.target}"
         )
@@ -70,8 +72,56 @@ class FuchsiaDevice(object):
             # Lacewing does.
             ctx_config["discovery.mdns.enabled"] = "true"
         self.ctx = Context(
-            isolate_dir=isolate, target=self.target, config=ctx_config
+            isolate_dir=self.isolate, target=self.target, config=ctx_config
         )
+
+    def notify_intentional_disconnect(self) -> None:
+        """Notifies the FFX monitor of an upcoming intentional disconnect."""
+        nodename = self.config.get("name")
+        if not nodename:
+            logging.warning(
+                "No nodename found in config. Skipping intentional disconnect notification."
+            )
+            return
+
+        # Use the ffx path from config if available, otherwise default to "ffx"
+        ffx_config = (
+            self.config.get("honeydew_config", {})
+            .get("transports", {})
+            .get("ffx", {})
+        )
+        ffx_path = ffx_config.get("path", "ffx")
+
+        cmd = [ffx_path]
+        if self.isolate:
+            cmd.extend(["--isolate-dir", self.isolate.directory()])
+
+        # Inject configuration required to find the monitor in infra
+        shared_data = ffx_config.get("shared_data")
+        if shared_data:
+            cmd.extend(["-c", f"shared_data={shared_data}"])
+
+        subtools_path = ffx_config.get("subtools_search_path")
+        if subtools_path:
+            cmd.extend(["-c", f"ffx.subtool-search-paths={subtools_path}"])
+
+        cmd.extend(
+            ["monitor", "intentional-disconnect", "--nodename", nodename]
+        )
+        logging.info(f"Notifying intentional disconnect for {nodename}")
+        try:
+            # We want to see the output if it fails
+            result = subprocess.run(
+                cmd, check=False, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                logging.warning(
+                    f"FFX monitor notification failed (exit {result.returncode}):\n"
+                    f"STDOUT: {result.stdout}\n"
+                    f"STDERR: {result.stderr}"
+                )
+        except Exception as e:
+            logging.warning(f"Failed to notify intentional disconnect: {e}")
 
     def channel_create(self) -> Tuple[Channel, Channel]:
         assert self.ctx is not None
