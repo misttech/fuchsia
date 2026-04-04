@@ -14,10 +14,14 @@ use crate::nl80211::nested::{to_nested_nlas, to_nested_values};
 
 mod band;
 mod bss;
+mod sched_scan_match;
+mod sched_scan_plan;
 mod sta_info;
 
 pub use band::*;
 pub use bss::*;
+pub use sched_scan_match::*;
+pub use sched_scan_plan::*;
 pub use sta_info::*;
 
 // Note: variants are sorted in ascending order by `kind` value.
@@ -44,9 +48,17 @@ pub enum Nl80211Attr {
     ScanFlags(u32),
     ProtocolFeatures(u32),
     ExtendedFeatures(Vec<u8>),
-    MaxScheduledScanPlans(u32),
+    MaxSchedScanPlans(u32),
     MaxScanPlanInterval(u32),
     MaxScanPlanIterations(u32),
+    SchedScanPlans(Vec<Vec<Nl80211SchedScanPlanAttr>>),
+    SchedScanInterval(u32),
+    SchedScanMatch(Vec<Vec<Nl80211SchedScanMatchAttr>>),
+    Ie(Vec<u8>),
+    RelativeRssi(i32),
+    RssiAdjust(i32),
+    SchedScanDelay(u32),
+    SchedScanMulti(bool),
 }
 
 impl Nla for Nl80211Attr {
@@ -74,9 +86,17 @@ impl Nla for Nl80211Attr {
             ScanFlags(val) => size_of_val(val),
             ProtocolFeatures(val) => size_of_val(val),
             ExtendedFeatures(val) => val.len(),
-            MaxScheduledScanPlans(val) => size_of_val(val),
+            MaxSchedScanPlans(val) => size_of_val(val),
             MaxScanPlanInterval(val) => size_of_val(val),
             MaxScanPlanIterations(val) => size_of_val(val),
+            SchedScanPlans(val) => to_nested_nlas(val).as_slice().buffer_len(),
+            SchedScanInterval(val) => size_of_val(val),
+            SchedScanMatch(val) => to_nested_nlas(val).as_slice().buffer_len(),
+            Ie(val) => val.len(),
+            RelativeRssi(val) => size_of_val(val),
+            RssiAdjust(val) => size_of_val(val),
+            SchedScanDelay(val) => size_of_val(val),
+            SchedScanMulti(_) => 0,
         }
     }
 
@@ -104,9 +124,17 @@ impl Nla for Nl80211Attr {
             ScanFlags(_) => NL80211_ATTR_SCAN_FLAGS,
             ProtocolFeatures(_) => NL80211_ATTR_PROTOCOL_FEATURES,
             ExtendedFeatures(_) => NL80211_ATTR_EXT_FEATURES,
-            MaxScheduledScanPlans(_) => NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS,
+            MaxSchedScanPlans(_) => NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS,
             MaxScanPlanInterval(_) => NL80211_ATTR_MAX_SCAN_PLAN_INTERVAL,
             MaxScanPlanIterations(_) => NL80211_ATTR_MAX_SCAN_PLAN_ITERATIONS,
+            SchedScanPlans(_) => NL80211_ATTR_SCHED_SCAN_PLANS,
+            SchedScanInterval(_) => NL80211_ATTR_SCHED_SCAN_INTERVAL,
+            SchedScanMatch(_) => NL80211_ATTR_SCHED_SCAN_MATCH,
+            Ie(_) => NL80211_ATTR_IE,
+            RelativeRssi(_) => NL80211_ATTR_SCHED_SCAN_RELATIVE_RSSI,
+            RssiAdjust(_) => NL80211_ATTR_SCHED_SCAN_RSSI_ADJUST,
+            SchedScanDelay(_) => NL80211_ATTR_SCHED_SCAN_DELAY,
+            SchedScanMulti(_) => NL80211_ATTR_SCHED_SCAN_MULTI,
         }
     }
 
@@ -143,9 +171,17 @@ impl Nla for Nl80211Attr {
             ScanFlags(val) => NativeEndian::write_u32(buffer, *val),
             ProtocolFeatures(val) => NativeEndian::write_u32(buffer, *val),
             ExtendedFeatures(val) => buffer.copy_from_slice(&val[..]),
-            MaxScheduledScanPlans(val) => NativeEndian::write_u32(buffer, *val),
+            MaxSchedScanPlans(val) => NativeEndian::write_u32(buffer, *val),
             MaxScanPlanInterval(val) => NativeEndian::write_u32(buffer, *val),
             MaxScanPlanIterations(val) => NativeEndian::write_u32(buffer, *val),
+            SchedScanPlans(val) => to_nested_nlas(val).as_slice().emit(buffer),
+            SchedScanInterval(val) => NativeEndian::write_u32(buffer, *val),
+            SchedScanMatch(val) => to_nested_nlas(val).as_slice().emit(buffer),
+            Ie(val) => buffer.copy_from_slice(&val[..]),
+            RelativeRssi(val) => NativeEndian::write_i32(buffer, *val),
+            RssiAdjust(val) => NativeEndian::write_i32(buffer, *val),
+            SchedScanDelay(val) => NativeEndian::write_u32(buffer, *val),
+            SchedScanMulti(_) => {}
         }
     }
 }
@@ -221,7 +257,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nl80211Attr {
                 parse_u32(payload).context("Invalid NL80211_ATTR_PROTOCOL_FEATURES value")?,
             ),
             NL80211_ATTR_EXT_FEATURES => Self::ExtendedFeatures(payload.to_vec()),
-            NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS => Self::MaxScheduledScanPlans(
+            NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS => Self::MaxSchedScanPlans(
                 parse_u32(payload)
                     .context("Invalid NL80211_ATTR_MAX_NUM_SCHED_SCAN_PLANS value")?,
             ),
@@ -232,6 +268,59 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nl80211Attr {
                 parse_u32(payload)
                     .context("Invalid NL80211_ATTR_MAX_SCAN_PLAN_ITERATIONS value")?,
             ),
+            NL80211_ATTR_SCHED_SCAN_PLANS => NlasIterator::new(payload)
+                .map(|nla| {
+                    nla.map_err(DecodeError::from).and_then(|v| {
+                        NlasIterator::new(v.value())
+                            .map(|nested| {
+                                nested
+                                    .map_err(DecodeError::from)
+                                    .and_then(|v2| Nl80211SchedScanPlanAttr::parse(&v2))
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::SchedScanPlans)
+                .context("Invalid NL80211_ATTR_SCHED_SCAN_PLANS value")?,
+            NL80211_ATTR_SCHED_SCAN_MATCH => NlasIterator::new(payload)
+                .map(|nla| {
+                    nla.map_err(DecodeError::from).and_then(|v| {
+                        NlasIterator::new(v.value())
+                            .map(|nested| {
+                                nested
+                                    .map_err(DecodeError::from)
+                                    .and_then(|v2| Nl80211SchedScanMatchAttr::parse(&v2))
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(Self::SchedScanMatch)
+                .context("Invalid NL80211_ATTR_SCHED_SCAN_MATCH value")?,
+            NL80211_ATTR_SCHED_SCAN_INTERVAL => parse_u32(payload)
+                .map(Self::SchedScanInterval)
+                .context("Invalid SchedScanInterval")?,
+            NL80211_ATTR_IE => Self::Ie(payload.to_vec()),
+            NL80211_ATTR_SCHED_SCAN_RELATIVE_RSSI => {
+                if payload.len() != 4 {
+                    return Err(DecodeError::from("Invalid RelativeRssi length"));
+                }
+                Self::RelativeRssi(NativeEndian::read_i32(payload))
+            }
+            NL80211_ATTR_SCHED_SCAN_RSSI_ADJUST => {
+                if payload.len() != 4 {
+                    return Err(DecodeError::from("Invalid RssiAdjust length"));
+                }
+                Self::RssiAdjust(NativeEndian::read_i32(payload))
+            }
+            NL80211_ATTR_SCHED_SCAN_DELAY => {
+                parse_u32(payload).map(Self::SchedScanDelay).context("Invalid SchedScanDelay")?
+            }
+            NL80211_ATTR_SCHED_SCAN_MULTI => {
+                let val = if payload.is_empty() { true } else { payload[0] != 0 };
+                Self::SchedScanMulti(val)
+            }
             other => {
                 return Err(DecodeError::from(format!("Unhandled NL80211 attribute: {other}")));
             }
@@ -267,9 +356,11 @@ mod tests {
             ScanFlags(12345),
             ProtocolFeatures(123456),
             ExtendedFeatures(vec![]),
-            MaxScheduledScanPlans(13),
+            MaxSchedScanPlans(13),
             MaxScanPlanInterval(14),
             MaxScanPlanIterations(15),
+            SchedScanPlans(vec![]),
+            SchedScanInterval(1234),
         ];
 
         let mut buffer = vec![0; attrs.as_slice().buffer_len()];
@@ -385,6 +476,48 @@ mod tests {
             8, 0, // frequency entry: length
             2, 0, // frequency entry: kind
             0xdd, 0xcc, 0xbb, 0xaa, // frequency entry: value
+        ];
+        assert_eq!(buffer, expected_buffer);
+    }
+
+    #[test]
+    fn emit_sched_scan_match() {
+        use crate::nl80211::Nl80211SchedScanMatchAttr;
+        let attr = Nl80211Attr::SchedScanMatch(vec![vec![
+            Nl80211SchedScanMatchAttr::Ssid(b"TestSSID".to_vec()),
+            Nl80211SchedScanMatchAttr::Rssi(-42),
+        ]]);
+        let mut buffer = vec![0; attr.buffer_len()];
+        attr.emit(&mut buffer[..]);
+
+        #[rustfmt::skip]
+        let expected_buffer = vec![
+            28, 0, // length
+            NL80211_ATTR_SCHED_SCAN_MATCH as u8, 0, // kind
+            24, 0, 1, 0, // entry 1 header
+            12, 0, 1, 0, b'T', b'e', b's', b't', b'S', b'S', b'I', b'D', // ssid
+            8, 0, 2, 0, 214, 255, 255, 255, // rssi
+        ];
+        assert_eq!(buffer, expected_buffer);
+    }
+
+    #[test]
+    fn emit_sched_scan_plans() {
+        use crate::nl80211::Nl80211SchedScanPlanAttr;
+        let attr = Nl80211Attr::SchedScanPlans(vec![vec![
+            Nl80211SchedScanPlanAttr::Interval(100),
+            Nl80211SchedScanPlanAttr::Iterations(5),
+        ]]);
+        let mut buffer = vec![0; attr.buffer_len()];
+        attr.emit(&mut buffer[..]);
+
+        #[rustfmt::skip]
+        let expected_buffer = vec![
+            24, 0, // length
+            NL80211_ATTR_SCHED_SCAN_PLANS as u8, 0, // kind
+            20, 0, 1, 0, // entry 1 header
+            8, 0, NL80211_SCHED_SCAN_PLAN_INTERVAL as u8, 0, 100, 0, 0, 0, // interval
+            8, 0, NL80211_SCHED_SCAN_PLAN_ITERATIONS as u8, 0, 5, 0, 0, 0, // iterations
         ];
         assert_eq!(buffer, expected_buffer);
     }

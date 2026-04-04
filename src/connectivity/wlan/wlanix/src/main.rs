@@ -6,14 +6,22 @@ use crate::security::Credential;
 use crate::security::wep::WepKeys;
 use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
+use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_wlan_device_service as fidl_device_service;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
     WifiLegacyHalResetTxPowerScenarioResponder, WifiLegacyHalSelectTxPowerScenarioRequest,
     WifiLegacyHalSelectTxPowerScenarioResponder, WifiLegacyHalStatus,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
+use fuchsia_trace_provider as trace_provider;
 use futures::{FutureExt, StreamExt, TryFutureExt};
 use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
@@ -25,12 +33,6 @@ use std::sync::Arc;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_telemetry::{self, TelemetryEvent, TelemetrySender};
-use {
-    fidl_fuchsia_power_system as fsystem, fidl_fuchsia_wlan_device_service as fidl_device_service,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_wlanix as fidl_wlanix,
-    fuchsia_async as fasync, fuchsia_trace_provider as trace_provider,
-};
 mod bss_scorer;
 mod default_drop;
 mod ifaces;
@@ -40,7 +42,10 @@ mod security;
 
 use default_drop::{DefaultDrop, WithDefaultDrop};
 use ifaces::{ClientIface, ConnectResult, IfaceManager, ScanEnd};
-use nl80211::{Nl80211, Nl80211Attr, Nl80211BandAttr, Nl80211Cmd, Nl80211FrequencyAttr};
+use nl80211::{
+    Nl80211, Nl80211Attr, Nl80211BandAttr, Nl80211Cmd, Nl80211FrequencyAttr,
+    Nl80211SchedScanMatchAttr, Nl80211SchedScanPlanAttr,
+};
 use power_manager::{DevicePowerManager, PowerManager};
 
 // TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
@@ -1906,6 +1911,219 @@ async fn handle_nl80211_message<I: IfaceManager>(
                 }
             }
         }
+        Nl80211Cmd::StartSchedScan => {
+            info!("Nl80211Cmd::StartSchedScan");
+            match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
+                Ok((client_iface, _)) => {
+                    let mut ssids = vec![];
+                    let mut match_sets = vec![];
+                    let mut frequencies = vec![];
+                    let mut plans = vec![];
+                    let mut default_interval = None;
+                    let mut ie = None;
+                    let mut top_level_relative_rssi = None;
+                    let mut top_level_rssi_adjust = None;
+                    let mut sched_scan_delay = None;
+                    let mut sched_scan_multi = None;
+
+                    for attr in &message.payload.attrs {
+                        match attr {
+                            Nl80211Attr::ScanSsids(s) => {
+                                for ssid_bytes in s {
+                                    if !ssid_bytes.is_empty() {
+                                        ssids.push(ssid_bytes.clone());
+                                    }
+                                }
+                            }
+                            Nl80211Attr::ScanFrequencies(f) => {
+                                frequencies = f.clone();
+                            }
+                            Nl80211Attr::SchedScanMatch(matches) => {
+                                for match_set_attrs in matches {
+                                    let mut match_set = fidl_wlanix::SchedScanMatchSet::default();
+                                    for match_attr in match_set_attrs {
+                                        match match_attr {
+                                            Nl80211SchedScanMatchAttr::Ssid(ssid_bytes)
+                                                if !ssid_bytes.is_empty() =>
+                                            {
+                                                match_set.ssid = Some(ssid_bytes.clone());
+                                            }
+                                            Nl80211SchedScanMatchAttr::Rssi(val) => {
+                                                match_set.rssi_threshold = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
+                                                    warn!("RSSI threshold {} unexpectedly out of range, clamping to {}", val, clamped);
+                                                    clamped
+                                                }));
+                                            }
+                                            Nl80211SchedScanMatchAttr::RelativeRssi(val) => {
+                                                match_set.relative_rssi = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
+                                                    warn!("Relative RSSI {} unexpectedly out of range, clamping to {}", val, clamped);
+                                                    clamped
+                                                }));
+                                            }
+                                            Nl80211SchedScanMatchAttr::RssiAdjust(val) => {
+                                                match_set.rssi_adjust = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
+                                                    warn!("RSSI adjust {} unexpectedly out of range, clamping to {}", val, clamped);
+                                                    clamped
+                                                }));
+                                            }
+                                            _ => {
+                                                warn!(
+                                                    "Unhandled SchedScanMatchAttr: {:?}",
+                                                    match_attr
+                                                );
+                                            }
+                                        }
+                                    }
+                                    match_sets.push(match_set);
+                                }
+                            }
+                            Nl80211Attr::SchedScanPlans(p) => {
+                                for plan_attrs in p {
+                                    let mut interval_ms = 0;
+                                    let mut iterations = 0;
+                                    for plan_attr in plan_attrs {
+                                        match plan_attr {
+                                            Nl80211SchedScanPlanAttr::Interval(val) => {
+                                                interval_ms = *val;
+                                            }
+                                            Nl80211SchedScanPlanAttr::Iterations(val) => {
+                                                iterations = *val;
+                                            }
+                                        }
+                                    }
+                                    if interval_ms == 0 {
+                                        warn!("Skipping SchedScanPlan with interval_ms = 0");
+                                        continue;
+                                    }
+                                    plans.push(fidl_wlanix::SchedScanPlan {
+                                        interval_ms,
+                                        iterations,
+                                    });
+                                }
+                            }
+                            Nl80211Attr::SchedScanInterval(interval) => {
+                                default_interval = Some(*interval);
+                            }
+                            Nl80211Attr::IfaceIndex(_) => {}
+                            Nl80211Attr::Ie(val) => {
+                                ie = Some(val.clone());
+                            }
+                            Nl80211Attr::RelativeRssi(val) => {
+                                top_level_relative_rssi = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
+                                    warn!("Top-level relative RSSI {} unexpectedly out of range, clamping to {}", val, clamped);
+                                    clamped
+                                }));
+                            }
+                            Nl80211Attr::RssiAdjust(val) => {
+                                top_level_rssi_adjust = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
+                                    warn!("Top-level RSSI adjust {} unexpectedly out of range, clamping to {}", val, clamped);
+                                    clamped
+                                }));
+                            }
+                            Nl80211Attr::SchedScanDelay(val) => {
+                                sched_scan_delay = Some(*val);
+                            }
+                            Nl80211Attr::SchedScanMulti(val) => {
+                                sched_scan_multi = Some(*val);
+                            }
+                            _ => {
+                                warn!("Unhandled SchedScanAttr: {:?}", attr);
+                            }
+                        }
+                    }
+
+                    if let Some(interval) = default_interval {
+                        // If a top-level interval was provided, add it as the final scan plan, to
+                        // run until scan plans are terminated. Doing so simplifies the wlanix API
+                        // surface by not requiring a separate interval field.
+                        plans.push(fidl_wlanix::SchedScanPlan {
+                            interval_ms: interval,
+                            iterations: 0,
+                        });
+                    }
+
+                    if plans.is_empty() {
+                        warn!(
+                            "Received StartSchedScan without any scan plans or top-level interval. Ignoring."
+                        );
+                        responder
+                            .take()
+                            .send(Err(zx::sys::ZX_ERR_INVALID_ARGS))
+                            .unwrap_or_else(|e| error!("Failed to ack: {:?}", e));
+                        return Ok(());
+                    }
+
+                    let request = fidl_wlanix::SchedScanRequest {
+                        ssids: Some(ssids),
+                        match_sets: Some(match_sets),
+                        frequencies: Some(frequencies),
+                        scan_plans: Some(plans),
+                        ie,
+                        sched_scan_multi,
+                        sched_scan_delay,
+                        relative_rssi: top_level_relative_rssi,
+                        rssi_adjust: top_level_rssi_adjust,
+                        ..Default::default()
+                    };
+                    match client_iface.start_sched_scan(request).await {
+                        Ok(()) => {
+                            info!("Started scheduled scan successfully");
+                            responder
+                                .take()
+                                .send(Ok(vec![build_nl80211_ack()]))
+                                .context("Failed to ack StartSchedScan")?;
+                        }
+                        Err(e) => {
+                            error!("Failed to start scheduled scan: {:?}", e);
+                            responder
+                                .take()
+                                .send(Ok(vec![build_nl80211_err(zx::Status::BAD_STATE)]))
+                                .context("Failed to ack StartSchedScan")?;
+                        }
+                    }
+                }
+                Err(e) => {
+                    responder
+                        .take()
+                        .send(Err(e))
+                        .context("sending error status for StartSchedScan")?;
+                    bail!("Could not get a client iface for StartSchedScan")
+                }
+            }
+        }
+        Nl80211Cmd::StopSchedScan => {
+            info!("Nl80211Cmd::StopSchedScan");
+            match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
+                Ok((client_iface, _)) => match client_iface.stop_sched_scan().await {
+                    Ok(()) => {
+                        info!("Stopped scheduled scan successfully");
+                        responder
+                            .take()
+                            .send(Ok(vec![build_nl80211_ack()]))
+                            .context("Failed to ack StopSchedScan")?;
+                    }
+                    Err(e) => {
+                        error!("Failed to stop scheduled scan: {:?}", e);
+                        responder
+                            .take()
+                            .send(Ok(vec![build_nl80211_err(zx::Status::BAD_STATE)]))
+                            .context("Failed to ack StopSchedScan")?;
+                    }
+                },
+                Err(e) => {
+                    responder
+                        .take()
+                        .send(Err(e))
+                        .context("sending error status for StopSchedScan")?;
+                    bail!("Could not get a client iface for StopSchedScan")
+                }
+            }
+        }
         Nl80211Cmd::GetScan => {
             info!("Nl80211Cmd::GetScan");
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
@@ -2648,17 +2866,14 @@ mod tests {
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
-    use fidl_fuchsia_wlan_wlanix::Nl80211Message;
-    use futures::Future;
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use futures::channel::mpsc;
     use futures::task::Poll;
     use ieee80211::Ssid;
     use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
-    use {
-        fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    };
     const CHIP_ID: u32 = 1;
     const FAKE_IFACE_NAME: &str = "fake-iface-name";
 
@@ -4819,6 +5034,103 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn start_sched_scan() {
+        use crate::nl80211::{Nl80211SchedScanMatchAttr, Nl80211SchedScanPlanAttr};
+        let mut exec = fasync::TestExecutor::new();
+
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        let start_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StartSchedScan,
+            vec![
+                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::SchedScanMatch(vec![vec![
+                    Nl80211SchedScanMatchAttr::Ssid(b"TestMatchSSID".to_vec()),
+                    Nl80211SchedScanMatchAttr::Rssi(-50),
+                    Nl80211SchedScanMatchAttr::RelativeRssi(10),
+                    Nl80211SchedScanMatchAttr::RssiAdjust(20),
+                ]]),
+                Nl80211Attr::Ie(vec![1, 2, 3]),
+                Nl80211Attr::RelativeRssi(5),
+                Nl80211Attr::RssiAdjust(15),
+                Nl80211Attr::SchedScanDelay(30),
+                Nl80211Attr::SchedScanMulti(true),
+                Nl80211Attr::SchedScanInterval(40),
+                Nl80211Attr::SchedScanPlans(vec![vec![
+                    Nl80211SchedScanPlanAttr::Interval(20),
+                    Nl80211SchedScanPlanAttr::Iterations(5),
+                ]]),
+            ],
+        );
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = pin!(start_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut start_scan_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+        assert_eq!(responses.len(), 1);
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
+
+        let calls = client_iface.calls.lock();
+        assert_eq!(calls.len(), 1);
+        let request =
+            assert_matches!(&calls[0], ClientIfaceCall::StartSchedScan { _request } => _request);
+
+        assert_eq!(request.ssids.as_ref().unwrap().len(), 1);
+        assert_eq!(request.ssids.as_ref().unwrap()[0], b"TestSSID".to_vec());
+
+        assert_eq!(request.match_sets.as_ref().unwrap().len(), 1);
+        assert_eq!(request.match_sets.as_ref().unwrap()[0].ssid, Some(b"TestMatchSSID".to_vec()));
+        assert_eq!(request.match_sets.as_ref().unwrap()[0].rssi_threshold, Some(-50));
+        assert_eq!(request.match_sets.as_ref().unwrap()[0].relative_rssi, Some(10));
+        assert_eq!(request.match_sets.as_ref().unwrap()[0].rssi_adjust, Some(20));
+
+        let scan_plans = request.scan_plans.as_ref().unwrap();
+        assert_eq!(scan_plans.len(), 2);
+        assert_eq!(scan_plans[0].interval_ms, 20);
+        assert_eq!(scan_plans[0].iterations, 5);
+        // Scan plan added for the top-level interval param
+        assert_eq!(scan_plans[1].interval_ms, 40);
+        assert_eq!(scan_plans[1].iterations, 0);
+
+        assert_eq!(request.ie, Some(vec![1, 2, 3]));
+        assert_eq!(request.sched_scan_multi, Some(true));
+        assert_eq!(request.sched_scan_delay, Some(30));
+        assert_eq!(request.relative_rssi, Some(5));
+        assert_eq!(request.rssi_adjust, Some(15));
+    }
+
+    #[fuchsia::test]
+    fn stop_sched_scan() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        let stop_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StopSchedScan,
+            vec![Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())],
+        );
+        let stop_scan_fut = test_values.nl80211_proxy.message_v2(&stop_sched_scan_message);
+        let mut stop_scan_fut = pin!(stop_scan_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_values.nl80211_fut), Poll::Pending);
+
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut stop_scan_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+        assert_eq!(responses.len(), 1);
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
+
+        let calls = client_iface.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(&calls[0], ClientIfaceCall::StopSchedScan);
+    }
+
+    #[fuchsia::test]
     fn get_station_during_scan() {
         let mut exec = fasync::TestExecutor::new();
         let (iface_manager, scan_end_sender) =
@@ -5074,7 +5386,7 @@ mod tests {
         );
     }
 
-    fn deserialize(vmo: zx::Vmo) -> Vec<Nl80211Message> {
+    fn deserialize(vmo: zx::Vmo) -> Vec<fidl_wlanix::Nl80211Message> {
         let value = vmo.read_to_vec(0, vmo.get_content_size().unwrap()).unwrap();
         fidl::unpersist::<fidl_wlanix::Nl80211MessageArray>(&value).unwrap().messages
     }

@@ -380,6 +380,8 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn set_mac_address(&self, mac_addr: [u8; 6]) -> Result<(), zx::Status>;
     async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status>;
     async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status>;
+    async fn start_sched_scan(&self, request: fidl_wlanix::SchedScanRequest) -> Result<(), Error>;
+    async fn stop_sched_scan(&self) -> Result<(), Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -837,6 +839,16 @@ impl ClientIface for SmeClientIface {
             })?
             .map_err(zx::Status::from_raw)
     }
+
+    async fn start_sched_scan(&self, request: fidl_wlanix::SchedScanRequest) -> Result<(), Error> {
+        warn!("SmeClientIface.start_sched_scan is not currently supported. request: {:?}", request);
+        Ok(())
+    }
+
+    async fn stop_sched_scan(&self) -> Result<(), Error> {
+        warn!("SmeClientIface.stop_sched_scan called");
+        Ok(())
+    }
 }
 
 /// Wait until stream returns an OnConnectResult event or None. Ignore other event types.
@@ -942,6 +954,8 @@ pub mod test_utils {
         SetMacAddress([u8; 6]),
         InstallApfPacketFilter(Vec<u8>),
         ReadApfPacketFilterData,
+        StartSchedScan { _request: fidl_wlanix::SchedScanRequest },
+        StopSchedScan,
     }
 
     pub struct TestClientIface {
@@ -1082,6 +1096,19 @@ pub mod test_utils {
         async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status> {
             self.calls.lock().push(ClientIfaceCall::ReadApfPacketFilterData);
             Ok(vec![2, 2, 2, 2])
+        }
+
+        async fn start_sched_scan(
+            &self,
+            request: fidl_wlanix::SchedScanRequest,
+        ) -> Result<(), Error> {
+            self.calls.lock().push(ClientIfaceCall::StartSchedScan { _request: request });
+            Ok(())
+        }
+
+        async fn stop_sched_scan(&self) -> Result<(), Error> {
+            self.calls.lock().push(ClientIfaceCall::StopSchedScan);
+            Ok(())
         }
     }
 

@@ -464,3 +464,33 @@ open protocol WifiLegacyHal {
     /// Sets each PHY's SAR scenario to the default scenario.
     flexible ResetTxPowerScenario() -> () error WifiLegacyHalStatus;
 };
+
+/// Scan plan for PNO scanning.
+@available(added=HEAD)
+type SchedScanPlan = struct {
+    interval_ms uint32;
+    iterations uint32;
+};
+
+/// Matching criteria for PNO scan results.
+@available(added=HEAD)
+type SchedScanMatchSet = table {
+    1: ssid fuchsia.wlan.ieee80211.Ssid;
+    2: bssid fuchsia.wlan.ieee80211.MacAddr;
+    3: rssi_threshold int8;
+    4: relative_rssi int8;
+    5: rssi_adjust int8;
+};
+
+@available(added=HEAD)
+type SchedScanRequest = table {
+    1: ssids vector<fuchsia.wlan.ieee80211.Ssid>:MAX;
+    2: match_sets vector<SchedScanMatchSet>:MAX;
+    3: frequencies vector<uint32>:MAX;
+    4: scan_plans vector<SchedScanPlan>:MAX;
+    5: sched_scan_multi bool;
+    6: sched_scan_delay uint32;
+    7: ie vector<uint8>:MAX;
+    8: relative_rssi int8;
+    9: rssi_adjust int8;
+};
