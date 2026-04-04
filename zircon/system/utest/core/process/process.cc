@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/core-test-utils.h>
 #include <lib/fit/function.h>
-#include <lib/standalone-test/standalone.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
 #include <lib/zx/job.h>
@@ -40,66 +40,6 @@ constexpr auto kThreadRegister = &zx_thread_state_general_regs_t::fs_base;
 #endif
 
 const zx_duration_mono_t kTimeoutNs = ZX_MSEC(250);
-
-// TODO(https://fxbug.dev/363254896): The Cavium hardware is believed to be
-// buggy in occasional cross-socket multi-core races such that tests dependent
-// on hardware clock reads can fail.
-
-#ifdef __aarch64__
-constexpr std::string_view kCaviumMidr = "Cavium CN99XX";
-#else
-constexpr std::string_view kCaviumMidr{};
-#endif
-
-// Returns std::nullopt if no midr.txt was present (as distinguished from the
-// empty string, which indicates that it was present and empty).
-std::optional<std::string> ReadMidrTxt() {
-  std::string midr;
-  zx::unowned_vmo midr_vmo = standalone::GetVmo("midr.txt");
-  if (!*midr_vmo) {
-    return std::nullopt;
-  }
-
-  uint64_t size = 0;
-  EXPECT_OK(midr_vmo->get_prop_content_size(&size));
-  midr.resize(size);
-  EXPECT_OK(midr_vmo->read(midr.data(), 0, midr.size()));
-  EXPECT_STRNE(midr, "");
-  printf("INFO: Contents of midr.txt: \"%s\"\n", midr.c_str());
-  return midr;
-}
-
-// Returns std::nullopt if we were unable to determine for certain whether we
-// are on a Cavium (i.e., if no midr.txt was present on arm64).
-[[maybe_unused]] std::optional<bool> CheckIsCavium() {
-  if (kCaviumMidr.empty()) {
-    return false;
-  }
-
-  // No midr.txt, so cannot determine Cavium-ness at this stage.
-  std::optional<std::string> midr = ReadMidrTxt();
-  if (!midr) {
-    return std::nullopt;
-  }
-  return midr->starts_with(kCaviumMidr);
-}
-
-// Returns std::nullopt if skipping should not occur, or else will return the
-// message that should be passed to ZXTEST_SKIP().
-std::optional<std::string_view> SkipBug363254896() {
-#ifdef __aarch64__
-  static std::optional<bool> is_cavium = CheckIsCavium();
-
-  if (!is_cavium.has_value()) {
-    return "WARNING: No midr.txt was present, so assuming the worst (i.e., that "
-           "we're on a Cavium) and skipping per https://fxbug.dev/363254896\n";
-  }
-  if (*is_cavium) {
-    return "We are on a Cavium, so skipping per https://fxbug.dev/363254896\n";
-  }
-#endif
-  return std::nullopt;
-}
 
 TEST(ProcessTest, LongNameSucceeds) {
   // Creating a process with a super long name should succeed.
@@ -759,7 +699,7 @@ TEST(ProcessTest, SuspendWithDyingThread) {
 
 template <typename InfoT>
 static void TestProcessGetInfoRuntime(const uint32_t topic) {
-  if (std::optional<std::string_view> skip = SkipBug363254896(); skip) {
+  if (std::optional<std::string_view> skip = core_test_utils::SkipBug363254896(); skip) {
     ZXTEST_SKIP(*skip);
   }
 

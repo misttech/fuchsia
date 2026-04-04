@@ -10,9 +10,10 @@ source_set("process") {
   ]
   deps = [
     "//sdk/lib/fit",
-    "//src/zircon/testing/standalone-test:headers",
     "//zircon/system/ulib/mini-process",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
+    "//zircon/system/utest/core/core-test-utils",
   ]
+  public_deps = [ "//zircon/system/utest/core/core-test-utils" ]
 }
