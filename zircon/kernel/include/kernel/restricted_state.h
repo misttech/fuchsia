@@ -46,6 +46,7 @@ class RestrictedState {
   bool in_restricted() const { return in_restricted_; }
   uintptr_t vector_ptr() const { return vector_ptr_; }
   uintptr_t context() const { return context_; }
+  user_out_ptr<zx_exception_report_t> exception_report_ptr() const { return exception_report_ptr_; }
   const ArchSavedNormalState& arch_normal_state() const { return arch_; }
   ArchSavedNormalState& arch_normal_state() { return arch_; }
   template <typename T>
@@ -93,7 +94,8 @@ class RestrictedState {
   // Update the exception context so that we will return to normal mode to allow normal
   // mode to handle a restricted exception.
   static void ArchRedirectRestrictedExceptionToNormal(const ArchSavedNormalState& arch_state,
-                                                      uintptr_t vector_table, uintptr_t context);
+                                                      uintptr_t vector_table, uintptr_t context,
+                                                      zx_restricted_reason_t reason);
   // Enter normal mode at the address pointed to by vector_table with arguments code and context
   // in an architecturally specific register in an architecturally specific way.
   [[noreturn]] static void ArchEnterFull(const ArchSavedNormalState& arch_state,

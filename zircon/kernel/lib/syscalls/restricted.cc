@@ -43,11 +43,6 @@ zx_status_t sys_restricted_bind_state(uint32_t options, zx_handle_t* out,
     return ZX_ERR_INVALID_ARGS;
   }
 
-  // TODO(https://fxbug.dev/489515410): We do not yet support writing out the exception report.
-  if (out_exception) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
   // Are we allowed to create a VMO?
   auto up = ProcessDispatcher::GetCurrent();
   zx_status_t status = up->EnforceBasicPolicy(ZX_POL_NEW_VMO);

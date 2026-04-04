@@ -184,7 +184,8 @@ zx_status_t RestrictedEnter(uintptr_t vector_table_ptr, uintptr_t context) {
   __UNREACHABLE;
 }
 
-void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs) {
+void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs,
+                                             const zx_exception_report_t& report) {
   DEBUG_ASSERT(rs->in_restricted());
   zx_restricted_state_t* state = rs->state_ptr();
   DEBUG_ASSERT(state);
@@ -202,15 +203,29 @@ void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs) {
   rs->set_in_restricted(false);
   arch_set_restricted_flag(false);
 
+  ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
+  vmm_set_active_aspace(up->normal_aspace());
+
+  // "Return" the exception report.
+  zx_restricted_reason_t reason = ZX_RESTRICTED_REASON_EXCEPTION;
+  if (rs->exception_report_ptr()) {
+    // We've got a user_ptr so copy it out.
+    if (rs->exception_report_ptr().copy_to_user(report) != ZX_OK) {
+      reason = ZX_RESTRICTED_REASON_EXCEPTION_LOST;
+    }
+  } else {
+    // No user_ptr, put it in the mode state VMO.
+    auto* restricted_exception = rs->state_ptr_as<zx_restricted_exception_t>();
+    DEBUG_ASSERT(restricted_exception != nullptr);
+    restricted_exception->exception = report;
+  }
+
   // Redirect the exception so that we return to normal mode for handling.
   //
   // This will update the exception context so that when we return back to usermode
   // we will be in normal mode instead of restricted mode.
   RestrictedState::ArchRedirectRestrictedExceptionToNormal(rs->arch_normal_state(),
-                                                           rs->vector_ptr(), rs->context());
-
-  ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
-  vmm_set_active_aspace(up->normal_aspace());
+                                                           rs->vector_ptr(), rs->context(), reason);
 }
 
 [[noreturn]] void RestrictedLeaveIframe(const iframe_t* iframe, zx_restricted_reason_t reason) {

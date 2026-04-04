@@ -128,11 +128,12 @@ void RestrictedState::ArchSaveStatePreRestrictedEntry(ArchSavedNormalState& arch
 }
 
 void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
-    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context) {
+    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context,
+    zx_restricted_reason_t reason) {
   zx_thread_state_general_regs_t regs = {};
   regs.pc = vector_table;
   regs.r[0] = context;
-  regs.r[1] = ZX_RESTRICTED_REASON_EXCEPTION;
+  regs.r[1] = reason;
   regs.tpidr = arch_state.tpidr_el0;
   [[maybe_unused]] zx_status_t status = arch_set_general_regs(Thread::Current().Get(), &regs);
   // This will only fail if register state has not been saved, but this will always

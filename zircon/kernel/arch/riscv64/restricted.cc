@@ -123,11 +123,12 @@ void RestrictedState::ArchSaveRestrictedIframeState(zx_restricted_state_t& state
 }
 
 void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
-    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context) {
+    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context,
+    zx_restricted_reason_t reason) {
   zx_thread_state_general_regs_t regs = {};
   regs.pc = vector_table;
   regs.a0 = context;
-  regs.a1 = ZX_RESTRICTED_REASON_EXCEPTION;
+  regs.a1 = reason;
   [[maybe_unused]] zx_status_t status = arch_set_general_regs(Thread::Current::Get(), &regs);
   // This will only fail if register state has not been saved, but this will always
   // have happened by this stage of exception handling.

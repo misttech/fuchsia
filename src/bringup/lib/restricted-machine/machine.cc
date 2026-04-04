@@ -95,35 +95,51 @@ void Machine::LogState(std::optional<zx_restricted_reason_t> if_not_reason) {
   if (if_not_reason.has_value() && last_reason_code_ == if_not_reason.value()) {
     return;
   }
-  if (last_reason_code_ == ZX_RESTRICTED_REASON_EXCEPTION) {
-    zx_restricted_exception_t exception_state = {};
 
-    if (!exception_report_) {
-      // If there's no exception report pointer, then the mode state vmo will
-      // contain a zx_restricted_exception_t.  Just copy it.
-      if (state_vmo_.read(&exception_state, 0, sizeof(exception_state)) != ZX_OK) {
+  switch (last_reason_code_) {
+    case ZX_RESTRICTED_REASON_SYSCALL:
+    case ZX_RESTRICTED_REASON_KICK: {
+      zx_restricted_state_t rstate = {};
+      if (state_vmo_.read(&rstate, 0, sizeof(rstate)) != ZX_OK) {
         return;
       }
-    } else {
-      // If there is an exception report pointer, then the mode state vmo will
-      // only contain a zx_restricted_state_t.  Copy that, then fill in the
-      // exception report.
-      if (state_vmo_.read(&exception_state.state, 0, sizeof(exception_state.state)) != ZX_OK) {
-        return;
-      }
-      exception_state.exception = *exception_report_;
-    }
-
-    if (sizeof(exception_state.exception) == exception_state.exception.header.size) {
-      RM_LOG(INFO) << "dumping exception state to stdout";
-      registers_->PrintExceptionState(exception_state);
-    }
-  } else {
-    zx_restricted_state_t rstate = {};
-    if (state_vmo_.read(&rstate, 0, sizeof(rstate)) != ZX_OK) {
+      registers_->PrintState(rstate);
       return;
     }
-    registers_->PrintState(rstate);
+    case ZX_RESTRICTED_REASON_EXCEPTION: {
+      zx_restricted_exception_t exception_state = {};
+
+      if (!exception_report_) {
+        // If there's no exception report pointer, then the mode state vmo will contain a full
+        // zx_restricted_exception_t.
+        if (state_vmo_.read(&exception_state, 0, sizeof(exception_state)) != ZX_OK) {
+          return;
+        }
+        RM_LOG(INFO) << "dumping exception state to stdout";
+        registers_->PrintExceptionState(exception_state);
+        return;
+      }
+
+      // There *is* an exception report pointer. Print the report and the state. The mode state vmo
+      // will only contain a zx_restricted_state_t.
+      RM_LOG(INFO) << "dumping exception state to stdout";
+      registers_->PrintExceptionReport(*exception_report_);
+      zx_restricted_state_t rstate = {};
+      if (state_vmo_.read(&rstate, 0, sizeof(rstate)) != ZX_OK) {
+        return;
+      }
+
+      registers_->PrintState(rstate);
+      return;
+    }
+
+    case ZX_RESTRICTED_REASON_EXCEPTION_LOST:
+      RM_LOG(ERROR) << "exception report was lost";
+      return;
+
+    default:
+      RM_LOG(ERROR) << "unexpected reason code: " << last_reason_code_;
+      return;
   }
 }
 
@@ -132,9 +148,18 @@ zx::result<> Machine::LoadState() {
   ZX_ASSERT(0 == state_vmo_.read(&registers_->restricted_state(), 0,
                                  sizeof(registers_->restricted_state())));
   if (last_reason_code_ == ZX_RESTRICTED_REASON_EXCEPTION) {
-    ZX_ASSERT(0 == state_vmo_.read(&registers_->exception_report(),
-                                   sizeof(registers_->restricted_state()),
-                                   sizeof(registers_->exception_report())));
+    if (exception_report_) {
+      // The exception report was copied out to exception_report_.
+      registers_->exception_report() = *exception_report_;
+    } else {
+      // The exception report was placed in the mode state VMO.
+      ZX_ASSERT(0 == state_vmo_.read(&registers_->exception_report(),
+                                     sizeof(registers_->restricted_state()),
+                                     sizeof(registers_->exception_report())));
+    }
+  } else if (last_reason_code_ == ZX_RESTRICTED_REASON_EXCEPTION_LOST) {
+    // The report was lost. Zero out the struct to avoid confusion.
+    registers_->exception_report() = {};
   }
   return zx::ok();
 }

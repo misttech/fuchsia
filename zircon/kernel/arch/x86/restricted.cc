@@ -156,11 +156,12 @@ void RestrictedState::ArchSaveStatePreRestrictedEntry(ArchSavedNormalState& arch
 }
 
 void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
-    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context) {
+    const ArchSavedNormalState& arch_state, uintptr_t vector_table, uintptr_t context,
+    zx_restricted_reason_t reason) {
   zx_thread_state_general_regs_t regs = {};
   regs.rip = vector_table;
   regs.rdi = context;
-  regs.rsi = ZX_RESTRICTED_REASON_EXCEPTION;
+  regs.rsi = reason;
   regs.rflags = X86_FLAGS_IF;
   regs.fs_base = arch_state.normal_fs_base_;
   regs.gs_base = arch_state.normal_gs_base_;

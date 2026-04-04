@@ -111,12 +111,11 @@ class ExceptionHandlerIterator final {
         case ExceptionDeliveryMethod::kRestrictedModeVectoredException: {
           RestrictedState* rs = Thread::Current::restricted_state();
           DEBUG_ASSERT(rs != nullptr);
-          RedirectRestrictedExceptionToNormalMode(rs);
 
-          // Write the exception report into the side-car.
-          auto* exception = rs->state_ptr_as<zx_restricted_exception_t>();
-          DEBUG_ASSERT(exception != nullptr);
-          exception_->FillReport(&exception->exception);
+          zx_exception_report_t report{};
+          const bool fill_report_success = exception_->FillReport(&report);
+          ASSERT(fill_report_success);
+          RedirectRestrictedExceptionToNormalMode(rs, report);
 
           // Handle the exception on behalf of restricted mode.
           //

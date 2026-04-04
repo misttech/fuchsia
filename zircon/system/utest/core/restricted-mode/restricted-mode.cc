@@ -135,16 +135,14 @@ TEST_P(RestrictedMode, BindState) {
   zx::vmar::root_self()->unmap(ptr, zx_system_get_page_size());
 }
 
-TEST_P(RestrictedMode, BindStateUnsupported) {
+TEST_P(RestrictedMode, BindStateWithExceptionReport) {
   NEEDS_NEXT_SKIP(zx_restricted_bind_state);
 
   zx::vmo vmo;
   zx_exception_report_t report;
 
-  // TODO(https://fxbug.dev/489515410): Providing a non-null pointer for the exception report is
-  // currently unsupported.
-  ASSERT_EQ(ZX_ERR_NOT_SUPPORTED,
-            zx_restricted_bind_state(0, vmo.reset_and_get_address(), &report));
+  ASSERT_OK(zx_restricted_bind_state(0, vmo.reset_and_get_address(), &report));
+  auto cleanup = fit::defer([]() { EXPECT_OK(zx_restricted_unbind_state(0)); });
 }
 
 TEST_P(RestrictedMode, UnbindState) {
@@ -399,14 +397,20 @@ TEST_P(RestrictedMode, Bench) {
   }
 }
 
-// Verify we can receive restricted exceptions using in-thread exception handlers.
-TEST_P(RestrictedMode, InThreadException) {
-  auto helper = GetArchHelper();
-  restricted_machine::Machine machine(environment());
-  ASSERT_TRUE(machine.Initialize());
+enum class ExceptionReportLocation {
+  UserPtr,
+  ModeStateVmo,
+};
+void TestInThreadException(RestrictedMode& fixture, ExceptionReportLocation report_location) {
+  auto helper = fixture.GetArchHelper();
+  restricted_machine::Machine machine(fixture.environment());
+  zx_exception_report_t report_storage{};
+  zx_exception_report_t* const report =
+      report_location == ExceptionReportLocation::UserPtr ? &report_storage : nullptr;
+  ASSERT_TRUE(machine.Initialize(restricted_machine::Machine::kDefaultStackBytes, report));
   helper->SetInitialState(machine.registers());
 
-  auto exc_addr = environment()->SymbolAddress("exception_bounce");
+  auto exc_addr = fixture.environment()->SymbolAddress("exception_bounce");
   ASSERT_OK(exc_addr);
   machine.registers()->set_pc(exc_addr.value());
   EXPECT_OK(machine.CommitState());
@@ -431,6 +435,43 @@ TEST_P(RestrictedMode, InThreadException) {
   EXPECT_EQ(0x2, exception_report->context.arch.u.riscv_64.cause);
   EXPECT_EQ(0u, exception_report->context.arch.u.riscv_64.tval);
 #endif
+}
+
+// Verify we can receive exceptions using an in-thread exception handler and bound user pointer.
+TEST_P(RestrictedMode, InThreadExceptionUserPtr) {
+  TestInThreadException(*this, ExceptionReportLocation::UserPtr);
+}
+
+// Verify we can receive exceptions using an in-thread exception handler and the mode state VMO.
+TEST_P(RestrictedMode, InThreadExceptionModeState) {
+  TestInThreadException(*this, ExceptionReportLocation::ModeStateVmo);
+}
+
+// Verify we properly report failure when we fail to copy-out the exception report.
+TEST_P(RestrictedMode, ExceptionReportPointerReadOnly) {
+  // Create a VMO to hold the exception report and map it.  We map it as read-only to ensure the
+  // copy-out fails.
+  zx::vmo report_vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &report_vmo));
+  zx_vaddr_t report_mapped_addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, report_vmo, 0, zx_system_get_page_size(),
+                                       &report_mapped_addr));
+  auto unmap_report = fit::defer(
+      [&]() { zx::vmar::root_self()->unmap(report_mapped_addr, zx_system_get_page_size()); });
+  auto* report_storage = reinterpret_cast<zx_exception_report_t*>(report_mapped_addr);
+
+  auto helper = GetArchHelper();
+  restricted_machine::Machine machine(environment());
+  ASSERT_TRUE(machine.Initialize(restricted_machine::Machine::kDefaultStackBytes, report_storage));
+  helper->SetInitialState(machine.registers());
+
+  auto exc_addr = environment()->SymbolAddress("exception_bounce");
+  ASSERT_OK(exc_addr);
+  machine.registers()->set_pc(exc_addr.value());
+  EXPECT_OK(machine.CommitState());
+  auto result = machine.Enter();
+  EXPECT_OK(result);
+  ASSERT_EQ(ZX_RESTRICTED_REASON_EXCEPTION_LOST, result.value());
 }
 
 // Verify that restricted_enter fails on invalid zx_restricted_state_t values.
