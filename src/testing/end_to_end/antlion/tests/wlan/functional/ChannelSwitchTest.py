@@ -69,7 +69,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         self.fuchsia_device, self.dut = self.get_dut_type(
             FuchsiaDevice, AssociationMode.POLICY
         )
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.stop_all()
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
 
     def setup_class(self) -> None:
         super().setup_class()
@@ -178,7 +178,9 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
             must_change_channel_by = time.time() + must_change_channel_within
 
             while time.time() < change_channel_after:
-                status = self.fuchsia_device.honeydew_fd.wlan_core.status()
+                status = (
+                    self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.status()
+                )
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(
                         f"want ClientStatusConnected, got {type(status)} after "
@@ -361,7 +363,7 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         ssid = rand_ascii_str(10)
         self.log.info(f'Starting SoftAP on DUT with ssid "{ssid}"')
 
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.start(
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.start(
             ssid,
             SecurityType.NONE,
             None,
@@ -385,14 +387,16 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         iface_ids = self.dut.get_wlan_interface_id_list()
         for iface_id in iface_ids:
             try:
-                result = self.fuchsia_device.honeydew_fd.wlan_core.query_iface(
+                result = self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.query_iface(
                     iface_id
                 )
             except HoneydewWlanError as e:
                 self.log.warning(f"Query iface {iface_id} failed: {e}")
                 continue
             if result.role == f_wlan_common.WlanMacRole.AP:
-                status = self.fuchsia_device.honeydew_fd.wlan_core.status()
+                status = (
+                    self.fuchsia_device.honeydew_fd.wlan_core_deprecated_sync.status()
+                )
                 if not isinstance(status, ClientStatusConnected):
                     raise signals.TestFailure(
                         f"want ClientStatusConnected, got {type(status)}"

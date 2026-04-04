@@ -6,7 +6,7 @@ import unittest
 from typing import Any
 
 from fuchsia_async_extension import AsyncBaseTestClass, get_loop, retry
-from mobly import base_test, config_parser, records
+from mobly import base_test, config_parser, records, signals
 
 
 class FakeWriter:
@@ -246,12 +246,9 @@ class FuchsiaAsyncExtensionTest(unittest.TestCase):
             MOBLY_CONTROLLER_CONFIG_NAME = "FakeAsync"
 
             @classmethod
-            def create(cls, configs: Any) -> list[Any]:
-                async def create_obj() -> str:
-                    call_order.append("async_create")
-                    return "obj1"
-
-                return [create_obj()]
+            async def create(cls, configs: Any) -> list[Any]:
+                call_order.append("async_create")
+                return ["obj1"]
 
             @classmethod
             async def destroy(cls, objects: Any) -> None:
@@ -280,6 +277,116 @@ class FuchsiaAsyncExtensionTest(unittest.TestCase):
 
         self.assertIn("async_create", call_order)
         self.assertIn("async_destroy", call_order)
+
+    def test_mobly_register_controller_missing_config(self) -> None:
+        class FakeSyncController:
+            MOBLY_CONTROLLER_CONFIG_NAME = "FakeSync"
+
+            @classmethod
+            def create(cls, configs: Any) -> list[str]:
+                return ["obj1"]
+
+            @classmethod
+            def destroy(cls, objects: Any) -> None:
+                pass
+
+        class MoblyTest(base_test.BaseTestClass):
+            def setup_class(self) -> None:
+                self.register_controller(FakeSyncController, required=True)
+
+        fake_config = config_parser.TestRunConfig()
+        fake_config.testbed_name = "FakeTestbed"
+        fake_config.log_path = "/tmp"
+
+        test_obj = MoblyTest(fake_config)
+        test_obj.summary_writer = FakeWriter()
+
+        with self.assertRaises(signals.ControllerError):
+            test_obj.setup_class()
+
+    def test_async_register_controller_missing_config(self) -> None:
+        class FakeAsyncController:
+            MOBLY_CONTROLLER_CONFIG_NAME = "FakeAsync"
+
+            @classmethod
+            async def create(cls, configs: Any) -> list[str]:
+                return ["obj1"]
+
+            @classmethod
+            async def destroy(cls, objects: Any) -> None:
+                pass
+
+        class AsyncTest(AsyncBaseTestClass):
+            async def setup_class(self) -> None:
+                await self.register_controller(
+                    FakeAsyncController, required=True
+                )
+
+        fake_config = config_parser.TestRunConfig()
+        fake_config.testbed_name = "FakeTestbed"
+        fake_config.log_path = "/tmp"
+
+        test_obj = AsyncTest(fake_config)
+        test_obj.summary_writer = FakeWriter()
+
+        with self.assertRaises(signals.ControllerError):
+            test_obj.setup_class()  # type: ignore[unused-coroutine]
+
+    def test_mobly_register_controller_min_number(self) -> None:
+        class FakeSyncController:
+            MOBLY_CONTROLLER_CONFIG_NAME = "FakeSync"
+
+            @classmethod
+            def create(cls, configs: Any) -> list[str]:
+                return ["obj1"]
+
+            @classmethod
+            def destroy(cls, objects: Any) -> None:
+                pass
+
+        class MoblyTest(base_test.BaseTestClass):
+            def setup_class(self) -> None:
+                self.register_controller(FakeSyncController, min_number=2)
+
+        fake_config = config_parser.TestRunConfig()
+        fake_config.testbed_name = "FakeTestbed"
+        fake_config.log_path = "/tmp"
+        fake_config.controller_configs = {"FakeSync": [{}]}
+
+        test_obj = MoblyTest(fake_config)
+        test_obj.summary_writer = FakeWriter()
+
+        with self.assertRaises(signals.ControllerError):
+            test_obj.setup_class()
+
+    def test_async_register_controller_min_number(self) -> None:
+        class FakeAsyncController:
+            MOBLY_CONTROLLER_CONFIG_NAME = "FakeAsync"
+
+            @classmethod
+            async def create(cls, configs: Any) -> list[str]:
+                return ["obj1"]
+
+            @classmethod
+            async def destroy(cls, objects: Any) -> None:
+                pass
+
+        class AsyncTest(AsyncBaseTestClass):
+            async def setup_class(self) -> None:
+                await self.register_controller(
+                    FakeAsyncController, min_number=2
+                )
+
+        fake_config = config_parser.TestRunConfig()
+        fake_config.testbed_name = "FakeTestbed"
+        fake_config.log_path = "/tmp"
+        fake_config.controller_configs = {"FakeAsync": [{}]}
+
+        test_obj = AsyncTest(fake_config)
+        test_obj.summary_writer = FakeWriter()
+
+        with self.assertRaises(signals.ControllerError):
+            test_obj.setup_class()  # type: ignore[unused-coroutine]
 
 
 if __name__ == "__main__":

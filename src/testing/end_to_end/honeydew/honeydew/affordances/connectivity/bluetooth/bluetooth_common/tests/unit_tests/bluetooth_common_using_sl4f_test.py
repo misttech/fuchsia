@@ -77,7 +77,7 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
 
         self.sl4f_obj = mock.MagicMock(spec=sl4f_transport.SL4F)
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
+            spec=affordances_capable.AsyncRebootCapableDevice
         )
 
         self.bluetooth_common_sl4f_obj = (

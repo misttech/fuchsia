@@ -11,7 +11,6 @@ import subprocess
 import typing
 from typing import Any
 
-import fuchsia_async_extension
 import fuchsia_inspect
 
 from honeydew import affordances_capable, errors
@@ -774,91 +773,3 @@ class AsyncSystemPowerStateControllerUsingStarnix(
             raise system_power_state_controller_interface.SystemPowerStateControllerError(
                 f"Failed to read FSH inspect data from {self._device_name}"
             ) from err
-
-
-class SystemPowerStateControllerUsingStarnix(
-    system_power_state_controller_interface.SystemPowerStateController
-):
-    """SystemPowerStateController affordance implementation using sysfs.
-
-    Args:
-        device_name: Device name returned by `ffx target list`.
-        ffx: interfaces.transports.FFX implementation.
-        device_logger: FuchsiaDeviceLogger implementation.
-        inspect: InspectCapableDevice implementation.
-        starnix_affordance: Starnix implementation.
-
-    Raises:
-        errors.NotSupportedError: If Fuchsia device does not support Starnix.
-    """
-
-    def __init__(
-        self,
-        device_name: str,
-        ffx: ffx_transport.FFX,
-        device_logger: affordances_capable.FuchsiaDeviceLogger,
-        inspect: affordances_capable.InspectCapableDevice,
-        starnix_affordance: starnix.Starnix,
-    ) -> None:
-        self._inner = AsyncSystemPowerStateControllerUsingStarnix(
-            device_name=device_name,
-            ffx=ffx,
-            device_logger=device_logger.as_async(),
-            inspect=inspect,
-            starnix_affordance=starnix_affordance.as_async(),
-        )
-
-    # List all the public methods
-    def verify_supported(self) -> None:
-        # Already verified this during the init of `starnix.Starnix` affordance
-        self._inner.verify_supported()
-
-    def suspend_resume(
-        self,
-        suspend_state: system_power_state_controller_interface.SuspendState,
-        resume_mode: system_power_state_controller_interface.ResumeMode,
-    ) -> None:
-        """Perform suspend-resume operation on the device.
-
-        This is a synchronous operation on the device and thus this call will
-        hang until resume operation finishes.
-
-        Args:
-            suspend_state: Which state to suspend the Fuchsia device into.
-            resume_mode: Information about how to resume the device.
-
-        Raises:
-            SystemPowerStateControllerError: In case of failure
-            errors.NotSupportedError: If any of the suspend_state or resume_type
-                is not yet supported
-            ValueError: If any of the input args are not valid
-        """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.suspend_resume(suspend_state, resume_mode)
-        )
-
-    def idle_suspend_timer_based_resume(
-        self,
-        duration: int,
-        verify_duration: bool = True,
-    ) -> None:
-        """Perform idle-suspend and timer-based-resume operation on the device.
-
-        Args:
-            duration: Resume timer duration in seconds.
-            verify_duration: If set to True, verifies suspend-resume operation completed with in the
-                duration specified. If set to False, skips this verification. Default is True.
-
-        Raises:
-            SystemPowerStateControllerError: In case of failure
-            ValueError: If any of the input args are not valid
-        """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.idle_suspend_timer_based_resume(
-                duration, verify_duration
-            )
-        )
-
-    def as_async(self) -> AsyncSystemPowerStateControllerUsingStarnix:
-        """Returns the async version of SystemPowerStateController."""
-        return self._inner

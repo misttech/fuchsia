@@ -13,26 +13,24 @@ import fuchsia_inspect
 from mobly import signals
 
 from honeydew import errors
-from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows, power
 from honeydew.utils.deadline import Deadline
 
 
-class PowerTests(unittest.TestCase):
+class PowerTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.utils.power."""
 
     def setUp(self) -> None:
         super().setUp()
-        self.mock_device = mock.MagicMock(spec=fuchsia_device.FuchsiaDevice)
-        self.mock_device.device_name = "test-device"
-        self.mock_async_device = mock.MagicMock(
+        self.mock_device = mock.MagicMock(
             spec=async_fuchsia_device.AsyncFuchsiaDevice
         )
-        self.mock_async_device.device_name = "test-device"
-        self.mock_device.as_async.return_value = self.mock_async_device
+        self.mock_device.device_name = "test-device"
+        self.mock_async_device = self.mock_device
 
-    def test_get_sag_suspend_stats_success(self) -> None:
+    async def test_get_sag_suspend_stats_success(self) -> None:
         """Test case for get_sag_suspend_stats() success case."""
         payload: dict[str, Any] = {
             "root": {
@@ -55,7 +53,7 @@ class PowerTests(unittest.TestCase):
             fuchsia_inspect.InspectDataCollection(data=[inspect_data])
         )
 
-        stats = power.get_sag_suspend_stats(self.mock_device)
+        stats = await power.async_get_sag_suspend_stats(self.mock_device)
 
         self.assertEqual(stats.success_count, 10)
         self.assertEqual(stats.fail_count, 1)
@@ -67,16 +65,16 @@ class PowerTests(unittest.TestCase):
             selectors=["bootstrap/system-activity-governor:root"]
         )
 
-    def test_get_sag_suspend_stats_empty_data(self) -> None:
+    async def test_get_sag_suspend_stats_empty_data(self) -> None:
         """Test case for get_sag_suspend_stats() when no data is returned."""
         self.mock_async_device.get_inspect_data.return_value = (
             fuchsia_inspect.InspectDataCollection(data=[])
         )
 
         with self.assertRaisesRegex(errors.InspectError, "is empty"):
-            power.get_sag_suspend_stats(self.mock_device)
+            await power.async_get_sag_suspend_stats(self.mock_device)
 
-    def test_get_sag_suspend_stats_missing_payload(self) -> None:
+    async def test_get_sag_suspend_stats_missing_payload(self) -> None:
         """Test case for get_sag_suspend_stats() when payload is missing."""
         inspect_data = fuchsia_inspect.InspectData(
             moniker="bootstrap/system-activity-governor",
@@ -93,9 +91,9 @@ class PowerTests(unittest.TestCase):
         with self.assertRaisesRegex(
             errors.InspectError, "not have a valid payload"
         ):
-            power.get_sag_suspend_stats(self.mock_device)
+            await power.async_get_sag_suspend_stats(self.mock_device)
 
-    def test_get_sag_suspend_stats_missing_field(self) -> None:
+    async def test_get_sag_suspend_stats_missing_field(self) -> None:
         """Test case for get_sag_suspend_stats() when expected field is missing."""
         payload: dict[str, Any] = {
             "root": {
@@ -117,12 +115,12 @@ class PowerTests(unittest.TestCase):
         with self.assertRaisesRegex(
             errors.InspectError, "missing expected field"
         ):
-            power.get_sag_suspend_stats(self.mock_device)
+            await power.async_get_sag_suspend_stats(self.mock_device)
 
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "async_sleep_until_deadline")
     @mock.patch.object(power, "async_get_sag_suspend_stats")
-    def test_suspend_resume_exception_during_suspend(
+    async def test_suspend_resume_exception_during_suspend(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -145,7 +143,7 @@ class PowerTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "Suspend failed"):
-            power.suspend_resume(self.mock_device, deadline)
+            await power.async_suspend_resume(self.mock_device, deadline)
 
         self.mock_async_device.suspend.assert_called_once()
         mock_sleep.assert_not_called()
@@ -159,7 +157,7 @@ class PowerTests(unittest.TestCase):
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "async_sleep_until_deadline")
     @mock.patch.object(power, "async_get_sag_suspend_stats")
-    def test_suspend_resume_success(
+    async def test_suspend_resume_success(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -182,7 +180,7 @@ class PowerTests(unittest.TestCase):
         )
         mock_get_stats.side_effect = [stats_before, stats_after]
 
-        power.suspend_resume(self.mock_device, deadline)
+        await power.async_suspend_resume(self.mock_device, deadline)
 
         self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
@@ -197,7 +195,7 @@ class PowerTests(unittest.TestCase):
     @mock.patch("honeydew.utils.deadline.datetime")
     @mock.patch.object(control_flows, "async_sleep_until_deadline")
     @mock.patch.object(power, "async_get_sag_suspend_stats")
-    def test_suspend_resume_retry_success(
+    async def test_suspend_resume_retry_success(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -236,7 +234,7 @@ class PowerTests(unittest.TestCase):
             stats_after_2,
         ]
 
-        power.suspend_resume(self.mock_device, deadline)
+        await power.async_suspend_resume(self.mock_device, deadline)
 
         self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
@@ -251,7 +249,7 @@ class PowerTests(unittest.TestCase):
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "async_sleep_until_deadline")
     @mock.patch.object(power, "async_get_sag_suspend_stats")
-    def test_suspend_resume_timeout(
+    async def test_suspend_resume_timeout(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -284,7 +282,7 @@ class PowerTests(unittest.TestCase):
         with self.assertRaisesRegex(
             signals.TestFailure, "SAG did not suspend during idle."
         ):
-            power.suspend_resume(self.mock_device, deadline)
+            await power.async_suspend_resume(self.mock_device, deadline)
 
         self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
@@ -299,7 +297,7 @@ class PowerTests(unittest.TestCase):
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "async_sleep_until_deadline")
     @mock.patch.object(power, "async_get_sag_suspend_stats")
-    def test_suspend_resume_ffx_error_raises(
+    async def test_suspend_resume_ffx_error_raises(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -312,7 +310,7 @@ class PowerTests(unittest.TestCase):
         deadline = Deadline.from_timeout(timedelta(minutes=5))
 
         with self.assertRaisesRegex(RuntimeError, "ffx failed"):
-            power.suspend_resume(self.mock_device, deadline)
+            await power.async_suspend_resume(self.mock_device, deadline)
 
         self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],
@@ -323,7 +321,7 @@ class PowerTests(unittest.TestCase):
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime.datetime)
     @mock.patch.object(control_flows, "async_sleep_until_deadline")
     @mock.patch.object(power, "async_get_sag_suspend_stats")
-    def test_suspend_resume_no_deadline(
+    async def test_suspend_resume_no_deadline(
         self,
         mock_get_stats: mock.MagicMock,
         mock_sleep: mock.MagicMock,
@@ -345,7 +343,7 @@ class PowerTests(unittest.TestCase):
         )
         mock_get_stats.side_effect = [stats_before, stats_after]
 
-        power.suspend_resume(self.mock_device)
+        await power.async_suspend_resume(self.mock_device)
 
         self.mock_async_device.ffx.run.assert_called_once_with(
             ["session", "drop-power-lease", "--allow-missing"],

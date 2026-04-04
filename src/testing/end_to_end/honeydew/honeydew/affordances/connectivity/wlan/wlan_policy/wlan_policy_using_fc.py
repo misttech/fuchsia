@@ -31,7 +31,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
-from honeydew.affordances.location.location import AsyncLocation, Location
+from honeydew.affordances.location.location import AsyncLocation
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
@@ -997,9 +997,9 @@ class WlanPolicy(wlan_policy.WlanPolicy):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
-        location: Location,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
+        location: AsyncLocation,
     ) -> None:
         """Create a WlanPolicy Fuchsia Controller affordance.
 
@@ -1015,9 +1015,9 @@ class WlanPolicy(wlan_policy.WlanPolicy):
             device_name=device_name,
             ffx=ffx,
             fuchsia_controller=fuchsia_controller,
-            reboot_affordance=reboot_affordance.as_async(),
-            fuchsia_device_close=fuchsia_device_close.as_async(),
-            location=location.as_async(),
+            reboot_affordance=reboot_affordance,
+            fuchsia_device_close=fuchsia_device_close,
+            location=location,
         )
 
     def verify_supported(self) -> None:

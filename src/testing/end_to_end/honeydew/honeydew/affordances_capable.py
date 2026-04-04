@@ -43,41 +43,6 @@ class AsyncRebootCapableDevice(abc.ABC):
         """Wait for Fuchsia device to go online."""
 
 
-class RebootCapableDevice(abc.ABC):
-    """Abstract base class to be implemented by a device which supports the
-    reboot operation."""
-
-    @abc.abstractmethod
-    def reboot(self) -> None:
-        """Soft reboot the device."""
-
-    @abc.abstractmethod
-    def on_device_boot(self) -> None:
-        """Take actions after the device is rebooted."""
-
-    @abc.abstractmethod
-    def register_for_on_device_boot(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
-    ) -> None:
-        """Register a function that will be called in `on_device_boot()`.
-
-        Args:
-            fn: Function that need to be called after FuchsiaDevice boot up.
-        """
-
-    @abc.abstractmethod
-    def wait_for_offline(self) -> None:
-        """Wait for Fuchsia device to go offline."""
-
-    @abc.abstractmethod
-    def wait_for_online(self) -> None:
-        """Wait for Fuchsia device to go online."""
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncRebootCapableDevice:
-        pass
-
-
 class AsyncFuchsiaDeviceLogger(abc.ABC):
     """Abstract base class which contains methods for logging message to fuchsia
     device."""

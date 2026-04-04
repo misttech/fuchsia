@@ -13,7 +13,7 @@ import os
 from collections.abc import Callable
 from datetime import datetime
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Coroutine
+from typing import Any, Coroutine
 
 import fidl_fuchsia_buildinfo as f_buildinfo
 import fidl_fuchsia_developer_remotecontrol as fd_remotecontrol
@@ -36,24 +36,29 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
     types as bluetooth_types,
 )
 from honeydew.affordances.connectivity.netstack import (
-    netstack,
-    netstack_using_fc,
+    netstack as netstack_module,
 )
+from honeydew.affordances.connectivity.netstack import netstack_using_fc
 from honeydew.affordances.connectivity.wlan.wlan_core import (
-    wlan_core,
-    wlan_core_using_fc,
+    wlan_core as wlan_core_module,
+)
+from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
+from honeydew.affordances.connectivity.wlan.wlan_policy import (
+    wlan_policy as wlan_policy_module,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
-    wlan_policy,
     wlan_policy_using_fc,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
-    wlan_policy_ap,
+    wlan_policy_ap as wlan_policy_ap_module,
+)
+from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
     wlan_policy_ap_using_fc,
 )
 from honeydew.affordances.device_knobs import async_device_knobs
 from honeydew.affordances.hello_world import hello_world, hello_world_using_ffx
-from honeydew.affordances.location import location, location_using_fc
+from honeydew.affordances.location import location as location_module
+from honeydew.affordances.location import location_using_fc
 from honeydew.affordances.media import media, media_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller as system_power_state_controller_interface,
@@ -97,10 +102,6 @@ from honeydew.transports.sl4f import sl4f as sl4f_transport_interface
 from honeydew.transports.sl4f import sl4f_impl
 from honeydew.typing import custom_types
 from honeydew.utils import common, properties
-
-if TYPE_CHECKING:
-    from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
-
 
 _FC_PROXIES: dict[str, custom_types.FidlEndpoint] = {
     "BuildInfo": custom_types.FidlEndpoint(
@@ -201,7 +202,6 @@ class AsyncFuchsiaDevice(
     def __init__(
         self,
         *,
-        _outer: "FuchsiaDevice",
         device_info: custom_types.DeviceInfo,
         ffx_config_data: FfxConfigData,
         # intentionally made this a Dict instead of dataclass to minimize the changes in remaining Lacewing stack every time we need to add a new configuration item
@@ -209,7 +209,6 @@ class AsyncFuchsiaDevice(
     ) -> None:
         _LOGGER.debug("Initializing FuchsiaDevice")
 
-        self._outer = _outer
         self._device_info: custom_types.DeviceInfo = device_info
 
         # Track if the device was created with a statically provided IP.
@@ -479,7 +478,7 @@ class AsyncFuchsiaDevice(
         return session_using_ffx.SessionUsingFfx(
             device_name=self.device_name,
             ffx=self.ffx,
-            fuchsia_device_close=self.as_sync(),
+            fuchsia_device_close=self,
         )
 
     @properties.Affordance
@@ -630,7 +629,7 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_policy(self) -> wlan_policy.AsyncWlanPolicy:
+    def wlan_policy(self) -> wlan_policy_module.AsyncWlanPolicy:
         """Returns a wlan_policy affordance object.
 
         Returns:
@@ -646,7 +645,23 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_policy_ap(self) -> wlan_policy_ap.AsyncWlanPolicyAp:
+    def wlan_policy_deprecated_sync(self) -> wlan_policy_module.WlanPolicy:
+        """Returns a wlan_policy affordance object.
+
+        Returns:
+            wlan_policy.AsyncWlanPolicy object
+        """
+        return wlan_policy_using_fc.WlanPolicy(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
+            location=self.location,
+        )
+
+    @properties.Affordance
+    def wlan_policy_ap(self) -> wlan_policy_ap_module.AsyncWlanPolicyAp:
         """Returns a wlan_policy_ap affordance object.
 
         Returns:
@@ -661,7 +676,24 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def wlan_core(self) -> wlan_core.AsyncWlanCore:
+    def wlan_policy_ap_deprecated_sync(
+        self,
+    ) -> wlan_policy_ap_module.WlanPolicyAp:
+        """Returns a wlan_policy_ap affordance object.
+
+        Returns:
+            wlan_policy_ap.AsyncWlanPolicyAp object
+        """
+        return wlan_policy_ap_using_fc.WlanPolicyAp(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
+        )
+
+    @properties.Affordance
+    def wlan_core(self) -> wlan_core_module.AsyncWlanCore:
         """Returns a wlan affordance object.
 
         Returns:
@@ -676,7 +708,22 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def netstack(self) -> netstack.AsyncNetstack:
+    def wlan_core_deprecated_sync(self) -> wlan_core_module.WlanCore:
+        """Returns a wlan affordance object.
+
+        Returns:
+            wlan.AsyncWlanCore object
+        """
+        return wlan_core_using_fc.WlanCore(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
+        )
+
+    @properties.Affordance
+    def netstack(self) -> netstack_module.AsyncNetstack:
         """Returns a netstack affordance object.
 
         Returns:
@@ -690,7 +737,21 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def location(self) -> location.AsyncLocation:
+    def netstack_deprecated_sync(self) -> netstack_module.Netstack:
+        """Returns a netstack affordance object.
+
+        Returns:
+            netstack.AsyncNetstack object
+        """
+        return netstack_using_fc.NetstackUsingFc(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+        )
+
+    @properties.Affordance
+    def location(self) -> location_module.AsyncLocation:
         """Returns a location affordance object.
 
         Returns:
@@ -704,17 +765,31 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
+    def location_deprecated_sync(self) -> location_module.Location:
+        """Returns a location affordance object.
+
+        Returns:
+            location.AsyncLocation object
+        """
+        return location_using_fc.LocationUsingFc(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+        )
+
+    @properties.Affordance
     def media(self) -> media.AsyncMedia:
         """Returns a media affordance object.
 
         Returns:
             media.Media object
         """
-        return media_using_fc.MediaUsingFc(
+        return media_using_fc.AsyncMediaUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             ffx_transport=self.ffx,
-        ).as_async()
+        )
 
     @properties.Affordance
     def hello_world(self) -> hello_world.HelloWorld:
@@ -1598,6 +1673,3 @@ class AsyncFuchsiaDevice(
         ):
             return True
         return False
-
-    def as_sync(self) -> "FuchsiaDevice":
-        return self._outer

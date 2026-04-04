@@ -24,7 +24,7 @@ class StarnixUsingStarnixTests(unittest.TestCase):
             starnix_using_ffx._STARNIX_KERNEL_PREFIX
         )
 
-        self.starnix_obj = starnix_using_ffx.StarnixUsingFfx(
+        self.starnix_obj = starnix_using_ffx.AsyncStarnixUsingFfx(
             ffx=self.mock_ffx,
             device_name="device",
         )
@@ -42,11 +42,11 @@ class StarnixUsingStarnixTests(unittest.TestCase):
         return_value=(1, 1),
         autospec=True,
     )
-    def test_run_console_shell_cmd(
+    async def test_run_console_shell_cmd(
         self, mock_openpty: mock.Mock, mock_os_read: mock.Mock
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.run_console_shell_cmd()"""
-        self.starnix_obj.run_console_shell_cmd(cmd=["something"])
+        await self.starnix_obj.run_console_shell_cmd(cmd=["something"])
         mock_openpty.assert_called_once()
         mock_os_read.assert_called_once()
 
@@ -60,13 +60,13 @@ class StarnixUsingStarnixTests(unittest.TestCase):
         return_value=(1, 1),
         autospec=True,
     )
-    def test_run_console_shell_cmd_raises_not_supported_error(
+    async def test_run_console_shell_cmd_exception(
         self, mock_openpty: mock.Mock, mock_os_read: mock.Mock
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.run_console_shell_cmd()
         raising NotSupportedError"""
         with self.assertRaises(errors.NotSupportedError):
-            self.starnix_obj.run_console_shell_cmd(cmd=["something"])
+            await self.starnix_obj.run_console_shell_cmd(cmd=["something"])
         mock_openpty.assert_called_once()
         mock_os_read.assert_called_once()
 
@@ -80,12 +80,12 @@ class StarnixUsingStarnixTests(unittest.TestCase):
         return_value=(1, 1),
         autospec=True,
     )
-    def test_run_console_shell_cmd_raises_starnix_error(
+    async def test_run_console_shell_cmd_ffx_error(
         self, mock_openpty: mock.Mock, mock_os_read: mock.Mock
     ) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix.run_console_shell_cmd()
         raising StarnixError"""
         with self.assertRaises(starnix_errors.StarnixError):
-            self.starnix_obj.run_console_shell_cmd(cmd=["something"])
+            await self.starnix_obj.run_console_shell_cmd(cmd=["something"])
         mock_openpty.assert_called_once()
         mock_os_read.assert_called_once()

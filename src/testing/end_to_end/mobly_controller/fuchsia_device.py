@@ -8,8 +8,7 @@ from copy import deepcopy
 from typing import Any
 
 import honeydew
-from honeydew.fuchsia_device import fuchsia_device as fuchsia_device_interface
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.typing import custom_types
 from honeydew.utils import properties
@@ -25,9 +24,9 @@ _FFX_CONFIG_LOGS_LEVEL: str = "debug"
 _FFX_CONFIG_PROXY_TIMEOUT_SECS: int = 30
 
 
-def create(
+async def create(
     configs: list[dict[str, Any]],
-) -> list[FuchsiaDevice]:
+) -> list[AsyncFuchsiaDevice]:
     """Create Fuchsia device controller(s) and returns them.
 
     Required for Mobly controller registration.
@@ -37,7 +36,7 @@ def create(
             Fuchsia device.
 
     Returns:
-        A list of FuchsiaDevice objects.
+        A list of AsyncFuchsiaDevice objects.
     """
     _LOGGER.debug(
         "FuchsiaDevice controller configs received in testbed yml file is '%s'",
@@ -92,18 +91,18 @@ def create(
     return fuchsia_devices
 
 
-def destroy(
-    fuchsia_devices: list[fuchsia_device_interface.FuchsiaDevice],
+async def destroy(
+    fuchsia_devices: list[AsyncFuchsiaDevice],
 ) -> None:
     """Closes all created fuchsia devices.
 
     Required for Mobly controller registration.
 
     Args:
-        fuchsia_devices: A list of FuchsiaDevice objects.
+        fuchsia_devices: A list of AsyncFuchsiaDevice objects.
     """
     for fuchsia_device in fuchsia_devices:
-        fuchsia_device.close()
+        await fuchsia_device.close()
 
     # Call `FfxConfig.close` manually even though it's already registered for
     # clean up in `FfxConfig.setup` in order to minimize chance of FFX daemon
@@ -112,27 +111,27 @@ def destroy(
     _FFX_CONFIG_OBJ.close()
 
 
-def get_info(
-    fuchsia_devices: list[fuchsia_device_interface.FuchsiaDevice],
+async def get_info(
+    fuchsia_devices: list[AsyncFuchsiaDevice],
 ) -> list[dict[str, Any]]:
-    """Gets information from a list of FuchsiaDevice objects.
+    """Gets information from a list of AsyncFuchsiaDevice objects.
 
     Optional for Mobly controller registration.
 
     Args:
-        fuchsia_devices: A list of FuchsiaDevice objects.
+        fuchsia_devices: A list of AsyncFuchsiaDevice objects.
 
     Returns:
-        A list of dict, each representing info for an FuchsiaDevice objects.
+        A list of dict, each representing info for an AsyncFuchsiaDevice objects.
     """
     return [
-        _get_fuchsia_device_info(fuchsia_device)
+        await _get_fuchsia_device_info(fuchsia_device)
         for fuchsia_device in fuchsia_devices
     ]
 
 
-def _get_fuchsia_device_info(
-    fuchsia_device: fuchsia_device_interface.FuchsiaDevice,
+async def _get_fuchsia_device_info(
+    fuchsia_device: AsyncFuchsiaDevice,
 ) -> dict[str, Any]:
     """Returns information of a specific fuchsia device object.
 

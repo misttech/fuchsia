@@ -392,7 +392,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
                 f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
             )
-            self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_no_connections(
+            self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections(
                 timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
             )
             self.setup_ap(ssid, band, ip_version, security_mode, password)

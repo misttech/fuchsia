@@ -7,11 +7,9 @@ import dataclasses
 import logging
 from datetime import timedelta
 
-import fuchsia_async_extension
 from mobly import asserts
 
 from honeydew import errors
-from honeydew.fuchsia_device import fuchsia_device
 from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows
@@ -44,26 +42,6 @@ class SagSuspendStats:
             total_time_in_suspend=self.total_time_in_suspend
             - other.total_time_in_suspend,
         )
-
-
-def get_sag_suspend_stats(
-    device: fuchsia_device.FuchsiaDevice,
-) -> SagSuspendStats:
-    """Returns the aggregate stats about suspend, exposed by SAG via inspect.
-
-    Args:
-        device: Fuchsia device object.
-
-    Returns:
-        SagSuspendStats: Aggregate stats about suspend.
-
-    Raises:
-        errors.InspectError: If SAG inspect data is missing.
-    """
-
-    return fuchsia_async_extension.get_loop().run_until_complete(
-        async_get_sag_suspend_stats(device.as_async())
-    )
 
 
 async def async_get_sag_suspend_stats(
@@ -110,21 +88,6 @@ async def async_get_sag_suspend_stats(
             f"SAG inspect data associated with {device.device_name} is "
             f"missing expected field: {err}"
         ) from err
-
-
-def suspend_resume(
-    device: fuchsia_device.FuchsiaDevice,
-    deadline: Deadline | None = None,
-) -> None:
-    """Disconnects USB, idles, reconnects.
-
-    Args:
-        device: Fuchsia device object.
-        deadline: this will idle for increasing durations, up to this deadline.
-    """
-    return fuchsia_async_extension.get_loop().run_until_complete(
-        async_suspend_resume(device.as_async(), deadline)
-    )
 
 
 async def async_suspend_resume(

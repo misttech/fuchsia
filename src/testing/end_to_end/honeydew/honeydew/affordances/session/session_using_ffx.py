@@ -30,7 +30,7 @@ class SessionUsingFfx(session.Session):
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
-        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
     ) -> None:
         self._name: str = device_name
         self._ffx: ffx_transport.FFX = ffx

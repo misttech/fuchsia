@@ -89,6 +89,7 @@ python_library("mobly_no_testonly") {
     "asserts.pyi",
     "base_test.pyi",
     "config_parser.pyi",
+    "controller_manager.pyi",
     "expects.pyi",
     "keys.pyi",
     "logger.pyi",

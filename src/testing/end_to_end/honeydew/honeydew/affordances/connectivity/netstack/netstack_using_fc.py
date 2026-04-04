@@ -203,7 +203,7 @@ class NetstackUsingFc(netstack.Netstack):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
     ) -> None:
         """Create a Netstack Fuchsia Controller affordance.
 
@@ -217,7 +217,7 @@ class NetstackUsingFc(netstack.Netstack):
             device_name=device_name,
             ffx=ffx,
             fuchsia_controller=fuchsia_controller,
-            reboot_affordance=reboot_affordance.as_async(),
+            reboot_affordance=reboot_affordance,
         )
 
     def verify_supported(self) -> None:

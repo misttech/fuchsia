@@ -4,10 +4,8 @@
 """SL4F based implementation for Bluetooth AVRCP Profile affordance."""
 
 from enum import StrEnum
-from typing import Any
 
 import fidl_fuchsia_bluetooth as f_bt
-import fuchsia_async_extension
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp
@@ -109,97 +107,3 @@ class AsyncAvrcpUsingSl4f(
             errors.Sl4fError: On Failure.
         """
         self.__sl4f.run(method=Sl4fMethods.STOP_MOCK_PLAYER)
-
-
-class AvrcpUsingSl4f(
-    bluetooth_common_using_sl4f.BluetoothCommonUsingSl4f,
-    avrcp.Avrcp,
-):
-    """SL4F based implementation for BluetoothAvrcp Profile affordance."""
-
-    def __init__(
-        self,
-        device_name: str,
-        sl4f: sl4f_transport.SL4F,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-    ) -> None:
-        super().__init__(device_name, sl4f, reboot_affordance)
-        self._inner = AsyncAvrcpUsingSl4f(
-            device_name=device_name,
-            sl4f=sl4f,
-            reboot_affordance=reboot_affordance.as_async(),
-        )
-
-    # List all the public methods
-    def init_avrcp(self, target_id: f_bt.PeerId) -> None:
-        """Initialize AVRCP service from the sink device.
-
-        Args:
-            target_id: id of source device to start AVRCP
-
-        Raises:
-            Sl4fError: On failure.
-        """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.init_avrcp(target_id)
-        )
-
-    def verify_supported(self) -> None:
-        """Check if Bluetooth avrpc is supported on the DUT.
-        Raises:
-            NotSupportedError: AVRCP affordance is not supported by Fuchsia device.
-        """
-        self._inner.verify_supported()
-
-    def list_received_requests(self) -> list[Any]:
-        """List received requests received from source device.
-
-        Returns:
-            A list of the most recent commands received, where the last
-            element in the list is the most recent command received. If no
-            result then return empty list.
-        Raises:
-            errors.Sl4fError: On failure.
-        """
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.list_received_requests()
-        )
-
-    def publish_mock_player(self) -> None:
-        """Publish the media session mock player.
-
-        Raises:
-            errors.Sl4fError: On failure.
-        """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.publish_mock_player()
-        )
-
-    def send_avrcp_command(
-        self, command: bluetooth_types.BluetoothAvrcpCommand
-    ) -> None:
-        """Send Avrcp command from the sink device.
-
-        Args:
-            command: the command to send to the AVRCP service.
-
-        Raises:
-            errors.Sl4fError: On Failure.
-        """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.send_avrcp_command(command)
-        )
-
-    def stop_mock_player(self) -> None:
-        """Stop the media session mock player.
-
-        Raises:
-            errors.Sl4fError: On Failure.
-        """
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.stop_mock_player()
-        )
-
-    def as_async(self) -> AsyncAvrcpUsingSl4f:
-        """Returns the async version of Avrcp."""
-        return self._inner

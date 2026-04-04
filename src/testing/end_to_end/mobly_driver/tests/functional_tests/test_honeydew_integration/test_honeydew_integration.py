@@ -6,16 +6,19 @@
 Test that Mobly driver's Mobly config interfaces with Honeydew correctly.
 """
 
-from mobly import asserts, base_test, test_runner
+import fuchsia_async_extension
+from mobly import asserts, test_runner
 from mobly_controller import fuchsia_device
 
 
-class MoblyDriverHoneydewIntegrationTest(base_test.BaseTestClass):
+class MoblyDriverHoneydewIntegrationTest(
+    fuchsia_async_extension.AsyncBaseTestClass
+):
     """Mobly Driver Honeydew integration tests."""
 
-    def test_mobly_controller_init(self) -> None:
+    async def test_mobly_controller_init(self) -> None:
         """Test case to ensure Mobly controller initializes successfully"""
-        fuchsia_devices = self.register_controller(fuchsia_device)
+        fuchsia_devices = await self.register_controller(fuchsia_device)
         asserts.assert_true(
             fuchsia_devices, "Expect at least 1 created controller."
         )

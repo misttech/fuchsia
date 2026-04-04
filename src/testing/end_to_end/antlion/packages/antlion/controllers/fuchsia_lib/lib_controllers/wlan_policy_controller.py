@@ -18,8 +18,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkState,
     WlanClientState,
 )
-from honeydew.fuchsia_device.fuchsia_device import (
-    FuchsiaDevice as HdFuchsiaDevice,
+from honeydew.fuchsia_device.async_fuchsia_device import (
+    AsyncFuchsiaDevice as HdFuchsiaDevice,
 )
 from mobly import logger, signals
 
@@ -97,7 +97,7 @@ class WlanPolicyController:
                     self.log.info(
                         "Removing any and all saved networks to run tests in a clean state."
                     )
-                    self.honeydew.wlan_policy.remove_all_networks()
+                    self.honeydew.wlan_policy_deprecated_sync.remove_all_networks()
 
                 # Optionally restart client connections to start tests in a good state. This should
                 # prevent issues like scans still being in progress when tests start.
@@ -111,7 +111,7 @@ class WlanPolicyController:
                     # conditions with retrying failed scans
                     time.sleep(TIME_WAIT_BETWEEN_STOP_START_CONNECTIONS)
 
-                self.honeydew.wlan_policy.start_client_connections()
+                self.honeydew.wlan_policy_deprecated_sync.start_client_connections()
                 self.log.info(
                     "ACTS tests now have control of the WLAN policy layer."
                 )
@@ -133,7 +133,7 @@ class WlanPolicyController:
         )
 
     def _deconfigure_wlan(self) -> None:
-        self.honeydew.wlan_policy.stop_client_connections()
+        self.honeydew.wlan_policy_deprecated_sync.stop_client_connections()
         self.policy_configured = False
 
     def stop_client_connections_and_wait(
@@ -143,7 +143,7 @@ class WlanPolicyController:
         and waits for an update showing that the state has changed.
         """
         try:
-            client = self.honeydew.wlan_policy.get_status(
+            client = self.honeydew.wlan_policy_deprecated_sync.get_status(
                 timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE
             )
             if client.state != WlanClientState.CONNECTIONS_ENABLED:
@@ -158,7 +158,7 @@ class WlanPolicyController:
                 "Unexpectedly timed out getting client state. Proceeding to stop client connections"
             )
 
-        self.honeydew.wlan_policy.stop_client_connections()
+        self.honeydew.wlan_policy_deprecated_sync.stop_client_connections()
         try:
             self.wait_for_client_state(
                 expected_state=WlanClientState.CONNECTIONS_DISABLED,
@@ -240,14 +240,16 @@ class WlanPolicyController:
                 "Disconnect status not valid for CONNECTING or CONNECTED states."
             )
 
-        self.honeydew.wlan_policy.set_new_update_listener()
+        self.honeydew.wlan_policy_deprecated_sync.set_new_update_listener()
         network: NetworkState | None = None
 
         end_time = time.time() + timeout_sec
         while time.time() < end_time:
             time_left = max(1.0, end_time - time.time())
             try:
-                client = self.honeydew.wlan_policy.get_update(timeout=time_left)
+                client = self.honeydew.wlan_policy_deprecated_sync.get_update(
+                    timeout=time_left
+                )
             except TimeoutError as e:
                 self.log.debug("Timeout waiting for WLAN state updates: %s", e)
                 continue
@@ -303,14 +305,16 @@ class WlanPolicyController:
             WlanPolicyControllerError: If client still has not converged to expected
                 state at end of timeout.
         """
-        self.honeydew.wlan_policy.set_new_update_listener()
+        self.honeydew.wlan_policy_deprecated_sync.set_new_update_listener()
 
         last_err: TimeoutError | None = None
         end_time = time.time() + timeout_sec
         while time.time() < end_time:
             time_left = max(1, int(end_time - time.time()))
             try:
-                client = self.honeydew.wlan_policy.get_update(timeout=time_left)
+                client = self.honeydew.wlan_policy_deprecated_sync.get_update(
+                    timeout=time_left
+                )
             except TimeoutError as e:
                 last_err = e
                 continue

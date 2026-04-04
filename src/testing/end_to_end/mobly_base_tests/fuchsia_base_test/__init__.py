@@ -23,7 +23,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub,
     usb_power_hub_using_dmc,
 )
-from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device
 from honeydew.typing import custom_types
 from mobly import signals, test_runner
 from mobly.records import TestResultRecord
@@ -165,18 +165,10 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        res = AsyncFuchsiaBaseTest.register_controller(
+        self.fuchsia_devices = await AsyncFuchsiaBaseTest.register_controller(
             self,
             fuchsia_device_mobly_controller,
         )
-        if inspect.isawaitable(res):
-            fuchsia_devices_sync = await res
-        else:
-            fuchsia_devices_sync = res
-
-        self.fuchsia_devices: list[async_fuchsia_device.AsyncFuchsiaDevice] = [
-            device.as_async() for device in fuchsia_devices_sync
-        ]
 
         if (
             self.tracing_on == TracingOn.TEARDOWN_CLASS

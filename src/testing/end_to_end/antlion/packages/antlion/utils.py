@@ -650,7 +650,11 @@ def get_interface_ip_addresses(
             for addr in ip.stdout.decode("utf-8").splitlines()
         ]
     elif isinstance(comm_channel, FuchsiaDevice):
-        for iface in comm_channel.honeydew_fd.netstack.list_interfaces():
+        for (
+            iface
+        ) in (
+            comm_channel.honeydew_fd.netstack_deprecated_sync.list_interfaces()
+        ):
             if iface.name != interface:
                 continue
             for ipv4_address in iface.ipv4_addresses:

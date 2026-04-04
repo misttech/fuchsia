@@ -9,7 +9,6 @@ import json
 import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
-import fuchsia_async_extension
 import fuchsia_controller_py as fcp
 
 from honeydew import errors
@@ -264,61 +263,6 @@ class AsyncMouseDeviceUsingFc(user_input.AsyncMouseDevice, AsyncLazyReady):
             ) from status
 
 
-class TouchDeviceUsingFc(user_input.TouchDevice):
-    """Virtual TouchDevice wrapper."""
-
-    def __init__(
-        self,
-        device_name: str,
-        fuchsia_controller: fc_transport.FuchsiaController,
-        touch_screen_size: ui_custom_types.Size,
-        inner: AsyncTouchDeviceUsingFc | None = None,
-    ) -> None:
-        self._inner = inner or AsyncTouchDeviceUsingFc(
-            device_name=device_name,
-            fuchsia_controller=fuchsia_controller,
-            touch_screen_size=touch_screen_size,
-        )
-        if not self._inner._ready:  # pylint: disable=protected-access
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self._inner.make_ready()
-            )
-
-    def tap(
-        self,
-        location: ui_custom_types.Coordinate,
-        tap_event_count: int = user_input.DEFAULTS["TAP_EVENT_COUNT"],
-        duration_ms: int = user_input.DEFAULTS["TAP_DURATION_MS"],
-        duration_of_one_tap_ms: int = user_input.DEFAULTS[
-            "ONE_TAP_DURATION_MS"
-        ],
-    ) -> None:
-        """Instantiates Taps at coordinates (x, y) for a touchscreen."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.tap(
-                location, tap_event_count, duration_ms, duration_of_one_tap_ms
-            )
-        )
-
-    def swipe(
-        self,
-        start_location: ui_custom_types.Coordinate,
-        end_location: ui_custom_types.Coordinate,
-        move_event_count: int,
-        duration_ms: int = user_input.DEFAULTS["SWIPE_DURATION_MS"],
-    ) -> None:
-        """Instantiates a swipe event sequence."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.swipe(
-                start_location, end_location, move_event_count, duration_ms
-            )
-        )
-
-    def as_async(self) -> AsyncTouchDeviceUsingFc:
-        """Returns the async version of TouchDevice."""
-        return self._inner
-
-
 class AsyncKeyboardDeviceUsingFc(
     user_input.AsyncKeyboardDevice, AsyncLazyReady
 ):
@@ -380,78 +324,6 @@ class AsyncKeyboardDeviceUsingFc(
             ) from status
 
 
-class KeyboardDeviceUsingFc(user_input.KeyboardDevice):
-    """Virtual KeyboardDevice wrapper."""
-
-    def __init__(
-        self,
-        device_name: str,
-        fuchsia_controller: fc_transport.FuchsiaController,
-        inner: AsyncKeyboardDeviceUsingFc | None = None,
-    ) -> None:
-        self._inner = inner or AsyncKeyboardDeviceUsingFc(
-            device_name=device_name, fuchsia_controller=fuchsia_controller
-        )
-        if not self._inner._ready:  # pylint: disable=protected-access
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self._inner.make_ready()
-            )
-
-    def key_press(
-        self,
-        key_code: int,
-    ) -> None:
-        """Instantiates key press includes down and up."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.key_press(key_code)
-        )
-
-    def as_async(self) -> AsyncKeyboardDeviceUsingFc:
-        """Returns the async version of KeyboardDevice."""
-        return self._inner
-
-
-class MouseDeviceUsingFc(user_input.MouseDevice):
-    """Virtual MouseDevice wrapper."""
-
-    def __init__(
-        self,
-        device_name: str,
-        fuchsia_controller: fc_transport.FuchsiaController,
-        inner: AsyncMouseDeviceUsingFc | None = None,
-    ) -> None:
-        self._inner = inner or AsyncMouseDeviceUsingFc(
-            device_name=device_name, fuchsia_controller=fuchsia_controller
-        )
-        if not self._inner._ready:  # pylint: disable=protected-access
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self._inner.make_ready()
-            )
-
-    def scroll(
-        self,
-        scroll_v_detent: int = 0,
-        scroll_h_detent: int = 0,
-    ) -> None:
-        """Instantiates a scroll event."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.scroll(scroll_v_detent, scroll_h_detent)
-        )
-
-    def click(
-        self,
-        button: int = user_input.DEFAULTS["MOUSE_BUTTON"],
-    ) -> None:
-        """Instantiates a click event (button down and up)."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.click(button)
-        )
-
-    def as_async(self) -> AsyncMouseDeviceUsingFc:
-        """Returns the async version of MouseDevice."""
-        return self._inner
-
-
 class AsyncUserInputUsingFc(user_input.AsyncUserInput):
     """Async UserInput affordance implementation using FuchsiaController."""
 
@@ -507,60 +379,3 @@ class AsyncUserInputUsingFc(user_input.AsyncUserInput):
         return AsyncMouseDeviceUsingFc(
             device_name=self._device_name, fuchsia_controller=self._fc_transport
         )
-
-
-class UserInputUsingFc(user_input.UserInput):
-    """UserInput affordance implementation using FuchsiaController."""
-
-    def __init__(
-        self,
-        device_name: str,
-        fuchsia_controller: fc_transport.FuchsiaController,
-        ffx_transport: ffx.FFX,
-    ) -> None:
-        self._inner = AsyncUserInputUsingFc(
-            device_name=device_name,
-            fuchsia_controller=fuchsia_controller,
-            ffx_transport=ffx_transport,
-        )
-
-    def verify_supported(self) -> None:
-        """Check if User Input affordance is supported on the DUT."""
-        self._inner.verify_supported()
-
-    def create_touch_device(
-        self,
-        touch_screen_size: ui_custom_types.Size = user_input.DEFAULTS[
-            "TOUCH_SCREEN_SIZE"
-        ],
-    ) -> TouchDeviceUsingFc:
-        """Create a virtual touch device wrapper."""
-        async_device = self._inner.create_touch_device(touch_screen_size)
-        return TouchDeviceUsingFc(
-            device_name=self._inner._device_name,  # pylint: disable=protected-access
-            fuchsia_controller=self._inner._fc_transport,  # pylint: disable=protected-access
-            touch_screen_size=touch_screen_size,
-            inner=async_device,
-        )
-
-    def create_keyboard_device(self) -> KeyboardDeviceUsingFc:
-        """Create a virtual keyboard device wrapper."""
-        async_device = self._inner.create_keyboard_device()
-        return KeyboardDeviceUsingFc(
-            device_name=self._inner._device_name,  # pylint: disable=protected-access
-            fuchsia_controller=self._inner._fc_transport,  # pylint: disable=protected-access
-            inner=async_device,
-        )
-
-    def create_mouse_device(self) -> MouseDeviceUsingFc:
-        """Create a virtual mouse device wrapper."""
-        async_device = self._inner.create_mouse_device()
-        return MouseDeviceUsingFc(
-            device_name=self._inner._device_name,  # pylint: disable=protected-access
-            fuchsia_controller=self._inner._fc_transport,  # pylint: disable=protected-access
-            inner=async_device,
-        )
-
-    def as_async(self) -> AsyncUserInputUsingFc:
-        """Returns the async version of UserInput."""
-        return self._inner

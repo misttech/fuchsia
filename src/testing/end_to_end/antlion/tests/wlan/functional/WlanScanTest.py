@@ -121,7 +121,7 @@ class WlanScanTest(base_test.WifiBaseTest):
 
     def teardown_test(self) -> None:
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_core.disconnect()
+            fd.honeydew_fd.wlan_core_deprecated_sync.disconnect()
         if hasattr(self, "access_point"):
             self.access_point.stop_all_aps()
 
@@ -190,7 +190,9 @@ class WlanScanTest(base_test.WifiBaseTest):
             name = fd.honeydew_fd.device_name
 
             self.log.info('[%s] Scanning for ssid "%s"', name, ssid)
-            scan_results = fd.honeydew_fd.wlan_core.scan_for_bss_info()
+            scan_results = (
+                fd.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
+            )
             asserts.assert_in(
                 ssid, scan_results, f'Scan results did not include "{ssid}"'
             )
@@ -203,7 +205,7 @@ class WlanScanTest(base_test.WifiBaseTest):
 
             self.log.info('[%s] Connecting to ssid "%s"', name, ssid)
             asserts.assert_true(
-                fd.honeydew_fd.wlan_core.connect(
+                fd.honeydew_fd.wlan_core_deprecated_sync.connect(
                     ssid,
                     target_bss[0],
                     authentication,
@@ -222,7 +224,9 @@ class WlanScanTest(base_test.WifiBaseTest):
             ssid: ssid of network to validate is in scan results
         """
         start_time = datetime.now()
-        scan_results = fd.honeydew_fd.wlan_core.scan_for_bss_info()
+        scan_results = (
+            fd.honeydew_fd.wlan_core_deprecated_sync.scan_for_bss_info()
+        )
         self.log.info("Scan contained %d results", len(scan_results))
         self.log.debug("Scan results: %s", scan_results)
         total_time_ms = (datetime.now() - start_time).total_seconds() * 1000

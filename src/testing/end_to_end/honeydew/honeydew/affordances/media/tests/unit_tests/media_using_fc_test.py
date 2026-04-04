@@ -19,7 +19,7 @@ from honeydew.transports.fuchsia_controller import (
 )
 
 
-class MediaFcTests(unittest.TestCase):
+class MediaFcTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for the media_using_fc.MediaUsingFc class."""
 
     def setUp(self) -> None:
@@ -33,7 +33,7 @@ class MediaFcTests(unittest.TestCase):
             {"instances": [{"moniker": "core/mediasession"}]}
         )
 
-        self.media_obj = media_using_fc.MediaUsingFc(
+        self.media_obj = media_using_fc.AsyncMediaUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,
@@ -52,7 +52,7 @@ class MediaFcTests(unittest.TestCase):
 
     @mock.patch.object(media_session, "ActiveSessionClient", autospec=True)
     @mock.patch.object(media_session, "SessionControlClient", autospec=True)
-    def test_get_active_session_status_playing(
+    async def test_get_active_session_status_playing(
         self,
         mock_session_control_client: mock.Mock,
         mock_active_session_client: mock.Mock,
@@ -76,12 +76,12 @@ class MediaFcTests(unittest.TestCase):
             )
         )
 
-        status = self.media_obj.get_active_session_status()
+        status = await self.media_obj.get_active_session_status()
         self.assertEqual(status, media.PlayerState.PLAYING)
 
     @mock.patch.object(media_session, "ActiveSessionClient", autospec=True)
     @mock.patch.object(media_session, "SessionControlClient", autospec=True)
-    def test_get_active_session_status_no_session(
+    async def test_get_active_session_status_no_session(
         self,
         mock_session_control_client: mock.Mock,
         mock_active_session_client: mock.Mock,
@@ -94,11 +94,11 @@ class MediaFcTests(unittest.TestCase):
             )
         )
 
-        status = self.media_obj.get_active_session_status()
+        status = await self.media_obj.get_active_session_status()
         self.assertIsNone(status)
 
     @mock.patch.object(media_session, "ActiveSessionClient", autospec=True)
-    def test_get_active_session_status_error(
+    async def test_get_active_session_status_error(
         self, mock_active_session_client: mock.Mock
     ) -> None:
         """Test get_active_session_status raises MediaError on FIDL failure."""
@@ -108,7 +108,7 @@ class MediaFcTests(unittest.TestCase):
         )
 
         with self.assertRaises(MediaError):
-            self.media_obj.get_active_session_status()
+            await self.media_obj.get_active_session_status()
 
 
 if __name__ == "__main__":

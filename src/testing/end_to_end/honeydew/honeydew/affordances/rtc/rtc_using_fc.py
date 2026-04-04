@@ -6,7 +6,6 @@
 import datetime
 
 import fidl_fuchsia_hardware_rtc as frtc
-import fuchsia_async_extension
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
 
 from honeydew import affordances_capable
@@ -22,6 +21,19 @@ CAPABILITY = "fuchsia.hardware.rtc.Service/default/device"
 
 class AsyncRtcUsingFc(rtc.AsyncRtc):
     """Async affordance for the fuchsia.hardware.rtc.Device protocol."""
+
+    # TODO(b/316959472) Use toolbox once RTC service lands in the toolbox realm.
+    #
+    # Service moniker for the NXP PCF8563 chip on a Khadas vim3 board.
+    # Currently, this is board-specific. Once the RTC protocol lands and is
+    # routable from the toolbox realm, this affordance can be made
+    # board-agnostic.
+
+    # TODO(b/340607972): To allow for smooth transition from vim3 to vim3-devicetree, both monikers
+    # will be tried. Whichever path exists will be used. Once the migration is complete, the old
+    # moniker can be discarded.
+    MONIKER_OLD = "/bootstrap/base-drivers:i2c-0.aml-i2c.i2c.i2c-0-81"
+    MONIKER_NEW = "/bootstrap/base-drivers:i2c-5000.aml-i2c.i2c.i2c-0-81"
 
     def __init__(
         self,
@@ -46,8 +58,12 @@ class AsyncRtcUsingFc(rtc.AsyncRtc):
 
     def _connect_proxy(self) -> None:
         """Connect the RTC Device protocol proxy."""
-        ep_old = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_OLD, CAPABILITY)
-        ep_new = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_NEW, CAPABILITY)
+        ep_old = custom_types.FidlEndpoint(
+            AsyncRtcUsingFc.MONIKER_OLD, CAPABILITY
+        )
+        ep_new = custom_types.FidlEndpoint(
+            AsyncRtcUsingFc.MONIKER_NEW, CAPABILITY
+        )
         try:
             self._proxy: frtc.DeviceClient = frtc.DeviceClient(
                 self._controller.connect_device_proxy(ep_old)
@@ -92,55 +108,3 @@ class AsyncRtcUsingFc(rtc.AsyncRtc):
         except (AssertionError, ZxStatus, FcTransportStatus) as e:
             msg = f"Device.Set2() error {e}"
             raise HoneydewRtcError(msg) from e
-
-
-class RtcUsingFc(rtc.Rtc):
-    """Affordance for the fuchsia.hardware.rtc.Device protocol."""
-
-    # TODO(b/316959472) Use toolbox once RTC service lands in the toolbox realm.
-    #
-    # Service moniker for the NXP PCF8563 chip on a Khadas vim3 board.
-    # Currently, this is board-specific. Once the RTC protocol lands and is
-    # routable from the toolbox realm, this affordance can be made
-    # board-agnostic.
-
-    # TODO(b/340607972): To allow for smooth transition from vim3 to vim3-devicetree, both monikers
-    # will be tried. Whichever path exists will be used. Once the migration is complete, the old
-    # moniker can be discarded.
-    MONIKER_OLD = "/bootstrap/base-drivers:i2c-0.aml-i2c.i2c.i2c-0-81"
-    MONIKER_NEW = "/bootstrap/base-drivers:i2c-5000.aml-i2c.i2c.i2c-0-81"
-
-    def __init__(
-        self,
-        fuchsia_controller: fuchsia_controller_lib.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-    ) -> None:
-        """Initializer."""
-        self._inner = AsyncRtcUsingFc(
-            fuchsia_controller=fuchsia_controller,
-            reboot_affordance=reboot_affordance.as_async(),
-        )
-
-    def verify_supported(self) -> None:
-        """Check if RTC is supported on the DUT.
-        Raises:
-            NotSupportedError: RTC affordance is not supported by Fuchsia device.
-        """
-        self._inner.verify_supported()
-
-    # Protocol methods.
-    def get(self) -> datetime.datetime:
-        """See base class."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.get()
-        )
-
-    def set(self, time: datetime.datetime) -> None:
-        """See base class."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.set(time)
-        )
-
-    def as_async(self) -> AsyncRtcUsingFc:
-        """Returns the async version of Rtc."""
-        return self._inner

@@ -47,7 +47,7 @@ from honeydew.auxiliary_devices.power_switch import (
 from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub as usb_power_hub_interface,
 )
-from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device
 from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
@@ -282,7 +282,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_sl4f_check_connection,
         ):
-            sync_fd_fc_obj = fuchsia_device.FuchsiaDevice(
+            sync_fd_fc_obj = async_fuchsia_device.AsyncFuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     ip_port=_INPUT_ARGS["device_ip"],
@@ -300,7 +300,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             )
-            self.fd_fc_obj = sync_fd_fc_obj.as_async()
+            self.fd_fc_obj = sync_fd_fc_obj
             self.fd_fc_obj.fuchsia_controller.ctx = fuchsia_controller.Context()
 
             mock_fc_create_context.assert_called_once_with(
@@ -344,7 +344,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_sl4f_check_connection,
         ):
-            sync_fd_sl4f_obj = fuchsia_device.FuchsiaDevice(
+            sync_fd_sl4f_obj = async_fuchsia_device.AsyncFuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     ip_port=None,
@@ -362,8 +362,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                     }
                 },
             )
-            self.fd_sl4f_obj = sync_fd_sl4f_obj.as_async()
-
+            self.fd_sl4f_obj = sync_fd_sl4f_obj
             mock_fc_create_context.assert_called_once_with(
                 self.fd_sl4f_obj.fuchsia_controller
             )
@@ -434,7 +433,7 @@ class AsyncFuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ),
         ):
-            fd_obj = fuchsia_device.FuchsiaDevice(
+            fd_obj = async_fuchsia_device.AsyncFuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     ip_port=_INPUT_ARGS["device_ip"],

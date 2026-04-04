@@ -7,15 +7,15 @@ import logging
 from typing import Any
 
 from honeydew import errors
-from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.typing import custom_types
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _CUSTOM_FUCHSIA_DEVICE_CLASS: type[
-    fuchsia_device.FuchsiaDevice
-] = fuchsia_device.FuchsiaDevice
+    async_fuchsia_device.AsyncFuchsiaDevice
+] = async_fuchsia_device.AsyncFuchsiaDevice
 
 
 # The return type of this function can change at runtime with register_custom_fuchsia_device which
@@ -25,7 +25,7 @@ def create_device(
     ffx_config_data: FfxConfigData,
     # intentionally made this a Dict instead of dataclass to minimize the changes in remaining Lacewing stack every time we need to add a new configuration item
     config: dict[str, Any] | None = None,
-) -> fuchsia_device.FuchsiaDevice:
+) -> async_fuchsia_device.AsyncFuchsiaDevice:
     """Factory method that creates and returns the device class.
 
     Args:
@@ -101,7 +101,7 @@ def create_device(
 
 
 def register_custom_fuchsia_device(
-    fuchsia_device_class: type[fuchsia_device.FuchsiaDevice],
+    fuchsia_device_class: type[async_fuchsia_device.AsyncFuchsiaDevice],
 ) -> None:
     """Registers a custom fuchsia device class implementation.
 

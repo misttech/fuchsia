@@ -27,14 +27,14 @@ async def _async_response(response: _T) -> _T:
 
 
 # pylint: disable=protected-access
-class LocationFCTests(unittest.TestCase):
+class LocationFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.location."""
 
     def setUp(self) -> None:
         super().setUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice,
+            spec=affordances_capable.AsyncRebootCapableDevice,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(
@@ -50,7 +50,7 @@ class LocationFCTests(unittest.TestCase):
             location_using_fc._REQUIRED_CAPABILITIES
         )
 
-        self.location_obj = location_using_fc.LocationUsingFc(
+        self.location_obj = location_using_fc.AsyncLocationUsingFc(
             device_name="fuchsia-emulator",
             ffx=self.ffx_transport_obj,
             fuchsia_controller=self.fc_transport_obj,
@@ -62,7 +62,7 @@ class LocationFCTests(unittest.TestCase):
         self.ffx_transport_obj.run.return_value = ""
 
         with self.assertRaises(NotSupportedError):
-            self.location_obj = location_using_fc.LocationUsingFc(
+            self.location_obj = location_using_fc.AsyncLocationUsingFc(
                 device_name="fuchsia-emulator",
                 ffx=self.ffx_transport_obj,
                 fuchsia_controller=self.fc_transport_obj,
@@ -71,46 +71,40 @@ class LocationFCTests(unittest.TestCase):
 
     def test_init_register_for_on_device_boot(self) -> None:
         """Test if Location registers on_device_boot."""
-        self.reboot_affordance_obj.as_async().register_for_on_device_boot.assert_called_once_with(
-            self.location_obj._inner._connect_proxy
+        self.reboot_affordance_obj.register_for_on_device_boot.assert_called_once_with(
+            self.location_obj._connect_proxy
         )
 
     def test_init_connect_proxy(self) -> None:
         """Test if Location connects to
         fuchsia.location.namedplace/RegulatoryRegionConfigurator."""
-        self.assertIsNotNone(
-            self.location_obj._inner._regulatory_region_configurator
-        )
+        self.assertIsNotNone(self.location_obj._regulatory_region_configurator)
 
-    def test_set_region_works(self) -> None:
+    async def test_set_region_works(self) -> None:
         """Test if set_region works with valid input."""
-        self.location_obj._inner._regulatory_region_configurator = (
-            mock.MagicMock(
-                spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
-            )
+        self.location_obj._regulatory_region_configurator = mock.MagicMock(
+            spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
         )
-        self.location_obj._inner._regulatory_region_configurator.set_region.return_value = (
+        self.location_obj._regulatory_region_configurator.set_region.return_value = (
             None
         )
-        self.location_obj.set_region("AT")
+        await self.location_obj.set_region("AT")
 
-    def test_set_region_fails_internal_error(self) -> None:
+    async def test_set_region_fails_internal_error(self) -> None:
         """Verify set_region fails when the location stack errors."""
-        self.location_obj._inner._regulatory_region_configurator = (
-            mock.MagicMock(
-                spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
-            )
+        self.location_obj._regulatory_region_configurator = mock.MagicMock(
+            spec=f_location_namedplace.RegulatoryRegionConfiguratorClient
         )
-        self.location_obj._inner._regulatory_region_configurator.set_region.side_effect = FcTransportStatus(
+        self.location_obj._regulatory_region_configurator.set_region.side_effect = FcTransportStatus(
             FcTransportStatus.FC_ERR_INTERNAL
         )
         with self.assertRaises(HoneydewLocationError):
-            self.location_obj.set_region("AT")
+            await self.location_obj.set_region("AT")
 
-    def test_set_region_fails_invalid_region_code(self) -> None:
+    async def test_set_region_fails_invalid_region_code(self) -> None:
         """Verify set_region fails immediately with invalid input."""
         with self.assertRaises(TypeError):
-            self.location_obj.set_region("?")
+            await self.location_obj.set_region("?")
 
 
 if __name__ == "__main__":

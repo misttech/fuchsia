@@ -12,6 +12,7 @@ import logging
 import os
 from typing import Any, TypedDict, TypeVar
 
+import fuchsia_async_extension
 from antlion import context, controllers, utils
 from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.android_device import AndroidDevice
@@ -315,8 +316,10 @@ class WifiBaseTest(BaseTestClass):
         """Writes a message to device logs."""
         for fd in self.fuchsia_devices:
             try:
-                fd.honeydew_fd.log_message_to_device(
-                    message=message, level=level
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    fd.honeydew_fd.log_message_to_device(
+                        message=message, level=level
+                    )
                 )
             except Exception as err:  # pylint: disable=broad-except
                 _LOGGER.exception(

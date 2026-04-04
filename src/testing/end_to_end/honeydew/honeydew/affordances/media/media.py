@@ -33,23 +33,3 @@ class AsyncMedia(affordance.Affordance):
         Raises:
             MediaError: On FIDL communication failure.
         """
-
-    @abc.abstractmethod
-    def as_sync(self) -> "Media":
-        """Returns the synchronous version of this affordance."""
-
-
-class Media(affordance.Affordance):
-    """Abstract base class for Media affordance."""
-
-    @abc.abstractmethod
-    def get_active_session_status(self) -> PlayerState | None:
-        """Returns the status of the active media session.
-
-        Returns:
-            The player state of the active media session if one exists,
-            None otherwise.
-
-        Raises:
-            MediaError: On FIDL communication failure.
-        """

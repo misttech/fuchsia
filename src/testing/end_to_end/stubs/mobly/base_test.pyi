@@ -2,6 +2,7 @@ from typing import Any, Callable, Sequence
 
 from _typeshed import Incomplete
 from mobly import records
+from mobly import controller_manager
 
 TEST_CASE_TOKEN: str
 RESULT_LINE_TEMPLATE: Incomplete
@@ -30,6 +31,7 @@ class BaseTestClass:
     summary_writer: Incomplete
     controller_configs: dict[str, Any]
     current_test_info: Any
+    _controller_manager: controller_manager.ControllerManager
     _generated_test_table: dict[str, Any]
 
     def __init__(self, configs: Any) -> None: ...

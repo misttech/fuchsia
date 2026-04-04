@@ -6,11 +6,12 @@ import asyncio
 import copy
 import functools
 import inspect
+import logging
 import typing
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar
 
-from mobly import base_test, records
+from mobly import base_test, records, signals
 
 _ASYNC_EVENT_LOOP: asyncio.AbstractEventLoop = asyncio.new_event_loop()
 
@@ -51,7 +52,7 @@ def make_sync_wrapper(
 
 if typing.TYPE_CHECKING:
     from _typeshed import Incomplete
-    from mobly import base_test, records, runtime_test_info
+    from mobly import base_test, controller_manager, records, runtime_test_info
 
     # LINT.IfChange
     class _MoblyStub(base_test.BaseTestClass):
@@ -62,6 +63,7 @@ if typing.TYPE_CHECKING:
         user_params: dict[str, Any]
         controller_configs: dict[str, Any]
         current_test_info: Any
+        _controller_manager: controller_manager.ControllerManager
 
     # LINT.ThenChange(//src/testing/end_to_end/stubs/mobly/base_test.pyi)
     _BaseTestClass = _MoblyStub
@@ -178,15 +180,90 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
     async def register_controller(
         self, module: Any, required: bool = True, min_number: int = 1
     ) -> list[Any]:
-        res = super().register_controller(module, required, min_number)
-        if res:
-            for i, obj in enumerate(res):
-                if inspect.isawaitable(obj):
-                    res[i] = await obj
+        module_ref_name = module.__name__.split(".")[-1]
+        module_config_name = module.MOBLY_CONTROLLER_CONFIG_NAME
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        # Check if the controller has an async create method
+        if hasattr(module, "create") and inspect.iscoroutinefunction(
+            module.create
+        ):
+            if loop is not None:
+                # We are in an active event loop. We cannot use run_until_complete.
+                # We must bypass Mobly's register_controller and do it ourselves.
+                #
+                # FRAGILITY NOTE: This approach is fragile because it accesses private
+                # attributes of Mobly's ControllerManager (`_controller_objects` and
+                # `_controller_modules`). If Mobly changes its internal implementation,
+                # this code may break.
+                #
+                # TESTING APPROACH: To mitigate this fragility, we have unit tests in
+                # `fuchsia_async_extension_test.py` that test both Mobly's
+                # `register_controller` and this overridden version against the same
+                # expected behaviors (e.g. config checks, min_number enforcement).
+                # If Mobly changes, those tests should fail and alert us.
+
+                if module_config_name not in self.controller_configs:
+                    if required:
+                        raise signals.ControllerError(
+                            f"No corresponding config found for {module_config_name}"
+                        )
+                    logging.warning(
+                        f"No corresponding config found for optional controller {module_config_name}"
+                    )
+                    return []
+
+                original_config = self.controller_configs[module_config_name]
+                controller_config = copy.deepcopy(original_config)
+
+                # Await the async create directly
+                objects = await module.create(controller_config)
+
+                if not isinstance(objects, list):
+                    raise signals.ControllerError(
+                        f"Controller module {module_ref_name} did not return a list of objects, abort."
+                    )
+
+                actual_number = len(objects)
+                if actual_number < min_number:
+                    if hasattr(
+                        module, "destroy"
+                    ) and inspect.iscoroutinefunction(module.destroy):
+                        await module.destroy(objects)
+                    elif hasattr(module, "destroy"):
+                        module.destroy(objects)
+                    raise signals.ControllerError(
+                        f"Expected to get at least {min_number} controller objects, got {actual_number}."
+                    )
+
+                # Manually register objects in Mobly's controller manager
+                self._controller_manager._controller_objects[
+                    module_ref_name
+                ] = copy.copy(objects)
+                self._controller_manager._controller_modules[
+                    module_ref_name
+                ] = module
+                res = objects
+            else:
+                # No event loop running. Safe to use run_until_complete via a sync wrapper.
+                original_create = module.create
+
+                def sync_create(*args: Any, **kwargs: Any) -> Any:
+                    return get_loop().run_until_complete(
+                        original_create(*args, **kwargs)
+                    )
+
+                setattr(module, "create", sync_create)
+                res = super().register_controller(module, required, min_number)
+        else:
+            # Synchronous create or no create, use default Mobly behavior
+            res = super().register_controller(module, required, min_number)
+
         # Patch module.destroy and module.get_info to run synchronously for Mobly teardown.
-        # Mobly only allows registering each module once (it raises a ControllerError otherwise),
-        # so there is no need to guard against double patching. Furthermore, even if double patching
-        # were to occur, the synchronous wrapper is idempotent and safely passes through to the underlying function.
         if hasattr(module, "destroy"):
             original_destroy = getattr(module, "destroy")
 

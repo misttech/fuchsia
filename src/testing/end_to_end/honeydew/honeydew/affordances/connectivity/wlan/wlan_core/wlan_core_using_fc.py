@@ -599,8 +599,8 @@ class WlanCore(wlan_core.WlanCore):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
     ) -> None:
         """Create a WLAN Core Fuchsia Controller affordance.
 
@@ -615,8 +615,8 @@ class WlanCore(wlan_core.WlanCore):
             device_name=device_name,
             ffx=ffx,
             fuchsia_controller=fuchsia_controller,
-            reboot_affordance=reboot_affordance.as_async(),
-            fuchsia_device_close=fuchsia_device_close.as_async(),
+            reboot_affordance=reboot_affordance,
+            fuchsia_device_close=fuchsia_device_close,
         )
 
     def verify_supported(self) -> None:

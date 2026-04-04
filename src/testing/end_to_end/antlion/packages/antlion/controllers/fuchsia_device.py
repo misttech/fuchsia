@@ -15,6 +15,7 @@ import time
 from ipaddress import ip_address
 from typing import Any, Tuple
 
+import fuchsia_async_extension
 import honeydew
 from antlion import context, utils
 from antlion.capabilities.ssh import DEFAULT_SSH_PORT, SSHConfig
@@ -374,8 +375,12 @@ class FuchsiaDevice:
         # because only netstack has that information. The bug linked here is
         # to reconcile some of the information between the two perspectives, at
         # which point we can eliminate this step.
-        netstack_interfaces = self.honeydew_fd.netstack.list_interfaces()
-        wlan_interfaces_by_mac = self.honeydew_fd.wlan_core.query_interfaces()
+        netstack_interfaces = (
+            self.honeydew_fd.netstack_deprecated_sync.list_interfaces()
+        )
+        wlan_interfaces_by_mac = (
+            self.honeydew_fd.wlan_core_deprecated_sync.query_interfaces()
+        )
 
         for netstack_iface in netstack_interfaces:
             if netstack_iface.mac is None:
@@ -512,7 +517,9 @@ class FuchsiaDevice:
         """
         if reboot_type == FUCHSIA_REBOOT_TYPE_SOFT:
             self.log.info("Soft rebooting")
-            self.honeydew_fd.reboot()
+            fuchsia_async_extension.get_loop().run_until_complete(
+                self.honeydew_fd.reboot()
+            )
 
         elif reboot_type == FUCHSIA_REBOOT_TYPE_HARD:
             self.log.info("Hard rebooting via PDU")
@@ -536,8 +543,12 @@ class FuchsiaDevice:
 
                 self.log.info("Restoring power to FuchsiaDevice with dmc")
                 dmc.power_on()
-                self.honeydew_fd.wait_for_online()
-                self.honeydew_fd.on_device_boot()
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.honeydew_fd.wait_for_online()
+                )
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.honeydew_fd.on_device_boot()
+                )
             else:
                 # Find the matching PDU in the Mobly config.
                 if not testbed_pdus:
@@ -554,8 +565,12 @@ class FuchsiaDevice:
 
                 self.log.info("Restoring power to FuchsiaDevice")
                 device_pdu.on(device_pdu_port)
-                self.honeydew_fd.wait_for_online()
-                self.honeydew_fd.on_device_boot()
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.honeydew_fd.wait_for_online()
+                )
+                fuchsia_async_extension.get_loop().run_until_complete(
+                    self.honeydew_fd.on_device_boot()
+                )
 
         else:
             raise ValueError(f"Invalid reboot type: {reboot_type}")

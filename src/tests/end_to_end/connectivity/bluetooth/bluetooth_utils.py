@@ -9,8 +9,7 @@ import re
 from typing import List
 
 import fidl_fuchsia_bluetooth as f_bt
-import fuchsia_async_extension
-from honeydew.fuchsia_device import async_fuchsia_device, fuchsia_device
+from honeydew.fuchsia_device import async_fuchsia_device
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 DEFAULT_WAITING_SECS = 10
@@ -43,13 +42,6 @@ async def forget_all_bt_devices_async(
             await device.bluetooth_gap.forget_device(identifier=peer.id)
 
 
-def forget_all_bt_devices(device: fuchsia_device.FuchsiaDevice) -> None:
-    """Unpairs and deletes any BT peer pairing data from the device."""
-    fuchsia_async_extension.get_loop().run_until_complete(
-        forget_all_bt_devices_async(device.as_async())
-    )
-
-
 async def verify_bt_connection_async(
     identifier: f_bt.PeerId,
     device: async_fuchsia_device.AsyncFuchsiaDevice,
@@ -70,23 +62,6 @@ async def verify_bt_connection_async(
     return False
 
 
-def verify_bt_connection(
-    identifier: str,
-    device: fuchsia_device.FuchsiaDevice,
-    wait_secs: int = DEFAULT_WAITING_SECS,
-    num_retries: int = DEFAULT_RETRIES_ATTEMPT,
-) -> bool:
-    """Verifies BT connection between peer identifier and device."""
-    return fuchsia_async_extension.get_loop().run_until_complete(
-        verify_bt_connection_async(
-            f_bt.PeerId(value=int(identifier)),
-            device.as_async(),
-            wait_secs,
-            num_retries,
-        )
-    )
-
-
 async def verify_bt_pairing_async(
     identifier: f_bt.PeerId,
     device: async_fuchsia_device.AsyncFuchsiaDevice,
@@ -104,20 +79,3 @@ async def verify_bt_pairing_async(
         _LOGGER.info("Pairing is not completed, Checking in 10 seconds")
         await asyncio.sleep(wait_secs)
     return False
-
-
-def verify_bt_pairing(
-    identifier: str,
-    device: fuchsia_device.FuchsiaDevice,
-    wait_secs: int = DEFAULT_WAITING_SECS,
-    num_retries: int = DEFAULT_RETRIES_ATTEMPT,
-) -> bool:
-    """Verifies BT pairing between peer identifier and device"""
-    return fuchsia_async_extension.get_loop().run_until_complete(
-        verify_bt_pairing_async(
-            f_bt.PeerId(value=int(identifier)),
-            device.as_async(),
-            wait_secs,
-            num_retries,
-        )
-    )

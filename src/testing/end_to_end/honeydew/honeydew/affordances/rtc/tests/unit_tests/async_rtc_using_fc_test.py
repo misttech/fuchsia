@@ -58,10 +58,10 @@ class AsyncRtcFcTests(unittest.IsolatedAsyncioTestCase):
         (ep1,), _ = self.transport.connect_device_proxy.call_args_list[0]
         (ep2,), _ = self.transport.connect_device_proxy.call_args_list[1]
 
-        self.assertEqual(rtc_using_fc.RtcUsingFc.MONIKER_OLD, ep1.moniker)
+        self.assertEqual(rtc_using_fc.AsyncRtcUsingFc.MONIKER_OLD, ep1.moniker)
         self.assertEqual(rtc_using_fc.CAPABILITY, ep1.protocol)
 
-        self.assertEqual(rtc_using_fc.RtcUsingFc.MONIKER_NEW, ep2.moniker)
+        self.assertEqual(rtc_using_fc.AsyncRtcUsingFc.MONIKER_NEW, ep2.moniker)
         self.assertEqual(rtc_using_fc.CAPABILITY, ep2.protocol)
 
     async def test_rtc_get(self) -> None:

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 """Unit tests for fastboot_impl.py."""
 
-import asyncio
 import os
 import sys
 import unittest
@@ -12,7 +11,6 @@ from importlib import resources
 from typing import Any
 from unittest import mock
 
-import fuchsia_async_extension
 from parameterized import param, parameterized
 
 from honeydew import affordances_capable, errors
@@ -656,69 +654,3 @@ class AsyncFastbootTests(unittest.IsolatedAsyncioTestCase):
         self.fastboot_obj._boot_to_fastboot_mode_using_ffx()
 
         self.ffx_obj.notify_intentional_disconnect.assert_called_once()
-
-
-class FastbootImplTests(unittest.TestCase):
-    """Unit tests for FastbootImpl (sync wrapper)."""
-
-    def setUp(self) -> None:
-        super().setUp()
-
-        self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.RebootCapableDevice
-        )
-        self.reboot_affordance_obj.as_async.return_value = mock.AsyncMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
-        )
-
-        self.ffx_obj = mock.MagicMock(spec=ffx.FFX)
-
-        self.fastboot_obj = fastboot_impl.FastbootImpl(
-            device_name=_INPUT_ARGS["device_name"],
-            reboot_affordance=self.reboot_affordance_obj,
-            ffx_transport=self.ffx_obj,
-            fastboot_node_id=_INPUT_ARGS["fastboot_node_id"],
-        )
-
-    @mock.patch.object(
-        fuchsia_async_extension.get_loop(),
-        "run_until_complete",
-        side_effect=lambda x: x
-        if not asyncio.iscoroutine(x)
-        else asyncio.run(x),
-    )
-    @mock.patch.object(
-        fastboot_impl.AsyncFastbootImpl,
-        "node_id",
-        new_callable=mock.AsyncMock,
-        return_value=_INPUT_ARGS["fastboot_node_id"],
-    )
-    def test_node_id(
-        self, mock_node_id: mock.AsyncMock, *unused_args: Any
-    ) -> None:
-        self.assertEqual(
-            self.fastboot_obj.node_id, _INPUT_ARGS["fastboot_node_id"]
-        )
-
-    @mock.patch.object(
-        fuchsia_async_extension.get_loop(),
-        "run_until_complete",
-        side_effect=lambda x: x
-        if not asyncio.iscoroutine(x)
-        else asyncio.run(x),
-    )
-    @mock.patch.object(
-        fastboot_impl.AsyncFastbootImpl,
-        "boot_to_fastboot_mode",
-        new_callable=mock.AsyncMock,
-    )
-    def test_boot_to_fastboot_mode(
-        self, mock_boot: mock.AsyncMock, *unused_args: Any
-    ) -> None:
-        self.fastboot_obj.boot_to_fastboot_mode()
-        mock_boot.assert_called_once()
-
-    def test_as_async(self) -> None:
-        self.assertIsInstance(
-            self.fastboot_obj.as_async(), fastboot_impl.AsyncFastbootImpl
-        )

@@ -8,8 +8,8 @@ import logging
 import time
 
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
-from honeydew.fuchsia_device.fuchsia_device import (
-    FuchsiaDevice as HdFuchsiaDevice,
+from honeydew.fuchsia_device.async_fuchsia_device import (
+    AsyncFuchsiaDevice as HdFuchsiaDevice,
 )
 from mobly import logger, signals
 
@@ -45,17 +45,19 @@ class WlanController:
             ConnectionError - failure to query PHYs
         """
         self.log.info(f"Setting DUT country code to {country_code}")
-        self.honeydew.location.set_region(country_code)
+        self.honeydew.location_deprecated_sync.set_region(country_code)
 
         self.log.info(
             f"Verifying DUT country code was correctly set to {country_code}."
         )
-        phy_ids_response = self.honeydew.wlan_core.get_phy_id_list()
+        phy_ids_response = (
+            self.honeydew.wlan_core_deprecated_sync.get_phy_id_list()
+        )
 
         end_time = time.time() + TIME_TO_WAIT_FOR_COUNTRY_CODE
         while time.time() < end_time:
             for id in phy_ids_response:
-                resp = self.honeydew.wlan_core.get_country(id)
+                resp = self.honeydew.wlan_core_deprecated_sync.get_country(id)
                 if resp == country_code:
                     return
                 time.sleep(TIME_TO_SLEEP_BETWEEN_RETRIES)

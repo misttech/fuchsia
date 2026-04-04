@@ -6,13 +6,10 @@
 import asyncio
 import logging
 import os
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime
 
 import fidl_fuchsia_tracing as f_tracing
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
-import fuchsia_async_extension
 import fuchsia_controller_py as fc
 from fidl import AsyncSocket
 from fuchsia_controller_py import ZxStatus
@@ -378,120 +375,3 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
 
         await self._reset_state()
         return trace_file_path
-
-
-class TracingUsingFc(tracing.Tracing):
-    """Tracing affordance implementation using Fuchsia-Controller."""
-
-    def __init__(
-        self,
-        device_name: str,
-        fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.RebootCapableDevice,
-    ) -> None:
-        self._inner = AsyncTracingUsingFc(
-            device_name=device_name,
-            fuchsia_controller=fuchsia_controller,
-            reboot_affordance=reboot_affordance.as_async(),
-        )
-
-    def verify_supported(self) -> None:
-        """Check if Trace is supported on the DUT."""
-        self._inner.verify_supported()
-
-    def initialize(
-        self,
-        categories: list[str] | None = None,
-        buffer_size: int | None = None,
-        start_timeout_milliseconds: int | None = None,
-        buffering_mode: f_tracing.BufferingMode | None = None,
-        defer_transfer: bool | None = None,
-    ) -> None:
-        """Initializes a trace session."""
-        self._inner.initialize(
-            categories,
-            buffer_size,
-            start_timeout_milliseconds,
-            buffering_mode,
-            defer_transfer,
-        )
-
-    def is_active(self) -> bool:
-        """Checks if there is a currently active trace."""
-        return self._inner.is_active()
-
-    def is_session_initialized(self) -> bool:
-        """Checks if the session is initialized or not."""
-        return self._inner.is_session_initialized()
-
-    def start(self) -> None:
-        """Starts tracing."""
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.start()
-        )
-
-    def stop(self) -> None:
-        """Stops the current trace."""
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.stop()
-        )
-
-    def terminate(self) -> None:
-        """Terminates the trace session.."""
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.terminate()
-        )
-
-    def terminate_and_download(
-        self, directory: str, trace_file: str | None = None
-    ) -> str:
-        """Terminates the trace session and downloads the trace data."""
-        return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.terminate_and_download(directory, trace_file)
-        )
-
-    # LINT.IfChange
-    @contextmanager
-    def trace_session(
-        self,
-        categories: list[str] | None = None,
-        buffer_size: int | None = None,
-        download: bool = False,
-        directory: str | None = None,
-        trace_file: str | None = None,
-    ) -> Iterator[None]:
-        """Starts and captures trace data within a context."""
-        if not self.is_session_initialized():
-            self.initialize(categories, buffer_size)
-        try:
-            self.start()
-            yield
-        finally:
-            self.stop()
-            if download:
-                if directory is None or not os.path.isabs(directory):
-                    raise ValueError(
-                        "Provide a valid absolute path to download the trace."
-                    )
-                if trace_file is None:
-                    raise ValueError(
-                        "Provide a valid trace file to download the trace."
-                    )
-                self.terminate_and_download(
-                    directory=directory,
-                    trace_file=trace_file,
-                )
-            else:
-                self.terminate()
-
-    # LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/affordances/tracing/tracing.py)
-
-    def _reset_state_sync(self) -> None:
-        """Resets internal state. This is primarily for testing."""
-        fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner._reset_state()
-        )
-
-    def as_async(self) -> AsyncTracingUsingFc:
-        """Returns the async version of Tracing."""
-        return self._inner

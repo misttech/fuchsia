@@ -431,7 +431,7 @@ class SoftApTest(base_test.WifiBaseTest):
             client.disconnect()
             client.reset_wifi()
             client.wifi_toggle_state(True)
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.stop_all()
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
         if self.access_point:
             self.access_point.stop_all_aps()
         self.dut.disconnect()
@@ -442,7 +442,7 @@ class SoftApTest(base_test.WifiBaseTest):
         for ad in self.android_devices:
             ad.droid.wakeLockRelease()
             ad.droid.goToSleepNow()
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.stop_all()
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
         self.download_logs()
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -464,7 +464,7 @@ class SoftApTest(base_test.WifiBaseTest):
                     - 'any', 'only_5_ghz', 'only_2_4_ghz'
         """
         self.log.info(f"Starting SoftAP on DUT with settings: {params}")
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.start(
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.start(
             params.ssid,
             SecurityType(params.security_type.fuchsia_security_type()),
             params.password,
@@ -919,7 +919,7 @@ class SoftApTest(base_test.WifiBaseTest):
             EnvironmentError, if client and AP can still communicate
         """
         self.log.info("Stopping SoftAP on DUT.")
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap.stop(
+        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop(
             soft_ap_params.ssid,
             SecurityType(soft_ap_params.security_type.fuchsia_security_type()),
             soft_ap_params.password,
