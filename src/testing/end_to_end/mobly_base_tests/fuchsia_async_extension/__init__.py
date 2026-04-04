@@ -10,7 +10,7 @@ import typing
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar
 
-from mobly import base_test
+from mobly import base_test, records
 
 _ASYNC_EVENT_LOOP: asyncio.AbstractEventLoop = asyncio.new_event_loop()
 
@@ -59,57 +59,9 @@ if typing.TYPE_CHECKING:
         tests: list[str]
         root_output_path: str
         log_path: str
-        test_bed_name: str
-        testbed_name: str
         user_params: dict[str, Any]
-        results: records.TestResult
-        summary_writer: Incomplete
         controller_configs: dict[str, Any]
         current_test_info: Any
-
-        def __init__(self, configs: Any) -> None:
-            ...
-
-        def unpack_userparams(
-            self,
-            req_param_names: list[str] | None = ...,
-            opt_param_names: list[str] | None = ...,
-            **kwargs: Any,
-        ) -> None:
-            ...
-
-        def setup_generated_tests(self) -> None:
-            ...
-
-        def record_data(self, content: Any) -> None:
-            ...
-
-        def exec_one_test(
-            self,
-            test_name: str,
-            test_method: Callable[..., Any],
-            record: records.TestResultRecord | None = ...,
-        ) -> None:
-            ...
-
-        def get_existing_test_names(self) -> list[str]:
-            ...
-
-        def run(self, test_names: list[str] | None = ...) -> None:
-            ...
-
-        # Add generate_tests so super() works
-        def generate_tests(
-            self,
-            test_logic: Callable[..., Any],
-            name_func: Callable[..., str],
-            arg_sets: Sequence[Any],
-            uid_func: Callable[..., str] | None = ...,
-        ) -> None:
-            ...
-
-        # Use Any to avoid LSP violation when overriding with async def
-        register_controller: Any
 
     # LINT.ThenChange(//src/testing/end_to_end/stubs/mobly/base_test.pyi)
     _BaseTestClass = _MoblyStub
@@ -158,31 +110,31 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
     # This ensures each subclass of this one will define these methods as async,
     # because mypy checks will enforce that. Then the __init_subclass__ in
     # _AsyncBaseTestClassMeta will wrap them with make_sync_wrapper.
-    async def pre_run(self):  # type: ignore
+    async def pre_run(self) -> None:
         pass
 
-    async def setup_generated_tests(self):  # type: ignore
+    async def setup_generated_tests(self) -> None:
         pass
 
-    async def setup_class(self):  # type: ignore
+    async def setup_class(self) -> None:
         pass
 
-    async def teardown_class(self):  # type: ignore
+    async def teardown_class(self) -> None:
         pass
 
-    async def setup_test(self):  # type: ignore
+    async def setup_test(self) -> None:
         pass
 
-    async def teardown_test(self):  # type: ignore
+    async def teardown_test(self) -> None:
         pass
 
-    async def on_fail(self, record):  # type: ignore
+    async def on_fail(self, record: records.TestResultRecord) -> None:
         pass
 
-    async def on_pass(self, record):  # type: ignore
+    async def on_pass(self, record: records.TestResultRecord) -> None:
         pass
 
-    async def on_skip(self, record):  # type: ignore
+    async def on_skip(self, record: records.TestResultRecord) -> None:
         pass
 
     def generate_tests(

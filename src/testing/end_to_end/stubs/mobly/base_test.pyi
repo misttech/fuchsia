@@ -1,8 +1,7 @@
 from typing import Any, Callable, Sequence
 
 from _typeshed import Incomplete
-from mobly import records as records
-from mobly import runtime_test_info as runtime_test_info
+from mobly import records
 
 TEST_CASE_TOKEN: str
 RESULT_LINE_TEMPLATE: Incomplete
@@ -14,7 +13,9 @@ ATTR_MAX_CONSEC_ERROR: str
 
 class Error(Exception): ...
 
-def repeat(count: int, max_consecutive_error: Incomplete | None = ...) -> Any: ...
+def repeat(
+    count: int, max_consecutive_error: Incomplete | None = ...
+) -> Any: ...
 def retry(max_count: int) -> Any: ...
 
 class BaseTestClass:

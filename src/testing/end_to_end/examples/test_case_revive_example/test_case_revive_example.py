@@ -6,11 +6,11 @@
 import logging
 
 import test_case_revive
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
 from mobly import test_runner
 from test_case_revive import TestMethodExecutionFrequency, opt_out, tag_test
 
-dut: FuchsiaDevice
+dut: AsyncFuchsiaDevice
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

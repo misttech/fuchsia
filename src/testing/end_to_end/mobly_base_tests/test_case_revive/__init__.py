@@ -59,9 +59,9 @@ class _TestArgTuple:
     test_case_method: str
     fuchsia_device_operation: FuchsiaDeviceOperation
     test_method_execution_frequency: TestMethodExecutionFrequency
-    pre_test_execution_fn: Callable[[], None] | None = None
+    pre_test_execution_fn: Callable[..., Any] | None = None
     pre_test_execution_fn_kwargs: dict[str, Any] | None = None
-    post_test_execution_fn: Callable[[], None] | None = None
+    post_test_execution_fn: Callable[..., Any] | None = None
     post_test_execution_fn_kwargs: dict[str, Any] | None = None
 
     def __str__(self) -> str:
@@ -89,9 +89,9 @@ def opt_out() -> Callable[..., Any]:
 def tag_test(
     fuchsia_device_operation: FuchsiaDeviceOperation | None = None,
     test_method_execution_frequency: TestMethodExecutionFrequency | None = None,
-    pre_test_execution_fn: Callable[[], None] | None = None,
+    pre_test_execution_fn: Callable[..., Any] | None = None,
     pre_test_execution_fn_kwargs: dict[str, Any] | None = None,
-    post_test_execution_fn: Callable[[], None] | None = None,
+    post_test_execution_fn: Callable[..., Any] | None = None,
     post_test_execution_fn_kwargs: dict[str, Any] | None = None,
 ) -> Callable[..., Any]:
     """Decorator that can be used to tag a test with a label"""
@@ -159,7 +159,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
 
     def _perform_op(
         self, fuchsia_device_operation: FuchsiaDeviceOperation
-    ) -> None:
+    ) -> Any:
         """Perform user specified operation"""
 
         for fuchsia_device in self.fuchsia_devices:
@@ -188,7 +188,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     _DMC_MODULE,
                     _DMC_CLASS,
                 )
-                power_switch_class: type[power_switch.PowerSwitch] = getattr(
+                power_switch_class: Any = getattr(
                     importlib.import_module(_DMC_MODULE), _DMC_CLASS
                 )
 
@@ -327,9 +327,9 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
         test_case: str,
         fuchsia_device_operation: FuchsiaDeviceOperation,
         test_method_execution_frequency: TestMethodExecutionFrequency,
-        pre_test_execution_fn: Callable[[], None] | None,
+        pre_test_execution_fn: Callable[..., Any] | None,
         pre_test_execution_fn_kwargs: dict[str, Any] | None,
-        post_test_execution_fn: Callable[[], None] | None,
+        post_test_execution_fn: Callable[..., Any] | None,
         post_test_execution_fn_kwargs: dict[str, Any] | None,
     ) -> str:
         """Revived test case name function"""
@@ -435,7 +435,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     self, revived_test_case
                 )._test_method_execution_frequency
 
-            pre_test_execution_fn: Callable[[], None] | None = None
+            pre_test_execution_fn: Callable[..., Any] | None = None
             if "_pre_test_execution_fn" in dir(
                 getattr(self, revived_test_case)
             ):
@@ -451,7 +451,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     self, revived_test_case
                 )._pre_test_execution_fn_kwargs
 
-            post_test_execution_fn: Callable[[], None] | None = None
+            post_test_execution_fn: Callable[..., Any] | None = None
             if "_post_test_execution_fn" in dir(
                 getattr(self, revived_test_case)
             ):
