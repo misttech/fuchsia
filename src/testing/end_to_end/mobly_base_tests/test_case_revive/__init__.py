@@ -118,7 +118,7 @@ def tag_test(
 
 
 class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
-    """Async version of TestCaseRevive."""
+    """Base class for TestCaseRevive."""
 
     async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""

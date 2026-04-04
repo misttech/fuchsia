@@ -15,19 +15,19 @@ import logging
 import random
 
 import fidl_fuchsia_blackout_test as blackout
-import fuchsia_async_extension
 import honeydew.utils.common
+import test_case_revive
 from honeydew.transports.ffx.errors import FfxCommandError
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, test_runner
-from test_case_revive import test_case_revive
+from test_case_revive import TestMethodExecutionFrequency, tag_test
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class BlackoutTest(test_case_revive.TestCaseRevive):
-    def setup_class(self) -> None:
-        super().setup_class()
+class BlackoutTest(test_case_revive.AsyncTestCaseRevive):
+    async def setup_class(self) -> None:
+        await super().setup_class()
 
         self.dut = self.fuchsia_devices[0]
         asserts.abort_class_if(
@@ -52,7 +52,7 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
 
         self.create_blackout_component()
 
-    def teardown_class(self) -> None:
+    async def teardown_class(self) -> None:
         try:
             self.dut.ffx.run(
                 [
@@ -65,14 +65,14 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
             _LOGGER.warning(
                 "Blackout: Failed to stop component during teardown"
             )
-        super().teardown_class()
+        await super().teardown_class()
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def setup_test(self) -> None:
+        await super().setup_test()
         _LOGGER.info("Blackout: Setting up test filesystem")
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.blackout_proxy.setup(
+            (
+                await self.blackout_proxy.setup(
                     device_label=self.device_label,
                     device_path=self.device_path,
                     seed=self.seed,
@@ -82,8 +82,8 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
             asserts.fail(f"Failed to run setup: {e}")
         _LOGGER.info("Blackout: Running filesystem load")
         try:
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.blackout_proxy.test(
+            (
+                await self.blackout_proxy.test(
                     device_label=self.device_label,
                     device_path=self.device_path,
                     seed=self.seed,
@@ -123,18 +123,16 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
         )
         self.blackout_proxy = blackout.ControllerClient(ch)
 
-    @test_case_revive.tag_test(
-        test_method_execution_frequency=test_case_revive.TestMethodExecutionFrequency.POST_ONLY,
+    @tag_test(
+        test_method_execution_frequency=TestMethodExecutionFrequency.POST_ONLY,
     )
-    def _test_do_verification(self) -> None:
+    async def _test_do_verification(self) -> None:
         self.create_blackout_component()
         _LOGGER.info("Blackout: Running device verification")
-        res = fuchsia_async_extension.get_loop().run_until_complete(
-            self.blackout_proxy.verify(
-                device_label=self.device_label,
-                device_path=self.device_path,
-                seed=self.seed,
-            )
+        res = await self.blackout_proxy.verify(
+            device_label=self.device_label,
+            device_path=self.device_path,
+            seed=self.seed,
         )
         asserts.assert_equal(
             res.err,

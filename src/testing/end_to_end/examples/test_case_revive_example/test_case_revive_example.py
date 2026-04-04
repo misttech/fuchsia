@@ -1,13 +1,14 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Example usage of test_case_revive.TestCaseRevive."""
+"""Example usage of test_case_revive.AsyncTestCaseRevive."""
 
 import logging
 
+import test_case_revive
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from mobly import test_runner
-from test_case_revive import test_case_revive
+from test_case_revive import TestMethodExecutionFrequency, opt_out, tag_test
 
 dut: FuchsiaDevice
 
@@ -30,16 +31,16 @@ def _to_run_after_test(bar: int) -> None:
     )
 
 
-class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
-    """Example usage of test_case_revive.TestCaseRevive."""
+class ExampleTestCaseRevive(test_case_revive.AsyncTestCaseRevive):
+    """Example usage of test_case_revive.AsyncTestCaseRevive."""
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
 
         global dut
         dut = self.fuchsia_devices[0]
 
-    @test_case_revive.opt_out()
+    @opt_out()
     def test_that_does_not_revive(self) -> None:
         """This test case will not be run if built with `params.test_case_revive = true`"""
         _LOGGER.info(
@@ -57,7 +58,7 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
             3. Re-run this test case method
 
         To prevent running a test case in revive mode even if built with the revive flag,
-        annotate it with `@test_case_revive.opt_out()`.
+        annotate it with `@opt_out()`.
         """
         for fuchsia_device in self.fuchsia_devices:
             _LOGGER.info(
@@ -66,8 +67,8 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
                 fuchsia_device.firmware_version,
             )
 
-    @test_case_revive.tag_test(
-        test_method_execution_frequency=test_case_revive.TestMethodExecutionFrequency.POST_ONLY,
+    @tag_test(
+        test_method_execution_frequency=TestMethodExecutionFrequency.POST_ONLY,
         pre_test_execution_fn=_to_run_before_test,
         pre_test_execution_fn_kwargs={"foo": 1},
         post_test_execution_fn=_to_run_after_test,
