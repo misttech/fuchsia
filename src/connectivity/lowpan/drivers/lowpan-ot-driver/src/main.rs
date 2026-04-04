@@ -320,13 +320,14 @@ where
 {
     let name = name.as_ref();
     let (epskc_sender, epskc_receiver) = mpsc::channel(SERVICE_CHANNEL_SIZE);
+    let (border_agent_sender, border_agent_receiver) = mpsc::channel(SERVICE_CHANNEL_SIZE);
     let mut driver = OtDriver::new(
         ot_instance,
         net_if,
         backbone_if,
         product_metadata,
-        publisher.clone(),
         epskc_sender,
+        border_agent_sender,
     );
 
     driver.start_multicast_routing_manager();
@@ -357,7 +358,7 @@ where
     // We use `stream::select_all` here so that only the
     // futures that actually need to be polled get polled.
     futures::stream::select_all([
-        driver.main_loop_stream(epskc_receiver, publisher).boxed(),
+        driver.main_loop_stream(epskc_receiver, border_agent_receiver, publisher).boxed(),
         lowpan_device_task.into_stream().boxed(),
         lowpan_device_factory_task.into_stream().boxed(),
     ])

@@ -168,6 +168,7 @@ where
 enum PublishServiceFailure {
     PublishInstanceRequestFailure,
     PublishInstanceFailure,
+    AlreadyPublishedLocally,
     ResponderFailure,
 }
 
@@ -190,6 +191,9 @@ async fn publish_service(
         .map(|x| -> Result<(), PublishServiceFailure> {
             match x {
                 Ok(Ok(())) => Ok(()),
+                Ok(Err(
+                    fidl_fuchsia_net_mdns::PublishServiceInstanceError::AlreadyPublishedLocally,
+                )) => Err(PublishServiceFailure::AlreadyPublishedLocally),
                 Ok(Err(err)) => {
                     error!(tag = tag; "publish_init_future failed: {:?}", err);
                     Err(PublishServiceFailure::PublishInstanceFailure)
@@ -277,17 +281,13 @@ async fn publish_border_agent_service(
     publisher: ServiceInstancePublisherProxy,
 ) -> Result<(), anyhow::Error> {
     let tag = "meshcop";
+    let mut current_instance_name = service_instance;
 
-    for i in 0..MAX_PUBLISH_SERVICE_ATTEMPTS {
-        let service_name = match i {
-            0 => service_instance.clone(),
-            _ => get_alternate_service_instance_name(service_instance.as_str()),
-        };
-
+    for _ in 0..MAX_PUBLISH_SERVICE_ATTEMPTS {
         match publish_service(
             tag,
             BORDER_AGENT_SERVICE_TYPE,
-            service_name.as_str(),
+            &current_instance_name,
             Some(txt.clone()),
             port,
             publisher.clone(),
@@ -295,17 +295,66 @@ async fn publish_border_agent_service(
         .await
         {
             Ok(()) => return Ok(()),
+            Err(PublishServiceFailure::AlreadyPublishedLocally) => {
+                warn!(tag; "Service {:?} already published locally.", current_instance_name);
+            }
             Err(PublishServiceFailure::PublishInstanceRequestFailure) => {
-                return Err(anyhow::format_err!("Failed to publish border agent service."));
+                return Err(anyhow::format_err!("Failed to publish meshcop service."));
             }
             Err(PublishServiceFailure::PublishInstanceFailure)
             | Err(PublishServiceFailure::ResponderFailure) => {
-                warn!(tag; "Publish attempt failed.",);
+                warn!(tag; "Publish attempt failed.");
             }
         }
+
+        // If we didn't succeed, we calculate an alternative name and retry the outer loop.
+        current_instance_name = get_alternate_service_instance_name(&current_instance_name);
     }
 
     Err(anyhow::format_err!("Exhausted service publication retry attempts."))
+}
+
+pub(crate) enum BorderAgentPublishRequest {
+    Stop,
+    Start { port: u16, txt: Vec<(String, Vec<u8>)>, instance_name: String },
+}
+
+pub(crate) async fn manage_border_agent_service_publisher(
+    mut receiver: mpsc::Receiver<BorderAgentPublishRequest>,
+    publisher: ServiceInstancePublisherProxy,
+) -> Result<(), anyhow::Error> {
+    let publication_fut = Fuse::terminated();
+    let mut publication_fut = pin!(publication_fut);
+
+    loop {
+        select! {
+             result = publication_fut => {
+                 info!("meshcop publication completed: {result:?}");
+             }
+             state = receiver.select_next_some() => {
+                 match state {
+                    BorderAgentPublishRequest::Start { port, txt, instance_name } => {
+                         let cloned_publisher = publisher.clone();
+                         publication_fut.set(async move {
+                             let _ = publish_border_agent_service(
+                                 instance_name,
+                                 txt,
+                                 port,
+                                 cloned_publisher,
+                             ).await;
+                         }.fuse());
+                    }
+                    BorderAgentPublishRequest::Stop => {
+                         publication_fut.set(Fuse::terminated());
+                    }
+                }
+            }
+            complete => {
+                error!("meshcop receiver completed unexpectedly");
+                return Err(anyhow::format_err!("meshcop receiver completed unexpectedly"))
+            }
+        }
+    }
 }
 
 pub(crate) enum PublishServiceRequest {
@@ -337,6 +386,9 @@ async fn publish_epskc_service(
         .await
         {
             Ok(()) => return Ok(()),
+            Err(PublishServiceFailure::AlreadyPublishedLocally) => {
+                warn!(tag; "Service {:?} already published locally.", service_name);
+            }
             Err(PublishServiceFailure::PublishInstanceRequestFailure) => {
                 return Err(anyhow::format_err!("Failed to publish ePSKc service."));
             }
@@ -392,7 +444,11 @@ pub(crate) async fn manage_epskc_service_publisher(
 // service instance name used by the Border Agent (e.g., for meshcop and meshcop-e) is
 // generated using the pattern: "vendor name + product name + #XYZW + service type", the
 // "XYZW" represents the last two bytes of the extended address, in uppercase hexadecimal.
-fn get_service_instance_name_with_ext_addr(vendor: &str, product: &str, ext_addr: &[u8]) -> String {
+pub(crate) fn get_service_instance_name_with_ext_addr(
+    vendor: &str,
+    product: &str,
+    ext_addr: &[u8],
+) -> String {
     format!("{} {} #{}", vendor, product, hex::encode(&ext_addr[6..]).to_uppercase())
 }
 
@@ -456,25 +512,14 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
 
             *last_txt_entries = txt.clone();
 
-            let old_service = self.border_agent_service.lock().take();
-            if let Some(task) = old_service {
-                if let Some(Err(err)) = task.abort().await {
-                    warn!(
-                        tag = "meshcop";
-                        "update_border_agent_service: Previous publication task ended with an \
-                         error: {err:?}"
-                    );
-                }
-                info!(tag = "meshcop"; "update_border_agent_service: pervious task terminated");
+            let mut sender = self.border_agent_publisher.lock();
+            if let Err(e) = sender.try_send(BorderAgentPublishRequest::Start {
+                port,
+                txt,
+                instance_name: service_instance_name,
+            }) {
+                warn!("Could not post Border Agent Start event: {:?}", e);
             }
-
-            *self.border_agent_service.lock() =
-                Some(fasync::Task::spawn(publish_border_agent_service(
-                    service_instance_name,
-                    txt,
-                    port,
-                    self.publisher.clone(),
-                )));
         }
     }
 
@@ -603,7 +648,6 @@ mod tests {
                     service, instance, options, publication_responder: _, responder,
                 }))) => {
                         match i {
-
                             0 => assert_eq!(instance, TEST_SERVICE),
                             _ => {
                                 let re = regex::Regex::new(

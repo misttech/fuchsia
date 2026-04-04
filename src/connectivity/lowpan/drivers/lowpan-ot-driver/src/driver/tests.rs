@@ -79,14 +79,15 @@ where
     let (publisher, _) =
         fidl::endpoints::create_proxy::<fidl_fuchsia_net_mdns::ServiceInstancePublisherMarker>();
     let (sender, receiver) = mpsc::channel(100);
+    let (border_agent_sender, border_agent_receiver) = mpsc::channel(10);
 
     let driver = Arc::new(OtDriver::new(
         instance,
         network_interface,
         backbone_interface,
         ProductMetadata::default(),
-        publisher.clone(),
         sender,
+        border_agent_sender,
     ));
 
     // Note that we cannot move this into an async block because
@@ -111,7 +112,7 @@ where
     };
 
     async move {
-        let driver_stream = driver.main_loop_stream(receiver, publisher);
+        let driver_stream = driver.main_loop_stream(receiver, border_agent_receiver, publisher);
 
         let mut driver_stream_count = 0u32;
         futures::select_biased! {

@@ -80,8 +80,12 @@ pub struct OtDriver<OT, NI, BI> {
     /// Backbone Interface. Provides support of bouder routing and TREL.
     backbone_if: BI,
 
-    /// Task for updating mDNS service for border agent
-    border_agent_service: fuchsia_sync::Mutex<Option<fasync::Task<Result<(), anyhow::Error>>>>,
+    /// Information about the platform on which the driver is running.  This information is cached
+    /// to prevent repeated service reconnections and redundant queries.
+    product_metadata: ProductMetadata,
+
+    border_agent_publisher:
+        fuchsia_sync::Mutex<mpsc::Sender<border_agent::BorderAgentPublishRequest>>,
 
     /// The current meshcop TXT records.
     #[allow(clippy::type_complexity)]
@@ -95,11 +99,6 @@ pub struct OtDriver<OT, NI, BI> {
 
     /// Information about the platform on which the driver is running.  This information is cached
     /// to prevent repeated service reconnections and redundant queries.
-    product_metadata: ProductMetadata,
-
-    /// Allows for controlling the publishing of border agent service and ePSKc service.
-    publisher: fidl_fuchsia_net_mdns::ServiceInstancePublisherProxy,
-
     /// Commands ePSKc publishing logic to start or stop.
     epskc_publisher: fuchsia_sync::Mutex<mpsc::Sender<border_agent::PublishServiceRequest>>,
 }
@@ -110,23 +109,22 @@ impl<OT: ot::Cli, NI, BI> OtDriver<OT, NI, BI> {
         net_if: NI,
         backbone_if: BI,
         product_metadata: ProductMetadata,
-        publisher: fidl_fuchsia_net_mdns::ServiceInstancePublisherProxy,
         epskc_publisher: mpsc::Sender<border_agent::PublishServiceRequest>,
+        border_agent_publisher: mpsc::Sender<border_agent::BorderAgentPublishRequest>,
     ) -> Self {
         OtDriver {
             driver_state: fuchsia_sync::Mutex::new(DriverState::new(ot_instance)),
             driver_state_change: AsyncCondition::new(),
             net_if,
             backbone_if,
-            border_agent_service: fuchsia_sync::Mutex::new(None),
             border_agent_current_txt_entries: std::sync::Arc::new(futures::lock::Mutex::new(
                 vec![],
             )),
             border_agent_vendor_txt_entries: futures::lock::Mutex::new(vec![]),
             multicast_routing_manager: MulticastRoutingManager::new(),
             product_metadata,
-            publisher,
             epskc_publisher: fuchsia_sync::Mutex::new(epskc_publisher),
+            border_agent_publisher: fuchsia_sync::Mutex::new(border_agent_publisher),
         }
     }
 

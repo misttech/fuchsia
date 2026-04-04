@@ -32,6 +32,7 @@ where
     pub fn main_loop_stream(
         &self,
         epskc_receiver: mpsc::Receiver<border_agent::PublishServiceRequest>,
+        border_agent_receiver: mpsc::Receiver<border_agent::BorderAgentPublishRequest>,
         publisher: ServiceInstancePublisherProxy,
     ) -> impl Stream<Item = Result<(), anyhow::Error>> + Send + '_
     where
@@ -317,7 +318,11 @@ where
             }
         };
 
-        let epskc_service = border_agent::manage_epskc_service_publisher(epskc_receiver, publisher);
+        let epskc_service =
+            border_agent::manage_epskc_service_publisher(epskc_receiver, publisher.clone());
+
+        let border_agent_service =
+            border_agent::manage_border_agent_service_publisher(border_agent_receiver, publisher);
 
         // Stream for handling ePSKc state changes.
         let epskc_state_change_stream = futures::stream::unfold((), move |_| {
@@ -363,6 +368,7 @@ where
             openthread_cli_inbound_loop.into_stream().boxed(),
             epskc_service.into_stream().boxed(),
             epskc_state_change_stream.into_stream().boxed(),
+            border_agent_service.into_stream().boxed(),
         ]))
     }
 
