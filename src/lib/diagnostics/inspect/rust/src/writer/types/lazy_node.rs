@@ -15,7 +15,11 @@ pub struct LazyNode {
     inner: Inner<InnerLazyNodeType>,
 }
 
-impl InspectType for LazyNode {}
+impl InspectType for LazyNode {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::LazyNode(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(LazyNode);
 

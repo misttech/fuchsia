@@ -19,7 +19,11 @@ pub struct DoubleLinearHistogramProperty {
     step_size: f64,
 }
 
-impl InspectType for DoubleLinearHistogramProperty {}
+impl InspectType for DoubleLinearHistogramProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::DoubleArray(self.array)
+    }
+}
 
 impl DoubleLinearHistogramProperty {
     pub(crate) fn new(

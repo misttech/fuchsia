@@ -16,7 +16,11 @@ pub struct UintArrayProperty {
     pub(crate) inner: Inner<InnerValueType>,
 }
 
-impl InspectType for UintArrayProperty {}
+impl InspectType for UintArrayProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::UintArray(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(UintArrayProperty);
 

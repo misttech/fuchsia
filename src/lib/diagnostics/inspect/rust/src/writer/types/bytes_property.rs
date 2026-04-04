@@ -30,7 +30,11 @@ impl<'t> Property<'t> for BytesProperty {
     }
 }
 
-impl InspectType for BytesProperty {}
+impl InspectType for BytesProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::BytesProperty(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(BytesProperty);
 

@@ -16,6 +16,9 @@ use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
 use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_inspect::{
     ArrayProperty, InspectType, Inspector, LazyNode, Node as InspectNode, NumericProperty,
@@ -37,10 +40,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, wlan_metrics_registry as metrics,
-};
+use wlan_metrics_registry as metrics;
 
 // Include a timeout on stats calls so that if the driver deadlocks, telemtry doesn't get stuck.
 const GET_IFACE_STATS_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
@@ -797,7 +797,11 @@ struct HistogramsNode {
     antenna_nodes: HashMap<fidl_fuchsia_wlan_stats::AntennaId, InspectNode>,
 }
 
-impl InspectType for HistogramsNode {}
+impl InspectType for HistogramsNode {
+    fn into_recorded(self) -> fuchsia_inspect::RecordedInspectType {
+        fuchsia_inspect::RecordedInspectType::Boxed(Box::new(self))
+    }
+}
 
 macro_rules! fn_log_per_antenna_histograms {
     ($name:ident, $field:ident, $histogram_ty:ty, $sample:ident => $sample_index_expr:expr) => {

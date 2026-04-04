@@ -19,7 +19,11 @@ pub struct UintExponentialHistogramProperty {
     buckets: usize,
 }
 
-impl InspectType for UintExponentialHistogramProperty {}
+impl InspectType for UintExponentialHistogramProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::UintArray(self.array)
+    }
+}
 
 impl UintExponentialHistogramProperty {
     pub(crate) fn new(

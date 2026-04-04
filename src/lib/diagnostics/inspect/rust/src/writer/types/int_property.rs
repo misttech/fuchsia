@@ -16,7 +16,11 @@ pub struct IntProperty {
     inner: Inner<InnerValueType>,
 }
 
-impl InspectType for IntProperty {}
+impl InspectType for IntProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::IntProperty(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(IntProperty);
 

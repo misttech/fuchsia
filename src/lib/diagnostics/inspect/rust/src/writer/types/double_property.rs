@@ -16,7 +16,11 @@ pub struct DoubleProperty {
     inner: Inner<InnerValueType>,
 }
 
-impl InspectType for DoubleProperty {}
+impl InspectType for DoubleProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::DoubleProperty(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(DoubleProperty);
 

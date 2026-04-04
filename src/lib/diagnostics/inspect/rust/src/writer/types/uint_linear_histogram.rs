@@ -18,7 +18,11 @@ pub struct UintLinearHistogramProperty {
     step_size: u64,
 }
 
-impl InspectType for UintLinearHistogramProperty {}
+impl InspectType for UintLinearHistogramProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::UintArray(self.array)
+    }
+}
 
 impl UintLinearHistogramProperty {
     pub(crate) fn new(

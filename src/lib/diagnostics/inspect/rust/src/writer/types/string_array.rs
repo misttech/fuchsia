@@ -12,7 +12,11 @@ pub struct StringArrayProperty {
     inner: Inner<InnerValueType>,
 }
 
-impl InspectType for StringArrayProperty {}
+impl InspectType for StringArrayProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::StringArray(self)
+    }
+}
 
 impl InspectTypeInternal for StringArrayProperty {
     fn new(state: State, block_index: BlockIndex) -> Self {

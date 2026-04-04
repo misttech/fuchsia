@@ -115,7 +115,11 @@ pub type BootTimeProperty = TimeProperty<zx::BootTimeline>;
 /// An Inspect Time Property on the monotonictimeline.
 pub type MonotonicTimeProperty = TimeProperty<zx::MonotonicTimeline>;
 
-impl<T: fmt::Debug + Send + Sync> InspectType for TimeProperty<T> {}
+impl<T: fmt::Debug + Send + Sync + 'static> InspectType for TimeProperty<T> {
+    fn into_recorded(self) -> fuchsia_inspect::RecordedInspectType {
+        fuchsia_inspect::RecordedInspectType::IntProperty(self.inner)
+    }
+}
 
 #[cfg(test)]
 mod tests {

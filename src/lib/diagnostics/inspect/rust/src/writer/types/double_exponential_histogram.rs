@@ -20,7 +20,11 @@ pub struct DoubleExponentialHistogramProperty {
     buckets: usize,
 }
 
-impl InspectType for DoubleExponentialHistogramProperty {}
+impl InspectType for DoubleExponentialHistogramProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::DoubleArray(self.array)
+    }
+}
 
 impl DoubleExponentialHistogramProperty {
     pub(crate) fn new(

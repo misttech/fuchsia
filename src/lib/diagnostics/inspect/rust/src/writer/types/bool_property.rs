@@ -27,7 +27,11 @@ impl Property<'_> for BoolProperty {
     }
 }
 
-impl InspectType for BoolProperty {}
+impl InspectType for BoolProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::BoolProperty(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(BoolProperty);
 

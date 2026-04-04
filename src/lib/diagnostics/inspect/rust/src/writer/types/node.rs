@@ -49,7 +49,11 @@ pub struct Node {
     pub(crate) inner: Inner<InnerNodeType>,
 }
 
-impl InspectType for Node {}
+impl InspectType for Node {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::Node(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(Node);
 

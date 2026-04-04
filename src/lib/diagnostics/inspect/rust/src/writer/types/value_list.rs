@@ -2,15 +2,44 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::writer::types::InspectType;
+use super::*;
 use derivative::Derivative;
 use fuchsia_sync::Mutex;
 
-type InspectTypeList = Vec<Box<dyn InspectType>>;
+/// An enum representing any standard Inspect type that can be recorded in a `ValueList`.
+///
+/// Types that are 16 bytes or less are stored directly in the enum. Types that are larger than
+/// 16 bytes must be boxed in a `Boxed` variant.
+#[derive(Debug)]
+pub enum RecordedInspectType {
+    Node(Node),
+    BoolProperty(BoolProperty),
+    BytesProperty(BytesProperty),
+    DoubleProperty(DoubleProperty),
+    IntProperty(IntProperty),
+    StringProperty(StringProperty),
+    UintProperty(UintProperty),
+    DoubleArray(DoubleArrayProperty),
+    IntArray(IntArrayProperty),
+    StringArray(StringArrayProperty),
+    UintArray(UintArrayProperty),
+    LazyNode(LazyNode),
+    Boxed(Box<dyn InspectType>),
+}
+
+// Ensure that we don't inadvertently increase the size of RecordedInspectType by adding a new
+// variant with an unboxed payload larger than 16 bytes.
+const _RECORDED_INSPECT_TYPE_SIZE_ASSERTION: () = assert!(
+    std::mem::size_of::<RecordedInspectType>() == 24,
+    "RecordedInspectType size changed! Expected 24 bytes (1 byte tag + 7 bytes padding + \
+     16 bytes max unboxed payload)."
+);
+
+type InspectTypeList = Vec<RecordedInspectType>;
 
 /// Holds a list of inspect types that won't change.
 #[derive(Derivative)]
-#[derivative(Debug, PartialEq, Eq)]
+#[derivative(Debug, PartialEq)]
 pub struct ValueList {
     #[derivative(PartialEq = "ignore")]
     #[derivative(Debug = "ignore")]
@@ -31,12 +60,12 @@ impl ValueList {
 
     /// Stores an inspect type that won't change.
     pub fn record(&self, value: impl InspectType + 'static) {
-        let boxed_value = Box::new(value);
+        let converted_value = value.into_recorded();
         let mut values_lock = self.values.lock();
         if let Some(ref mut values) = *values_lock {
-            values.push(boxed_value);
+            values.push(converted_value);
         } else {
-            *values_lock = Some(vec![boxed_value]);
+            *values_lock = Some(vec![converted_value]);
         }
     }
 

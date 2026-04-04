@@ -10,7 +10,11 @@ use std::fmt::Debug;
 use std::sync::{Arc, Weak};
 
 /// Trait implemented by all inspect types.
-pub trait InspectType: Send + Sync + Debug {}
+pub trait InspectType: Send + Sync + Debug {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType
+    where
+        Self: Sized + 'static;
+}
 
 pub(crate) mod private {
     use crate::writer::State;

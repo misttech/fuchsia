@@ -108,7 +108,11 @@ pub struct Node {
     message: Option<StringProperty>,
 }
 
-impl InspectType for Node {}
+impl InspectType for Node {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::Boxed(Box::new(self))
+    }
+}
 
 impl Reporter for Node {
     /// Sets the health status to `STARTING_UP`.

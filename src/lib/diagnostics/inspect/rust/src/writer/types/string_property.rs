@@ -33,7 +33,11 @@ impl<'t> Property<'t> for StringProperty {
     }
 }
 
-impl InspectType for StringProperty {}
+impl InspectType for StringProperty {
+    fn into_recorded(self) -> crate::writer::types::RecordedInspectType {
+        crate::writer::types::RecordedInspectType::StringProperty(self)
+    }
+}
 
 crate::impl_inspect_type_internal!(StringProperty);
 
