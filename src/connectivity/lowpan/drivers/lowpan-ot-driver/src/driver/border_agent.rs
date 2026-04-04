@@ -7,6 +7,7 @@
 use super::*;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_net_mdns::*;
+use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::future::Fuse;
 use futures::select;
@@ -22,6 +23,13 @@ const BORDER_AGENT_SERVICE_PLACEHOLDER_PORT: u16 = 9;
 
 // Number of times to attempt to publish services.
 const MAX_PUBLISH_SERVICE_ATTEMPTS: usize = 2;
+
+// Number of times to attempt to check for mDNS service removal.
+const MAX_MDNS_SERVICE_REMOVAL_CHECKS: usize = 2;
+
+// The interval to wait before re-checking mDNS service removal.
+const MDNS_SERVICE_REMOVAL_CHECK_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(250);
 
 // These flags are ultimately defined by table 8-5 of the Thread v1.1.1 specification.
 // Additional flags originate from the source code found [here][1].
@@ -279,32 +287,74 @@ async fn publish_border_agent_service(
     txt: Vec<(String, Vec<u8>)>,
     port: u16,
     publisher: ServiceInstancePublisherProxy,
+    subscriber: Option<ServiceSubscriber2Proxy>,
 ) -> Result<(), anyhow::Error> {
     let tag = "meshcop";
     let mut current_instance_name = service_instance;
 
     for _ in 0..MAX_PUBLISH_SERVICE_ATTEMPTS {
-        match publish_service(
-            tag,
-            BORDER_AGENT_SERVICE_TYPE,
-            &current_instance_name,
-            Some(txt.clone()),
-            port,
-            publisher.clone(),
-        )
-        .await
-        {
-            Ok(()) => return Ok(()),
-            Err(PublishServiceFailure::AlreadyPublishedLocally) => {
-                warn!(tag; "Service {:?} already published locally.", current_instance_name);
+        let mut publish_success = false;
+
+        // Try publishing with current_instance_name, waiting up to
+        // MAX_MDNS_SERVICE_REMOVAL_CHECKS times. If AlreadyPublishedLocally is
+        // encountered, wait for MDNS_SERVICE_REMOVAL_CHECK_INTERVAL for the
+        // service to be removed.
+        for wait_attempt in 0..MAX_MDNS_SERVICE_REMOVAL_CHECKS {
+            match publish_service(
+                tag,
+                BORDER_AGENT_SERVICE_TYPE,
+                &current_instance_name,
+                Some(txt.clone()),
+                port,
+                publisher.clone(),
+            )
+            .await
+            {
+                Ok(()) => {
+                    publish_success = true;
+                    break;
+                }
+                Err(PublishServiceFailure::AlreadyPublishedLocally) => {
+                    warn!(tag; "Service {:?} already published locally. wait_attempt: {}",
+                        current_instance_name, wait_attempt);
+                    // Try to wait for 0.25 seconds for the service to be removed.
+                    // Assumed that we have removed the service earlier and mdns stack was not
+                    // properly procseed it yet.
+                    let timeout = fuchsia_async::Timer::new(MDNS_SERVICE_REMOVAL_CHECK_INTERVAL);
+                    let wait_fut = wait_for_service_removal(
+                        BORDER_AGENT_SERVICE_TYPE,
+                        &current_instance_name,
+                        subscriber.clone(),
+                    );
+
+                    let result = match futures::future::select(
+                        std::pin::pin!(timeout),
+                        std::pin::pin!(wait_fut),
+                    )
+                    .await
+                    {
+                        futures::future::Either::Left(_) => {
+                            Err(anyhow::anyhow!("Timeout waiting for service removal"))
+                        }
+                        futures::future::Either::Right((res, _)) => res,
+                    };
+                    if let Err(e) = result {
+                        warn!(tag; "Error waiting for mDNS service removal: {:?}", e);
+                    }
+                }
+                Err(PublishServiceFailure::PublishInstanceRequestFailure) => {
+                    return Err(anyhow::format_err!("Failed to publish meshcop service."));
+                }
+                Err(PublishServiceFailure::PublishInstanceFailure)
+                | Err(PublishServiceFailure::ResponderFailure) => {
+                    warn!(tag; "Publish attempt failed.");
+                    break;
+                }
             }
-            Err(PublishServiceFailure::PublishInstanceRequestFailure) => {
-                return Err(anyhow::format_err!("Failed to publish meshcop service."));
-            }
-            Err(PublishServiceFailure::PublishInstanceFailure)
-            | Err(PublishServiceFailure::ResponderFailure) => {
-                warn!(tag; "Publish attempt failed.");
-            }
+        }
+
+        if publish_success {
+            return Ok(());
         }
 
         // If we didn't succeed, we calculate an alternative name and retry the outer loop.
@@ -317,6 +367,55 @@ async fn publish_border_agent_service(
 pub(crate) enum BorderAgentPublishRequest {
     Stop,
     Start { port: u16, txt: Vec<(String, Vec<u8>)>, instance_name: String },
+}
+
+async fn wait_for_service_removal(
+    service_type: impl Into<String>,
+    instance_name: impl Into<String>,
+    subscriber: Option<ServiceSubscriber2Proxy>,
+) -> Result<(), anyhow::Error> {
+    let service_type = service_type.into();
+    let instance_name = instance_name.into();
+
+    let subscriber = if let Some(sub) = subscriber {
+        sub
+    } else {
+        connect_to_protocol::<ServiceSubscriber2Marker>()?
+    };
+    let (client, server) = create_endpoints::<ServiceSubscriptionListenerMarker>();
+
+    subscriber.subscribe_to_service(
+        &service_type,
+        &ServiceSubscriptionOptions {
+            exclude_local: Some(false),
+            exclude_local_proxies: Some(false),
+            ..Default::default()
+        },
+        client,
+    )?;
+
+    let mut stream = server.into_stream();
+
+    while let Some(request) = stream.try_next().await? {
+        match request {
+            ServiceSubscriptionListenerRequest::OnInstanceLost { instance, responder, .. } => {
+                responder.send().context("Failed to send OnInstanceLost response")?;
+                if instance == instance_name {
+                    return Ok(());
+                }
+            }
+            ServiceSubscriptionListenerRequest::OnInstanceDiscovered { responder, .. } => {
+                responder.send().context("Failed to send OnInstanceDiscovered response")?;
+            }
+            ServiceSubscriptionListenerRequest::OnInstanceChanged { responder, .. } => {
+                responder.send().context("Failed to send OnInstanceChanged response")?;
+            }
+            ServiceSubscriptionListenerRequest::OnQuery { responder, .. } => {
+                responder.send().context("Failed to send OnQuery response")?;
+            }
+        }
+    }
+    anyhow::bail!("Service subscription stream ended before removal of {:?}", instance_name)
 }
 
 pub(crate) async fn manage_border_agent_service_publisher(
@@ -341,6 +440,7 @@ pub(crate) async fn manage_border_agent_service_publisher(
                                  txt,
                                  port,
                                  cloned_publisher,
+                                 None,
                              ).await;
                          }.fuse());
                     }
@@ -624,24 +724,25 @@ mod tests {
 
     #[fuchsia::test]
     fn test_publish_border_agent_service_publication_failure() {
-        // Use an executor with fake time to prevent the timers related to the fake spinel instance
-        // from failing the test.
-        let mut exec = TestExecutor::new();
+        let mut exec = TestExecutor::new_with_fake_time();
         let mut test_vals = test_setup();
+
+        let (subscriber, subscriber_reqs) = create_proxy::<ServiceSubscriber2Marker>();
+        let mut subscriber_stream = subscriber_reqs.into_stream();
 
         let fut = publish_border_agent_service(
             String::from(TEST_SERVICE),
             TEST_TEXT.to_vec(),
             TEST_PORT,
             test_vals.publisher,
+            Some(subscriber),
         );
         let mut fut = pin!(fut);
 
         for i in 0..MAX_PUBLISH_SERVICE_ATTEMPTS {
-            // Progress the future and expect it to stall while attempting to interact with MDNS.
+            // First loop attempt (wait_attempt: 0).
             assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
 
-            // There should now be a request from the publisher.
             assert_matches!(
                 exec.run_until_stalled(&mut test_vals.publisher_stream.next()),
                 Poll::Ready(Some(Ok(fidl_mdns::ServiceInstancePublisherRequest::PublishServiceInstance {
@@ -663,6 +764,52 @@ mod tests {
                         .expect("Failed to send publish response");
                 }
             );
+
+            // Step future to let the timeout register.
+            assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+            assert_matches!(
+                exec.run_until_stalled(&mut subscriber_stream.next()),
+                Poll::Ready(Some(Ok(ServiceSubscriber2Request::SubscribeToService { .. })))
+            );
+
+            // Wait 0.5s timeout logic (wait_attempt: 0)
+            let _ = exec.wake_next_timer();
+
+            // Second loop attempt (wait_attempt: 1).
+            assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+            assert_matches!(
+                exec.run_until_stalled(&mut test_vals.publisher_stream.next()),
+                Poll::Ready(Some(Ok(fidl_mdns::ServiceInstancePublisherRequest::PublishServiceInstance {
+                    service, instance, options, publication_responder: _, responder,
+                }))) => {
+                        match i {
+                            0 => assert_eq!(instance, TEST_SERVICE),
+                            _ => {
+                                let re = regex::Regex::new(
+                                    (TEST_SERVICE.to_owned() + " \\([0-9]+\\)").as_str()
+                                ).unwrap();
+                                assert!(re.is_match(&instance))
+                            }
+                        }
+                    assert_eq!(service, BORDER_AGENT_SERVICE_TYPE);
+                    assert_eq!(options, ServiceInstancePublicationOptions::default());
+                    responder
+                        .send(Err(fidl_mdns::PublishServiceInstanceError::AlreadyPublishedLocally))
+                        .expect("Failed to send publish response");
+                }
+            );
+
+            // Step future to let the timeout register.
+            assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+            assert_matches!(
+                exec.run_until_stalled(&mut subscriber_stream.next()),
+                Poll::Ready(Some(Ok(ServiceSubscriber2Request::SubscribeToService { .. })))
+            );
+
+            // Wait 0.5s timeout logic (wait_attempt: 1).
+            let _ = exec.wake_next_timer();
         }
 
         // The future should complete with an error.
@@ -722,6 +869,7 @@ mod tests {
             TEST_TEXT.to_vec(),
             TEST_PORT,
             test_vals.publisher,
+            None,
         );
         let mut fut = pin!(fut);
 
@@ -754,6 +902,7 @@ mod tests {
             TEST_TEXT.to_vec(),
             TEST_PORT,
             test_vals.publisher,
+            None,
         );
         let mut fut = pin!(fut);
 
@@ -885,6 +1034,7 @@ mod tests {
             TEST_TEXT.to_vec(),
             TEST_PORT,
             test_vals.publisher,
+            None,
         );
         let mut fut = pin!(fut);
 
