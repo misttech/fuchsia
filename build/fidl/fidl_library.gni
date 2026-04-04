@@ -668,31 +668,36 @@ template("fidl_library") {
 
       files = all_files
 
+      non_sdk_deps = [ ":$main_target_name" ] + sdk_atom_deps
+
+      deps = sdk_deps
+
+      # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:idk_atom)
+
       metadata = {
         # For libraries included in an IDK, add the metadata to the list used to
         # generate documentation.
         # Historically, libraries in the  "host_tool" and "prebuilt" SDK
         # categories have also been published, so include them as well.
+        # LINT.IfChange(sdk_fidl_json_data_categories)
         if (is_sdk_included_publishable || category == "host_tool" ||
             category == "prebuilt") {
+          # LINT.ThenChange(//build/fidl/BUILD.bazel:idk_fidl_json_data_categories)
           sdk_fidl_json_data = [
+            # LINT.IfChange(sdk_fidl_json_data_contents)
             {
               name = library_name
               ir = rebase_path(invoker.fidl_ir_json, root_build_dir)
               category = category
               sdk_area = invoker.sdk_area
             },
+            # LINT.ThenChange(//build/bazel/rules/fidl/collect_fidl_library_data.bzl:idk_fidl_json_data_contents, //build/bazel/rules/fidl/collect_fidl_library_data.bzl:idk_fidl_json_data_json)
           ]
         }
       }
-
-      non_sdk_deps = [ ":$main_target_name" ] + sdk_atom_deps
-
-      deps = sdk_deps
     }
   } else {  # defined(invoker.sdk_category)
     not_needed(invoker, [ "sdk_area" ])
     not_needed([ "sdk_atom_deps" ])
   }
 }
-# LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:idk_atom)

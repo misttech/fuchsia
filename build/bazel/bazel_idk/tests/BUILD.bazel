@@ -942,11 +942,18 @@ filegroup(
         # "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_rust",
         # Tests linting exemptions and a source file with the same base name as the target name.
         "//sdk/fidl/zbi",
+        # This library is not in the IDK or a dependency of any other target in this list.
+        # This dependency can be used to verify that aspects find FIDL libraries
+        # via bindings targets. For example, by depending on this target in
+        # `//build/fidl:all_fidl_ir_json_files`.
+        "//sdk/fidl/fuchsia.camera2.debug:fuchsia.camera2.debug_cpp",
 
         # Non-IDK targets.
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
         "//zircon/system/ulib/zircon-internal",
     ],
+    # TODO(https://fxbug.dev/496603528): Remove once a better target is used for "all_fidl_ir_json_files".
+    visibility = ["//build/fidl:__pkg__"],
 )
 
 # Builds the targets listed in `tools` on the host toolchain.

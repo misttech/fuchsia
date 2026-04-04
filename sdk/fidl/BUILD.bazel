@@ -104,7 +104,10 @@ _compat_test_fidl_libraries_targets_list = [
 
 idk_molecule(
     name = "fidl",
-    visibility = ["//sdk:__pkg__"],
+    visibility = [
+        "//build/fidl:__pkg__",
+        "//sdk:__pkg__",
+    ],
     deps = [
         target + "_idk"
         for target in (_partner_idk_stable_fidl_libraries_targets_list +

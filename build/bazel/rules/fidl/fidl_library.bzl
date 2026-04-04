@@ -395,10 +395,12 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 
-    # LINT.IfChange(idk_atom)
     if category:
+        # LINT.IfChange(idk_name)
         idk_name = library_name
+        # LINT.ThenChange(//build/bazel/rules/fidl/collect_fidl_library_data.bzl:idk_fidl_json_data_contents)
 
+        # LINT.IfChange(idk_atom)
         file_base = "fidl/" + idk_name
 
         idk_files_map = {}
@@ -443,10 +445,7 @@ def _fidl_library_impl(
             testonly = testonly,
             visibility = get_atom_visibility(visibility, is_fidl_library = True),
         )
-
-        # TODO(https://fxbug.dev/428285014): Implement sdk_fidl_json_data.
-
-    # LINT.ThenChange(//build/fidl/fidl_library.gni:idk_atom)
+        # LINT.ThenChange(//build/fidl/fidl_library.gni:idk_atom)
 
 _fidl_library = macro(
     doc = """Declares a FIDL library.
