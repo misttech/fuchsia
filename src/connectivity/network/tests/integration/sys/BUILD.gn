@@ -9,8 +9,11 @@ rustc_test("sys") {
   edition = "2024"
   output_name = "netstack_sys_integration_test"
   deps = [
-    ":persistence-configuration",
+    ":dhcp_client-persistence-configuration",
+    ":netstack2-persistence-configuration",
+    ":netstack3-persistence-configuration",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+    "//sdk/fidl/fuchsia.net.dhcp:fuchsia.net.dhcp_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
     "//sdk/fidl/fuchsia.scheduler.deprecated:fuchsia.scheduler.deprecated_rust",
@@ -34,7 +37,17 @@ rustc_test("sys") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
-resource("persistence-configuration") {
+resource("netstack2-persistence-configuration") {
   sources = [ "//src/diagnostics/config/persistence/netstack.persist" ]
   outputs = [ "data/netstack.persist" ]
+}
+
+resource("netstack3-persistence-configuration") {
+  sources = [ "//src/diagnostics/config/persistence/netstack3.persist" ]
+  outputs = [ "data/netstack3.persist" ]
+}
+
+resource("dhcp_client-persistence-configuration") {
+  sources = [ "//src/diagnostics/config/persistence/dhcp_client.persist" ]
+  outputs = [ "data/dhcp_client.persist" ]
 }

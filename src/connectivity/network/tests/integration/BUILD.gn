@@ -12,7 +12,10 @@ import("//src/lib/testing/sharding/fuchsia_sharded_test_package.gni")
 tests = [
   {
     label = "sys"
-    package_deps = [ "//src/sys/stash:stash_secure_v2" ]
+    package_deps = [
+      "//src/connectivity/network/dhcpv4/client/bindings:component",
+      "//src/sys/stash:stash_secure_v2",
+    ]
   },
   {
     label = "device"

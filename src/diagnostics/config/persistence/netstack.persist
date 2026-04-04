@@ -1,5 +1,7 @@
 // TODO(https://fxbug.dev/42076420): Must be kept in sync with netstack's Inspect
 // tree manually in lieu of automated testing solution.
+
+// TODO(https://fxbug.dev/372466789): Remove this configuration once Netstack2 is deleted.
 [
     {
         tag: "counters",
