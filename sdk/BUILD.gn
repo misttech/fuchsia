@@ -423,16 +423,16 @@ sdk_documentation("sdk_notice") {
 # A tiny SDK collection used to export the content of the Zircon sysroot
 # This is only needed because several other parts of the Fuchsia build
 # depend on $OUTPUT_DIR/sdk/exported/zircon_sysroot/ to be available
-# and properly populated, see [1] for all details. Also, some third-party repos
-# build or reference building this rule [2].
+# and properly populated, see the links below for all details. Also, some third-party repos
+# build or reference building this rule.
 #
 # Note that //zircon/public/sysroot_sdk is already
 # a transitive dependency of //sdk:in_tree_collection, so using the content of
 # $OUTPUT_DIR/sdk/exported/in_tree_collection/ would be equivalent, except that
 # this directory is much longer to build (since it contains host tools).
 #
-# [1] https://cs.opensource.google/search?q=zircon_sysroot&ss=fuchsia%2Ffuchsia
-# [2] https://cs.opensource.google/search?q=%22sdk:zircon_sysroot%22&ss=fuchsia%2Ffuchsia
+# * See: https://cs.opensource.google/search?q=zircon_sysroot&ss=fuchsia%2Ffuchsia
+# * See: https://cs.opensource.google/search?q=%22sdk:zircon_sysroot%22&ss=fuchsia%2Ffuchsia
 sdk_collection("zircon_sysroot") {
   # This collection is not included in any SDK and could be a standard `group()`
   # except that there are shell scripts that expect
