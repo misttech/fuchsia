@@ -5,9 +5,9 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_REGISTERS_ARBITER_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_REGISTERS_ARBITER_H_
 
-#include <lib/stdcompat/bit.h>
 #include <zircon/assert.h>
 
+#include <bit>
 #include <cstdint>
 
 #include <hwreg/bitfields.h>
@@ -138,7 +138,7 @@ class ArbitrationControl : public hwreg::RegisterBase<ArbitrationControl, uint32
     ZX_ASSERT(value >= 1);
     ZX_ASSERT(value <= 8);
     ZX_ASSERT((value & (value - 1)) == 0);
-    return cpp20::countr_zero(static_cast<uint32_t>(value));
+    return std::countr_zero(static_cast<uint32_t>(value));
   }
 };
 
@@ -343,7 +343,7 @@ class ArbitrationControl2 : public hwreg::RegisterBase<ArbitrationControl2, uint
     ZX_ASSERT(max_requests >= 16);
     ZX_ASSERT(max_requests <= 128);
     ZX_ASSERT((max_requests & (max_requests - 1)) == 0);
-    const uint32_t raw_max_requests = 7 - cpp20::countr_zero(static_cast<uint32_t>(max_requests));
+    const uint32_t raw_max_requests = 7 - std::countr_zero(static_cast<uint32_t>(max_requests));
     return set_max_inflight_high_priority_read_requests_bits(raw_max_requests);
   }
 
@@ -377,7 +377,7 @@ class ArbitrationControl2 : public hwreg::RegisterBase<ArbitrationControl2, uint
     ZX_ASSERT(watermark >= 8);
     ZX_ASSERT(watermark <= 32);
     ZX_ASSERT((watermark & (watermark - 1)) == 0);
-    const uint32_t raw_watermark = cpp20::countr_zero(static_cast<uint32_t>(watermark)) - 3;
+    const uint32_t raw_watermark = std::countr_zero(static_cast<uint32_t>(watermark)) - 3;
     return set_request_transaction_id_queue_watermark_bits(raw_watermark);
   }
 
@@ -812,7 +812,7 @@ class PipeArbiterControl : public hwreg::RegisterBase<PipeArbiterControl, uint32
     ZX_ASSERT(clocks <= 128);
     ZX_ASSERT((clocks & (clocks - 1)) == 0);
 
-    const uint32_t raw_clocks = cpp20::countr_zero(static_cast<uint32_t>(clocks >> 4));
+    const uint32_t raw_clocks = std::countr_zero(static_cast<uint32_t>(clocks >> 4));
     return set_display_stream_buffer_arbitration_interval_bits(raw_clocks);
   }
 
@@ -849,7 +849,7 @@ class PipeArbiterControl : public hwreg::RegisterBase<PipeArbiterControl, uint32
     ZX_ASSERT((display_buffer_requests & (display_buffer_requests - 1)) == 0);
 
     const uint32_t raw_display_buffer_requests =
-        cpp20::countr_zero(static_cast<uint32_t>(display_buffer_requests >> 1));
+        std::countr_zero(static_cast<uint32_t>(display_buffer_requests >> 1));
     return set_display_buffer_requests_per_streamer_request_bits(raw_display_buffer_requests);
   }
 

@@ -8,12 +8,12 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/stdcompat/bit.h>
 #include <lib/zx/bti.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
 
+#include <bit>
 #include <cstdint>
 #include <string>
 #include <type_traits>
@@ -30,7 +30,7 @@ namespace {
 
 template <typename T, typename _ = std::enable_if<std::is_unsigned_v<T>>>
 constexpr bool IsAligned(T address_or_size, T alignment) {
-  ZX_DEBUG_ASSERT(cpp20::has_single_bit(alignment));
+  ZX_DEBUG_ASSERT(std::has_single_bit(alignment));
 
   const T alignment_mask = alignment - 1;
   return (address_or_size & alignment_mask) == 0;

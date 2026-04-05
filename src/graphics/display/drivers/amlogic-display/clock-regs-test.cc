@@ -4,9 +4,8 @@
 
 #include "src/graphics/display/drivers/amlogic-display/clock-regs.h"
 
-#include <lib/stdcompat/bit.h>
-
 #include <algorithm>
+#include <bit>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -310,7 +309,7 @@ TEST(HdmiClockTreeControlSetFrequencyDivider, LeastSignificantBitIsAlwaysZero) {
 // Returns -1 if `pattern` doesn't contains any one (i.e. pattern is 0).
 int BitOfMostSignificantOne(uint32_t pattern) {
   // This also works for pattern being 0, where countl_zero(0) equals to 32.
-  return 31 - cpp20::countl_zero(pattern);
+  return 31 - std::countl_zero(pattern);
 }
 
 TEST(BitOfMostSignificantOne, Correctness) {

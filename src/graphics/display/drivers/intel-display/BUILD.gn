@@ -113,7 +113,6 @@ source_set("common_srcs") {
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
-    "//sdk/lib/stdcompat",
     "//sdk/lib/zbi-format",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.intel.platform.gpucore:fuchsia.intel.platform.gpucore_cpp",

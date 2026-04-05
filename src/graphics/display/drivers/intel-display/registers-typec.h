@@ -6,9 +6,9 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_REGISTERS_TYPEC_H_
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/bit.h>
 #include <zircon/assert.h>
 
+#include <bit>
 #include <optional>
 
 #include <hwreg/bitfields.h>
@@ -298,7 +298,7 @@ class DynamicFlexIoScratchPad : public hwreg::RegisterBase<DynamicFlexIoScratchP
   // Callers must make sure they read from the correct FIA register.
   size_t display_port_assigned_tx_lane_count(intel_display::DdiId ddi_id) const {
     auto assignment = display_port_tx_lane_assignment(ddi_id);
-    return cpp20::popcount(assignment);
+    return std::popcount(assignment);
   }
 
   static auto GetForDdi(intel_display::DdiId ddi_id) {
