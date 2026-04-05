@@ -129,7 +129,7 @@ class MockBufferCollection : public MockBufferCollectionBase {
     EXPECT_EQ(64u, constraints.image_format_constraints().at(0).bytes_per_row_divisor());
 
     size_t expected_format_constraints_count = 0u;
-    const cpp20::span<const fuchsia_sysmem2::wire::ImageFormatConstraints> image_format_constraints(
+    const std::span<const fuchsia_sysmem2::wire::ImageFormatConstraints> image_format_constraints(
         constraints.image_format_constraints().data(),
         constraints.image_format_constraints().size());
 

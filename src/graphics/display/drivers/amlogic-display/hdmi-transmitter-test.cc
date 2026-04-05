@@ -68,7 +68,7 @@ class MockHdmiTransmitterController : public designware_hdmi::HdmiTransmitterCon
     expected_calls_.pop_front();
   }
 
-  void ExpectCalls(const cpp20::span<const HdmiTransmitterControllerCall> expected_calls) {
+  void ExpectCalls(const std::span<const HdmiTransmitterControllerCall> expected_calls) {
     std::copy(expected_calls.begin(), expected_calls.end(), std::back_inserter(expected_calls_));
   }
 

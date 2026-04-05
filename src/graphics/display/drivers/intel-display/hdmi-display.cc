@@ -6,7 +6,6 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/result.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
@@ -17,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 
 #include <fbl/alloc_checker.h>
@@ -76,8 +76,8 @@ constexpr DdiPhyConfigEntry kPhyConfigHdmiSkylakeY[11] = {
     {0x000000c0, 0x80003015}, {0x000000c0, 0x80000018},
 };
 
-cpp20::span<const DdiPhyConfigEntry> GetHdmiPhyConfigEntries(uint16_t device_id,
-                                                             uint8_t* default_iboost) {
+std::span<const DdiPhyConfigEntry> GetHdmiPhyConfigEntries(uint16_t device_id,
+                                                           uint8_t* default_iboost) {
   if (is_skl_y(device_id) || is_kbl_y(device_id)) {
     *default_iboost = 3;
     return kPhyConfigHdmiSkylakeY;
@@ -258,7 +258,7 @@ bool HdmiDisplay::PipeConfigEpilogue(const display::DisplayTiming& mode, PipeId 
   uint8_t i_boost_override = controller()->igd_opregion().GetIBoost(ddi_id(), false /* is_dp */);
 
   uint8_t default_iboost;
-  const cpp20::span<const DdiPhyConfigEntry> entries =
+  const std::span<const DdiPhyConfigEntry> entries =
       GetHdmiPhyConfigEntries(controller()->device_id(), &default_iboost);
   if (idx >= entries.size()) {
     idx = 8;  // Default index

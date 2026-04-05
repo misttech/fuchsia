@@ -7,7 +7,6 @@
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/mipi-dsi/mipi-dsi.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
@@ -16,6 +15,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 #include <fbl/alloc_checker.h>
 
@@ -63,7 +63,7 @@ zx_status_t CheckDsiDeviceRegister(
       reg,
   };
   std::array<uint8_t, kReadRegisterMaximumValueCount> response_buffer = {};
-  cpp20::span<uint8_t> response_payload(response_buffer.data(), count);
+  std::span<uint8_t> response_payload(response_buffer.data(), count);
 
   const mipi_dsi::DsiCommandAndResponse commands[] = {
       // Sets the maximum return packet size to avoid read buffer overflow on the
@@ -187,7 +187,7 @@ Lcd::Lcd(display::PanelType panel_type, const PanelConfig* panel_config,
 }
 
 // This function write DSI commands based on the input buffer.
-zx::result<> Lcd::PerformDisplayInitCommandSequence(cpp20::span<const uint8_t> encoded_commands) {
+zx::result<> Lcd::PerformDisplayInitCommandSequence(std::span<const uint8_t> encoded_commands) {
   zx_status_t status = ZX_OK;
   uint32_t delay_ms = 0;
   constexpr size_t kMinCmdSize = 2;
@@ -297,7 +297,7 @@ zx::result<> Lcd::PerformDisplayInitCommandSequence(cpp20::span<const uint8_t> e
           return zx::error(ZX_ERR_INVALID_ARGS);
         }
 
-        const cpp20::span<const uint8_t> payload = encoded_commands.subspan(i + 2, payload_size);
+        const std::span<const uint8_t> payload = encoded_commands.subspan(i + 2, payload_size);
         const mipi_dsi::DsiCommandAndResponse commands[] = {{
             .virtual_channel_id = kMipiDsiVirtualChanId,
             .data_type = cmd_type,

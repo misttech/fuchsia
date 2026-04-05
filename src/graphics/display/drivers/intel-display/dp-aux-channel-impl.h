@@ -7,13 +7,13 @@
 
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <threads.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/drivers/intel-display/ddi-aux-channel.h"
 #include "src/graphics/display/drivers/intel-display/dp-aux-channel.h"
@@ -46,7 +46,7 @@ class DpAuxChannelImpl final : public DpAuxChannel {
       __TA_REQUIRES(lock_);
 
   zx::result<DdiAuxChannel::ReplyInfo> DoTransaction(const DdiAuxChannel::Request& request,
-                                                     cpp20::span<uint8_t> reply_data_buffer)
+                                                     std::span<uint8_t> reply_data_buffer)
       __TA_REQUIRES(lock_);
 };
 

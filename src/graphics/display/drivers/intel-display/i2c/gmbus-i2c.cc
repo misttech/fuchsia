@@ -22,7 +22,7 @@ void WriteGMBusData(fdf::MmioBuffer* mmio_space, const uint8_t* buf, uint32_t si
   if (idx >= size) {
     return;
   }
-  cpp20::span<const uint8_t> data(buf + idx, std::min(4u, size - idx));
+  std::span<const uint8_t> data(buf + idx, std::min(4u, size - idx));
   registers::GMBusData::Get().FromValue(0).set_data(data).WriteTo(mmio_space);
 }
 

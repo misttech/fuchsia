@@ -5,10 +5,10 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_AMLOGIC_DISPLAY_CLOCK_REGS_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AMLOGIC_DISPLAY_CLOCK_REGS_H_
 
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
+#include <span>
 
 #include <hwreg/bitfields.h>
 
@@ -1109,7 +1109,7 @@ class HdmiClockTreeControl : public hwreg::RegisterBase<HdmiClockTreeControl, ui
       ToU28_4(3.75), ToU28_4(4.0), ToU28_4(5.0),  ToU28_4(6.0),  ToU28_4(6.25),
       ToU28_4(7.0),  ToU28_4(7.5), ToU28_4(12.0), ToU28_4(14.0), ToU28_4(15.0),
   };
-  static constexpr cpp20::span<const uint32_t> kSupportedFrequencyDividerRatios =
+  static constexpr std::span<const uint32_t> kSupportedFrequencyDividerRatios =
       kSupportedFrequencyDividerRatiosArray;
 
   // Sets the pattern generator so that it works as a frequency divider with a

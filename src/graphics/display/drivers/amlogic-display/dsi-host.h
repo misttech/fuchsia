@@ -10,11 +10,11 @@
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 
 #include <cstdint>
 #include <memory>
+#include <span>
 
 #include "src/graphics/display/drivers/amlogic-display/lcd.h"
 #include "src/graphics/display/drivers/amlogic-display/mipi-phy.h"
@@ -98,7 +98,7 @@ class DsiHost {
   // "Power on/off step", pages 16-17.
   //
   // `power_on` is called for each command of type Signal.
-  zx::result<> PerformPowerOpSequence(cpp20::span<const PowerOp> power_ops,
+  zx::result<> PerformPowerOpSequence(std::span<const PowerOp> power_ops,
                                       fit::callback<zx::result<>()> power_on);
 
   fdf::MmioBuffer mipi_dsi_top_mmio_;

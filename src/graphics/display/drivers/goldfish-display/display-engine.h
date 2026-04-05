@@ -71,10 +71,10 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
       display::ColorConversion color_conversion,
-      cpp20::span<const display::DriverLayer> layers) override;
+      std::span<const display::DriverLayer> layers) override;
   void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
                            display::ColorConversion color_conversion,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,

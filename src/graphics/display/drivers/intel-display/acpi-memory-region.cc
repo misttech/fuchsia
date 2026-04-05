@@ -5,7 +5,6 @@
 #include "src/graphics/display/drivers/intel-display/acpi-memory-region.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zircon-internal/align.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
@@ -19,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <span>
 
 #include "src/graphics/display/drivers/intel-display/acpi-memory-region-util.h"
 
@@ -53,18 +53,18 @@ zx::result<AcpiMemoryRegion> AcpiMemoryRegion::Create(zx::unowned_resource mmio_
   }
 
   const zx_vaddr_t region_address = static_cast<zx_vaddr_t>(first_page_address + page_offset);
-  const cpp20::span<uint8_t> region_data(reinterpret_cast<uint8_t*>(region_address), region_size);
+  const std::span<uint8_t> region_data(reinterpret_cast<uint8_t*>(region_address), region_size);
   return zx::ok(AcpiMemoryRegion(std::move(region_vmo), region_data));
 }
 
-AcpiMemoryRegion::AcpiMemoryRegion(zx::vmo region_vmo, cpp20::span<uint8_t> region_data)
+AcpiMemoryRegion::AcpiMemoryRegion(zx::vmo region_vmo, std::span<uint8_t> region_data)
     : region_data_(region_data), region_vmo_(std::move(region_vmo)) {
   ZX_ASSERT(!region_data.empty());
 }
 
 AcpiMemoryRegion::AcpiMemoryRegion(AcpiMemoryRegion&& rhs) noexcept
     : region_data_(rhs.region_data_), region_vmo_(std::move(rhs.region_vmo_)) {
-  rhs.region_data_ = cpp20::span<uint8_t>();
+  rhs.region_data_ = std::span<uint8_t>();
 }
 
 AcpiMemoryRegion& AcpiMemoryRegion::operator=(AcpiMemoryRegion&& rhs) noexcept {

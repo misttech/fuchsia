@@ -6,12 +6,12 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <cfloat>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <tuple>
 #include <utility>
 
@@ -154,7 +154,7 @@ bool DisplayDevice::CheckNeedsModeset(const display::DisplayTiming& mode) {
 
 void DisplayDevice::SubmitConfiguration(display::ModeId mode_id,
                                         const display::ColorConversion& color_conversion,
-                                        cpp20::span<const display::DriverLayer> layers,
+                                        std::span<const display::DriverLayer> layers,
                                         display::DriverConfigStamp config_stamp) {
   std::optional<display::DisplayTiming> display_timing_result = GetDisplayTiming(mode_id);
   if (!display_timing_result) {

@@ -7,12 +7,12 @@
 
 #include <fidl/fuchsia.gpu.virtio/cpp/wire.h>
 #include <lib/async/dispatcher.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 
 #include <cstddef>
 #include <functional>
+#include <span>
 
 namespace virtio_display {
 
@@ -20,8 +20,8 @@ class GpuControlServer : public fidl::WireServer<fuchsia_gpu_virtio::GpuControl>
  public:
   class Owner {
    public:
-    virtual void SendHardwareCommand(cpp20::span<uint8_t> request,
-                                     std::function<void(cpp20::span<uint8_t>)> callback) = 0;
+    virtual void SendHardwareCommand(std::span<uint8_t> request,
+                                     std::function<void(std::span<uint8_t>)> callback) = 0;
   };
 
   GpuControlServer(Owner* device_accessor, size_t capability_set_limit);

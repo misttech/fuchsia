@@ -152,7 +152,7 @@ zx::result<std::unique_ptr<DsiHost>> DsiHost::Create(fdf::Namespace& incoming,
   return zx::ok(std::move(dsi_host));
 }
 
-zx::result<> DsiHost::PerformPowerOpSequence(cpp20::span<const PowerOp> commands,
+zx::result<> DsiHost::PerformPowerOpSequence(std::span<const PowerOp> commands,
                                              fit::callback<zx::result<>()> power_on) {
   if (commands.size() == 0) {
     fdf::error("No power commands to execute");

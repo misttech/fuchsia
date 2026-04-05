@@ -100,8 +100,8 @@ zx::result<> GpuDeviceDriver::InitDisplayNode() {
   static constexpr std::string_view kDisplayChildNodeName = "virtio-gpu-display";
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>>
       display_node_controller_client_result =
-          AddChild(kDisplayChildNodeName,
-                   cpp20::span<const fuchsia_driver_framework::NodeProperty>(), node_offers);
+          AddChild(kDisplayChildNodeName, std::span<const fuchsia_driver_framework::NodeProperty>(),
+                   node_offers);
   if (display_node_controller_client_result.is_error()) {
     fdf::error("Failed to add child node: {}", display_node_controller_client_result);
     return display_node_controller_client_result.take_error();
@@ -130,8 +130,8 @@ zx::result<> GpuDeviceDriver::InitGpuControlNode() {
   };
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>>
       gpu_control_node_controller_client_result = AddChild(
-          kGpuControlChildNodeName, cpp20::span<const fuchsia_driver_framework::NodeProperty>(),
-          cpp20::span<const fuchsia_driver_framework::Offer>(node_offers, 1));
+          kGpuControlChildNodeName, std::span<const fuchsia_driver_framework::NodeProperty>(),
+          std::span<const fuchsia_driver_framework::Offer>(node_offers, 1));
   if (gpu_control_node_controller_client_result.is_error()) {
     fdf::error("Failed to add child node: {}", gpu_control_node_controller_client_result);
     return gpu_control_node_controller_client_result.take_error();
@@ -182,8 +182,8 @@ void GpuDeviceDriver::Stop() {
   }
 }
 
-void GpuDeviceDriver::SendHardwareCommand(cpp20::span<uint8_t> request,
-                                          std::function<void(cpp20::span<uint8_t>)> callback) {
+void GpuDeviceDriver::SendHardwareCommand(std::span<uint8_t> request,
+                                          std::function<void(std::span<uint8_t>)> callback) {
   display_engine_->pci_device().ExchangeControlqVariableLengthRequestResponse(std::move(request),
                                                                               std::move(callback));
 }

@@ -10,13 +10,13 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
 #include <cstdint>
 #include <optional>
+#include <span>
 
 #include <gtest/gtest.h>
 

@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/span.h>
 #include <lib/virtio/driver_utils.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
@@ -23,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <utility>
 
 #include <fbl/algorithm.h>
@@ -199,7 +199,7 @@ void DisplayEngine::ReleaseImage(display::DriverImageId image_id) {
 
 display::ConfigCheckResult DisplayEngine::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    cpp20::span<const display::DriverLayer> layers) {
+    std::span<const display::DriverLayer> layers) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
 
   if (layers.size() > kEngineInfo.max_layer_count()) {
@@ -240,7 +240,7 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
 
 void DisplayEngine::SubmitConfiguration(display::DisplayId display_id,
                                         display::ModeId display_mode_id,
-                                        cpp20::span<const display::DriverLayer> layers,
+                                        std::span<const display::DriverLayer> layers,
                                         display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT(display_id == kDisplayId);
   ZX_DEBUG_ASSERT(display_mode_id == kDisplayModeId);
@@ -533,7 +533,7 @@ zx_status_t DisplayEngine::Start() {
   return ZX_OK;
 }
 
-const DisplayInfo* DisplayEngine::FirstValidDisplay(cpp20::span<const DisplayInfo> display_infos) {
+const DisplayInfo* DisplayEngine::FirstValidDisplay(std::span<const DisplayInfo> display_infos) {
   return display_infos.empty() ? nullptr : &display_infos.front();
 }
 

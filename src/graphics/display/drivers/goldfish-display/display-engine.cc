@@ -137,7 +137,7 @@ display::EngineInfo DisplayEngine::CompleteCoordinatorConnection() {
       display::PixelFormat::kB8G8R8A8,
       display::PixelFormat::kR8G8B8A8,
   };
-  engine_events_->OnDisplayAdded(kPrimaryDisplayId, cpp20::span(&preferred_mode, 1), pixel_formats);
+  engine_events_->OnDisplayAdded(kPrimaryDisplayId, std::span(&preferred_mode, 1), pixel_formats);
 
   return kEngineInfo;
 }
@@ -336,7 +336,7 @@ void DisplayEngine::ReleaseImage(display::DriverImageId image_id) {
 
 display::ConfigCheckResult DisplayEngine::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
+    display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers) {
   // The display coordinator currently uses zero-display configs to blank a
   // display. We'll remove this eventually.
   if (layers.empty()) {
@@ -500,7 +500,7 @@ zx_status_t DisplayEngine::PresentPrimaryDisplayConfig(const DisplayConfig& disp
 void DisplayEngine::SubmitConfiguration(display::DisplayId display_id,
                                         display::ModeId display_mode_id,
                                         display::ColorConversion color_conversion,
-                                        cpp20::span<const display::DriverLayer> layers,
+                                        std::span<const display::DriverLayer> layers,
                                         display::DriverConfigStamp config_stamp) {
   ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
                       layers.size());

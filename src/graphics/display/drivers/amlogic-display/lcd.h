@@ -66,7 +66,7 @@ class Lcd {
   // The Amlogic-specific display initialization commands are defined in:
   // Amlogic MIPI DSI Panel Tuning User Guide, Version 0.1 (Google internal),
   // Section 3.2.6 "Init table config", page 19.
-  zx::result<> PerformDisplayInitCommandSequence(cpp20::span<const uint8_t> encoded_commands);
+  zx::result<> PerformDisplayInitCommandSequence(std::span<const uint8_t> encoded_commands);
 
   display::PanelType panel_type_;
   const PanelConfig& panel_config_;

@@ -15,7 +15,6 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fzl/vmo-mapper.h>
-#include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zircon-internal/align.h>
 #include <zircon/process.h>
@@ -32,6 +31,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -526,8 +526,8 @@ zx_status_t capture_start() {
   return ZX_OK;
 }
 
-bool AmlogicCompareCapturedImage(cpp20::span<const uint8_t> captured_image,
-                                 cpp20::span<const uint8_t> input_image,
+bool AmlogicCompareCapturedImage(std::span<const uint8_t> captured_image,
+                                 std::span<const uint8_t> input_image,
                                  fuchsia_images2::wire::PixelFormat input_image_pixel_format,
                                  int height, int width) {
   assert(input_image_pixel_format == fuchsia_images2::wire::PixelFormat::kB8G8R8A8 ||
@@ -585,7 +585,7 @@ bool AmlogicCompareCapturedImage(cpp20::span<const uint8_t> captured_image,
   return true;
 }
 
-bool CompareCapturedImage(cpp20::span<const uint8_t> input_image,
+bool CompareCapturedImage(std::span<const uint8_t> input_image,
                           fuchsia_images2::wire::PixelFormat input_image_pixel_format, int height,
                           int width) {
   if (input_image.data() == nullptr) {
@@ -611,7 +611,7 @@ bool CompareCapturedImage(cpp20::span<const uint8_t> input_image,
 
   if (platform == AMLOGIC_PLATFORM) {
     return AmlogicCompareCapturedImage(
-        cpp20::span(reinterpret_cast<const uint8_t*>(mapped_capture_vmo.start()), capture_vmo_size),
+        std::span(reinterpret_cast<const uint8_t*>(mapped_capture_vmo.start()), capture_vmo_size),
         input_image, input_image_pixel_format, height, width);
   }
 
@@ -1084,9 +1084,9 @@ int main(int argc, const char* argv[]) {
         capture = false;
         break;
       }
-      if (verify_capture && !CompareCapturedImage(cpp20::span(reinterpret_cast<const uint8_t*>(
-                                                                  layers[0]->GetCurrentImageBuf()),
-                                                              layers[0]->GetCurrentImageSize()),
+      if (verify_capture && !CompareCapturedImage(std::span(reinterpret_cast<const uint8_t*>(
+                                                                layers[0]->GetCurrentImageBuf()),
+                                                            layers[0]->GetCurrentImageSize()),
                                                   /*input_image_pixel_format=*/displays[0].format(),
                                                   /*height=*/displays[0].mode().active_area.height,
                                                   /*width=*/displays[0].mode().active_area.width)) {

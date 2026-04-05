@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_DISPLAY_ENGINE_H_
 
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
-#include <lib/stdcompat/span.h>
 #include <lib/virtio/backends/backend.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
@@ -18,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
@@ -78,9 +78,9 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   void ReleaseImage(display::DriverImageId image_id) override;
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId display_mode_id,
-      cpp20::span<const display::DriverLayer> layers) override;
+      std::span<const display::DriverLayer> layers) override;
   void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
@@ -94,7 +94,7 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   // Finds the first display usable by this driver, in the `display_infos` list.
   //
   // Returns nullptr if the list does not contain a usable display.
-  const DisplayInfo* FirstValidDisplay(cpp20::span<const DisplayInfo> display_infos);
+  const DisplayInfo* FirstValidDisplay(std::span<const DisplayInfo> display_infos);
 
   const virtio_abi::ScanoutInfo* pmode() const { return &current_display_.scanout_info; }
 

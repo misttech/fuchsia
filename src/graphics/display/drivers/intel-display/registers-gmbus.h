@@ -6,10 +6,10 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_REGISTERS_GMBUS_H_
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <optional>
+#include <span>
 
 #include <hwreg/bitfields.h>
 
@@ -437,7 +437,7 @@ class GMBusData : public hwreg::RegisterBase<GMBusData, uint32_t> {
   // `data_byte_0` fields to write to the data register.
   //
   // `data` must have at most 4 elements.
-  GMBusData& set_data(cpp20::span<const uint8_t> data) {
+  GMBusData& set_data(std::span<const uint8_t> data) {
     ZX_DEBUG_ASSERT(data.size() <= 4);
     if (!data.empty()) {
       set_data_byte_0(data[0]);

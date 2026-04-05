@@ -4,15 +4,16 @@
 
 #include "src/graphics/display/drivers/intel-display/ddi.h"
 
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
+
+#include <span>
 
 #include "src/graphics/display/drivers/intel-display/hardware-common.h"
 #include "src/graphics/display/drivers/intel-display/pci-ids.h"
 
 namespace intel_display {
 
-cpp20::span<const DdiId> GetDdiIds(uint16_t device_id) {
+std::span<const DdiId> GetDdiIds(uint16_t device_id) {
   if (is_skl(device_id)) {
     return DdiIds<registers::Platform::kSkylake>();
   }

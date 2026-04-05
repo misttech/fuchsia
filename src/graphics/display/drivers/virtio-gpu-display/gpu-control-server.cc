@@ -7,9 +7,9 @@
 #include <fidl/fuchsia.gpu.virtio/cpp/wire.h>
 #include <lib/async/dispatcher.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/span.h>
 
 #include <cstdint>
+#include <span>
 
 namespace virtio_display {
 
@@ -34,13 +34,13 @@ void GpuControlServer::SendHardwareCommand(
     SendHardwareCommandCompleter::Sync& completer) {
   fdf::trace("GpuControlServer::SendHardwareCommand");
 
-  auto callback = [&completer](cpp20::span<uint8_t> response) {
+  auto callback = [&completer](std::span<uint8_t> response) {
     completer.ReplySuccess(
         fidl::VectorView<uint8_t>::FromExternal(response.data(), response.size()));
   };
 
-  owner_->SendHardwareCommand(
-      cpp20::span<uint8_t>(request->request.data(), request->request.size()), std::move(callback));
+  owner_->SendHardwareCommand(std::span<uint8_t>(request->request.data(), request->request.size()),
+                              std::move(callback));
 }
 
 }  // namespace virtio_display

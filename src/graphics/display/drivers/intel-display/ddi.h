@@ -5,16 +5,15 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_DDI_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_DDI_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <array>
+#include <span>
 
 #include "src/graphics/display/drivers/intel-display/registers-ddi.h"
 
 namespace intel_display {
 
 // Get the list of DDIs supported by the device of |device_id|.
-cpp20::span<const DdiId> GetDdiIds(uint16_t device_id);
+std::span<const DdiId> GetDdiIds(uint16_t device_id);
 
 }  // namespace intel_display
 

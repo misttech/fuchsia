@@ -6,6 +6,8 @@
 
 #include <zircon/assert.h>
 
+#include <algorithm>
+
 #include "src/graphics/display/drivers/amlogic-display/fixed-point-util.h"
 
 namespace amlogic_display {

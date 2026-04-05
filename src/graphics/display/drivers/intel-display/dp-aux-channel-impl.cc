@@ -6,7 +6,6 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <threads.h>
 #include <zircon/assert.h>
@@ -14,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 
 #include <fbl/auto_lock.h>
 
@@ -57,7 +57,7 @@ constexpr uint8_t kDdcDataI2cTargetAddress = 0x50;
 }  // namespace
 
 zx::result<DdiAuxChannel::ReplyInfo> DpAuxChannelImpl::DoTransaction(
-    const DdiAuxChannel::Request& request, cpp20::span<uint8_t> reply_data_buffer) {
+    const DdiAuxChannel::Request& request, std::span<uint8_t> reply_data_buffer) {
   // If the DisplayPort sink device isn't ready to handle an Aux message,
   // it can return an AUX_DEFER reply, which means we should retry the
   // request. The spec added a requirement for >=7 defer retries in v1.3,
@@ -157,11 +157,11 @@ zx_status_t DpAuxChannelImpl::DpAuxReadChunk(uint32_t dp_cmd, uint32_t addr, uin
       .address = static_cast<int32_t>(addr),
       .command = static_cast<int8_t>(dp_cmd),
       .op_size = static_cast<int8_t>(size_in),
-      .data = cpp20::span<uint8_t>(),
+      .data = std::span<uint8_t>(),
   };
 
   zx::result<DdiAuxChannel::ReplyInfo> result =
-      DoTransaction(request, cpp20::span<uint8_t>(buf, size_in));
+      DoTransaction(request, std::span<uint8_t>(buf, size_in));
   if (result.is_error()) {
     return result.error_value();
   }
@@ -186,7 +186,7 @@ zx_status_t DpAuxChannelImpl::DpAuxWrite(uint32_t dp_cmd, uint32_t addr, const u
       .address = static_cast<int32_t>(addr),
       .command = static_cast<int8_t>(dp_cmd),
       .op_size = static_cast<int8_t>(size),
-      .data = cpp20::span<const uint8_t>(buf, size),
+      .data = std::span<const uint8_t>(buf, size),
   };
 
   // In case of a short write, receives the amount of written bytes.

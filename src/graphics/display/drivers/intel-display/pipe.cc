@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
-#include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
@@ -402,7 +401,7 @@ void Pipe::LoadActiveMode(display::DisplayTiming* mode) {
 }
 
 void Pipe::SubmitConfiguration(const display::ColorConversion& color_conversion,
-                               cpp20::span<const display::DriverLayer> layers,
+                               std::span<const display::DriverLayer> layers,
                                display::DriverConfigStamp config_stamp,
                                const SetupGttImageFunc& setup_gtt_image,
                                const GetImagePixelFormatFunc& get_pixel_format) {

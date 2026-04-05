@@ -105,6 +105,7 @@ source_set("common_srcs") {
     "//sdk/lib/driver/incoming/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
+    "//sdk/lib/stdcompat",
     "//src/devices/bind/fuchsia.amlogic.platform.sysmem.heap:fuchsia.amlogic.platform.sysmem.heap_cpp",
     "//src/devices/bind/fuchsia.sysmem.heap:fuchsia.sysmem.heap_cpp",
     "//src/graphics/display/lib/api-protocols/cpp",

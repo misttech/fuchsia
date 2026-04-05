@@ -4,16 +4,16 @@
 
 #include "src/graphics/display/drivers/intel-display/dpll-config.h"
 
-#include <lib/stdcompat/span.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <span>
 
 namespace intel_display {
 
-cpp20::span<const int8_t> DpllSupportedFrequencyDividersKabyLake() {
+std::span<const int8_t> DpllSupportedFrequencyDividersKabyLake() {
   // This list merges the odd and even dividers in  the "Pseudocode to Find HDMI
   // and DVI DPLL Programming" section in the display engine PRMs.
   //
@@ -29,7 +29,7 @@ cpp20::span<const int8_t> DpllSupportedFrequencyDividersKabyLake() {
   return kDividers;
 }
 
-cpp20::span<const int8_t> DpllSupportedFrequencyDividersTigerLake() {
+std::span<const int8_t> DpllSupportedFrequencyDividersTigerLake() {
   // Tiger Lake: IHD-OS-TGL-Vol 12-1.22-Rev2.0 pages 181-182
 
   // TODO(costan): These aren't ordered anymore.
@@ -55,7 +55,7 @@ DpllOscillatorConfig CreateDpllOscillatorConfigKabyLake(int32_t afe_clock_khz) {
   DpllOscillatorConfig result;
   int32_t min_deviation = std::numeric_limits<int32_t>::max();
 
-  const cpp20::span<const int8_t> supported_dividers = DpllSupportedFrequencyDividersKabyLake();
+  const std::span<const int8_t> supported_dividers = DpllSupportedFrequencyDividersKabyLake();
 
   // The PRM asks that we prefer even frequency dividers so strongly that we'll
   // chose any acceptable DPLL configuration with an even divider over any
@@ -168,7 +168,7 @@ DpllOscillatorConfig CreateDpllOscillatorConfigForHdmiTigerLake(int32_t afe_cloc
   DpllOscillatorConfig result;
   int32_t min_deviation = std::numeric_limits<int32_t>::max();
 
-  const cpp20::span<const int8_t> supported_dividers = DpllSupportedFrequencyDividersTigerLake();
+  const std::span<const int8_t> supported_dividers = DpllSupportedFrequencyDividersTigerLake();
 
   // The PLL output (AFE clock) frequency is the DCO (Digitally-Controlled
   // Oscillator) frequency divided by the frequency divider. More compactly,

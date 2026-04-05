@@ -435,7 +435,7 @@ void DisplayEngine::ReleaseImage(display::DriverImageId image_id) {
 
 display::ConfigCheckResult DisplayEngine::CheckConfiguration(
     display::DisplayId display_id, display::ModeId mode_id,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
+    display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers) {
   fbl::AutoLock lock(&display_mutex_);
 
   // no-op, just wait for the client to try a new config
@@ -530,7 +530,7 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
 
 void DisplayEngine::SubmitConfiguration(display::DisplayId display_id, display::ModeId mode_id,
                                         display::ColorConversion color_conversion,
-                                        cpp20::span<const display::DriverLayer> layers,
+                                        std::span<const display::DriverLayer> layers,
                                         display::DriverConfigStamp config_stamp) {
   fbl::AutoLock lock(&display_mutex_);
 

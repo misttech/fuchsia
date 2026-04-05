@@ -646,7 +646,7 @@ class PipeScalerCoefficients {
   // registers.
   // The size of `coefficients` must be 17 * 7 = 119.
   template <typename T>
-  void WriteToRegister(cpp20::span<const PipeScalerCoefficientFormat> coefficients, T* reg_io) {
+  void WriteToRegister(std::span<const PipeScalerCoefficientFormat> coefficients, T* reg_io) {
     ZX_ASSERT(coefficients.size() == kNumCoefficients);
     auto index_reg = index_address_.FromValue(0);
     index_reg.set_reg_value(0).set_index(0).set_index_auto_increment_enabled(true).WriteTo(reg_io);

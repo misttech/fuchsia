@@ -15,7 +15,6 @@
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fit/function.h>
 #include <lib/image-format/image_format.h>
-#include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zbitl/items/graphics.h>
@@ -1095,7 +1094,7 @@ Pipe* Controller::GetPipeForDisplay(display::DisplayId display_id) {
 }
 
 std::optional<display::DriverLayer> Controller::GetDriverLayerForPlane(
-    uint32_t plane_id, cpp20::span<const display::DriverLayer> layers) {
+    uint32_t plane_id, std::span<const display::DriverLayer> layers) {
   if (layers.empty()) {
     return std::nullopt;
   }
@@ -1122,7 +1121,7 @@ uint16_t Controller::CalculateBuffersPerPipe(size_t active_pipe_count) {
 }
 
 bool Controller::CalculateMinimumAllocations(
-    display::DisplayId display_id, cpp20::span<const display::DriverLayer> layers,
+    display::DisplayId display_id, std::span<const display::DriverLayer> layers,
     uint16_t min_allocs[PipeIds<registers::Platform::kKabyLake>().size()]
                        [registers::kImagePlaneCount]) {
   // This fn ignores layers after kImagePlaneCount. Displays with too many layers already
@@ -1301,7 +1300,7 @@ void Controller::UpdateAllocations(
 }
 
 void Controller::ReallocatePlaneBuffers(display::DisplayId display_id,
-                                        cpp20::span<const display::DriverLayer> layers,
+                                        std::span<const display::DriverLayer> layers,
                                         bool reallocate_pipes) {
   uint16_t min_allocs[PipeIds<registers::Platform::kKabyLake>().size()]
                      [registers::kImagePlaneCount];
@@ -1463,7 +1462,7 @@ void Controller::DoPipeBufferReallocation(
 
 bool Controller::CheckDisplayLimits(display::DisplayId display_id,
                                     const display::DisplayTiming& display_timing,
-                                    cpp20::span<const display::DriverLayer> layers) {
+                                    std::span<const display::DriverLayer> layers) {
   // The intel display controller doesn't support these flags
   if (display_timing.vblank_alternates) {
     return false;
@@ -1547,7 +1546,7 @@ bool Controller::CheckDisplayLimits(display::DisplayId display_id,
 
 display::ConfigCheckResult Controller::CheckConfiguration(
     display::DisplayId display_id, display::ModeId display_mode_id,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
+    display::ColorConversion color_conversion, std::span<const display::DriverLayer> layers) {
   fbl::AutoLock lock(&display_lock_);
 
   std::array<display::DisplayId, PipeIds<registers::Platform::kKabyLake>().size()>
@@ -1713,8 +1712,8 @@ display::ConfigCheckResult Controller::CheckConfiguration(
   return display::ConfigCheckResult::kOk;
 }
 
-bool Controller::CalculatePipeAllocation(
-    display::DisplayId display_id, cpp20::span<display::DisplayId> display_allocated_to_pipe) {
+bool Controller::CalculatePipeAllocation(display::DisplayId display_id,
+                                         std::span<display::DisplayId> display_allocated_to_pipe) {
   ZX_DEBUG_ASSERT(display_allocated_to_pipe.size() ==
                   PipeIds<registers::Platform::kKabyLake>().size());
   std::fill(display_allocated_to_pipe.begin(), display_allocated_to_pipe.end(),
@@ -1760,7 +1759,7 @@ uint16_t Controller::DataBufferBlockCount() const {
 
 void Controller::SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
                                      display::ColorConversion color_conversion,
-                                     cpp20::span<const display::DriverLayer> layers,
+                                     std::span<const display::DriverLayer> layers,
                                      display::DriverConfigStamp driver_config_stamp) {
   fbl::AutoLock lock(&display_lock_);
 

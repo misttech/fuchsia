@@ -18,7 +18,7 @@ namespace display {
 namespace {
 
 std::optional<size_t> PickFirstDisplayModeSatisfyingConstraints(
-    cpp20::span<const WireDisplayMode> modes, const DisplayModeConstraints& constraints) {
+    std::span<const WireDisplayMode> modes, const DisplayModeConstraints& constraints) {
   for (size_t i = 0; i < modes.size(); ++i) {
     if (constraints.ModeSatisfiesConstraints(modes[i])) {
       return std::make_optional(i);

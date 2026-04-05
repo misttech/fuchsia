@@ -5,10 +5,9 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_HARDWARE_COMMON_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_HARDWARE_COMMON_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <array>
 #include <format>
+#include <span>
 
 namespace registers {
 
@@ -51,7 +50,7 @@ constexpr std::array kDdisTigerLake = {
 }  // namespace internal
 
 template <registers::Platform P>
-constexpr cpp20::span<const DdiId> DdiIds() {
+constexpr std::span<const DdiId> DdiIds() {
   switch (P) {
     case registers::Platform::kKabyLake:
     case registers::Platform::kSkylake:
@@ -88,7 +87,7 @@ constexpr std::array kTranscodersTigerLake = {
 }  // namespace internal
 
 template <registers::Platform P>
-constexpr cpp20::span<const TranscoderId> TranscoderIds() {
+constexpr std::span<const TranscoderId> TranscoderIds() {
   switch (P) {
     case registers::Platform::kKabyLake:
     case registers::Platform::kSkylake:
@@ -124,7 +123,7 @@ constexpr std::array kPipeIdsTigerLake = {
 }  // namespace internal
 
 template <registers::Platform P>
-constexpr cpp20::span<const PipeId> PipeIds() {
+constexpr std::span<const PipeId> PipeIds() {
   switch (P) {
     case registers::Platform::kKabyLake:
     case registers::Platform::kSkylake:
@@ -167,7 +166,7 @@ constexpr std::array kPllIdsTigerLake = {
 }  // namespace internal
 
 template <registers::Platform P>
-constexpr cpp20::span<const PllId> PllIds() {
+constexpr std::span<const PllId> PllIds() {
   switch (P) {
     case registers::Platform::kSkylake:
     case registers::Platform::kKabyLake:

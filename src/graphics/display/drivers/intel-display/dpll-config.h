@@ -5,10 +5,9 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_DPLL_CONFIG_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_DPLL_CONFIG_H_
 
-#include <lib/stdcompat/span.h>
-
 #include <cstdint>
 #include <optional>
+#include <span>
 
 namespace intel_display {
 
@@ -18,7 +17,7 @@ namespace intel_display {
 // elements will be sorted in ascending order.
 //
 // The supported dividers are currently above 1 and below 110.
-cpp20::span<const int8_t> DpllSupportedFrequencyDividersKabyLake();
+std::span<const int8_t> DpllSupportedFrequencyDividersKabyLake();
 
 // Returns to the list of documented DCO frequency dividers in Display PLLs.
 //
@@ -26,7 +25,7 @@ cpp20::span<const int8_t> DpllSupportedFrequencyDividersKabyLake();
 // elements are not sorted in ascending order.
 //
 // The supported dividers are currently above 1 and below 110.
-cpp20::span<const int8_t> DpllSupportedFrequencyDividersTigerLake();
+std::span<const int8_t> DpllSupportedFrequencyDividersTigerLake();
 
 // Operating parameters for the DCO in Display PLLs.
 struct DpllOscillatorConfig {

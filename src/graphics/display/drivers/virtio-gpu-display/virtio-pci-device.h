@@ -6,7 +6,6 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_PCI_DEVICE_H_
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/span.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
 #include <lib/zx/bti.h>
@@ -22,6 +21,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <span>
 
 #include <fbl/auto_lock.h>
 #include <fbl/condition_variable.h>
@@ -57,11 +57,11 @@ class VirtioPciDevice : public virtio::Device {
                            zx::vmo virtio_control_queue_buffer_pool_vmo,
                            zx::pmt virtio_control_queue_buffer_pool_pin,
                            zx_paddr_t virtio_control_queue_buffer_pool_physical_address,
-                           cpp20::span<uint8_t> virtio_control_queue_buffer_pool,
+                           std::span<uint8_t> virtio_control_queue_buffer_pool,
                            zx::vmo virtio_cursor_queue_buffer_pool_vmo,
                            zx::pmt virtio_cursor_queue_buffer_pool_pin,
                            zx_paddr_t virtio_cursor_queue_buffer_pool_physical_address,
-                           cpp20::span<uint8_t> virtio_cursor_queue_buffer_pool);
+                           std::span<uint8_t> virtio_cursor_queue_buffer_pool);
   ~VirtioPciDevice() override;
 
   size_t GetCapabilitySetLimit() const { return capability_set_limit_; }
@@ -73,7 +73,7 @@ class VirtioPciDevice : public virtio::Device {
 
   // Synchronous request/response exchange on the main `controlq` virtqueue.
   void ExchangeControlqVariableLengthRequestResponse(
-      cpp20::span<const uint8_t> request, std::function<void(cpp20::span<uint8_t>)> callback);
+      std::span<const uint8_t> request, std::function<void(std::span<uint8_t>)> callback);
 
   // Templated request/response exchange on the main `control` virtqueue.
   //
@@ -200,13 +200,13 @@ class VirtioPciDevice : public virtio::Device {
   // correlating to the `controlq`.
   //
   // The span's data is modified by the driver and by the virtio device.
-  const cpp20::span<uint8_t> virtio_control_queue_buffer_pool_;
+  const std::span<uint8_t> virtio_control_queue_buffer_pool_;
 
   // Memory pinned at a known physical address, used for virtqueue buffers
   // correlating to the `cursorq`.
   //
   // The span's data is modified by the driver and by the virtio device.
-  const cpp20::span<uint8_t> virtio_cursor_queue_buffer_pool_;
+  const std::span<uint8_t> virtio_cursor_queue_buffer_pool_;
 
   // The number of capability sets supported by the virtio device.
   size_t capability_set_limit_ = {};
@@ -220,14 +220,14 @@ const ResponseType& VirtioPciDevice::ExchangeControlqRequestResponse(const Reque
   static constexpr size_t request_size = sizeof(RequestType);
   ResponseType* response_ptr = nullptr;
 
-  auto callback = [&response_ptr](cpp20::span<uint8_t> response_bytes) {
+  auto callback = [&response_ptr](std::span<uint8_t> response_bytes) {
     static constexpr size_t response_size = sizeof(ResponseType);
     ZX_ASSERT(response_bytes.size() == response_size);
     response_ptr = reinterpret_cast<ResponseType*>(response_bytes.data());
   };
 
   ExchangeControlqVariableLengthRequestResponse(
-      cpp20::span(reinterpret_cast<const uint8_t*>(&request), request_size), std::move(callback));
+      std::span(reinterpret_cast<const uint8_t*>(&request), request_size), std::move(callback));
   return *response_ptr;
 }
 
@@ -273,7 +273,7 @@ const ResponseType& VirtioPciDevice::ExchangeCursorqRequestResponse(const Reques
   ZX_ASSERT(request_descriptor);
   virtio_cursor_queue_request_index_ = request_descriptor_index;
 
-  cpp20::span<uint8_t> request_span = virtio_cursor_queue_buffer_pool_.subspan(0, request_size);
+  std::span<uint8_t> request_span = virtio_cursor_queue_buffer_pool_.subspan(0, request_size);
   std::memcpy(request_span.data(), &request, request_size);
 
   const zx_paddr_t request_physical_address = virtio_cursor_queue_buffer_pool_physical_address_;
@@ -286,7 +286,7 @@ const ResponseType& VirtioPciDevice::ExchangeCursorqRequestResponse(const Reques
       virtio_cursor_queue_.DescFromIndex(request_descriptor->next);
   ZX_ASSERT(response_descriptor);
 
-  cpp20::span<uint8_t> response_span =
+  std::span<uint8_t> response_span =
       virtio_cursor_queue_buffer_pool_.subspan(request_size, response_size);
   std::fill(response_span.begin(), response_span.end(), 0);
 

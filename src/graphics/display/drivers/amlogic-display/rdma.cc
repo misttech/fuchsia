@@ -8,7 +8,6 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/interrupt.h>
@@ -23,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
@@ -329,16 +329,15 @@ zx_status_t RdmaEngine::SetupRdma() {
     fdf::error("Could not map RDMA VMO: {}", zx::make_result(status));
     return status;
   }
-  const cpp20::span<uint8_t> rdma_region(reinterpret_cast<uint8_t*>(rdma_virtual_address),
-                                         RdmaRegionSize());
+  const std::span<uint8_t> rdma_region(reinterpret_cast<uint8_t*>(rdma_virtual_address),
+                                       RdmaRegionSize());
 
   // At this point, we have a table initialized.
   // Initialize each rdma channel container
   fbl::AutoLock l(&rdma_lock_);
   for (uint32_t i = 0; i < kNumberOfTables; i++) {
     rdma_channels_[i].phys_offset = rdma_physical_address + (i * kTableSize);
-    const cpp20::span<uint8_t> rdma_table_subregion =
-        rdma_region.subspan(i * kTableSize, kTableSize);
+    const std::span<uint8_t> rdma_table_subregion = rdma_region.subspan(i * kTableSize, kTableSize);
     rdma_channels_[i].virt_offset = rdma_table_subregion.data();
     rdma_usage_table_[i] = kRdmaTableReady;
   }

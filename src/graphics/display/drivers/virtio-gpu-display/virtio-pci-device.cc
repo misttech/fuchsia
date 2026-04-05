@@ -5,7 +5,6 @@
 #include "src/graphics/display/drivers/virtio-gpu-display/virtio-pci-device.h"
 
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/pmt.h>
 #include <lib/zx/result.h>
@@ -15,6 +14,7 @@
 #include <zircon/types.h>
 
 #include <memory>
+#include <span>
 
 #include <fbl/alloc_checker.h>
 
@@ -70,7 +70,7 @@ zx::result<std::unique_ptr<VirtioPciDevice>> VirtioPciDevice::Create(
 
   // NOLINTBEGIN(performance-no-int-to-ptr): Casting from zx_vaddr_t to a
   // pointer is unavoidable due to the zx::vmar::map() API.
-  cpp20::span<uint8_t> virtio_control_queue_buffer_pool(
+  std::span<uint8_t> virtio_control_queue_buffer_pool(
       reinterpret_cast<uint8_t*>(virtio_control_queue_buffer_pool_begin),
       virtio_control_queue_buffer_pool_size);
   // NOLINTEND(performance-no-int-to-ptr)
@@ -120,7 +120,7 @@ zx::result<std::unique_ptr<VirtioPciDevice>> VirtioPciDevice::Create(
 
   // NOLINTBEGIN(performance-no-int-to-ptr): Casting from zx_vaddr_t to a
   // pointer is unavoidable due to the zx::vmar::map() API.
-  cpp20::span<uint8_t> virtio_cursor_queue_buffer_pool(
+  std::span<uint8_t> virtio_cursor_queue_buffer_pool(
       reinterpret_cast<uint8_t*>(virtio_cursor_queue_buffer_pool_begin),
       virtio_cursor_queue_buffer_pool_size);
   // NOLINTEND(performance-no-int-to-ptr)
@@ -151,11 +151,11 @@ VirtioPciDevice::VirtioPciDevice(zx::bti bti, std::unique_ptr<virtio::Backend> b
                                  zx::vmo virtio_control_queue_buffer_pool_vmo,
                                  zx::pmt virtio_control_queue_buffer_pool_pin,
                                  zx_paddr_t virtio_control_queue_buffer_pool_physical_address,
-                                 cpp20::span<uint8_t> virtio_control_queue_buffer_pool,
+                                 std::span<uint8_t> virtio_control_queue_buffer_pool,
                                  zx::vmo virtio_cursor_queue_buffer_pool_vmo,
                                  zx::pmt virtio_cursor_queue_buffer_pool_pin,
                                  zx_paddr_t virtio_cursor_queue_buffer_pool_physical_address,
-                                 cpp20::span<uint8_t> virtio_cursor_queue_buffer_pool)
+                                 std::span<uint8_t> virtio_cursor_queue_buffer_pool)
     : virtio::Device(std::move(bti), std::move(backend)),
       virtio_control_queue_(this),
       virtio_cursor_queue_(this),
@@ -374,7 +374,7 @@ void VirtioPciDevice::VirtioCursorqBufferUsedByDevice(uint32_t used_descriptor_i
 }
 
 void VirtioPciDevice::ExchangeControlqVariableLengthRequestResponse(
-    cpp20::span<const uint8_t> request, std::function<void(cpp20::span<uint8_t>)> callback) {
+    std::span<const uint8_t> request, std::function<void(std::span<uint8_t>)> callback) {
   const size_t request_size = request.size();
   const size_t max_response_size = virtio_control_queue_buffer_pool_.size() - request_size;
 
@@ -412,7 +412,7 @@ void VirtioPciDevice::ExchangeControlqVariableLengthRequestResponse(
   ZX_ASSERT(request_descriptor);
   virtio_control_queue_request_response_ = {request_descriptor_index, 0};
 
-  cpp20::span<uint8_t> request_span = virtio_control_queue_buffer_pool_.subspan(0, request_size);
+  std::span<uint8_t> request_span = virtio_control_queue_buffer_pool_.subspan(0, request_size);
   std::memcpy(request_span.data(), request.data(), request_size);
 
   const zx_paddr_t request_physical_address = virtio_control_queue_buffer_pool_physical_address_;
@@ -425,7 +425,7 @@ void VirtioPciDevice::ExchangeControlqVariableLengthRequestResponse(
       virtio_control_queue_.DescFromIndex(request_descriptor->next);
   ZX_ASSERT(response_descriptor);
 
-  cpp20::span<uint8_t> response_span =
+  std::span<uint8_t> response_span =
       virtio_control_queue_buffer_pool_.subspan(request_size, max_response_size);
   std::fill(response_span.begin(), response_span.end(), 0);
 

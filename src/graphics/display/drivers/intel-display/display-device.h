@@ -7,12 +7,12 @@
 
 #include <fidl/fuchsia.hardware.backlight/cpp/wire.h>
 #include <lib/driver/mmio/cpp/mmio.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
 #include <optional>
+#include <span>
 
 #include <fbl/vector.h>
 #include <region-alloc/region-alloc.h>
@@ -61,7 +61,7 @@ class DisplayDevice {
 
   void SubmitConfiguration(display::ModeId mode_id,
                            const display::ColorConversion& color_conversion,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp config_stamp);
 
   // TODO(https://fxbug.dev/42167004): Initialization-related interactions between the Controller
@@ -157,7 +157,7 @@ class DisplayDevice {
   // Validates that a basic layer configuration can be supported for the
   // given modes of this display.
   bool CheckDisplayLimits(display::DisplayTiming display_timing,
-                          cpp20::span<const display::DriverLayer> layers);
+                          std::span<const display::DriverLayer> layers);
 
   fdf::MmioBuffer* mmio_space() const;
 

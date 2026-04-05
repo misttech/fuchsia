@@ -8,12 +8,12 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zx/vmo.h>
 
 #include <cstdint>
 #include <list>
+#include <span>
 #include <unordered_map>
 
 #include <region-alloc/region-alloc.h>
@@ -59,7 +59,7 @@ class Pipe {
       const display::ImageMetadata& image_metadata, display::DriverImageId image_id,
       display::CoordinateTransformation coordinate_transformation)>;
   void SubmitConfiguration(const display::ColorConversion& color_conversion,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp config_stamp,
                            const SetupGttImageFunc& setup_gtt_image,
                            const GetImagePixelFormatFunc& get_pixel_format);

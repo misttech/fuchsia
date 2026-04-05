@@ -15,13 +15,13 @@
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/inspector.h>
-#include <lib/stdcompat/span.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zx/channel.h>
 
 #include <memory>
 #include <optional>
+#include <span>
 
 #include <fbl/mutex.h>
 #include <fbl/vector.h>
@@ -123,10 +123,10 @@ class Controller final : public display::DisplayEngineInterface,
   display::ConfigCheckResult CheckConfiguration(
       display::DisplayId display_id, display::ModeId mode_id,
       display::ColorConversion color_conversion,
-      cpp20::span<const display::DriverLayer> layers) override;
+      std::span<const display::DriverLayer> layers) override;
   void SubmitConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
                            display::ColorConversion color_conversion,
-                           cpp20::span<const display::DriverLayer> layers,
+                           std::span<const display::DriverLayer> layers,
                            display::DriverConfigStamp driver_config_stamp) override;
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
@@ -244,13 +244,13 @@ class Controller final : public display::DisplayEngineInterface,
 
   // Gets the DriverLayer config for the given pipe/plane. Return false if there is no layer.
   std::optional<display::DriverLayer> GetDriverLayerForPlane(
-      uint32_t plane, cpp20::span<const display::DriverLayer> layers) __TA_REQUIRES(display_lock_);
+      uint32_t plane, std::span<const display::DriverLayer> layers) __TA_REQUIRES(display_lock_);
 
   uint16_t CalculateBuffersPerPipe(size_t active_pipe_count);
   // Returns false if no allocation is possible. When that happens,
   // plane 0 of the failing displays will be set to UINT16_MAX.
   bool CalculateMinimumAllocations(
-      display::DisplayId display_id, cpp20::span<const display::DriverLayer> layers,
+      display::DisplayId display_id, std::span<const display::DriverLayer> layers,
       uint16_t min_allocs[PipeIds<registers::Platform::kKabyLake>().size()]
                          [registers::kImagePlaneCount]) __TA_REQUIRES(display_lock_);
   // Updates plane_buffers_ based pipe_buffers_ and the given parameters
@@ -268,18 +268,18 @@ class Controller final : public display::DisplayEngineInterface,
       __TA_REQUIRES(display_lock_);
   // Reallocates plane buffers based on the given layer config.
   void ReallocatePlaneBuffers(display::DisplayId display_id,
-                              cpp20::span<const display::DriverLayer> layers, bool reallocate_pipes)
+                              std::span<const display::DriverLayer> layers, bool reallocate_pipes)
       __TA_REQUIRES(display_lock_);
 
   // Validates that a basic layer configuration can be supported for the
   // given modes of the displays.
   bool CheckDisplayLimits(display::DisplayId display_id,
                           const display::DisplayTiming& display_timing,
-                          cpp20::span<const display::DriverLayer> layers)
+                          std::span<const display::DriverLayer> layers)
       __TA_REQUIRES(display_lock_);
 
   bool CalculatePipeAllocation(display::DisplayId display_id,
-                               cpp20::span<display::DisplayId> display_allocated_to_pipe)
+                               std::span<display::DisplayId> display_allocated_to_pipe)
       __TA_REQUIRES(display_lock_);
 
   // The number of DBUF (Data Buffer) blocks that can be allocated to planes.
@@ -340,7 +340,7 @@ class Controller final : public display::DisplayEngineInterface,
 
   std::unique_ptr<DisplayPllManager> dpll_manager_;
 
-  cpp20::span<const DdiId> ddis_;
+  std::span<const DdiId> ddis_;
   fbl::Vector<GMBusI2c> gmbus_i2cs_;
   fbl::Vector<DpAuxChannelImpl> dp_aux_channels_;
 

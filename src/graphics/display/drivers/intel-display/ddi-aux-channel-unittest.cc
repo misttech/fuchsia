@@ -7,12 +7,12 @@
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/mock-mmio/cpp/globally-ordered-region.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 
 #include <cstdint>
 #include <optional>
+#include <span>
 
 #include <gtest/gtest.h>
 
@@ -270,7 +270,7 @@ TEST_F(DdiAuxChannelWriteRequestTest, Read1Byte) {
   }));
   DdiAuxChannel aux_channel(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
   aux_channel.WriteRequestForTesting(
-      {.address = 0xabcde, .command = 9, .op_size = 1, .data = cpp20::span<uint8_t>()});
+      {.address = 0xabcde, .command = 9, .op_size = 1, .data = std::span<uint8_t>()});
 }
 TEST_F(DdiAuxChannelWriteRequestTest, Read16Bytes) {
   mmio_range_.Expect(mock_mmio::GloballyOrderedRegion::AccessList({
@@ -278,7 +278,7 @@ TEST_F(DdiAuxChannelWriteRequestTest, Read16Bytes) {
   }));
   DdiAuxChannel aux_channel(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
   aux_channel.WriteRequestForTesting(
-      {.address = 0xabcde, .command = 9, .op_size = 16, .data = cpp20::span<uint8_t>()});
+      {.address = 0xabcde, .command = 9, .op_size = 16, .data = std::span<uint8_t>()});
 }
 
 TEST_F(DdiAuxChannelWriteRequestTest, Write1Byte) {
@@ -409,7 +409,7 @@ class DdiAuxChannelTransactTest : public DdiAuxChannelTest {
   void SetUpTransaction() {
     aux_channel_.emplace(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
     aux_channel_->WriteRequestForTesting(
-        {.address = 0xabcde, .command = 9, .op_size = 16, .data = cpp20::span<uint8_t>()});
+        {.address = 0xabcde, .command = 9, .op_size = 16, .data = std::span<uint8_t>()});
   }
 
  protected:
@@ -427,7 +427,7 @@ TEST_F(DdiAuxChannelTransactTest, TransactAdjustsZeroControl) {
 
   DdiAuxChannel aux_channel(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
   aux_channel.WriteRequestForTesting(
-      {.address = 0xabcde, .command = 9, .op_size = 16, .data = cpp20::span<uint8_t>()});
+      {.address = 0xabcde, .command = 9, .op_size = 16, .data = std::span<uint8_t>()});
   const zx::result transact_status = aux_channel.TransactForTesting();
   EXPECT_TRUE(transact_status.is_ok()) << transact_status.status_string();
 }
@@ -442,7 +442,7 @@ TEST_F(DdiAuxChannelTest, TransactAdjustsDefaultControl) {
 
   DdiAuxChannel aux_channel(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
   aux_channel.WriteRequestForTesting(
-      {.address = 0xabcde, .command = 9, .op_size = 16, .data = cpp20::span<uint8_t>()});
+      {.address = 0xabcde, .command = 9, .op_size = 16, .data = std::span<uint8_t>()});
   const zx::result transact_status = aux_channel.TransactForTesting();
   EXPECT_TRUE(transact_status.is_ok()) << transact_status.status_string();
 }
@@ -582,7 +582,7 @@ class DdiAuxChannelReadReplyTest : public DdiAuxChannelTest {
   bool SetUpReadReplyForTesting() {
     aux_channel_.emplace(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
     aux_channel_->WriteRequestForTesting(
-        {.address = 0xabcde, .command = 9, .op_size = 16, .data = cpp20::span<uint8_t>()});
+        {.address = 0xabcde, .command = 9, .op_size = 16, .data = std::span<uint8_t>()});
     const zx::result transact_status = aux_channel_->TransactForTesting();
 
     // ASSERT_TRUE() doesn't stop the test when called from a nested function.
@@ -606,7 +606,7 @@ TEST_F(DdiAuxChannelReadReplyTest, EmptyAckRead) {
   ASSERT_TRUE(SetUpReadReplyForTesting());
 
   const DdiAuxChannel::ReplyInfo reply_info =
-      aux_channel_->ReadReplyForTesting(cpp20::span<uint8_t>());
+      aux_channel_->ReadReplyForTesting(std::span<uint8_t>());
   EXPECT_EQ(0, reply_info.reply_header);
   EXPECT_EQ(0, reply_info.reply_data_size);
 }
@@ -620,7 +620,7 @@ TEST_F(DdiAuxChannelReadReplyTest, EmptyNackRead) {
   ASSERT_TRUE(SetUpReadReplyForTesting());
 
   const DdiAuxChannel::ReplyInfo reply_info =
-      aux_channel_->ReadReplyForTesting(cpp20::span<uint8_t>());
+      aux_channel_->ReadReplyForTesting(std::span<uint8_t>());
   EXPECT_EQ(0x10, reply_info.reply_header);
   EXPECT_EQ(0, reply_info.reply_data_size);
 }
@@ -803,7 +803,7 @@ TEST_F(DdiAuxChannelTest, DoTransactReadAck1Byte) {
   DdiAuxChannel aux_channel(&mmio_buffer_, DdiId::DDI_A, kAtlasGpuDeviceId);
 
   const DdiAuxChannel::Request request = {
-      .address = 0xabcde, .command = 9, .op_size = 1, .data = cpp20::span<uint8_t>()};
+      .address = 0xabcde, .command = 9, .op_size = 1, .data = std::span<uint8_t>()};
   std::array<uint8_t, 1> reply_data_buffer;
   const zx::result<DdiAuxChannel::ReplyInfo> result =
       aux_channel.DoTransaction(request, reply_data_buffer);

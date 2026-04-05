@@ -6,9 +6,9 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_AMLOGIC_DISPLAY_PANEL_CONFIG_H_
 
 #include <lib/device-protocol/display-panel.h>
-#include <lib/stdcompat/span.h>
 
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 
@@ -67,7 +67,7 @@ enum DsiOpcode : uint8_t {
 // The DSI operations are encoded as a sequence of variable-length operations.
 // The first byte in each operation is a `DsiOpcode` value, followed by the
 // opcode's arguments.
-using DsiOperationSequence = cpp20::span<const uint8_t>;
+using DsiOperationSequence = std::span<const uint8_t>;
 
 enum PowerOpcode : uint8_t {
   // Drive a GPIO pin.
@@ -99,10 +99,10 @@ struct PanelConfig {
   const DsiOperationSequence dsi_off;
 
   // Power operation sequence to power on the panel.
-  const cpp20::span<const PowerOp> power_on;
+  const std::span<const PowerOp> power_on;
 
   // Power operation sequence to power off the panel.
-  const cpp20::span<const PowerOp> power_off;
+  const std::span<const PowerOp> power_off;
 
   // The number of D-PHY data lanes used by the display's DSI connection.
   //

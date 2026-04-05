@@ -62,7 +62,7 @@ DdiAuxChannel::DdiAuxChannel(fdf::MmioBuffer* mmio_buffer, DdiId ddi_id, uint16_
 }
 
 zx::result<DdiAuxChannel::ReplyInfo> DdiAuxChannel::DoTransaction(
-    const Request& request, cpp20::span<uint8_t> reply_data_buffer) {
+    const Request& request, std::span<uint8_t> reply_data_buffer) {
   WriteRequestForTesting(request);
   zx::result<> transact_status = TransactForTesting();
   if (!transact_status.is_ok()) {
@@ -181,7 +181,7 @@ void DdiAuxChannel::WriteRequestHeader(int8_t command, int32_t address, int8_t o
   aux_data_header.set_swapped_bytes(swapped_bytes).WriteTo(mmio_buffer_);
 }
 
-void DdiAuxChannel::WriteRequestData(cpp20::span<const uint8_t> data) {
+void DdiAuxChannel::WriteRequestData(std::span<const uint8_t> data) {
   ZX_ASSERT(data.size() <= kMaxOpSize);
 
   // Points to the data byte currently copied into the AUX DDI buffer.
@@ -278,7 +278,7 @@ zx::result<> DdiAuxChannel::TransactForTesting() {
 }
 
 // Reads an AUX channel response from the DDI's data buffer.
-DdiAuxChannel::ReplyInfo DdiAuxChannel::ReadReplyForTesting(cpp20::span<uint8_t> data_buffer) {
+DdiAuxChannel::ReplyInfo DdiAuxChannel::ReadReplyForTesting(std::span<uint8_t> data_buffer) {
   // We rely on the fact that Transact() must have done an MMIO read for
   // `aux_control_` before exiting successfully.
   //

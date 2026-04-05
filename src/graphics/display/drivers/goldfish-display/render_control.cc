@@ -118,9 +118,9 @@ struct SetDisplayPoseCmd {
 };
 
 template <class T>
-cpp20::span<const uint8_t> ToByteSpan(const T& t) {
-  return cpp20::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&t),
-                                    reinterpret_cast<const uint8_t*>(&t + 1));
+std::span<const uint8_t> ToByteSpan(const T& t) {
+  return std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&t),
+                                  reinterpret_cast<const uint8_t*>(&t + 1));
 }
 
 }  // namespace

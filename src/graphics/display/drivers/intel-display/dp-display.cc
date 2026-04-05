@@ -8,7 +8,6 @@
 #include <lib/fit/function.h>
 #include <lib/fit/result.h>
 #include <lib/fpromise/result.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
@@ -22,6 +21,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <span>
 #include <utility>
 
 #include <fbl/alloc_checker.h>
@@ -128,7 +128,7 @@ constexpr DdiPhyConfigEntry kPhyConfigEdpKabyLakeU[10] = {
     {0x000000df, 0x00000018},
 };
 
-cpp20::span<const DdiPhyConfigEntry> GetDpPhyConfigEntries(uint16_t device_id, uint8_t* i_boost) {
+std::span<const DdiPhyConfigEntry> GetDpPhyConfigEntries(uint16_t device_id, uint8_t* i_boost) {
   if (is_skl(device_id)) {
     if (is_skl_u(device_id)) {
       *i_boost = 0x1;
@@ -159,7 +159,7 @@ cpp20::span<const DdiPhyConfigEntry> GetDpPhyConfigEntries(uint16_t device_id, u
   return {};
 }
 
-cpp20::span<const DdiPhyConfigEntry> GetEdpPhyConfigEntries(uint16_t device_id, uint8_t* i_boost) {
+std::span<const DdiPhyConfigEntry> GetEdpPhyConfigEntries(uint16_t device_id, uint8_t* i_boost) {
   *i_boost = 0x0;
   if (is_skl_u(device_id) || is_kbl_u(device_id)) {
     return kPhyConfigEdpKabyLakeU;
@@ -473,7 +473,7 @@ void DpDisplay::ConfigureVoltageSwingComboTigerLake(size_t phy_config_index) {
     physical_coding1.set_common_mode_keeper_enabled(true).WriteTo(mmio_space());
   }
 
-  cpp20::span<const bool> load_generation;
+  std::span<const bool> load_generation;
   if (dp_link_rate_mhz_ >= 6'000) {
     static constexpr bool kHighSpeedLoadGeneration[] = {false, false, false, false};
     load_generation = kHighSpeedLoadGeneration;
@@ -534,7 +534,7 @@ void DpDisplay::ConfigureVoltageSwingComboTigerLake(size_t phy_config_index) {
     uint8_t cursor;
   };
 
-  cpp20::span<const ComboSwingConfig> swing_configs;
+  std::span<const ComboSwingConfig> swing_configs;
   // TODO(https://fxbug.dev/42065201):
   const int use_edp_voltages = false;
   if (use_edp_voltages) {
@@ -896,7 +896,7 @@ bool DpDisplay::LinkTrainingSetupKabyLake() {
   // TODO(https://fxbug.dev/42106274): Read the VBT to handle unique motherboard configs for kaby
   // lake
   uint8_t i_boost;
-  const cpp20::span<const DdiPhyConfigEntry> entries =
+  const std::span<const DdiPhyConfigEntry> entries =
       controller()->igd_opregion().IsLowVoltageEdp(ddi_id())
           ? GetEdpPhyConfigEntries(controller()->device_id(), &i_boost)
           : GetDpPhyConfigEntries(controller()->device_id(), &i_boost);

@@ -6,11 +6,11 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_DDI_AUX_CHANNEL_H_
 
 #include <lib/driver/mmio/cpp/mmio.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
+#include <span>
 
 #include "src/graphics/display/drivers/intel-display/registers-ddi.h"
 
@@ -72,7 +72,7 @@ class DdiAuxChannel {
     //
     // Write payloads should have the size stated in `op_size`. Read requests
     // have empty payloads.
-    cpp20::span<const uint8_t> data;
+    std::span<const uint8_t> data;
   };
 
   // Metadata about a transaction reply.
@@ -110,8 +110,7 @@ class DdiAuxChannel {
   // successful. If that's the case, the `ReplyInfo` structure has the reply
   // command byte (which could indicate a NACK or a DEFER), and the size of the
   // reply payload.
-  zx::result<ReplyInfo> DoTransaction(const Request& request,
-                                      cpp20::span<uint8_t> reply_data_buffer);
+  zx::result<ReplyInfo> DoTransaction(const Request& request, std::span<uint8_t> reply_data_buffer);
 
   // Directs AUX transactions to/away from the Thunderbolt controller.
   //
@@ -161,7 +160,7 @@ class DdiAuxChannel {
   //
   // Callers should pass a non-empty buffer even when performing a writes, so
   // they can retrieve the partial write size, if the write is NACKed.
-  ReplyInfo ReadReplyForTesting(cpp20::span<uint8_t> data_buffer);
+  ReplyInfo ReadReplyForTesting(std::span<uint8_t> data_buffer);
 
  private:
   // The DDI is set to time out after 1,600us (on Kaby Lake and Skylake) or
@@ -174,7 +173,7 @@ class DdiAuxChannel {
 
   // WriteRequest() helpers.
   void WriteRequestHeader(int8_t command, int32_t address, int8_t op_size);
-  void WriteRequestData(cpp20::span<const uint8_t> data);
+  void WriteRequestData(std::span<const uint8_t> data);
 
   // Patches up fields in the AUX control reg with obviously incorrect values.
   //

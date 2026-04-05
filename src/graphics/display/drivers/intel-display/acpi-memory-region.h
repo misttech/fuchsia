@@ -5,7 +5,6 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_ACPI_MEMORY_REGION_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_INTEL_DISPLAY_ACPI_MEMORY_REGION_H_
 
-#include <lib/stdcompat/span.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -13,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace intel_display {
 
@@ -47,7 +47,7 @@ class AcpiMemoryRegion {
   // backing `region_data` stays alive while the newly created instance exists.
   //
   // `region_data` must not be empty.
-  explicit AcpiMemoryRegion(zx::vmo region_vmo, cpp20::span<uint8_t> region_data);
+  explicit AcpiMemoryRegion(zx::vmo region_vmo, std::span<uint8_t> region_data);
 
   // Copying is not allowed.
   AcpiMemoryRegion(const AcpiMemoryRegion&) = delete;
@@ -62,13 +62,13 @@ class AcpiMemoryRegion {
   bool is_empty() const { return region_data_.empty(); }
 
   // The mapped memory. Empty iff this is an empty memory region.
-  cpp20::span<uint8_t> data() { return region_data_; }
-  cpp20::span<const uint8_t> data() const { return region_data_; }
+  std::span<uint8_t> data() { return region_data_; }
+  std::span<const uint8_t> data() const { return region_data_; }
 
   zx::unowned_vmo vmo_for_testing() const { return region_vmo_.borrow(); }
 
  private:
-  cpp20::span<uint8_t> region_data_;
+  std::span<uint8_t> region_data_;
 
   // Holds onto the VMO backing `region_data_`.
   //

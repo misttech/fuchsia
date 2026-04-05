@@ -7,13 +7,13 @@
 
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <zircon/types.h>
 
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <thread>
 
 #include "src/graphics/display/drivers/virtio-gpu-display/display-engine.h"
@@ -41,8 +41,8 @@ class GpuDeviceDriver : public fdf::DriverBase, public GpuControlServer::Owner {
   void Stop() override;
 
   // GpuControlServer::DeviceAccessor interface.
-  void SendHardwareCommand(cpp20::span<uint8_t> request,
-                           std::function<void(cpp20::span<uint8_t>)> callback) override;
+  void SendHardwareCommand(std::span<uint8_t> request,
+                           std::function<void(std::span<uint8_t>)> callback) override;
 
  private:
   // Resource initialization that is not suitable for the constructor.
