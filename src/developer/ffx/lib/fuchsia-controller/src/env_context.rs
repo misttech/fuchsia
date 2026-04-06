@@ -123,7 +123,7 @@ impl EnvContext {
     }
 
     async fn invariant_check(&self) -> Result<()> {
-        log::info!(
+        log::debug!(
             "Checking connectivity invariant for EnvContext: {}",
             logging::log_id(&self.context)
         );
@@ -182,7 +182,7 @@ impl EnvContext {
             let t = Duration::from_secs_f64(self.context.get(ffx_config::keys::PROXY_TIMEOUT)?);
             match timeout::timeout(t, async {
                 let rcs_proxy = self.device_connection.lock().await.as_ref().unwrap().rcs_proxy_fdomain().await?;
-                log::info!(
+                log::debug!(
                     "Acquired remote_control_proxy for EnvContext instance: {}",
                     logging::log_id(&self.context)
                 );
@@ -258,7 +258,7 @@ impl EnvContext {
                     &rcs_proxy,
                 )
                 .await?;
-                log::info!(
+                log::debug!(
                     "Successfully connected to {moniker_clone}:{capability_name_clone} via RCS"
                 );
                 let hdl = proxy
