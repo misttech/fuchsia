@@ -17,6 +17,7 @@
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/join_strings.h"
 #include "src/lib/fxl/strings/split_string.h"
+#include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/fxl/strings/trim.h"
 
@@ -34,8 +35,11 @@ constexpr std::string_view kBeginDlog = "--- BEGIN DLOG DUMP ---";
 constexpr std::string_view kEndDlog = "--- END DLOG DUMP ---";
 
 std::optional<zx::duration> ExtractTime(const std::string_view line) {
-  const std::string line_copy(line);
-  const int64_t val = std::stoll(line_copy);
+  int64_t val;
+  if (!fxl::StringToNumberWithError(line, &val)) {
+    return std::nullopt;
+  }
+
   // Sometimes (e.g., https://fxbug.dev/458140022), the time is negative and we know it's bogus in
   // these cases.
   if (val < 0) {
