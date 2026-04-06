@@ -16,7 +16,6 @@ from fidl import (
     FrameworkError,
     GlobalHandleWaker,
     StopEventHandler,
-    StopServer,
 )
 from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
 
@@ -110,9 +109,8 @@ class TargetCollectionReaderImpl(ffx.TargetCollectionReaderServer):
         self.target_list = target_list
 
     def next_(self, request: ffx.TargetCollectionReaderNextRequest) -> None:
-        if not request.entry:
-            raise StopServer
-        self.target_list.extend(request.entry)
+        if request.entry:
+            self.target_list.extend(request.entry)
 
 
 @implement_missing_abstract_methods

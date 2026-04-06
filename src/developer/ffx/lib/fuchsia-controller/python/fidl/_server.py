@@ -17,7 +17,6 @@ from ._fidl_common import (
     FidlMeta,
     FrameworkError,
     GenericResult,
-    StopServer,
     parse_ordinal,
     parse_txid,
 )
@@ -102,13 +101,7 @@ class ServerBase(
                 self._channel.close()
 
     async def handle_next_request(self) -> bool:
-        try:
-            # TODO(b/299946378): Handle case where ordinal is unknown.
-            return await self._handle_request_helper()
-        except StopServer:
-            return False
-
-    async def _handle_request_helper(self) -> bool:
+        # TODO(b/299946378): Handle case where ordinal is unknown.
         # TODO(b/303532690): When attempting to decode a method that is
         # unrecognized, there should be a message sent declaring this is
         # an unknown method.

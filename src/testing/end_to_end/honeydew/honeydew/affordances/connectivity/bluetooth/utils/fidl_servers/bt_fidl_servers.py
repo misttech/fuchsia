@@ -8,7 +8,6 @@ from typing import Any
 
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
-from fidl import StopServer
 
 from honeydew.affordances.connectivity.bluetooth.utils import (
     errors as bt_errors,
@@ -54,14 +53,10 @@ class PairingDelegateImpl(f_btsys_controller.PairingDelegateServer):
 
         Raises:
             BluetoothError: Pairing request failed to complete from the device.
-            StopServer: Stop the FIDL Server since async will block execution indefinitely.
         """
         if not pairing_complete_request.success:
             raise bt_errors.BluetoothError("Pairing request failed.")
-        _LOGGER.info(
-            "Pairing was successful. Calling StopServer to unblock execution."
-        )
-        raise StopServer
+        _LOGGER.info("Pairing was successful.")
 
     def on_remote_keypress(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(

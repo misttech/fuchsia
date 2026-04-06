@@ -10,7 +10,6 @@ from ._fidl_common import (
     EpitaphError,
     FrameworkError,
     StopEventHandler,
-    StopServer,
 )
 from ._ipc import GlobalHandleWaker, HandleWaker
 
@@ -24,7 +23,6 @@ __all__ = [
     "GlobalHandleWaker",
     "HandleWaker",
     "StopEventHandler",
-    "StopServer",
     "construct_response_object",
     "Unsupported",
 ]

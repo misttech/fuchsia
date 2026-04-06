@@ -12,7 +12,6 @@ import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_gatt2 as f_gatt_controller
 import fidl_fuchsia_bluetooth_le as f_ble_controller
 import fuchsia_controller_py as fc
-from fidl import StopServer
 
 from honeydew import affordances_capable
 from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
@@ -59,7 +58,6 @@ class AdvertisedPeripheralImpl(f_ble_controller.AdvertisedPeripheralServer):
             request.peer.id_.value,
         )
         self._peripheral_connection = request.connection
-        raise StopServer
 
 
 class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):

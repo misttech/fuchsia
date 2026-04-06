@@ -89,13 +89,6 @@ class MethodInfo:
     response_identifier: str | None
 
 
-class StopServer(Exception):
-    """An exception used to stop a server loop from continuing.
-
-    This closes the underlying channel as well.
-    """
-
-
 @dataclass
 class DomainError:
     """A class used to wrap returning an error from a two-way method."""

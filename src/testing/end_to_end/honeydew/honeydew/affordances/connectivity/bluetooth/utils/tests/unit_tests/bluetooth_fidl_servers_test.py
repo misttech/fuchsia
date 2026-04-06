@@ -6,7 +6,6 @@
 import unittest
 from unittest import mock
 
-import fidl
 import fidl_fuchsia_bluetooth as f_bt
 import fidl_fuchsia_bluetooth_sys as f_btsys_controller
 from fuchsia_controller_py import Channel
@@ -47,7 +46,7 @@ class BluetoothFidlServerTest(unittest.TestCase):
         super().setUp()
         self.channel_mock_object = mock.MagicMock(spec=Channel)
         self.bluetooth_server = PairingDelegateImpl(
-            channel=self.channel_mock_object
+            channel=self.channel_mock_object,
         )
 
     def test_on_pairing_request(self) -> None:
@@ -59,10 +58,10 @@ class BluetoothFidlServerTest(unittest.TestCase):
 
     def test_on_pairing_complete_success(self) -> None:
         """Test for PairingDelegateImpl.on_pairing_complete() method."""
-        with self.assertRaises(fidl.StopServer):
-            self.bluetooth_server.on_pairing_complete(
-                pairing_complete_request=_SAMPLE_ON_PAIRING_COMPLETE_SUCCESS_INPUT
-            )
+        # The test passes by virtue of not raising an exception.
+        self.bluetooth_server.on_pairing_complete(
+            pairing_complete_request=_SAMPLE_ON_PAIRING_COMPLETE_SUCCESS_INPUT
+        )
 
     def test_on_pairing_complete_failure(self) -> None:
         """Test for PairingDelegateImpl.on_pairing_complete() method."""
