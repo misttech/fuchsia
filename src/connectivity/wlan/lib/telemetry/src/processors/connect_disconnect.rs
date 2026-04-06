@@ -6,6 +6,9 @@ use crate::processors::toggle_events::ClientConnectionsToggleEvent;
 use crate::util::cobalt_logger::log_cobalt_batch;
 use derivative::Derivative;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fuchsia_async as fasync;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::id_enum::IdEnum;
 use fuchsia_inspect_contrib::inspect_log;
@@ -22,10 +25,8 @@ use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::Channel;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-    fuchsia_async as fasync, wlan_legacy_metrics_registry as metrics, zx,
-};
+use wlan_legacy_metrics_registry as metrics;
+use zx;
 
 const INSPECT_CONNECT_EVENTS_LIMIT: usize = 10;
 const INSPECT_DISCONNECT_EVENTS_LIMIT: usize = 10;
@@ -39,15 +40,18 @@ enum ConnectionState {
     Idle(IdleState),
     Connected(ConnectedState),
     Disconnected(DisconnectedState),
+    ConnectFailed(ConnectFailedState),
 }
 
+// Update the ConnectDisconnectTimeSeries BitSetMap when making changes to this enum.
 impl IdEnum for ConnectionState {
     type Id = u8;
     fn to_id(&self) -> Self::Id {
         match self {
             Self::Idle(_) => 0,
             Self::Disconnected(_) => 1,
-            Self::Connected(_) => 2,
+            Self::ConnectFailed(_) => 2,
+            Self::Connected(_) => 3,
         }
     }
 }
@@ -60,6 +64,9 @@ struct ConnectedState {}
 
 #[derive(Debug, Default)]
 struct DisconnectedState {}
+
+#[derive(Debug, Default)]
+struct ConnectFailedState {}
 
 #[derive(Derivative, Unit)]
 #[derivative(PartialEq, Eq, Hash)]
@@ -211,6 +218,7 @@ impl ConnectDisconnectLogger {
         &self,
         result: fidl_ieee80211::StatusCode,
         bss: &BssDescription,
+        is_credential_rejected: bool,
     ) {
         let mut flushed_successive_failures = None;
         let mut downtime_duration = None;
@@ -220,8 +228,12 @@ impl ConnectDisconnectLogger {
                 Some(self.successive_connect_attempt_failures.swap(0, Ordering::SeqCst));
             downtime_duration =
                 self.last_disconnect_at.lock().map(|t| fasync::MonotonicInstant::now() - t);
-        } else {
+        } else if is_credential_rejected {
             self.update_connection_state(ConnectionState::Idle(IdleState {}));
+            let _prev = self.successive_connect_attempt_failures.fetch_add(1, Ordering::SeqCst);
+            let _prev = self.last_connect_failure_at.lock().replace(fasync::BootInstant::now());
+        } else {
+            self.update_connection_state(ConnectionState::ConnectFailed(ConnectFailedState {}));
             let _prev = self.successive_connect_attempt_failures.fetch_add(1, Ordering::SeqCst);
             let _prev = self.last_connect_failure_at.lock().replace(fasync::BootInstant::now());
         }
@@ -432,7 +444,8 @@ impl ConnectDisconnectTimeSeries {
                 SamplingProfile::highly_granular(),
                 LastSample::or(0),
             ),
-            BitSetMap::from_ordered(["idle", "disconnected", "connected"]),
+            // Update the ConnectionState IdEnum trait when making changes to this list.
+            BitSetMap::from_ordered(["idle", "disconnected", "connect_failed", "connected"]),
         );
         let connected_networks = client.inspect_time_matrix_with_metadata(
             "connected_networks",
@@ -543,6 +556,7 @@ impl DisconnectSourceExt for fidl_sme::DisconnectSource {
 mod tests {
     use super::*;
     use crate::testing::*;
+    use assert_matches::assert_matches;
     use diagnostics_assertions::{
         AnyBoolProperty, AnyBytesProperty, AnyNumericProperty, AnyStringProperty, assert_data_tree,
     };
@@ -573,7 +587,7 @@ mod tests {
         );
         let bss = random_bss_description!();
         let mut log_connect_attempt =
-            pin!(logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss));
+            pin!(logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss, false));
         assert!(
             harness.run_until_stalled_drain_cobalt_events(&mut log_connect_attempt).is_ready(),
             "`log_connect_attempt` did not complete",
@@ -593,7 +607,8 @@ mod tests {
                                 index: {
                                     "0": "idle",
                                     "1": "disconnected",
-                                    "2": "connected",
+                                    "2": "connect_failed",
+                                    "3": "connected",
                                 },
                             },
                         },
@@ -637,9 +652,11 @@ mod tests {
 
         // Log the event
         let bss_description = random_bss_description!();
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -672,7 +689,7 @@ mod tests {
         let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
         assert_eq!(
             &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
-            &[TimeMatrixCall::Fold(Timed::now(1 << 0)), TimeMatrixCall::Fold(Timed::now(1 << 2)),]
+            &[TimeMatrixCall::Fold(Timed::now(1 << 0)), TimeMatrixCall::Fold(Timed::now(1 << 3)),]
         );
         assert_eq!(
             &time_matrix_calls.drain::<u64>("connected_networks")[..],
@@ -698,9 +715,11 @@ mod tests {
         );
 
         // Log the event
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -729,9 +748,11 @@ mod tests {
         );
 
         let bss_description = random_bss_description!(Wpa2);
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -760,7 +781,8 @@ mod tests {
         for _i in 0..n_failures {
             let mut test_fut = pin!(logger.handle_connect_attempt(
                 fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
-                &bss_description
+                &bss_description,
+                false
             ));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -772,9 +794,11 @@ mod tests {
             test_helper.get_logged_metrics(metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID);
         assert!(metrics.is_empty());
 
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -787,9 +811,11 @@ mod tests {
 
         // Verify subsequent successes would report 0 failures
         test_helper.clear_cobalt_events();
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -817,7 +843,8 @@ mod tests {
         for _i in 0..n_failures {
             let mut test_fut = pin!(logger.handle_connect_attempt(
                 fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
-                &bss_description
+                &bss_description,
+                false
             ));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -901,7 +928,8 @@ mod tests {
         for _i in 0..n_failures {
             let mut test_fut = pin!(logger.handle_connect_attempt(
                 fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
-                &bss_description
+                &bss_description,
+                false
             ));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
@@ -931,6 +959,9 @@ mod tests {
         let metrics =
             test_helper.get_logged_metrics(metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID);
         assert!(metrics.is_empty());
+
+        // Verify that the connection state has transitioned to ConnectFailed
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::ConnectFailed(_));
     }
 
     #[fuchsia::test]
@@ -1154,9 +1185,11 @@ mod tests {
         // Connect at 15th second
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(15_000_000_000));
         let bss_description = random_bss_description!(Wpa2);
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -1165,6 +1198,9 @@ mod tests {
         // Verify no downtime metric is logged on first successful connect
         let metrics = test_helper.get_logged_metrics(metrics::DOWNTIME_POST_DISCONNECT_METRIC_ID);
         assert!(metrics.is_empty());
+
+        // Verify that the connection state has transitioned to Connected
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Connected(_));
 
         // Disconnect at 25th second
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(25_000_000_000));
@@ -1175,11 +1211,16 @@ mod tests {
             Poll::Ready(())
         );
 
+        // Verify that the connection state has transitioned to Disconnected
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Disconnected(_));
+
         // Reconnect at 60th second
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(60_000_000_000));
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
@@ -1189,6 +1230,9 @@ mod tests {
         let metrics = test_helper.get_logged_metrics(metrics::DOWNTIME_POST_DISCONNECT_METRIC_ID);
         assert_eq!(metrics.len(), 1);
         assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(35_000));
+
+        // Verify that the connection state has transitioned to Connected
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Connected(_));
     }
 
     #[fuchsia::test]
@@ -1204,13 +1248,18 @@ mod tests {
 
         // Log connect event to move state to connected
         let bss_description = random_bss_description!();
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
         );
+
+        // Verify that the connection state has transitioned to Connected
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Connected(_));
 
         // Log iface destroyed event to move state to idle
         let mut test_fut = pin!(logger.handle_iface_destroyed());
@@ -1224,10 +1273,13 @@ mod tests {
             &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
             &[
                 TimeMatrixCall::Fold(Timed::now(1 << 0)),
-                TimeMatrixCall::Fold(Timed::now(1 << 2)),
+                TimeMatrixCall::Fold(Timed::now(1 << 3)),
                 TimeMatrixCall::Fold(Timed::now(1 << 0))
             ]
         );
+
+        // Verify that the connection state has transitioned to Idle
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Idle(_));
     }
 
     #[fuchsia::test]
@@ -1243,13 +1295,18 @@ mod tests {
 
         // Log connect event to move state to connected
         let bss_description = random_bss_description!();
-        let mut test_fut = pin!(
-            logger.handle_connect_attempt(fidl_ieee80211::StatusCode::Success, &bss_description)
-        );
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
             Poll::Ready(())
         );
+
+        // Verify that the connection state has transitioned to Connected
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Connected(_));
 
         // Disable client connections to move state to idle
         let mut test_fut =
@@ -1264,10 +1321,39 @@ mod tests {
             &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
             &[
                 TimeMatrixCall::Fold(Timed::now(1 << 0)),
-                TimeMatrixCall::Fold(Timed::now(1 << 2)),
+                TimeMatrixCall::Fold(Timed::now(1 << 3)),
                 TimeMatrixCall::Fold(Timed::now(1 << 0))
             ]
         );
+
+        // Verify that the connection state has transitioned to Idle
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Idle(_));
+    }
+
+    #[fuchsia::test]
+    fn test_wlan_connectivity_states_credential_rejected() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        // Log connect failure with credential rejected to move state to idle
+        let bss_description = random_bss_description!();
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+            &bss_description,
+            true
+        ));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::Idle(_));
     }
 
     fn fake_disconnect_info() -> DisconnectInfo {

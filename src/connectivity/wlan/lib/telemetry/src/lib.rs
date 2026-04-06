@@ -30,6 +30,7 @@ pub enum TelemetryEvent {
     ConnectResult {
         result: fidl_ieee80211::StatusCode,
         bss: Box<BssDescription>,
+        is_credential_rejected: bool,
     },
     Disconnect {
         info: DisconnectInfo,
@@ -180,8 +181,8 @@ pub fn serve_telemetry(
                     };
                     use TelemetryEvent::*;
                     match event {
-                        ConnectResult { result, bss } => {
-                            connect_disconnect.handle_connect_attempt(result, &bss).await;
+                        ConnectResult { result, bss, is_credential_rejected } => {
+                            connect_disconnect.handle_connect_attempt(result, &bss, is_credential_rejected).await;
                         }
                         Disconnect { info } => {
                             connect_disconnect.log_disconnect(&info).await;

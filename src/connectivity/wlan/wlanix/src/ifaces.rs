@@ -305,6 +305,7 @@ pub(crate) struct ConnectSuccess {
 pub(crate) struct ConnectFail {
     pub bss: Box<BssDescription>,
     pub status_code: fidl_ieee80211::StatusCode,
+    pub is_credential_rejected: bool,
     pub timed_out: bool,
 }
 
@@ -688,6 +689,7 @@ impl ClientIface for SmeClientIface {
             Ok(ConnectResult::Fail(ConnectFail {
                 bss: Box::new(bss_description),
                 status_code: sme_result.code,
+                is_credential_rejected: sme_result.is_credential_rejected,
                 timed_out,
             }))
         }
@@ -1038,6 +1040,7 @@ pub mod test_utils {
                         bssid: bssid.map(|b| b.to_array()).unwrap_or([42, 42, 42, 42, 42, 42]),
                     )),
                     status_code: fidl_ieee80211::StatusCode::RefusedReasonUnspecified,
+                    is_credential_rejected: false,
                     timed_out: false,
                 }))
             }

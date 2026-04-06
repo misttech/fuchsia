@@ -1154,6 +1154,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                         telemetry_sender.send(TelemetryEvent::ConnectResult {
                             result: fidl_ieee80211::StatusCode::Success,
                             bss: connected.bss.clone(),
+                            is_credential_rejected: false,
                         });
                         let event = fidl_wlanix::SupplicantStaIfaceCallbackOnStateChangedRequest {
                             new_state: Some(fidl_wlanix::StaIfaceCallbackState::Completed),
@@ -1187,6 +1188,7 @@ async fn handle_supplicant_sta_network_request<I: IfaceManager, P: PowerManager>
                         telemetry_sender.send(TelemetryEvent::ConnectResult {
                             result: fail.status_code,
                             bss: fail.bss.clone(),
+                            is_credential_rejected: fail.is_credential_rejected,
                         });
                         let event =
                             fidl_wlanix::SupplicantStaIfaceCallbackOnAssociationRejectedRequest {
@@ -4025,7 +4027,7 @@ mod tests {
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult { result, bss })) => {
+            Ok(Some(TelemetryEvent::ConnectResult { result, bss, is_credential_rejected: _ })) => {
                 assert_eq!(result, fidl_ieee80211::StatusCode::Success);
                 assert_eq!(bss.ssid, Ssid::try_from("foo").unwrap());
                 assert_eq!(bss.bssid, Bssid::from([42, 42, 42, 42, 42, 42]));
@@ -4397,7 +4399,11 @@ mod tests {
         // Metrics: for this test, we don't care about the contents of the ConnectResult
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult { result: _, bss: _ }))
+            Ok(Some(TelemetryEvent::ConnectResult {
+                result: _,
+                bss: _,
+                is_credential_rejected: _
+            }))
         );
 
         let connection_length_nanos: u16 = rand::random();
@@ -4496,7 +4502,11 @@ mod tests {
         // Metrics: for this test, we don't care about the contents of the ConnectResult
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
-            Ok(Some(TelemetryEvent::ConnectResult { result: _, bss: _ }))
+            Ok(Some(TelemetryEvent::ConnectResult {
+                result: _,
+                bss: _,
+                is_credential_rejected: _
+            }))
         );
 
         let connection_length_nanos: u16 = rand::random();
