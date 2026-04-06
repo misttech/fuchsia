@@ -207,7 +207,7 @@ func (c *stringInLogCheck) checkBytes(toCheck []byte, start int, end int) (bool,
 	stringBytes := []byte(c.String)
 	if len(c.ExceptBlocks) == 0 {
 		if idx := bytes.Index(toCheckBlock, stringBytes); idx != -1 {
-			line := getLine(toCheck, idx)
+			line := getLine(toCheckBlock, idx)
 			return true, line
 		} else {
 			return false, nil

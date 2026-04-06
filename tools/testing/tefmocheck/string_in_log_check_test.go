@@ -224,6 +224,30 @@ func TestCheck(t *testing.T) {
 			wantName:    path.Join(wantName, "bar-test"),
 		},
 		{
+			name:            "should match correct FailureReason for non-zero SwarmingOutputPerTest slice index",
+			attributeToTest: true,
+			testingOutputs: TestingOutputs{
+				SwarmingOutput: []byte("first test line\nsecond test " + line + "\n"),
+				SwarmingOutputPerTest: []TestLog{
+					{
+						TestName: "foo-test",
+						Bytes:    []byte("first test line\n"),
+						FilePath: "foo/log.txt",
+						Index:    0,
+					},
+					{
+						TestName: "bar-test",
+						Bytes:    []byte("second test " + line + "\n"),
+						FilePath: "bar/log.txt",
+						Index:    len("first test line\n"),
+					},
+				},
+			},
+			shouldMatch: true,
+			wantName:    path.Join(wantName, "bar-test"),
+			wantLine:    "second test " + line,
+		},
+		{
 			name:            "should check all syslogs",
 			attributeToTest: true,
 			testingOutputs: TestingOutputs{
