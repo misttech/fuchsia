@@ -23,7 +23,8 @@
 # but each entry needs a ticket assigned to the assembly team with an agreed
 # upon solution for how to address the tech-debt.
 
-fuchsia_product_assembly_config_label = "//products/core:core_with_f2fs"
-zedboot_product_assembly_config_label = "//products/zedboot"
-fxfs_blob = false
+bazel_product_bundle_prefix = "//products/core:product_bundle_f2fs"
+use_bazel_images_only = true
+
 product_skip_uefi_disk = false
+fxfs_blob = false

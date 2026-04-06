@@ -73,23 +73,6 @@ _platform_configuration_base = {
   }
 }
 
-_storage_f2fs = {
-  storage = {
-    mutable_storage_garbage_collection = true
-    filesystems = {
-      volume = {
-        fvm = {
-          data = {
-            data_filesystem_format = "f2fs"
-          }
-          blob = {
-          }
-        }
-      }
-    }
-  }
-}
-
 _storage_minfs = {
   storage = {
     mutable_storage_garbage_collection = true
@@ -146,6 +129,20 @@ if (current_cpu == "x64") {
     bazel_inputs_from_gn =
         _bazel_inputs + [ "//boards/x64:reduced_perf_variation.bazel_input" ]
   }
+
+  bazel_product_bundle("product_bundle_f2fs.x64") {
+    testonly = true
+    product_bundle_name = "core_with_f2fs.x64"
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle_f2fs.x64"
+    bazel_product_image_target = ":image_f2fs.x64"
+    bazel_product_config_target = ":product_config_f2fs"
+    bazel_product_config_name = "core"
+    bazel_recovery_image_target = "//products/zedboot:x64"
+    bazel_elf_sizes_target = ":elf_sizes_f2fs.x64"
+    bazel_inputs_from_gn = _bazel_inputs + [ "//boards/x64:x64.bazel_input" ]
+    image_has_fxfs_blob = false
+  }
 }
 
 if (current_cpu == "arm64") {
@@ -190,22 +187,21 @@ if (current_cpu == "arm64") {
     bazel_elf_sizes_target = ":elf_sizes.vim3"
     bazel_inputs_from_gn = _bazel_inputs + [ "//boards/vim3:bazel_inputs" ]
   }
-}
 
-product_assembly_configuration("core_with_f2fs") {
-  testonly = true
-  platform = {
-    forward_variables_from(_platform_configuration_base, "*")
-    forward_variables_from(_storage_f2fs, "*")
+  bazel_product_bundle("product_bundle_f2fs.arm64") {
+    testonly = true
+    product_bundle_name = "core_with_f2fs.arm64"
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle_f2fs.arm64"
+    bazel_product_image_target = ":image_f2fs.arm64"
+    bazel_product_config_target = ":product_config_f2fs"
+    bazel_product_config_name = "core"
+    bazel_recovery_image_target = "//products/zedboot:arm64"
+    bazel_elf_sizes_target = ":elf_sizes_f2fs.arm64"
+    bazel_inputs_from_gn =
+        _bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
+    image_has_fxfs_blob = false
   }
-  product = {
-    build_info = default_product_build_info
-  }
-
-  base_packages = _base_packages
-  cache_packages = _cache_packages
-  deps = [ "//build/info:build_info_files" ]
-  version = build_info_version
 }
 
 product_assembly_configuration("core_with_minfs") {

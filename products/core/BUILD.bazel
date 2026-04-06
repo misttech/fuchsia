@@ -244,3 +244,90 @@ fuchsia_product_bundle(
     update_epoch = "1",
     update_version_file = "//build/info:version",
 )
+
+## core_with_f2fs targets
+
+fuchsia_product_configuration(
+    name = "product_config_f2fs",
+    base_packages = BASE_PACKAGES,
+    cache_packages = CACHE_PACKAGES,
+    product_config_json = {
+        "platform": PLATFORM_BASE | {
+            "storage": {
+                "mutable_storage_garbage_collection": True,
+                "filesystems": {
+                    "volume": {
+                        "fvm": {
+                            "data": {
+                                "data_filesystem_format": "f2fs",
+                            },
+                            "blob": {},
+                        },
+                    },
+                },
+            },
+        },
+        "product": PRODUCT_BASE,
+    },
+    version = build_info_version,
+)
+
+# x64-f2fs
+fuchsia_product(
+    name = "image_f2fs.x64",
+    board_config = "//boards:x64",
+    platform_artifacts = "//build/bazel/assembly/assembly_input_bundles:platform_eng",
+    product_config = ":product_config_f2fs",
+)
+
+fuchsia_elf_sizes(
+    name = "elf_sizes_f2fs.x64",
+    product = ":image_f2fs.x64",
+)
+
+fuchsia_product_bundle(
+    name = "product_bundle_f2fs.x64",
+    default_virtual_device = "//build/bazel/assembly/virtual_devices:x64-emu-recommended",
+    main = ":image_f2fs.x64",
+    product_bundle_name = "core_with_f2fs.x64",
+    product_bundle_version = build_info_version,
+    recovery = "//products/zedboot:x64",
+    repository_keys = "//src/sys/pkg/repositories/devhost/keys",
+    update_epoch = "1",
+    update_version_file = "//build/info:version",
+    virtual_devices = [
+        "//build/bazel/assembly/virtual_devices:x64-emu-recommended",
+        "//build/bazel/assembly/virtual_devices:x64-emu-min",
+        "//build/bazel/assembly/virtual_devices:x64-emu-extra-large",
+    ],
+)
+
+# arm64-f2fs
+fuchsia_product(
+    name = "image_f2fs.arm64",
+    board_config = "//boards:arm64",
+    platform_artifacts = "//build/bazel/assembly/assembly_input_bundles:platform_eng",
+    product_config = ":product_config_f2fs",
+)
+
+fuchsia_elf_sizes(
+    name = "elf_sizes_f2fs.arm64",
+    product = ":image_f2fs.arm64",
+)
+
+fuchsia_product_bundle(
+    name = "product_bundle_f2fs.arm64",
+    default_virtual_device = "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
+    main = ":image_f2fs.arm64",
+    product_bundle_name = "core_with_f2fs.arm64",
+    product_bundle_version = build_info_version,
+    recovery = "//products/zedboot:arm64",
+    repository_keys = "//src/sys/pkg/repositories/devhost/keys",
+    update_epoch = "1",
+    update_version_file = "//build/info:version",
+    virtual_devices = [
+        "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
+        "//build/bazel/assembly/virtual_devices:arm64-emu-min",
+        "//build/bazel/assembly/virtual_devices:arm64-emu-extra-large",
+    ],
+)
