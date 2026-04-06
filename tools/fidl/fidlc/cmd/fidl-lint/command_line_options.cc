@@ -32,6 +32,8 @@ const char kExperimentalCheck[] = R"(  --experimental-check=<check-id>
       all other checks to be excluded. This is usually only useful for
       experimental checks, since all non-experimental checks are included by
       default unless the --include-check option is used.)";
+const char kExperimental[] = R"(  --experimental=<flag-name>
+      Enable an experimental feature of fidlc.)";
 const char kMustFindExcludedChecks[] = R"(  --must-find-excluded-checks
    -m If this flag is set, at least one --exclude-check option is required.
       After lint checking all given FIDL files, if an excluded check is
@@ -69,6 +71,7 @@ cmdline::Status ParseCommandLine(int argc, const char* argv[], CommandLineOption
   parser.AddSwitch("exclude-check", 'e', help::kExcludeCheck, &CommandLineOptions::excluded_checks);
   parser.AddSwitch("experimental-check", 'x', help::kExperimentalCheck,
                    &CommandLineOptions::experimental_checks);
+  parser.AddSwitch("experimental", 0, help::kExperimental, &CommandLineOptions::experimental_flags);
   parser.AddSwitch("must-find-excluded-checks", 'm', help::kMustFindExcludedChecks,
                    &CommandLineOptions::must_find_excluded_checks);
   parser.AddSwitch("format", 'f', help::kFormat, &CommandLineOptions::format,

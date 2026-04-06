@@ -181,11 +181,6 @@ def _is_exempt_from_linting(package, excluded_checks):
     if not excluded_checks and package_path in _fidl_test_packages:
         return True
 
-    # zbi fails linting with a "parse-error", which cannot be excluded.
-    # TODO(https://fxbug.dev/498348957): Fix the "parse-error" and remove.
-    if package_path == "//sdk/fidl/zbi":
-        return True
-
     # TODO(https://fxbug.dev/381163466): Fix lint warnings in vendor repos.
     if not excluded_checks and package_path.startswith("//vendor/"):
         return True
@@ -227,6 +222,9 @@ def _fidl_lint_impl(ctx):
         for experimental_check in ctx.attr.experimental_checks:
             args.add("-x", experimental_check)
 
+        for flag in ctx.attr.experimental_flags:
+            args.add("--experimental", flag)
+
         for src in ctx.files.srcs:
             args.add(src)
 
@@ -264,6 +262,9 @@ _fidl_lint = rule(
         "excluded_checks": attr.string_list(
             doc = "List of `fidl-lint` check IDs to ignore (by passing the " +
                   "command line flag `-e some-check-id` for each value).",
+        ),
+        "experimental_flags": attr.string_list(
+            doc = "A list of experimental fidlc features to enable.",
         ),
         "_fidl_lint": attr.label(
             default = Label("//tools/fidl/fidlc:fidl-lint_tool"),
@@ -310,6 +311,7 @@ def fidl_ir(
         excluded_checks,
         testonly,
         visibility,
+        experimental_flags = [],
         subdirectory = None,
         skip_linting_and_validation = False,
         **kwargs):
@@ -337,6 +339,7 @@ def fidl_ir(
         name = fidlc_target_name,
         fidl_library_target_name = fidl_library_target_name,
         srcs = srcs,
+        experimental_flags = experimental_flags,
         # IMPORTANT: The deps must be a label list that was passed to the
         # top-most symbolic macro in order for visibility to be checked
         # correctly. The reason for this is that label strings defined within
@@ -371,6 +374,7 @@ def fidl_ir(
             srcs = srcs,
             experimental_checks = experimental_checks,
             excluded_checks = excluded_checks,
+            experimental_flags = experimental_flags,
             testonly = testonly,
             visibility = ["//visibility:private"],
         )

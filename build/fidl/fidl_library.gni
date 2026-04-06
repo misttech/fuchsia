@@ -427,14 +427,6 @@ template("fidl_library") {
               "//zircon/tools/zither:*",
             ]) != []) {
       args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
-    } else if (get_label_info(":${target_name}", "label_no_toolchain") ==
-               "//sdk/fidl/zbi:zbi_lint") {
-      # zbi fails linting with a "parse-error", which cannot be excluded.
-      # TODO(https://fxbug.dev/498348957): Fix the "parse-error" and remove.
-      args += [ ":" ]  # NOOP - Nothing to lint, but touch the stamp file
-
-      # Allow zbi to specify non-parse-error excluded checks.
-      not_needed(invoker, [ "excluded_checks" ])
     } else if (!defined(invoker.excluded_checks) &&
                filter_include(
                    [ get_label_info(":${target_name}", "label_no_toolchain") ],
@@ -478,6 +470,15 @@ template("fidl_library") {
           "-x",
           experimental_check,
         ]
+      }
+
+      if (defined(invoker.experimental_flags)) {
+        foreach(flag, invoker.experimental_flags) {
+          args += [
+            "--experimental",
+            flag,
+          ]
+        }
       }
 
       foreach(source, sources) {

@@ -55,13 +55,12 @@ fidlc::Finding DiagnosticToFinding(const fidlc::Diagnostic& diag) {
   return fidlc::Finding(diag.span, check_id, diag.Format());
 }
 
-void Lint(const fidlc::SourceFile& source_file, fidlc::Findings* findings,
-          const std::set<std::string>& included_checks,
+void Lint(const fidlc::SourceFile& source_file, fidlc::ExperimentalFlagSet experimental_flags,
+          fidlc::Findings* findings, const std::set<std::string>& included_checks,
           const std::set<std::string>& excluded_checks, bool exclude_by_default,
           std::set<std::string>* excluded_checks_not_found) {
   fidlc::Reporter reporter;
   fidlc::Lexer lexer(source_file, &reporter);
-  fidlc::ExperimentalFlagSet experimental_flags;
   fidlc::Parser parser(&lexer, &reporter, experimental_flags);
   std::unique_ptr<fidlc::File> ast = parser.Parse();
   for (auto* diag : reporter.Diagnostics()) {
@@ -139,11 +138,20 @@ int main(int argc, char* argv[]) {
   // officially released an so no-longer experimental.
   included_checks.insert(options.experimental_checks.begin(), options.experimental_checks.end());
 
+  fidlc::ExperimentalFlagSet experimental_flags;
+  for (const auto& flag_str : options.experimental_flags) {
+    auto it = fidlc::kAllExperimentalFlags.find(flag_str);
+    if (it == fidlc::kAllExperimentalFlags.end()) {
+      Fail("Unknown experimental flag %s\n", flag_str.c_str());
+    }
+    experimental_flags.Enable(it->second);
+  }
+
   fidlc::Findings findings;
   bool enable_color = !std::getenv("NO_COLOR") && isatty(fileno(stderr));
   for (const auto& source_file : source_manager.sources()) {
-    Lint(*source_file, &findings, included_checks, excluded_checks, exclude_by_default,
-         &excluded_checks_not_found);
+    Lint(*source_file, experimental_flags, &findings, included_checks, excluded_checks,
+         exclude_by_default, &excluded_checks_not_found);
   }
 
   if (options.format == "text") {
