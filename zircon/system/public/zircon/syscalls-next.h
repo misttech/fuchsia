@@ -137,7 +137,6 @@ typedef struct zx_restricted_exception {
 typedef struct zx_sampler_config {
   zx_duration_mono_t period;
   size_t buffer_size;
-  uint64_t iobuffer_discipline;
 } zx_sampler_config_t;
 
 // ====== End of Software Sampling support ====== //
