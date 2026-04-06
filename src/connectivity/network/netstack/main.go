@@ -25,7 +25,6 @@ import (
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/dns"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/fidlconv"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/filter"
-	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/pprof"
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/routes"
 	zxtime "go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/time"
 	tracingprovider "go.fuchsia.dev/fuchsia/src/connectivity/network/netstack/tracing/provider"
@@ -630,16 +629,6 @@ func Main() {
 			},
 		},
 	})
-
-	// Minimal support for the inspect VMO format allows our profile protos to be
-	// picked up by bug reports.
-	//
-	// To extract these serialized protos from inspect.json, jq can be used:
-	//
-	// cat iquery.json | \
-	// jq '.[] | select(.path | contains("/pprof/")) | .contents.root.pprof.goroutine[4:]' | \
-	// xargs echo | base64 --decode > goroutine
-	componentCtx.OutgoingService.AddDiagnostics("pprof", pprof.NewNode())
 
 	{
 		stub := verify.ComponentOtaHealthCheckWithCtxStub{Impl: &healthCheck{}}

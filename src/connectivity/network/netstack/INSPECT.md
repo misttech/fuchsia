@@ -156,41 +156,7 @@ To retrieve all routes from inspect data use:
 fx jq '.[] | select(.moniker == "core/network/netstack") | .payload."Routes" | .[]?'
 ```
 
-## pprof
 
-Netstack exposes [`pprof`] data that can be used to gather more information from
-the Go runtime.
-
-A typical snapshot will contain periodic `pprof` data which is gathered at set
-intervals. You can query the available `pprof` information with:
-```
-fx jq -c '.[] | select(.moniker == "core/network/netstack")
-              | select(.payload.root.pprof != null)
-              | {file: .metadata.filename, keys: (.payload.root.pprof | keys)}'
-```
-Which will generate output like
-```
-{"file":"pprof/2020-10-22T16:21:49Z.inspect","keys":["allocs","block","goroutine","heap","mutex","threadcreate"]}
-{"file":"pprof/now.inspect","keys":["allocs","block","goroutine","heap","mutex","threadcreate"]}
-{"file":"pprof/2020-10-22T16:19:49Z.inspect","keys":["allocs","block","goroutine","heap","mutex","threadcreate"]}
-{"file":"pprof/2020-10-22T16:20:49Z.inspect","keys":["allocs","block","goroutine","heap","mutex","threadcreate"]}
-```
-
-Each of the `pprof` profiles is encoded in base64. The following line gets all
-the `pprof` files and decodes them at once (remember to either pipe in your
-`inspect` data or add path to your inspect file after the `jq` command):
-```bash
-fx jq -rc '.[]
-            | select(.moniker == "core/network/netstack")
-            | select(.payload.root.pprof != null)
-            | . as $parent
-            | (.payload.root.pprof | to_entries | .[] | ($parent | .metadata.filename) + "_" + .key + " " + .value)' | \
- while read f c; do echo $c | sed s/b64://g | base64 -d > $(echo $f | sed 's/pprof\///g'); done
-```
-
-You can modify the selector `.payload.root.pprof != null` and append `and
-.metadata.filename == "pprof/now.inspect"` to only get the latest profile.
 
 [`jq`]: https://stedolan.github.io/jq/
-[`pprof`]: https://github.com/google/pprof
 
