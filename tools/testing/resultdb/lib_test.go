@@ -71,8 +71,12 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 	}
 
 	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed"
-	if !(result.Status == resultpb.TestStatus_FAIL && result.FailureReason.PrimaryErrorMessage == expectedTopLevelTestFailureReason) {
-		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The primary error message is %q.\n The expected failure reason is %q.", result.FailureReason.PrimaryErrorMessage, expectedTopLevelTestFailureReason)
+	var gotErr string
+	if result.FailureReason != nil && len(result.FailureReason.Errors) > 0 {
+		gotErr = result.FailureReason.Errors[0].Message
+	}
+	if !(result.StatusV2 == resultpb.TestResult_FAILED && gotErr == expectedTopLevelTestFailureReason) {
+		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The error message is %q.\n The expected failure reason is %q.", gotErr, expectedTopLevelTestFailureReason)
 	}
 
 	tags := make(map[string]string)
@@ -134,8 +138,12 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 	}
 
 	expectedTopLevelTestFailureReason := "bar_0: test case failed\nbar_1: test case failed\nbar_2: test case failed\nbar_3: test case failed\nbar_4: test case failed\nbar_5: test case failed\nbar_6: test case failed\nbar_7: test case failed\nbar_8: test case failed\nbar_9: test case failed\nbar_10: test case failed\nbar_11: test case failed\nbar_12: test case failed\nbar_13: test case failed\nbar_14: test case failed\nbar_15: test case failed\nbar_16: test case failed\nbar_17: test case failed\nbar_18: test case failed\nbar_19: test case failed\nbar_20: test case failed\nbar_21: test case failed\nbar_22: test case failed\nbar_23: test case failed\nbar_24: test case failed\nbar_25: test case failed\nbar_26: test case failed\nbar_27: test case failed\nbar_28: test case failed\nbar_29: test case failed\nbar_30: test case failed\nbar_31: test case failed\nbar_32: test case failed\nbar_33: test case failed\nbar_34: test case failed\nbar_35: test case failed\nbar_36: test case failed\nbar_37: test case failed\nbar_38: test case failed\nbar_39: test case failed\nbar_40: test case failed\nbar_41: t"
-	if !(result.Status == resultpb.TestStatus_FAIL && result.FailureReason.PrimaryErrorMessage == expectedTopLevelTestFailureReason) {
-		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The primary error message is %q.\n The expected failure reason is %q.", result.FailureReason.PrimaryErrorMessage, expectedTopLevelTestFailureReason)
+	var gotErr string
+	if result.FailureReason != nil && len(result.FailureReason.Errors) > 0 {
+		gotErr = result.FailureReason.Errors[0].Message
+	}
+	if !(result.StatusV2 == resultpb.TestResult_FAILED && gotErr == expectedTopLevelTestFailureReason) {
+		t.Errorf("If a test failed, the top level test should have a failure reason with a list of the failed tests.\n The error message is %q.\n The expected failure reason is %q.", gotErr, expectedTopLevelTestFailureReason)
 	}
 
 	tags := make(map[string]string)
@@ -209,7 +217,6 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 					},
 				},
 			},
-			expectedFailureReason: "skipped_1: skipped reason 1",
 		},
 	}
 
@@ -223,14 +230,18 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 
 			if tc.expectedFailureReason == "" {
 				if result.FailureReason != nil {
-					t.Errorf("Expected nil FailureReason, got %q", result.FailureReason.PrimaryErrorMessage)
+					t.Errorf("Expected nil FailureReason, got %+v", result.FailureReason)
 				}
 			} else {
 				if result.FailureReason == nil {
 					t.Fatalf("Expected FailureReason to be non-nil")
 				}
-				if result.FailureReason.PrimaryErrorMessage != tc.expectedFailureReason {
-					t.Errorf("Expected failure reason %q, got %q", tc.expectedFailureReason, result.FailureReason.PrimaryErrorMessage)
+				var gotErr string
+				if len(result.FailureReason.Errors) > 0 {
+					gotErr = result.FailureReason.Errors[0].Message
+				}
+				if gotErr != tc.expectedFailureReason {
+					t.Errorf("Expected failure reason %q, got %q", tc.expectedFailureReason, gotErr)
 				}
 			}
 		})
@@ -437,65 +448,6 @@ func TestInvocationLevelArtifacts(t *testing.T) {
 	}
 	if !foundSerial {
 		t.Errorf("Did not find serial_log.txt in output")
-	}
-}
-
-func TestDetermineExpected(t *testing.T) {
-	testCases := []struct {
-		testStatus     resultpb.TestStatus
-		testCaseStatus resultpb.TestStatus
-		expected       bool
-	}{
-		{
-			// test passed, test case result is ignored.
-			testStatus:     resultpb.TestStatus_PASS,
-			testCaseStatus: resultpb.TestStatus_FAIL,
-			expected:       true,
-		},
-		{
-			// test failed and has test case status,
-			// report on test case result.
-			testStatus:     resultpb.TestStatus_FAIL,
-			testCaseStatus: resultpb.TestStatus_PASS,
-			expected:       true,
-		},
-		{
-			// test failed and no test case status,
-			// report test result.
-			testStatus:     resultpb.TestStatus_FAIL,
-			testCaseStatus: resultpb.TestStatus_STATUS_UNSPECIFIED,
-			expected:       false,
-		},
-		{
-			// cannot determine test status,
-			// report on test cast result.
-			testStatus:     resultpb.TestStatus_STATUS_UNSPECIFIED,
-			testCaseStatus: resultpb.TestStatus_PASS,
-			expected:       true,
-		},
-		{
-			// cannot determine both test and test case result
-			testStatus:     resultpb.TestStatus_STATUS_UNSPECIFIED,
-			testCaseStatus: resultpb.TestStatus_STATUS_UNSPECIFIED,
-			expected:       false,
-		},
-		{
-			testStatus:     resultpb.TestStatus_PASS,
-			testCaseStatus: resultpb.TestStatus_PASS,
-			expected:       true,
-		},
-		{
-			testStatus:     resultpb.TestStatus_FAIL,
-			testCaseStatus: resultpb.TestStatus_FAIL,
-			expected:       false,
-		},
-	}
-	for _, tc := range testCases {
-		r := determineExpected(tc.testStatus, tc.testCaseStatus)
-		if r != tc.expected {
-			t.Errorf("TestDetermineExpected failed:\ntestSuite Status: %v, testCase Status: %v, got %t, want %t",
-				tc.testStatus, tc.testCaseStatus, r, tc.expected)
-		}
 	}
 }
 
