@@ -40,10 +40,10 @@ COG_METADATA_FILE_NAME: str = ".cog.json"
 LOCAL_JIRI_MANIFEST_CONTENT: str = """
 <manifest>
   <imports>
-    <localimport file="../integration/prebuilts"/>
-    <localimport file="../integration/cobalt"/>
     <localimport file="manifests/prebuilts"/>
     <localimport file="manifests/third_party/all"/>
+    <localimport file="../integration/cobalt"/>
+    <localimport file="../integration/prebuilts"/>
   </imports>
 </manifest>
 """
@@ -628,14 +628,12 @@ class Workspace:
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
-        integration_directory = self.cartfs_directory / "integration"
-
-        # Setup the integration repository
-        if integration_directory.exists():
-            shutil.rmtree(integration_directory, ignore_errors=True)
+        integration_dir = self.cartfs_directory / "integration"
+        if integration_dir.exists():
+            shutil.rmtree(integration_dir, ignore_errors=True)
 
         logger.emit_status("Cloning integration repo...")
-        if not integration_directory.exists():
+        if not integration_dir.exists():
             self._run(
                 [
                     "git",
@@ -653,20 +651,20 @@ class Workspace:
         commit_hash_prefix = fuchsia_repo_commit_hash[:7]
         logger.log_info(f"commit_hash_prefix: {commit_hash_prefix}")
 
-        integration_repo_commit_hash = (
+        integration_base_commit_hash = (
             self._run(
                 ["git", "log", "--grep", commit_hash_prefix, "--format=%H"],
-                cwd=integration_directory,
+                cwd=integration_dir,
                 capture_output=True,
             )
             .strip()
             .split("\n")[-1]
         )
         logger.log_info(
-            f"integration_repo_commit_hash: {integration_repo_commit_hash}"
+            f"integration_base_commit_hash: {integration_base_commit_hash}"
         )
 
-        if not integration_repo_commit_hash:
+        if not integration_base_commit_hash:
             logger.log_info(
                 "Fuchsia commit is not rolled to integration repo yet. We will "
                 "use the latest integration repo commit hash."
@@ -674,8 +672,8 @@ class Workspace:
         else:
             # checkout the integration repo based on the fuchsia repo commit hash
             self._run(
-                ["git", "reset", "--hard", integration_repo_commit_hash],
-                cwd=integration_directory,
+                ["git", "reset", "--hard", integration_base_commit_hash],
+                cwd=integration_dir,
             )
 
         # clone fuchsia repository and reset it to the commit hash
@@ -686,7 +684,7 @@ class Workspace:
         integration_commit_timestamp = int(
             self._run(
                 ["git", "show", "-s", "--format=%ct"],
-                cwd=integration_directory,
+                cwd=integration_dir,
                 capture_output=True,
             ).strip()
         )
@@ -748,7 +746,7 @@ class Workspace:
         self._write_jiri_manifest()
         self._write_jiri_config()
 
-        return integration_repo_commit_hash
+        return integration_base_commit_hash
 
     def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
@@ -761,7 +759,6 @@ class Workspace:
             "prebuilt",
             "build/cipd.gni",
             ".jiri_manifest",
-            ".jiri_root/bin/ffx",
             ".jiri_root/bin/fuchsia-vendored-python",
             ".jiri_root/bin/hermetic-env",
             ".git",
@@ -772,16 +769,17 @@ class Workspace:
         ]:
             repo_path = self.workspace_dir / self.repo_name / path
             cartfs_path = self.cartfs_fuchsia_dir / path
-            self._create_symlink(
-                cartfs_path,
-                repo_path,
-            )
+            self._create_symlink(cartfs_path, repo_path)
 
-        # Symlink in the fx script.
-        self._create_symlink(
-            self.workspace_dir / self.repo_name / "scripts/cog/resources/fx",
-            self.workspace_dir / self.repo_name / ".jiri_root/bin/fx",
-        )
+        # Symlink in the fx and ffx script.
+        for script in ["fx", "ffx"]:
+            self._create_symlink(
+                self.workspace_dir
+                / self.repo_name
+                / "scripts/cog/resources"
+                / script,
+                self.workspace_dir / self.repo_name / ".jiri_root/bin" / script,
+            )
 
         # Symlink in CartFS specific GN arg overrides.
         self._create_symlink(

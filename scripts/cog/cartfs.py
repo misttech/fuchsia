@@ -116,7 +116,8 @@ class Cartfs:
         mount_point = cls._find_mount_point(use_local_mock_cartfs)
         if not mount_point:
             raise CartfsNotRunningError(
-                "cartfs is installed but not running. Please start cartfs to continue."
+                "cartfs is installed but not running. Please start cartfs with"
+                " `systemctl start cartfs.service` to continue."
             )
 
         return cls(mount_point, use_local_mock_cartfs)
