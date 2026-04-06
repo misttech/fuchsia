@@ -133,12 +133,12 @@ async def _poll_until(
     return await _poll()
 
 
-class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
+class FastbootImpl(AsyncLazyReady, fastboot_interface.Fastboot):
     """Provides methods for Host-(Fuchsia)Target interactions via Fastboot.
 
     Args:
         device_name: Fuchsia device name.
-        reboot_affordance: Object to AsyncRebootCapableDevice implementation.
+        reboot_affordance: Object to RebootCapableDevice implementation.
         ffx_transport: Object to FFX transport interface implementation.
         fastboot_node_id: Fastboot Node ID.
 
@@ -149,13 +149,13 @@ class AsyncFastbootImpl(AsyncLazyReady, fastboot_interface.AsyncFastboot):
     def __init__(
         self,
         device_name: str,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
         ffx_transport: ffx_interface.FFX,
         fastboot_node_id: str | None = None,
     ) -> None:
         super().__init__()
         self._device_name: str = device_name
-        self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
+        self._reboot_affordance: affordances_capable.RebootCapableDevice = (
             reboot_affordance
         )
         self.ffx: ffx_interface.FFX = ffx_transport

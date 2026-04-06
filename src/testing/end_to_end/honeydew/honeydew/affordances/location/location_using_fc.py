@@ -41,7 +41,7 @@ class AsyncLocationUsingFc(location.AsyncLocation):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         """Create an Async location Fuchsia Controller affordance.
 
@@ -49,7 +49,7 @@ class AsyncLocationUsingFc(location.AsyncLocation):
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements AsyncRebootCapableDevice.
+            reboot_affordance: Object that implements RebootCapableDevice.
         """
         super().__init__()
 
@@ -136,7 +136,7 @@ class LocationUsingFc(location.Location):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         """Create a location Fuchsia Controller affordance.
 

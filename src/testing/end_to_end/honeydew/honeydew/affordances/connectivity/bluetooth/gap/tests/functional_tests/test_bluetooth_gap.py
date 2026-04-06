@@ -17,7 +17,7 @@ BluetoothAcceptPairing = bt_types.BluetoothAcceptPairing
 BluetoothConnectionType = bt_types.BluetoothConnectionType
 
 
-class BluetoothGapAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class BluetoothGapAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """BluetoothGap affordance tests"""
 
     async def setup_class(self) -> None:

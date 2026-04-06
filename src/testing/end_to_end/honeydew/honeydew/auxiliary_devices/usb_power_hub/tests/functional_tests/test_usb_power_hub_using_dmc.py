@@ -23,7 +23,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class UsbPowerHubUsingDmcTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
     """Mobly test for UsbPowerDmc implementation of UsbPower interface."""
 
     async def setup_class(self) -> None:

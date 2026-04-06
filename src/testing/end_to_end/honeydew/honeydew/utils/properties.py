@@ -54,7 +54,7 @@ class Transport(cached_property[R]):
         self.name: str = func.__name__
 
 
-def async_persistent_method(func: Callable[..., Any]) -> Callable[..., Any]:
+def persistent_method(func: Callable[..., Any]) -> Callable[..., Any]:
     """An async method decorator that is persistent throughout device interaction.
 
     Value is queried only once and cached on the instance.

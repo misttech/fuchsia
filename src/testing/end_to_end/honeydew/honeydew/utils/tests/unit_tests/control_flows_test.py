@@ -12,9 +12,9 @@ from parameterized import param, parameterized
 
 from honeydew.utils.control_flows import (
     RetryAbortingError,
-    async_repeat_until_deadline,
-    async_retry,
-    async_retry_until_deadline,
+    repeat_until_deadline,
+    retry,
+    retry_until_deadline,
 )
 from honeydew.utils.deadline import Deadline
 
@@ -24,12 +24,12 @@ class _RetryAbortingErrorSubClass(RetryAbortingError):
 
 
 class RetryTest(unittest.TestCase):
-    @mock.patch("honeydew.utils.control_flows.async_sleep_for_duration")
+    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
     async def test_retry_succeeds_on_first_try(
         self, mock_sleep: mock.Mock
     ) -> None:
         mock_task = mock.Mock(return_value=1)
-        await async_retry(
+        await retry(
             task=mock_task,
             max_tries=3,
             retry_delay=timedelta(seconds=1),
@@ -49,7 +49,7 @@ class RetryTest(unittest.TestCase):
             param(expected_exception=signals.TestAbortAll),
         ]
     )
-    @mock.patch("honeydew.utils.control_flows.async_sleep_for_duration")
+    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
     async def test_retry_does_not_retry_some_errors(
         self,
         mock_sleep_for_duration: mock.Mock,
@@ -60,7 +60,7 @@ class RetryTest(unittest.TestCase):
             expected_exception=expected_exception,
             expected_regex="expected",
         ):
-            await async_retry(
+            await retry(
                 task=mock_task,
                 max_tries=3,
                 retry_delay=timedelta(seconds=1),
@@ -69,14 +69,14 @@ class RetryTest(unittest.TestCase):
         mock_task.assert_called_once()
         mock_sleep_for_duration.assert_not_called()
 
-    @mock.patch("honeydew.utils.control_flows.async_sleep_for_duration")
+    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
     async def test_retry_succeeds_on_retry(
         self, mock_sleep_for_duration: mock.Mock
     ) -> None:
         mock_task = mock.Mock(
             side_effect=2 * [RuntimeError("Triggers a retry")] + [True]
         )
-        await async_retry(
+        await retry(
             task=mock_task,
             max_tries=3,
             retry_delay=timedelta(seconds=1),
@@ -85,7 +85,7 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(mock_task.call_count, 3)
         self.assertEqual(mock_sleep_for_duration.call_count, 2)
 
-    @mock.patch("honeydew.utils.control_flows.async_sleep_for_duration")
+    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     async def test_retry_never_succeeds(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -103,7 +103,7 @@ class RetryTest(unittest.TestCase):
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
         ):
-            await async_retry(
+            await retry(
                 task=mock_task,
                 max_tries=3,
                 retry_delay=timedelta(seconds=1),
@@ -115,7 +115,7 @@ class RetryTest(unittest.TestCase):
             [mock.call(timedelta(seconds=1)), mock.call(timedelta(seconds=1))]
         )
 
-    @mock.patch("honeydew.utils.control_flows.async_sleep_for_duration")
+    @mock.patch("honeydew.utils.control_flows.sleep_for_duration")
     @mock.patch("honeydew.utils.deadline.datetime", wraps=datetime)
     async def test_retry_never_succeeds_with_backoff(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
@@ -133,7 +133,7 @@ class RetryTest(unittest.TestCase):
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
         ):
-            await async_retry(
+            await retry(
                 task=mock_task,
                 max_tries=5,
                 retry_delay=timedelta(seconds=1),
@@ -167,7 +167,7 @@ class RetryTest(unittest.TestCase):
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
         ):
-            await async_retry(
+            await retry(
                 task=mock_task,
                 max_tries=5,
                 retry_delay=timedelta(seconds=25),
@@ -190,7 +190,7 @@ class RetryTest(unittest.TestCase):
     ) -> None:
         deadline = Deadline.from_timeout(timedelta(seconds=100))
         mock_task = mock.Mock(return_value=1)
-        await async_retry_until_deadline(
+        await retry_until_deadline(
             task=mock_task,
             deadline=deadline,
             retry_delay=timedelta(seconds=1),
@@ -219,7 +219,7 @@ class RetryTest(unittest.TestCase):
             expected_exception=expected_exception,
             expected_regex="expected",
         ):
-            await async_retry_until_deadline(
+            await retry_until_deadline(
                 task=mock_task,
                 deadline=Deadline.from_timeout(timedelta(seconds=10)),
                 retry_delay=timedelta(seconds=1),
@@ -235,7 +235,7 @@ class RetryTest(unittest.TestCase):
         mock_task = mock.Mock(
             side_effect=2 * [RuntimeError("Triggers a retry")] + [True]
         )
-        await async_retry_until_deadline(
+        await retry_until_deadline(
             task=mock_task,
             deadline=Deadline.from_timeout(timedelta(seconds=10)),
             retry_delay=timedelta(seconds=1),
@@ -264,7 +264,7 @@ class RetryTest(unittest.TestCase):
         deadline = Deadline.from_timeout(timedelta(seconds=100))
 
         expected_sleep_duration = 45
-        await async_retry_until_deadline(
+        await retry_until_deadline(
             task=mock_task,
             deadline=deadline,
             retry_delay=timedelta(seconds=expected_sleep_duration),
@@ -294,7 +294,7 @@ class RetryTest(unittest.TestCase):
             side_effect=4 * [RuntimeError("Triggers a retry")] + [True]
         )
         deadline = Deadline.from_timeout(timedelta(seconds=100))
-        await async_retry_until_deadline(
+        await retry_until_deadline(
             task=mock_task,
             deadline=deadline,
             retry_delay=timedelta(seconds=1),
@@ -331,7 +331,7 @@ class RetryTest(unittest.TestCase):
         deadline = Deadline.from_timeout(
             timedelta(seconds=25 + 50 + 100 + 200 + 1)
         )
-        await async_retry_until_deadline(
+        await retry_until_deadline(
             task=mock_task,
             deadline=deadline,
             retry_delay=timedelta(seconds=25),
@@ -374,7 +374,7 @@ class RetryTest(unittest.TestCase):
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
         ):
-            await async_retry_until_deadline(
+            await retry_until_deadline(
                 task=mock_task,
                 deadline=deadline,
                 retry_delay=timedelta(seconds=1),
@@ -401,7 +401,7 @@ class RepeatTest(unittest.TestCase):
 
         mock_sleep.side_effect = advance_now
 
-        await async_repeat_until_deadline(
+        await repeat_until_deadline(
             task=mock_task,
             deadline=deadline,
             repeat_delay=timedelta(seconds=1),
@@ -417,7 +417,7 @@ class RepeatTest(unittest.TestCase):
         mock_task = mock.Mock()
         deadline = Deadline.from_timeout(timedelta(seconds=0))
 
-        await async_repeat_until_deadline(
+        await repeat_until_deadline(
             task=mock_task,
             deadline=deadline,
             repeat_delay=timedelta(seconds=1),
@@ -445,7 +445,7 @@ class RepeatTest(unittest.TestCase):
         mock_sleep.side_effect = advance_now
 
         with self.assertRaisesRegex(RuntimeError, "Expected"):
-            await async_repeat_until_deadline(
+            await repeat_until_deadline(
                 task=mock_task,
                 deadline=deadline,
                 repeat_delay=timedelta(seconds=1),

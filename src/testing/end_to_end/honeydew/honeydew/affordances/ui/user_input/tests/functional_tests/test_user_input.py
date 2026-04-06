@@ -13,7 +13,7 @@ from mobly import asserts, test_runner
 from honeydew import errors
 from honeydew.affordances.ui.screenshot import types
 from honeydew.affordances.ui.user_input import types as ui_custom_types
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.utils import common
 
 INPUT_APP = (
@@ -22,12 +22,12 @@ INPUT_APP = (
 )
 
 
-class UserInputTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class UserInputTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test logic for UserInput affordance."""
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)
@@ -72,7 +72,7 @@ class UserInputTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
             return before.data[0:4] != current_screenshot.data[0:4]
 
         try:
-            await common.async_wait_for_state(
+            await common.wait_for_state(
                 state_fn=pixel_changed_condition,
                 expected_state=True,
                 wait_time=2,
@@ -156,7 +156,7 @@ class UserInputTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
         await self._wait_for_pixel_change(before_scroll, "scroll")
 
 
-class UserInputAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """UserInput affordance tests"""
 
     TEST_CASES = [UserInputTestCases]

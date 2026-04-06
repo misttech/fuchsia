@@ -87,7 +87,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
+            spec=affordances_capable.RebootCapableDevice
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
@@ -104,7 +104,7 @@ class BluetoothCommonFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.bluetooth_common_fc_obj = (
-            bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc(
+            bluetooth_common_using_fc.BluetoothCommonUsingFc(
                 device_name="fuchsia-emulator",
                 fuchsia_controller=self.fc_transport_obj,
                 reboot_affordance=self.reboot_affordance_obj,

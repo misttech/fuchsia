@@ -18,7 +18,7 @@ from honeydew.transports.serial import serial as serial_transport
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class FastbootUsingSerialTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
     """Test class to test rebooting the device into Fastboot mode using serial transport.
 
     Note: This test case can only be run in infra as it uses below which are available only in infra:

@@ -38,7 +38,3 @@ class Netstack(affordance.Affordance):
         Raises:
             HoneydewNetstackError: Error from the netstack.
         """
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncNetstack:
-        """Returns the async version of Netstack."""

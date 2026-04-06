@@ -124,7 +124,7 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
+            spec=affordances_capable.RebootCapableDevice
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
@@ -140,7 +140,7 @@ class BluetoothLEAsyncTest(unittest.IsolatedAsyncioTestCase):
             channel_create, self.fc_transport_obj
         )
 
-        self.bluetooth_le_obj = le_using_fc.AsyncLEUsingFc(
+        self.bluetooth_le_obj = le_using_fc.LEUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             reboot_affordance=self.reboot_affordance_obj,

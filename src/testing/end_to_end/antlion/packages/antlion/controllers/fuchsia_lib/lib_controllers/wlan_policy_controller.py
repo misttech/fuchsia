@@ -18,8 +18,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkState,
     WlanClientState,
 )
-from honeydew.fuchsia_device.async_fuchsia_device import (
-    AsyncFuchsiaDevice as HdFuchsiaDevice,
+from honeydew.fuchsia_device.fuchsia_device import (
+    FuchsiaDevice as HdFuchsiaDevice,
 )
 from mobly import logger, signals
 

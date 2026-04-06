@@ -13,7 +13,7 @@ from mobly import asserts, test_runner
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class RtcAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class RtcAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """RTC affordance tests."""
 
     async def setup_class(self) -> None:

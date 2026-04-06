@@ -27,7 +27,7 @@ _MEDIA_SESSION_COMPONENT: str = "core/mediasession"
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AsyncMediaUsingFc(media.AsyncMedia):
+class MediaUsingFc(media.Media):
     """Media affordance implementation using FuchsiaController."""
 
     def __init__(

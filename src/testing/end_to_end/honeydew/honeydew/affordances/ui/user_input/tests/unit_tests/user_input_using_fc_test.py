@@ -24,7 +24,7 @@ from honeydew.typing import custom_types
 
 
 # pylint: disable=protected-access
-class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
+class UserInputFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.ui.user_input.py."""
 
     async def asyncSetUp(self) -> None:
@@ -49,12 +49,12 @@ class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
     async def test_verify_supported_no_virtual_device_support_raise_error(
         self,
     ) -> None:
-        """Test for user_input_using_fc.AsyncUserInputUsingFc() method raise error without virtual device
+        """Test for user_input_using_fc.UserInputUsingFc() method raise error without virtual device
         support."""
 
         self.ffx_transport_obj.run.return_value = '{"instances": []}'
         with self.assertRaises(errors.NotSupportedError):
-            user_input_using_fc.AsyncUserInputUsingFc(
+            user_input_using_fc.UserInputUsingFc(
                 device_name="fuchsia-emulator",
                 fuchsia_controller=self.fc_transport_obj,
                 ffx_transport=self.ffx_transport_obj,
@@ -65,18 +65,18 @@ class AsyncUserInputFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_verify_supported_no_raise(self) -> None:
-        """Test for user_input_using_fc.AsyncUserInputUsingFc() method not raise error with virtual
+        """Test for user_input_using_fc.UserInputUsingFc() method not raise error with virtual
         device support."""
         self.ffx_transport_obj.run.return_value = f'{{"instances": [{{"moniker": "{user_input_using_fc._INPUT_HELPER_COMPONENT}"}}]}}'
-        user_input_using_fc.AsyncUserInputUsingFc(
+        user_input_using_fc.UserInputUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,
         )
 
-    def user_input(self) -> user_input_using_fc.AsyncUserInputUsingFc:
+    def user_input(self) -> user_input_using_fc.UserInputUsingFc:
         self.ffx_transport_obj.run.return_value = f'{{"instances": [{{"moniker": "{user_input_using_fc._INPUT_HELPER_COMPONENT}"}}]}}'
-        return user_input_using_fc.AsyncUserInputUsingFc(
+        return user_input_using_fc.UserInputUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,

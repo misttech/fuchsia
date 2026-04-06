@@ -33,7 +33,7 @@ class MediaFcTests(unittest.IsolatedAsyncioTestCase):
             {"instances": [{"moniker": "core/mediasession"}]}
         )
 
-        self.media_obj = media_using_fc.AsyncMediaUsingFc(
+        self.media_obj = media_using_fc.MediaUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             ffx_transport=self.ffx_transport_obj,

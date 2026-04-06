@@ -18,7 +18,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 
-class AsyncTouchDevice(abc.ABC):
+class TouchDevice(abc.ABC):
     """Abstract base class for an async UserInput Touch."""
 
     @abc.abstractmethod
@@ -75,7 +75,7 @@ class AsyncTouchDevice(abc.ABC):
         """
 
 
-class AsyncKeyboardDevice(abc.ABC):
+class KeyboardDevice(abc.ABC):
     """Abstract base class for an async UserInput Keyboard or Button."""
 
     @abc.abstractmethod
@@ -127,14 +127,14 @@ class AsyncMouseDevice(abc.ABC):
         """
 
 
-class AsyncUserInput(abc.ABC):
+class UserInput(abc.ABC):
     """Abstract base class for an async UserInput affordance."""
 
     @abc.abstractmethod
     def create_touch_device(
         self,
         touch_screen_size: types.Size = DEFAULTS["TOUCH_SCREEN_SIZE"],
-    ) -> AsyncTouchDevice:
+    ) -> TouchDevice:
         """Create a virtual touch device for testing touch input.
 
         Args:
@@ -142,18 +142,18 @@ class AsyncUserInput(abc.ABC):
                 1000 x 1000.
 
         Returns:
-            AsyncTouchDevice object.
+            TouchDevice object.
 
         Raises:
             UserInputError: if failed to create virtual touch device.
         """
 
     @abc.abstractmethod
-    def create_keyboard_device(self) -> AsyncKeyboardDevice:
+    def create_keyboard_device(self) -> KeyboardDevice:
         """Create a virtual keyboard device for testing keyboard input.
 
         Returns:
-            AsyncKeyboardDevice object.
+            KeyboardDevice object.
 
         Raises:
             UserInputError: if failed to create virtual keyboard device.

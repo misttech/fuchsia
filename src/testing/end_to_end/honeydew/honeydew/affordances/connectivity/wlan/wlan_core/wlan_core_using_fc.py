@@ -59,8 +59,8 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
-        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
     ) -> None:
         """Create an Async WLAN Core Fuchsia Controller affordance.
 
@@ -68,8 +68,8 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements AsyncRebootCapableDevice.
-            fuchsia_device_close: Object that implements AsyncFuchsiaDeviceClose.
+            reboot_affordance: Object that implements RebootCapableDevice.
+            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
         """
         AsyncLazyReady.__init__(self)
 
@@ -599,8 +599,8 @@ class WlanCore(wlan_core.WlanCore):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
-        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
     ) -> None:
         """Create a WLAN Core Fuchsia Controller affordance.
 
@@ -823,10 +823,6 @@ class WlanCore(wlan_core.WlanCore):
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.status()
         )
-
-    def as_async(self) -> AsyncWlanCoreUsingFc:
-        """Returns the async version of WlanCore."""
-        return self._inner
 
 
 class ConnectTransactionEventHandler(f_wlan_sme.ConnectTransactionEventHandler):

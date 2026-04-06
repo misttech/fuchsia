@@ -16,7 +16,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 )
 
 
-class AsyncAvrcp(bluetooth_common.AsyncBluetoothCommon):
+class Avrcp(bluetooth_common.BluetoothCommon):
     """Abstract base class for an async Bluetooth AVRCP Profile affordance."""
 
     # List all the public methods

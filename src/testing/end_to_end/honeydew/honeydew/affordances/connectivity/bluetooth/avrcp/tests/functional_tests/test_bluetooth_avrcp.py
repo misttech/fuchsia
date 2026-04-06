@@ -19,7 +19,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 BluetoothAvrcpCommand = bluetooth_types.BluetoothAvrcpCommand
 
 
-class BluetoothAvrcpAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class BluetoothAvrcpAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """BluetoothAvrcp affordance tests"""
 
     async def setup_class(self) -> None:

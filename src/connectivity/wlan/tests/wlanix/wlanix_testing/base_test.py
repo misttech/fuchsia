@@ -99,7 +99,7 @@ def verify_new_interface_response(
     )
 
 
-class WlanixBaseTestClass(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class WlanixBaseTestClass(fuchsia_base_test.FuchsiaBaseTest):
     wlanix_proxy: fidl_wlanix.WlanixClient
 
     async def setup_class(self) -> None:

@@ -13,9 +13,7 @@ from honeydew.transports.fuchsia_controller import (
 )
 
 
-class AsyncGapUsingFc(
-    bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc, gap.AsyncGap
-):
+class GapUsingFc(bluetooth_common_using_fc.BluetoothCommonUsingFc, gap.Gap):
     """Async BluetoothGap Common affordance implementation using Fuchsia Controller.
 
     Args:
@@ -27,7 +25,7 @@ class AsyncGapUsingFc(
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         super().__init__(device_name, fuchsia_controller, reboot_affordance)
         self.verify_supported()

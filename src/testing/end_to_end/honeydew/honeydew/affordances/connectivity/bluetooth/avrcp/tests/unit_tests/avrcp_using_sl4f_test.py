@@ -42,17 +42,17 @@ BluetoothAvrcpCommand = bluetooth_types.BluetoothAvrcpCommand
 
 # pylint: disable=protected-access
 class BluetoothAvrcpAsyncSL4FTests(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for honeydew.affordances.sl4f.bluetooth.bluetooth_avrcp.py AsyncAvrcpUsingSl4f."""
+    """Unit tests for honeydew.affordances.sl4f.bluetooth.bluetooth_avrcp.py AvrcpUsingSl4f."""
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
 
         self.sl4f_obj = mock.MagicMock(spec=sl4f_transport.SL4F)
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
+            spec=affordances_capable.RebootCapableDevice
         )
 
-        self.bluetooth_obj = avrcp_using_sl4f.AsyncAvrcpUsingSl4f(
+        self.bluetooth_obj = avrcp_using_sl4f.AvrcpUsingSl4f(
             device_name="fuchsia-emulator",
             sl4f=self.sl4f_obj,
             reboot_affordance=self.reboot_affordance_obj,

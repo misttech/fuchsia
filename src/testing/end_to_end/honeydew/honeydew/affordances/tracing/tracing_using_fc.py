@@ -73,14 +73,14 @@ DEFAULT_CATEGORIES: list[str] = [
 # LINT.ThenChange(//src/developer/ffx/plugins/trace/data/config.json)
 
 
-class AsyncTracingUsingFc(tracing.AsyncTracing):
+class TracingUsingFc(tracing.Tracing):
     """Async tracing affordance implementation using Fuchsia-Controller."""
 
     def __init__(
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         self._name: str = device_name
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
@@ -118,7 +118,7 @@ class AsyncTracingUsingFc(tracing.AsyncTracing):
             )
             if not self._drain_task.done():
                 # We can't await this here because we might be in a sync context
-                # via some legacy path, but in AsyncTracingUsingFc we are fine.
+                # via some legacy path, but in TracingUsingFc we are fine.
                 await self._drain_task
             self._drain_task = None
         self._trace_buffer = None

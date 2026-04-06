@@ -17,7 +17,7 @@ class MultipleFuchsiaDevicesNotFound(Exception):
     """When there are less than two Fuchsia devices available."""
 
 
-class BluetoothSmokeTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class BluetoothSmokeTest(fuchsia_base_test.FuchsiaBaseTest):
     async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: List[Tuple[int]] = []

@@ -62,9 +62,7 @@ class AdvertisedPeripheralImpl(f_ble_controller.AdvertisedPeripheralServer):
         raise StopServer
 
 
-class AsyncLEUsingFc(
-    le.AsyncLE, bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc
-):
+class LEUsingFc(le.LE, bluetooth_common_using_fc.BluetoothCommonUsingFc):
     """Async BluetoothLE Common affordance implementation using Fuchsia Controller.
 
     Args:
@@ -76,7 +74,7 @@ class AsyncLEUsingFc(
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         super().__init__(
             device_name=device_name,
@@ -95,7 +93,7 @@ class AsyncLEUsingFc(
         )
         self._peripheral_connection: fc.Channel | None = None
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
-        self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
+        self._reboot_affordance: affordances_capable.RebootCapableDevice = (
             reboot_affordance
         )
         self._peripheral_controller_proxy: (
@@ -133,9 +131,7 @@ class AsyncLEUsingFc(
         self._peripheral_connection = None
         self._le_session_initialized = False
         # Explicitly call the common reset to bypass the interface's abstract method shadowing
-        await bluetooth_common_using_fc.AsyncBluetoothCommonUsingFc.reset_state(
-            self
-        )
+        await bluetooth_common_using_fc.BluetoothCommonUsingFc.reset_state(self)
 
     def init_le_sys(self) -> None:
         """Initializes BLE stack.

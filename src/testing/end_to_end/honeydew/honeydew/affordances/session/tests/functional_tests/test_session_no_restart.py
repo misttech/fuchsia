@@ -13,7 +13,7 @@ from mobly import asserts, test_runner
 from honeydew import errors
 from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session_using_ffx
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import common
 
@@ -24,12 +24,12 @@ _TILE_URL = (
 )
 
 
-class SessionNoRestartTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test logic for Session affordance without restart."""
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)
@@ -96,7 +96,7 @@ class SessionNoRestartTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
             return added_element not in self._elements()
 
         try:
-            common.wait_for_state(
+            await common.wait_for_state(
                 state_fn=element_removed,
                 expected_state=True,
                 wait_time=2,  # Time to wait between retries in seconds
@@ -105,7 +105,7 @@ class SessionNoRestartTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
             asserts.fail("The added element is not removed.")
 
 
-class SessionAffordanceNoRestartTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class SessionAffordanceNoRestartTests(fuchsia_base_test.FuchsiaBaseTest):
     """Session affordance tests without restart
 
     This test suite only contains tests that do not restart the session.

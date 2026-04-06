@@ -24,7 +24,7 @@ class MultipleFuchsiaDevicesNotFound(Exception):
     """When there are less than two Fuchsia devices available."""
 
 
-class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class BluetoothAvrcpTest(fuchsia_base_test.FuchsiaBaseTest):
     async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: List[Tuple[int]] = []
@@ -113,7 +113,7 @@ class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             connection_type=BluetoothConnectionType.CLASSIC,
         )
         asserts.assert_true(
-            await bluetooth_utils.verify_bt_pairing_async(
+            await bluetooth_utils.verify_bt_pairing(
                 identifier=identifier, device=self.initiator
             ),
             msg="Receiver was not paired.",
@@ -126,7 +126,7 @@ class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             connection_type=BluetoothConnectionType.CLASSIC,
         )
         asserts.assert_true(
-            await bluetooth_utils.verify_bt_connection_async(
+            await bluetooth_utils.verify_bt_connection(
                 identifier=identifier, device=self.initiator
             ),
             msg="Receiver was not connected.",
@@ -181,8 +181,8 @@ class BluetoothAvrcpTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
         #### Teardown
         _LOGGER.info("Removing all paired devices and " "turning off Bluetooth")
         await self.initiator.bluetooth_avrcp.stop_mock_player()
-        await bluetooth_utils.forget_all_bt_devices_async(self.initiator)
-        await bluetooth_utils.forget_all_bt_devices_async(self.receiver)
+        await bluetooth_utils.forget_all_bt_devices(self.initiator)
+        await bluetooth_utils.forget_all_bt_devices(self.receiver)
         await self.initiator.bluetooth_avrcp.set_discoverable(False)
         await self.receiver.bluetooth_avrcp.set_discoverable(False)
         return await super().teardown_test()

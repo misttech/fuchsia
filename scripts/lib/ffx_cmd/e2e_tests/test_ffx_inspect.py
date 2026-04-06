@@ -12,7 +12,7 @@ from mobly import asserts, test_runner
 _LOGGER = logging.getLogger(__name__)
 
 
-class TestFfxInspect(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class TestFfxInspect(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.fuchsia_dut = self.fuchsia_devices[0]

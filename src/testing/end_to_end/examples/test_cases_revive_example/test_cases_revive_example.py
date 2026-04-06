@@ -1,7 +1,7 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Example test demonstrating AsyncFuchsiaTestCases and AsyncTestCaseRevive."""
+"""Example test demonstrating FuchsiaTestCases and TestCaseRevive."""
 
 import logging
 import pathlib
@@ -9,18 +9,18 @@ from typing import Callable
 
 import fuchsia_base_test
 import test_case_revive
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class MyTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class MyTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Example test cases."""
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)
@@ -41,8 +41,8 @@ class MyTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
         _LOGGER.info("Executing test_revive_me")
 
 
-class ExampleTest(test_case_revive.AsyncTestCaseRevive):
-    """Example test using AsyncFuchsiaTestCases with AsyncTestCaseRevive."""
+class ExampleTest(test_case_revive.TestCaseRevive):
+    """Example test using FuchsiaTestCases with TestCaseRevive."""
 
     TEST_CASES = [MyTestCases]
 

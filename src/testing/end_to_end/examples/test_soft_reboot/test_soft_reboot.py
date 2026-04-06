@@ -11,7 +11,7 @@ from mobly import test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SoftRebootTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
     """Soft Reboot test.
 
     Attributes:

@@ -14,7 +14,7 @@ import fuchsia_base_test
 from mobly import asserts, test_runner
 
 
-class ComponentsSqlEndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class ComponentsSqlEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()

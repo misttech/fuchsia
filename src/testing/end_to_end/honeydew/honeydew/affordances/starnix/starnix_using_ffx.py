@@ -43,7 +43,7 @@ class _RegExPatterns:
     )
 
 
-class AsyncStarnixUsingFfx(starnix.AsyncStarnix):
+class StarnixUsingFfx(starnix.Starnix):
     """Async Starnix affordance implementation using FFX.
 
     Args:

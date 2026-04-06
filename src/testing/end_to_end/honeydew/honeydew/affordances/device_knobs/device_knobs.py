@@ -50,7 +50,7 @@ from honeydew.typing import custom_types
 from honeydew.utils import properties
 
 
-class AsyncDeviceKnobs(abc.ABC):
+class DeviceKnobs(abc.ABC):
     """Abstract base class for async knobs that control a device.
 
     This class contains abstract methods that are supported by every device
@@ -76,7 +76,7 @@ class AsyncDeviceKnobs(abc.ABC):
             Name of the device.
         """
 
-    @properties.async_persistent_method
+    @properties.persistent_method
     @abc.abstractmethod
     async def manufacturer(self) -> str:
         """Returns the manufacturer of the device.
@@ -85,7 +85,7 @@ class AsyncDeviceKnobs(abc.ABC):
             Manufacturer of the device.
         """
 
-    @properties.async_persistent_method
+    @properties.persistent_method
     @abc.abstractmethod
     async def model(self) -> str:
         """Returns the model of the device.
@@ -103,7 +103,7 @@ class AsyncDeviceKnobs(abc.ABC):
             product value of the device.
         """
 
-    @properties.async_persistent_method
+    @properties.persistent_method
     @abc.abstractmethod
     async def product_name(self) -> str:
         """Returns the product name of the device.
@@ -112,7 +112,7 @@ class AsyncDeviceKnobs(abc.ABC):
             Product name of the device.
         """
 
-    @properties.async_persistent_method
+    @properties.persistent_method
     @abc.abstractmethod
     async def serial_number(self) -> str:
         """Returns the serial number of the device.
@@ -141,7 +141,7 @@ class AsyncDeviceKnobs(abc.ABC):
     # List all the transports
     @properties.Transport
     @abc.abstractmethod
-    def fastboot(self) -> fastboot_transport.AsyncFastboot:
+    def fastboot(self) -> fastboot_transport.Fastboot:
         """Returns the Fastboot transport object.
 
         Returns:
@@ -201,7 +201,7 @@ class AsyncDeviceKnobs(abc.ABC):
     # List all the affordances
     @properties.Affordance
     @abc.abstractmethod
-    def bluetooth_avrcp(self) -> avrcp.AsyncAvrcp:
+    def bluetooth_avrcp(self) -> avrcp.Avrcp:
         """Returns a Bluetooth Avrcp affordance object.
 
         Returns:
@@ -210,7 +210,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def bluetooth_gap(self) -> gap.AsyncGap:
+    def bluetooth_gap(self) -> gap.Gap:
         """Returns a Bluetooth Gap affordance object.
 
         Returns:
@@ -219,7 +219,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def bluetooth_le(self) -> le.AsyncLE:
+    def bluetooth_le(self) -> le.LE:
         """Returns a Bluetooth LE affordance object.
 
         Returns:
@@ -237,7 +237,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def rtc(self) -> rtc.AsyncRtc:
+    def rtc(self) -> rtc.Rtc:
         """Returns an RTC affordance object.
 
         Returns:
@@ -255,7 +255,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def virtual_audio(self) -> audio.AsyncVirtualAudio:
+    def virtual_audio(self) -> audio.VirtualAudio:
         """Returns an audio affordance object.
 
         Returns:
@@ -273,7 +273,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def starnix(self) -> starnix.AsyncStarnix:
+    def starnix(self) -> starnix.Starnix:
         """Returns a starnix affordance object.
 
         Returns:
@@ -284,7 +284,7 @@ class AsyncDeviceKnobs(abc.ABC):
     @abc.abstractmethod
     def system_power_state_controller(
         self,
-    ) -> system_power_state_controller.AsyncSystemPowerStateController:
+    ) -> system_power_state_controller.SystemPowerStateController:
         """Returns a SystemPowerStateController affordance object.
 
         Returns:
@@ -296,7 +296,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def tracing(self) -> tracing.AsyncTracing:
+    def tracing(self) -> tracing.Tracing:
         """Returns a tracing affordance object.
 
         Returns:
@@ -305,7 +305,7 @@ class AsyncDeviceKnobs(abc.ABC):
 
     @properties.Affordance
     @abc.abstractmethod
-    def user_input(self) -> user_input.AsyncUserInput:
+    def user_input(self) -> user_input.UserInput:
         """Returns a user_input affordance object.
 
         Returns:

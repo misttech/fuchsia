@@ -48,7 +48,7 @@ ITERATIONS_PER_TEST_PER_PROCESS: int = 120
 PROCESS_RUNS: int = 6
 
 
-class TracingMicrobenchmarksTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class TracingMicrobenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         self.device = self.fuchsia_devices[0]

@@ -17,7 +17,7 @@ _AUDIO_FILE_INPUT = "audio_runtime_deps/sine_wave.wav"
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AudioAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Audio affordance tests"""
 
     async def setup_class(self) -> None:

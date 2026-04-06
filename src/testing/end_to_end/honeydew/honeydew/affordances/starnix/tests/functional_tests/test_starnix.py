@@ -9,7 +9,7 @@ from mobly import asserts, test_runner
 from honeydew import errors
 
 
-class StarnixAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class StarnixAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Starnix affordance tests"""
 
     async def setup_class(self) -> None:

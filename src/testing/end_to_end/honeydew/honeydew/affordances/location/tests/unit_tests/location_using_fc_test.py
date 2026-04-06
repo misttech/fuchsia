@@ -34,7 +34,7 @@ class LocationFCTests(unittest.IsolatedAsyncioTestCase):
         super().setUp()
 
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice,
+            spec=affordances_capable.RebootCapableDevice,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(

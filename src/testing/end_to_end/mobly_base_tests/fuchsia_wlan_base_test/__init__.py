@@ -20,7 +20,7 @@ from mobly import signals
 INTERFACE_TIMEOUT = 30
 
 
-class FuchsiaWlanBaseTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     """Wlan base test class."""
 
     async def wait_for_interface(

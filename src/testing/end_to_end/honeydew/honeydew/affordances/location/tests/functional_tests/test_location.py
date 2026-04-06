@@ -16,7 +16,7 @@ TIMEOUT_COUNTRY_CODE_SEC = 10.0
 """Seconds to wait for the country code to propagate to WLAN PHYs."""
 
 
-class LocationTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class LocationTests(fuchsia_base_test.FuchsiaBaseTest):
     """Location affordance tests"""
 
     async def setup_class(self) -> None:

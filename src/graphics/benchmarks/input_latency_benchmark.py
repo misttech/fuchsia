@@ -23,7 +23,7 @@ TOUCH_APP = (
 TEST_NAME: str = "fuchsia.input_latency.simplest_app"
 
 
-class InputBenchmark(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
     """Input Benchmarks.
 
     Attributes:

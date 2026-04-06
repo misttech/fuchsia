@@ -13,7 +13,7 @@ from mobly import asserts, test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SerialTransportTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     """Serial transport tests"""
 
     async def setup_class(self) -> None:

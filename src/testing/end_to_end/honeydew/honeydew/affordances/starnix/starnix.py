@@ -7,7 +7,7 @@
 import abc
 
 
-class AsyncStarnix(abc.ABC):
+class Starnix(abc.ABC):
     """Abstract base class for an async Starnix affordance."""
 
     @abc.abstractmethod

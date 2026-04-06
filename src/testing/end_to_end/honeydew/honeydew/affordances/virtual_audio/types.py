@@ -15,8 +15,8 @@ from honeydew.affordances.virtual_audio.errors import VirtualAudioError
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AsyncAudioInputWaiter:
-    """AsyncAudioInputWaiter affordance response type.
+class AudioInputWaiter:
+    """AudioInputWaiter affordance response type.
 
     Args:
         endpoint: Fuchsia test audio InjectionClient endpoint.
@@ -39,8 +39,8 @@ class AsyncAudioInputWaiter:
         _LOGGER.info("Audio injection has completed!")
 
 
-class AsyncAudioResponse:
-    """AsyncAudioResponse captured audio affordance response type.
+class AudioResponse:
+    """AudioResponse captured audio affordance response type.
 
     Args:
         endpoint: Fuchsia test audio CaptureClient endpoint.

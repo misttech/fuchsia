@@ -49,7 +49,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         """Create an Async Netstack Fuchsia Controller affordance.
 
@@ -57,7 +57,7 @@ class AsyncNetstackUsingFc(netstack.AsyncNetstack):
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements AsyncRebootCapableDevice.
+            reboot_affordance: Object that implements RebootCapableDevice.
         """
         super().__init__()
 
@@ -203,7 +203,7 @@ class NetstackUsingFc(netstack.Netstack):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         """Create a Netstack Fuchsia Controller affordance.
 
@@ -240,7 +240,3 @@ class NetstackUsingFc(netstack.Netstack):
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.list_interfaces()
         )
-
-    def as_async(self) -> AsyncNetstackUsingFc:
-        """Returns the async version of Netstack."""
-        return self._inner

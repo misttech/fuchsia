@@ -77,11 +77,11 @@ class BluetoothGapSL4FTests(unittest.IsolatedAsyncioTestCase):
 
         self.sl4f_obj = mock.MagicMock(spec=sl4f_transport.SL4F)
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
+            spec=affordances_capable.RebootCapableDevice
         )
 
         self.bluetooth_common_sl4f_obj = (
-            bluetooth_common_using_sl4f.AsyncBluetoothCommonUsingSl4f(
+            bluetooth_common_using_sl4f.BluetoothCommonUsingSl4f(
                 device_name="fuchsia-emulator",
                 sl4f=self.sl4f_obj,
                 reboot_affordance=self.reboot_affordance_obj,

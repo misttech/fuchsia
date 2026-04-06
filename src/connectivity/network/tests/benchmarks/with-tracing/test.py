@@ -16,7 +16,7 @@ from mobly import asserts, test_runner
 # the "task outputs" link. Currently this host-side wrapper code is needed for
 # making the trace available that way, but in the future that could be done
 # by using "ffx test" to run the test on Infra (see https://fxbug.dev/42076004).
-class NetstackBenchmarksWithTracingTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class NetstackBenchmarksWithTracingTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         self.device = self.fuchsia_devices[0]

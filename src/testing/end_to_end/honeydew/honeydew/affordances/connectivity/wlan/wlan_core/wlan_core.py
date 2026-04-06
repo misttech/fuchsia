@@ -361,7 +361,3 @@ class WlanCore(affordance.Affordance):
             NetworkInterfaceNotFoundError: No client WLAN interface found.
             TypeError: If any of the return values are not of the expected type.
         """
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncWlanCore:
-        """Returns the async version of WlanCore."""

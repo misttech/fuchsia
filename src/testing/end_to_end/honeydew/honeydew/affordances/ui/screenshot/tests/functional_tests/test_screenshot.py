@@ -12,7 +12,7 @@ from typing import Callable
 import fuchsia_base_test
 from mobly import asserts, test_runner
 
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.typing import custom_types
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,12 +23,12 @@ EXAMPLE_URL = (
 )
 
 
-class ScreenshotTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class ScreenshotTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test logic for Screenshot affordance."""
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)
@@ -78,7 +78,7 @@ class ScreenshotTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
         asserts.assert_not_equal(image.data[0:4], [0x0, 0x0, 0x0, 0xFF])
 
 
-class ScreenshotAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class ScreenshotAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Screenshot affordance tests"""
 
     TEST_CASES = [ScreenshotTestCases]

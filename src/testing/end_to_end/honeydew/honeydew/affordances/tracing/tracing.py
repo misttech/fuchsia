@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 import fidl_fuchsia_tracing as f_tracing
 
 
-class AsyncTracing(abc.ABC):
+class Tracing(abc.ABC):
     """Abstract base class for an async Tracing affordance."""
 
     @abc.abstractmethod

@@ -19,7 +19,7 @@ class PlayerState(enum.StrEnum):
     ERROR = "Error"
 
 
-class AsyncMedia(affordance.Affordance):
+class Media(affordance.Affordance):
     """Abstract base class for Media affordance."""
 
     @abc.abstractmethod

@@ -20,13 +20,13 @@ class BluetoothGapAsyncFCTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
+            spec=affordances_capable.RebootCapableDevice
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
 
-        self.bluetooth_gap_obj = gap_using_fc.AsyncGapUsingFc(
+        self.bluetooth_gap_obj = gap_using_fc.GapUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             reboot_affordance=self.reboot_affordance_obj,
@@ -34,10 +34,8 @@ class BluetoothGapAsyncFCTests(unittest.IsolatedAsyncioTestCase):
 
     def test_gap_using_fc(self) -> None:
         """Test case for gap_using_fc.py"""
-        self.assertIsInstance(
-            self.bluetooth_gap_obj, gap_using_fc.AsyncGapUsingFc
-        )
-        self.assertIsInstance(self.bluetooth_gap_obj, gap.AsyncGap)
+        self.assertIsInstance(self.bluetooth_gap_obj, gap_using_fc.GapUsingFc)
+        self.assertIsInstance(self.bluetooth_gap_obj, gap.Gap)
 
 
 if __name__ == "__main__":

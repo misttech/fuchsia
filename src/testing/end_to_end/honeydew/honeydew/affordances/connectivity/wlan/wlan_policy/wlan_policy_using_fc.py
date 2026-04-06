@@ -31,7 +31,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
-from honeydew.affordances.location.location import AsyncLocation
+from honeydew.affordances.location.location import AsyncLocation, Location
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
@@ -182,8 +182,8 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
-        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
         location: AsyncLocation,
     ) -> None:
         """Create an Async WlanPolicy Fuchsia Controller affordance.
@@ -192,9 +192,9 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements AsyncRebootCapableDevice.
-            fuchsia_device_close: Object that implements AsyncFuchsiaDeviceClose.
-            location: Object that implements AsyncLocation.
+            reboot_affordance: Object that implements RebootCapableDevice.
+            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
+            location: Object that implements Location.
         """
         AsyncLazyReady.__init__(self)
 
@@ -997,9 +997,9 @@ class WlanPolicy(wlan_policy.WlanPolicy):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
-        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
-        location: AsyncLocation,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        location: Location,
     ) -> None:
         """Create a WlanPolicy Fuchsia Controller affordance.
 
@@ -1017,7 +1017,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
             fuchsia_controller=fuchsia_controller,
             reboot_affordance=reboot_affordance,
             fuchsia_device_close=fuchsia_device_close,
-            location=location,
+            location=location.as_async(),
         )
 
     def verify_supported(self) -> None:
@@ -1316,10 +1316,6 @@ class WlanPolicy(wlan_policy.WlanPolicy):
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.wait_for_no_connections(timeout=timeout)
         )
-
-    def as_async(self) -> AsyncWlanPolicyUsingFc:
-        """Returns the async version of WlanPolicy."""
-        return self._inner
 
 
 class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):

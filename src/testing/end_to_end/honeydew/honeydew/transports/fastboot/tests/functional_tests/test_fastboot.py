@@ -11,7 +11,7 @@ from mobly import asserts, test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class FastbootTransportTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FastbootTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     """Fastboot transport tests"""
 
     async def setup_class(self) -> None:

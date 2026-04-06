@@ -41,7 +41,7 @@ class RetriableError(Exception):
         super().__init__(message)
 
 
-async def async_retry_until_deadline(
+async def retry_until_deadline(
     task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
     deadline: Deadline,
     retry_delay: timedelta = timedelta(seconds=1),
@@ -93,13 +93,13 @@ async def async_retry_until_deadline(
                     type(e),
                 )
 
-        await async_sleep_for_duration(retry_delay)
+        await sleep_for_duration(retry_delay)
 
         if backoff:
             retry_delay *= 2
 
 
-async def async_retry(
+async def retry(
     task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
     max_tries: int | None = None,
     retry_delay: timedelta = timedelta(seconds=1),
@@ -111,7 +111,7 @@ async def async_retry(
     # TODO(b/402203873): Remove once in-tree is stabilized. See
     # `_GLOBAL_TASK_TIMEOUT` for an explanation.
     if max_tries is None or max_tries == 0:
-        return await async_retry_for_duration(
+        return await retry_for_duration(
             task=task,
             retry_delay=retry_delay,
             backoff=backoff,
@@ -156,25 +156,25 @@ async def async_retry(
                 type(e),
             )
 
-        await async_sleep_for_duration(retry_delay)
+        await sleep_for_duration(retry_delay)
 
         if backoff:
             retry_delay *= 2
 
 
-async def async_retry_for_duration(
+async def retry_for_duration(
     task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
     duration: timedelta,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
 ) -> Any:
-    """Calls |async_retry_until_deadline| with a deadline based on |duration|"""
-    return await async_retry_until_deadline(
+    """Calls |retry_until_deadline| with a deadline based on |duration|"""
+    return await retry_until_deadline(
         task, Deadline.from_timeout(duration), retry_delay, backoff
     )
 
 
-async def async_repeat_until_deadline(
+async def repeat_until_deadline(
     task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
     deadline: Deadline,
     repeat_delay: timedelta = timedelta(seconds=1),
@@ -196,21 +196,21 @@ async def async_repeat_until_deadline(
             task()
         if deadline.is_due_before(repeat_delay):
             break
-        await async_sleep_for_duration(repeat_delay)
+        await sleep_for_duration(repeat_delay)
 
 
-async def async_repeat_for_duration(
+async def repeat_for_duration(
     task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
     duration: timedelta,
     repeat_delay: timedelta = timedelta(seconds=1),
 ) -> None:
-    """Calls |async_repeat_until_deadline| with a deadline based on |duration|"""
-    await async_repeat_until_deadline(
+    """Calls |repeat_until_deadline| with a deadline based on |duration|"""
+    await repeat_until_deadline(
         task, Deadline.from_timeout(duration), repeat_delay
     )
 
 
-async def async_sleep_until_deadline(deadline: Deadline) -> None:
+async def sleep_until_deadline(deadline: Deadline) -> None:
     """Sleeps until the deadline is reached.
 
     This function generates logs at intervals to prevent swarming from thinking
@@ -239,13 +239,13 @@ async def async_sleep_until_deadline(deadline: Deadline) -> None:
     _LOGGER.debug("Done sleeping!")
 
 
-async def async_sleep_for_duration(duration: timedelta) -> None:
+async def sleep_for_duration(duration: timedelta) -> None:
     """Sleeps for the length of this duration.
 
     This function generates logs at intervals to prevent swarming from thinking
     we're frozen and timing us out.
     """
-    await async_sleep_until_deadline(Deadline.from_timeout(duration))
+    await sleep_until_deadline(Deadline.from_timeout(duration))
 
 
 def _pretty_func_name(func: Callable[..., Any]) -> str:

@@ -142,11 +142,11 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice,
+            spec=affordances_capable.RebootCapableDevice,
             autospec=True,
         )
         self.fuchsia_device_close_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncFuchsiaDeviceClose,
+            spec=affordances_capable.FuchsiaDeviceClose,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(

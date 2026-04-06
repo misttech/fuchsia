@@ -56,7 +56,7 @@ class SystemPowerStateControllerError(errors.HoneydewError):
     """Exception to be raised by SystemPowerStateController affordance."""
 
 
-class AsyncSystemPowerStateController(abc.ABC):
+class SystemPowerStateController(abc.ABC):
     """Abstract base class for an async SystemPowerStateController affordance."""
 
     @abc.abstractmethod

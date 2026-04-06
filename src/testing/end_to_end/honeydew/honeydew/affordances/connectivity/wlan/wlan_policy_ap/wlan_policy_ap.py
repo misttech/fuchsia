@@ -201,7 +201,3 @@ class WlanPolicyAp(affordance.Affordance):
             HoneydewWlanError: Error from WLAN stack.
             TimeoutError: Reached timeout without any updates.
         """
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncWlanPolicyAp:
-        """Returns the async version of WlanPolicyAp."""

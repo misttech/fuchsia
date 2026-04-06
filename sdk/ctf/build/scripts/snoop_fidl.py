@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 # the test output directory.
 
 
-class FidlReaderTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.device = self.fuchsia_devices[0]

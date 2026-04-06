@@ -16,7 +16,7 @@ from honeydew.typing.custom_types import FidlEndpoint
 from mobly import test_runner
 
 
-class WlanCanaryTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class WlanCanaryTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.wlan_device_monitor_proxy = (

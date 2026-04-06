@@ -508,7 +508,3 @@ class WlanPolicy(affordance.Affordance):
         Raises:
             HoneydewWlanError: Failure to observe no connection within timeout.
         """
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncWlanPolicy:
-        """Returns the async version of WlanPolicy."""

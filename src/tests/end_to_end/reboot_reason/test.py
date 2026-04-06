@@ -7,7 +7,7 @@ import reboot_reason_test_cases
 from mobly import test_runner
 
 
-class RebootReasonTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class RebootReasonTest(fuchsia_base_test.FuchsiaBaseTest):
     TEST_CASES = [reboot_reason_test_cases.RebootReasonTestCases]
 
 

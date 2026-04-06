@@ -11,7 +11,7 @@ from mobly import test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class HelloWorldTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class HelloWorldTest(fuchsia_base_test.FuchsiaBaseTest):
     def test_hello_world(self) -> None:
         for fuchsia_device in self.fuchsia_devices:
             _LOGGER.info("%s says hello!", fuchsia_device.device_name)

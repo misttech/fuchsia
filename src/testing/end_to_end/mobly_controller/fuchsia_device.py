@@ -8,7 +8,7 @@ from copy import deepcopy
 from typing import Any
 
 import honeydew
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.typing import custom_types
 from honeydew.utils import properties
@@ -26,7 +26,7 @@ _FFX_CONFIG_PROXY_TIMEOUT_SECS: int = 30
 
 async def create(
     configs: list[dict[str, Any]],
-) -> list[AsyncFuchsiaDevice]:
+) -> list[FuchsiaDevice]:
     """Create Fuchsia device controller(s) and returns them.
 
     Required for Mobly controller registration.
@@ -36,7 +36,7 @@ async def create(
             Fuchsia device.
 
     Returns:
-        A list of AsyncFuchsiaDevice objects.
+        A list of FuchsiaDevice objects.
     """
     _LOGGER.debug(
         "FuchsiaDevice controller configs received in testbed yml file is '%s'",
@@ -92,14 +92,14 @@ async def create(
 
 
 async def destroy(
-    fuchsia_devices: list[AsyncFuchsiaDevice],
+    fuchsia_devices: list[FuchsiaDevice],
 ) -> None:
     """Closes all created fuchsia devices.
 
     Required for Mobly controller registration.
 
     Args:
-        fuchsia_devices: A list of AsyncFuchsiaDevice objects.
+        fuchsia_devices: A list of FuchsiaDevice objects.
     """
     for fuchsia_device in fuchsia_devices:
         await fuchsia_device.close()
@@ -112,17 +112,17 @@ async def destroy(
 
 
 async def get_info(
-    fuchsia_devices: list[AsyncFuchsiaDevice],
+    fuchsia_devices: list[FuchsiaDevice],
 ) -> list[dict[str, Any]]:
-    """Gets information from a list of AsyncFuchsiaDevice objects.
+    """Gets information from a list of FuchsiaDevice objects.
 
     Optional for Mobly controller registration.
 
     Args:
-        fuchsia_devices: A list of AsyncFuchsiaDevice objects.
+        fuchsia_devices: A list of FuchsiaDevice objects.
 
     Returns:
-        A list of dict, each representing info for an AsyncFuchsiaDevice objects.
+        A list of dict, each representing info for an FuchsiaDevice objects.
     """
     return [
         await _get_fuchsia_device_info(fuchsia_device)
@@ -131,7 +131,7 @@ async def get_info(
 
 
 async def _get_fuchsia_device_info(
-    fuchsia_device: AsyncFuchsiaDevice,
+    fuchsia_device: FuchsiaDevice,
 ) -> dict[str, Any]:
     """Returns information of a specific fuchsia device object.
 

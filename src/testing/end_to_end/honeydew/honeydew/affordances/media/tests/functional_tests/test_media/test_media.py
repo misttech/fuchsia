@@ -13,7 +13,7 @@ from honeydew.affordances.media import media
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class MediaAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class MediaAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Media affordance tests"""
 
     async def setup_class(self) -> None:

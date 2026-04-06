@@ -35,7 +35,7 @@ _CAPTURE_ENDPOINT = FidlEndpoint(
 _AUDIO_RECORDING_COMPONENT: str = "core/audio_recording"
 
 
-class AsyncVirtualAudioUsingFuchsiaController(audio.AsyncVirtualAudio):
+class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
     """Async audio affordance implementation using Fuchsia Controller.
 
     Args:
@@ -88,13 +88,13 @@ class AsyncVirtualAudioUsingFuchsiaController(audio.AsyncVirtualAudio):
             self.fuchsia_controller.connect_device_proxy(_CAPTURE_ENDPOINT)
         )
 
-    async def inject(self, wav_file: str) -> types.AsyncAudioInputWaiter:
+    async def inject(self, wav_file: str) -> types.AudioInputWaiter:
         """Inject wav_file audio query.
         Args:
             wav_file: Audio .wav file
 
         Return:
-            AsyncAudioInputWaiter: object. This object is used to wait until the input injection is done.
+            AudioInputWaiter: object. This object is used to wait until the input injection is done.
 
         Raises:
             VirtualAudioError: On failure
@@ -151,13 +151,13 @@ class AsyncVirtualAudioUsingFuchsiaController(audio.AsyncVirtualAudio):
                 f"Failed to start audio {err}"
             )
 
-        return types.AsyncAudioInputWaiter(self._injection_client)
+        return types.AudioInputWaiter(self._injection_client)
 
-    async def capture(self) -> types.AsyncAudioResponse:
+    async def capture(self) -> types.AudioResponse:
         """Start to capture the audio response.
 
         Return:
-            AsyncAudioResponse: object. This object is used to stop and extract the captured audio.
+            AudioResponse: object. This object is used to stop and extract the captured audio.
 
         Raises:
             VirtualAudioError:  On failure
@@ -171,7 +171,7 @@ class AsyncVirtualAudioUsingFuchsiaController(audio.AsyncVirtualAudio):
                 f"Failed to start output capture audio {err}"
             )
 
-        return types.AsyncAudioResponse(self._capture_client)
+        return types.AudioResponse(self._capture_client)
 
     async def wait_for_quiet(
         self,

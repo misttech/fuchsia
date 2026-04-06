@@ -9,28 +9,28 @@ from datetime import timedelta
 from honeydew.affordances.virtual_audio import types
 
 
-class AsyncVirtualAudio(abc.ABC):
+class VirtualAudio(abc.ABC):
     """Abstract base class for an async Audio affordance."""
 
     @abc.abstractmethod
-    async def inject(self, wav_file: str) -> types.AsyncAudioInputWaiter:
+    async def inject(self, wav_file: str) -> types.AudioInputWaiter:
         """Inject wav_file audio query.
         Args:
             wav_file: Audio .wav file
 
         Return:
-            AsyncAudioInputWaiter: object. This object is used to wait until the input injection is done.
+            AudioInputWaiter: object. This object is used to wait until the input injection is done.
 
         Raises:
             VirtualAudioError: On failure
         """
 
     @abc.abstractmethod
-    async def capture(self) -> types.AsyncAudioResponse:
+    async def capture(self) -> types.AudioResponse:
         """Start to capture the audio response.
 
         Return:
-            AsyncAudioResponse: object. This object is used to stop and extract the captured audio.
+            AudioResponse: object. This object is used to stop and extract the captured audio.
 
         Raises:
             VirtualAudioError: On failure

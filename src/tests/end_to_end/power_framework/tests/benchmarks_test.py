@@ -12,7 +12,7 @@ from trace_processing import trace_importing, trace_model
 _LOGGER = logging.getLogger(__name__)
 
 
-class PowerBenchmarksTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """Initialize all DUT(s)"""
         await super().setup_class()

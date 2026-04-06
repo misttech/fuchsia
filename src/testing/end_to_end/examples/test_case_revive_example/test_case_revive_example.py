@@ -1,16 +1,16 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Example usage of test_case_revive.AsyncTestCaseRevive."""
+"""Example usage of test_case_revive.TestCaseRevive."""
 
 import logging
 
 import test_case_revive
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from mobly import test_runner
 from test_case_revive import TestMethodExecutionFrequency, opt_out, tag_test
 
-dut: AsyncFuchsiaDevice
+dut: FuchsiaDevice
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -31,8 +31,8 @@ def _to_run_after_test(bar: int) -> None:
     )
 
 
-class ExampleTestCaseRevive(test_case_revive.AsyncTestCaseRevive):
-    """Example usage of test_case_revive.AsyncTestCaseRevive."""
+class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
+    """Example usage of test_case_revive.TestCaseRevive."""
 
     async def setup_class(self) -> None:
         await super().setup_class()

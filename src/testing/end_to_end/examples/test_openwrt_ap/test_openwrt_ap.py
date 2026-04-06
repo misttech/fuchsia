@@ -24,7 +24,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class OpenWrtAPScanConnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()

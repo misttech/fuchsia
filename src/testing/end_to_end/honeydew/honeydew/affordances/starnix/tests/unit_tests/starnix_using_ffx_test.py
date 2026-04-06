@@ -24,7 +24,7 @@ class StarnixUsingStarnixTests(unittest.TestCase):
             starnix_using_ffx._STARNIX_KERNEL_PREFIX
         )
 
-        self.starnix_obj = starnix_using_ffx.AsyncStarnixUsingFfx(
+        self.starnix_obj = starnix_using_ffx.StarnixUsingFfx(
             ffx=self.mock_ffx,
             device_name="device",
         )

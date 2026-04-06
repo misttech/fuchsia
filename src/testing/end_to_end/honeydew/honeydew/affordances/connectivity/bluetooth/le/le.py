@@ -16,7 +16,7 @@ from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
 from honeydew.affordances.connectivity.bluetooth.utils import types as bt_types
 
 
-class AsyncLE(bluetooth_common.AsyncBluetoothCommon):
+class LE(bluetooth_common.BluetoothCommon):
     """Abstract base class for an async Bluetooth LE Profile affordance."""
 
     # TODO(b/352584355): Add functional tests for BLE affordance

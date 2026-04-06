@@ -25,7 +25,7 @@ from test_case_revive import TestMethodExecutionFrequency, tag_test
 _LOGGER = logging.getLogger(__name__)
 
 
-class BlackoutTest(test_case_revive.AsyncTestCaseRevive):
+class BlackoutTest(test_case_revive.TestCaseRevive):
     async def setup_class(self) -> None:
         await super().setup_class()
 
@@ -50,7 +50,7 @@ class BlackoutTest(test_case_revive.AsyncTestCaseRevive):
         self.seed = self.user_params.get("seed", random.randint(0, 1024 * 1024))
         _LOGGER.info(f"Blackout: random seed is {self.seed}")
 
-        self.create_blackout_component()
+        await self.create_blackout_component()
 
     async def teardown_class(self) -> None:
         try:
@@ -102,10 +102,10 @@ class BlackoutTest(test_case_revive.AsyncTestCaseRevive):
                 ]
             )
 
-    def create_blackout_component(self) -> None:
+    async def create_blackout_component(self) -> None:
         # TODO(https://fxbug.dev/340586785): sometimes this fails. Until it becomes more stable (or
         # the retry logic is put into the framework), retry it for a bit.
-        honeydew.utils.common.retry(
+        await honeydew.utils.common.retry(
             lambda: self.dut.ffx.run(
                 [
                     "component",
@@ -127,7 +127,7 @@ class BlackoutTest(test_case_revive.AsyncTestCaseRevive):
         test_method_execution_frequency=TestMethodExecutionFrequency.POST_ONLY,
     )
     async def _test_do_verification(self) -> None:
-        self.create_blackout_component()
+        await self.create_blackout_component()
         _LOGGER.info("Blackout: Running device verification")
         res = await self.blackout_proxy.verify(
             device_label=self.device_label,

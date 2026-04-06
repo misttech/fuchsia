@@ -102,7 +102,7 @@ from mobly import test_runner
 _LOGGER = logging.getLogger(__name__)
 
 
-class MyFirstLacewingTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class MyFirstLacewingTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """Initialize all DUT(s)"""
         await super().setup_class()

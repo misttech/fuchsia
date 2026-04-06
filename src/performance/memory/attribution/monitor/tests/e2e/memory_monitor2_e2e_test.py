@@ -25,7 +25,7 @@ def assertContainsRegex(reg_str: str, content: str) -> None:
     )
 
 
-class MemoryMonitor2EndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()

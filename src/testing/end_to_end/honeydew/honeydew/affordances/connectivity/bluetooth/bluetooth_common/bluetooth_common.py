@@ -14,7 +14,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 from honeydew.typing.custom_types import MacAddress
 
 
-class AsyncBluetoothCommon(abc.ABC):
+class BluetoothCommon(abc.ABC):
     """Abstract base class for Common bluetooth affordance that other bluetooth profiles/affordances
     will depend on."""
 

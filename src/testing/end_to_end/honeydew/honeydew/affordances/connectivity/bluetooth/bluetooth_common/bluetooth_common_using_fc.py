@@ -54,7 +54,7 @@ BluetoothConnectionType = bt_types.BluetoothConnectionType
 ASYNC_OP_TIMEOUT: int = 30
 
 
-class AsyncBluetoothCommonUsingFc(bluetooth_common.AsyncBluetoothCommon):
+class BluetoothCommonUsingFc(bluetooth_common.BluetoothCommon):
     """Bluetooth Common affordance implementation using Fuchsia Controller.
 
     Args:
@@ -70,7 +70,7 @@ class AsyncBluetoothCommonUsingFc(bluetooth_common.AsyncBluetoothCommon):
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         self._device_name = device_name
         self._fc_transport = fuchsia_controller

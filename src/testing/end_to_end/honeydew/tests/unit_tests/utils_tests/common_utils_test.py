@@ -48,33 +48,33 @@ def _custom_test_name_func(
     return f"{test_func_name}_with_{test_label}"
 
 
-class CommonUtilsTests(unittest.TestCase):
+class CommonUtilsTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.utils.common.py."""
 
-    def test_wait_for_state_success(self) -> None:
+    async def test_wait_for_state_success(self) -> None:
         """Test case for common.wait_for_state() success case."""
-        common.wait_for_state(
+        await common.wait_for_state(
             state_fn=lambda: True, expected_state=True, timeout=5
         )
 
-    @mock.patch("time.sleep", autospec=True)
+    @mock.patch("asyncio.sleep", autospec=True)
     @mock.patch("time.time", side_effect=[0, 1, 2, 3, 4, 5], autospec=True)
-    def test_wait_for_state_fail(
+    async def test_wait_for_state_fail(
         self, mock_time: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
         """Test case for common.wait_for_state() failure case where state_fn
         never returns the expected state."""
         with self.assertRaises(errors.HoneydewTimeoutError):
-            common.wait_for_state(
+            await common.wait_for_state(
                 state_fn=lambda: True, expected_state=False, timeout=5
             )
 
         mock_time.assert_called()
         mock_sleep.assert_called()
 
-    @mock.patch("time.sleep", autospec=True)
+    @mock.patch("asyncio.sleep", autospec=True)
     @mock.patch("time.time", side_effect=[0, 1, 2, 3, 4, 5], autospec=True)
-    def test_wait_for_state_fail_2(
+    async def test_wait_for_state_fail_2(
         self, mock_time: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
         """Test case for common.wait_for_state() failure case where state_fn
@@ -84,23 +84,23 @@ class CommonUtilsTests(unittest.TestCase):
             raise RuntimeError("Error")
 
         with self.assertRaises(errors.HoneydewTimeoutError):
-            common.wait_for_state(
+            await common.wait_for_state(
                 state_fn=_state_fn, expected_state=False, timeout=5
             )
 
         mock_time.assert_called()
         mock_sleep.assert_called()
 
-    def test_retry_success_with_no_ret_val(self) -> None:
+    async def test_retry_success_with_no_ret_val(self) -> None:
         """Test case for common.retry() success case where fn() does not return
         anything."""
 
         def _fn() -> None:
             return
 
-        common.retry(fn=_fn, timeout=60, wait_time=5)
+        await common.retry(fn=_fn, timeout=60, wait_time=5)
 
-    def test_retry_success_with_ret_val(self) -> None:
+    async def test_retry_success_with_ret_val(self) -> None:
         """Test case for common.retry() success case where fn() returns an
         object."""
 
@@ -108,14 +108,16 @@ class CommonUtilsTests(unittest.TestCase):
             return "some_string"
 
         self.assertEqual(
-            common.retry(fn=_fn, timeout=60, wait_time=5), "some_string"
+            await common.retry(fn=_fn, timeout=60, wait_time=5), "some_string"
         )
 
-    @mock.patch("time.sleep", autospec=True)
+    @mock.patch("asyncio.sleep", autospec=True)
     @mock.patch(
-        "time.time", side_effect=[0, 5, 10, 15, 20, 25, 30, 35], autospec=True
+        "time.time",
+        side_effect=[0, 5, 10, 15, 20, 25, 30, 35],
+        autospec=True,
     )
-    def test_retry_fail(
+    async def test_retry_fail(
         self, mock_time: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
         """Test case for common.retry() failure case where fn never succeeds."""
@@ -124,7 +126,7 @@ class CommonUtilsTests(unittest.TestCase):
             raise RuntimeError("Error")
 
         with self.assertRaises(errors.HoneydewTimeoutError):
-            common.retry(
+            await common.retry(
                 fn=_fn,
                 timeout=30,
                 wait_time=5,

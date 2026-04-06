@@ -19,7 +19,7 @@ from honeydew.typing import custom_types
 CAPABILITY = "fuchsia.hardware.rtc.Service/default/device"
 
 
-class AsyncRtcUsingFc(rtc.AsyncRtc):
+class RtcUsingFc(rtc.Rtc):
     """Async affordance for the fuchsia.hardware.rtc.Device protocol."""
 
     # TODO(b/316959472) Use toolbox once RTC service lands in the toolbox realm.
@@ -38,7 +38,7 @@ class AsyncRtcUsingFc(rtc.AsyncRtc):
     def __init__(
         self,
         fuchsia_controller: fuchsia_controller_lib.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         """Initializer."""
         self._controller = fuchsia_controller
@@ -58,12 +58,8 @@ class AsyncRtcUsingFc(rtc.AsyncRtc):
 
     def _connect_proxy(self) -> None:
         """Connect the RTC Device protocol proxy."""
-        ep_old = custom_types.FidlEndpoint(
-            AsyncRtcUsingFc.MONIKER_OLD, CAPABILITY
-        )
-        ep_new = custom_types.FidlEndpoint(
-            AsyncRtcUsingFc.MONIKER_NEW, CAPABILITY
-        )
+        ep_old = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_OLD, CAPABILITY)
+        ep_new = custom_types.FidlEndpoint(RtcUsingFc.MONIKER_NEW, CAPABILITY)
         try:
             self._proxy: frtc.DeviceClient = frtc.DeviceClient(
                 self._controller.connect_device_proxy(ep_old)

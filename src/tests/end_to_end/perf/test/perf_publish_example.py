@@ -14,7 +14,7 @@ import test_data
 from mobly import test_runner
 
 
-class ExampleMetricPublishing(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class ExampleMetricPublishing(fuchsia_base_test.FuchsiaBaseTest):
     """Example perf metric publishing tests"""
 
     def test_example_metric_publishing(self) -> None:

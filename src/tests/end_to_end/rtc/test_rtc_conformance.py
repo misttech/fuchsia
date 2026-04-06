@@ -46,7 +46,7 @@ class TimeIt(contextlib.ContextDecorator):
         return False  # Never suppress raised exceptions.
 
 
-class RtcTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class RtcTest(fuchsia_base_test.FuchsiaBaseTest):
     """fuchsia.hardware.rtc.Device protocol conformance Test."""
 
     async def setup_class(self) -> None:

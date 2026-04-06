@@ -7,7 +7,7 @@ import abc
 import datetime
 
 
-class AsyncRtc(abc.ABC):
+class Rtc(abc.ABC):
     """Abstract base class for an async RTC affordance."""
 
     @abc.abstractmethod

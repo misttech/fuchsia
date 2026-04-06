@@ -1,25 +1,25 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Example test demonstrating AsyncFuchsiaTestCases."""
+"""Example test demonstrating FuchsiaTestCases."""
 
 import logging
 import pathlib
 from typing import Callable
 
 import fuchsia_base_test
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from mobly import test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class ExampleTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class ExampleTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Example test cases."""
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)
@@ -38,7 +38,7 @@ class ExampleTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
             )
 
 
-class ExampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class ExampleTest(fuchsia_base_test.FuchsiaBaseTest):
     """Example test using TEST_CASES."""
 
     TEST_CASES = [ExampleTestCases]

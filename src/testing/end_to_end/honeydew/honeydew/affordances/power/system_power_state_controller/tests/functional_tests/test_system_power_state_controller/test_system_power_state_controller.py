@@ -14,7 +14,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class SystemPowerStateControllerAffordanceTests(
-    fuchsia_base_test.AsyncFuchsiaBaseTest
+    fuchsia_base_test.FuchsiaBaseTest
 ):
     """SystemPowerStateController affordance tests"""
 

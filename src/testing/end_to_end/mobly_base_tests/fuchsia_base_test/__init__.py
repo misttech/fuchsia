@@ -23,7 +23,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub,
     usb_power_hub_using_dmc,
 )
-from honeydew.fuchsia_device import async_fuchsia_device
+from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
 from mobly import signals, test_runner
 from mobly.records import TestResultRecord
@@ -83,12 +83,12 @@ class TracingOn(enum.StrEnum):
     NEVER = "never"
 
 
-class AsyncFuchsiaTestCases:
+class FuchsiaTestCases:
     """Base class for modular test cases."""
 
     async def setup_test(  # type: ignore
         self,
-        fuchsia_devices: list[async_fuchsia_device.AsyncFuchsiaDevice],
+        fuchsia_devices: list[fuchsia_device.FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ):
         """Called before each test case."""
@@ -96,7 +96,7 @@ class AsyncFuchsiaTestCases:
     async def teardown_test(self):  # type: ignore
         """Called after each test case."""
 
-    def inject_test_cases(self, mobly_test: "AsyncFuchsiaBaseTest") -> None:
+    def inject_test_cases(self, mobly_test: "FuchsiaBaseTest") -> None:
         for attr_name, method in inspect.getmembers(self, callable):
             if attr_name.startswith("test_"):
 
@@ -124,11 +124,11 @@ class AsyncFuchsiaTestCases:
                 )
 
 
-class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
+class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     """Async Fuchsia-specific base test class
 
     Attributes:
-        fuchsia_devices: List of AsyncFuchsiaDevice objects.
+        fuchsia_devices: List of FuchsiaDevice objects.
         test_case_path: Directory pointing to a specific test case artifacts.
         snapshot_on: `snapshot_on` test param value converted into SnapshotOn Enum.
         tracing_on: `tracing_on` test param value converted into TracingOn Enum.
@@ -142,7 +142,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             Default value is "never".
     """
 
-    TEST_CASES: list[type[AsyncFuchsiaTestCases]] | None = None
+    TEST_CASES: list[type[FuchsiaTestCases]] | None = None
 
     async def pre_run(self):  # type: ignore
         if self.TEST_CASES is None:
@@ -165,7 +165,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        self.fuchsia_devices = await AsyncFuchsiaBaseTest.register_controller(
+        self.fuchsia_devices = await FuchsiaBaseTest.register_controller(
             self,
             fuchsia_device_mobly_controller,
         )
@@ -192,7 +192,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             f"{self.log_path}/{self.current_test_info.name}"
         )
         os.mkdir(self.test_case_path)
-        await AsyncFuchsiaBaseTest._log_message_to_devices(
+        await FuchsiaBaseTest._log_message_to_devices(
             self,
             message=f"Started executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
@@ -219,10 +219,10 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
               "teardown_test"
             * Logs a info message onto device that test case has ended.
         """
-        await AsyncFuchsiaBaseTest._health_check_and_recover(self)
+        await FuchsiaBaseTest._health_check_and_recover(self)
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST:
-            await AsyncFuchsiaBaseTest._collect_snapshot(
+            await FuchsiaBaseTest._collect_snapshot(
                 self, directory=self.test_case_path
             )
 
@@ -239,7 +239,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     )
 
         _LOGGER.info("Completed closing active tracing sessions.")
-        await AsyncFuchsiaBaseTest._log_message_to_devices(
+        await FuchsiaBaseTest._log_message_to_devices(
             self,
             message=f"Finished executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
@@ -284,7 +284,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_CLASS:
             self._teardown_class_artifacts = f"{self.log_path}/teardown_class"
-            await AsyncFuchsiaBaseTest._collect_snapshot(
+            await FuchsiaBaseTest._collect_snapshot(
                 self, directory=self._teardown_class_artifacts
             )
         elif (
@@ -294,7 +294,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             self._teardown_class_artifacts = (
                 f"{self.log_path}/teardown_class_on_fail"
             )
-            await AsyncFuchsiaBaseTest._collect_snapshot(
+            await FuchsiaBaseTest._collect_snapshot(
                 self, directory=self._teardown_class_artifacts
             )
 
@@ -308,7 +308,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         """
         self._any_test_failed = True
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST_ON_FAIL:
-            await AsyncFuchsiaBaseTest._collect_snapshot(
+            await FuchsiaBaseTest._collect_snapshot(
                 self, directory=self.test_case_path
             )
 
@@ -354,7 +354,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             return
 
         _LOGGER.info(
-            "Collecting snapshots of all the AsyncFuchsiaDevice objects in '%s'...",
+            "Collecting snapshots of all the FuchsiaDevice objects in '%s'...",
             self.snapshot_on.value,
         )
         for fx_device in self.fuchsia_devices:
@@ -407,11 +407,11 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         return config.get(key) if config else None
 
     async def _health_check_and_recover(self):  # type: ignore
-        """Ensure all AsyncFuchsiaDevice objects are healthy and if unhealthy perform
+        """Ensure all FuchsiaDevice objects are healthy and if unhealthy perform
         a power_cycle in an attempt to recover.
         """
         _LOGGER.info(
-            "Performing health checks on all the AsyncFuchsiaDevice objects..."
+            "Performing health checks on all the FuchsiaDevice objects..."
         )
 
         for fx_device in self.fuchsia_devices:
@@ -424,11 +424,11 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     fx_device.device_name,
                     err,
                 )
-                await AsyncFuchsiaBaseTest._recover_device(self, fx_device)
+                await FuchsiaBaseTest._recover_device(self, fx_device)
 
         _LOGGER.info(
             "Successfully performed health checks and/or recoveries on all the "
-            "AsyncFuchsiaDevice objects..."
+            "FuchsiaDevice objects..."
         )
 
     async def _recover_device(self, fx_device):  # type: ignore[no-untyped-def]
@@ -436,7 +436,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         access to a power switch.
 
         Args:
-            fx_device: AsyncFuchsiaDevice object
+            fx_device: FuchsiaDevice object
         """
         try:
             switch, outlet = self._lookup_power_switch(fx_device)
@@ -462,7 +462,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             ) from err
 
     def _lookup_power_switch(
-        self, fx_device: async_fuchsia_device.AsyncFuchsiaDevice
+        self, fx_device: fuchsia_device.FuchsiaDevice
     ) -> tuple[power_switch.PowerSwitch, int | None]:
         device_config: dict[str, object] = self._get_device_config(
             controller_type="FuchsiaDevice",
@@ -497,7 +497,7 @@ class AsyncFuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             )
 
     def _lookup_usb_power_hub(
-        self, fx_device: async_fuchsia_device.AsyncFuchsiaDevice
+        self, fx_device: fuchsia_device.FuchsiaDevice
     ) -> tuple[usb_power_hub.UsbPowerHub, int | None]:
         device_config: dict[str, object] = self._get_device_config(
             controller_type="FuchsiaDevice",

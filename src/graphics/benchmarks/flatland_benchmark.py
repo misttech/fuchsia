@@ -26,7 +26,7 @@ TEST_NAME: str = "fuchsia.app_render_latency"
 LOGGER = logging.getLogger(__name__)
 
 
-class FlatlandBenchmark(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FlatlandBenchmark(fuchsia_base_test.FuchsiaBaseTest):
     """Flatland Benchmark.
 
     Attributes:

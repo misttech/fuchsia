@@ -101,7 +101,7 @@ class RpcClient(object):
     """The default value for the maximum amount of connections for a client."""
     DEFAULT_MAX_CONNECTION = 15
 
-    class AsyncClient(object):
+    class Client(object):
         """An object that allows RPC calls to be called asynchronously.
 
         Attributes:
@@ -170,7 +170,7 @@ class RpcClient(object):
         else:
             self.max_connections = max_connections
 
-        self._async_client = RpcClient.AsyncClient(self)
+        self._async_client = RpcClient.Client(self)
         self.is_alive = True
 
     def terminate(self):

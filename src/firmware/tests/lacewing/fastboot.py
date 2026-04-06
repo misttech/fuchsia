@@ -84,7 +84,7 @@ def ignore_line(line: str) -> bool:
     return "waiting for" in line
 
 
-class FastbootTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """Initializes all DUT(s)"""
         await super().setup_class()

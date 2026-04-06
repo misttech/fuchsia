@@ -24,7 +24,7 @@ _SNAPSHOT_ZIP = "snapshot_test.zip"
 _TEST_SUITE = "fuchsia.test.diagnostics"
 
 
-class SnapshotTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class SnapshotTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self._fuchsia_device = self.fuchsia_devices[0]

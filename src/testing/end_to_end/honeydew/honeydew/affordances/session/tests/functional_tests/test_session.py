@@ -18,7 +18,7 @@ _TILE_URL = (
 )
 
 
-class SessionAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Session affordance tests"""
 
     async def setup_class(self) -> None:

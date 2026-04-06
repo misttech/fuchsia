@@ -45,7 +45,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice,
+            spec=affordances_capable.RebootCapableDevice,
             autospec=True,
         )
         self.fc_transport_obj = mock.MagicMock(

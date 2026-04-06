@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Callable
 
 import fuchsia_base_test
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.utils import control_flows, power
 from honeydew.utils.deadline import Deadline
 from mobly.asserts import assert_equal, assert_less
@@ -16,12 +16,12 @@ from mobly.asserts import assert_equal, assert_less
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class SuspendResumeTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test cases for suspend and resume."""
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)
@@ -29,20 +29,18 @@ class SuspendResumeTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
         self.output_file_path = output_file_path
 
     async def test_suspend_resume(self) -> None:
-        await power.async_suspend_resume(
+        await power.suspend_resume(
             self.dut, Deadline.from_timeout(timedelta(minutes=1))
         )
 
     async def test_no_suspend_on_usb(self) -> None:
-        before_on_usb_idle_stats = await power.async_get_sag_suspend_stats(
-            self.dut
-        )
+        before_on_usb_idle_stats = await power.get_sag_suspend_stats(self.dut)
 
         # Then, idle a bit while plugged in to make sure we _don't_ suspend.
-        await control_flows.async_sleep_for_duration(timedelta(seconds=60))
+        await control_flows.sleep_for_duration(timedelta(seconds=60))
 
         while_on_usb_stats = (
-            await power.async_get_sag_suspend_stats(self.dut)
+            await power.get_sag_suspend_stats(self.dut)
             - before_on_usb_idle_stats
         )
 

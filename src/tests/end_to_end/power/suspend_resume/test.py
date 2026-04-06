@@ -7,7 +7,7 @@ import suspend_resume_test_cases
 from mobly import test_runner
 
 
-class SuspendResumeTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class SuspendResumeTest(fuchsia_base_test.FuchsiaBaseTest):
     TEST_CASES = [suspend_resume_test_cases.SuspendResumeTestCases]
 
     async def setup_class(self) -> None:

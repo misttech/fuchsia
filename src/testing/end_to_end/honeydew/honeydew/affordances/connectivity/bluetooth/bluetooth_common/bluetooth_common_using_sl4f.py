@@ -34,7 +34,7 @@ class Sl4fMethods(StrEnum):
     FORGET_DEVICE = "bt_sys_facade.BluetoothForgetDevice"
 
 
-class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
+class BluetoothCommonUsingSl4f(bluetooth_common.BluetoothCommon):
     """Bluetooth Common affordance implementation using SL4F.
 
     Args:
@@ -47,11 +47,11 @@ class AsyncBluetoothCommonUsingSl4f(bluetooth_common.AsyncBluetoothCommon):
         self,
         device_name: str,
         sl4f: sl4f_transport.SL4F,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         self._name: str = device_name
         self._sl4f: sl4f_transport.SL4F = sl4f
-        self._reboot_affordance: affordances_capable.AsyncRebootCapableDevice = (
+        self._reboot_affordance: affordances_capable.RebootCapableDevice = (
             reboot_affordance
         )
 

@@ -10,7 +10,7 @@ from datetime import timedelta
 from mobly import asserts
 
 from honeydew import errors
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import control_flows
 from honeydew.utils.deadline import Deadline
@@ -44,8 +44,8 @@ class SagSuspendStats:
         )
 
 
-async def async_get_sag_suspend_stats(
-    device: AsyncFuchsiaDevice,
+async def get_sag_suspend_stats(
+    device: FuchsiaDevice,
 ) -> SagSuspendStats:
     """Returns the aggregate stats about suspend, exposed by SAG via inspect.
 
@@ -90,8 +90,8 @@ async def async_get_sag_suspend_stats(
         ) from err
 
 
-async def async_suspend_resume(
-    device: AsyncFuchsiaDevice,
+async def suspend_resume(
+    device: FuchsiaDevice,
     deadline: Deadline | None = None,
 ) -> None:
     """Disconnects USB, idles, reconnects.
@@ -116,19 +116,19 @@ async def async_suspend_resume(
         if deadline.is_due():
             asserts.fail("SAG did not suspend during idle.")
         _LOGGER.info("Suspension attempt %s...", attempt + 1)
-        before_off_charger_stats = await async_get_sag_suspend_stats(device)
+        before_off_charger_stats = await get_sag_suspend_stats(device)
 
         sleep_deadline = deadline.subdeadline_with_timeout(
             SUSPEND_RESUME_BASE_IDLE_DURATION * (2**attempt)
         )
         try:
             await device.suspend()
-            await control_flows.async_sleep_until_deadline(sleep_deadline)
+            await control_flows.sleep_until_deadline(sleep_deadline)
         finally:
             await device.resume()
 
         while_off_charger_stats = (
-            await async_get_sag_suspend_stats(device) - before_off_charger_stats
+            await get_sag_suspend_stats(device) - before_off_charger_stats
         )
 
         _LOGGER.info(

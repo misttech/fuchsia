@@ -70,8 +70,8 @@ class AsyncWlanPolicyApUsingFc(
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
-        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
     ) -> None:
         """Create an Async WlanPolicyAp Fuchsia Controller affordance.
 
@@ -79,8 +79,8 @@ class AsyncWlanPolicyApUsingFc(
             device_name: Device name returned by `ffx target list`.
             ffx: FFX transport.
             fuchsia_controller: Fuchsia Controller transport.
-            reboot_affordance: Object that implements AsyncRebootCapableDevice.
-            fuchsia_device_close: Object that implements AsyncFuchsiaDeviceClose.
+            reboot_affordance: Object that implements RebootCapableDevice.
+            fuchsia_device_close: Object that implements FuchsiaDeviceClose.
         """
         AsyncLazyReady.__init__(self)
 
@@ -398,8 +398,8 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
         device_name: str,
         ffx: ffx_transport.FFX,
         fuchsia_controller: fc_transport.FuchsiaController,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
-        fuchsia_device_close: affordances_capable.AsyncFuchsiaDeviceClose,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
     ) -> None:
         """Create a WlanPolicyAp Fuchsia Controller affordance.
 
@@ -529,10 +529,6 @@ class WlanPolicyAp(wlan_policy_ap.WlanPolicyAp):
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.get_update(timeout)
         )
-
-    def as_async(self) -> AsyncWlanPolicyApUsingFc:
-        """Returns the async version of WlanPolicyAp."""
-        return self._inner
 
 
 class AccessPointStateUpdatesImpl(f_wlan_policy.AccessPointStateUpdatesServer):

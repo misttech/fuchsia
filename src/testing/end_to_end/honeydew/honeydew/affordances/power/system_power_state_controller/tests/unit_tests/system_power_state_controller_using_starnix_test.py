@@ -165,14 +165,14 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
 
         self.mock_ffx = mock.MagicMock(spec=ffx_transport.FFX)
         self.mock_device_logger = mock.AsyncMock(
-            spec=affordances_capable.AsyncFuchsiaDeviceLogger
+            spec=affordances_capable.FuchsiaDeviceLogger
         )
         self.mock_inspect = mock.MagicMock(
             spec=affordances_capable.InspectCapableDevice
         )
-        self.mock_starnix = mock.AsyncMock(spec=starnix.AsyncStarnix)
+        self.mock_starnix = mock.AsyncMock(spec=starnix.Starnix)
 
-        self.system_power_state_controller_using_starnix_obj = system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix(
+        self.system_power_state_controller_using_starnix_obj = system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix(
             ffx=self.mock_ffx,
             device_logger=self.mock_device_logger,
             inspect=self.mock_inspect,
@@ -181,7 +181,7 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "suspend_resume",
         autospec=True,
     )
@@ -222,12 +222,12 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
             )
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_suspend",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_set_resume_mode",
         autospec=True,
     )
@@ -261,12 +261,12 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
         mock_suspend.assert_called_once()
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_suspend",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_set_resume_mode",
         autospec=True,
     )
@@ -304,12 +304,12 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
         mock_suspend.assert_called_once()
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_suspend",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_set_resume_mode",
         autospec=True,
     )
@@ -347,7 +347,7 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
         mock_suspend.assert_called_once()
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_perform_idle_suspend",
         autospec=True,
     )
@@ -390,12 +390,12 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_wait_for_timer_end",
         autospec=True,
     )
     @mock.patch.object(
-        system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix,
+        system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix,
         "_wait_for_timer_start",
         autospec=True,
     )

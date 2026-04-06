@@ -26,9 +26,9 @@ class Sl4fMethods(StrEnum):
     STOP_MOCK_PLAYER = "media_session_facade.StopMockPlayer"
 
 
-class AsyncAvrcpUsingSl4f(
-    bluetooth_common_using_sl4f.AsyncBluetoothCommonUsingSl4f,
-    avrcp.AsyncAvrcp,
+class AvrcpUsingSl4f(
+    bluetooth_common_using_sl4f.BluetoothCommonUsingSl4f,
+    avrcp.Avrcp,
 ):
     """SL4F based implementation for BluetoothAvrcp Profile affordance."""
 
@@ -36,7 +36,7 @@ class AsyncAvrcpUsingSl4f(
         self,
         device_name: str,
         sl4f: sl4f_transport.SL4F,
-        reboot_affordance: affordances_capable.AsyncRebootCapableDevice,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
         super().__init__(device_name, sl4f, reboot_affordance)
         self.__sl4f = sl4f

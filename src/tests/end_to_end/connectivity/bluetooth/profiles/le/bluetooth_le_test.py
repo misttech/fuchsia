@@ -20,7 +20,7 @@ class MultipleFuchsiaDevicesNotFound(Exception):
     """When there are less than two Fuchsia devices available."""
 
 
-class MultiDeviceSampleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class MultiDeviceSampleTest(fuchsia_base_test.FuchsiaBaseTest):
     """Sample test that uses multiple Fuchsia devices"""
 
     async def pre_run(self) -> None:

@@ -22,7 +22,7 @@ class MultipleFuchsiaDevicesNotFound(Exception):
     """When there are less than two Fuchsia devices available."""
 
 
-class BluetoothGapTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class BluetoothGapTest(fuchsia_base_test.FuchsiaBaseTest):
     async def pre_run(self) -> None:
         """Mobly method used to generate the test cases at run time."""
         test_arg_tuple_list: List[Tuple[int]] = []
@@ -108,7 +108,7 @@ class BluetoothGapTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
             connection_type=BluetoothConnectionType.CLASSIC,
         )
         asserts.assert_true(
-            await bluetooth_utils.verify_bt_connection_async(
+            await bluetooth_utils.verify_bt_connection(
                 identifier=identifier, device=self.initiator
             ),
             msg="Receiver was not connected.",

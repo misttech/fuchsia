@@ -1,7 +1,7 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""AsyncFuchsiaDevice abstract base class implementation."""
+"""FuchsiaDevice abstract base class implementation."""
 
 
 import dataclasses
@@ -55,7 +55,7 @@ from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
 from honeydew.affordances.connectivity.wlan.wlan_policy_ap import (
     wlan_policy_ap_using_fc,
 )
-from honeydew.affordances.device_knobs import async_device_knobs
+from honeydew.affordances.device_knobs import device_knobs
 from honeydew.affordances.hello_world import hello_world, hello_world_using_ffx
 from honeydew.affordances.location import location as location_module
 from honeydew.affordances.location import location_using_fc
@@ -145,11 +145,11 @@ _LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics_types.Severity] = {
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AsyncFuchsiaDevice(
-    async_device_knobs.AsyncDeviceKnobs,
-    affordances_capable.AsyncRebootCapableDevice,
-    affordances_capable.AsyncFuchsiaDeviceLogger,
-    affordances_capable.AsyncFuchsiaDeviceClose,
+class FuchsiaDevice(
+    device_knobs.DeviceKnobs,
+    affordances_capable.RebootCapableDevice,
+    affordances_capable.FuchsiaDeviceLogger,
+    affordances_capable.FuchsiaDeviceClose,
     affordances_capable.InspectCapableDevice,
     affordances_capable.FuchsiaDeviceIpChange,
 ):
@@ -407,7 +407,7 @@ class AsyncFuchsiaDevice(
         return fuchsia_controller_obj
 
     @properties.Transport
-    def fastboot(self) -> fastboot_transport_interface.AsyncFastboot:
+    def fastboot(self) -> fastboot_transport_interface.Fastboot:
         """Returns the Fastboot transport object.
 
         Returns:
@@ -416,8 +416,8 @@ class AsyncFuchsiaDevice(
         Raises:
             FuchsiaDeviceError: Failed to instantiate.
         """
-        fastboot_obj: fastboot_transport_interface.AsyncFastboot = (
-            fastboot_impl.AsyncFastbootImpl(
+        fastboot_obj: fastboot_transport_interface.Fastboot = (
+            fastboot_impl.FastbootImpl(
                 device_name=self.device_name,
                 reboot_affordance=self,
                 ffx_transport=self.ffx,
@@ -491,7 +491,7 @@ class AsyncFuchsiaDevice(
         return screenshot_using_ffx.ScreenshotUsingFfx(self.ffx)
 
     @properties.Affordance
-    def virtual_audio(self) -> audio.AsyncVirtualAudio:
+    def virtual_audio(self) -> audio.VirtualAudio:
         """Returns a virtual audio affordance object.
 
         Connecting to the protocols this connects to on startup will inject
@@ -504,22 +504,24 @@ class AsyncFuchsiaDevice(
         behavior other than rebooting the device.
 
         Returns:
-            audio.AsyncVirtualAudio object
+            audio.VirtualAudio object
         """
-        return audio_using_fuchsia_controller.AsyncVirtualAudioUsingFuchsiaController(
-            device_name=self.device_name,
-            fuchsia_controller=self.fuchsia_controller,
-            ffx_transport=self.ffx,
+        return (
+            audio_using_fuchsia_controller.VirtualAudioUsingFuchsiaController(
+                device_name=self.device_name,
+                fuchsia_controller=self.fuchsia_controller,
+                ffx_transport=self.ffx,
+            )
         )
 
     @properties.Affordance
-    def starnix(self) -> starnix.AsyncStarnix:
+    def starnix(self) -> starnix.Starnix:
         """Returns a starnix affordance object.
 
         Returns:
-            starnix.AsyncStarnix object
+            starnix.Starnix object
         """
-        return starnix_using_ffx.AsyncStarnixUsingFfx(
+        return starnix_using_ffx.StarnixUsingFfx(
             device_name=self.device_name,
             ffx=self.ffx,
         )
@@ -527,18 +529,16 @@ class AsyncFuchsiaDevice(
     @properties.Affordance
     def system_power_state_controller(
         self,
-    ) -> (
-        system_power_state_controller_interface.AsyncSystemPowerStateController
-    ):
+    ) -> system_power_state_controller_interface.SystemPowerStateController:
         """Returns a SystemPowerStateController affordance object.
 
         Returns:
-            system_power_state_controller_interface.AsyncSystemPowerStateController object
+            system_power_state_controller_interface.SystemPowerStateController object
 
         Raises:
             errors.NotSupportedError: If Fuchsia device does not support Starnix
         """
-        return system_power_state_controller_using_starnix.AsyncSystemPowerStateControllerUsingStarnix(
+        return system_power_state_controller_using_starnix.SystemPowerStateControllerUsingStarnix(
             device_name=self.device_name,
             ffx=self.ffx,
             inspect=self,
@@ -547,45 +547,45 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def rtc(self) -> rtc.AsyncRtc:
+    def rtc(self) -> rtc.Rtc:
         """Returns an RTC affordance object.
 
         Returns:
-            rtc.AsyncRtc object
+            rtc.Rtc object
         """
-        return rtc_using_fc.AsyncRtcUsingFc(
+        return rtc_using_fc.RtcUsingFc(
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
         )
 
     @properties.Affordance
-    def tracing(self) -> tracing.AsyncTracing:
+    def tracing(self) -> tracing.Tracing:
         """Returns a tracing affordance object.
 
         Returns:
-            tracing.AsyncTracing object
+            tracing.Tracing object
         """
-        return tracing_using_fc.AsyncTracingUsingFc(
+        return tracing_using_fc.TracingUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
         )
 
     @properties.Affordance
-    def user_input(self) -> user_input.AsyncUserInput:
+    def user_input(self) -> user_input.UserInput:
         """Returns an user input affordance object.
 
         Returns:
-            user_input.AsyncUserInput object
+            user_input.UserInput object
         """
-        return user_input_using_fc.AsyncUserInputUsingFc(
+        return user_input_using_fc.UserInputUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             ffx_transport=self.ffx,
         )
 
     @properties.Affordance
-    def bluetooth_avrcp(self) -> avrcp.AsyncAvrcp:
+    def bluetooth_avrcp(self) -> avrcp.Avrcp:
         """Returns a Bluetooth Avrcp affordance object.
 
         Returns:
@@ -595,7 +595,7 @@ class AsyncFuchsiaDevice(
             self._get_bluetooth_affordances_implementation()
             == bluetooth_types.Implementation.SL4F
         ):
-            return avrcp_using_sl4f.AsyncAvrcpUsingSl4f(
+            return avrcp_using_sl4f.AvrcpUsingSl4f(
                 device_name=self.device_name,
                 sl4f=self.sl4f,
                 reboot_affordance=self,
@@ -603,26 +603,26 @@ class AsyncFuchsiaDevice(
         raise NotImplementedError
 
     @properties.Affordance
-    def bluetooth_le(self) -> le.AsyncLE:
+    def bluetooth_le(self) -> le.LE:
         """Returns a Bluetooth LE affordance object.
 
         Returns:
             Bluetooth LE object
         """
-        return le_using_fc.AsyncLEUsingFc(
+        return le_using_fc.LEUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
         )
 
     @properties.Affordance
-    def bluetooth_gap(self) -> gap.AsyncGap:
+    def bluetooth_gap(self) -> gap.Gap:
         """Returns a Bluetooth Gap affordance object.
 
         Returns:
             Bluetooth Gap object
         """
-        return gap_using_fc.AsyncGapUsingFc(
+        return gap_using_fc.GapUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
@@ -657,7 +657,7 @@ class AsyncFuchsiaDevice(
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
             fuchsia_device_close=self,
-            location=self.location,
+            location=self.location_deprecated_sync,
         )
 
     @properties.Affordance
@@ -755,7 +755,7 @@ class AsyncFuchsiaDevice(
         """Returns a location affordance object.
 
         Returns:
-            location.AsyncLocation object
+            location.Location object
         """
         return location_using_fc.AsyncLocationUsingFc(
             device_name=self.device_name,
@@ -779,13 +779,13 @@ class AsyncFuchsiaDevice(
         )
 
     @properties.Affordance
-    def media(self) -> media.AsyncMedia:
+    def media(self) -> media.Media:
         """Returns a media affordance object.
 
         Returns:
             media.Media object
         """
-        return media_using_fc.AsyncMediaUsingFc(
+        return media_using_fc.MediaUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
             ffx_transport=self.ffx,
@@ -952,7 +952,7 @@ class AsyncFuchsiaDevice(
         """
         # Restart the SL4F server on device boot up.
         if self._is_sl4f_needed:
-            common.retry(fn=self.sl4f.start_server, wait_time=5)
+            await common.retry(fn=self.sl4f.start_server, wait_time=5)
 
         # Create a new Fuchsia controller context for new device connection.
         self.fuchsia_controller.create_context()
@@ -1141,7 +1141,7 @@ class AsyncFuchsiaDevice(
         """Register a function that will be called in `on_device_boot()`.
 
         Args:
-            fn: Function that need to be called after AsyncFuchsiaDevice boot up.
+            fn: Function that need to be called after FuchsiaDevice boot up.
         """
         self._on_device_boot_fns.append(fn)
 
@@ -1151,7 +1151,7 @@ class AsyncFuchsiaDevice(
         """Register a function that will be called during device clean up in `close()`.
 
         Args:
-            fn: Function that need to be called during AsyncFuchsiaDevice cleanup.
+            fn: Function that need to be called during FuchsiaDevice cleanup.
         """
         self._on_device_close_fns.append(fn)
 
@@ -1372,7 +1372,7 @@ class AsyncFuchsiaDevice(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    @properties.async_persistent_method
+    @properties.persistent_method
     async def _device_info_from_fidl(self) -> f_hwinfo.DeviceInfo:
         """Returns the device information of the device.
 
@@ -1395,7 +1395,7 @@ class AsyncFuchsiaDevice(
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    @properties.async_persistent_method
+    @properties.persistent_method
     async def _product_info(self) -> f_hwinfo.ProductInfo:
         """Returns the product information of the device.
 

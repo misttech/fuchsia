@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import fuchsia_async_extension
-from fuchsia_base_test import AsyncFuchsiaBaseTest
+from fuchsia_base_test import FuchsiaBaseTest
 from honeydew.auxiliary_devices.power_switch import power_switch
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ def tag_test(
     return tags_decorator
 
 
-class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
+class TestCaseRevive(FuchsiaBaseTest):
     """Base class for TestCaseRevive."""
 
     async def pre_run(self) -> None:
@@ -130,13 +130,13 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
 
         if self._test_case_revive is False:
             _LOGGER.info(
-                "[AsyncTestCaseRevive] - test_case_revive setting is not enabled "
+                "[TestCaseRevive] - test_case_revive setting is not enabled "
                 "in user_params. So not testing in revive mode...",
             )
             return
 
         _LOGGER.info(
-            "[AsyncTestCaseRevive] - test_case_revive setting is enabled in "
+            "[TestCaseRevive] - test_case_revive setting is enabled in "
             "user_params. So testing in revive mode...",
         )
 
@@ -184,7 +184,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                 FuchsiaDeviceOperation.POWER_CYCLE,
             ]:
                 _LOGGER.debug(
-                    "[AsyncTestCaseRevive] - Importing %s.%s module",
+                    "[TestCaseRevive] - Importing %s.%s module",
                     _DMC_MODULE,
                     _DMC_CLASS,
                 )
@@ -193,7 +193,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                 )
 
                 _LOGGER.debug(
-                    "[AsyncTestCaseRevive] - Instantiating %s.%s module",
+                    "[TestCaseRevive] - Instantiating %s.%s module",
                     _DMC_MODULE,
                     _DMC_CLASS,
                 )
@@ -214,7 +214,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                 == FuchsiaDeviceOperation.IDLE_SUSPEND_BUTTON_PRESS_RESUME
             ):
                 raise ValueError(
-                    f"'{fuchsia_device_operation}' operation is not supported by 'AsyncTestCaseRevive'"
+                    f"'{fuchsia_device_operation}' operation is not supported by 'TestCaseRevive'"
                 )
 
     def _logic_for_test_case_revive(
@@ -227,7 +227,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
         post_test_execution_fn: Callable[[], Any] | None,
         post_test_execution_fn_kwargs: dict[str, Any] | None,
     ) -> None:
-        """AsyncTestCaseRevive logic"""
+        """TestCaseRevive logic"""
 
         sequence: str
         if (
@@ -248,12 +248,12 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
             sequence = f"{pre_test_execution_fn.__qualname__} -> {sequence}"
         if post_test_execution_fn:
             sequence = f"{sequence} -> {post_test_execution_fn.__qualname__}"
-        _LOGGER.info("[AsyncTestCaseRevive] - Revived test logic: %s", sequence)
+        _LOGGER.info("[TestCaseRevive] - Revived test logic: %s", sequence)
 
         if pre_test_execution_fn:
             if pre_test_execution_fn_kwargs:
                 _LOGGER.info(
-                    "[AsyncTestCaseRevive] - Calling %s with args:%s which is the first step in the revived test sequence...",
+                    "[TestCaseRevive] - Calling %s with args:%s which is the first step in the revived test sequence...",
                     pre_test_execution_fn.__qualname__,
                     pre_test_execution_fn_kwargs,
                 )
@@ -262,7 +262,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
                 _LOGGER.info(
-                    "[AsyncTestCaseRevive] - Calling %s which is the first step in the revived test sequence...",
+                    "[TestCaseRevive] - Calling %s which is the first step in the revived test sequence...",
                     pre_test_execution_fn.__qualname__,
                 )
                 res = pre_test_execution_fn()
@@ -274,7 +274,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
             TestMethodExecutionFrequency.PRE_ONLY,
         ]:
             _LOGGER.info(
-                "[AsyncTestCaseRevive] - Running the %s before performing %s operation...",
+                "[TestCaseRevive] - Running the %s before performing %s operation...",
                 test_case,
                 fuchsia_device_operation,
             )
@@ -283,7 +283,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                 fuchsia_async_extension.get_loop().run_until_complete(res)
 
         _LOGGER.info(
-            "[AsyncTestCaseRevive] - Performing %s operation on all Fuchsia devices "
+            "[TestCaseRevive] - Performing %s operation on all Fuchsia devices "
             "that are part of the testbed...",
             fuchsia_device_operation,
         )
@@ -298,7 +298,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
             TestMethodExecutionFrequency.POST_ONLY,
         ]:
             _LOGGER.info(
-                "[AsyncTestCaseRevive] - Running the %s after performing %s operation...",
+                "[TestCaseRevive] - Running the %s after performing %s operation...",
                 test_case,
                 fuchsia_device_operation,
             )
@@ -309,7 +309,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
         if post_test_execution_fn:
             if post_test_execution_fn_kwargs:
                 _LOGGER.info(
-                    "[AsyncTestCaseRevive] - Calling %s with args:%s which is the last step in the revived test sequence...",
+                    "[TestCaseRevive] - Calling %s with args:%s which is the last step in the revived test sequence...",
                     post_test_execution_fn.__qualname__,
                     post_test_execution_fn_kwargs,
                 )
@@ -318,7 +318,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
                 _LOGGER.info(
-                    "[AsyncTestCaseRevive] - Calling %s which is the last step in the revived test sequence...",
+                    "[TestCaseRevive] - Calling %s which is the last step in the revived test sequence...",
                     post_test_execution_fn.__qualname__,
                 )
                 res = post_test_execution_fn()
@@ -351,7 +351,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
         except ValueError as err:
             raise ValueError(
                 f"'{self._fuchsia_device_operation}' operation is not "
-                f"supported by 'AsyncTestCaseRevive'"
+                f"supported by 'TestCaseRevive'"
             ) from err
 
         if (
@@ -391,7 +391,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
             and callable(getattr(self, attribute))
         ]
         _LOGGER.info(
-            "[AsyncTestCaseRevive] - List of all the test cases in this test "
+            "[TestCaseRevive] - List of all the test cases in this test "
             "class: %s",
             test_cases,
         )
@@ -403,7 +403,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
             or not getattr(self, test_case)._opt_out
         ]
         _LOGGER.info(
-            "[AsyncTestCaseRevive] - List of all the test cases in this test class "
+            "[TestCaseRevive] - List of all the test cases in this test class "
             "that are configured to run with revived sequence: %s",
             revived_test_cases,
         )
@@ -483,7 +483,7 @@ class AsyncTestCaseRevive(AsyncFuchsiaBaseTest):
             test_arg_tuple_list.append(test_arg_tuple)
 
         _LOGGER.debug(
-            "[AsyncTestCaseRevive] - Test arg list that will be passed to Mobly's "
+            "[TestCaseRevive] - Test arg list that will be passed to Mobly's "
             "generate_test method to generate the revived test cases is: %s",
             test_arg_tuple_list,
         )

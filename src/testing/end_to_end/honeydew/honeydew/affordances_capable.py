@@ -12,7 +12,7 @@ import fuchsia_inspect
 from honeydew.typing import custom_types
 
 
-class AsyncRebootCapableDevice(abc.ABC):
+class RebootCapableDevice(abc.ABC):
     """Abstract base class to be implemented by a device which supports the
     reboot operation."""
 
@@ -43,7 +43,7 @@ class AsyncRebootCapableDevice(abc.ABC):
         """Wait for Fuchsia device to go online."""
 
 
-class AsyncFuchsiaDeviceLogger(abc.ABC):
+class FuchsiaDeviceLogger(abc.ABC):
     """Abstract base class which contains methods for logging message to fuchsia
     device."""
 
@@ -56,41 +56,6 @@ class AsyncFuchsiaDeviceLogger(abc.ABC):
         Args:
             message: Message that need to logged.
             level: Log message level.
-        """
-
-
-class FuchsiaDeviceLogger(abc.ABC):
-    """Abstract base class which contains methods for logging message to fuchsia
-    device."""
-
-    @abc.abstractmethod
-    def log_message_to_device(
-        self, message: str, level: custom_types.LEVEL
-    ) -> None:
-        """Log message to fuchsia device at specified level.
-
-        Args:
-            message: Message that need to logged.
-            level: Log message level.
-        """
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncFuchsiaDeviceLogger:
-        """Returns the async version of FuchsiaDeviceLogger."""
-
-
-class AsyncFuchsiaDeviceClose(abc.ABC):
-    """Abstract base class which contains methods that let you register to run any custom logic
-    during device cleanup."""
-
-    @abc.abstractmethod
-    def register_for_on_device_close(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
-    ) -> None:
-        """Register a function that will be called during device clean up in `close()`.
-
-        Args:
-            fn: Function that need to be called during FuchsiaDevice cleanup.
         """
 
 
@@ -107,10 +72,6 @@ class FuchsiaDeviceClose(abc.ABC):
         Args:
             fn: Function that need to be called during FuchsiaDevice cleanup.
         """
-
-    @abc.abstractmethod
-    def as_async(self) -> AsyncFuchsiaDeviceClose:
-        """Returns the async version of FuchsiaDeviceClose."""
 
 
 class FuchsiaDeviceIpChange(abc.ABC):

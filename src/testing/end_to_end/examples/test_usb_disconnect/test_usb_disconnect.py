@@ -13,7 +13,7 @@ from mobly import expects, test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class UsbDisconnectTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
     """Mobly test for testing the UsbPowerHub that works locally or in infra.
 
      Attributes:

@@ -31,7 +31,7 @@ class _FcProxies:
     )
 
 
-class AsyncTouchDeviceUsingFc(user_input.AsyncTouchDevice, AsyncLazyReady):
+class TouchDeviceUsingFc(user_input.TouchDevice, AsyncLazyReady):
     """Virtual TouchDevice for testing using FuchsiaController.
 
     Args:
@@ -263,9 +263,7 @@ class AsyncMouseDeviceUsingFc(user_input.AsyncMouseDevice, AsyncLazyReady):
             ) from status
 
 
-class AsyncKeyboardDeviceUsingFc(
-    user_input.AsyncKeyboardDevice, AsyncLazyReady
-):
+class KeyboardDeviceUsingFc(user_input.KeyboardDevice, AsyncLazyReady):
     """Virtual KeyboardDevice for testing using FuchsiaController.
 
     Args:
@@ -324,7 +322,7 @@ class AsyncKeyboardDeviceUsingFc(
             ) from status
 
 
-class AsyncUserInputUsingFc(user_input.AsyncUserInput):
+class UserInputUsingFc(user_input.UserInput):
     """Async UserInput affordance implementation using FuchsiaController."""
 
     def __init__(
@@ -360,17 +358,17 @@ class AsyncUserInputUsingFc(user_input.AsyncUserInput):
         touch_screen_size: ui_custom_types.Size = user_input.DEFAULTS[
             "TOUCH_SCREEN_SIZE"
         ],
-    ) -> AsyncTouchDeviceUsingFc:
+    ) -> TouchDeviceUsingFc:
         """Create a virtual touch device for testing touch input."""
-        return AsyncTouchDeviceUsingFc(
+        return TouchDeviceUsingFc(
             device_name=self._device_name,
             fuchsia_controller=self._fc_transport,
             touch_screen_size=touch_screen_size,
         )
 
-    def create_keyboard_device(self) -> AsyncKeyboardDeviceUsingFc:
+    def create_keyboard_device(self) -> KeyboardDeviceUsingFc:
         """Create a virtual keyboard device for testing keyboard input."""
-        return AsyncKeyboardDeviceUsingFc(
+        return KeyboardDeviceUsingFc(
             device_name=self._device_name, fuchsia_controller=self._fc_transport
         )
 

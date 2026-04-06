@@ -235,7 +235,7 @@ class IperfServer:
             f.write(output)
 
 
-class NetstackIperfTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         self._device = self.fuchsia_devices[0]

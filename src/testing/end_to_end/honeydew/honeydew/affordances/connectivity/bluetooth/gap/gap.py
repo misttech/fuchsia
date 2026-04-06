@@ -8,5 +8,5 @@ from honeydew.affordances.connectivity.bluetooth.bluetooth_common import (
 )
 
 
-class AsyncGap(bluetooth_common.AsyncBluetoothCommon):
+class Gap(bluetooth_common.BluetoothCommon):
     """Abstract base class for an async Bluetooth Gap Profile affordance."""

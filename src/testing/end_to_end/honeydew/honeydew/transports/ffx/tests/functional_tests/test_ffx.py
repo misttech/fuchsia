@@ -14,7 +14,7 @@ from honeydew.typing import custom_types
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class FFXTransportTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     """FFX transport tests"""
 
     async def setup_class(self) -> None:

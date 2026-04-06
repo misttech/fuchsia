@@ -19,7 +19,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 PDU_CONFIG_KEY: str = "pdu_config"
 
 
-class PowerSwitchTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
     """Mobly test for PowerSwitchDmc implementation of PowerSwitch interface."""
 
     _power_switch: power_switch.PowerSwitch

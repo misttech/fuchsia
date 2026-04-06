@@ -7,21 +7,21 @@ import pathlib
 from typing import Callable
 
 import fuchsia_base_test
-from honeydew.fuchsia_device.async_fuchsia_device import AsyncFuchsiaDevice
+from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class RebootReasonTestCases(fuchsia_base_test.AsyncFuchsiaTestCases):
+class RebootReasonTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test cases for reboot reasons."""
 
-    dut: AsyncFuchsiaDevice
+    dut: FuchsiaDevice
 
     async def setup_test(
         self,
-        fuchsia_devices: list[AsyncFuchsiaDevice],
+        fuchsia_devices: list[FuchsiaDevice],
         output_file_path: Callable[[str], pathlib.Path],
     ) -> None:
         await super().setup_test(fuchsia_devices, output_file_path)

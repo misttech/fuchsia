@@ -13,7 +13,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 _REBOOT: list[str] = ["target", "reboot"]
 
 
-class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.FuchsiaBaseTest):
     """Test class to test FFX.wait_for_rcs_disconnection().
 
     This is included in a separate test class as it involves rebooting the

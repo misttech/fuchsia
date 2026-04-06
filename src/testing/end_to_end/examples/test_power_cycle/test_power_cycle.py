@@ -18,7 +18,7 @@ _DMC_MODULE: str = (
 _DMC_CLASS: str = "PowerSwitchUsingDmc"
 
 
-class PowerCycleTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class PowerCycleTest(fuchsia_base_test.FuchsiaBaseTest):
     """power cycle test.
 
     Attributes:

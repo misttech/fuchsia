@@ -18,7 +18,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 TRACE2JSON = "trace_runtime_deps/trace2json"
 
 
-class TracingAffordanceTests(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Tracing affordance tests"""
 
     async def setup_class(self) -> None:

@@ -9,7 +9,7 @@ import re
 from typing import List
 
 import fidl_fuchsia_bluetooth as f_bt
-from honeydew.fuchsia_device import async_fuchsia_device
+from honeydew.fuchsia_device import fuchsia_device
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 DEFAULT_WAITING_SECS = 10
@@ -31,8 +31,8 @@ def _convert_reverse_hex(address: List[str]) -> List[int]:
     return [int(x, 16) for x in reversed(address)]
 
 
-async def forget_all_bt_devices_async(
-    device: async_fuchsia_device.AsyncFuchsiaDevice,
+async def forget_all_bt_devices(
+    device: fuchsia_device.FuchsiaDevice,
 ) -> None:
     """Unpairs and deletes any BT peer pairing data from the device."""
     data = await device.bluetooth_gap.get_known_remote_devices()
@@ -42,9 +42,9 @@ async def forget_all_bt_devices_async(
             await device.bluetooth_gap.forget_device(identifier=peer.id)
 
 
-async def verify_bt_connection_async(
+async def verify_bt_connection(
     identifier: f_bt.PeerId,
-    device: async_fuchsia_device.AsyncFuchsiaDevice,
+    device: fuchsia_device.FuchsiaDevice,
     wait_secs: int = DEFAULT_WAITING_SECS,
     num_retries: int = DEFAULT_RETRIES_ATTEMPT,
 ) -> bool:
@@ -62,9 +62,9 @@ async def verify_bt_connection_async(
     return False
 
 
-async def verify_bt_pairing_async(
+async def verify_bt_pairing(
     identifier: f_bt.PeerId,
-    device: async_fuchsia_device.AsyncFuchsiaDevice,
+    device: fuchsia_device.FuchsiaDevice,
     wait_secs: int = DEFAULT_WAITING_SECS,
     num_retries: int = DEFAULT_RETRIES_ATTEMPT,
 ) -> bool:

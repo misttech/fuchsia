@@ -8,7 +8,7 @@ import fuchsia_base_test
 from mobly import asserts, test_runner
 
 
-class CpuProfilerEndToEndTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class CpuProfilerEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         self.device = self.fuchsia_devices[0]

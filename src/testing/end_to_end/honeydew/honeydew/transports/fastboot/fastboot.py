@@ -11,7 +11,7 @@ from honeydew.auxiliary_devices.power_switch import (
 from honeydew.transports.serial import serial as serial_interface
 
 
-class AsyncFastboot(abc.ABC):
+class Fastboot(abc.ABC):
     """ABC with methods for Host-(Fuchsia)Target interactions via Fastboot."""
 
     @abc.abstractmethod

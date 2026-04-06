@@ -9,7 +9,7 @@ from mobly import asserts, test_runner
 from trace_processing import trace_importing, trace_model, trace_utils
 
 
-class PerfTestTraceEventsTest(fuchsia_base_test.AsyncFuchsiaBaseTest):
+class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
         self.device = self.fuchsia_devices[0]

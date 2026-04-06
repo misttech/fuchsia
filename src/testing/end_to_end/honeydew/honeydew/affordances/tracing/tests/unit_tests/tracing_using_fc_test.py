@@ -48,13 +48,13 @@ def _initialize_tracing_fake(
     fc.Socket(output).close()
 
 
-class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
+class TracingFCTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for honeydew.affordances.fuchsia_controller.tracing.py."""
 
     async def asyncSetUp(self) -> None:
         super().setUp()
         self.reboot_affordance_obj = mock.MagicMock(
-            spec=affordances_capable.AsyncRebootCapableDevice
+            spec=affordances_capable.RebootCapableDevice
         )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
@@ -99,7 +99,7 @@ class AsyncTracingFCTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        self.tracing_obj = tracing_using_fc.AsyncTracingUsingFc(
+        self.tracing_obj = tracing_using_fc.TracingUsingFc(
             device_name="fuchsia-emulator",
             fuchsia_controller=self.fc_transport_obj,
             reboot_affordance=self.reboot_affordance_obj,

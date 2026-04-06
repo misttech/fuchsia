@@ -86,8 +86,8 @@ class _RegExPatterns:
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class AsyncSystemPowerStateControllerUsingStarnix(
-    system_power_state_controller_interface.AsyncSystemPowerStateController
+class SystemPowerStateControllerUsingStarnix(
+    system_power_state_controller_interface.SystemPowerStateController
 ):
     """Async SystemPowerStateController affordance implementation using sysfs.
 
@@ -106,13 +106,13 @@ class AsyncSystemPowerStateControllerUsingStarnix(
         self,
         device_name: str,
         ffx: ffx_transport.FFX,
-        device_logger: affordances_capable.AsyncFuchsiaDeviceLogger,
+        device_logger: affordances_capable.FuchsiaDeviceLogger,
         inspect: affordances_capable.InspectCapableDevice,
-        starnix_affordance: starnix.AsyncStarnix,
+        starnix_affordance: starnix.Starnix,
     ) -> None:
         self._device_name: str = device_name
         self._ffx: ffx_transport.FFX = ffx
-        self._device_logger: affordances_capable.AsyncFuchsiaDeviceLogger = (
+        self._device_logger: affordances_capable.FuchsiaDeviceLogger = (
             device_logger
         )
         self._inspect: affordances_capable.InspectCapableDevice = inspect
