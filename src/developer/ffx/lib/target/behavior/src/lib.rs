@@ -18,7 +18,7 @@ mod injection;
 
 struct DirectConnectorInner {
     context: EnvironmentContext,
-    resolution: futures::lock::Mutex<Arc<Resolution>>,
+    resolution: futures::lock::Mutex<Option<Arc<Resolution>>>,
 }
 
 #[derive(Clone)]
@@ -28,26 +28,32 @@ impl DirectConnector {
     pub fn from_resolution_for_test(resolution: Resolution) -> Self {
         DirectConnector(Arc::new(DirectConnectorInner {
             context: EnvironmentContext::default(),
-            resolution: futures::lock::Mutex::new(Arc::new(resolution)),
+            resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
         }))
     }
 
     pub async fn resolution(&self) -> anyhow::Result<Arc<Resolution>> {
         let mut resolution = self.0.resolution.lock().await;
 
-        if resolution.ensure_not_terminated(&self.0.context).await.is_ok() {
-            return Ok(Arc::clone(&*resolution));
+        if let Some(resolution) = &*resolution {
+            if resolution.ensure_not_terminated(&self.0.context).await.is_ok() {
+                return Ok(Arc::clone(resolution));
+            }
         }
 
         let new = Arc::new(Resolution::try_from_env_context(&self.0.context).await?);
-        *resolution = Arc::clone(&new);
+        *resolution = Some(Arc::clone(&new));
 
         Ok(new)
     }
 
     fn get_connection_if_already_established(&self) -> Option<Arc<ffx_target::Connection>> {
         if let Some(guard) = self.0.resolution.try_lock() {
-            guard.get_connection_if_already_established()
+            if let Some(resolution) = &*guard {
+                resolution.get_connection_if_already_established()
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -249,7 +255,10 @@ impl FhoTargetEnvironmentInner {
         err
     }
 
-    /// Explicitly create direct connection behavior.
+    /// Explicitly create direct connection behavior. Note that we don't actually
+    /// resolve a connection here -- it will only be validated when requested via
+    /// `resolution().` Among other things, this allows unit-tests to test connection
+    /// logic without requiring a target.
     pub async fn init_direct_connection_behavior(
         &self,
         context: &EnvironmentContext,
@@ -257,10 +266,9 @@ impl FhoTargetEnvironmentInner {
         let behavior = self
             .initialize_behavior_with(|| async {
                 log::info!("Initializing ConnectionBehavior::DirectConnector");
-                let resolution = Resolution::try_from_env_context(context).await?;
                 let connector = DirectConnector(Arc::new(DirectConnectorInner {
                     context: context.clone(),
-                    resolution: futures::lock::Mutex::new(Arc::new(resolution)),
+                    resolution: futures::lock::Mutex::new(None),
                 }));
                 Ok(ConnectionBehavior::DirectConnector(connector))
             })
