@@ -165,8 +165,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         # child test classes in teardown_class before calling the super() teardown
         self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
-        self.fuchsia_devices = await FuchsiaBaseTest.register_controller(
-            self,
+        self.fuchsia_devices = await self.register_controller(
             fuchsia_device_mobly_controller,
         )
 
@@ -192,8 +191,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             f"{self.log_path}/{self.current_test_info.name}"
         )
         os.mkdir(self.test_case_path)
-        await FuchsiaBaseTest._log_message_to_devices(
-            self,
+        await self._log_message_to_devices(
             message=f"Started executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
             level=custom_types.LEVEL.INFO,
@@ -219,12 +217,10 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
               "teardown_test"
             * Logs a info message onto device that test case has ended.
         """
-        await FuchsiaBaseTest._health_check_and_recover(self)
+        await self._health_check_and_recover()
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST:
-            await FuchsiaBaseTest._collect_snapshot(
-                self, directory=self.test_case_path
-            )
+            await self._collect_snapshot(directory=self.test_case_path)
 
         _LOGGER.info("Closing any active tracing sessions.")
         for device in self.fuchsia_devices:
@@ -239,8 +235,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     )
 
         _LOGGER.info("Completed closing active tracing sessions.")
-        await FuchsiaBaseTest._log_message_to_devices(
-            self,
+        await self._log_message_to_devices(
             message=f"Finished executing '{self.current_test_info.name}' "
             f"Lacewing test case...",
             level=custom_types.LEVEL.INFO,
@@ -284,8 +279,8 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
         if self.snapshot_on == SnapshotOn.TEARDOWN_CLASS:
             self._teardown_class_artifacts = f"{self.log_path}/teardown_class"
-            await FuchsiaBaseTest._collect_snapshot(
-                self, directory=self._teardown_class_artifacts
+            await self._collect_snapshot(
+                directory=self._teardown_class_artifacts
             )
         elif (
             self.snapshot_on == SnapshotOn.TEARDOWN_CLASS_ON_FAIL
@@ -294,8 +289,8 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             self._teardown_class_artifacts = (
                 f"{self.log_path}/teardown_class_on_fail"
             )
-            await FuchsiaBaseTest._collect_snapshot(
-                self, directory=self._teardown_class_artifacts
+            await self._collect_snapshot(
+                directory=self._teardown_class_artifacts
             )
 
     async def on_fail(self, record):  # type: ignore
@@ -308,9 +303,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         """
         self._any_test_failed = True
         if self.snapshot_on == SnapshotOn.TEARDOWN_TEST_ON_FAIL:
-            await FuchsiaBaseTest._collect_snapshot(
-                self, directory=self.test_case_path
-            )
+            await self._collect_snapshot(directory=self.test_case_path)
 
         for device in self.fuchsia_devices:
             if (
@@ -424,7 +417,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     fx_device.device_name,
                     err,
                 )
-                await FuchsiaBaseTest._recover_device(self, fx_device)
+                await self._recover_device(fx_device)
 
         _LOGGER.info(
             "Successfully performed health checks and/or recoveries on all the "
