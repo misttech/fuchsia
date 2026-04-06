@@ -25,6 +25,11 @@ type flags struct {
 	hasReusedBuildArtifacts        bool
 	skipPreviouslyPassedTestShards bool
 	skipPreviouslyPassedTests      bool
+	shardsJsonPath                 string
+	taskRequestsJsonPath           string
+	skippedShardsJsonPath          string
+	filteredTaskRequestsJsonPath   string
+	presubmitRetryMetadataJsonPath string
 }
 
 type PresubmitRetryMetadata struct {
@@ -36,14 +41,7 @@ type Test struct {
 	Name string `json:"name"`
 }
 
-const (
-	presubmitRetryMetadataFilePath = "presubmit_retry_metadata.json"
-	shardsFilePath                 = "shards.json"
-	taskRequestsFilePath           = "task_requests.json"
-	skippedShardsFilePath          = "skipped_shards.json"
-	filteredTaskRequestsFilePath   = "filtered_task_requests.json"
-	twoSpaces                      = "  "
-)
+const twoSpaces = "  "
 
 func parseFlags() flags {
 	var f flags
@@ -65,44 +63,74 @@ func parseFlags() flags {
 		false,
 		"Skip tests that passed in the previous run.",
 	)
+	flag.StringVar(
+		&f.shardsJsonPath,
+		"shards_json_path",
+		"shards.json",
+		"Path to the shards json file.",
+	)
+	flag.StringVar(
+		&f.taskRequestsJsonPath,
+		"task_requests_json_path",
+		"task_requests.json",
+		"Path to the task requests json file.",
+	)
+	flag.StringVar(
+		&f.skippedShardsJsonPath,
+		"skipped_shards_json_path",
+		"skipped_shards.json",
+		"Path to the skipped shards json file.",
+	)
+	flag.StringVar(
+		&f.filteredTaskRequestsJsonPath,
+		"filtered_task_requests_json_path",
+		"filtered_task_requests.json",
+		"Path to the filtered task requests json file.",
+	)
+	flag.StringVar(
+		&f.presubmitRetryMetadataJsonPath,
+		"presubmit_retry_metadata_json_path",
+		"presubmit_retry_metadata.json",
+		"Path to the presubmit retry metadata json file.",
+	)
 	flag.Parse()
 	return f
 }
 
-func readPresubmitRetryMetadata() (PresubmitRetryMetadata, error) {
+func readPresubmitRetryMetadata(presubmitRetryMetadataJsonPath string) PresubmitRetryMetadata {
 	var metadata PresubmitRetryMetadata
-	data, err := os.ReadFile(presubmitRetryMetadataFilePath)
+	data, err := os.ReadFile(presubmitRetryMetadataJsonPath)
 	if err != nil {
 		log.Fatalf("Failed to read presubmit retry metadata json file: %v", err)
 	}
 	if err := json.Unmarshal(data, &metadata); err != nil {
 		log.Fatalf("Failed to unmarshal presubmit retry metadata json: %v", err)
 	}
-	return metadata, nil
+	return metadata
 }
 
-func readShards() ([]testsharder.Shard, error) {
+func readShards(shardsJsonPath string) []testsharder.Shard {
 	var shards []testsharder.Shard
-	data, err := os.ReadFile(shardsFilePath)
+	data, err := os.ReadFile(shardsJsonPath)
 	if err != nil {
 		log.Fatalf("Failed to read shards json file: %v", err)
 	}
 	if err := json.Unmarshal(data, &shards); err != nil {
 		log.Fatalf("Failed to unmarshal shards json: %v", err)
 	}
-	return shards, nil
+	return shards
 }
 
-func readTaskRequests() ([]swarmingpb.NewTaskRequest, error) {
+func readTaskRequests(taskRequestsJsonPath string) []swarmingpb.NewTaskRequest {
 	var taskRequests []swarmingpb.NewTaskRequest
-	data, err := os.ReadFile(taskRequestsFilePath)
+	data, err := os.ReadFile(taskRequestsJsonPath)
 	if err != nil {
 		log.Fatalf("Failed to read task requests json file: %v", err)
 	}
 	if err := json.Unmarshal(data, &taskRequests); err != nil {
 		log.Fatalf("Failed to unmarshal task requests json: %v", err)
 	}
-	return taskRequests, nil
+	return taskRequests
 }
 
 func createSkippedShards(
@@ -221,18 +249,9 @@ func createFilteredTaskRequests(
 
 func main() {
 	flags := parseFlags()
-	metadata, err := readPresubmitRetryMetadata()
-	if err != nil {
-		log.Fatalf("Failed to read presubmit retry metadata: %v", err)
-	}
-	shards, err := readShards()
-	if err != nil {
-		log.Fatalf("Failed to read shards: %v", err)
-	}
-	taskRequests, err := readTaskRequests()
-	if err != nil {
-		log.Fatalf("Failed to read task requests: %v", err)
-	}
+	metadata := readPresubmitRetryMetadata(flags.presubmitRetryMetadataJsonPath)
+	shards := readShards(flags.shardsJsonPath)
+	taskRequests := readTaskRequests(flags.taskRequestsJsonPath)
 	filteredShards := createSkippedShards(shards, metadata, &flags)
 	filteredTaskRequests := createFilteredTaskRequests(taskRequests, metadata, &flags)
 	jsonData, err := json.MarshalIndent(filteredShards, "", twoSpaces)
@@ -240,7 +259,7 @@ func main() {
 		log.Fatalf("Failed to marshal filtered shards: %v", err)
 	}
 	// 0644: readable by everyone, writable by the owner
-	if err := os.WriteFile(skippedShardsFilePath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(flags.skippedShardsJsonPath, jsonData, 0644); err != nil {
 		log.Fatalf("Failed to write skipped shards: %v", err)
 	}
 	jsonData, err = json.MarshalIndent(filteredTaskRequests, "", twoSpaces)
@@ -248,7 +267,7 @@ func main() {
 		log.Fatalf("Failed to marshal filtered task requests: %v", err)
 	}
 	// 0644: readable by everyone, writable by the owner
-	if err := os.WriteFile(filteredTaskRequestsFilePath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(flags.filteredTaskRequestsJsonPath, jsonData, 0644); err != nil {
 		log.Fatalf("Failed to write filtered task requests: %v", err)
 	}
 }
