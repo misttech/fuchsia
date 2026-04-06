@@ -601,8 +601,8 @@ class Workspace:
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
         if (cartfs_fuchsia_dir / ".git").exists():
-            self._run(["git", "add", "."], cwd=cartfs_fuchsia_dir)
-            self._run(["git", "reset", "--hard"], cwd=cartfs_fuchsia_dir)
+            self._run(["git", "restore", "."], cwd=cartfs_fuchsia_dir)
+            self._run(["git", "clean", "-df"], cwd=cartfs_fuchsia_dir)
 
         # Run jiri update and fetch-packages in parallel to speed up the
         # process.
