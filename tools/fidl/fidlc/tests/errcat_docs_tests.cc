@@ -85,8 +85,8 @@ TEST(ErrcatDocsTests, RedirectsAreComplete) {
   auto redirects = ReadFile(path).value();
   for (auto def : kAllDiagnosticDefs) {
     auto id = def->FormatId();
-    auto entry = "- from: /fuchsia-src/error/" + id +
-                 "\n  to: /fuchsia-src/reference/fidl/language/errcat.md#" + id;
+    auto entry =
+        "- from: /docs/error/" + id + "\n  to: /docs/reference/fidl/language/errcat.md#" + id;
     if (def->opts.documented) {
       EXPECT_THAT(redirects, HasSubstr(entry)) << path << " is missing a redirect for " << id;
     } else {

@@ -4,5 +4,3 @@
 # to somewhere else you should create your redirects file
 # at `//docs/xyz/v1/api/_redirects.yaml`.
 redirects:
- - from: empty
-   to: empty

@@ -7,14 +7,14 @@
 
 use self::toc_checker::Toc;
 use crate::link_checker::{
-    check_external_links, do_check_link, do_in_tree_check, is_intree_link, LinkReference,
-    PUBLISHED_DOCS_HOST,
+    LinkReference, PUBLISHED_DOCS_HOST, check_external_links, do_check_link, do_in_tree_check,
+    is_intree_link,
 };
 use crate::{DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_yaml::{Mapping, Value};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
@@ -140,7 +140,7 @@ struct ProblemEntry {
 
 #[derive(Deserialize, PartialEq, Debug)]
 struct Redirects {
-    redirects: Vec<FromTo>,
+    redirects: Option<Vec<FromTo>>,
 }
 
 #[derive(Deserialize, PartialEq, Debug)]
@@ -236,7 +236,14 @@ impl DocYamlCheck for YamlChecker {
                 Some("_glossary.yaml") => check_glossary(filename, yaml_value),
                 Some("_metadata.yaml") => check_metadata(filename, yaml_value),
                 Some("_problems.yaml") => check_problems(filename, yaml_value),
-                Some("_redirects.yaml") => check_redirects(filename, yaml_value),
+                Some("_redirects.yaml") => check_redirects(
+                    &self.root_dir,
+                    &self.docs_folder,
+                    &self.project,
+                    filename,
+                    yaml_value,
+                    self.allow_fuchsia_src_links,
+                ),
                 Some("_rfcs.yaml") => check_rfcs(filename, yaml_value),
                 Some("_roadmap.yaml") => check_roadmap(filename, yaml_value),
                 Some("_supported_cpu_architecture.yaml") => {
@@ -470,11 +477,7 @@ impl DocYamlCheck for YamlChecker {
             }
         }
 
-        if errors.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(errors))
-        }
+        if errors.is_empty() { Ok(None) } else { Ok(Some(errors)) }
     }
 }
 
@@ -503,7 +506,7 @@ fn check_path(
                 doc_line.line_num,
                 doc_line.file_name.clone(),
                 &e.to_string(),
-            ))
+            ));
         }
         Ok(None) => {}
     };
@@ -653,11 +656,58 @@ fn check_problems(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckErr
     errors
 }
 
-fn check_redirects(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
+fn check_redirects(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    yaml_value: &Value,
+    allow_fuchsia_src_links: bool,
+) -> Option<Vec<DocCheckError>> {
     let result = serde_yaml::from_value::<Redirects>(yaml_value.clone());
-    //TODO(https://fxbug.dev/42064930): add valication to redirects.
     match result {
-        Ok(_) => None,
+        Ok(redirects) => {
+            let mut errors = vec![];
+            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+            for r in redirects.redirects.unwrap_or_default() {
+                // Ignore wildcards ending with "..." as they are likely supported by devsite
+                // but fail file existence checks.
+                if r.to.ends_with("...") {
+                    let parts: Vec<&str> = r.to.split("...").collect();
+                    let dir_part = parts[0].trim_end_matches('/');
+                    if !dir_part.is_empty() {
+                        let root_dir_str = root_dir.display().to_string();
+                        if let Ok(Some(in_tree_path)) =
+                            is_intree_link(project, &root_dir_str, docs_folder, dir_part)
+                        {
+                            let abs_path = root_dir.join(
+                                in_tree_path.strip_prefix("/").unwrap_or_else(|_| &in_tree_path),
+                            );
+                            if !path_helper::exists(&abs_path) || !path_helper::is_dir(&abs_path) {
+                                errors.push(DocCheckError::new_error(
+                                    doc_line.line_num,
+                                    doc_line.file_name.clone(),
+                                    &format!(
+                                        "Directory: {:?} not found for wildcard redirect.",
+                                        abs_path
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                } else if let Some(e) = check_path(
+                    &doc_line,
+                    root_dir,
+                    docs_folder,
+                    project,
+                    &r.to,
+                    allow_fuchsia_src_links,
+                ) {
+                    errors.push(e);
+                }
+            }
+            if errors.is_empty() { None } else { Some(errors) }
+        }
         Err(e) => Some(vec![DocCheckError::new_error(
             1,
             filename.to_path_buf(),
@@ -850,6 +900,52 @@ mod test {
         )?;
 
         assert_eq!(check_areas(&PathBuf::from(filename), &yaml_value), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_redirects() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let docs_folder = PathBuf::from("docs");
+        let project = "fuchsia";
+        let allow_fuchsia_src_links = false;
+        let filename = PathBuf::from("_redirects.yaml");
+
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+redirects:
+- from: /docs/old.md
+  to: /docs/are-ok.md
+- from: /docs/old2.md
+  to: /src/main.cc
+- from: /docs/old3/...
+  to: /docs/...
+- from: /docs/old4/...
+  to: /docs/nonexistent-no-extension/...
+          "#,
+        )?;
+
+        let result = check_redirects(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &yaml_value,
+            allow_fuchsia_src_links,
+        );
+
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors[0].message,
+            "Invalid path /src/main.cc. Path must be in /docs (checked: \"/src/main.cc\""
+        );
+        assert_eq!(
+            errors[1].message,
+            "Directory: \"./docs/nonexistent-no-extension\" not found for wildcard redirect."
+        );
 
         Ok(())
     }

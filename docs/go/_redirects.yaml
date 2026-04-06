@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Please, read https://fuchsia.dev/fuchsia-src/contribute/docs/documentation-navigation-toc
+# Please, read https://fuchsia.dev/docs/contribute/docs/documentation-navigation-toc
 # before making changes to this file, and add a member of the fuchsia.dev
 # team as a reviewer.
 # Using ? or * is not supported in the redirect links.
@@ -22,13 +22,13 @@ redirects:
 - from: /docs/go/components/connect-errors
   to: /docs/development/components/connect.md#troubleshooting
 - from: /docs/go/components/instance-id
-  to: /docs/development/components/component_id_index
+  to: /docs/development/components/component_id_index.md
 - from: /docs/go/components/run
   to: /docs/development/components/run.md
 - from: /docs/go/components/run-errors
   to: /docs/development/components/run.md#troubleshooting
 - from: /docs/go/components/runners
-  to: /docs/concepts/components/v2/capabilities/runners
+  to: /docs/concepts/components/v2/capabilities/runner.md
 - from: /docs/go/components/restricted-features
   to: /docs/development/components/build.md#restricted-features
 - from: /docs/go/components/test-errors
@@ -38,9 +38,9 @@ redirects:
 - from: /docs/go/components/non-hermetic-tests
   to: /docs/development/testing/components/test_runner_framework.md##non-hermetic_tests
 - from: /docs/go/components/url
-  to: /docs/reference/components/url
+  to: /docs/reference/components/url.md
 - from: /docs/go/components/structured-config
-  to: /docs/development/components/structured_config
+  to: /docs/development/components/configuration/structured_config.md
 - from: /docs/go/components/static-analysis-errors
   to: /docs/development/components/build.md#troubleshoot-build-analyzer
 - from: /docs/go/components/declaration
@@ -64,8 +64,8 @@ redirects:
   to: https://fuchsia-docs.firebaseapp.com/rust/...
 
 # Hardware links
-- from: /fuchsia-src/go/intree-drivers
-  to: /fuchsia-src/reference/hardware/drivers
+- from: /docs/go/intree-drivers
+  to: /docs/reference/hardware/drivers.md
 
 # Starnix
 - from: /docs/go/troubleshoot-adb-connect
