@@ -8,7 +8,9 @@ load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
 
 idk_cc_source_library_zx(
     name = "zx",
-    srcs = select({
+    srcs = [
+        "status_string.cc",
+    ] + select({
         "@platforms//os:fuchsia": [
             # TODO(https://fxbug.dev/456186319): When adding support for building
             # the kernel, only include the following when `!is_kernel`.
@@ -31,7 +33,6 @@ idk_cc_source_library_zx(
             "profile.cc",
             "resource.cc",
             "socket.cc",
-            "status_string.cc",
             "stream.cc",
             "thread.cc",
             "time.cc",

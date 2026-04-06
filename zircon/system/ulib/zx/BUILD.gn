@@ -82,7 +82,6 @@ zx_library("zx") {
       "profile.cc",
       "resource.cc",
       "socket.cc",
-      "status_string.cc",
       "stream.cc",
       "thread.cc",
       "time.cc",
@@ -91,6 +90,10 @@ zx_library("zx") {
       "vmar.cc",
       "vmo.cc",
     ]
+  }
+
+  if (!is_kernel) {
+    sources += [ "status_string.cc" ]
   }
 }
 # LINT.ThenChange(BUILD.bazel)

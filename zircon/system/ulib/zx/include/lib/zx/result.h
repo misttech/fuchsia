@@ -125,10 +125,8 @@ class [[nodiscard]] result<T> : public ::fit::result<zx_status_t, T> {
     return this->is_error() ? base::error_value() : ZX_OK;
   }
 
-#if defined(__Fuchsia__)
   // Returns the string representation of the status value.
   const char* status_string() const;
-#endif  // defined(__Fuchsia__)
 };
 
 // Specialization of status for empty value type.
@@ -164,10 +162,8 @@ class [[nodiscard]] result<> : public ::fit::result<zx_status_t> {
     return this->is_error() ? base::error_value() : ZX_OK;
   }
 
-#if defined(__Fuchsia__)
   // Returns the string representation of the status value.
   const char* status_string() const;
-#endif  // defined(__Fuchsia__)
 };
 
 // Simplified alias of zx::error<zx_status_t>.
@@ -245,17 +241,15 @@ constexpr result<std::remove_reference_t<T>> make_result(zx_status_t status, T&&
   return error_result{status};
 }
 
-#if defined(__Fuchsia__)
 template <typename T>
 const char* result<T>::status_string() const {
   return make_result(status_value()).status_string();
 }
-#endif  // defined(__Fuchsia__)
 
 }  // namespace zx
 
 // Support for std::format
-#if defined(__cpp_lib_format) && __cplusplus >= 202002L && defined(__Fuchsia__)
+#if defined(__cpp_lib_format) && __cplusplus >= 202002L
 #include <format>
 
 template <>
