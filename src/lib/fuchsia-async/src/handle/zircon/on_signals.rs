@@ -271,8 +271,7 @@ mod test {
     use assert_matches::assert_matches;
     use futures::future::{FutureExt, pending};
     use std::pin::pin;
-    use std::sync::Arc;
-    use std::task::{Wake, Waker};
+    use std::task::Waker;
 
     #[test]
     fn wait_for_event() -> Result<(), zx::Status> {
@@ -330,15 +329,10 @@ mod test {
 
         tx.write(b"hello", &mut []).expect("write failed");
 
-        struct TestWaker;
-        impl Wake for TestWaker {
-            fn wake(self: Arc<Self>) {}
-        }
-
         // Poll the future directly which guarantees the port notification for the write hasn't
         // arrived.
         assert_matches!(
-            fut.poll(&mut Context::from_waker(&Waker::from(Arc::new(TestWaker)))),
+            fut.poll(&mut Context::from_waker(Waker::noop())),
             Poll::Ready(Ok(signals)) if signals.contains(zx::Signals::CHANNEL_READABLE)
         );
     }

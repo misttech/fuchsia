@@ -207,8 +207,7 @@ mod tests {
     use std::future::poll_fn;
     use std::mem;
     use std::pin::pin;
-    use std::sync::Arc;
-    use std::task::{Wake, Waker};
+    use std::task::Waker;
 
     #[test]
     fn can_receive() {
@@ -307,16 +306,8 @@ mod tests {
 
         tx.write(b"hello", &mut []).expect("write failed");
 
-        struct TestWaker;
-        impl Wake for TestWaker {
-            fn wake(self: Arc<Self>) {}
-        }
-
         // Poll the future directly which guarantees the port notification for the write hasn't
         // arrived.
-        assert_eq!(
-            fut.poll(&mut Context::from_waker(&Waker::from(Arc::new(TestWaker)))),
-            Poll::Ready(Ok(()))
-        );
+        assert_eq!(fut.poll(&mut Context::from_waker(Waker::noop())), Poll::Ready(Ok(())));
     }
 }
