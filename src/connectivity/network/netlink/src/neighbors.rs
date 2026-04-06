@@ -191,7 +191,7 @@ impl GetNeighborArgs {
             log_warn!("unsupported Proxy flag in dump neighbors request");
             return Err(RequestError::UnsupportedFlags(*flags));
         }
-        // TODO(https://fxbug.dev/456508664): Support strict validation of dump
+        // TODO(https://fxbug.dev/500013355): Support strict validation of dump
         // requests.
         let ip_version = match family {
             AddressFamily::Unspec => None,
