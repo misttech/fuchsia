@@ -406,49 +406,6 @@ class FakeNetworkDeviceImpl
   PrepareVmoHandler prepare_vmo_handler_;
 };
 
-class FakeNetworkDeviceIfc : public fdf::WireServer<netdriver::NetworkDeviceIfc> {
- public:
-  FakeNetworkDeviceIfc() = default;
-  zx::result<fdf::ClientEnd<netdriver::NetworkDeviceIfc>> Bind(fdf::Dispatcher* dispatcher);
-
-  // NetworkDeviceIfc implementation.
-  void PortStatusChanged(netdriver::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
-                         fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) override;
-  void AddPort(netdriver::wire::NetworkDeviceIfcAddPortRequest* request, fdf::Arena& arena,
-               AddPortCompleter::Sync& completer) override;
-  void RemovePort(netdriver::wire::NetworkDeviceIfcRemovePortRequest* request, fdf::Arena& arena,
-                  RemovePortCompleter::Sync& completer) override;
-  void CompleteRx(netdriver::wire::NetworkDeviceIfcCompleteRxRequest* request, fdf::Arena& arena,
-                  CompleteRxCompleter::Sync& completer) override;
-  void CompleteTx(netdriver::wire::NetworkDeviceIfcCompleteTxRequest* request, fdf::Arena& arena,
-                  CompleteTxCompleter::Sync& completer) override;
-  void DelegateRxLease(netdriver::wire::NetworkDeviceIfcDelegateRxLeaseRequest* request,
-                       fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override;
-
-  // If assigned, these functions are called when the corresponding FIDL call is served.
-  fit::function<void(netdriver::wire::NetworkDeviceIfcPortStatusChangedRequest*, fdf::Arena&,
-                     PortStatusChangedCompleter::Sync&)>
-      port_status_changed_;
-  fit::function<void(netdriver::wire::NetworkDeviceIfcAddPortRequest*, fdf::Arena&,
-                     AddPortCompleter::Sync&)>
-      add_port_;
-  fit::function<void(netdriver::wire::NetworkDeviceIfcRemovePortRequest*, fdf::Arena&,
-                     RemovePortCompleter::Sync&)>
-      remove_port_;
-  fit::function<void(netdriver::wire::NetworkDeviceIfcCompleteRxRequest*, fdf::Arena&,
-                     CompleteRxCompleter::Sync&)>
-      complete_rx_;
-  fit::function<void(netdriver::wire::NetworkDeviceIfcCompleteTxRequest*, fdf::Arena&,
-                     CompleteTxCompleter::Sync&)>
-      complete_tx_;
-  fit::function<void(netdriver::wire::NetworkDeviceIfcDelegateRxLeaseRequest*, fdf::Arena&,
-                     DelegateRxLeaseCompleter::Sync&)>
-      delegate_rx_lease_;
-
- private:
-  DISALLOW_COPY_ASSIGN_AND_MOVE(FakeNetworkDeviceIfc);
-};
-
 class RxFidlReturnTransaction {
  public:
   explicit RxFidlReturnTransaction(FakeNetworkDeviceImpl* impl)

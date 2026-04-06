@@ -520,62 +520,6 @@ zx::result<std::unique_ptr<NetworkDeviceInterface>> FakeNetworkDeviceImpl::Creat
   return zx::ok(std::move(value));
 }
 
-zx::result<fdf::ClientEnd<netdriver::NetworkDeviceIfc>> FakeNetworkDeviceIfc::Bind(
-    fdf::Dispatcher* dispatcher) {
-  auto endpoints = fdf::CreateEndpoints<netdriver::NetworkDeviceIfc>();
-  if (endpoints.is_error()) {
-    return endpoints.take_error();
-  }
-
-  fdf::BindServer(dispatcher->get(), std::move(endpoints->server), this);
-
-  return zx::ok(std::move(endpoints->client));
-}
-
-void FakeNetworkDeviceIfc::PortStatusChanged(
-    netdriver::wire::NetworkDeviceIfcPortStatusChangedRequest* request, fdf::Arena& arena,
-    PortStatusChangedCompleter::Sync& completer) {
-  if (port_status_changed_) {
-    port_status_changed_(request, arena, completer);
-  }
-}
-
-void FakeNetworkDeviceIfc::AddPort(netdriver::wire::NetworkDeviceIfcAddPortRequest* request,
-                                   fdf::Arena& arena, AddPortCompleter::Sync& completer) {
-  if (add_port_) {
-    add_port_(request, arena, completer);
-  }
-}
-
-void FakeNetworkDeviceIfc::RemovePort(netdriver::wire::NetworkDeviceIfcRemovePortRequest* request,
-                                      fdf::Arena& arena, RemovePortCompleter::Sync& completer) {
-  if (remove_port_) {
-    remove_port_(request, arena, completer);
-  }
-}
-
-void FakeNetworkDeviceIfc::CompleteRx(netdriver::wire::NetworkDeviceIfcCompleteRxRequest* request,
-                                      fdf::Arena& arena, CompleteRxCompleter::Sync& completer) {
-  if (complete_rx_) {
-    complete_rx_(request, arena, completer);
-  }
-}
-
-void FakeNetworkDeviceIfc::CompleteTx(netdriver::wire::NetworkDeviceIfcCompleteTxRequest* request,
-                                      fdf::Arena& arena, CompleteTxCompleter::Sync& completer) {
-  if (complete_tx_) {
-    complete_tx_(request, arena, completer);
-  }
-}
-
-void FakeNetworkDeviceIfc::DelegateRxLease(
-    netdriver::wire::NetworkDeviceIfcDelegateRxLeaseRequest* request, fdf::Arena& arena,
-    DelegateRxLeaseCompleter::Sync& completer) {
-  if (delegate_rx_lease_) {
-    delegate_rx_lease_(request, arena, completer);
-  }
-}
-
 const char* LeaseHandleTypeToString(LeaseHandleType type) {
   switch (type) {
     case LeaseHandleType::kChannel:
