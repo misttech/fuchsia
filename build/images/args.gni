@@ -34,11 +34,6 @@ declare_args() {
   # epoch increased.
   update_product_epoch = 0
 
-  # GUID Partition Table (GPT) image.
-  #
-  # Typically useful for initially flashing a device from zero-state.
-  gpt_image = ""
-
   # The netboot zbi has been deprecated.  This GN arg is now used to generate a warning.
   enable_netboot = false
 

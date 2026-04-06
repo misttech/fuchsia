@@ -107,29 +107,6 @@ group("record_filesystem_sizes") {
   }
 }
 
-# If a GPT image was specified, make it available as a build artifact.
-if (gpt_image != "") {
-  copy("gpt") {
-    testonly = true
-    sources = [ rebase_path(gpt_image, root_build_dir) ]
-    outputs = [ "$root_out_dir/gpt.bin" ]
-
-    metadata = {
-      images = [
-        {
-          label = get_label_info(":gpt", "label_with_toolchain")
-          archive = true
-          name = "gpt"
-          path = "gpt.bin"
-          type = "bin"
-        },
-      ]
-    }
-  }
-
-  default_image_deps += [ ":gpt" ]
-}
-
 # Build the UEFI disk image.
 # GCE, a consumer of this image, requires it to be named disk.raw
 if (build_uefi_disk && !product_skip_uefi_disk) {
