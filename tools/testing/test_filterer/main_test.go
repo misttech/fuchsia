@@ -87,6 +87,25 @@ func TestCreateSkippedShards(t *testing.T) {
 			expectErr:       false,
 		},
 		{
+			name: "shards with tefmocheck failures are not skipped",
+			shards: []testsharder.Shard{
+				{Name: "shard1", Skippable: false},
+				{Name: "shard2", Skippable: false},
+				{Name: "shard3", Skippable: true},
+			},
+			metadata: PresubmitRetryMetadata{
+				ShardToFailedTestsMap:        map[string][]string{"shard1": {"test1"}},
+				ShardsWithTefmocheckFailures: []string{"shard2"},
+			},
+			flags: flags{
+				hasReusedBuildArtifacts:        true,
+				skipPreviouslyPassedTestShards: true,
+				skipPreviouslyPassedTests:      true,
+			},
+			expectedResults: []testsharder.Shard{{Name: "shard3", Skippable: true}},
+			expectErr:       false,
+		},
+		{
 			name:   "empty shards",
 			shards: []testsharder.Shard{},
 			metadata: PresubmitRetryMetadata{
@@ -206,9 +225,15 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 		{
 			name: "build not skipping building fuchsia on a presubmit retry",
 			taskRequests: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			metadata: PresubmitRetryMetadata{
 				ShardToFailedTestsMap: map[string][]string{
@@ -223,18 +248,30 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 				skipPreviouslyPassedTests:      true,
 			},
 			expectedResults: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			expectErr: false,
 		},
 		{
 			name: "build not skipping test shards on a presubmit retry",
 			taskRequests: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			metadata: PresubmitRetryMetadata{
 				ShardToFailedTestsMap: map[string][]string{
@@ -249,18 +286,30 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 				skipPreviouslyPassedTests:      true,
 			},
 			expectedResults: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			expectErr: false,
 		},
 		{
 			name: "shard to failed tests map is empty",
 			taskRequests: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			metadata: PresubmitRetryMetadata{
 				ShardToFailedTestsMap:        map[string][]string{},
@@ -272,9 +321,58 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 				skipPreviouslyPassedTests:      true,
 			},
 			expectedResults: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+			},
+			expectErr: false,
+		},
+		{
+			name: "tasks with tefmocheck failures are not skipped",
+			taskRequests: []swarmingpb.NewTaskRequest{
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard4|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+			},
+			metadata: PresubmitRetryMetadata{
+				ShardToFailedTestsMap:        map[string][]string{"shard1": {"test1"}, "shard3": {"test2"}},
+				ShardsWithTefmocheckFailures: []string{"shard2", "shard3"},
+			},
+			flags: flags{
+				hasReusedBuildArtifacts:        true,
+				skipPreviouslyPassedTestShards: true,
+				skipPreviouslyPassedTests:      true,
+			},
+			expectedResults: []swarmingpb.NewTaskRequest{
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{
+					{Properties: &swarmingpb.TaskProperties{
+						Env: []*swarmingpb.StringPair{
+							{Key: "TEST_ALLOWLIST_LENGTH", Value: "1"},
+							{Key: "TEST_ALLOWLIST_INDEX_0", Value: "test1"},
+						},
+					}},
+				}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			expectErr: false,
 		},
@@ -299,9 +397,15 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 		{
 			name: "skip task requests that are not in the shard to failed test map and skippable shards",
 			taskRequests: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder"},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			metadata: PresubmitRetryMetadata{
 				ShardToFailedTestsMap:        map[string][]string{"shard1": {"test1"}},
@@ -312,16 +416,27 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 				skipPreviouslyPassedTestShards: true,
 				skipPreviouslyPassedTests:      false,
 			},
-			expectedResults: []swarmingpb.NewTaskRequest{{Name: "shard1|builder"}},
-			expectErr:       false,
+			expectedResults: []swarmingpb.NewTaskRequest{
+				{
+					Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+						Properties: &swarmingpb.TaskProperties{},
+					}},
+				},
+			},
+			expectErr: false,
 		},
 		{
 			name: "only run previously failed tests",
 			taskRequests: []swarmingpb.NewTaskRequest{
-				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{
-					{Properties: &swarmingpb.TaskProperties{}}}},
-				{Name: "shard2|builder"},
-				{Name: "shard3|builder"},
+				{Name: "shard1|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard2|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
+				{Name: "shard3|builder", TaskSlices: []*swarmingpb.TaskSlice{{
+					Properties: &swarmingpb.TaskProperties{},
+				}}},
 			},
 			metadata: PresubmitRetryMetadata{
 				ShardToFailedTestsMap:        map[string][]string{"shard1": {"test1"}},

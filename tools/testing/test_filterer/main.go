@@ -113,7 +113,15 @@ func createSkippedShards(
 	checkShardToFailedTestsMap := flags.hasReusedBuildArtifacts && flags.skipPreviouslyPassedTestShards
 	// only include shards that are skippable or are included in the shard_to_failed_tests_map
 	skippedShards := []testsharder.Shard{} // do not return a nil slice; this will be marshalled to json
+	tefmocheckFailureSet := make(map[string]struct{})
+	for _, shardName := range metadata.ShardsWithTefmocheckFailures {
+		tefmocheckFailureSet[shardName] = struct{}{}
+	}
 	for _, shard := range shards {
+		_, hasTefmocheckFailure := tefmocheckFailureSet[shard.Name]
+		if hasTefmocheckFailure {
+			continue
+		}
 		failedTests, ok := metadata.ShardToFailedTestsMap[shard.Name]
 		shardHasFailedTests := ok && len(failedTests) > 0
 		shouldSkipPassedShards :=
@@ -164,15 +172,25 @@ func createFilteredTaskRequests(
 		len(metadata.ShardToFailedTestsMap) == 0 {
 		return taskRequests
 	}
+	tefmocheckFailureSet := make(map[string]struct{})
+	for _, shardName := range metadata.ShardsWithTefmocheckFailures {
+		tefmocheckFailureSet[shardName] = struct{}{}
+	}
 	// only include task requests for shards that are present in the shard_to_failed_tests_map
 	filteredTaskRequests := []swarmingpb.NewTaskRequest{} // do not return a nil slice; this will be marshalled to json
 	for _, taskRequest := range taskRequests {
-		if _, ok := metadata.ShardToFailedTestsMap[getShardNameFromTaskRequest(taskRequest)]; ok {
+		_, isFailedShard := metadata.ShardToFailedTestsMap[getShardNameFromTaskRequest(taskRequest)]
+		_, hasTefmocheckFailure := tefmocheckFailureSet[getShardNameFromTaskRequest(taskRequest)]
+		if isFailedShard || hasTefmocheckFailure {
 			filteredTaskRequests = append(filteredTaskRequests, taskRequest)
 		}
 	}
 	if flags.skipPreviouslyPassedTests {
 		for i, taskRequest := range filteredTaskRequests {
+			_, hasTefmocheckFailure := tefmocheckFailureSet[getShardNameFromTaskRequest(taskRequest)]
+			if hasTefmocheckFailure {
+				continue
+			}
 			if failedTests, _ :=
 				metadata.ShardToFailedTestsMap[getShardNameFromTaskRequest(taskRequest)]; len(failedTests) > 0 {
 				for j, slice := range taskRequest.TaskSlices {
