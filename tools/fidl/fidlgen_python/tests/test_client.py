@@ -16,16 +16,16 @@ class MockWaker(HandleWaker):
     def __init__(self) -> None:
         self.queues: Dict[int, asyncio.Queue[int]] = {}
 
-    def register(self, h: Any, *, name: str) -> None:
+    def _register(self, h: Any, *, name: str) -> None:
         h_id = h.as_int()
         if h_id not in self.queues:
             self.queues[h_id] = asyncio.Queue()
 
-    def unregister(self, h: Any) -> None:
+    def _unregister(self, h: Any) -> None:
         pass
 
     def registration(self, h: Any, *, name: str) -> Any:
-        self.register(h, name=name)
+        self._register(h, name=name)
         return MagicMock(__enter__=lambda s: s, __exit__=lambda s, *a: None)
 
     def post_ready(self, h: Any) -> None:

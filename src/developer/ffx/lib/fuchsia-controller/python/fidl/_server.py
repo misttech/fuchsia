@@ -6,7 +6,7 @@ import inspect
 import logging
 from abc import abstractmethod
 from inspect import getframeinfo, stack
-from typing import Any, Coroutine, cast
+from typing import Any, cast
 
 import fuchsia_controller_py as fc
 from fidl_codec import decode_fidl_request, encode_fidl_message
@@ -74,41 +74,21 @@ class ServerBase(
             f"{self} instantiated from {caller.filename}:{caller.lineno}"
         )
 
-    def __del__(self) -> None:
-        _LOGGER.debug(f"{self} closing")
-        if self._channel is not None:
-            self._channel_waker.unregister(self._channel)
-            self._channel = None
-
-    def close(
-        self,
-    ) -> Coroutine[Any, Any, DomainError | None] | DomainError | None:
-        self.__del__()
-        return None
-
-    def serve(self) -> Coroutine[Any, Any, Any]:
+    async def serve(self) -> None:
         if self._channel is None:
             raise ValueError("Channel is already closed")
-        self._channel_waker.register(self._channel, name=str(self))
 
-        async def _serve() -> None:
-            if self._channel is None:
-                raise ValueError("Channel is already closed")
-            self._channel_waker.register(self._channel, name=str(self))
-            while await self.handle_next_request():
-                pass
-
-        return _serve()
-
-    async def handle_next_request(self) -> bool:
         try:
-            # TODO(b/299946378): Handle case where ordinal is unknown.
-            return await self._handle_request_helper()
-        except StopServer:
-            if self._channel is not None:
-                self._channel.close()
-            return False
-        except Exception as e:
+            with self._channel_waker.registration(
+                self._channel, name=str(self)
+            ):
+                while await self.handle_next_request():
+                    pass
+        finally:
+            # As long as we don't do something silly like catch a
+            # `GeneratorExit` exception or a `CancelledError` in the above
+            # code we should always execute this `finally` block.
+            _LOGGER.debug(f"{self} completed serving. Closing channel")
             # Explicitly close the channel instead of deferring closure to the
             # garbage collector to close it. The garbage collector may never
             # close the channel since removing the last reference to an object
@@ -120,9 +100,13 @@ class ServerBase(
             # order to make progress.
             if self._channel is not None:
                 self._channel.close()
-            self._channel = None
-            _LOGGER.debug(f"{self} request handling error: {e}")
-            raise e
+
+    async def handle_next_request(self) -> bool:
+        try:
+            # TODO(b/299946378): Handle case where ordinal is unknown.
+            return await self._handle_request_helper()
+        except StopServer:
+            return False
 
     async def _handle_request_helper(self) -> bool:
         # TODO(b/303532690): When attempting to decode a method that is
@@ -213,7 +197,6 @@ class ServerBase(
                     _LOGGER.debug(f"{self} channel spurious wakeup")
                     await self._channel_waker.wait_ready(self._channel)
                     continue
-                self._channel_waker.unregister(self._channel)
                 _LOGGER.warning(f"{self} channel received error: {e}")
                 raise e
 

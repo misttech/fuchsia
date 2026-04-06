@@ -50,7 +50,7 @@ class HandleRegistration:
         self.name = name
 
     def __enter__(self) -> Self:
-        self.waker.register(self.handle, name=self.name)
+        self.waker._register(self.handle, name=self.name)
         return self
 
     def __exit__(
@@ -59,18 +59,18 @@ class HandleRegistration:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        self.waker.unregister(self.handle)
+        self.waker._unregister(self.handle)
 
 
 class HandleWaker(ABC):
     """Base class for a waker used with potentially blocking handles."""
 
     @abstractmethod
-    def register(self, channel: fc.BaseHandle, *, name: str) -> None:
+    def _register(self, channel: fc.BaseHandle, *, name: str) -> None:
         """Registers a handle to receive wake notifications."""
 
     @abstractmethod
-    def unregister(self, channel: fc.BaseHandle) -> None:
+    def _unregister(self, channel: fc.BaseHandle) -> None:
         """Unregisters a handle, meaning it is not possible to wait for it to be ready."""
 
     def registration(
@@ -99,7 +99,7 @@ class GlobalHandleWaker(HandleWaker):
         self._handle_ready_queues = HANDLE_READY_QUEUES
         self._handle_refcounts = HANDLE_REFCOUNTS
 
-    def register(self, h: fc.BaseHandle, *, name: str) -> None:
+    def _register(self, h: fc.BaseHandle, *, name: str) -> None:
         h_id = h.as_int()
         if h_id not in self._handle_ready_queues:
             self._handle_ready_queues[h_id] = asyncio.Queue()
@@ -127,7 +127,7 @@ class GlobalHandleWaker(HandleWaker):
                 logger.debug(f"-- {line}")
             logger.debug("[[ TRACE END ]]")
 
-    def unregister(self, h: fc.BaseHandle) -> None:
+    def _unregister(self, h: fc.BaseHandle) -> None:
         h_id = h.as_int()
         if h_id in self._handle_ready_queues:
             self._handle_refcounts[h_id] -= 1

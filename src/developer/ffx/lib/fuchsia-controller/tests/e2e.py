@@ -173,4 +173,3 @@ class EndToEnd(unittest.IsolatedAsyncioTestCase):
         res4 = await client.return_socket_or_error()
         self.assertEqual(res4.err, FcTransportStatus.FC_ERR_NOT_SUPPORTED)
         server_task.cancel()
-        server.close()
