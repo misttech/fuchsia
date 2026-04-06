@@ -198,5 +198,9 @@
             dictionary: "diagnostics",
             from: "self",
         },
+        {
+            service: [ "fuchsia.hardware.usb.policy.Service" ],
+            from: "#boot-drivers",
+        },
     ],
 }

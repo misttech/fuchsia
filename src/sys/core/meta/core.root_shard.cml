@@ -389,6 +389,7 @@
                 "fuchsia.hardware.trippoint.Service",
                 "fuchsia.hardware.usb.device.Service",
                 "fuchsia.hardware.usb.peripheral.Service",
+                "fuchsia.hardware.usb.policy.Service",
                 "fuchsia.hardware.usb.tester.Service",
                 "fuchsia.hardware.usb.virtualbustest.Service",
                 "fuchsia.input.report.Service",

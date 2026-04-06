@@ -25,6 +25,10 @@ group("drivers") {
   }
 }
 
+group("packages") {
+  deps = [ "usb-policy" ]
+}
+
 group("tests") {
   testonly = true
 

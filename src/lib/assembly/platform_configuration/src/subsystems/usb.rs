@@ -37,6 +37,11 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
             builder.platform_bundle("usb_host_drivers")?;
         }
         if context.board_config.provides_feature(BoardFeature::UsbPeripheralSupport) {
+            if usb.enable_policy
+                && matches!(context.build_type, BuildType::UserDebug | BuildType::Eng)
+            {
+                builder.platform_bundle("usb_policy")?;
+            }
             for function in usb.peripheral.functions() {
                 match (function, context.feature_set_level, context.build_type) {
                     (UsbPeripheralFunction::Adb, _, _) => {

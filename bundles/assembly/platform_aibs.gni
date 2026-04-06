@@ -349,6 +349,7 @@ platform_aib_names =
 
       # USB
       "usb_peripheral_drivers_base",
+      "usb_policy",
 
       # Recovery
       "factory_reset",

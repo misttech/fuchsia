@@ -355,6 +355,21 @@ assembly_input_bundle("usb_cdc_function_base") {
   ]
 }
 
+assembly_input_bundle("usb_policy") {
+  experimental = true
+  allowed_in = [
+    "standard::eng",
+    "standard::userdebug",
+    "utility::eng",
+    "utility::userdebug",
+  ]
+
+  base_packages = [ "//src/devices/usb/usb-policy" ]
+
+  core_shards =
+      [ "//src/devices/usb/usb-policy/meta/usb-policy.core_shard.cml" ]
+}
+
 assembly_input_bundle("network_drivers_boot") {
   allowed_in = [
     "userdebug",
