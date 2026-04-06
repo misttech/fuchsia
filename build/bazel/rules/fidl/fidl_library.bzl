@@ -274,7 +274,7 @@ def _fidl_library_impl(
     # IMPORTANT: The name of this target must be the the same as the name that
     # will be used in the `deps` of other FIDL libraries for reasons described
     # in `fidl_ir()`.
-    fidl_ir_target_name = name  # "%s_compile" % name
+    fidl_ir_target_name = name
 
     fidlc_versioned_arg, requires_compatibility_tests = _get_fidlc_versioned_arg(
         library_name = library_name,
