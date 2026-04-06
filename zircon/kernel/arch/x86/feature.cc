@@ -631,7 +631,7 @@ static void cf9_reboot_reason(uint64_t reason) {
   // discarded reads acting as a small delay on the bus
   (void)inp(0xcf9);
   (void)inp(0xcf9);
-  outp(0xcf9, 0x04);
+  outp(0xcf9, 0x06);
 }
 
 // Intel microarches
