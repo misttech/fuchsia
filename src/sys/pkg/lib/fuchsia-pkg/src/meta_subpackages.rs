@@ -105,7 +105,6 @@ mod tests {
     use super::*;
     use crate::test::*;
     use fuchsia_url::test::random_relative_package_url;
-    use maplit::hashmap;
     use proptest::prelude::*;
     use serde_json::json;
 
@@ -127,10 +126,10 @@ mod tests {
                 }
             }"#.as_bytes();
         let meta_subpackages = MetaSubpackages::deserialize(bytes).unwrap();
-        let expected_subpackages = hashmap! {
-            RelativePackageUrl::parse("a_0_subpackage").unwrap() => zeros_hash(),
-            RelativePackageUrl::parse("other-1-subpackage").unwrap() => ones_hash(),
-        };
+        let expected_subpackages = HashMap::from([
+            (RelativePackageUrl::parse("a_0_subpackage").unwrap(), zeros_hash()),
+            (RelativePackageUrl::parse("other-1-subpackage").unwrap(), ones_hash()),
+        ]);
         assert_eq!(meta_subpackages.subpackages(), &expected_subpackages);
         assert_eq!(meta_subpackages.into_subpackages(), expected_subpackages);
     }
@@ -149,10 +148,10 @@ mod tests {
             ref hex1 in random_hash())
         {
             prop_assume!(path0 != path1);
-            let map = hashmap! {
-                path0.clone() => *hex0,
-                path1.clone() => *hex1,
-            };
+            let map = HashMap::from([
+                (path0.clone(), *hex0),
+                (path1.clone(), *hex1),
+            ]);
             let meta_subpackages = MetaSubpackages::from_iter(map);
 
             prop_assert_eq!(

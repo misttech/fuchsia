@@ -37,14 +37,14 @@ impl PackageBuildManifest {
     ///
     /// ```
     /// # use fuchsia_pkg::PackageBuildManifest;
-    /// # use maplit::btreemap;
-    /// let external_contents = btreemap! {
-    ///     "lib/mylib.so".to_string() => "build/system/path/mylib.so".to_string()
-    /// };
-    /// let far_contents = btreemap! {
-    ///     "meta/my_component_manifest.cm".to_string() =>
-    ///         "other/build/system/path/my_component_manifest.cm".to_string()
-    /// };
+    /// # use std::collections::BTreeMap;
+    /// let external_contents = BTreeMap::from([
+    ///     ("lib/mylib.so".to_string(), "build/system/path/mylib.so".to_string()),
+    /// ]);
+    /// let far_contents = BTreeMap::from([
+    ///     ("meta/my_component_manifest.cm".to_string(),
+    ///         "other/build/system/path/my_component_manifest.cm".to_string()),
+    /// ]);
     /// let creation_manifest =
     ///     PackageBuildManifest::from_external_and_far_contents(external_contents, far_contents)
     ///         .unwrap();
@@ -339,7 +339,6 @@ mod tests {
     use super::*;
     use crate::test::*;
     use assert_matches::assert_matches;
-    use maplit::btreemap;
     use proptest::prelude::*;
     use serde_json::json;
     use std::fs::create_dir;
@@ -431,10 +430,10 @@ mod tests {
             ("foo/bar", "foo/bar/baz", "foo/bar"),
             ("foo", "foo/bar/baz", "foo"),
         ] {
-            let external = btreemap! {
-                path0.to_string() => String::new(),
-                path1.to_string() => String::new(),
-            };
+            let external = BTreeMap::from([
+                (path0.to_string(), String::new()),
+                (path1.to_string(), String::new()),
+            ]);
             assert_matches!(
                 PackageBuildManifest::from_external_and_far_contents(external, BTreeMap::new()),
                 Err(PackageBuildManifestError::FileDirectoryCollision { path })
@@ -460,14 +459,14 @@ mod tests {
             ))
             .unwrap(),
             PackageBuildManifest(VersionedPackageBuildManifest::Version1(PackageBuildManifestV1 {
-                external_contents: btreemap! {
-                    "this-path".to_string() => "this-host-path".to_string(),
-                    "that/path".to_string() => "that/host/path".to_string()
-                },
-                far_contents: btreemap! {
-                    "meta/some-path".to_string() => "some-host-path".to_string(),
-                    "meta/other/path".to_string() => "other/host/path".to_string()
-                }
+                external_contents: BTreeMap::from([
+                    ("this-path".to_string(), "this-host-path".to_string()),
+                    ("that/path".to_string(), "that/host/path".to_string()),
+                ]),
+                far_contents: BTreeMap::from([
+                    ("meta/some-path".to_string(), "some-host-path".to_string()),
+                    ("meta/other/path".to_string(), "other/host/path".to_string()),
+                ])
             }))
         );
     }
@@ -488,17 +487,17 @@ mod tests {
             )
             .unwrap(),
             PackageBuildManifest(VersionedPackageBuildManifest::Version1(PackageBuildManifestV1 {
-                external_contents: btreemap! {
-                    "this-path".to_string() => "this-host-path".to_string(),
-                    "that/path".to_string() => "that/host/path".to_string(),
-                    "another/path".to_string() => "another/host=path".to_string(),
-                    "with/white/space".to_string() => "host/white/space".to_string(),
-                },
-                far_contents: btreemap! {
-                    "meta/some-path".to_string() => "some-host-path".to_string(),
-                    "meta/other/path".to_string() => "other/host/path".to_string(),
-                    "meta/another/path".to_string() => "another/host=path".to_string(),
-                },
+                external_contents: BTreeMap::from([
+                    ("this-path".to_string(), "this-host-path".to_string()),
+                    ("that/path".to_string(), "that/host/path".to_string()),
+                    ("another/path".to_string(), "another/host=path".to_string()),
+                    ("with/white/space".to_string(), "host/white/space".to_string()),
+                ]),
+                far_contents: BTreeMap::from([
+                    ("meta/some-path".to_string(), "some-host-path".to_string()),
+                    ("meta/other/path".to_string(), "other/host/path".to_string()),
+                    ("meta/another/path".to_string(), "another/host=path".to_string()),
+                ]),
             })),
         );
     }
@@ -508,8 +507,8 @@ mod tests {
         assert_eq!(
             PackageBuildManifest::from_pm_fini("".as_bytes()).unwrap(),
             PackageBuildManifest(VersionedPackageBuildManifest::Version1(PackageBuildManifestV1 {
-                external_contents: btreemap! {},
-                far_contents: btreemap! {}
+                external_contents: BTreeMap::new(),
+                far_contents: BTreeMap::new()
             })),
         );
     }
@@ -534,10 +533,11 @@ mod tests {
         assert_eq!(
             PackageBuildManifest::from_pm_fini(fini.as_bytes()).unwrap(),
             PackageBuildManifest(VersionedPackageBuildManifest::Version1(PackageBuildManifestV1 {
-                external_contents: btreemap! {
-                    "path".to_string() => path.to_str().unwrap().to_string(),
-                },
-                far_contents: btreemap! {},
+                external_contents: BTreeMap::from([(
+                    "path".to_string(),
+                    path.to_str().unwrap().to_string()
+                ),]),
+                far_contents: BTreeMap::new(),
             })),
         );
     }
@@ -639,10 +639,11 @@ mod tests {
         assert_eq!(
             PackageBuildManifest::from_pm_fini(fini.as_bytes()).unwrap(),
             PackageBuildManifest(VersionedPackageBuildManifest::Version1(PackageBuildManifestV1 {
-                external_contents: btreemap! {
-                    "path".to_string() => path.to_str().unwrap().to_string(),
-                },
-                far_contents: btreemap! {},
+                external_contents: BTreeMap::from([(
+                    "path".to_string(),
+                    path.to_str().unwrap().to_string()
+                ),]),
+                far_contents: BTreeMap::new(),
             })),
         );
     }
@@ -655,13 +656,13 @@ mod tests {
             ref far_resource_path in random_far_resource_path(),
             ref far_host_path in ".{0,30}"
         ) {
-            let external_contents = btreemap! {
-                external_resource_path.to_string() => external_host_path.to_string()
-            };
+            let external_contents = BTreeMap::from([
+                (external_resource_path.to_string(), external_host_path.to_string()),
+            ]);
             let far_resource_path = format!("meta/{far_resource_path}");
-            let far_contents = btreemap! {
-                far_resource_path => far_host_path.to_string()
-            };
+            let far_contents = BTreeMap::from([
+                (far_resource_path, far_host_path.to_string()),
+            ]);
 
             let creation_manifest = PackageBuildManifest::from_external_and_far_contents(
                 external_contents.clone(), far_contents.clone())

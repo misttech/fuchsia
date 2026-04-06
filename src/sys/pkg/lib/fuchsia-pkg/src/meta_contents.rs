@@ -33,18 +33,18 @@ impl MetaContents {
     /// ```
     /// # use fuchsia_merkle::Hash;
     /// # use fuchsia_pkg::MetaContents;
-    /// # use maplit::hashmap;
+    /// # use std::collections::HashMap;
     /// # use std::str::FromStr;
-    /// let map = hashmap! {
-    ///     "bin/my_prog".to_string() =>
+    /// let map = HashMap::from([
+    ///     ("bin/my_prog".to_string(),
     ///         Hash::from_str(
     ///             "0000000000000000000000000000000000000000000000000000000000000000")
-    ///         .unwrap(),
-    ///     "lib/mylib.so".to_string() =>
+    ///         .unwrap()),
+    ///     ("lib/mylib.so".to_string(),
     ///         Hash::from_str(
     ///             "1111111111111111111111111111111111111111111111111111111111111111")
-    ///         .unwrap(),
-    /// };
+    ///         .unwrap()),
+    /// ]);
     /// let meta_contents = MetaContents::from_map(map).unwrap();
     pub fn from_map(map: HashMap<String, Hash>) -> Result<Self, MetaContentsError> {
         for resource_path in map.keys() {
@@ -73,18 +73,18 @@ impl MetaContents {
     /// ```
     /// # use fuchsia_merkle::Hash;
     /// # use fuchsia_pkg::MetaContents;
-    /// # use maplit::hashmap;
+    /// # use std::collections::HashMap;
     /// # use std::str::FromStr;
-    /// let map = hashmap! {
-    ///     "bin/my_prog".to_string() =>
+    /// let map: PackedMap<str, Hash> = HashMap::from([
+    ///     ("bin/my_prog".to_string(),
     ///         Hash::from_str(
     ///             "0000000000000000000000000000000000000000000000000000000000000000")
-    ///         .unwrap(),
-    ///     "lib/mylib.so".to_string() =>
+    ///         .unwrap()),
+    ///     ("lib/mylib.so".to_string(),
     ///         Hash::from_str(
     ///             "1111111111111111111111111111111111111111111111111111111111111111")
-    ///         .unwrap(),
-    /// };
+    ///         .unwrap()),
+    /// ]);
     /// let meta_contents = MetaContents::from_map(map).unwrap();
     /// let mut bytes = Vec::new();
     /// meta_contents.serialize(&mut bytes).unwrap();
@@ -107,21 +107,21 @@ impl MetaContents {
     /// ```
     /// # use fuchsia_merkle::Hash;
     /// # use fuchsia_pkg::MetaContents;
-    /// # use maplit::hashmap;
+    /// # use std::collections::HashMap;
     /// # use std::str::FromStr;
     /// let bytes = "bin/my_prog=0000000000000000000000000000000000000000000000000000000000000000\n\
     ///              lib/mylib.so=1111111111111111111111111111111111111111111111111111111111111111\n".as_bytes();
     /// let meta_contents = MetaContents::deserialize(bytes).unwrap();
-    /// let expected_contents = hashmap! {
-    ///     "bin/my_prog".to_string() =>
+    /// let expected_contents = HashMap::from([
+    ///     ("bin/my_prog".to_string(),
     ///         Hash::from_str(
     ///             "0000000000000000000000000000000000000000000000000000000000000000")
-    ///         .unwrap(),
-    ///     "lib/mylib.so".to_string() =>
+    ///         .unwrap()),
+    ///     ("lib/mylib.so".to_string(),
     ///         Hash::from_str(
     ///             "1111111111111111111111111111111111111111111111111111111111111111")
-    ///         .unwrap(),
-    /// };
+    ///         .unwrap()),
+    /// ]);
     /// assert_eq!(meta_contents.contents(), &expected_contents);
     /// ```
     pub fn deserialize(mut reader: impl io::BufRead) -> Result<Self, MetaContentsError> {
@@ -178,7 +178,6 @@ mod tests {
     use assert_matches::assert_matches;
     use fuchsia_url::ResourcePathError;
     use fuchsia_url::test::*;
-    use maplit::hashmap;
     use proptest::prelude::*;
 
     fn zeros_hash() -> Hash {
@@ -204,19 +203,17 @@ mod tests {
              other/host/path=1111111111111111111111111111111111111111111111111111111111111111\n"
                 .as_bytes();
         let meta_contents = MetaContents::deserialize(bytes).unwrap();
-        let expected_contents = hashmap! {
-            "a-host/path".to_string() => zeros_hash(),
-            "other/host/path".to_string() => ones_hash(),
-        };
+        let expected_contents = HashMap::from([
+            ("a-host/path".to_string(), zeros_hash()),
+            ("other/host/path".to_string(), ones_hash()),
+        ]);
         assert_eq!(meta_contents.contents(), &expected_contents);
         assert_eq!(meta_contents.into_contents(), expected_contents);
     }
 
     #[test]
     fn from_map_rejects_meta_file() {
-        let map = hashmap! {
-            "meta".to_string() => zeros_hash(),
-        };
+        let map = HashMap::from([("meta".to_string(), zeros_hash())]);
         assert_matches!(
             MetaContents::from_map(map),
             Err(MetaContentsError::ExternalContentInMetaDirectory { path }) if path == "meta"
@@ -227,24 +224,24 @@ mod tests {
     fn from_map_rejects_file_dir_collisions() {
         for (map, expected_path) in [
             (
-                hashmap! {
-                    "foo".to_string() => zeros_hash(),
-                    "foo/bar".to_string() => zeros_hash(),
-                },
+                HashMap::from([
+                    ("foo".to_string(), zeros_hash()),
+                    ("foo/bar".to_string(), zeros_hash()),
+                ]),
                 "foo",
             ),
             (
-                hashmap! {
-                    "foo/bar".to_string() => zeros_hash(),
-                    "foo/bar/baz".to_string() => zeros_hash(),
-                },
+                HashMap::from([
+                    ("foo/bar".to_string(), zeros_hash()),
+                    ("foo/bar/baz".to_string(), zeros_hash()),
+                ]),
                 "foo/bar",
             ),
             (
-                hashmap! {
-                    "foo".to_string() => zeros_hash(),
-                    "foo/bar/baz".to_string() => zeros_hash(),
-                },
+                HashMap::from([
+                    ("foo".to_string(), zeros_hash()),
+                    ("foo/bar/baz".to_string(), zeros_hash()),
+                ]),
                 "foo",
             ),
         ] {
@@ -268,10 +265,9 @@ mod tests {
         {
             prop_assume!(!path.starts_with("meta/"));
             let invalid_path = format!("{path}/");
-            let map = hashmap! {
-                invalid_path.clone() =>
-                    Hash::from_str(hex.as_str()).unwrap(),
-            };
+            let map = HashMap::from([
+                (invalid_path.clone(), Hash::from_str(hex.as_str()).unwrap()),
+            ]);
             assert_matches!(
                 MetaContents::from_map(map),
                 Err(MetaContentsError::InvalidResourcePath {
@@ -286,10 +282,9 @@ mod tests {
             ref hex in random_merkle_hex())
         {
             let invalid_path = format!("meta/{path}");
-            let map = hashmap! {
-                invalid_path.clone() =>
-                    Hash::from_str(hex.as_str()).unwrap(),
-            };
+            let map = HashMap::from([
+                (invalid_path.clone(), Hash::from_str(hex.as_str()).unwrap()),
+            ]);
             assert_matches!(
                 MetaContents::from_map(map),
                 Err(MetaContentsError::ExternalContentInMetaDirectory { path }) if path == invalid_path
@@ -304,12 +299,10 @@ mod tests {
             ref hex1 in random_merkle_hex())
         {
             prop_assume!(path0 != path1);
-            let map = hashmap! {
-                path0.clone() =>
-                    Hash::from_str(hex0.as_str()).unwrap(),
-                path1.clone() =>
-                    Hash::from_str(hex1.as_str()).unwrap(),
-            };
+            let map = HashMap::from([
+                (path0.clone(), Hash::from_str(hex0.as_str()).unwrap()),
+                (path1.clone(), Hash::from_str(hex1.as_str()).unwrap()),
+            ]);
             let meta_contents = MetaContents::from_map(map);
             prop_assume!(meta_contents.is_ok());
             let meta_contents = meta_contents.unwrap();

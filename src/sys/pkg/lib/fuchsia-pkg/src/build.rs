@@ -202,7 +202,6 @@ mod test_build_with_file_system {
     use crate::MetaPackage;
     use crate::test::*;
     use assert_matches::assert_matches;
-    use maplit::{btreemap, hashmap};
     use proptest::prelude::*;
     use rand::SeedableRng as _;
     use std::collections::{HashMap, HashSet};
@@ -264,13 +263,11 @@ mod test_build_with_file_system {
         let meta_far_path = outdir.path().join("meta.far");
 
         let creation_manifest = PackageBuildManifest::from_external_and_far_contents(
-            btreemap! {
-                "lib/mylib.so".to_string() => "host/mylib.so".to_string()
-            },
-            btreemap! {
-                "meta/my_component.cml".to_string() => "host/my_component.cml".to_string(),
-                "meta/package".to_string() => "host/meta/package".to_string()
-            },
+            BTreeMap::from([("lib/mylib.so".to_string(), "host/mylib.so".to_string())]),
+            BTreeMap::from([
+                ("meta/my_component.cml".to_string(), "host/my_component.cml".to_string()),
+                ("meta/package".to_string(), "host/meta/package".to_string()),
+            ]),
         )
         .unwrap();
         let component_manifest_contents = "my_component.cml contents";
@@ -279,11 +276,14 @@ mod test_build_with_file_system {
             MetaPackage::from_name_and_variant_zero("my-package-name".parse().unwrap());
         meta_package.serialize(&mut v).unwrap();
         let file_system = FakeFileSystem {
-            content_map: hashmap! {
-                "host/mylib.so".to_string() => "mylib.so contents".as_bytes().to_vec(),
-                "host/my_component.cml".to_string() => component_manifest_contents.as_bytes().to_vec(),
-                "host/meta/package".to_string() => v.clone()
-            },
+            content_map: HashMap::from([
+                ("host/mylib.so".to_string(), "mylib.so contents".as_bytes().to_vec()),
+                (
+                    "host/my_component.cml".to_string(),
+                    component_manifest_contents.as_bytes().to_vec(),
+                ),
+                ("host/meta/package".to_string(), v.clone()),
+            ]),
         };
         build_with_file_system(
             &creation_manifest,
@@ -315,10 +315,10 @@ mod test_build_with_file_system {
 
         let creation_manifest = PackageBuildManifest::from_external_and_far_contents(
             BTreeMap::new(),
-            btreemap! {
-                "meta/contents".to_string() => "some-host-path".to_string(),
-                "meta/package".to_string() => "host/meta/package".to_string()
-            },
+            BTreeMap::from([
+                ("meta/contents".to_string(), "some-host-path".to_string()),
+                ("meta/package".to_string(), "host/meta/package".to_string()),
+            ]),
         )
         .unwrap();
         let mut v = vec![];
@@ -326,10 +326,10 @@ mod test_build_with_file_system {
             MetaPackage::from_name_and_variant_zero("my-package-name".parse().unwrap());
         meta_package.serialize(&mut v).unwrap();
         let file_system = FakeFileSystem {
-            content_map: hashmap! {
-                "some-host-path".to_string() => Vec::new(),
-                "host/meta/package".to_string() => v
-            },
+            content_map: HashMap::from([
+                ("some-host-path".to_string(), Vec::new()),
+                ("host/meta/package".to_string(), v),
+            ]),
         };
         let result = build_with_file_system(
             &creation_manifest,
