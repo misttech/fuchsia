@@ -16,31 +16,15 @@ import sys
 from pathlib import Path
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--ninja-log",
-        type=Path,
-        help="Path to a ninja log file, it must only contain a SINGLE build's output",
-    )
-    parser.add_argument(
-        "--weights-file",
-        type=Path,
-        help="Path to a file to write ninja weights to.",
-    )
-    parser.add_argument(
-        "--minimum-duration",
-        type=int,
-        default=60000,
-        help="Minimum duration in ms to use as a weight.",
-    )
-    args = parser.parse_args()
-
+def convert_log_to_weights(
+    ninjalog_path: Path,
+    weights_path: Path,
+    minimum_duration_ms: int,
+) -> None:
     weights: dict[str, int] = {}
 
-    print(f"reading ninja log: {args.ninja_log}")
     last_stop = 0
-    with open(args.ninja_log) as logfile:
+    with open(ninjalog_path) as logfile:
         for linenum, line in enumerate(logfile.readlines()):
             if line.startswith("#"):
                 continue
@@ -62,17 +46,45 @@ def main() -> int:
                     f"Found duplicate entries for path: {path} at line {linenum+1}"
                 )
             duration = stop - start
-            if duration > args.minimum_duration:
+            if duration > minimum_duration_ms:
                 weights[path] = stop - start
 
     print(f"read {len(weights)} weights from ninja log")
 
-    os.makedirs(args.weights_file.parent, exist_ok=True)
-    with open(args.weights_file, "w") as weights_file:
+    os.makedirs(weights_path.parent, exist_ok=True)
+    with open(weights_path, "w") as weights_file:
         for path, weight in sorted(
             weights.items(), key=lambda x: x[1], reverse=True
         ):
             print(f"{path},{weight}", file=weights_file)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--ninja-log",
+        type=Path,
+        required=True,
+        help="Path to a ninja log file, it must only contain a SINGLE build's output",
+    )
+    parser.add_argument(
+        "--weights-file",
+        type=Path,
+        required=True,
+        help="Path to a file to write ninja weights to.",
+    )
+    parser.add_argument(
+        "--minimum-duration-ms",
+        type=int,
+        default=60000,
+        help="Minimum duration in ms to use as a weight.",
+    )
+    args = parser.parse_args()
+
+    print(f"reading ninja log: {args.ninja_log}")
+    convert_log_to_weights(
+        args.ninja_log, args.weights_file, args.minimum_duration_ms
+    )
 
     return 0
 

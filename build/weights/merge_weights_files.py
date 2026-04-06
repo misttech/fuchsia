@@ -16,6 +16,36 @@ import sys
 from pathlib import Path
 
 
+def merge_weights_files_finding_max(
+    weights_files: list[Path], merged_weights_file: Path
+) -> None:
+    """Merge multiples weights files into one that contains the max value for each path.
+
+    This merges multiple weights files into a single file, using the
+    max value from all files for each path that's found.
+    """
+    merged_weights: dict[str, int] = {}
+
+    # Open each weights file, and add to the merged weights if the
+    # value is larger than the existing value
+    for weights_file_path in weights_files:
+        for line in weights_file_path.read_text().splitlines():
+            # each line is a csv line of `<path>,<weight>`
+            path, _, weight_str = line.partition(",")
+            weight = int(weight_str)
+
+            existing_weight = merged_weights.get(path)
+            if not existing_weight or weight > existing_weight:
+                merged_weights[path] = weight
+
+    os.makedirs(merged_weights_file.parent, exist_ok=True)
+    with open(merged_weights_file, "w") as weights_file:
+        for path, weight in sorted(
+            merged_weights.items(), key=lambda x: x[1], reverse=True
+        ):
+            print(f"{path},{weight}", file=weights_file)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -32,30 +62,9 @@ def main() -> int:
         help="Path to a file to write ninja weights to.",
     )
     args = parser.parse_args()
-
-    merged_weights: dict[str, int] = {}
-
-    # Open each weights file, and add to the merged weights if the
-    # value is larger than the existing value
-    for weights_file_path in args.weights_files:
-        with open(weights_file_path) as weights_file:
-            for line in weights_file.readlines():
-                # each line is a csv line of `<path>,<weight>`
-                tokens = line.split(",", 2)
-                path = tokens[0]
-                weight = int(tokens[1])
-
-                existing_weight = merged_weights.get(path)
-                if not existing_weight or weight > existing_weight:
-                    merged_weights[path] = weight
-
-    os.makedirs(args.merged_weights_file.parent, exist_ok=True)
-    with open(args.merged_weights_file, "w") as weights_file:
-        for path, weight in sorted(
-            merged_weights.items(), key=lambda x: x[1], reverse=True
-        ):
-            print(f"{path},{weight}", file=weights_file)
-
+    merge_weights_files_finding_max(
+        args.weights_files, args.merged_weights_file
+    )
     return 0
 
 
