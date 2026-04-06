@@ -5,14 +5,14 @@
 library test.python.reserved;
 
 closed protocol ReservedNamesProtocol {
-    strict Next();
+    strict Next() -> ();
     strict StructArg(struct {
         int uint8;
-    });
+    }) -> ();
     strict TableArg(table {
         1: int uint8;
-    });
+    }) -> ();
     strict UnionArg(strict union {
         1: int uint8;
-    });
+    }) -> ();
 };

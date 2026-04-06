@@ -213,7 +213,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         (tx, rx) = ctx.channel_create()
         server = TestEchoer(rx)
         client = ffx.EchoClient(tx)
-        server_task = asyncio.get_running_loop().create_task(server.serve())
+        server_task = asyncio.create_task(server.serve())
         res = await client.echo_string(value="foobar")
         self.assertEqual(res.response, "foobar")
         server_task.cancel()
@@ -226,9 +226,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         coro1 = client.echo_string(value="foobar")
         # Creating a task here so at least one task is awaiting on a staged
         # message/notification.
-        task = asyncio.get_running_loop().create_task(
-            client.echo_string(value="foobar")
-        )
+        task = asyncio.create_task(client.echo_string(value="foobar"))
         coro2 = client.echo_string(value="foobar")
         # Put `task` onto the executor so it makes partial progress, since this will yield
         # to the executor.
@@ -264,7 +262,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         (tx, rx) = ctx.channel_create()
         server = AsyncEchoer(rx)
         client = ffx.EchoClient(tx)
-        server_task = asyncio.get_running_loop().create_task(server.serve())
+        server_task = asyncio.create_task(server.serve())
         res = await client.echo_string(value="foobar")
         self.assertEqual(res.response, "foobar")
         server_task.cancel()
@@ -277,7 +275,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         (tx, rx) = ctx.channel_create()
         server = AsyncEchoer(rx)
         client = ffx.EchoClient(tx)
-        server_task = asyncio.get_running_loop().create_task(server.serve())
+        server_task = asyncio.create_task(server.serve())
         for _ in range(12):
             res = await client.echo_string(value="foobar")
             self.assertEqual(res.response, "foobar")
@@ -290,19 +288,17 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         server = TargetCollectionReaderImpl(reader_server_channel, target_list)
         (tc_client_channel, tc_server_channel) = ctx.channel_create()
         target_collection_server = TargetCollectionImpl(tc_server_channel)  # type: ignore[abstract]
-        loop = asyncio.get_running_loop()
-        reader_task = loop.create_task(server.serve())
-        tc_task = loop.create_task(target_collection_server.serve())
+        reader_task = asyncio.create_task(server.serve())
+        tc_task = asyncio.create_task(target_collection_server.serve())
         tc_client = ffx.TargetCollectionClient(tc_client_channel)
         tc_client.list_targets(
             query=ffx.TargetQuery(), reader=reader_client_channel.take()
         )
-        done, pending = await asyncio.wait(
-            [reader_task, tc_task], return_when=asyncio.FIRST_COMPLETED
-        )
-        # This will just surface exceptions if they happen. For correct behavior this should just
-        # return the result of the reader task.
-        done.pop().result()
+        # Wait for the reader to finish processing all messages
+        await asyncio.wait_for(reader_task, timeout=5.0)
+
+        # Clean up the server task which is still waiting for more requests
+        tc_task.cancel()
         self.assertEqual(len(target_list), 3)
         foo_targets = [x for x in target_list if x.nodename == "foo"]
         self.assertEqual(len(foo_targets), 1)
@@ -318,9 +314,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         file_proxy = f_io.FileClient(client)
         print(StubFileServer.get_flags)
         file_server = StubFileServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(
-            file_server.serve()
-        )
+        server_task = asyncio.create_task(file_server.serve())
         response = (await file_proxy.read(count=4)).unwrap()
         self.assertEqual(response.data, [1, 2, 3, 4])
         server_task.cancel()
@@ -330,9 +324,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         file_proxy = f_io.FileClient(client)
         file_server = FailingFileServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(
-            file_server.serve()
-        )
+        server_task = asyncio.create_task(file_server.serve())
         result = await file_proxy.read(count=4)
         self.assertEqual(result.err, FcTransportStatus.FC_ERR_FDOMAIN)
         server_task.cancel()
@@ -342,7 +334,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         t_client = fc_test.TestingClient(client)
         t_server = TestingServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         return_union_response = await t_client.return_union()
         assert return_union_response.y is not None
         self.assertEqual(return_union_response.y, "foobar")
@@ -373,7 +365,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         res1 = await t_client.some_method()
         self.assertEqual(res1.framework_err, FrameworkError.UNKNOWN_METHOD)
         res2 = await t_client.some_method_without_error()
@@ -408,7 +400,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         res1 = await t_client.some_method()
         self.assertTrue(res1.unwrap().some_bool_value)
         res2 = await t_client.some_method_without_error()
@@ -432,7 +424,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         res1 = await t_client.some_method()
         with self.assertRaisesRegex(AssertionError, "Result error"):
             res1.unwrap()
@@ -445,17 +437,20 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         server_task.cancel()
 
     async def test_strict_one_way_union(self) -> None:
+        strict_one_way_union_called = asyncio.Event()
+
         @implement_missing_abstract_methods
         class NoopServer(fc_test.NoopServer):
             def strict_one_way_union(self, value: Any) -> None:
-                pass
+                strict_one_way_union_called.set()
 
         ctx = Context()
         client, server = ctx.channel_create()
         t_client = fc_test.NoopClient(client)
         t_server = NoopServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         t_client.strict_one_way_union(value=1)
+        await asyncio.wait_for(strict_one_way_union_called.wait(), timeout=5.0)
         server_task.cancel()
 
     async def test_strict_two_way_union(self) -> None:
@@ -468,25 +463,30 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         t_client = fc_test.NoopClient(client)
         t_server = NoopServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         await t_client.strict_two_way_union(other_value="foo")
         server_task.cancel()
 
     async def test_flexible_one_way_union(self) -> None:
+        flexible_one_way_union_called = asyncio.Event()
+
         @implement_missing_abstract_methods
         class FlexibleMethodTesterServer(fc_test.FlexibleMethodTesterServer):
             def flexible_one_way_union(
                 self,
                 value: fc_test.FlexibleMethodTesterFlexibleOneWayUnionRequest,
             ) -> None:
-                pass
+                flexible_one_way_union_called.set()
 
         ctx = Context()
         client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         t_client.flexible_one_way_union(value=1)
+        await asyncio.wait_for(
+            flexible_one_way_union_called.wait(), timeout=5.0
+        )
         server_task.cancel()
 
     async def test_flexible_two_way_union(self) -> None:
@@ -499,7 +499,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         client, server = ctx.channel_create()
         t_client = fc_test.FlexibleMethodTesterClient(client)
         t_server = FlexibleMethodTesterServer(server)  # type: ignore[abstract]
-        server_task = asyncio.get_running_loop().create_task(t_server.serve())
+        server_task = asyncio.create_task(t_server.serve())
         (await t_client.flexible_two_way_union(other_value="foo")).unwrap()
         server_task.cancel()
 
@@ -521,7 +521,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         t_server = NotImplementedCrossLibraryNoopServer(server)  # type: ignore[abstract]
         event_handler = TestEventHandler(t_client, random_event_handler)
         t_server.on_random_event(this=THIS_EXPECTED, that=THAT_EXPECTED)
-        task = asyncio.get_running_loop().create_task(event_handler.serve())
+        task = asyncio.create_task(event_handler.serve())
         # If the event is never received this will loop forever (since the channel is open, and the
         # handler should stop service after receiving the event.
         await task
@@ -534,7 +534,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         t_server = NotImplementedCrossLibraryNoopServer(server)  # type: ignore[abstract]
         event_handler = TestEventHandler(t_client, lambda _: None)
         t_server.on_empty_event()
-        task = asyncio.get_running_loop().create_task(event_handler.serve())
+        task = asyncio.create_task(event_handler.serve())
         # If the event is never received this will loop forever (since the channel is open, and the
         # handler should stop service after receiving the event.
         await task
@@ -546,5 +546,5 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         del server
         # A generic unimplemented event handler is fine, since we're just making it exit.
         event_handler = NotImplementedCrossLibraryNoopEventHandler(t_client)  # type: ignore[abstract]
-        task = asyncio.get_running_loop().create_task(event_handler.serve())
+        task = asyncio.create_task(event_handler.serve())
         await task
