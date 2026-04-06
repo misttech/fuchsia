@@ -8,3 +8,7 @@ group("tests") {
   # TODO(https://fxbug.dev/42130065): re-enable once issue is root caused
   deps = [ "lsusb:tests" ]
 }
+
+group("usb-cli") {
+  deps = [ "usb-cli" ]
+}

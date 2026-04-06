@@ -364,7 +364,10 @@ assembly_input_bundle("usb_policy") {
     "utility::userdebug",
   ]
 
-  base_packages = [ "//src/devices/usb/usb-policy" ]
+  base_packages = [
+    "//src/devices/usb/usb-policy",
+    "//src/devices/usb/bin/usb-cli",
+  ]
 
   core_shards =
       [ "//src/devices/usb/usb-policy/meta/usb-policy.core_shard.cml" ]

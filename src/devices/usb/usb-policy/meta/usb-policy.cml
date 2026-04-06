@@ -29,4 +29,7 @@
             from: "self",
         },
     ],
+    facets: {
+        "fuchsia.dash.launcher-tool-urls": [ "fuchsia-pkg://fuchsia.com/usb-cli" ],
+    },
 }
