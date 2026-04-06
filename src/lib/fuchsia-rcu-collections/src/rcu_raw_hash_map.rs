@@ -144,7 +144,7 @@ where
 
     /// Creates a new hash map with the given hasher.
     pub fn with_hasher(hash_builder: S) -> Self {
-        Self::with_capacity_and_hasher(INITIAL_CAPACITY, hash_builder)
+        Self::with_capacity_and_hasher(0, hash_builder)
     }
 
     /// Returns the hash of the key as a u64.
