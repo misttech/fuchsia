@@ -8,13 +8,16 @@ import importlib
 import inspect
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
 
 import fuchsia_async_extension
 from fuchsia_base_test import FuchsiaBaseTest
 from honeydew.auxiliary_devices.power_switch import power_switch
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+F = TypeVar("F", bound=Callable[..., object])
 
 
 _DMC_MODULE: str = (
@@ -60,9 +63,9 @@ class _TestArgTuple:
     fuchsia_device_operation: FuchsiaDeviceOperation
     test_method_execution_frequency: TestMethodExecutionFrequency
     pre_test_execution_fn: Callable[..., Any] | None = None
-    pre_test_execution_fn_kwargs: dict[str, Any] | None = None
+    pre_test_execution_fn_kwargs: dict[str, object] | None = None
     post_test_execution_fn: Callable[..., Any] | None = None
-    post_test_execution_fn_kwargs: dict[str, Any] | None = None
+    post_test_execution_fn_kwargs: dict[str, object] | None = None
 
     def __str__(self) -> str:
         return (
@@ -76,10 +79,10 @@ class _TestArgTuple:
         )
 
 
-def opt_out() -> Callable[..., Any]:
+def opt_out() -> Callable[[F], F]:
     """Decorator that will opt out a test case from "revive" """
 
-    def opt_out_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+    def opt_out_decorator(func: F) -> F:
         func._opt_out = True  # type: ignore[attr-defined]
         return func
 
@@ -90,13 +93,13 @@ def tag_test(
     fuchsia_device_operation: FuchsiaDeviceOperation | None = None,
     test_method_execution_frequency: TestMethodExecutionFrequency | None = None,
     pre_test_execution_fn: Callable[..., Any] | None = None,
-    pre_test_execution_fn_kwargs: dict[str, Any] | None = None,
+    pre_test_execution_fn_kwargs: dict[str, object] | None = None,
     post_test_execution_fn: Callable[..., Any] | None = None,
-    post_test_execution_fn_kwargs: dict[str, Any] | None = None,
-) -> Callable[..., Any]:
+    post_test_execution_fn_kwargs: dict[str, object] | None = None,
+) -> Callable[[F], F]:
     """Decorator that can be used to tag a test with a label"""
 
-    def tags_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+    def tags_decorator(func: F) -> F:
         func._revive = True  # type: ignore[attr-defined]
         if fuchsia_device_operation is not None:
             func._fuchsia_device_operation = FuchsiaDeviceOperation(  # type: ignore[attr-defined]
@@ -223,9 +226,9 @@ class TestCaseRevive(FuchsiaBaseTest):
         fuchsia_device_operation: FuchsiaDeviceOperation,
         test_method_execution_frequency: TestMethodExecutionFrequency,
         pre_test_execution_fn: Callable[[], Any] | None,
-        pre_test_execution_fn_kwargs: dict[str, Any] | None,
+        pre_test_execution_fn_kwargs: dict[str, object] | None,
         post_test_execution_fn: Callable[[], Any] | None,
-        post_test_execution_fn_kwargs: dict[str, Any] | None,
+        post_test_execution_fn_kwargs: dict[str, object] | None,
     ) -> None:
         """TestCaseRevive logic"""
 
@@ -331,9 +334,9 @@ class TestCaseRevive(FuchsiaBaseTest):
         fuchsia_device_operation: FuchsiaDeviceOperation,
         test_method_execution_frequency: TestMethodExecutionFrequency,
         pre_test_execution_fn: Callable[..., Any] | None,
-        pre_test_execution_fn_kwargs: dict[str, Any] | None,
+        pre_test_execution_fn_kwargs: dict[str, object] | None,
         post_test_execution_fn: Callable[..., Any] | None,
-        post_test_execution_fn_kwargs: dict[str, Any] | None,
+        post_test_execution_fn_kwargs: dict[str, object] | None,
     ) -> str:
         """Revived test case name function"""
         test_case = test_case.lstrip("_")
@@ -446,7 +449,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     self, revived_test_case
                 )._pre_test_execution_fn
 
-            pre_test_execution_fn_kwargs: dict[str, Any] | None = None
+            pre_test_execution_fn_kwargs: dict[str, object] | None = None
             if "_pre_test_execution_fn_kwargs" in dir(
                 getattr(self, revived_test_case)
             ):
@@ -462,7 +465,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     self, revived_test_case
                 )._post_test_execution_fn
 
-            post_test_execution_fn_kwargs: dict[str, Any] | None = None
+            post_test_execution_fn_kwargs: dict[str, object] | None = None
             if "_post_test_execution_fn_kwargs" in dir(
                 getattr(self, revived_test_case)
             ):
