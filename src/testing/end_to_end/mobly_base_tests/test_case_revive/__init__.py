@@ -8,7 +8,7 @@ import importlib
 import inspect
 import logging
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, Awaitable, TypeVar
 
 import fuchsia_async_extension
 from fuchsia_base_test import FuchsiaBaseTest
@@ -62,9 +62,13 @@ class _TestArgTuple:
     test_case_method: str
     fuchsia_device_operation: FuchsiaDeviceOperation
     test_method_execution_frequency: TestMethodExecutionFrequency
-    pre_test_execution_fn: Callable[..., Any] | None = None
+    pre_test_execution_fn: Callable[..., None] | Callable[
+        ..., Awaitable[None]
+    ] | None = None
     pre_test_execution_fn_kwargs: dict[str, object] | None = None
-    post_test_execution_fn: Callable[..., Any] | None = None
+    post_test_execution_fn: Callable[..., None] | Callable[
+        ..., Awaitable[None]
+    ] | None = None
     post_test_execution_fn_kwargs: dict[str, object] | None = None
 
     def __str__(self) -> str:
@@ -92,9 +96,13 @@ def opt_out() -> Callable[[F], F]:
 def tag_test(
     fuchsia_device_operation: FuchsiaDeviceOperation | None = None,
     test_method_execution_frequency: TestMethodExecutionFrequency | None = None,
-    pre_test_execution_fn: Callable[..., Any] | None = None,
+    pre_test_execution_fn: Callable[..., None]
+    | Callable[..., Awaitable[None]]
+    | None = None,
     pre_test_execution_fn_kwargs: dict[str, object] | None = None,
-    post_test_execution_fn: Callable[..., Any] | None = None,
+    post_test_execution_fn: Callable[..., None]
+    | Callable[..., Awaitable[None]]
+    | None = None,
     post_test_execution_fn_kwargs: dict[str, object] | None = None,
 ) -> Callable[[F], F]:
     """Decorator that can be used to tag a test with a label"""
@@ -225,9 +233,13 @@ class TestCaseRevive(FuchsiaBaseTest):
         test_case: str,
         fuchsia_device_operation: FuchsiaDeviceOperation,
         test_method_execution_frequency: TestMethodExecutionFrequency,
-        pre_test_execution_fn: Callable[[], Any] | None,
+        pre_test_execution_fn: Callable[..., None]
+        | Callable[..., Awaitable[None]]
+        | None,
         pre_test_execution_fn_kwargs: dict[str, object] | None,
-        post_test_execution_fn: Callable[[], Any] | None,
+        post_test_execution_fn: Callable[..., None]
+        | Callable[..., Awaitable[None]]
+        | None,
         post_test_execution_fn_kwargs: dict[str, object] | None,
     ) -> None:
         """TestCaseRevive logic"""
@@ -333,9 +345,13 @@ class TestCaseRevive(FuchsiaBaseTest):
         test_case: str,
         fuchsia_device_operation: FuchsiaDeviceOperation,
         test_method_execution_frequency: TestMethodExecutionFrequency,
-        pre_test_execution_fn: Callable[..., Any] | None,
+        pre_test_execution_fn: Callable[..., None]
+        | Callable[..., Awaitable[None]]
+        | None,
         pre_test_execution_fn_kwargs: dict[str, object] | None,
-        post_test_execution_fn: Callable[..., Any] | None,
+        post_test_execution_fn: Callable[..., None]
+        | Callable[..., Awaitable[None]]
+        | None,
         post_test_execution_fn_kwargs: dict[str, object] | None,
     ) -> str:
         """Revived test case name function"""
@@ -441,7 +457,9 @@ class TestCaseRevive(FuchsiaBaseTest):
                     self, revived_test_case
                 )._test_method_execution_frequency
 
-            pre_test_execution_fn: Callable[..., Any] | None = None
+            pre_test_execution_fn: Callable[..., None] | Callable[
+                ..., Awaitable[None]
+            ] | None = None
             if "_pre_test_execution_fn" in dir(
                 getattr(self, revived_test_case)
             ):
@@ -457,7 +475,9 @@ class TestCaseRevive(FuchsiaBaseTest):
                     self, revived_test_case
                 )._pre_test_execution_fn_kwargs
 
-            post_test_execution_fn: Callable[..., Any] | None = None
+            post_test_execution_fn: Callable[..., None] | Callable[
+                ..., Awaitable[None]
+            ] | None = None
             if "_post_test_execution_fn" in dir(
                 getattr(self, revived_test_case)
             ):
