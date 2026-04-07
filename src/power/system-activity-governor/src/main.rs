@@ -14,6 +14,13 @@ use crate::power_observability::WakeSourceObservability;
 use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::{Context, Result};
 use async_lock::OnceCell;
+use fidl_fuchsia_hardware_platform_bus as ffhpb;
+use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
+use fidl_fuchsia_hardware_power_suspend as fhsuspend;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_suspend as fsuspend;
+use fidl_fuchsia_power_system as fsystem;
+use fuchsia_async as fasync;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::{Service, connect_to_protocol};
 use fuchsia_component::server::ServiceFs;
@@ -26,13 +33,6 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 use zx::MonotonicDuration;
-use {
-    fidl_fuchsia_hardware_platform_bus as ffhpb,
-    fidl_fuchsia_hardware_power_statecontrol as fstatecontrol,
-    fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
-    fidl_fuchsia_power_suspend as fsuspend, fidl_fuchsia_power_system as fsystem,
-    fuchsia_async as fasync,
-};
 
 const SUSPEND_DEVICE_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(10);
 const SUSPENDER_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(3);

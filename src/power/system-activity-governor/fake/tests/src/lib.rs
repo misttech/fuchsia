@@ -6,12 +6,13 @@ use anyhow::Result;
 use fidl::endpoints::{DiscoverableProtocolMarker, create_endpoints};
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_fuchsia_power_system::{self as fsystem, ApplicationActivityLevel, ExecutionStateLevel};
+use fidl_test_sagcontrol as fctrl;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::StreamExt;
 use futures::channel::mpsc;
 use log::*;
 use power_broker_client::PowerElementContext;
-use {fidl_test_sagcontrol as fctrl, fuchsia_async as fasync};
 
 struct TestEnv {
     realm_instance: RealmInstance,

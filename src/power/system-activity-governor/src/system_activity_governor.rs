@@ -1215,39 +1215,38 @@ impl SystemActivityGovernor {
         futures::stream::iter(suspend_blockers)
             .enumerate()
             .for_each_concurrent(None, |(i, (id, suspend_blocker, name))| {
-            let dead_blocker_ids = dead_blocker_ids.clone();
+                let dead_blocker_ids = dead_blocker_ids.clone();
 
-            async move {
-                let name2 = name.clone();
-                let _warn_task = fasync::Task::local(async move {
-                    // Log every 10 seconds that a given callback has not completed.
-                    for count in 1.. {
-                        fasync::Timer::new(SUSPEND_BLOCKER_WARNING_TIMEOUT).await;
-                        let seconds = count * 10;
-                        log::warn!(
-                            "No response to {method_name} from SuspendBlocker '{name2}' ({i}) after {seconds} seconds!"
-                        );
-                        // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:no_response_tefmo)
-                    }
-                });
+                async move {
+                    let name2 = name.clone();
+                    let _warn_task = fasync::Task::local(async move {
+                        // Log every 10 seconds that a given callback has not completed.
+                        for count in 1.. {
+                            fasync::Timer::new(SUSPEND_BLOCKER_WARNING_TIMEOUT).await;
+                            let seconds = count * 10;
+                            log::warn!(
+                                "No response to {method_name} from SuspendBlocker '{name2}' ({i}) after {seconds} seconds!"
+                            );
+                            // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:no_response_tefmo)
+                        }
+                    });
 
-                if is_suspending {
-                    if let Err(e) = suspend_blocker.before_suspend().await {
-                        log::warn!(
-                            "Failed to call BeforeSuspend on SuspendBlocker '{name}' ({i}): {e:?}"
-                        );
-                        dead_blocker_ids.borrow_mut().push(id);
+                    if is_suspending {
+                        if let Err(e) = suspend_blocker.before_suspend().await {
+                            log::warn!(
+                                "Failed to call BeforeSuspend on SuspendBlocker '{name}' ({i}): {e:?}"
+                            );
+                            dead_blocker_ids.borrow_mut().push(id);
+                        }
+                    } else {
+                        if let Err(e) = suspend_blocker.after_resume().await {
+                            log::warn!(
+                                "Failed to call AfterResume on SuspendBlocker '{name}' ({i}):  {e:?}"
+                            );
+                            dead_blocker_ids.borrow_mut().push(id);
+                        }
                     }
-                } else {
-                    if let Err(e) = suspend_blocker.after_resume().await {
-                        log::warn!(
-                            "Failed to call AfterResume on SuspendBlocker '{name}' ({i}):  {e:?}"
-                        );
-                        dead_blocker_ids.borrow_mut().push(id);
-                    }
-                }
-            }})
-            .await;
+            }}).await;
 
         // Remove suspend blockers that failed.
         let dead_ids = dead_blocker_ids.borrow();

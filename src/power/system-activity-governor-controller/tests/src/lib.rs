@@ -6,14 +6,14 @@ use anyhow::Result;
 use diagnostics_assertions::{AnyProperty, NonZeroUintProperty, tree_assertion};
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_power_observability as fobs;
+use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_power_topology_test as fpt;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{
     Capability, ChildOptions, DEFAULT_COLLECTION_NAME, RealmBuilder, RealmInstance, Ref, Route,
 };
 use log::*;
-use {
-    fidl_fuchsia_power_observability as fobs, fidl_fuchsia_power_system as fsystem,
-    fidl_fuchsia_power_topology_test as fpt, fuchsia_async as fasync,
-};
 
 // Report prolonged match delay after this many loops.
 const DELAY_NOTIFICATION: usize = 10;
