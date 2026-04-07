@@ -55,18 +55,21 @@ def main():
     args.depfile.write(f"{args.object.name}: {' '.join(elf_files)}\n")
     args.depfile.close()
 
-    data = json.loads(
-        subprocess.check_output(
-            [
-                args.readelf[0],
-                "--elf-output-style=JSON",
-                "--program-headers",
-                "--notes",
-                "--dynamic",
-            ]
-            + elf_files
-        )
-    )
+    # Use Popen and json.load to stream the JSON output from llvm-readelf
+    # directly into the parser. This avoids allocating a potentially massive
+    # intermediate string for the entire JSON blob, which can cause memory
+    # pressure or timeouts in large builds.
+    readelf_cmd = [
+        args.readelf[0],
+        "--elf-output-style=JSON",
+        "--program-headers",
+        "--notes",
+        "--dynamic",
+    ] + elf_files
+    with subprocess.Popen(readelf_cmd, stdout=subprocess.PIPE) as proc:
+        data = json.load(proc.stdout)
+        if proc.wait() != 0:
+            raise subprocess.CalledProcessError(proc.returncode, readelf_cmd)
 
     def c_str(string):
         return '"' + string + '"'
