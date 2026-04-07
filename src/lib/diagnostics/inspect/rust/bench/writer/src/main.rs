@@ -79,8 +79,13 @@ macro_rules! bench_numeric_property_fn {
                     concat!("Node/record_", stringify!($name), "_property"),
                     move |b| {
                         let inspector = Inspector::default();
+                        let iter = std::cell::Cell::new(0);
                         b.iter_batched_ref(
-                            || inspector.root().create_child(NAME),
+                            || {
+                                let count = iter.get() + 1;
+                                iter.set(count);
+                                inspector.root().create_child(format!("child_{count}"))
+                            },
                             |child| child.[<record_ $name>](NAME, 0 as $type),
                             criterion::BatchSize::SmallInput);
                     }
@@ -169,8 +174,13 @@ macro_rules! bench_property_fn {
                     format!("Node/record_{}/{size}", stringify!($name)),
                     move |b| {
                         let inspector = Inspector::default();
+                        let iter = std::cell::Cell::new(0);
                         b.iter_with_large_setup(
-                            || inspector.root().create_child(NAME),
+                            || {
+                                let count = iter.get() + 1;
+                                iter.set(count);
+                                inspector.root().create_child(format!("child_{count}"))
+                            },
                             |child| child.[<record_ $name>](NAME, &initial_val));
                     }
                 );
@@ -505,7 +515,7 @@ fn bench_write_after_tree_cow_read(mut bench: criterion::Benchmark) -> criterion
     let mut properties = vec![];
 
     for i in 0..1015 {
-        properties.push(inspector.root().create_int("i", i));
+        properties.push(inspector.root().create_int(format!("i_{i}"), i));
     }
 
     let (proxy, tree_server_fut) = fuchsia_inspect_bench_utils::spawn_server(inspector).unwrap();
@@ -532,15 +542,20 @@ fn bench_drop_string_reference(bench: criterion::Benchmark, size: usize) -> crit
         let root = inspector.root();
         b.iter_with_large_setup(
             || {
+                let mut current = root.create_child("start");
                 for i in 0..size {
-                    // store `size` unique entries in the reference cache
-                    root.record_int(format!("{i}"), 0);
+                    let next = current.create_child(format!("{i}"));
+                    let weak = next.clone_weak();
+                    root.record(next);
+                    current = weak;
                 }
-                // the point is just to get string references in the cache that don't
-                // match any of the extra ones stored above
-                root.create_string(NAME, NAME)
+                let p = current.create_string(NAME, NAME);
+                root.record(current);
+                p
             },
-            |p| drop(criterion::black_box(p)),
+            |p| {
+                drop(criterion::black_box(p));
+            },
         );
     })
 }

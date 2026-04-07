@@ -146,9 +146,12 @@ fn reader_snapshot_tree_vmo_bench(b: &mut criterion::Bencher, size: usize, fille
     #[allow(clippy::collection_is_never_read)]
     let mut nodes = vec![];
     if filled_size > 0 {
-        let ints_for_filling: i64 = filled_size / 16 - 1;
+        // Each property takes 16 bytes for the Int block.
+        // The name "i_{i}" takes at least 16 bytes for the String block.
+        // So each property takes approx 32 bytes.
+        let ints_for_filling: i64 = filled_size / 32 - 1;
         for i in 0..ints_for_filling {
-            nodes.push(inspector.root().create_int("i", i));
+            nodes.push(inspector.root().create_int(format!("i_{i}"), i));
         }
     }
 
