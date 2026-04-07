@@ -17,7 +17,6 @@ fidl_library(
     deps = [
         "//sdk/fidl/fuchsia.component.decl",
         "//sdk/fidl/fuchsia.io",
-        "//sdk/fidl/fuchsia.unknown",
         "//zircon/vdso/zx",
     ],
 )
