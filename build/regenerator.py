@@ -623,6 +623,27 @@ def main() -> int:
             for input_path in sorted_extra_ninja_build_inputs:
                 f.write(f"{input_path}\n")
 
+        time_profile.start("ninja_bazel_delayed_worker")
+        # The name of the worker script expected by Ninja in the build directory
+        # to enable the feature automatically.
+        ninja_worker_script_name = "ninja_bazel_delayed_worker"
+        ninja_worker_script_path = build_dir / ninja_worker_script_name
+
+        enable_delayed_bazel_actions = args_json.get(
+            "enable_delayed_bazel_actions", False
+        )
+        if enable_delayed_bazel_actions:
+            # Symlink the ninja_bazel_action_worker script into the build outdir
+            log2(f"- Symlinking {ninja_worker_script_name}")
+            make_relative_symlink(
+                ninja_worker_script_path,
+                fuchsia_dir / "build/bazel/scripts/ninja_bazel_delayed_worker",
+            )
+        elif ninja_worker_script_path.exists():
+            # Remove previous version of the script to disable the feature.
+            log2(f"- Removing stale {ninja_worker_script_name}")
+            ninja_worker_script_path.unlink()
+
         # Patch build.ninja.d to ensure that Ninja will re-invoke the script if its
         # own source code, or any other extra implicit input, changes.
         time_profile.start("build.ninja.d")

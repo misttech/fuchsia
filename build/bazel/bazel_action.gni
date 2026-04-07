@@ -693,6 +693,7 @@ template("bazel_action") {
                  # LINT.IfChange(bazel_gn_target_imports)
                  "//build/api/debug_symbols.py",
                  "//build/bazel/scripts/bazel_action_impl.py",
+                 "//build/bazel/scripts/bazel_ninja_delayed_actions.py",
                  "//build/bazel/scripts/bazel_action_file_copy_utils.py",
                  "//build/bazel/scripts/bazel_action_utils.py",
                  "//build/bazel/scripts/bazel_compdb_utils.py",
@@ -949,6 +950,9 @@ template("bazel_action") {
               if (defined(entry.ninja_dir)) {
                 ninja_dir = rebase_path(entry.ninja_dir, root_build_dir)
               }
+
+              # The depfile that ninja will read for this action.
+              ninja_depfile = rebase_path(depfile, root_build_dir)
 
               # The gn_targets_dir that needs to be symlinked into the workspace to
               # build the bazel action.  This is transitional until this is setup

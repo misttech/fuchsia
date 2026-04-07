@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+declare_args() {
+  # Enable Bazel delayed actions to optimize the Fuchsia build. This makes
+  # Ninja delay the invocation of Bazel actions, to later launch several
+  # of them through a special worker script that can combine several
+  # `bazel build` invocations into a single one.
+  # See https://fxbug.dev/468100333
+  enable_delayed_bazel_actions = false
+}

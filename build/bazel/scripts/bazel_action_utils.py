@@ -73,6 +73,7 @@ class BazelTargetInfo(object):
     bazel_target: str
     bazel_platform_label: str
     bazel_platform_config: str
+    ninja_depfile: str
     gn_targets_dir: str
     gn_targets_manifest: str
     stamp_path: str
@@ -104,6 +105,7 @@ class BazelTargetInfosMap(object):
             bazel_target = entry["bazel_target"]
             bazel_platform_label = entry["bazel_platform_label"]
             bazel_platform_config = entry["bazel_platform_config"]
+            ninja_depfile = entry["ninja_depfile"]
             gn_targets_dir = entry["gn_targets_dir"]
             gn_targets_manifest = entry["gn_targets_manifest"]
             stamp_path = entry["stamp_path"]
@@ -113,6 +115,7 @@ class BazelTargetInfosMap(object):
                     bazel_target=bazel_target,
                     bazel_platform_label=bazel_platform_label,
                     bazel_platform_config=bazel_platform_config,
+                    ninja_depfile=ninja_depfile,
                     gn_targets_dir=gn_targets_dir,
                     gn_targets_manifest=gn_targets_manifest,
                     stamp_path=stamp_path,

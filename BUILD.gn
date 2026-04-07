@@ -22,6 +22,11 @@ import("//build/toolchain/zircon/clang.gni")
 import("//build/zbi/zbi.gni")
 import("//sdk/config.gni")
 
+# Included solely to allow this arg to be read by regenerator.py
+# This will be removed when this feature is always enabled.
+import("//build/config/enable_delayed_bazel_actions.gni")
+
+# Standard GN args.
 declare_args() {
   # These remain only to allow for a soft-transition with developer's
   # local args.gn files.
@@ -2267,6 +2272,10 @@ generated_file("bazel_build_action_targets") {
 #
 #   bazel_platform_config:
 #     - Required: bazel config to add to the bazel command line with the --config arg
+#     - Type: string
+#
+#   ninja_depfile:
+#     - Required: the ninja depfile path (rebased) for the action
 #     - Type: string
 #
 #   gn_targets_dir

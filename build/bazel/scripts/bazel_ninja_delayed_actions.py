@@ -6,12 +6,14 @@
 "Run a set of Ninja-delayed Bazel actions"
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
 import typing as T
 from pathlib import Path
 
+from bazel_action_file_copy_utils import write_file_if_changed
 from workspace_utils import (
     BazelPackageAndTargetToGnInputsEntriesMap,
     BazelTargetGNInputsEntriesMap,
@@ -56,13 +58,18 @@ def main() -> int:
         help="Specify Fuchsia source directory (defaults to auto-detected)",
     )
 
-    ##
-    # The set of output paths that are needed to be built
     parser.add_argument(
-        "--outputs",
-        default=[],
-        nargs="+",
-        help="list of bazel outputs needed by Ninja.",
+        "--delayed-actions-request",
+        type=Path,
+        required=True,
+        help="Path to a json file describing the set of actions Ninja needs run.",
+    )
+
+    parser.add_argument(
+        "--delayed-actions-response",
+        type=Path,
+        required=True,
+        help="Path to a json file to write describing the status of the action.",
     )
 
     args = parser.parse_args()
@@ -78,13 +85,13 @@ def main() -> int:
 
     # Load the extra global settings configured via GN global args
     global_bazel_args = BazelGlobalArguments.create_from_build_dir(
-        args.build_dir
+        bazel_paths.ninja_build_dir
     )
 
     # load the BazelTargetInfos so that we can find which targets need to be built in order
     # to build the requested outputs.
     bazel_target_infos = BazelTargetInfosMap.create_from_build_dir(
-        args.build_dir
+        bazel_paths.ninja_build_dir
     )
 
     time_profile.start("query_cache", "loading Bazel query cache")
@@ -97,8 +104,15 @@ def main() -> int:
         "Find the Bazel targets that create the given ninja outputs",
     )
 
+    ninja_outputs: list[str] = []
+    ninja_request = DelayedActionsRequest.from_json(
+        args.delayed_actions_request.read_text()
+    )
+    for action in ninja_request.actions:
+        ninja_outputs.extend(action.ninja_outputs)
+
     targets_by_platform: dict[str, dict[str, BazelTargetInfo]] = {}
-    for output in args.outputs:
+    for output in ninja_outputs:
         target = bazel_target_infos.get_target(output)
 
         if target:
@@ -125,6 +139,9 @@ def main() -> int:
     )
     # This will raise an exception on failure.
     try:
+        # This tracks the contents of the depfiles that will need to be written.
+        depfiles: dict[str, tuple[set[str], set[str]]] = {}
+
         for platform_label, platform_targets in targets_by_platform.items():
             time_profile.start("merging_bazel_target_infos")
 
@@ -180,15 +197,52 @@ def main() -> int:
                 extra_outputs=bazel_action_impl.BazelExtraOutputs(),
                 time_profile=time_profile,
             )
+
+            # Update the depfiles data
+            for target, sources in action_result.source_files.items():
+                info = platform_targets[target]
+
+                depfile_entry = depfiles.setdefault(
+                    info.ninja_depfile, (set(), set())
+                )
+                depfile_entry[1].update(sources)
+
+                target_outputs: list[str] = []
+                target_outputs.extend([c.ninja_path for c in info.copy_outputs])
+                for d in info.directory_outputs:
+                    target_outputs.extend(d.tracked_file_ninja_paths)
+                target_outputs.extend(
+                    [p.archive_path for p in info.package_outputs]
+                )
+                target_outputs.extend(
+                    [f.ninja_path for f in info.final_symlink_outputs]
+                )
+
+                depfile_entry[0].update(target_outputs)
+
+        for depfile, (outputs, sources) in depfiles.items():
+            depfile_content = "%s: %s\n" % (
+                " ".join(sorted(outputs)),
+                " ".join(sorted(sources)),
+            )
+
+            print(f"writing depfile: {depfile}")
+            write_file_if_changed(depfile, depfile_content)
+
+        rc = 0
+
     except bazel_action_impl.BazelActionError:
-        return 1
+        rc = 1
 
     time_profile.stop()
     if _DEBUG_TIME_PROFILE:
         time_profile.print(0.001)
 
+    response = DelayedActionsResponse(ninja_request.request_id, rc)
+    write_file_if_changed(args.delayed_actions_response, response.to_json())
+
     # Done!
-    return 0
+    return rc
 
 
 def merge_gn_target_manifests(
@@ -212,10 +266,72 @@ def merge_gn_target_manifests(
     return manifest_entries_package_map
 
 
+@dataclasses.dataclass
+class DelayedAction(object):
+    action_id: int
+    command: str
+    description: str
+    ninja_outputs: list[str]
+
+
+@dataclasses.dataclass
+class DelayedActionsRequest(object):
+    request_id: int
+    actions: list[DelayedAction]
+    build_metadata: dict[str, str]
+
+    @classmethod
+    def from_json(cls, raw: str) -> "DelayedActionsRequest":
+        """Parse the json Ninja uses to describe a batch of delayed action requests.
+
+        This parses the request from ninja which has the following schema:
+
+            "version": Required. Integer. Must be 1
+            "request_id": Required. Integer. Must be in 1..INT32_MAX range.
+            "actions": Required. Array of objects. Each one with:
+
+                "action_id": Required. Integer. Must be in 1..INT32_MAX range and
+                    correspond to the action's index in the request.
+                "command": Required. String. Command to run as a single string.
+                "description": Optional. String. Command description from GN.
+                "ninja_outputs": Optional. Array of Ninja output path strings,
+                    relative to the build directory.
+
+            "build_metadata": Optional. Object of key-value string pairs.
+        """
+        parsed: dict[str, T.Any] = json.loads(raw)
+        assert parsed["version"] == 1
+
+        return DelayedActionsRequest(
+            request_id=int(parsed["request_id"]),
+            actions=[
+                DelayedAction(
+                    action_id=a["action_id"],
+                    command=a["command"],
+                    description=a["description"],
+                    ninja_outputs=a["ninja_outputs"],
+                )
+                for a in parsed["actions"]
+            ],
+            build_metadata=parsed["build_metadata"],
+        )
+
+
+@dataclasses.dataclass
+class DelayedActionsResponse(object):
+    request_id: int
+    status: int
+
+    def to_json(self) -> str:
+        """Convert the response in the json format expected by Ninja.
+
+        This converts the response into the schema expected by Ninja.
+        """
+        as_dict = dataclasses.asdict(self)
+        as_dict["version"] = 1
+        return json.dumps(as_dict, indent=2)
+
+
 if __name__ == "__main__":
-    try:
-        rc = main()
-    except bazel_action_impl.BazelActionError:
-        # Convert these exceptions into an error rc instead of printing a stack trace.
-        rc = 1
+    rc = main()
     sys.exit(rc)

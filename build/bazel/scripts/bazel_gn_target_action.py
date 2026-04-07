@@ -330,9 +330,16 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    try:
+        bazel_paths = build_utils.BazelPaths.new(
+            args.fuchsia_dir, args.build_dir
+        )
+    except ValueError as e:
+        parser.error(str(e))
+
     # Load the extra global settings configured via GN global args
     global_bazel_args = BazelGlobalArguments.create_from_build_dir(
-        args.build_dir
+        bazel_paths.ninja_build_dir
     )
 
     if not args.bazel_targets:
@@ -346,7 +353,7 @@ def main() -> int:
 
     # Get the outputs for each bazel target that need to be copied out of the bazel outdir
     bazel_target_infos = BazelTargetInfosMap.create_from_build_dir(
-        args.build_dir
+        bazel_paths.ninja_build_dir
     )
 
     # These are the per-action stamp files that need to be touched to make sure that only
@@ -400,13 +407,6 @@ def main() -> int:
             "Found multiple gn targets directories for the bazel action."
         )
     gn_targets_dir = Path(list(gn_targets_dirs)[0])
-
-    try:
-        bazel_paths = build_utils.BazelPaths.new(
-            args.fuchsia_dir, args.build_dir
-        )
-    except ValueError as e:
-        parser.error(str(e))
 
     build_dir = bazel_paths.ninja_build_dir
     workspace_dir = bazel_paths.workspace
