@@ -978,6 +978,11 @@ def main() -> int:
         disk_cache = os.environ.get("FUCHSIA_BAZEL_DISK_CACHE")
         if disk_cache:
             bazel_common_args += [f"--disk_cache={disk_cache}"]
+            disk_cache_size = os.environ.get("FUCHSIA_BAZEL_DISK_CACHE_SIZE")
+            if disk_cache_size:
+                bazel_common_args += [
+                    f"--experimental_disk_cache_gc_max_size={disk_cache_size}"
+                ]
 
     # Pass explicit job count if needed. https://fxbug.dev/351623259
     job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")

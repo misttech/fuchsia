@@ -193,4 +193,22 @@ TEST_bazel_wrapper_build_command_with_disk_cache() {
     BT_EXPECT_EQ "${BT_MOCK_ARGS[8]}" //some:target
 }
 
+TEST_bazel_wrapper_build_command_with_disk_cache_with_max_size() {
+    FUCHSIA_BAZEL_DISK_CACHE="${BT_TEMP_DIR}/disk-cache" \
+    FUCHSIA_BAZEL_DISK_CACHE_SIZE="40G" \
+    "${bazel}" build --config=some_config //some:target
+    source "${bazel_bin}.mock_state"
+    BT_EXPECT_EQ "${#BT_MOCK_ARGS[@]}" 10
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[0]}" "${bazel_bin}"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[1]}" --nohome_rc
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[2]}" --output_base="${bazel_output_base}"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[3]}" --output_user_root="${bazel_output_user_root}"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[4]}" --bazelrc="${TEST_BUILD_DIR}"/regenerator_outputs/remote_services.bazelrc
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[5]}" build
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[6]}" --disk_cache="${BT_TEMP_DIR}"/disk-cache
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[7]}" --experimental_disk_cache_gc_max_size=40G
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[8]}" --config=some_config
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" //some:target
+}
+
 BT_RUN_TESTS "$@"

@@ -415,6 +415,7 @@ class BuildInvocation(object):
             "TMPDIR",  # was passed for Goma on macOS, but it might have other uses.
             "CLICOLOR_FORCE",
             "FUCHSIA_BAZEL_DISK_CACHE",
+            "FUCHSIA_BAZEL_DISK_CACHE_SIZE",
             "FUCHSIA_BAZEL_JOB_COUNT",
             "FUCHSIA_DEBUG_BAZEL_SANDBOX",
             "NINJA_PERSISTENT_TIMEOUT_SECONDS",
