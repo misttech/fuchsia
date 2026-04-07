@@ -134,6 +134,25 @@ where
         let discovery_proxy_stream =
             self.driver_state.discovery_proxy_future().into_stream().map(|_: Never| unreachable!());
 
+        let multicast_routing_manager_stream = self
+            .driver_state
+            .multicast_routing_manager_future()
+            .into_stream()
+            .map_err(|x| x.context("single_main_loop"))
+            .filter_map(|x| async {
+                match x {
+                    Ok(x) => Some(Ok(x)),
+                    Err(x) => {
+                        error!(
+                            "multicast_routing_manager_stream stream has terminated, reason: {:?}",
+                            x
+                        );
+                        // TODO(https://fxbug.dev/493250937): file a crash report here.
+                        None
+                    }
+                }
+            });
+
         let dhcp_v6_pd_stream = self
             .driver_state
             .dhcp_v6_pd_future()
@@ -361,6 +380,7 @@ where
             backbone_if_event_stream.boxed(),
             state_machine_stream.boxed(),
             discovery_proxy_stream.boxed(),
+            multicast_routing_manager_stream.boxed(),
             dhcp_v6_pd_stream.boxed(),
             dhcp_v6_pd_state_changed_stream.boxed(),
             border_agent_update_stream.boxed(),
@@ -392,13 +412,6 @@ where
             // NOTE: DRIVER STATE IS LOCKED WHEN THIS IS CALLED!
             self.on_ot_ip_receive(msg, fidl_fuchsia_hardware_network::FrameType::Ipv4);
         }));
-
-        driver_state.ot_instance.set_multicast_listener_callback(Some(
-            move |event: ot::BackboneRouterMulticastListenerEvent, address: &ot::Ip6Address| {
-                // NOTE: DRIVER STATE IS LOCKED WHEN THIS IS CALLED!
-                self.on_ot_bbr_multicast_listener_event(event, address);
-            },
-        ));
 
         driver_state.setup_border_agent_ephemeral_key_callback();
 
@@ -445,6 +458,12 @@ where
         {
             warn!("failed to set NAT64 CIDR: {:?}", e);
         }
+
+        // start multicast routing manager
+        if let Some(multicast_manager) = &driver_state.multicast_routing_manager {
+            multicast_manager.set_multicast_listener_callback_fn(&driver_state.ot_instance);
+            multicast_manager.start();
+        };
     }
 
     /// A single iteration of the main task loop

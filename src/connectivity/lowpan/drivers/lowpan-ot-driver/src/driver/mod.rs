@@ -35,8 +35,8 @@ pub use dhcpv6pd::*;
 use driver_state::*;
 pub use error_adapter::*;
 use lowpan_driver_common::AsyncCondition;
-use lowpan_driver_common::net::{BackboneInterface, NetworkInterface};
-use multicast_routing_manager::MulticastRoutingManager;
+pub use lowpan_driver_common::net::{BackboneInterface, NetworkInterface};
+pub use multicast_routing_manager::*;
 pub use nat64::*;
 pub use srp_proxy::*;
 
@@ -94,16 +94,15 @@ pub struct OtDriver<OT, NI, BI> {
     /// Additional TXT records set by `meshcop_update_txt_entries`.
     border_agent_vendor_txt_entries: futures::lock::Mutex<Vec<(String, Vec<u8>)>>,
 
-    /// Multicast routing manager:
-    multicast_routing_manager: MulticastRoutingManager,
-
     /// Information about the platform on which the driver is running.  This information is cached
     /// to prevent repeated service reconnections and redundant queries.
     /// Commands ePSKc publishing logic to start or stop.
     epskc_publisher: fuchsia_sync::Mutex<mpsc::Sender<border_agent::PublishServiceRequest>>,
 }
 
-impl<OT: ot::Cli, NI, BI> OtDriver<OT, NI, BI> {
+impl<OT: ot::Cli + ot::BackboneRouter, NI: NetworkInterface, BI: BackboneInterface>
+    OtDriver<OT, NI, BI>
+{
     pub fn new(
         ot_instance: OT,
         net_if: NI,
@@ -113,7 +112,11 @@ impl<OT: ot::Cli, NI, BI> OtDriver<OT, NI, BI> {
         border_agent_publisher: mpsc::Sender<border_agent::BorderAgentPublishRequest>,
     ) -> Self {
         OtDriver {
-            driver_state: fuchsia_sync::Mutex::new(DriverState::new(ot_instance)),
+            driver_state: fuchsia_sync::Mutex::new(DriverState::new(
+                ot_instance,
+                net_if.get_nicid(),
+                backbone_if.get_nicid(),
+            )),
             driver_state_change: AsyncCondition::new(),
             net_if,
             backbone_if,
@@ -121,7 +124,6 @@ impl<OT: ot::Cli, NI, BI> OtDriver<OT, NI, BI> {
                 vec![],
             )),
             border_agent_vendor_txt_entries: futures::lock::Mutex::new(vec![]),
-            multicast_routing_manager: MulticastRoutingManager::new(),
             product_metadata,
             epskc_publisher: fuchsia_sync::Mutex::new(epskc_publisher),
             border_agent_publisher: fuchsia_sync::Mutex::new(border_agent_publisher),

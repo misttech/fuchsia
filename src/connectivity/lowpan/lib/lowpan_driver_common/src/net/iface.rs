@@ -7,6 +7,7 @@ use crate::spinel::Subnet;
 use anyhow::Error;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
+use std::num::NonZeroU64;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -24,6 +25,9 @@ pub enum NetworkInterfaceEvent {
 pub trait NetworkInterface: Send + Sync {
     /// Returns the network interface index.
     fn get_index(&self) -> u64;
+
+    /// Returns the network interface index.
+    fn get_nicid(&self) -> NonZeroU64;
 
     /// Blocks until the network stack has a packet to send.
     async fn outbound_packet_from_stack(&self) -> Result<Vec<u8>, Error>;
@@ -139,6 +143,10 @@ impl Default for DummyNetworkInterface {
 impl NetworkInterface for DummyNetworkInterface {
     fn get_index(&self) -> u64 {
         3
+    }
+
+    fn get_nicid(&self) -> NonZeroU64 {
+        NonZeroU64::new(3).unwrap()
     }
 
     async fn outbound_packet_from_stack(&self) -> Result<Vec<u8>, Error> {

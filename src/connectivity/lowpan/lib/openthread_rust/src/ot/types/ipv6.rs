@@ -127,6 +127,25 @@ impl Ip6NetworkPrefix {
     pub fn contains(&self, addr: &std::net::Ipv6Addr) -> bool {
         self.0.m8 == addr.octets()[0..8]
     }
+
+    /// Get the scope of the prefix
+    pub fn get_scope(&self) -> Scope {
+        let addr: std::net::Ipv6Addr = (*self).into();
+        if addr.is_multicast() {
+            ot::types::ipv6::Scope::from(addr.octets()[1] & 0xf)
+        } else if self.is_link_local() {
+            Scope::LINK_LOCAL
+        } else if addr.is_loopback() {
+            Scope::NODE_LOCAL
+        } else {
+            Scope::GLOBAL
+        }
+    }
+
+    /// Check if this is a link local prefix
+    pub fn is_link_local(&self) -> bool {
+        (self.0.m8[0] == 0xfe) && ((self.0.m8[1] & 0xc0) == 0x80)
+    }
 }
 
 impl From<[u8; 8]> for Ip6NetworkPrefix {
@@ -208,6 +227,7 @@ pub struct Scope(pub u8);
 
 #[allow(missing_docs)]
 impl Scope {
+    pub const NODE_LOCAL: Scope = Scope(0x0);
     pub const INTERFACE_LOCAL: Scope = Scope(0x1);
     pub const LINK_LOCAL: Scope = Scope(0x2);
     pub const REALM_LOCAL: Scope = Scope(0x3);
@@ -235,6 +255,12 @@ impl Debug for Scope {
 impl From<Scope> for u8 {
     fn from(x: Scope) -> Self {
         x.0
+    }
+}
+
+impl From<u8> for Scope {
+    fn from(x: u8) -> Self {
+        Scope(x)
     }
 }
 

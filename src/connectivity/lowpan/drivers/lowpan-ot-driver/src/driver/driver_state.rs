@@ -5,6 +5,7 @@
 use super::*;
 
 use lowpan_driver_common::lowpan_fidl::*;
+use std::num::NonZeroU64;
 
 #[derive(Debug)]
 pub struct DriverState<OT> {
@@ -27,6 +28,8 @@ pub struct DriverState<OT> {
     pub border_agent: border_agent::BorderAgent,
 
     pub epskc: border_agent::Epskc,
+
+    pub multicast_routing_manager: Option<multicast_routing_manager::MulticastRoutingManager>,
 }
 
 impl<OT: AsRef<ot::Instance>> AsRef<ot::Instance> for DriverState<OT> {
@@ -62,6 +65,12 @@ impl<OT> AsRef<border_agent::BorderAgent> for DriverState<OT> {
 impl<OT> AsRef<border_agent::Epskc> for DriverState<OT> {
     fn as_ref(&self) -> &border_agent::Epskc {
         &self.epskc
+    }
+}
+
+impl<OT> AsRef<Option<multicast_routing_manager::MulticastRoutingManager>> for DriverState<OT> {
+    fn as_ref(&self) -> &Option<multicast_routing_manager::MulticastRoutingManager> {
+        &self.multicast_routing_manager
     }
 }
 
@@ -244,8 +253,8 @@ impl<OT: AsRef<ot::Instance>> DriverState<OT> {
     }
 }
 
-impl<OT> DriverState<OT> {
-    pub fn new(ot_instance: OT) -> Self {
+impl<OT: ot::BackboneRouter> DriverState<OT> {
+    pub fn new(ot_instance: OT, net_if_id: NonZeroU64, backbone_if_id: Option<NonZeroU64>) -> Self {
         DriverState {
             ot_instance,
             connectivity_state: ConnectivityState::Inactive,
@@ -257,6 +266,9 @@ impl<OT> DriverState<OT> {
             dhcp_v6_pd: dhcpv6pd::DhcpV6Pd::default(),
             border_agent: border_agent::BorderAgent::new(),
             epskc: border_agent::Epskc::new(),
+            multicast_routing_manager: backbone_if_id.map(move |backbone_if_id| {
+                multicast_routing_manager::MulticastRoutingManager::new(net_if_id, backbone_if_id)
+            }),
         }
     }
 }

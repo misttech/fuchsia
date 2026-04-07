@@ -46,7 +46,7 @@ pub trait BackboneRouter {
         F: FnMut(BackboneRouterMulticastListenerEvent, &Ip6Address) + 'a;
 
     /// Returns an iterator for iterating over multicast listeners.
-    fn iter_multicaster_listeners(&self) -> MulticastListenerIterator<'_, Self> {
+    fn iter_multicast_listeners(&self) -> MulticastListenerIterator<'_, Self> {
         MulticastListenerIterator {
             ot_instance: self,
             ot_listener_iter: OT_BACKBONE_ROUTER_MULTICAST_LISTENER_ITERATOR_INIT
@@ -94,9 +94,14 @@ impl BackboneRouter for Instance {
             )) {
                 Error::NotFound => None,
                 Error::None => Some(ret),
-                err => panic!(
-                    "Unexpected error from otBackboneRouterMulticastListenerIterator: {err:?}"
-                ),
+                err => {
+                    // If something's wrong in OpenThread when iterate multicast listeners,
+                    // do not crash `lowpan-ot-driver`.
+                    warn!(
+                        "Unexpected error from otBackboneRouterMulticastListenerIterator: {err:?}"
+                    );
+                    None
+                }
             }
         }
     }

@@ -321,7 +321,7 @@ where
     let name = name.as_ref();
     let (epskc_sender, epskc_receiver) = mpsc::channel(SERVICE_CHANNEL_SIZE);
     let (border_agent_sender, border_agent_receiver) = mpsc::channel(SERVICE_CHANNEL_SIZE);
-    let mut driver = OtDriver::new(
+    let driver = OtDriver::new(
         ot_instance,
         net_if,
         backbone_if,
@@ -329,8 +329,6 @@ where
         epskc_sender,
         border_agent_sender,
     );
-
-    driver.start_multicast_routing_manager();
 
     let driver_ref = &driver;
 

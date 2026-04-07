@@ -7,25 +7,26 @@ use super::debug::*;
 use super::iface::*;
 use crate::prelude_internal::*;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU64;
 
 use crate::spinel::Subnet;
 use anyhow::Error;
 use async_trait::async_trait;
 use fidl::endpoints::{create_endpoints, create_proxy};
+use fidl_fuchsia_hardware_network as fhwnet;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnetext;
+use fidl_fuchsia_net_interfaces_admin as fnetifadmin;
+use fidl_fuchsia_net_interfaces_ext as fnetifext;
+use fidl_fuchsia_net_stack as fnetstack;
 use fidl_fuchsia_net_stack_ext::FidlReturn as _;
+use fidl_fuchsia_net_tun as ftun;
 use fuchsia_async::net::DatagramSocket;
 use fuchsia_component::client::{connect_channel_to_protocol, connect_to_protocol};
 use fuchsia_sync::Mutex;
 use futures::stream::BoxStream;
 use net_types::ip::{Ip as _, Ipv6};
 use socket2::{Domain, Protocol};
-use {
-    fidl_fuchsia_hardware_network as fhwnet, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_ext as fnetext, fidl_fuchsia_net_interfaces_admin as fnetifadmin,
-    fidl_fuchsia_net_interfaces_ext as fnetifext, fidl_fuchsia_net_stack as fnetstack,
-    fidl_fuchsia_net_tun as ftun,
-};
-
 const TUN_PORT_ID: u8 = 0;
 
 #[derive(Debug)]
@@ -156,6 +157,10 @@ impl TunNetworkInterface {
 impl NetworkInterface for TunNetworkInterface {
     fn get_index(&self) -> u64 {
         self.id
+    }
+
+    fn get_nicid(&self) -> NonZeroU64 {
+        NonZeroU64::new(self.id).expect("TUN interface ID is guaranteed to be non-zero")
     }
 
     async fn outbound_packet_from_stack(&self) -> Result<Vec<u8>, Error> {
@@ -373,14 +378,22 @@ impl NetworkInterface for TunNetworkInterface {
     fn add_external_route(&self, addr: &Subnet) -> Result<(), Error> {
         let subnet_addr: std::net::Ipv6Addr = addr.addr;
         let subnet_length = addr.prefix_len;
-        info!("TunNetworkInterface: Adding external route: {} with prefix length {} (CURRENTLY IGNORED)", subnet_addr, subnet_length);
+        info!(
+            "TunNetworkInterface: Adding external route: {} with prefix length {} \
+            (CURRENTLY IGNORED)",
+            subnet_addr, subnet_length
+        );
         Ok(())
     }
 
     fn remove_external_route(&self, addr: &Subnet) -> Result<(), Error> {
         let subnet_addr: std::net::Ipv6Addr = addr.addr;
         let subnet_length = addr.prefix_len;
-        info!("TunNetworkInterface: Removing external route: {} with prefix length {} (CURRENTLY IGNORED)", subnet_addr, subnet_length);
+        info!(
+            "TunNetworkInterface: Removing external route: {} with prefix length {} \
+            (CURRENTLY IGNORED)",
+            subnet_addr, subnet_length
+        );
         Ok(())
     }
 

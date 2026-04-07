@@ -15,15 +15,6 @@ where
     NI: NetworkInterface,
     BI: BackboneInterface,
 {
-    pub fn start_multicast_routing_manager(&mut self) {
-        match self.backbone_if.get_nicid() {
-            None => info!("Backbone interface not present, not starting multicast routing manager"),
-            Some(backbone_nicid) => {
-                self.multicast_routing_manager.start(backbone_nicid.into(), self.net_if.get_index())
-            }
-        }
-    }
-
     pub fn on_ot_ip_receive(
         &self,
         msg: OtMessageBox<'_>,
@@ -136,33 +127,6 @@ where
                 self.net_if.remove_address_from_spinel_subnet(&subnet).ignore_not_found()
             {
                 warn!("Unable to remove address `{:?}` from interface: {:?}", subnet, err);
-            }
-        }
-    }
-
-    pub(crate) fn on_ot_bbr_multicast_listener_event(
-        &self,
-        event: ot::BackboneRouterMulticastListenerEvent,
-        address: &ot::Ip6Address,
-    ) {
-        // NOTE: DRIVER STATE IS LOCKED WHEN THIS IS CALLED!
-        //       Calling `lock()` on the driver state will deadlock!
-
-        match event {
-            ot::BackboneRouterMulticastListenerEvent::ListenerAdded => {
-                if let Err(err) = self.backbone_if.join_mcast_group(address).ignore_already_exists()
-                {
-                    warn!("Unable to join multicast group `{:?}`: {:?}", address, err);
-                } else {
-                    let future = self.multicast_routing_manager.add_forwarding_route(address);
-                    futures::executor::block_on(future);
-                }
-            }
-
-            ot::BackboneRouterMulticastListenerEvent::ListenerRemoved => {
-                if let Err(err) = self.backbone_if.leave_mcast_group(address).ignore_not_found() {
-                    warn!("Unable to leave multicast group `{:?}`: {:?}", address, err);
-                }
             }
         }
     }
