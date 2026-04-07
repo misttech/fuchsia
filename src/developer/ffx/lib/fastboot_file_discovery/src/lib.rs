@@ -193,6 +193,10 @@ pub fn get_fastboot_devices(
     let lines = BufReader::new(file).lines();
     let mut res = vec![];
     for line in lines.flatten() {
+        let line = line.trim_matches(|c: char| c.is_whitespace() || c == '\0');
+        if line.is_empty() {
+            continue;
+        }
         let device = line.parse::<FastbootEntry>()?;
         res.push(device);
     }
@@ -224,6 +228,11 @@ impl notify::EventHandler for FastbootFileHandler {
                                 let lines = BufReader::new(file).lines();
 
                                 for line in lines.flatten() {
+                                    let line =
+                                        line.trim_matches(|c: char| c.is_whitespace() || c == '\0');
+                                    if line.is_empty() {
+                                        continue;
+                                    }
                                     match line.parse::<FastbootEntry>() {
                                         Err(e) => {
                                             log::error!(
@@ -377,6 +386,31 @@ mod test {
         let entry =
             FastbootEntry { mode: FastbootMode::UDP, socket_addr: "[::1]:8080".parse().unwrap() };
         assert_eq!(entry.to_string(), "udp [::1]:8080");
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_get_fastboot_devices() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let mut file = NamedTempFile::new()?;
+        writeln!(file, "tcp:127.0.0.1:8080")?;
+        writeln!(file, "")?;
+        writeln!(file, "\0\0tcp:127.0.0.1:8081\0\0")?;
+        writeln!(file, "   ")?;
+        writeln!(file, " \0 \0  ")?;
+        writeln!(file, "udp:192.168.1.1:9090  ")?;
+
+        let devices = get_fastboot_devices(&file.path()).unwrap();
+        assert_eq!(devices.len(), 3);
+        assert_eq!(devices[0].mode, FastbootMode::TCP);
+        assert_eq!(devices[0].socket_addr, "127.0.0.1:8080".parse::<SocketAddr>().unwrap());
+        assert_eq!(devices[1].mode, FastbootMode::TCP);
+        assert_eq!(devices[1].socket_addr, "127.0.0.1:8081".parse::<SocketAddr>().unwrap());
+        assert_eq!(devices[2].mode, FastbootMode::UDP);
+        assert_eq!(devices[2].socket_addr, "192.168.1.1:9090".parse::<SocketAddr>().unwrap());
+
         Ok(())
     }
 }
