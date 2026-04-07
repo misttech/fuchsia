@@ -63,11 +63,15 @@ void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FIL
 
   for (auto [reason, value] : kRebootReasons) {
     if (reboot_reason == reason) {
+      static_assert(kBootArg.size() > 0);
+      fprintf(log, "%s: INFO %.*s was <%.*s>.\n", shim_name, static_cast<int>(kBootArg.size() - 1),
+              kBootArg.data(), static_cast<int>(reboot_reason.size()), reboot_reason.data());
       set_payload(value);
       return;
     }
   }
 
+  static_assert(kBootArg.size() > 0);
   fprintf(log, "%s: ERROR %.*s was <%.*s>, no known reboot reason.\n", shim_name,
           static_cast<int>(kBootArg.size() - 1), kBootArg.data(),
           static_cast<int>(reboot_reason.size()), reboot_reason.data());
