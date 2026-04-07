@@ -5,6 +5,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -468,5 +469,113 @@ func TestCreateFilteredTaskRequests(t *testing.T) {
 				t.Errorf("createFilteredTaskRequests() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestReadTaskRequests(t *testing.T) {
+	tempFile, err := os.CreateTemp("", "task_requests.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tempFile.Name())
+	defer tempFile.Close()
+
+	// Write test data to the temp file
+	jsonString := `
+			[
+				{
+					"name": "shard1|bucket/builder",
+					"priority": 20,
+					"service_account": "test-service-account",
+					"realm": "project:bucket",
+					"tags": ["tag1", "tag2"],
+					"task_slices": [
+						{
+							"properties": {
+								"cas_input_root": {
+									"cas_instance": "projects/chromium_swarm/instances/default_instance",
+									"digest": {
+										"hash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+										"size_bytes": 238
+									}
+								},
+								"command": ["echo", "hello"],
+								"containment": {
+									"containment_type": "NONE"
+								},
+								"dimensions": [
+									{
+										"key": "key1",
+										"value": "value1"
+									}
+								],
+								"env": [
+									{
+										"key": "key1",
+										"value": "value1"
+									}
+								],
+								"execution_timeout_secs": 3600,
+								"grace_period_secs": 60,
+								"outputs": [
+									"serial_logs",
+									"syslogs"
+								],
+								"relative_cwd": "/path/to/relative/cwd"
+							}
+						}
+					]
+				}
+			]
+		`
+	expectedResults := []swarmingpb.NewTaskRequest{
+		{
+			Name:           "shard1|bucket/builder",
+			Priority:       20,
+			ServiceAccount: "test-service-account",
+			Realm:          "project:bucket",
+			Tags:           []string{"tag1", "tag2"},
+			TaskSlices: []*swarmingpb.TaskSlice{
+				{
+					Properties: &swarmingpb.TaskProperties{
+						CasInputRoot: &swarmingpb.CASReference{
+							CasInstance: "projects/chromium_swarm/instances/default_instance",
+							Digest: &swarmingpb.Digest{
+								Hash:      "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+								SizeBytes: 238,
+							},
+						},
+						Command: []string{"echo", "hello"},
+						Containment: &swarmingpb.Containment{
+							ContainmentType: swarmingpb.Containment_NONE,
+						},
+						Dimensions: []*swarmingpb.StringPair{
+							{Key: "key1", Value: "value1"},
+						},
+						Env: []*swarmingpb.StringPair{
+							{Key: "key1", Value: "value1"},
+						},
+						ExecutionTimeoutSecs: 3600,
+						GracePeriodSecs:      60,
+						Outputs:              []string{"serial_logs", "syslogs"},
+						RelativeCwd:          "/path/to/relative/cwd",
+					},
+				},
+			},
+		},
+	}
+	if _, err := tempFile.Write([]byte(jsonString)); err != nil {
+		t.Fatalf("Failed to write test data: %v", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	// Read the data back using the function under test
+	result := readTaskRequests(tempFile.Name())
+
+	// Compare the result with the expected data
+	if diff := cmp.Diff(expectedResults, result, protocmp.Transform()); diff != "" {
+		t.Errorf("readTaskRequests() mismatch (-want +got):\n%s", diff)
 	}
 }

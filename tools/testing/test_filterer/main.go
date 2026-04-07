@@ -19,6 +19,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type flags struct {
@@ -122,13 +123,22 @@ func readShards(shardsJsonPath string) []testsharder.Shard {
 }
 
 func readTaskRequests(taskRequestsJsonPath string) []swarmingpb.NewTaskRequest {
-	var taskRequests []swarmingpb.NewTaskRequest
 	data, err := os.ReadFile(taskRequestsJsonPath)
 	if err != nil {
 		log.Fatalf("Failed to read task requests json file: %v", err)
 	}
-	if err := json.Unmarshal(data, &taskRequests); err != nil {
+	var rawTaskRequests []json.RawMessage
+	if err := json.Unmarshal(data, &rawTaskRequests); err != nil {
 		log.Fatalf("Failed to unmarshal task requests json: %v", err)
+	}
+
+	taskRequests := make([]swarmingpb.NewTaskRequest, len(rawTaskRequests))
+	for i, rawItem := range rawTaskRequests {
+		msg := swarmingpb.NewTaskRequest{}
+		if err := protojson.Unmarshal(rawItem, &msg); err != nil {
+			log.Fatalf("Failed to unmarshal task requests: %v", err)
+		}
+		taskRequests[i] = msg
 	}
 	return taskRequests
 }
