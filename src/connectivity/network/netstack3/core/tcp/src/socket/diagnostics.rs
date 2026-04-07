@@ -1711,6 +1711,8 @@ mod tests {
                 segs_out: 0,
                 segs_in: 0,
                 last_data_sent: None,
+                snd_mss: None,
+                rcv_mss: None,
             }
         );
     }
@@ -1758,6 +1760,8 @@ mod tests {
                 segs_out: 0,
                 segs_in: 0,
                 last_data_sent: None,
+                snd_mss: None,
+                rcv_mss: None,
             }
         );
     }
@@ -1877,6 +1881,8 @@ mod tests {
                     rtt_var: Some(rtt_var),
                     last_ack_recv: Some(last_ack_recv),
                     last_data_sent: Some(last_data_sent),
+                    snd_mss: _,
+                    rcv_mss: _,
                 } => {
                     assert_eq!(segs_out, 4);
                     assert_eq!(segs_in, 3);
@@ -1909,6 +1915,8 @@ mod tests {
                     rtt_var: Some(rtt_var),
                     last_ack_recv: Some(last_ack_recv),
                     last_data_sent: Some(last_data_sent),
+                    snd_mss: _,
+                    rcv_mss: _,
                 } => {
                     assert_eq!(segs_out, 2);
                     assert_eq!(segs_in, 3);

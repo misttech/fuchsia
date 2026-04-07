@@ -41,6 +41,10 @@ pub struct TcpSocketInfo<I> {
     pub segs_out: u64,
     /// Segments received.
     pub segs_in: u64,
+    /// The sender maximum segment size.
+    pub snd_mss: Option<u32>,
+    /// The receiver maximum segment size.
+    pub rcv_mss: Option<u32>,
     /// Timestamp of the last data sent.
     pub last_data_sent: Option<I>,
 }
@@ -56,6 +60,8 @@ impl<I: Instant> Inspectable for TcpSocketInfo<I> {
             snd_cwnd,
             last_ack_recv,
             last_data_sent,
+            snd_mss,
+            rcv_mss,
 
             // Already recorded by the caller.
             state: _,
@@ -83,6 +89,12 @@ impl<I: Instant> Inspectable for TcpSocketInfo<I> {
         }
         if let Some(last_data_sent) = last_data_sent {
             inspector.record_inspectable_value("LastDataSent", last_data_sent);
+        }
+        if let Some(snd_mss) = snd_mss {
+            inspector.record_uint("SndMss", *snd_mss);
+        }
+        if let Some(rcv_mss) = rcv_mss {
+            inspector.record_uint("RcvMss", *rcv_mss);
         }
     }
 }
@@ -114,6 +126,7 @@ pub(crate) struct SendInfo<I> {
     rtt_var: Option<Duration>,
     snd_ssthresh: u32,
     snd_cwnd: u32,
+    snd_mss: Option<u32>,
     last_data_sent: Option<I>,
     ca_state: CongestionControlState,
 }
@@ -134,6 +147,7 @@ impl<I: Instant> SendInfo<I> {
             rtt: est.srtt(),
             rtt_var: est.rtt_var(),
             rto: Some(est.rto().into()),
+            snd_mss: Some(u32::from(cc.mss())),
             last_data_sent: snd.last_data_sent,
         }
     }
@@ -146,16 +160,17 @@ impl<I: Instant> SendInfo<I> {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 struct RecvInfo<I> {
     last_ack_recv: Option<I>,
+    rcv_mss: Option<u32>,
 }
 
 impl<I: Instant> RecvInfo<I> {
     fn from_recv<R: ReceiveBuffer>(rcv: &Recv<I, R>) -> Self {
-        Self { last_ack_recv: rcv.last_segment_at }
+        Self { last_ack_recv: rcv.last_segment_at, rcv_mss: Some(u32::from(rcv.mss)) }
     }
 
     fn from_recv_params(rcv: &RecvParams<I>) -> Self {
         let RecvParams { last_ack_recv, ack: _, wnd_scale: _, wnd: _, ts_opt: _ } = rcv;
-        Self { last_ack_recv: *last_ack_recv }
+        Self { last_ack_recv: *last_ack_recv, rcv_mss: None }
     }
 }
 
@@ -184,9 +199,17 @@ impl<I: Instant> TcpSocketInfo<I> {
         state: netstack3_base::TcpSocketState,
         counters: &TcpCountersWithSocketInner,
     ) -> Self {
-        let SendInfo { rto, rtt, rtt_var, snd_ssthresh, snd_cwnd, last_data_sent, ca_state } =
-            SendInfo::default();
-        let RecvInfo { last_ack_recv } = RecvInfo::default();
+        let SendInfo {
+            rto,
+            rtt,
+            rtt_var,
+            snd_ssthresh,
+            snd_cwnd,
+            last_data_sent,
+            ca_state,
+            snd_mss: _,
+        } = SendInfo::default();
+        let RecvInfo { last_ack_recv, rcv_mss: _ } = RecvInfo::default();
         let CounterParams { retransmits, segs_out, segs_in } =
             CounterParams::from_counters(counters);
 
@@ -202,6 +225,8 @@ impl<I: Instant> TcpSocketInfo<I> {
             snd_cwnd,
             last_ack_recv,
             segs_in,
+            snd_mss: None,
+            rcv_mss: None,
             last_data_sent,
         }
     }
@@ -296,9 +321,17 @@ impl<I: Instant> TcpSocketInfo<I> {
             ),
         };
 
-        let SendInfo { snd_cwnd, snd_ssthresh, ca_state, rtt, rtt_var, rto, last_data_sent } =
-            send_params;
-        let RecvInfo { last_ack_recv } = recv_params;
+        let SendInfo {
+            snd_cwnd,
+            snd_ssthresh,
+            ca_state,
+            rtt,
+            rtt_var,
+            rto,
+            snd_mss,
+            last_data_sent,
+        } = send_params;
+        let RecvInfo { last_ack_recv, rcv_mss } = recv_params;
         let CounterParams { retransmits, segs_out, segs_in } =
             CounterParams::from_counters(counters);
 
@@ -314,6 +347,8 @@ impl<I: Instant> TcpSocketInfo<I> {
             last_ack_recv,
             segs_out,
             segs_in,
+            snd_mss,
+            rcv_mss,
             last_data_sent,
         }
     }
@@ -371,6 +406,8 @@ mod tests {
                 snd_ssthresh: 0,
                 snd_cwnd: 0,
                 last_ack_recv: None,
+                snd_mss: None,
+                rcv_mss: None,
                 last_data_sent: None,
             }
         );
@@ -407,6 +444,8 @@ mod tests {
                 snd_ssthresh: 0,
                 snd_cwnd: 0,
                 last_ack_recv: None,
+                snd_mss: None,
+                rcv_mss: None,
                 last_data_sent: None,
             }
         );
@@ -481,6 +520,8 @@ mod tests {
                 last_ack_recv: Some(now - Duration::from_secs(2)),
                 segs_out: 10,
                 segs_in: 20,
+                snd_mss: Some(1460),
+                rcv_mss: Some(1460),
                 last_data_sent: Some(now - Duration::from_secs(1))
             }
         );
@@ -555,6 +596,8 @@ mod tests {
                 snd_ssthresh: 3066,
                 snd_cwnd: 7300,
                 last_ack_recv: None,
+                snd_mss: Some(1460),
+                rcv_mss: Some(1460),
                 last_data_sent: None,
             }
         );
@@ -579,6 +622,8 @@ mod tests {
             last_ack_recv: None,
             segs_out: 10,
             segs_in: 20,
+            snd_mss: Some(1460),
+            rcv_mss: Some(1460),
             last_data_sent: None,
         };
 
@@ -595,6 +640,8 @@ mod tests {
             "RttVarMs": 25u64,
             "SndSsthresh": 1000u64,
             "SndCwnd": 2000u64,
+            "SndMss": 1460u64,
+            "RcvMss": 1460u64,
         });
     }
 }

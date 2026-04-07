@@ -301,6 +301,8 @@ impl TryIntoFidl<fnet_sockets_ext::TcpInfo> for TcpSocketInfo<StackTime> {
             last_ack_recv,
             segs_out,
             segs_in,
+            snd_mss: _,
+            rcv_mss: _,
             last_data_sent,
         } = self;
 
