@@ -198,9 +198,10 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
   uint32_t bus_id = entry.bdf.bus_id;  // 32bit so bus_id won't overflow 8bit in the loop
   uint8_t _dev_id = entry.bdf.device_id;
   uint8_t _func_id = entry.bdf.function_id;
+  uint8_t _max_functions = entry.max_functions;
   UpstreamNode* upstream = entry.upstream;
   for (uint8_t dev_id = _dev_id; dev_id < PCI_MAX_DEVICES_PER_BUS; dev_id++) {
-    uint8_t max_functions = 1;
+    uint8_t max_functions = _max_functions;
     for (uint8_t func_id = _func_id; func_id < max_functions; func_id++) {
       pci_bdf_t bdf = {static_cast<uint8_t>(bus_id), dev_id, func_id};
       zx::result<std::unique_ptr<Config>> config = MakeConfig(bdf);
@@ -253,7 +254,8 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
         resume_entry.bdf.bus_id = static_cast<uint8_t>(bus_id);
         resume_entry.bdf.device_id = dev_id;
         resume_entry.bdf.function_id = static_cast<uint8_t>(func_id + 1);
-        resume_entry.upstream = upstream;  // Same upstream as this scan
+        resume_entry.upstream = upstream;
+        resume_entry.max_functions = max_functions;
         scan_list->push_back(resume_entry);
 
         BusScanEntry bridge_entry{};
@@ -275,9 +277,10 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
       }
     }
 
-    // Reset _func_id to zero here so that after we resume a single function
-    // scan we'll be able to scan the full 8 functions of a given device.
+    // Reset _func_id and _max_functions so the next device will be scanned starting from function 0
+    // with the default single-function assumption
     _func_id = 0;
+    _max_functions = BusScanEntry::kDefaultMaxFunctions;
   }
 }
 

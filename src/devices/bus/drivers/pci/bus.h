@@ -41,8 +41,10 @@ namespace pci {
 // An entry corresponding to a place in the topology to scan. Use to allow for
 // DFS traversal of the bus topology while keeping track of nodes upstream.
 struct BusScanEntry {
+  static constexpr uint8_t kDefaultMaxFunctions = 1;
   pci_bdf_t bdf;
   UpstreamNode* upstream;
+  uint8_t max_functions = kDefaultMaxFunctions;
 };
 
 // A list of pci::Device which share the same legacy IRQ and are configured to use legacy irqs.

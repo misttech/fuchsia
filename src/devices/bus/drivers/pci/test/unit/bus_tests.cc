@@ -79,6 +79,9 @@ class PciBusTests : public ::gtest::TestLoopFixture {
   zx_device_t* parent() { return parent_.get(); }
   // Sets up 5 devices, including two under a bridge.
   uint32_t SetupTopology();
+  // Sets up 5 devices: a multifunction device with an endpoint, a bridge, and
+  // another endpoint, plus two devices behind the bridge.
+  uint32_t SetupMultifunctionTopology();
   zx::interrupt AddLegacyIrqToBus(uint8_t vector);
   void AddRoutingEntryToBus(std::optional<uint8_t> p_dev, std::optional<uint8_t> p_func,
                             uint8_t dev_id, uint8_t a, uint8_t b, uint8_t c, uint8_t d);
@@ -111,6 +114,26 @@ uint32_t PciBusTests::SetupTopology() {
   ecam.get_device({1, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
       PCI_HEADER_TYPE_MULTI_FN);
   ecam.get_device({1, 0, 1})->set_vendor_id(0x8086).set_device_id(idx);
+  return idx;
+}
+
+uint32_t PciBusTests::SetupMultifunctionTopology() {
+  uint8_t idx = 1;
+  auto& ecam = pciroot_->ecam();
+  ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
+      PCI_HEADER_TYPE_MULTI_FN);
+  ecam.get_bridge({0, 0, 1})
+      ->set_vendor_id(0x8086)
+      .set_device_id(idx++)
+      .set_header_type(PCI_HEADER_TYPE_PCI_BRIDGE | PCI_HEADER_TYPE_MULTI_FN)
+      .set_io_base(0x10)
+      .set_io_limit(0x0FFF)
+      .set_memory_base(0x1000)
+      .set_memory_limit(0xFFFFFFFF)
+      .set_secondary_bus_number(1);
+  ecam.get_device({0, 0, 2})->set_vendor_id(0x8086).set_device_id(idx++);
+  ecam.get_device({1, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++);
+  ecam.get_device({1, 1, 0})->set_vendor_id(0x8086).set_device_id(idx);
   return idx;
 }
 
@@ -348,6 +371,15 @@ TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 3u);
+}
+
+TEST_F(PciBusTests, MultiFnAllFunctionsScanned) {
+  uint32_t dev_cnt = SetupMultifunctionTopology();
+  auto owned_bus =
+      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+  ASSERT_EQ(bus->GetDeviceCount(), dev_cnt);
 }
 
 TEST_F(PciBusTests, Inspect) {
