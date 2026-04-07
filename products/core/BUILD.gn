@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/product_assembly_configuration.gni")
 import("//build/bazel/assembly/bazel_product_bundle.gni")
 import("//build/info/info.gni")
 import("//products/core/core_bazel_inputs.gni")
@@ -11,96 +10,6 @@ assert(
     is_fuchsia,
     "Product definitions and assemblies should only be defined in the fuchsia toolchain")
 
-# This is the base platform configuration used by core
-_platform_configuration_base = {
-  build_type = "eng"
-
-  kernel = {
-    scheduler_enable_new_wakeup_accounting = true
-  }
-
-  bluetooth = {
-    type = "standard"
-    snoop = "lazy"
-  }
-
-  # Include sl4f on all core products until tests transition to other APIs.
-  development_support = {
-    include_sl4f = true
-
-    tools = {
-      audio = {
-        driver_tools = true
-        full_stack_tools = true
-      }
-      connectivity = {
-        enable_networking = true
-        enable_wlan = true
-        enable_thread = true
-      }
-    }
-  }
-
-  fonts = {
-    # See base_packages below.
-    font_collection = "small-open-fonts-collection"
-  }
-
-  media = {
-    audio = {
-      full_stack = {
-      }
-    }
-    enable_codecs = true
-    enable_sessions = true
-  }
-
-  power = {
-    enable_non_hermetic_testing = true
-  }
-
-  setui = {
-  }
-
-  storage = {
-  }
-
-  ui = {
-    supported_input_devices = [
-      "button",
-      "touchscreen",
-    ]
-  }
-}
-
-_storage_minfs = {
-  storage = {
-    mutable_storage_garbage_collection = true
-    filesystems = {
-      volume = {
-        fvm = {
-          data = {
-            data_filesystem_format = "minfs"
-          }
-          blob = {
-          }
-        }
-      }
-    }
-  }
-}
-
-_base_packages = [
-  {
-    # Provides font assets for `platform.fonts.font_collection` above.
-    package_target = "//src/fonts/asset_providers:small-open-fonts-collection.asset-provider.package"
-  },
-]
-_cache_packages = [
-  {
-    package_target = "//src/chromium:web_engine_pkg"
-  },
-]
 _bazel_inputs = core_bazel_inputs
 
 if (current_cpu == "x64") {
@@ -140,6 +49,22 @@ if (current_cpu == "x64") {
     bazel_product_config_name = "core"
     bazel_recovery_image_target = "//products/zedboot:x64"
     bazel_elf_sizes_target = ":elf_sizes_f2fs.x64"
+    bazel_inputs_from_gn = _bazel_inputs + [ "//boards/x64:x64.bazel_input" ]
+    image_has_fxfs_blob = false
+  }
+
+  bazel_product_bundle("product_bundle_minfs.x64") {
+    testonly = true
+    product_bundle_name = "core_with_minfs.x64"
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle_minfs.x64"
+    bazel_product_image_target = ":image_minfs.x64"
+    bazel_product_config_target = ":product_config_minfs"
+    bazel_product_config_name = "core"
+    bazel_recovery_image_target = "//products/zedboot:x64"
+    bazel_elf_sizes_target = ":elf_sizes_minfs.x64"
+    bazel_product_size_check_target = ":size_limits_minfs.x64"
+    bazel_size_report_aggregator_target = ":size_report_aggregator_minfs.x64"
     bazel_inputs_from_gn = _bazel_inputs + [ "//boards/x64:x64.bazel_input" ]
     image_has_fxfs_blob = false
   }
@@ -202,20 +127,21 @@ if (current_cpu == "arm64") {
         _bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
     image_has_fxfs_blob = false
   }
-}
 
-product_assembly_configuration("core_with_minfs") {
-  testonly = true
-  platform = {
-    forward_variables_from(_platform_configuration_base, "*")
-    forward_variables_from(_storage_minfs, "*")
+  bazel_product_bundle("product_bundle_minfs.arm64") {
+    testonly = true
+    product_bundle_name = "core_with_minfs.arm64"
+    allow_eng_platform_bundle_use = true
+    bazel_product_bundle_target = ":product_bundle_minfs.arm64"
+    bazel_product_image_target = ":image_minfs.arm64"
+    bazel_product_config_target = ":product_config_minfs"
+    bazel_product_config_name = "core"
+    bazel_recovery_image_target = "//products/zedboot:arm64"
+    bazel_elf_sizes_target = ":elf_sizes_minfs.arm64"
+    bazel_product_size_check_target = ":size_limits_minfs.arm64"
+    bazel_size_report_aggregator_target = ":size_report_aggregator_minfs.arm64"
+    bazel_inputs_from_gn =
+        _bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
+    image_has_fxfs_blob = false
   }
-  product = {
-    build_info = default_product_build_info
-  }
-
-  base_packages = _base_packages
-  cache_packages = _cache_packages
-  deps = [ "//build/info:build_info_files" ]
-  version = build_info_version
 }

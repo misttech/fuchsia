@@ -12,6 +12,7 @@ load(
     "fuchsia_product_bundle",
     "fuchsia_product_configuration",
     "fuchsia_product_size_check",
+    "fuchsia_size_report_aggregator",
 )
 load("//build/info:info.bzl", "DEFAULT_PRODUCT_BUILD_INFO")
 
@@ -320,6 +321,117 @@ fuchsia_product_bundle(
     default_virtual_device = "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
     main = ":image_f2fs.arm64",
     product_bundle_name = "core_with_f2fs.arm64",
+    product_bundle_version = build_info_version,
+    recovery = "//products/zedboot:arm64",
+    repository_keys = "//src/sys/pkg/repositories/devhost/keys",
+    update_epoch = "1",
+    update_version_file = "//build/info:version",
+    virtual_devices = [
+        "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
+        "//build/bazel/assembly/virtual_devices:arm64-emu-min",
+        "//build/bazel/assembly/virtual_devices:arm64-emu-extra-large",
+    ],
+)
+
+## core_with_minfs targets
+
+fuchsia_product_configuration(
+    name = "product_config_minfs",
+    base_packages = BASE_PACKAGES,
+    cache_packages = CACHE_PACKAGES,
+    product_config_json = {
+        "platform": PLATFORM_BASE | {
+            "storage": {
+                "mutable_storage_garbage_collection": True,
+                "filesystems": {
+                    "volume": {
+                        "fvm": {
+                            "data": {
+                                "data_filesystem_format": "minfs",
+                            },
+                            "blob": {},
+                        },
+                    },
+                },
+            },
+        },
+        "product": PRODUCT_BASE,
+    },
+    version = build_info_version,
+)
+
+# x64-minfs
+fuchsia_product(
+    name = "image_minfs.x64",
+    board_config = "//boards:x64",
+    platform_artifacts = "//build/bazel/assembly/assembly_input_bundles:platform_eng",
+    product_config = ":product_config_minfs",
+)
+
+fuchsia_elf_sizes(
+    name = "elf_sizes_minfs.x64",
+    product = ":image_minfs.x64",
+)
+
+fuchsia_product_size_check(
+    name = "size_limits_minfs.x64",
+    blobfs_creep_limit = 102400,
+    platform_resources_budget = 8013047,
+    product_image = ":image_minfs.x64",
+)
+
+fuchsia_size_report_aggregator(
+    name = "size_report_aggregator_minfs.x64",
+    size_reports = [":size_limits_minfs.x64"],
+)
+
+fuchsia_product_bundle(
+    name = "product_bundle_minfs.x64",
+    default_virtual_device = "//build/bazel/assembly/virtual_devices:x64-emu-recommended",
+    main = ":image_minfs.x64",
+    product_bundle_name = "core_with_minfs.x64",
+    product_bundle_version = build_info_version,
+    recovery = "//products/zedboot:x64",
+    repository_keys = "//src/sys/pkg/repositories/devhost/keys",
+    update_epoch = "1",
+    update_version_file = "//build/info:version",
+    virtual_devices = [
+        "//build/bazel/assembly/virtual_devices:x64-emu-recommended",
+        "//build/bazel/assembly/virtual_devices:x64-emu-min",
+        "//build/bazel/assembly/virtual_devices:x64-emu-extra-large",
+    ],
+)
+
+# arm64-minfs
+fuchsia_product(
+    name = "image_minfs.arm64",
+    board_config = "//boards:arm64",
+    platform_artifacts = "//build/bazel/assembly/assembly_input_bundles:platform_eng",
+    product_config = ":product_config_minfs",
+)
+
+fuchsia_elf_sizes(
+    name = "elf_sizes_minfs.arm64",
+    product = ":image_minfs.arm64",
+)
+
+fuchsia_product_size_check(
+    name = "size_limits_minfs.arm64",
+    blobfs_creep_limit = 102400,
+    platform_resources_budget = 8013047,
+    product_image = ":image_minfs.arm64",
+)
+
+fuchsia_size_report_aggregator(
+    name = "size_report_aggregator_minfs.arm64",
+    size_reports = [":size_limits_minfs.arm64"],
+)
+
+fuchsia_product_bundle(
+    name = "product_bundle_minfs.arm64",
+    default_virtual_device = "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
+    main = ":image_minfs.arm64",
+    product_bundle_name = "core_with_minfs.arm64",
     product_bundle_version = build_info_version,
     recovery = "//products/zedboot:arm64",
     repository_keys = "//src/sys/pkg/repositories/devhost/keys",

@@ -25,6 +25,14 @@ declare_args() {
   # LINT.ThenChange(//build/bazel/BUILD.gn)
 }
 
+# Alias core_size_limits to core_with_minfs
+#
+# This is temporary to ease the removal of core_size_limits builders
+# while we transition to the new product bundle model
+if (build_info_product == "core_size_limits") {
+  build_info_product = "core_with_minfs"
+}
+
 build_info_files = {
   product = "$root_build_dir/product.txt"
   board = "$root_build_dir/board.txt"

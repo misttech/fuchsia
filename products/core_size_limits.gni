@@ -27,4 +27,3 @@
 # be enforced by running size_checker.
 
 import("//products/core_with_minfs.gni")
-enable_core_size_check = true
