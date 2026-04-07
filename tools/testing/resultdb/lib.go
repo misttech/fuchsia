@@ -156,10 +156,9 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 	var testResult []*sinkpb.TestResult
 	var testsSkipped []string
 
-	// Ignore the failure reason kind and error. We only check the top-level test status
-	// to see if it passed, which would mean that a failed result for a test case is
-	// expected and thus should be reported as a passed result.
-	testStatus, _, _ := resultDBStatus(testDetail.Status)
+	// Ignore error, testStatus will be set to resultpb.TestStatus_STATUS_UNSPECIFIED if error != nil.
+	// And when passed to determineExpected, resultpb.TestStatus_STATUS_UNSPECIFIED will be handled correctly.
+	testStatus, _ := resultDBStatus(testDetail.Status)
 
 	for _, testCase := range testCases {
 		testID := fmt.Sprintf("%s/%s:%s", testDetail.Name, testCase.SuiteName, testCase.CaseName)
@@ -181,26 +180,20 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 			TestId: testID,
 			Tags:   testCaseTags,
 		}
-		testCaseStatus, testCaseFailureReasonKind, err := resultDBStatus(testCase.Status)
+		testCaseStatus, err := resultDBStatus(testCase.Status)
 		if err != nil {
 			log.Printf("[Warn] Skip uploading testcase: %s to ResultDB due to error: %v", testID, err)
 			continue
 		}
-		if testStatus != resultpb.TestResult_PASSED && testCaseStatus == resultpb.TestResult_FAILED {
-			r.FailureReason = &resultpb.FailureReason{Kind: testCaseFailureReasonKind}
-			if testCase.FailReason != "" {
-				r.FailureReason.Errors = []*resultpb.FailureReason_Error{{Message: truncateString(testCase.FailReason, MaxFailureReasonLength)}}
-			}
-		} else if testCaseStatus == resultpb.TestResult_SKIPPED {
-			r.SkippedReason = &resultpb.SkippedReason{Kind: resultpb.SkippedReason_DISABLED_AT_DECLARATION}
-		} else if testStatus == resultpb.TestResult_PASSED {
-			testCaseStatus = testStatus
+		if testCase.FailReason != "" {
+			r.FailureReason = &resultpb.FailureReason{PrimaryErrorMessage: truncateString(testCase.FailReason, MaxFailureReasonLength)}
 		}
-		r.StatusV2 = testCaseStatus
+		r.Status = testCaseStatus
 		r.StartTime = timestamppb.New(testDetail.StartTime)
 		if testCase.Duration > 0 {
 			r.Duration = durationpb.New(testCase.Duration)
 		}
+		r.Expected = determineExpected(testStatus, testCaseStatus)
 		r.Artifacts = make(map[string]*sinkpb.Artifact)
 		for _, of := range testCase.OutputFiles {
 			outputFile := filepath.Join(outputRoot, testDetail.OutputDir, of)
@@ -247,17 +240,12 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 		TestId: testDetail.Name,
 		Tags:   testTags,
 	}
-	testStatus, failureReasonKind, err := resultDBStatus(testDetail.Status)
+	testStatus, err := resultDBStatus(testDetail.Status)
 	if err != nil {
 		log.Printf("[Warn] Skip uploading test target: %s to ResultDB due to error: %v", testDetail.Name, err)
 		return nil, testsSkipped, err
 	}
-	r.StatusV2 = testStatus
-	if testStatus == resultpb.TestResult_FAILED {
-		r.FailureReason = &resultpb.FailureReason{Kind: failureReasonKind, Errors: []*resultpb.FailureReason_Error{{Message: createTopLevelFailureReason(testDetail)}}}
-	} else if testStatus == resultpb.TestResult_SKIPPED {
-		r.SkippedReason = &resultpb.SkippedReason{Kind: resultpb.SkippedReason_OTHER, ReasonMessage: "skipped because unaffected"}
-	}
+	r.Status = testStatus
 
 	r.StartTime = timestamppb.New(testDetail.StartTime)
 	if testDetail.DurationMillis > 0 {
@@ -275,13 +263,17 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 		}
 	}
 
+	r.Expected = determineExpected(testStatus, resultpb.TestStatus_STATUS_UNSPECIFIED)
+	r.FailureReason = createTopLevelFailureReason(testDetail)
 	setTestMetadata(&r, *testDetail)
 	return &r, testsSkipped, nil
 }
 
-func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
+func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) *resultpb.FailureReason {
 	if topLevelTest.FailureReason != "" {
-		return truncateString(topLevelTest.FailureReason, MaxFailureReasonLength)
+		return &resultpb.FailureReason{
+			PrimaryErrorMessage: truncateString(topLevelTest.FailureReason, MaxFailureReasonLength),
+		}
 	}
 	var builder strings.Builder
 	for _, testCase := range topLevelTest.Cases {
@@ -302,7 +294,7 @@ func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
 		}
 	}
 	if builder.Len() == 0 {
-		return ""
+		return nil
 	}
 
 	// Truncate to max length.
@@ -310,23 +302,50 @@ func createTopLevelFailureReason(topLevelTest *runtests.TestDetails) string {
 	if len(failureReason) > MaxFailureReasonLength {
 		failureReason = failureReason[:MaxFailureReasonLength]
 	}
-	return failureReason
+	return &resultpb.FailureReason{
+		PrimaryErrorMessage: failureReason,
+	}
 }
 
-func resultDBStatus(result runtests.TestStatus) (resultpb.TestResult_Status, resultpb.FailureReason_Kind, error) {
+// determineExpected checks if a test result is expected.
+//
+// For example, if a test case failed but fail is the correct behavior, we will mark
+// expected to true. On the other hand, if a test case failed and failure is the incorrect
+// behavior then we will mark expected to false. This is completely determined by
+// the status recorded by the test suite vs. status recorded for the test case.
+//
+// If a test is reported "PASS", then we will report all test cases within the same
+// test to pass as well. If a test is reported other than "PASS" or "SKIP", we will
+// process the test cases based on the test case result.
+func determineExpected(testStatus resultpb.TestStatus, testCaseStatus resultpb.TestStatus) bool {
+	switch testStatus {
+	case resultpb.TestStatus_PASS, resultpb.TestStatus_SKIP:
+		return true
+	case resultpb.TestStatus_FAIL, resultpb.TestStatus_CRASH, resultpb.TestStatus_ABORT, resultpb.TestStatus_STATUS_UNSPECIFIED:
+		switch testCaseStatus {
+		case resultpb.TestStatus_PASS, resultpb.TestStatus_SKIP:
+			return true
+		case resultpb.TestStatus_FAIL, resultpb.TestStatus_CRASH, resultpb.TestStatus_ABORT, resultpb.TestStatus_STATUS_UNSPECIFIED:
+			return false
+		}
+	}
+	return false
+}
+
+func resultDBStatus(result runtests.TestStatus) (resultpb.TestStatus, error) {
 	switch result {
 	case runtests.TestSuccess:
-		return resultpb.TestResult_PASSED, resultpb.FailureReason_KIND_UNSPECIFIED, nil
+		return resultpb.TestStatus_PASS, nil
 	case runtests.TestFailure:
-		return resultpb.TestResult_FAILED, resultpb.FailureReason_ORDINARY, nil
+		return resultpb.TestStatus_FAIL, nil
 	case runtests.TestSkipped:
-		return resultpb.TestResult_SKIPPED, resultpb.FailureReason_KIND_UNSPECIFIED, nil
+		return resultpb.TestStatus_SKIP, nil
 	case runtests.TestAborted:
-		return resultpb.TestResult_FAILED, resultpb.FailureReason_TIMEOUT, nil
+		return resultpb.TestStatus_ABORT, nil
 	case runtests.TestInfraFailure:
-		return resultpb.TestResult_FAILED, resultpb.FailureReason_CRASH, nil
+		return resultpb.TestStatus_CRASH, nil
 	}
-	return resultpb.TestResult_STATUS_UNSPECIFIED, resultpb.FailureReason_KIND_UNSPECIFIED, fmt.Errorf("cannot map Result: %s to result_sink test_result status", result)
+	return resultpb.TestStatus_STATUS_UNSPECIFIED, fmt.Errorf("cannot map Result: %s to result_sink test_result status", result)
 }
 
 func isReadable(p string) bool {
