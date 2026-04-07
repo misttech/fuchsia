@@ -7,10 +7,10 @@ use component_events::events::{EventStream, Started, Stopped};
 use component_events::matcher::EventMatcher;
 use fuchsia_component_test::RealmBuilder;
 use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
-use {
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync,
-};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_test as fdt;
+use fuchsia_async as fasync;
 
 #[fasync::run_singlethreaded(test)]
 async fn test_index_stop_on_idle() -> Result<()> {
@@ -31,14 +31,14 @@ async fn test_index_stop_on_idle() -> Result<()> {
         composite_manager
             .add_spec(&fdf::CompositeNodeSpec {
                 name: Some("composite_spec_name_unmatched".to_owned()),
-                parents: Some(vec![fdf::ParentSpec {
-                    bind_rules: vec![fdf::BindRule {
-                        key: fdf::NodePropertyKey::StringValue("somekey".to_owned()),
+                parents2: Some(vec![fdf::ParentSpec2 {
+                    bind_rules: vec![fdf::BindRule2 {
+                        key: "somekey".to_owned(),
                         condition: fdf::Condition::Accept,
                         values: vec![fdf::NodePropertyValue::StringValue("somevalue".to_owned())],
                     }],
-                    properties: vec![fdf::NodeProperty {
-                        key: fdf::NodePropertyKey::StringValue("somekey".to_owned()),
+                    properties: vec![fdf::NodeProperty2 {
+                        key: "somekey".to_owned(),
                         value: fdf::NodePropertyValue::StringValue("somevalue".to_owned()),
                     }],
                 }]),
@@ -50,43 +50,35 @@ async fn test_index_stop_on_idle() -> Result<()> {
         composite_manager
             .add_spec(&fdf::CompositeNodeSpec {
                 name: Some("composite_spec_name_matched".to_owned()),
-                parents: Some(vec![
-                    fdf::ParentSpec {
-                        bind_rules: vec![fdf::BindRule {
-                            key: fdf::NodePropertyKey::StringValue(
-                                "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
-                            ),
+                parents2: Some(vec![
+                    fdf::ParentSpec2 {
+                        bind_rules: vec![fdf::BindRule2 {
+                            key: "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
                             condition: fdf::Condition::Accept,
                             values: vec![fdf::NodePropertyValue::EnumValue(
                                 "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_LEFT"
                                     .to_owned(),
                             )],
                         }],
-                        properties: vec![fdf::NodeProperty {
-                            key: fdf::NodePropertyKey::StringValue(
-                                "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
-                            ),
+                        properties: vec![fdf::NodeProperty2 {
+                            key: "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
                             value: fdf::NodePropertyValue::EnumValue(
                                 "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_LEFT"
                                     .to_owned(),
                             ),
                         }],
                     },
-                    fdf::ParentSpec {
-                        bind_rules: vec![fdf::BindRule {
-                            key: fdf::NodePropertyKey::StringValue(
-                                "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
-                            ),
+                    fdf::ParentSpec2 {
+                        bind_rules: vec![fdf::BindRule2 {
+                            key: "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
                             condition: fdf::Condition::Accept,
                             values: vec![fdf::NodePropertyValue::EnumValue(
                                 "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_RIGHT"
                                     .to_owned(),
                             )],
                         }],
-                        properties: vec![fdf::NodeProperty {
-                            key: fdf::NodePropertyKey::StringValue(
-                                "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
-                            ),
+                        properties: vec![fdf::NodeProperty2 {
+                            key: "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY".to_owned(),
                             value: fdf::NodePropertyValue::EnumValue(
                                 "fuchsia.nodegroupbind.test.TEST_BIND_PROPERTY.DRIVER_RIGHT"
                                     .to_owned(),
