@@ -26,11 +26,11 @@ namespace thread_sampler_tests {
 // for testing purposes.
 class TestThreadSampler : public ThreadSamplerDispatcher {
  public:
-  TestThreadSampler() = default;
+  TestThreadSampler(fbl::RefPtr<PeerHolder<IoBufferDispatcher>> holder, IobEndpointId endpoint_id,
+                    fbl::RefPtr<SharedIobState> shared_state)
+      : ThreadSamplerDispatcher(ktl::move(holder), endpoint_id, ktl::move(shared_state)) {}
 
   void SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source, void* gregs) {
-    // Enforce that we're not able to migrate cpus while accessing per cpu state.
-    DEBUG_ASSERT(arch_ints_disabled());
     sampler::internal::PerCpuState& cpu_state = GetPerCpuState(arch_curr_cpu_num());
     bool enabled = cpu_state.SetPendingWrite();
     if (!enabled) {
@@ -59,23 +59,21 @@ class TestThreadSampler : public ThreadSamplerDispatcher {
           .period = zx::msec(1).get(),
           .buffer_size = kPageSize,
       };
+      KernelHandle<ThreadSamplerDispatcher> state;
       for (int i = 0; i < 10; i++) {
-        zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> dispatcher =
-            ThreadSamplerDispatcher::CreateImpl(config);
-        ASSERT_OK(dispatcher.status_value());
-        auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(*ktl::move(dispatcher));
-        ASSERT_OK(test_state->StartImpl().status_value());
-        ASSERT_OK(test_state->StopImpl().status_value());
+        KernelHandle<ThreadSamplerDispatcher> read_handle;
+        ASSERT_TRUE(ThreadSamplerDispatcher::CreateImpl(config, read_handle, state).is_ok());
+        auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(state.release());
+        ASSERT_TRUE(test_state->StartImpl().is_ok());
+        ASSERT_TRUE(test_state->StopImpl().is_ok());
       }
 
       // We should also be able to drop the read handle without stopping first and the state should
       // get cleaned up properly
       for (int i = 0; i < 10; i++) {
-        zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> dispatcher =
-            ThreadSamplerDispatcher::CreateImpl(config);
-        ASSERT_OK(dispatcher.status_value());
-        KernelHandle<ThreadSamplerDispatcher> handle{ktl::move(*dispatcher)};
-        auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(handle.dispatcher());
+        KernelHandle<ThreadSamplerDispatcher> read_handle;
+        ASSERT_TRUE(ThreadSamplerDispatcher::CreateImpl(config, read_handle, state).is_ok());
+        auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(state.release());
         ASSERT_TRUE(test_state->StartImpl().is_ok());
       }
     }
@@ -86,16 +84,18 @@ class TestThreadSampler : public ThreadSamplerDispatcher {
     BEGIN_TEST;
     {
       // Construct a thread sampler state and initialize it
+      KernelHandle<ThreadSamplerDispatcher> state;
+      KernelHandle<ThreadSamplerDispatcher> read_handle;
+
       zx_sampler_config_t config{
           .period = zx::msec(1).get(),
           .buffer_size = kPageSize,
       };
-      zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> dispatcher =
-          ThreadSamplerDispatcher::CreateImpl(config);
-      ASSERT_OK(dispatcher.status_value());
-      auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(*dispatcher);
+      ASSERT_TRUE(ThreadSamplerDispatcher::CreateImpl(config, read_handle, state).is_ok());
 
-      ASSERT_OK(test_state->StartImpl().status_value());
+      auto test_state = fbl::RefPtr<TestThreadSampler>::Downcast(state.release());
+
+      ASSERT_TRUE(test_state->StartImpl().is_ok());
 
       zx_instant_mono_ticks_t before = current_mono_ticks();
       //  Write some fake samples to each buffer on each cpu
@@ -108,12 +108,12 @@ class TestThreadSampler : public ThreadSamplerDispatcher {
           },
           test_state.get());
       zx_instant_mono_ticks_t after = current_mono_ticks();
-      ASSERT_OK(test_state->StopImpl().status_value());
+      ASSERT_TRUE(test_state->StopImpl().is_ok());
 
       // We should now be able to read the records
       size_t num_cpus = arch_max_num_cpus();
       for (unsigned i = 0; i < num_cpus; ++i) {
-        sampler::internal::PerCpuState& s = test_state->GetPerCpuState(i);
+        auto& s = test_state->GetPerCpuState(i);
 
         // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
         // tid + 1 blob size = 70

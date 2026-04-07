@@ -24,12 +24,12 @@ constexpr bool kSamplerEnabled = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
 // zx_status_t zx_sampler_create
 zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
                                user_in_ptr<const zx_sampler_config_t> config,
-                               zx_handle_t* sampler_out) {
+                               zx_handle_t* buffers_out) {
   if constexpr (!kSamplerEnabled) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  *sampler_out = ZX_HANDLE_INVALID;
+  *buffers_out = ZX_HANDLE_INVALID;
   if (!BootOptions::Get()->enable_debugging_syscalls) {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -39,8 +39,9 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
     return status;
   }
 
+  // The sampler is a special case of an IOBuffer, so we use the same policy.
   auto up = ProcessDispatcher::GetCurrent();
-  if (zx_status_t status = up->EnforceBasicPolicy(ZX_POL_NEW_SAMPLER); status != ZX_OK) {
+  if (zx_status_t status = up->EnforceBasicPolicy(ZX_POL_NEW_IOB); status != ZX_OK) {
     return status;
   }
 
@@ -49,9 +50,16 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
     return status;
   }
 
+  // Validate the the provided config has reasonable values in it.
+  //
+  // Only the ZX_IOB_DISCIPLINE_TYPE_NONE is currently supported
+  if (sample_config.iobuffer_discipline != ZX_IOB_DISCIPLINE_TYPE_NONE) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   // We'll pick a arbitrary unreasonably large max size for the per cpu buffers.
   //
-  // When we implement streamed reads, we can reduce this to something more
+  // When we implement IOBuffer shared reading and writing, we can reduce this to something more
   // reasonable.
   if (sample_config.buffer_size > ZX_SAMPLER_MAX_BUFFER_SIZE) {
     return ZX_ERR_INVALID_ARGS;
@@ -68,12 +76,14 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
   if (create_res.is_error()) {
     return create_res.status_value();
   }
-  return up->MakeAndAddHandle(ktl::move(*create_res), ThreadSamplerDispatcher::default_rights(),
-                              sampler_out);
+  return up->MakeAndAddHandle(
+      ktl::move(*create_res),
+      (IoBufferDispatcher::default_rights() | ZX_RIGHT_APPLY_PROFILE) & ~ZX_RIGHT_WRITE,
+      buffers_out);
 }
 
 // zx_status_t zx_sampler_start
-zx_status_t sys_sampler_start(zx_handle_t sampler) {
+zx_status_t sys_sampler_start(zx_handle_t iobuffer) {
   if constexpr (!kSamplerEnabled) {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -82,9 +92,10 @@ zx_status_t sys_sampler_start(zx_handle_t sampler) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  fbl::RefPtr<ThreadSamplerDispatcher> thread_sampler;
+  fbl::RefPtr<IoBufferDispatcher> thread_sampler;
   auto up = ProcessDispatcher::GetCurrent();
-  if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
+  if (zx_status_t status = up->handle_table().GetDispatcherWithRights(
+          *up, iobuffer, ZX_RIGHT_APPLY_PROFILE, &thread_sampler);
       status != ZX_OK) {
     return status;
   }
@@ -93,7 +104,7 @@ zx_status_t sys_sampler_start(zx_handle_t sampler) {
 }
 
 // zx_status_t zx_sampler_stop
-zx_status_t sys_sampler_stop(zx_handle_t sampler) {
+zx_status_t sys_sampler_stop(zx_handle_t iobuffer) {
   if constexpr (!kSamplerEnabled) {
     return ZX_ERR_NOT_SUPPORTED;
   }
@@ -102,9 +113,10 @@ zx_status_t sys_sampler_stop(zx_handle_t sampler) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  fbl::RefPtr<ThreadSamplerDispatcher> thread_sampler;
+  fbl::RefPtr<IoBufferDispatcher> thread_sampler;
   auto up = ProcessDispatcher::GetCurrent();
-  if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
+  if (zx_status_t status = up->handle_table().GetDispatcherWithRights(
+          *up, iobuffer, ZX_RIGHT_APPLY_PROFILE, &thread_sampler);
       status != ZX_OK) {
     return status;
   }
@@ -113,7 +125,7 @@ zx_status_t sys_sampler_stop(zx_handle_t sampler) {
 }
 
 // zx_status_t zx_sampler_read
-zx_status_t sys_sampler_read(zx_handle_t sampler, user_out_ptr<void> data, size_t len,
+zx_status_t sys_sampler_read(zx_handle_t iobuffer, user_out_ptr<void> data, size_t len,
                              user_out_ptr<size_t> actual) {
   if constexpr (!kSamplerEnabled) {
     return ZX_ERR_NOT_SUPPORTED;
@@ -123,9 +135,10 @@ zx_status_t sys_sampler_read(zx_handle_t sampler, user_out_ptr<void> data, size_
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  fbl::RefPtr<ThreadSamplerDispatcher> thread_sampler;
+  fbl::RefPtr<IoBufferDispatcher> thread_sampler;
   auto up = ProcessDispatcher::GetCurrent();
-  if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
+  if (zx_status_t status = up->handle_table().GetDispatcherWithRights(
+          *up, iobuffer, ZX_RIGHT_APPLY_PROFILE, &thread_sampler);
       status != ZX_OK) {
     return status;
   }
