@@ -27,9 +27,8 @@ When running tests after a failure, try not to re-run all the tests, but rather
 just re-run the tests that previously failed. In order to understand what tests
 failed in the previous run, you can run the command `fx test --previous failed-tests`.
 
-To get logs from a fuchsia device, run `ffx log`. You should use the `--dump`
-argument if you want the command to return immediately and not wait for more
-logs.
+To get logs from a fuchsia device, run `ffx log`. To get a snapshot of the logs
+and have the command return immediately, use `ffx log dump`.
 
 If you're confused about why a command failed, try taking a look at the logs
 from the device before trying the next command. Device logs often reveal
@@ -241,7 +240,8 @@ include directives and debug print a compiled manifest.
 
 ### Diagnostics
 
-`ffx log dump` will dump the system log from the target.
+`ffx log dump` will dump the system log from the target. **Note**: `dump` is a
+_sub-command_ of `ffx log`, _not_ a flag preceded by `--` or `-`.
 
 `ffx inspect show` will dump inspect data from components on the device.
 
