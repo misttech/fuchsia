@@ -235,11 +235,13 @@ before commands are run for any package.
         clang_platforms = args.platforms
         if default_platforms:
             clang_platforms.append("windows-amd64")
+        clang_tag = GetResolvedClangFromRust(tag, clang_platforms)
         cmd.extend(
             [
                 "-package",
-                "fuchsia/third_party/clang/${platform}="
-                + GetResolvedClangFromRust(tag, clang_platforms),
+                "fuchsia/third_party/clang/${platform}=" + clang_tag,
+                "-package",
+                "fuchsia/third_party/clang/linux-arm64=" + clang_tag,
             ]
         )
 
