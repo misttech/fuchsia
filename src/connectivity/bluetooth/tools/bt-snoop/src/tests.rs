@@ -460,6 +460,11 @@ async fn test_handle_packet_crash_report_rate_limit() {
     );
     assert!(matches!(outcome, HandlePacketOutcome::CrashDetected(_)));
 
+    // Verify packet1 was logged and truncated.
+    let log = logs.get(&device_id).unwrap();
+    assert_eq!(log.lock().len(), 1);
+    assert_eq!(log.lock().iter_mut().next().unwrap().payload.len(), crate::HCI_EVENT_HEADER_SIZE);
+
     // After first packet, collector should be created, timer should be set.
     let state = crash_states.get(&device_id).unwrap();
     assert!(state.collector.is_some());
@@ -481,6 +486,10 @@ async fn test_handle_packet_crash_report_rate_limit() {
         &mut crash_states,
     );
     assert!(matches!(outcome, HandlePacketOutcome::Processed));
+
+    // Verify packet2 was logged and truncated.
+    assert_eq!(log.lock().len(), 2);
+    assert_eq!(log.lock().iter_mut().nth(1).unwrap().payload.len(), crate::HCI_EVENT_HEADER_SIZE);
 
     // After second packet, collector should STILL be active, tentative_report_file_time should be updated.
     let state = crash_states.get(&device_id).unwrap();
@@ -684,4 +693,58 @@ async fn test_process_vendor_connection_fidl_error() {
     assert!(!crash_states.contains_key("test_dev"));
     // Since we dropped `vendor_stream`, `open_snoop` will fail, so `snoopers` len should be 0.
     assert_eq!(snoopers.len(), 0);
+}
+
+#[fuchsia::test]
+async fn test_handle_packet_normal_packet() {
+    let inspect = fuchsia_inspect::Inspector::default();
+    let mut logs = crate::packet_logs::PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        std::time::Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = crate::subscription_manager::SubscriptionManager::new();
+
+    let device_id = "test_device".to_string();
+
+    let mut crash_states = std::collections::HashMap::new();
+    let _ = crash_states.insert(
+        device_id.clone(),
+        crate::core_dump::CrashState {
+            parameters: hardware_bt::VendorCrashParameters {
+                crash_events: Some(vec![vec![0x1B]]),
+                ..Default::default()
+            },
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        },
+    );
+
+    let _ = logs.add_device(device_id.clone());
+
+    let payload = vec![0x04, 0x01, 0x02]; // Normal packet (Event, but not vendor specific)
+    let packet = crate::snooper::SnoopPacket::new(
+        true,
+        fidl_fuchsia_bluetooth_snoop::PacketFormat::Event,
+        fuchsia_async::MonotonicInstant::now().into(),
+        payload.clone(),
+    );
+
+    let outcome = crate::handle_packet(
+        &device_id,
+        Some((device_id.clone(), packet)),
+        &mut subscribers,
+        &mut logs,
+        None,
+        &mut crash_states,
+    );
+    assert!(matches!(outcome, crate::HandlePacketOutcome::Processed));
+
+    // Verify packet was logged untruncated.
+    let log = logs.get(&device_id).unwrap();
+    assert_eq!(log.lock().len(), 1);
+    assert_eq!(log.lock().iter_mut().next().unwrap().payload, payload);
 }

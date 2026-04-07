@@ -33,6 +33,13 @@ pub(crate) const CRASH_REPORT_DEBOUNCE_DURATION: zx::MonotonicDuration =
 const CRASH_REPORT_RATE_LIMIT_DURATION: zx::MonotonicDuration =
     zx::MonotonicDuration::from_hours(1);
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CrashEventStatus {
+    FirstCrashEvent,
+    ContinuingCrashEvent,
+    NotCrashEvent,
+}
+
 pub(crate) struct CrashState {
     pub parameters: VendorCrashParameters,
     pub last_report_local_time: Option<fuchsia_async::MonotonicInstant>,
@@ -92,14 +99,14 @@ impl CrashState {
         }
     }
 
-    /// Returns true if the packet started a new crash dump collection.
-    pub(crate) fn process_packet(&mut self, packet: &SnoopPacket) -> bool {
+    /// Returns a status indicating the type of the packet (i.e. whether it was a crash event).
+    pub(crate) fn process_packet(&mut self, packet: &SnoopPacket) -> CrashEventStatus {
         if !self.is_crash_event(packet) {
-            return false;
+            return CrashEventStatus::NotCrashEvent;
         }
 
         if self.is_rate_limited() {
-            return false;
+            return CrashEventStatus::NotCrashEvent;
         }
 
         let started_new_crash = self.maybe_start_new_crash();
@@ -109,9 +116,14 @@ impl CrashState {
             self.tentative_report_file_time = Some(
                 (fuchsia_async::MonotonicInstant::now() + CRASH_REPORT_DEBOUNCE_DURATION).into(),
             );
+            if started_new_crash {
+                CrashEventStatus::FirstCrashEvent
+            } else {
+                CrashEventStatus::ContinuingCrashEvent
+            }
+        } else {
+            CrashEventStatus::NotCrashEvent
         }
-
-        started_new_crash
     }
 }
 
@@ -326,5 +338,45 @@ mod tests {
             vec![0x01, 0x02, 0x1B, 0x03],
         );
         assert!(!state.is_crash_event(&non_vendor_event));
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_process_packet() {
+        let mut state = CrashState {
+            parameters: fidl_fuchsia_hardware_bluetooth::VendorCrashParameters {
+                crash_events: Some(vec![vec![0x1b]]),
+                ..Default::default()
+            },
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        };
+
+        let non_crash_packet = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0xFF, 0x01, 0x1A],
+        );
+        assert_eq!(state.process_packet(&non_crash_packet), CrashEventStatus::NotCrashEvent);
+
+        let crash_packet = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0xFF, 0x01, 0x1B],
+        );
+        assert_eq!(state.process_packet(&crash_packet), CrashEventStatus::FirstCrashEvent);
+
+        let continuing_packet = SnoopPacket::new(
+            true,
+            PacketFormat::Event,
+            zx::MonotonicInstant::from_nanos(0),
+            vec![0xFF, 0x01, 0x1B],
+        );
+        assert_eq!(
+            state.process_packet(&continuing_packet),
+            CrashEventStatus::ContinuingCrashEvent
+        );
     }
 }

@@ -34,7 +34,7 @@ use crate::subscription_manager::SubscriptionManager;
 
 mod bounded_queue;
 mod core_dump;
-use crate::core_dump::CrashState;
+use crate::core_dump::{CrashEventStatus, CrashState};
 mod packet_logs;
 mod snooper;
 mod subscription_manager;
@@ -43,6 +43,9 @@ mod tests;
 
 /// Root directory of all HCI devices
 const HCI_DEVICE_CLASS_PATH: &str = "/dev/class/bt-hci";
+
+/// Size of the standard HCI event header (Event Code + Length).
+pub(crate) const HCI_EVENT_HEADER_SIZE: usize = 2;
 
 /// A `DeviceId` represents the name of a host device within the HCI_DEVICE_CLASS_PATH.
 pub(crate) type DeviceId = String;
@@ -355,18 +358,22 @@ pub(crate) fn handle_packet(
     };
     trace!("Received packet from {}.", device_name);
 
-    let mut started_new_crash = false;
+    let mut crash_status = CrashEventStatus::NotCrashEvent;
     if let Some(state) = crash_states.get_mut(&device) {
-        started_new_crash = state.process_packet(&packet);
+        crash_status = state.process_packet(&packet);
     }
 
     if let Some(len) = truncate_payload {
         packet.payload.truncate(len);
     }
     subscribers.notify(&device, &packet);
+
+    if crash_status != CrashEventStatus::NotCrashEvent {
+        packet.payload.truncate(HCI_EVENT_HEADER_SIZE);
+    }
     packet_logs.log_packet(&device, packet);
 
-    if started_new_crash {
+    if crash_status == CrashEventStatus::FirstCrashEvent {
         HandlePacketOutcome::CrashDetected(device)
     } else {
         HandlePacketOutcome::Processed
