@@ -19,7 +19,7 @@ class WlanDriverRestartTest(base_test.CoreBaseTestClass):
         # TODO(b/494309251): If a driver debug side channel is created, use that to query out the
         # KOID and kill that instead.
         logger.info("Killing driver-host-#wlan...")
-        self.fuchsia_device.ffx.run_ssh_cmd("killall driver-host-#wlan")
+        self.dut.ffx.run_ssh_cmd("killall driver-host-#wlan")
 
         logger.info("Polling for PHY to be removed")
         phy_removal_timeout = 10
@@ -71,7 +71,7 @@ class WlanDriverRestartTest(base_test.CoreBaseTestClass):
         logger.info(
             f"Created interface with ID {iface_id}, obtaining ClientSme..."
         )
-        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        proxy, server = self.dut.fuchsia_controller.channel_create()
         (
             await self.test_kit.device_monitor.get_client_sme(
                 iface_id=iface_id,

@@ -35,7 +35,6 @@ class InputBenchmark(fuchsia_base_test.FuchsiaBaseTest):
 
     async def setup_test(self) -> None:
         await super().setup_test()
-        self.dut = self.fuchsia_devices[0]
 
         self.dut.session.ensure_started()
 

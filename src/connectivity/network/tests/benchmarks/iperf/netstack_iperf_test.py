@@ -238,7 +238,6 @@ class IperfServer:
 class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
-        self._device = self.fuchsia_devices[0]
         self._protocol = Protocol.from_str(self.user_params["protocol"])
         self._direction = Direction.from_str(self.user_params["direction"])
         self._netstack3 = self.user_params["netstack"] == "netstack3"
@@ -252,7 +251,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
 
     async def _wait_system_metrics_daemon_start(self) -> None:
         for _ in range(10):
-            async with self._device.tracing.trace_session(
+            async with self.dut.tracing.trace_session(
                 categories=["system_metrics"],
                 download=True,
                 directory=self.test_case_path,
@@ -315,7 +314,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         os.makedirs(dir)
 
-        async with self._device.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=["system_metrics"],
             download=True,
             directory=str(dir),
@@ -345,7 +344,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         ]
         if self._netstack3:
             test_component_args.append("--netstack3")
-        self._device.ffx.run_test_component(
+        self.dut.ffx.run_test_component(
             "fuchsia-pkg://fuchsia.com/iperf-benchmark#meta/iperf-benchmark-component.cm",
             ffx_test_args=[
                 "--output-directory",
@@ -379,7 +378,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         self, dir: pathlib.Path, message_size: int, flows: int
     ) -> list[str]:
         asserts.assert_equal(flows, 1)
-        ssh_address = self._device.ffx.get_target_ssh_address()
+        ssh_address = self.dut.ffx.get_target_ssh_address()
         assert ssh_address is not None
         return [
             await self._execute_iperf3_commands(
@@ -403,10 +402,10 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         return list(processor.process_metrics(model))
 
     async def _start_iperf3_server(self) -> IperfServer:
-        server = IperfServer(self._device.ffx)
+        server = IperfServer(self.dut.ffx)
         while True:
             try:
-                output = self._device.ffx.run_ssh_cmd(
+                output = self.dut.ffx.run_ssh_cmd(
                     cmd=f"iperf3 -n 1 -c 127.0.0.1 -p {LISTEN_PORT}",
                 )
                 asserts.assert_not_in(
@@ -511,7 +510,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def _cleanup_iperf_tasks(self) -> None:
         try:
-            self._device.ffx.run_ssh_cmd(
+            self.dut.ffx.run_ssh_cmd(
                 cmd="killall iperf3",
             )
         except Exception:  # pylint: disable=broad-except

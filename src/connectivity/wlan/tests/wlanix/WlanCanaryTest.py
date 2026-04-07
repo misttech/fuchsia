@@ -21,7 +21,7 @@ class WlanCanaryTest(fuchsia_base_test.FuchsiaBaseTest):
         await super().setup_class()
         self.wlan_device_monitor_proxy = (
             fidl_wlan_device_service.DeviceMonitorClient(
-                self.fuchsia_devices[0].fuchsia_controller.connect_device_proxy(
+                self.dut.fuchsia_controller.connect_device_proxy(
                     FidlEndpoint(
                         "core/wlandevicemonitor",
                         "fuchsia.wlan.device.service.DeviceMonitor",

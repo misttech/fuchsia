@@ -93,7 +93,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
             )
 
         device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
-            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
+            self.dut.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
                     "core/wlandevicemonitor",
                     "fuchsia.wlan.device.service.DeviceMonitor",
@@ -110,7 +110,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
         ).unwrap()
 
         # Find the matching bss_description
-        scan_results = await self.fuchsia_device.wlan_core.scan_for_bss_info()
+        scan_results = await self.dut.wlan_core.scan_for_bss_info()
         try:
             bss_description = scan_results[ssid][0]
         except KeyError:
@@ -120,7 +120,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
             )
 
         # Connect to the AP
-        await self.fuchsia_device.wlan_core.connect(
+        await self.dut.wlan_core.connect(
             ssid=ssid,
             bss_desc=bss_description,
             authentication=fidl_security.Authentication(

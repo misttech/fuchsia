@@ -29,7 +29,6 @@ class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
         _LOGGER.debug("Instantiating UsbPowerDmc module")
         self._usb_power_hub: usb_power_hub.UsbPowerHub = (

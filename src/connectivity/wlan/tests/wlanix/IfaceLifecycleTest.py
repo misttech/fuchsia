@@ -21,7 +21,7 @@ class IfaceLifecycleTest(base_test.WifiChipBaseTestClass):
             "WifiChip should have returned an empty list of iface names",
         )
 
-        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        proxy, server = self.dut.fuchsia_controller.channel_create()
         (
             await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()

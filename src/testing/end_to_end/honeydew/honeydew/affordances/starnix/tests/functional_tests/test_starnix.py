@@ -12,20 +12,13 @@ from honeydew import errors
 class StarnixAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Starnix affordance tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests."""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_run_console_shell_cmd(self) -> None:
         """Test case for Starnix.run_console_shell_cmd()"""
         if self.user_params["is_starnix_supported"]:
-            await self.device.starnix.run_console_shell_cmd(["echo", "hello"])
+            await self.dut.starnix.run_console_shell_cmd(["echo", "hello"])
         else:
             with asserts.assert_raises(errors.NotSupportedError):
-                await self.device.starnix.run_console_shell_cmd(
-                    ["echo", "hello"]
-                )
+                await self.dut.starnix.run_console_shell_cmd(["echo", "hello"])
 
 
 if __name__ == "__main__":

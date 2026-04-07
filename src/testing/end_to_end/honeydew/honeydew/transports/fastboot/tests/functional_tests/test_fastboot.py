@@ -18,12 +18,10 @@ class FastbootTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         """setup_class is called once before running tests.
 
         It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
             * Calls some Fastboot transport method to initialize Fastboot
               transport (as it may involve device reboots)
         """
         await super().setup_class()
-        self.device = self.fuchsia_devices[0]
 
         # Calling some fastboot method here, so that Fastboot __init__ gets called which will
         # retrieve the fastboot node-id.
@@ -34,7 +32,7 @@ class FastbootTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         #   * reboot back to fuchsia mode
         # So to avoid all these additional steps in actual test case, we are explicitly
         # instantiating fastboot transport in setup_class
-        self._fastboot_node_id: str = await self.device.fastboot.node_id()
+        self._fastboot_node_id: str = await self.dut.fastboot.node_id()
 
     async def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
@@ -43,13 +41,13 @@ class FastbootTransportTests(fuchsia_base_test.FuchsiaBaseTest):
             * Ensures device is in fuchsia mode.
         """
         await super().teardown_test()
-        if await self.device.fastboot.is_in_fastboot_mode():
+        if await self.dut.fastboot.is_in_fastboot_mode():
             _LOGGER.warning(
                 "%s is in fastboot mode which is not expected. "
                 "Rebooting to fuchsia mode",
-                self.device.device_name,
+                self.dut.device_name,
             )
-            await self.device.fastboot.boot_to_fuchsia_mode()
+            await self.dut.fastboot.boot_to_fuchsia_mode()
 
     async def test_fastboot_node_id(self) -> None:
         """Test case for Fastboot.node_id."""
@@ -69,26 +67,26 @@ class FastbootTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     async def test_fastboot_methods(self) -> None:
         """Test case that puts the device in fastboot mode, runs a command in
         fastboot mode and reboots the device back to fuchsia mode."""
-        await self.device.fastboot.boot_to_fastboot_mode()
+        await self.dut.fastboot.boot_to_fastboot_mode()
 
-        await self.device.fastboot.wait_for_fastboot_mode()
+        await self.dut.fastboot.wait_for_fastboot_mode()
 
         asserts.assert_true(
-            await self.device.fastboot.is_in_fastboot_mode(),
-            msg=f"{self.device.device_name} is not in fastboot mode which "
+            await self.dut.fastboot.is_in_fastboot_mode(),
+            msg=f"{self.dut.device_name} is not in fastboot mode which "
             f"is not expected",
         )
 
         cmd: list[str] = ["getvar", "hw-revision"]
-        await self.device.fastboot.run(cmd)
+        await self.dut.fastboot.run(cmd)
 
-        await self.device.fastboot.boot_to_fuchsia_mode()
+        await self.dut.fastboot.boot_to_fuchsia_mode()
 
-        await self.device.fastboot.wait_for_fuchsia_mode()
+        await self.dut.fastboot.wait_for_fuchsia_mode()
 
         asserts.assert_false(
-            await self.device.fastboot.is_in_fastboot_mode(),
-            msg=f"{self.device.device_name} is in fastboot mode when not "
+            await self.dut.fastboot.is_in_fastboot_mode(),
+            msg=f"{self.dut.device_name} is in fastboot mode when not "
             f"expected",
         )
 

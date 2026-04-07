@@ -126,7 +126,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         async with ConnectTransactionEventHandler(
             proxy,
             server,

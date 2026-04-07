@@ -23,10 +23,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_integration_testcase(self) -> None:
         data_writer = JsonWriter(self.log_path)
         device_test_url = self.user_params.get(
@@ -44,7 +40,7 @@ class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
             realm=test_realm_name,
             log_severity=(min_severity, max_severity),
         )
-        async with self.device.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=[
                 "kernel:meta",
                 "kernel:ipc",
@@ -64,7 +60,7 @@ class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
                 ffx_test_args += ["--min-severity-logs", min_severity]
             if max_severity:
                 ffx_test_args += ["--max-severity-logs", max_severity]
-            self.device.ffx.run_test_component(
+            self.dut.ffx.run_test_component(
                 device_test_url,
                 # TODO(b/396759445): Audit these capabilities per-test.
                 capture_output=False,
@@ -76,7 +72,7 @@ class FidlReaderTest(fuchsia_base_test.FuchsiaBaseTest):
         # $ ffx trace symbolize --fxt trace.fxt --outfile trace.fxt
         infile = os.path.join(host_output_path, "trace.fxt")
         outfile = os.path.join(host_output_path, "trace.fxt")
-        self.device.ffx.run(
+        self.dut.ffx.run(
             ["trace", "symbolize", "--fxt", infile, "--outfile", outfile]
         )
         progress.record_milestone("symbolized the trace")

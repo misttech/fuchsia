@@ -95,9 +95,9 @@ class FuchsiaTestCases(fuchsia_async_extension.TestCases):
 
     fuchsia_devices: list[fuchsia_device.FuchsiaDevice]
     dut: fuchsia_device.FuchsiaDevice
+    test_case_path: str
     snapshot_on: SnapshotOn
     tracing_on: TracingOn
-    test_case_path: str
 
     @property
     def test(self) -> "FuchsiaBaseTest":
@@ -139,6 +139,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
     Attributes:
         fuchsia_devices: List of FuchsiaDevice objects.
+        dut: The first FuchsiaDevice object in `fuchsia_devices`.
         test_case_path: Directory pointing to a specific test case artifacts.
         snapshot_on: `snapshot_on` test param value converted into SnapshotOn Enum.
         tracing_on: `tracing_on` test param value converted into TracingOn Enum.
@@ -149,12 +150,12 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             Default value is "teardown_class_on_fail".
         tracing_on (str): One of "teardown_class", "teardown_class_on_fail",
             "teardown_test", "on_fail", "never".
-            Default value is "never".
-    """
-
+            Default value is "    fuchsia_devices: list[fuchsia_device.FuchsiaDevice]
+    dut: fuchsia_device.FuchsiaDevice
+    test_case_path: str
     snapshot_on: SnapshotOn
     tracing_on: TracingOn
-    test_case_path: str
+    """
 
     async def setup_class(self):  # type: ignore
         """setup_class is called once before running tests.
@@ -173,6 +174,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         self.fuchsia_devices = await self.register_controller(
             fuchsia_device_mobly_controller,
         )
+        self.dut = self.fuchsia_devices[0]
 
         if (
             self.tracing_on == TracingOn.TEARDOWN_CLASS

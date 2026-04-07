@@ -31,25 +31,18 @@ class BluetoothSmokeTest(fuchsia_base_test.FuchsiaBaseTest):
             arg_sets=test_arg_tuple_list,
         )
 
-    async def setup_class(self) -> None:
-        """Initialize DUT"""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def _test_logic(self, iteration: int) -> None:
         """Test Logic for Bluetooth Smoke Test
         1. Turn on BT discoverability on both devices
         2. Retrieve the receiver's BT address
         """
         _LOGGER.info("Initializing Bluetooth and setting discoverability")
-        await self.device.bluetooth_gap.request_discovery(True)
-        await self.device.bluetooth_gap.set_discoverable(True)
+        await self.dut.bluetooth_gap.request_discovery(True)
+        await self.dut.bluetooth_gap.set_discoverable(True)
         # TODO(b/309011914): Remove sleep once polling for discoverability is added.
         await asyncio.sleep(3)
 
-        bt_address = (
-            await self.device.bluetooth_gap.get_active_adapter_address()
-        )
+        bt_address = await self.dut.bluetooth_gap.get_active_adapter_address()
         _LOGGER.info("Receiver address: %s", bt_address)
         _LOGGER.info(
             "Completed Bluetooth state checks. "
@@ -62,8 +55,8 @@ class BluetoothSmokeTest(fuchsia_base_test.FuchsiaBaseTest):
         2. Turn off discovery on device.
         """
 
-        await self.device.bluetooth_gap.set_discoverable(False)
-        await self.device.bluetooth_gap.request_discovery(False)
+        await self.dut.bluetooth_gap.set_discoverable(False)
+        await self.dut.bluetooth_gap.request_discovery(False)
         return await super().teardown_test()
 
     def _name_func(self, iteration: int) -> str:

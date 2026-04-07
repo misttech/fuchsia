@@ -24,7 +24,7 @@ NUM_ITERATIONS = 20
 
 class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
     async def _create_iface(self) -> str:
-        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        proxy, server = self.dut.fuchsia_controller.channel_create()
         (
             await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()
@@ -118,7 +118,7 @@ class CreateClientIfaceBenchmarkTest(base_test.WifiChipBaseTestClass):
         return durations_ms
 
     async def test_create_destroy_client_iface(self) -> None:
-        async with self.fuchsia_device.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=["wlan"],
             download=True,
             directory=self.log_path,

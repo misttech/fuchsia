@@ -18,7 +18,6 @@ class ComponentsSqlEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
         self.dut.ffx.run(
             ["config", "set", "ffx_profile_memory_components", "true"]
         )

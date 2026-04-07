@@ -16,10 +16,6 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     """Serial transport tests"""
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_send(self) -> None:
         """Test case for Serial.send()"""
         for cmd in [
@@ -30,7 +26,7 @@ class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
             "ls",
             "ls -l",
         ]:
-            self.device.serial.send(
+            self.dut.serial.send(
                 cmd=cmd,
             )
 
@@ -45,7 +41,7 @@ class SerialTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         string_found = False
         while time.time() < read_end_time:
             try:
-                read_data = self.device.serial.read()
+                read_data = self.dut.serial.read()
                 if len(read_data) > 0:
                     string_found = True
             except Exception:

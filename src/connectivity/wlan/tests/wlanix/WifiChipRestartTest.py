@@ -42,7 +42,7 @@ class WifiChipRestartTest(base_test.WifiChipBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 
@@ -50,7 +50,7 @@ class WifiChipRestartTest(base_test.WifiChipBaseTestClass):
         (
             callback_client_end,
             callback_server_end,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         wifi_proxy.register_event_callback(callback=callback_client_end.take())
 
         my_callback_server = WifiEventCallbackServer(callback_server_end)

@@ -20,24 +20,19 @@ class FFXWaitForRCSDisconnectionTests(fuchsia_base_test.FuchsiaBaseTest):
     device.
     """
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests."""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_wait_for_rcs_connection(self) -> None:
         """Test case for FFX.wait_for_rcs_connection()."""
-        self.device.ffx.wait_for_rcs_connection()
+        self.dut.ffx.wait_for_rcs_connection()
 
-        self.device.ffx.notify_intentional_disconnect()
-        self.device.ffx.run(_REBOOT)
+        self.dut.ffx.notify_intentional_disconnect()
+        self.dut.ffx.run(_REBOOT)
 
-        self.device.ffx.wait_for_rcs_disconnection()
+        self.dut.ffx.wait_for_rcs_disconnection()
 
-        self.device.ffx.wait_for_rcs_connection()
+        self.dut.ffx.wait_for_rcs_connection()
 
         # Make the device ready after reboot
-        await self.device.on_device_boot()
+        await self.dut.on_device_boot()
 
 
 if __name__ == "__main__":

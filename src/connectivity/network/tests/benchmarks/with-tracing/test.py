@@ -19,7 +19,6 @@ from mobly import asserts, test_runner
 class NetstackBenchmarksWithTracingTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_test(self) -> None:
         await super().setup_test()
-        self.device = self.fuchsia_devices[0]
         self.skip_netstack2 = self.user_params["skip_netstack2"]
 
     def test_loopback_socket_benchmarks_with_tracing(self) -> None:
@@ -62,7 +61,7 @@ class NetstackBenchmarksWithTracingTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
     def _run_test(self, package_name: str, component_name: str) -> None:
-        self.device.ffx.run_test_component(
+        self.dut.ffx.run_test_component(
             f"fuchsia-pkg://fuchsia.com/{package_name}#meta/{component_name}.cm",
             ffx_test_args=[
                 "--realm",

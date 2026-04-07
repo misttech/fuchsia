@@ -42,7 +42,6 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
         self._usb_power_hub: usb_power_hub.UsbPowerHub
         self._usb_port: int | None
         (self._usb_power_hub, self._usb_port) = self._lookup_usb_power_hub(

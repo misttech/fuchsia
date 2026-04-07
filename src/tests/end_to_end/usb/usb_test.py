@@ -5,7 +5,6 @@
 import logging
 
 from fuchsia_base_test import fuchsia_base_test
-from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -22,16 +21,11 @@ _LSUSB_DEVICE_TOKEN = "Device"
 class UsbTest(fuchsia_base_test.FuchsiaBaseTest):
     """Verifies USB host and peripheral mode functionality on a DUT."""
 
-    def setup_class(self) -> None:
-        """setup_class is called once before any test case in the class."""
-        super().setup_class()
-        self.device: fuchsia_device.FuchsiaDevice = self.fuchsia_devices[0]
-
     def test_lsusb_device_list(self) -> None:
         """Verifies 'lsusb' detects a device when in host mode."""
 
         _LOGGER.info("Executing 'lsusb' command on target...")
-        lsusb_output = self.device.ffx.run_ssh_cmd("lsusb")
+        lsusb_output = self.dut.ffx.run_ssh_cmd("lsusb")
         _LOGGER.info(f"lsusb output:\n{lsusb_output}")
 
         is_host = self._is_operating_mode_supported(_USB_HOST_API_NAME)
@@ -86,7 +80,7 @@ class UsbTest(fuchsia_base_test.FuchsiaBaseTest):
 
         # We dump the driver list to check if a driver exposing the API is
         # loaded
-        driver_list_devices_output = self.device.ffx.run(
+        driver_list_devices_output = self.dut.ffx.run(
             ["driver", "list-devices", "-v"]
         )
 
@@ -126,7 +120,7 @@ class UsbTest(fuchsia_base_test.FuchsiaBaseTest):
             f"Checking if operating mode API '{operating_mode}' is supported by "
             "any loaded driver..."
         )
-        driver_list_devices_output = self.device.ffx.run(
+        driver_list_devices_output = self.dut.ffx.run(
             ["driver", "list-devices", "-v"]
         )
 

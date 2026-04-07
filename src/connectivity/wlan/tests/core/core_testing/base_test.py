@@ -21,7 +21,7 @@ from fuchsia_controller_py import ZxStatus
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
-from mobly.asserts import abort_class_if, assert_equal
+from mobly.asserts import assert_equal
 from mobly.records import TestResultRecord
 from mobly_controller import openwrt_access_point
 from mobly_controller.openwrt_access_point import OpenWrtAP
@@ -45,14 +45,8 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
 
-        abort_class_if(
-            len(self.fuchsia_devices) != 1,
-            "Requires exactly one Fuchsia device",
-        )
-        self.fuchsia_device = self.fuchsia_devices[0]
-
         device_monitor = fw_device_service.DeviceMonitorClient(
-            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
+            self.dut.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
                     "core/wlandevicemonitor",
                     "fuchsia.wlan.device.service.DeviceMonitor",
@@ -63,7 +57,7 @@ class CoreBaseTestClass(FuchsiaWlanBaseTest):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
 
         # Wait for first phy device to appear, and assert no additional
         # phy devices are added after a brief pause.
@@ -215,7 +209,7 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         (
             (
                 await self._core_test_kit.device_monitor.get_client_sme(
@@ -280,7 +274,7 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         if not additional_ping_params:
             additional_ping_params = ""
 
-        return self.fuchsia_device.ffx.run_ssh_cmd(
+        return self.dut.ffx.run_ssh_cmd(
             f"ping -c {count} -i {interval} -t {timeout} -s {size} "
             f"{additional_ping_params} {dest_ip}"
         )

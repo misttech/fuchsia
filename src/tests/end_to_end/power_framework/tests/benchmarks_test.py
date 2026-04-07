@@ -13,18 +13,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
-    async def setup_class(self) -> None:
-        """Initialize all DUT(s)"""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_integration_testcase(self) -> None:
         _LOGGER.info("Running power framework benchmarks Lacewing test...")
         # The power-framework-bench-integration runs the benchmark for
         # Takewakelease
         # Toggle levels
         host_output_path = self.test_case_path
-        async with self.device.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=[
                 "kernel:sched",
                 "kernel:meta",
@@ -35,7 +30,7 @@ class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
             directory=host_output_path,
             trace_file="trace.fxt",
         ):
-            self.device.ffx.run_test_component(
+            self.dut.ffx.run_test_component(
                 "fuchsia-pkg://fuchsia.com/power-framework-bench-integration-tests#meta/integration.cm",
                 ffx_test_args=[
                     "--realm",

@@ -16,7 +16,6 @@ class HelloWorldAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def setup_class(self) -> None:
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
     async def test_hello_world_greeting(self) -> None:
         """Test case for HelloWorld.greeting() method"""

@@ -28,7 +28,6 @@ class SessionAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `dut` variable with FuchsiaDevice object
         """
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
     async def test_add_component_without_started_session(self) -> None:
         """Test case for calling session.add_component() without started

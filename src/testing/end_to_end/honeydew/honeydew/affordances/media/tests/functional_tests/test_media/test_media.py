@@ -16,18 +16,13 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class MediaAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Media affordance tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests."""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_get_active_session_status(self) -> None:
         """Test case for Media.get_active_session_status()"""
-        status = await self.device.media.get_active_session_status()
+        status = await self.dut.media.get_active_session_status()
         if status is not None:
             assert isinstance(status, media.PlayerState)
         # Verify that a subsequent call does not hang.
-        status = await self.device.media.get_active_session_status()
+        status = await self.dut.media.get_active_session_status()
         if status is not None:
             assert isinstance(status, media.PlayerState)
 

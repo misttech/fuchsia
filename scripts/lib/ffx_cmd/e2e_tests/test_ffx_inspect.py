@@ -13,14 +13,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class TestFfxInspect(fuchsia_base_test.FuchsiaBaseTest):
-    async def setup_class(self) -> None:
-        await super().setup_class()
-        self.fuchsia_dut = self.fuchsia_devices[0]
-
     async def test_ffx_inspect_all_data(self) -> None:
         """ensure that ffx_cmd.inspect can read data from a real device"""
         inner = ffx_cmd.FfxCmd.create_test_inner(
-            *self.fuchsia_dut.ffx.generate_ffx_cmd(cmd=[])
+            *self.dut.ffx.generate_ffx_cmd(cmd=[])
         )
         _LOGGER.info("Selecting inspect data")
 

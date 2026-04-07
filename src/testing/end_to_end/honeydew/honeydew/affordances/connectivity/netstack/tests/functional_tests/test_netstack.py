@@ -14,14 +14,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class NetstackTests(fuchsia_base_test.FuchsiaBaseTest):
     """Netstack affordance tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests."""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_list_interfaces(self) -> None:
         """Verify list_interfaces() works on device."""
-        interfaces = await self.device.netstack.list_interfaces()
+        interfaces = await self.dut.netstack.list_interfaces()
         asserts.assert_greater(len(interfaces), 0)
 
 

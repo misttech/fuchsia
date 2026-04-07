@@ -9,16 +9,12 @@ from mobly import asserts, test_runner
 
 
 class CpuProfilerEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        self.device = self.fuchsia_devices[0]
-
     def test_launch_component(self) -> None:
         component_url = (
             "fuchsia-pkg://fuchsia.com/demo_target#meta/demo_target.cm"
         )
         output_json = json.loads(
-            self.device.ffx.run(
+            self.dut.ffx.run(
                 [
                     "--machine",
                     "json",
@@ -42,7 +38,7 @@ class CpuProfilerEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             "fuchsia-pkg://fuchsia.com/gtest_target#meta/gtest_target.cm"
         )
         output_json = json.loads(
-            self.device.ffx.run(
+            self.dut.ffx.run(
                 [
                     "--machine",
                     "json",
@@ -64,7 +60,7 @@ class CpuProfilerEndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_attach_system_wide(self) -> None:
         output_json = json.loads(
-            self.device.ffx.run(
+            self.dut.ffx.run(
                 [
                     "--machine",
                     "json",

@@ -18,20 +18,15 @@ class SystemPowerStateControllerAffordanceTests(
 ):
     """SystemPowerStateController affordance tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests."""
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_idle_suspend_timer_based_resume(self) -> None:
         """Test case for SystemPowerStateController.idle_suspend_timer_based_resume()"""
         if self.user_params["is_starnix_supported"]:
-            await self.device.system_power_state_controller.idle_suspend_timer_based_resume(
+            await self.dut.system_power_state_controller.idle_suspend_timer_based_resume(
                 duration=3
             )
         else:
             with asserts.assert_raises(errors.NotSupportedError):
-                await self.device.system_power_state_controller.idle_suspend_timer_based_resume(
+                await self.dut.system_power_state_controller.idle_suspend_timer_based_resume(
                     duration=3,
                 )
 

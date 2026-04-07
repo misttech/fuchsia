@@ -18,7 +18,6 @@ class RtcAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def setup_class(self) -> None:
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
     async def teardown_class(self) -> None:
         """Post-test teardown logic.

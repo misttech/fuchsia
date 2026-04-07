@@ -12,7 +12,6 @@ class SuspendResumeTest(fuchsia_base_test.FuchsiaBaseTest):
 
     async def setup_class(self) -> None:
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
         # TODO(https://fxbug.dev/486154863): It's weird that we're calling
         # this private function, but that's the only way to do it at the

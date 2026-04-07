@@ -20,26 +20,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Audio affordance tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
-        """
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
-    async def setup_test(self) -> None:
-        await super().setup_test()
-
-    async def teardown_test(self) -> None:
-        await super().teardown_test()
-
     async def test_audio(self) -> None:
-        responseAudio = await self.device.virtual_audio.capture()
-        inputResponse = await self.device.virtual_audio.inject(
-            _AUDIO_FILE_INPUT
-        )
+        responseAudio = await self.dut.virtual_audio.capture()
+        inputResponse = await self.dut.virtual_audio.inject(_AUDIO_FILE_INPUT)
 
         await inputResponse.wait_until_injection_is_done()
 
@@ -60,24 +43,22 @@ class AudioAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             f.write(data)
 
     async def test_triggered_capture(self) -> None:
-        quiet_result = await self.device.virtual_audio.wait_for_quiet(
+        quiet_result = await self.dut.virtual_audio.wait_for_quiet(
             requested_quiet_period=timedelta(seconds=2),
             optional_maximum_time_to_wait_for_quiet=timedelta(seconds=60),
         )
         assert quiet_result == WaitForQuietResult.SUCCESS
 
-        await self.device.virtual_audio.queue_triggered_capture(
+        await self.dut.virtual_audio.queue_triggered_capture(
             maximum_time_to_capture_audio=timedelta(seconds=5),
             maximum_time_to_wait_for_sound=timedelta(seconds=5),
             optional_quiet_time_before_stopping_capture=timedelta(seconds=1),
         )
-        inputResponse = await self.device.virtual_audio.inject(
-            _AUDIO_FILE_INPUT
-        )
+        inputResponse = await self.dut.virtual_audio.inject(_AUDIO_FILE_INPUT)
         await inputResponse.wait_until_injection_is_done()
 
         capture_result = (
-            await self.device.virtual_audio.wait_for_triggered_capture()
+            await self.dut.virtual_audio.wait_for_triggered_capture()
         )
         data = b""
         if capture_result.audio_data is not None:

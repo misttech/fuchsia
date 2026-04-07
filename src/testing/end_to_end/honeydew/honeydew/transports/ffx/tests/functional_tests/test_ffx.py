@@ -17,43 +17,34 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     """FFX transport tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
-        """
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def test_check_connection(self) -> None:
         """Test case for FFX.check_connection()."""
-        self.device.ffx.check_connection()
+        self.dut.ffx.check_connection()
 
     async def test_get_target_information(self) -> None:
         """Test case for FFX.get_target_information()."""
-        self.device.ffx.get_target_information()
+        self.dut.ffx.get_target_information()
 
     async def test_get_target_info_from_target_list(self) -> None:
         """Test case for FFX.get_target_info_from_target_list()."""
-        self.device.ffx.get_target_info_from_target_list()
+        self.dut.ffx.get_target_info_from_target_list()
 
     async def test_get_target_name(self) -> None:
         """Test case for FFX.get_target_name()."""
         asserts.assert_equal(
-            self.device.ffx.get_target_name(), self.device.device_name
+            self.dut.ffx.get_target_name(), self.dut.device_name
         )
 
     async def test_get_target_ssh_address(self) -> None:
         """Test case for FFX.get_target_ssh_address()."""
         asserts.assert_is_instance(
-            self.device.ffx.get_target_ssh_address(),
+            self.dut.ffx.get_target_ssh_address(),
             custom_types.TargetSshAddress,
         )
 
     async def test_get_target_board(self) -> None:
         """Test case for FFX.get_target_board()."""
-        board: str = self.device.ffx.get_target_board()
+        board: str = self.dut.ffx.get_target_board()
         # Note - If "board" is specified in "expected_values" in
         # params.yml then compare with it.
         if self.user_params["expected_values"] and self.user_params[
@@ -68,7 +59,7 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def test_get_target_product(self) -> None:
         """Test case for FFX.get_target_product()."""
-        product: str = self.device.ffx.get_target_product()
+        product: str = self.dut.ffx.get_target_product()
         # Note - If "product" is specified in "expected_values" in
         # params.yml then compare with it.
         if self.user_params["expected_values"] and self.user_params[
@@ -85,7 +76,7 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         """Test case for FFX.run()."""
         cmd: list[str] = ["target", "ssh", "ls"]
         # `ffx target ssh` does support JSON
-        self.device.ffx.run(cmd, machine=ffx_types.MachineFormat.RAW)
+        self.dut.ffx.run(cmd, machine=ffx_types.MachineFormat.RAW)
 
     async def test_ffx_run_subtool(self) -> None:
         """Test case for FFX.run() with a subtool.
@@ -94,21 +85,20 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
         to ensure the subtool exists.
         """
         cmd: list[str] = ["power", "help"]
-        self.device.ffx.run(cmd)
+        self.dut.ffx.run(cmd)
 
     async def test_wait_for_rcs_connection(self) -> None:
         """Test case for FFX.wait_for_rcs_connection()."""
-        self.device.ffx.wait_for_rcs_connection()
+        self.dut.ffx.wait_for_rcs_connection()
 
     async def test_ffx_run_test_component(self) -> None:
         """Test case for FFX.run_test_component()."""
         # Skip test if run on non-eng images.
         asserts.skip_if(
-            "core/test_manager"
-            not in self.device.ffx.run(["component", "list"]),
+            "core/test_manager" not in self.dut.ffx.run(["component", "list"]),
             "Test manager component is not present",
         )
-        output: str = self.device.ffx.run_test_component(
+        output: str = self.dut.ffx.run_test_component(
             "fuchsia-pkg://fuchsia.com/hello-world-rust-tests#meta/hello-world-rust-tests.cm",
         )
         asserts.assert_in("PASSED", output)
@@ -116,11 +106,11 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
     async def test_ffx_run_ssh_cmd(self) -> None:
         """Test case for FFX.run_ssh_cmd()."""
         cmd: str = "ls"
-        self.device.ffx.run_ssh_cmd(cmd)
+        self.dut.ffx.run_ssh_cmd(cmd)
 
     async def test_get_ffx_target_status(self) -> None:
         """Test case for FFX.get_ffx_target_status()."""
-        output: str = self.device.ffx.get_ffx_target_status()
+        output: str = self.dut.ffx.get_ffx_target_status()
         asserts.assert_is_instance(output, str)
 
 

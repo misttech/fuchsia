@@ -10,12 +10,8 @@ from trace_processing import trace_importing, trace_model, trace_utils
 
 
 class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
-    async def setup_test(self) -> None:
-        await super().setup_test()
-        self.device = self.fuchsia_devices[0]
-
     async def test_perftest_library_trace_events(self) -> None:
-        async with self.device.tracing.trace_session(
+        async with self.dut.tracing.trace_session(
             categories=[
                 "kernel",
                 "perftest",
@@ -25,7 +21,7 @@ class PerfTestTraceEventsTest(fuchsia_base_test.FuchsiaBaseTest):
             directory=self.log_path,
             trace_file="trace.fxt",
         ):
-            self.device.ffx.run_test_component(
+            self.dut.ffx.run_test_component(
                 "fuchsia-pkg://fuchsia.com/fuchsia_microbenchmarks#meta/fuchsia_microbenchmarks.cm",
                 ffx_test_args=["--realm", "/core/testing/system-tests"],
                 test_component_args=[

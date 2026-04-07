@@ -46,8 +46,6 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 "At least one OpenWRT access point is required"
             )
 
-        self.device = self.fuchsia_devices[0]
-
         self.openwrt_ap = self.openwrt_aps[0]
 
     async def _test_scan_and_connect(
@@ -75,7 +73,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
         self.log.info("Starting scan for SSID: %s", bss_settings.ssid)
         bss_desc_for_ssid = None
         for attempt in range(3):  # Retry up to 3 times
-            bss_scan_response = await self.device.wlan_core.scan_for_bss_info()
+            bss_scan_response = await self.dut.wlan_core.scan_for_bss_info()
             bss_desc_for_ssid = bss_scan_response.get(bss_settings.ssid)
             if bss_desc_for_ssid and len(bss_desc_for_ssid) > 0:
                 break
@@ -120,7 +118,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
             )
 
         if bss_desc_for_ssid and len(bss_desc_for_ssid) > 0:
-            success = await self.device.wlan_core.connect(
+            success = await self.dut.wlan_core.connect(
                 ssid=bss_settings.ssid,
                 bss_desc=bss_desc_for_ssid[0],
                 authentication=authentication,
@@ -131,8 +129,8 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 f"SSID {bss_settings.ssid} not found in bss descriptions."
             )
 
-        await self.device.wlan_core.disconnect()
-        status = await self.device.wlan_core.status()
+        await self.dut.wlan_core.disconnect()
+        status = await self.dut.wlan_core.status()
         if status == ClientStatusIdle():
             return
         asserts.fail(

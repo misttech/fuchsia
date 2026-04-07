@@ -27,7 +27,6 @@ _TEST_SUITE = "fuchsia.test.diagnostics"
 class SnapshotTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
-        self._fuchsia_device = self.fuchsia_devices[0]
         self._repetitions = self.user_params["repeat_count"]
 
     async def test_snapshot(self) -> None:
@@ -39,9 +38,7 @@ class SnapshotTest(fuchsia_base_test.FuchsiaBaseTest):
                 with t.record_iteration():
                     directory = tempfile.TemporaryDirectory()
                     try:
-                        await self._fuchsia_device.snapshot(
-                            directory.name, _SNAPSHOT_ZIP
-                        )
+                        await self.dut.snapshot(directory.name, _SNAPSHOT_ZIP)
                         final_path = os.path.join(directory.name, _SNAPSHOT_ZIP)
                         with zipfile.ZipFile(final_path) as zf:
                             self._validate_inspect(zf)

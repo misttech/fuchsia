@@ -41,7 +41,6 @@ class SoftRebootTest(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns dut variable with FuchsiaDevice object
         """
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
     async def _test_logic(self, iteration: int) -> None:
         """Test case logic that."""

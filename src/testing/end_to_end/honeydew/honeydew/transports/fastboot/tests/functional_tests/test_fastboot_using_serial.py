@@ -30,12 +30,10 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
         """setup_class is called once before running tests.
 
         It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
             * Calls some Fastboot transport method to initialize Fastboot
               transport (as it may involve device reboots)
         """
         await super().setup_class()
-        self.device = self.fuchsia_devices[0]
 
         # Calling some fastboot method here, so that Fastboot __init__ gets called which will
         # retrieve the fastboot node-id.
@@ -46,7 +44,7 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
         #   * reboot back to fuchsia mode
         # So to avoid all these additional steps in actual test case, we are explicitly
         # instantiating fastboot transport in setup_class
-        self._fastboot_node_id: str = await self.device.fastboot.node_id()
+        self._fastboot_node_id: str = await self.dut.fastboot.node_id()
 
     async def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
@@ -55,13 +53,13 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
             * Ensures device is in fuchsia mode.
         """
         await super().teardown_test()
-        if await self.device.fastboot.is_in_fastboot_mode():
+        if await self.dut.fastboot.is_in_fastboot_mode():
             _LOGGER.warning(
                 "%s is in fastboot mode which is not expected. "
                 "Rebooting to fuchsia mode",
-                self.device.device_name,
+                self.dut.device_name,
             )
-            await self.device.fastboot.boot_to_fuchsia_mode()
+            await self.dut.fastboot.boot_to_fuchsia_mode()
 
     async def test_fastboot_using_serial(self) -> None:
         """Test case that puts the device in fastboot mode using serial, runs
@@ -72,7 +70,7 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
 
         try:
             power_switch = power_switch_using_dmc.PowerSwitchUsingDmc(
-                device_name=self.device.device_name, ffx=self.device.ffx
+                device_name=self.dut.device_name, ffx=self.dut.ffx
             )
         except power_switch_using_dmc.PowerSwitchDmcError:
             asserts.fail(
@@ -80,22 +78,22 @@ class FastbootUsingSerialTests(fuchsia_base_test.FuchsiaBaseTest):
             )
 
         try:
-            serial = self.device.serial
+            serial = self.dut.serial
         except errors.FuchsiaDeviceError:
             asserts.fail(
                 "Access to device serial port via unix socket is not available. "
                 "This test can't be run."
             )
 
-        await self.device.fastboot.boot_to_fastboot_mode(
+        await self.dut.fastboot.boot_to_fastboot_mode(
             use_serial=True,
             serial_transport=serial,
             power_switch=power_switch,
         )
 
-        await self.device.fastboot.run(cmd=["getvar", "hw-revision"])
+        await self.dut.fastboot.run(cmd=["getvar", "hw-revision"])
 
-        await self.device.fastboot.boot_to_fuchsia_mode()
+        await self.dut.fastboot.boot_to_fuchsia_mode()
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ class WifiChipExistenceTest(base_test.WlanixBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 

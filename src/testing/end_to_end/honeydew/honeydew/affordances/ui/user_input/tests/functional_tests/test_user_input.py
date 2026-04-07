@@ -159,7 +159,6 @@ class UserInputAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
             * Assigns `dut` variable with FuchsiaDevice object
         """
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
 
     async def setup_test(self) -> None:
         await super().setup_test()

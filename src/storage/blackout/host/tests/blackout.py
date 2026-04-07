@@ -28,8 +28,6 @@ _LOGGER = logging.getLogger(__name__)
 class BlackoutTest(test_case_revive.TestCaseRevive):
     async def setup_class(self) -> None:
         await super().setup_class()
-
-        self.dut = self.fuchsia_devices[0]
         asserts.abort_class_if(
             "component_name" not in self.user_params, "Missing component name!"
         )

@@ -22,7 +22,6 @@ _TEST_SUITE = "fuchsia.test.diagnostics"
 class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
-        self._fuchsia_device = self.fuchsia_devices[0]
         self._repeat_count: int = self.user_params["repeat_count"]
 
     def test_inspect(self) -> None:
@@ -32,7 +31,7 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
         ) as t:
             for _ in range(self._repeat_count):
                 with t.record_iteration():
-                    result = self._fuchsia_device.ffx.run(
+                    result = self.dut.ffx.run(
                         cmd=["--machine", "json", "inspect", "show"],
                         log_output=False,
                     )
@@ -66,7 +65,7 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
         with action_timer.timer(_TEST_SUITE, "Logs", self.test_case_path) as t:
             for _ in range(self._repeat_count):
                 with t.record_iteration():
-                    logger_output = self._fuchsia_device.ffx.run(
+                    logger_output = self.dut.ffx.run(
                         cmd=[
                             "--machine",
                             "json",

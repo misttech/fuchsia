@@ -47,7 +47,6 @@ class PowerCycleTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """setup_class is called once before running tests."""
         await super().setup_class()
-        self.dut = self.fuchsia_devices[0]
         self._power_switch: power_switch.PowerSwitch
         self._outlet: int | None
         (self._power_switch, self._outlet) = self._lookup_power_switch(self.dut)

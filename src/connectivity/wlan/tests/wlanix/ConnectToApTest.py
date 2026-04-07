@@ -92,7 +92,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
         logger.info("Using IfaceIndex %d for connection test", iface_index)
 
         logger.info("Triggering a scan on IfaceIndex %d", iface_index)
-        client, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        client, server = self.dut.fuchsia_controller.channel_create()
         async with Nl80211MulticastServer(client, server) as ctx:
             scan_queue = ctx.message_queue
             scan_callback_channel = ctx.callback_channel
@@ -151,7 +151,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                     "Did not receive a scan result within 20 seconds"
                 )
 
-        client, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        client, server = self.dut.fuchsia_controller.channel_create()
         async with SupplicantStaIfaceCallbackServer(client, server) as ctx:
             state_change_queue = ctx.state_change_queue
             callback_channel = ctx.callback_channel
@@ -163,7 +163,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             (
                 proxy,
                 server,
-            ) = self.fuchsia_device.fuchsia_controller.channel_create()
+            ) = self.dut.fuchsia_controller.channel_create()
             self.supplicant_sta_iface_proxy.add_network(network=server.take())
             supplicant_sta_network_proxy = (
                 fidl_wlanix.SupplicantStaNetworkClient(proxy)

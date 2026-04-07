@@ -27,14 +27,14 @@ class ApfTest(base_test.ConnectionBaseTestClass):
         await super().setup_test()
 
         device_monitor_proxy = fidl_device_svc.DeviceMonitorClient(
-            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
+            self.dut.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
                     "core/wlandevicemonitor",
                     "fuchsia.wlan.device.service.DeviceMonitor",
                 )
             )
         )
-        proxy, server = self.fuchsia_device.fuchsia_controller.channel_create()
+        proxy, server = self.dut.fuchsia_controller.channel_create()
 
         # Find the interface ID for the client SME
         list_ifaces_response = await device_monitor_proxy.list_ifaces()

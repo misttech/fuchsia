@@ -127,7 +127,7 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         async with ConnectTransactionEventHandler(proxy, server) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
@@ -167,10 +167,10 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         # methods results in a RuntimeError because an event loop already
         # exists. Otherwise, instead of sleeping, this test would call
         # these methods to check for an IP address:
-        #    self.fuchsia_device.update_wlan_interfaces()
-        #    iface_name = self.fuchsia_device.wlan_client_test_interface_name
+        #    self.dut.update_wlan_interfaces()
+        #    iface_name = self.dut.wlan_client_test_interface_name
         #    assert iface_name is not None, "Failed to get WLAN interface name"
-        #    self.fuchsia_device.wait_for_ipv4_addr(iface_name)
+        #    self.dut.wait_for_ipv4_addr(iface_name)
         # For now, wait for the DHCP server to assign the DUT an IP address.
         # This should take no more than 5 seconds, typically.
         await asyncio.sleep(10)

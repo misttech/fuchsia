@@ -45,23 +45,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
     """FuchsiaDevice tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns device variable with FuchsiaDevice object
-              Note - If there are multiple Fuchsia devices listed in mobly
-                     testbed then first device will be used.
-            * Assigns device_config variable with testbed config associated with
-              this device
-        """
-        await super().setup_class()
-        fd = self.fuchsia_devices[0]
-        self.device = fd
-
     async def test_board(self) -> None:
         """Test case for board"""
-        board: str = self.device.board
+        board: str = self.dut.board
         # Note - If "board" is specified in "expected_values" in
         # params.yml then compare with it.
         if self.user_params["expected_values"] and self.user_params[
@@ -77,27 +63,27 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
     async def test_manufacturer(self) -> None:
         """Test case for manufacturer"""
         asserts.assert_equal(
-            await self.device.manufacturer(),
+            await self.dut.manufacturer(),
             self.user_params["expected_values"]["manufacturer"],
         )
 
     async def test_model(self) -> None:
         """Test case for model"""
         asserts.assert_equal(
-            await self.device.model(),
+            await self.dut.model(),
             self.user_params["expected_values"]["model"],
         )
 
     async def test_product(self) -> None:
         """Test case for product"""
-        product: str = self.device.product
+        product: str = self.dut.product
         asserts.assert_is_not_none(product)
         asserts.assert_is_instance(product, str)
 
     async def test_product_name(self) -> None:
         """Test case for product_name"""
         asserts.assert_equal(
-            await self.device.product_name(),
+            await self.dut.product_name(),
             self.user_params["expected_values"]["product_name"],
         )
 
@@ -105,7 +91,7 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         """Test case for serial_number"""
         # Note - Some devices such as FEmu, X64 does not have a serial_number.
         asserts.assert_true(
-            isinstance(await self.device.serial_number(), (str, type(None))),
+            isinstance(await self.dut.serial_number(), (str, type(None))),
             msg="serial_number operation failed",
         )
 
@@ -115,13 +101,11 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         # params.yml then compare with it.
         if "firmware_version" in self.user_params["expected_values"]:
             asserts.assert_equal(
-                await self.device.firmware_version(),
+                await self.dut.firmware_version(),
                 self.user_params["expected_values"]["firmware_version"],
             )
         else:
-            asserts.assert_is_instance(
-                await self.device.firmware_version(), str
-            )
+            asserts.assert_is_instance(await self.dut.firmware_version(), str)
 
     async def test_last_reboot_reason(self) -> None:
         """Test case for last_reboot_reason"""
@@ -131,21 +115,21 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         # Given that we have //src/tests/end_to_end/reboot_reason to test the
         # whole reboot flow and the reason, it's fine here to just assert that
         # a string reboot reason should always be available.
-        asserts.assert_is_instance(await self.device.last_reboot_reason(), str)
+        asserts.assert_is_instance(await self.dut.last_reboot_reason(), str)
 
     async def test_is_starnix_device(self) -> None:
         """Test case for is_starnix_device"""
-        asserts.assert_is_instance(self.device.is_starnix_device(), bool)
+        asserts.assert_is_instance(self.dut.is_starnix_device(), bool)
 
     async def test_health_check(self) -> None:
         """Test case for health_check()"""
-        self.device.health_check()
+        self.dut.health_check()
 
     async def test_get_inspect_data_without_selectors_and_monikers(
         self,
     ) -> None:
         inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
-            self.device.get_inspect_data()
+            self.dut.get_inspect_data()
         )
 
         asserts.assert_is_instance(
@@ -165,7 +149,7 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
                 return isinstance(other, int) and other >= 0
 
         inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
-            self.device.get_inspect_data(
+            self.dut.get_inspect_data(
                 selectors=["bootstrap/archivist:root/fuchsia.inspect.Health"],
             )
         )
@@ -195,7 +179,7 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
         ]
 
         inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
-            self.device.get_inspect_data(
+            self.dut.get_inspect_data(
                 selectors=selectors,
             )
         )
@@ -208,24 +192,24 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def test_log_message_to_device(self) -> None:
         """Test case for log_message_to_device()"""
-        await self.device.log_message_to_device(
+        await self.dut.log_message_to_device(
             message="This is a test ERROR message",
             level=custom_types.LEVEL.ERROR,
         )
 
-        await self.device.log_message_to_device(
+        await self.dut.log_message_to_device(
             message="This is a test WARNING message",
             level=custom_types.LEVEL.WARNING,
         )
 
-        await self.device.log_message_to_device(
+        await self.dut.log_message_to_device(
             message="This is a test INFO message", level=custom_types.LEVEL.INFO
         )
 
     async def test_snapshot(self) -> None:
         """Test case for snapshot()"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            await self.device.snapshot(
+            await self.dut.snapshot(
                 directory=tmpdir, snapshot_file="snapshot.zip"
             )
             exists: bool = os.path.exists(f"{tmpdir}/snapshot.zip")
@@ -233,11 +217,11 @@ class FuchsiaDeviceTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def test_wait_for_online(self) -> None:
         """Test case for wait_for_online()"""
-        await self.device.wait_for_online()
+        await self.dut.wait_for_online()
 
     async def test_resolve_device_ip(self) -> None:
         """Test case for resolve_device_ip()"""
-        await self.device.resolve_device_ip()
+        await self.dut.resolve_device_ip()
 
 
 if __name__ == "__main__":

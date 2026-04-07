@@ -104,14 +104,9 @@ class WlanixBaseTestClass(fuchsia_base_test.FuchsiaBaseTest):
 
     async def setup_class(self) -> None:
         await super().setup_class()
-        if len(self.fuchsia_devices) != 1:
-            raise signals.TestAbortClass(
-                "Requires exactly one Fuchsia device",
-            )
-        self.fuchsia_device = self.fuchsia_devices[0]
 
         self.wlanix_proxy = fidl_wlanix.WlanixClient(
-            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
+            self.dut.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint("core/wlanix", "fuchsia.wlan.wlanix.Wlanix")
             )
         )
@@ -137,7 +132,7 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         self.wlanix_proxy.get_wifi(wifi=server.take())
         wifi_proxy = fidl_wlanix.WifiClient(proxy)
 
@@ -155,7 +150,7 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         (
             await wifi_proxy.get_chip(chip_id=self.chip_id, chip=server.take())
         ).unwrap()
@@ -203,7 +198,7 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         (
             await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
         ).unwrap()
@@ -220,14 +215,14 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         self.wlanix_proxy.get_supplicant(supplicant=server.take())
         supplicant_proxy = fidl_wlanix.SupplicantClient(proxy)
 
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
 
         self.wlanix_proxy.get_nl80211(nl80211=server.take())
         self.nl80211_proxy = fidl_wlanix.Nl80211Client(proxy)
@@ -235,7 +230,7 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         (
             proxy,
             server,
-        ) = self.fuchsia_device.fuchsia_controller.channel_create()
+        ) = self.dut.fuchsia_controller.channel_create()
         supplicant_proxy.add_sta_interface(
             iface=server.take(),
             iface_name=self.iface_name,

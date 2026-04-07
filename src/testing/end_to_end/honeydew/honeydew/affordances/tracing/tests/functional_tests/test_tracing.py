@@ -21,15 +21,6 @@ TRACE2JSON = "trace_runtime_deps/trace2json"
 class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
     """Tracing affordance tests"""
 
-    async def setup_class(self) -> None:
-        """setup_class is called once before running tests.
-
-        It does the following things:
-            * Assigns `device` variable with FuchsiaDevice object
-        """
-        await super().setup_class()
-        self.device = self.fuchsia_devices[0]
-
     async def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
 
@@ -41,7 +32,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         """
         try:
             # in case if any trace session started by the test cases remains initialized.
-            await self.device.tracing.terminate()
+            await self.dut.tracing.terminate()
         finally:
             await super().teardown_test()
 
@@ -58,16 +49,16 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 * `tracing.terminate()`
         """
         # Initialize Tracing Session.
-        self.device.tracing.initialize()
+        self.dut.tracing.initialize()
 
         # Start Tracing.
-        await self.device.tracing.start()
+        await self.dut.tracing.start()
 
         # Stop Tracing.
-        await self.device.tracing.stop()
+        await self.dut.tracing.stop()
 
         # Terminate the tracing session.
-        await self.device.tracing.terminate()
+        await self.dut.tracing.terminate()
 
     async def test_tracing_trace_download(self) -> None:
         """This test case tests the following tracing methods and asserts that
@@ -80,15 +71,15 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
                 * `tracing.terminate_and_download(directory="/tmp/")`
         """
         # Initialize Tracing Session.
-        self.device.tracing.initialize()
+        self.dut.tracing.initialize()
 
         # Start Tracing.
-        await self.device.tracing.start()
+        await self.dut.tracing.start()
 
         time.sleep(1)
 
         # Stop Tracing.
-        await self.device.tracing.stop()
+        await self.dut.tracing.stop()
 
         # Terminate the tracing session.
         with tempfile.NamedTemporaryFile(
@@ -96,7 +87,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         ) as trace_fxt, tempfile.NamedTemporaryFile(
             mode="w+", suffix=".json", encoding="utf8"
         ) as trace_json:
-            res = await self.device.tracing.terminate_and_download(
+            res = await self.dut.tracing.terminate_and_download(
                 directory=os.path.dirname(trace_fxt.name),
                 trace_file=os.path.basename(trace_fxt.name),
             )
@@ -145,7 +136,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def test_tracing_session(self) -> None:
         """This test case tests the `tracing.trace_session()` context manager"""
-        async with self.device.tracing.trace_session():
+        async with self.dut.tracing.trace_session():
             pass
 
     async def test_tracing_session_download(self) -> None:
@@ -153,7 +144,7 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
         and asserts that the trace was downloaded successfully.
         """
         with tempfile.NamedTemporaryFile(suffix=".fxt") as trace_fxt:
-            async with self.device.tracing.trace_session(
+            async with self.dut.tracing.trace_session(
                 download=True,
                 directory=os.path.dirname(trace_fxt.name),
                 trace_file=os.path.basename(trace_fxt.name),
@@ -165,10 +156,10 @@ class TracingAffordanceTests(fuchsia_base_test.FuchsiaBaseTest):
 
     async def test_multi_tracing_session(self) -> None:
         """This test case tests the multiple traces using trace context manager"""
-        async with self.device.tracing.trace_session():
-            await self.device.tracing.stop()
+        async with self.dut.tracing.trace_session():
+            await self.dut.tracing.stop()
             time.sleep(1)
-            await self.device.tracing.start()
+            await self.dut.tracing.start()
 
 
 if __name__ == "__main__":
