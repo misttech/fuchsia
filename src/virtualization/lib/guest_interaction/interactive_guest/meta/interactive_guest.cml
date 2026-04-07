@@ -5,13 +5,13 @@
     include: [ "syslog/client.shard.cml" ],
     program: {
         runner: "elf",
-        binary: "bin/interactive_debian_guest_impl",
+        binary: "bin/interactive_guest_impl",
         forward_stderr_to: "log",
         forward_stdout_to: "log",
     },
     children: [
         {
-            name: "guest-manager",
+            name: "debian-guest-manager",
             url: "debian_guest_manager#meta/debian_guest_manager.cm",
         },
     ],
@@ -19,17 +19,18 @@
         {
             protocol: [
                 "fuchsia.virtualization.guest.interaction.Interaction",
-                "fuchsia.virtualization.guest.interaction.InteractiveDebianGuest",
+                "fuchsia.virtualization.guest.interaction.InteractiveGuest",
             ],
         },
     ],
     use: [
         {
-            protocol: [
-                "fuchsia.intl.PropertyProvider",
-                "fuchsia.virtualization.DebianGuestManager",
-            ],
-            from: "#guest-manager",
+            protocol: [ "fuchsia.intl.PropertyProvider" ],
+            from: "parent",
+        },
+        {
+            protocol: [ "fuchsia.virtualization.DebianGuestManager" ],
+            from: "#debian-guest-manager",
         },
     ],
     offer: [
@@ -37,6 +38,7 @@
             protocol: [
                 "fuchsia.kernel.HypervisorResource",
                 "fuchsia.kernel.VmexResource",
+                "fuchsia.memorypressure.Provider",
                 "fuchsia.scheduler.RoleManager",
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
@@ -44,14 +46,14 @@
                 "fuchsia.tracing.provider.Registry",
             ],
             from: "parent",
-            to: "#guest-manager",
+            to: "#debian-guest-manager",
         },
     ],
     expose: [
         {
             protocol: [
                 "fuchsia.virtualization.guest.interaction.Interaction",
-                "fuchsia.virtualization.guest.interaction.InteractiveDebianGuest",
+                "fuchsia.virtualization.guest.interaction.InteractiveGuest",
             ],
             from: "self",
         },

@@ -11,7 +11,18 @@ using zx;
 const GUEST_INTERACTION_MAX_LENGTH uint32 = 1024;
 const GUEST_EXECUTION_COMMAND_MAX_LENGTH uint32 = 8192;
 const DEFAULT_REALM string = "gis_default";
-const DEBIAN_GUEST_NAME_MAX_LENGTH uint32 = 1024;
+const GUEST_NAME_MAX_LENGTH uint32 = 1024;
+
+/// The available guest types.
+type GuestType = strict enum {
+    /// A minimal Fuchsia system that boots to a Zircon virtcon.
+    ZIRCON = 0;
+    /// A Debian guest, exact version dependent on prebuilts.
+    DEBIAN = 1;
+    /// A Linux guest that contains additional features for Vulkan and window manager
+    /// integration, based on the Termina VM from ChromeOS.
+    TERMINA = 2;
+};
 
 /// Enables discovery of guest VM's for control in tests.
 @discoverable
@@ -77,16 +88,17 @@ closed protocol Interaction {
     });
 };
 
-/// Encapsulates the starting and interaction of a Debian guest. This is primarily a convenience,
+/// Encapsulates the starting and interaction of a guest. This is primarily a convenience,
 /// but also provides an abstraction layer over the interaction client_impl.h and
 /// client_operation_state.h files. This abstraction allows reuse of the interaction implementations
 /// across Fuchsia processes via FIDL, regardless of the caller language (e.g. Rust).
 @discoverable
-closed protocol InteractiveDebianGuest {
+closed protocol InteractiveGuest {
     compose Interaction;
 
     strict Start(resource struct {
-        name string:DEBIAN_GUEST_NAME_MAX_LENGTH;
+        guest_type GuestType;
+        name string:GUEST_NAME_MAX_LENGTH;
         guest_config fuchsia.virtualization.GuestConfig;
     }) -> ();
 

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_DEBIAN_GUEST_INTERACTIVE_DEBIAN_GUEST_IMPL_H_
-#define SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_DEBIAN_GUEST_INTERACTIVE_DEBIAN_GUEST_IMPL_H_
+#ifndef SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_GUEST_INTERACTIVE_GUEST_IMPL_H_
+#define SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_GUEST_INTERACTIVE_GUEST_IMPL_H_
 
 #include <fidl/fuchsia.virtualization.guest.interaction/cpp/fidl.h>
 #include <fidl/fuchsia.virtualization/cpp/fidl.h>
@@ -11,21 +11,19 @@
 
 #include <optional>
 
-#include "src/virtualization/lib/guest_interaction/interactive_debian_guest/running_guest.h"
+#include "src/virtualization/lib/guest_interaction/interactive_guest/running_guest.h"
 
-namespace interactive_debian_guest {
+namespace interactive_guest {
 
-class InteractiveDebianGuestImpl
-    : public fidl::Server<fuchsia_virtualization_guest_interaction::InteractiveDebianGuest> {
+class InteractiveGuestImpl
+    : public fidl::Server<fuchsia_virtualization_guest_interaction::InteractiveGuest> {
  public:
-  InteractiveDebianGuestImpl(
-      async::Loop& loop,
-      fidl::SyncClient<fuchsia_virtualization::DebianGuestManager> guest_manager_sync);
-  ~InteractiveDebianGuestImpl();
+  explicit InteractiveGuestImpl(async::Loop& loop);
+  ~InteractiveGuestImpl();
 
-  // Implements `fuchsia_virtualization_guest_interaction::InteractiveDebianGuest`.
+  // Implements `fuchsia_virtualization_guest_interaction::InteractiveGuest`.
   void Start(StartRequest& request, StartCompleter::Sync& completer) override;
-  // Implements `fuchsia_virtualization_guest_interaction::InteractiveDebianGuest`.
+  // Implements `fuchsia_virtualization_guest_interaction::InteractiveGuest`.
   void Shutdown(ShutdownCompleter::Sync& completer) override;
   // Implements `fuchsia_virtualization::Interaction`.
   void PutFile(PutFileRequest& request, PutFileCompleter::Sync& completer) override;
@@ -39,10 +37,10 @@ class InteractiveDebianGuestImpl
   void DoShutdown();
 
   async::Loop& loop_;
-  fidl::SyncClient<fuchsia_virtualization::DebianGuestManager> guest_manager_sync_;
+  fidl::SyncClient<fuchsia_virtualization::GuestManager> guest_manager_sync_;
   std::optional<RunningGuest> running_guest_;
 };
 
-}  // namespace interactive_debian_guest
+}  // namespace interactive_guest
 
-#endif  // SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_DEBIAN_GUEST_INTERACTIVE_DEBIAN_GUEST_IMPL_H_
+#endif  // SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_GUEST_INTERACTIVE_GUEST_IMPL_H_

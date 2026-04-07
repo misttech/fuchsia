@@ -79,7 +79,7 @@ group("linux_vm_tests") {
     # this dependency here ensures that local developers have built the package, and have it
     # available at runtime for the repo server. Adding this dependency in the correct place within
     # the Starnix test runner would add blanket size bloat (+240 MB) across infra.
-    "//src/virtualization/lib/guest_interaction/interactive_debian_guest:interactive_debian_guest_pkg",
+    "//src/virtualization/lib/guest_interaction/interactive_guest:interactive_guest_pkg",
   ]
 }
 

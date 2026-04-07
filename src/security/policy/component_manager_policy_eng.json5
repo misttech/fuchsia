@@ -96,6 +96,7 @@
                 target_monikers: [
                     "/toolbox",
                     "/core/testing/vfs-compliance-tests:**",
+                    "/core/testing/starnix_test_runners/starnix_test_runner/interactive-guest/**",
                 ],
             },
             {
@@ -234,6 +235,7 @@
                     "/core/testing/component-framework-tests:**",
                     "/core/testing/storage-tests:**",
                     "/core/testing/vulkan-tests:**",
+                    "/core/testing/starnix_test_runners/starnix_test_runner/interactive-guest/**",
 
                     // We allow tests to access ambient executability in the same
                     // way that we're permissive with use of the components v1

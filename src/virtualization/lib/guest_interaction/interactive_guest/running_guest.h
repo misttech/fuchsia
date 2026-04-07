@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_DEBIAN_GUEST_RUNNING_GUEST_H_
-#define SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_DEBIAN_GUEST_RUNNING_GUEST_H_
+#ifndef SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_GUEST_RUNNING_GUEST_H_
+#define SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_GUEST_RUNNING_GUEST_H_
 
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.virtualization.guest.interaction/cpp/fidl.h>
@@ -15,7 +15,7 @@
 
 #include "src/virtualization/lib/guest_interaction/client/client_impl.h"
 
-namespace interactive_debian_guest {
+namespace interactive_guest {
 
 using FileTransferCallback = fit::function<void(zx_status_t status)>;
 
@@ -44,6 +44,6 @@ class RunningGuest {
   fidl::SyncClient<fuchsia_virtualization::Guest> guest_sync_;
 };
 
-}  // namespace interactive_debian_guest
+}  // namespace interactive_guest
 
-#endif  // SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_DEBIAN_GUEST_RUNNING_GUEST_H_
+#endif  // SRC_VIRTUALIZATION_LIB_GUEST_INTERACTION_INTERACTIVE_GUEST_RUNNING_GUEST_H_

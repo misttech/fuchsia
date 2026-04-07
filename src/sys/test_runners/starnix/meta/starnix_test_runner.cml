@@ -12,8 +12,8 @@
     },
     children: [
         {
-            name: "interactive-debian-guest",
-            url: "fuchsia-pkg://fuchsia.com/interactive-debian-guest#meta/interactive_debian_guest.cm",
+            name: "interactive-guest",
+            url: "fuchsia-pkg://fuchsia.com/interactive-guest#meta/interactive_guest.cm",
         },
     ],
     capabilities: [
@@ -40,8 +40,8 @@
             protocol: [ "fuchsia.component.Introspector" ],
         },
         {
-            protocol: [ "fuchsia.virtualization.guest.interaction.InteractiveDebianGuest" ],
-            from: "#interactive-debian-guest",
+            protocol: [ "fuchsia.virtualization.guest.interaction.InteractiveGuest" ],
+            from: "#interactive-guest",
         },
     ],
     offer: [
@@ -50,6 +50,7 @@
                 "fuchsia.intl.PropertyProvider",
                 "fuchsia.kernel.HypervisorResource",
                 "fuchsia.kernel.VmexResource",
+                "fuchsia.memorypressure.Provider",
                 "fuchsia.scheduler.RoleManager",
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
@@ -57,7 +58,7 @@
                 "fuchsia.tracing.provider.Registry",
             ],
             from: "parent",
-            to: "#interactive-debian-guest",
+            to: "#interactive-guest",
         },
     ],
     expose: [

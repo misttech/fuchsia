@@ -5,16 +5,16 @@
 import("//build/components.gni")
 import("//build/fidl/fidl.gni")
 
-executable("interactive_debian_guest_impl") {
+executable("interactive_guest_impl") {
   # The client code here hasn't been considered for production usage,
   # and should at a minimum be audited for resource leaks before
   # considered for usage outside of test environments.
   testonly = true
-  output_name = "interactive_debian_guest_impl"
+  output_name = "interactive_guest_impl"
 
   sources = [
-    "interactive_debian_guest_impl.cc",
-    "interactive_debian_guest_impl.h",
+    "interactive_guest_impl.cc",
+    "interactive_guest_impl.h",
     "main.cc",
     "running_guest.cc",
     "running_guest.h",
@@ -42,20 +42,20 @@ executable("interactive_debian_guest_impl") {
   ]
 }
 
-fuchsia_test_component("interactive_debian_guest") {
+fuchsia_test_component("interactive_guest") {
   testonly = true
-  component_name = "interactive_debian_guest"
-  manifest = "meta/interactive_debian_guest.cml"
+  component_name = "interactive_guest"
+  manifest = "meta/interactive_guest.cml"
   deps = [
-    ":interactive_debian_guest_impl",
+    ":interactive_guest_impl",
     "//src/virtualization/bundles:debian",
   ]
 }
 
-fuchsia_package("interactive_debian_guest_pkg") {
+fuchsia_package("interactive_guest_pkg") {
   testonly = true
-  package_name = "interactive-debian-guest"
-  deps = [ ":interactive_debian_guest" ]
+  package_name = "interactive-guest"
+  deps = [ ":interactive_guest" ]
   subpackages =
       [ "//src/virtualization/bin/guest_manager:debian_guest_manager" ]
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/virtualization/lib/guest_interaction/interactive_debian_guest/running_guest.h"
+#include "src/virtualization/lib/guest_interaction/interactive_guest/running_guest.h"
 
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/errors.h>
@@ -39,7 +39,7 @@ zx_status_t ToZxStatus(int proto_status) {
 
 }  // namespace
 
-namespace interactive_debian_guest {
+namespace interactive_guest {
 
 RunningGuest::RunningGuest(std::string name, fbl::unique_fd vsock_fd,
                            async_dispatcher_t* dispatcher,
@@ -108,4 +108,4 @@ void RunningGuest::Shutdown() {
 
 const char* RunningGuest::Name() { return name_.c_str(); }
 
-}  // namespace interactive_debian_guest
+}  // namespace interactive_guest

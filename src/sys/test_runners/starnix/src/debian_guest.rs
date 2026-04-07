@@ -9,8 +9,8 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_virtualization::GuestConfig;
 use fidl_fuchsia_virtualization_guest_interaction::{
-    CommandListenerEvent, CommandListenerMarker, EnvironmentVariable, InteractiveDebianGuestMarker,
-    InteractiveDebianGuestProxy,
+    CommandListenerEvent, CommandListenerMarker, EnvironmentVariable, GuestType,
+    InteractiveGuestMarker, InteractiveGuestProxy,
 };
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
@@ -23,7 +23,7 @@ pub struct DebianGuest {
     instance_name: String,
     /// The proxy for interacting with the guest. This should be accessed by the `interactive_guest`
     /// helper function, to aid with locking and ensuring that the guest is ready for interaction.
-    guest_proxy: OnceCell<Mutex<InteractiveDebianGuestProxy>>,
+    guest_proxy: OnceCell<Mutex<InteractiveGuestProxy>>,
     /// Stores the state of whether test data dependencies have already been pushed to the guest.
     // TODO(https://fxbug.dev/438284662): Better state / lifecycle management.
     deps_pushed: OnceCell<bool>,
@@ -42,7 +42,7 @@ impl DebianGuest {
     }
 
     /// Gets a mutex handle on the proxy, while also lazily bootstrapping the guest if necessary.
-    async fn interactive_guest(&self) -> MutexGuard<'_, InteractiveDebianGuestProxy> {
+    async fn interactive_guest(&self) -> MutexGuard<'_, InteractiveGuestProxy> {
         // Note that the OnceCell::get_or_init function doesn't play nicely with async init
         // functions, and I'm too lazy for an OSRB review for the async_once_cell. So we'll do
         // some manually juggling here to initialize the "ole fashioned way.""
@@ -62,10 +62,10 @@ impl DebianGuest {
                 cfg.virtio_mem = Some(false);
                 cfg.default_net = Some(false);
 
-                let guest_proxy = connect_to_protocol::<InteractiveDebianGuestMarker>()
-                    .expect("Error connecting to InteractiveDebianGuest");
+                let guest_proxy = connect_to_protocol::<InteractiveGuestMarker>()
+                    .expect("Error connecting to InteractiveGuest");
                 guest_proxy
-                    .start(&self.instance_name, cfg)
+                    .start(GuestType::Debian, &self.instance_name, cfg)
                     .await
                     .expect("Debian guest failed to start!");
 
@@ -95,7 +95,7 @@ impl DebianGuest {
             .await
             .put_file(source, destination.as_str())
             .await
-            .context("FIDL call to InteractiveDebianGuest::PutFile has failed.")?;
+            .context("FIDL call to InteractiveGuest::PutFile has failed.")?;
 
         let push_result = zx::Status::from_raw(response);
         if push_result != zx::Status::OK {

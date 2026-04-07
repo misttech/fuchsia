@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/virtualization/lib/guest_interaction/interactive_debian_guest/interactive_debian_guest_impl.h"
+#include "src/virtualization/lib/guest_interaction/interactive_guest/interactive_guest_impl.h"
 
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
 #include <lib/syslog/cpp/macros.h>
@@ -17,7 +18,9 @@
 #include "src/virtualization/tests/lib/guest_console.h"
 #include "src/virtualization/tests/lib/socket.h"
 
-namespace interactive_debian_guest {
+using fuchsia_virtualization::GuestManager;
+
+namespace interactive_guest {
 
 // How long to wait for the guest interaction daemon to become responsive, both whilst issuing the
 // bringup command as well as pausing between re-attempting to issue the command.
@@ -91,12 +94,9 @@ bool AttemptGuestInteractionDaemonBringup(const char* guest_name,
 
 }  // namespace
 
-InteractiveDebianGuestImpl::InteractiveDebianGuestImpl(
-    async::Loop& loop,
-    fidl::SyncClient<fuchsia_virtualization::DebianGuestManager> guest_manager_sync)
-    : loop_(loop), guest_manager_sync_(std::move(guest_manager_sync)) {}
+InteractiveGuestImpl::InteractiveGuestImpl(async::Loop& loop) : loop_(loop) {}
 
-InteractiveDebianGuestImpl::~InteractiveDebianGuestImpl() {
+InteractiveGuestImpl::~InteractiveGuestImpl() {
   if (running_guest_) {
     // This represents an unexpected teardown, but since it's still feasible to gracefully
     // recover, we'll only log an error and then initiate the expected shutdown.
@@ -105,9 +105,9 @@ InteractiveDebianGuestImpl::~InteractiveDebianGuestImpl() {
   }
 }
 
-void InteractiveDebianGuestImpl::Start(StartRequest& request, StartCompleter::Sync& completer) {
+void InteractiveGuestImpl::Start(StartRequest& request, StartCompleter::Sync& completer) {
   auto request_name = request.name().c_str();
-  FX_LOGST(INFO, request_name) << "Start requested for an interactive Debian guest.";
+  FX_LOGST(INFO, request_name) << "Start requested for an interactive guest.";
 
   if (running_guest_) {
     FX_LOGST(ERROR, request_name) << "Start requested, but an owned guest is already running.";
@@ -115,17 +115,48 @@ void InteractiveDebianGuestImpl::Start(StartRequest& request, StartCompleter::Sy
     return;
   }
 
+  if (guest_manager_sync_.is_valid()) {
+    FX_LOGST(ERROR, request_name) << "Guest manager connection already exists.";
+    completer.Close(ZX_ERR_ALREADY_BOUND);
+    return;
+  }
+
+  zx::result<fidl::ClientEnd<GuestManager>> client_end_result;
+
+  switch (request.guest_type()) {
+    case fuchsia_virtualization_guest_interaction::GuestType::kDebian: {
+      auto result = component::Connect<fuchsia_virtualization::DebianGuestManager>();
+      if (result.is_error()) {
+        FX_LOGST(ERROR, request_name)
+            << "Failed to connect to DebianGuestManager: " << result.status_string();
+        completer.Close(result.status_value());
+        return;
+      }
+      client_end_result = zx::ok(fidl::ClientEnd<GuestManager>(result.value().TakeChannel()));
+      break;
+    }
+    default:
+      FX_LOGST(ERROR, request_name)
+          << "Unsupported guest type: " << static_cast<uint32_t>(request.guest_type());
+      completer.Close(ZX_ERR_NOT_SUPPORTED);
+      return;
+  }
+
+  guest_manager_sync_ = fidl::SyncClient<GuestManager>(std::move(client_end_result.value()));
+
   // Attempt to launch the Guest session.
   zx::result guest_endpoints = fidl::CreateEndpoints<fuchsia_virtualization::Guest>();
   FX_CHECK(!guest_endpoints.is_error()) << std::format(
       "[{}] Failed to create guest endpoints: {}", request_name, guest_endpoints.status_value());
 
   auto [guest_client_end, guest_server_end] = *std::move(guest_endpoints);
-  fidl::Result<fuchsia_virtualization::DebianGuestManager::Launch> launch_result =
+  fidl::Result<fuchsia_virtualization::GuestManager::Launch> launch_result =
       guest_manager_sync_->Launch({std::move(request.guest_config()), std::move(guest_server_end)});
+
   FX_CHECK(launch_result.is_ok()) << std::format("[{}] Failed to launch guest with error: {}",
                                                  request_name,
                                                  launch_result.error_value().FormatDescription());
+
   fidl::SyncClient<fuchsia_virtualization::Guest> guest =
       fidl::SyncClient<fuchsia_virtualization::Guest>({std::move(guest_client_end)});
 
@@ -143,14 +174,13 @@ void InteractiveDebianGuestImpl::Start(StartRequest& request, StartCompleter::Sy
   completer.Reply();
 }
 
-void InteractiveDebianGuestImpl::Shutdown(ShutdownCompleter::Sync& completer) {
+void InteractiveGuestImpl::Shutdown(ShutdownCompleter::Sync& completer) {
   FX_LOGS(INFO) << "Explicit shutdown via FIDL was requested.";
   DoShutdown();
   completer.Reply();
 }
 
-void InteractiveDebianGuestImpl::PutFile(PutFileRequest& request,
-                                         PutFileCompleter::Sync& completer) {
+void InteractiveGuestImpl::PutFile(PutFileRequest& request, PutFileCompleter::Sync& completer) {
   FX_CHECK(running_guest_) << "PutFile requested without a running guest!";
   auto host_source = std::move(request.local_file());
   auto guest_dest = request.remote_path();
@@ -160,8 +190,7 @@ void InteractiveDebianGuestImpl::PutFile(PutFileRequest& request,
                           });
 }
 
-void InteractiveDebianGuestImpl::GetFile(GetFileRequest& request,
-                                         GetFileCompleter::Sync& completer) {
+void InteractiveGuestImpl::GetFile(GetFileRequest& request, GetFileCompleter::Sync& completer) {
   FX_CHECK(running_guest_) << "GetFile requested without a running guest!";
   auto guest_source = request.remote_path();
   auto host_dest = std::move(request.local_file());
@@ -171,8 +200,8 @@ void InteractiveDebianGuestImpl::GetFile(GetFileRequest& request,
                           });
 }
 
-void InteractiveDebianGuestImpl::ExecuteCommand(ExecuteCommandRequest& request,
-                                                ExecuteCommandCompleter::Sync& completer) {
+void InteractiveGuestImpl::ExecuteCommand(ExecuteCommandRequest& request,
+                                          ExecuteCommandCompleter::Sync& completer) {
   FX_CHECK(running_guest_) << "ExecuteCommand requested without a running guest!";
   std::map<std::string, std::string> env_variables;
   for (const auto& var : request.env()) {
@@ -185,10 +214,10 @@ void InteractiveDebianGuestImpl::ExecuteCommand(ExecuteCommandRequest& request,
                           std::move(listener));
 }
 
-void InteractiveDebianGuestImpl::DoShutdown() {
+void InteractiveGuestImpl::DoShutdown() {
   FX_CHECK(running_guest_) << "Shutdown requested without a running guest!";
   running_guest_->Shutdown();
   guest_manager_sync_->ForceShutdown();
 }
 
-}  // namespace interactive_debian_guest
+}  // namespace interactive_guest

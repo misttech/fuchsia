@@ -53,7 +53,7 @@ test_product_bundle("starnix_linux_vm_bundle") {
   }
   base_packages = [
     {
-      package_target = "//src/virtualization/lib/guest_interaction/interactive_debian_guest:interactive_debian_guest_pkg"
+      package_target = "//src/virtualization/lib/guest_interaction/interactive_guest:interactive_guest_pkg"
     },
   ]
 }
