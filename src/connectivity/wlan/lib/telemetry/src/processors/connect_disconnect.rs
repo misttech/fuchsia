@@ -296,7 +296,16 @@ impl ConnectDisconnectLogger {
     }
 
     pub async fn log_disconnect(&self, info: &DisconnectInfo) {
-        self.update_connection_state(ConnectionState::Disconnected(DisconnectedState {}));
+        // Mobile devices can be considered idle if they disconnect for reasons associated with
+        // going out of range or are commanded to disconnect by upper layers.
+        //
+        // TODO(500107852): Update this logic to account for non-mobile devices when such devices
+        // use the telemetry library.
+        if !info.disconnect_source.should_log_for_mobile_device() {
+            self.update_connection_state(ConnectionState::Idle(IdleState {}));
+        } else {
+            self.update_connection_state(ConnectionState::Disconnected(DisconnectedState {}));
+        }
         let _prev = self.last_disconnect_at.lock().replace(fasync::MonotonicInstant::now());
         self.log_disconnect_inspect(info);
         self.log_disconnect_cobalt(info).await;
@@ -1166,8 +1175,10 @@ mod tests {
         if should_log {
             assert_eq!(metrics.len(), 1);
             assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+            assert_matches!(*logger.connection_state.lock(), ConnectionState::Disconnected(_));
         } else {
             assert!(metrics.is_empty());
+            assert_matches!(*logger.connection_state.lock(), ConnectionState::Idle(_));
         }
     }
 
@@ -1204,7 +1215,14 @@ mod tests {
 
         // Disconnect at 25th second
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(25_000_000_000));
-        let disconnect_info = fake_disconnect_info();
+        let disconnect_info = DisconnectInfo {
+            connected_duration: zx::BootDuration::from_millis(300_000),
+            disconnect_source: fidl_sme::DisconnectSource::Ap(fidl_sme::DisconnectCause {
+                mlme_event_name: fidl_sme::DisconnectMlmeEventName::DeauthenticateIndication,
+                reason_code: fidl_ieee80211::ReasonCode::ApInitiated,
+            }),
+            ..fake_disconnect_info()
+        };
         let mut test_fut = pin!(logger.log_disconnect(&disconnect_info));
         assert_eq!(
             test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
