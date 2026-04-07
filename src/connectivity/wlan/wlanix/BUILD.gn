@@ -38,6 +38,7 @@ rustc_binary("wlanix_bin") {
     "//sdk/rust/zx",
     "//src/connectivity/wlan/lib/common/rust:wlan-common",
     "//src/connectivity/wlan/lib/ieee80211",
+    "//src/connectivity/wlan/lib/power_manager",
     "//src/connectivity/wlan/lib/telemetry:wlan-telemetry",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
@@ -65,6 +66,7 @@ rustc_binary("wlanix_bin") {
   test_deps = [
     "//sdk/fidl/fuchsia.wlan.common.security:fuchsia.wlan.common.security_rust",
     "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
+    "//src/connectivity/wlan/lib/power_manager:power_manager_testing",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
@@ -87,7 +89,6 @@ rustc_binary("wlanix_bin") {
     "src/nl80211/constants.rs",
     "src/nl80211/mod.rs",
     "src/nl80211/nested.rs",
-    "src/power_manager.rs",
     "src/security/mod.rs",
     "src/security/wep.rs",
   ]

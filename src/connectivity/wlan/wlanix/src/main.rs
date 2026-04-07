@@ -37,7 +37,7 @@ mod bss_scorer;
 mod default_drop;
 mod ifaces;
 mod nl80211;
-mod power_manager;
+
 mod security;
 
 use default_drop::{DefaultDrop, WithDefaultDrop};
@@ -46,7 +46,7 @@ use nl80211::{
     Nl80211, Nl80211Attr, Nl80211BandAttr, Nl80211Cmd, Nl80211FrequencyAttr,
     Nl80211SchedScanMatchAttr, Nl80211SchedScanPlanAttr,
 };
-use power_manager::{DevicePowerManager, PowerManager};
+use wlan_power_manager::{DevicePowerManager, PowerManager};
 
 // TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
 // the same iface name, even when an iface is recreated.
@@ -2703,9 +2703,7 @@ async fn serve_fidl<I: IfaceManager, P: PowerManager>(
 }
 
 async fn report_battery_updates(telemetry_sender: TelemetrySender) {
-    match fuchsia_component::client::connect_to_protocol::<
-        fidl_fuchsia_power_battery::BatteryManagerMarker,
-    >() {
+    match client::connect_to_protocol::<fidl_fuchsia_power_battery::BatteryManagerMarker>() {
         Ok(proxy) => {
             // Swallow and log failure to watch battery updates because they only affect some
             // Cobalt metrics and should not cause wlanix to shutdown.
@@ -2800,10 +2798,8 @@ async fn main() {
     .expect("Failed to initialize wlanix logs");
     info!("Starting Wlanix");
 
-    let monitor_svc = fuchsia_component::client::connect_to_protocol::<
-        fidl_device_service::DeviceMonitorMarker,
-    >()
-    .expect("failed to connect to device monitor");
+    let monitor_svc = client::connect_to_protocol::<fidl_device_service::DeviceMonitorMarker>()
+        .expect("failed to connect to device monitor");
 
     // Setup phy event processing
     let (phy_events_proxy, phy_events_server) =
@@ -2870,12 +2866,14 @@ mod tests {
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
     use fidl_fuchsia_wlan_internal as fidl_internal;
+    use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
     use ieee80211::Ssid;
     use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
+    use wlan_power_manager_testing::TestPowerManager;
     const CHIP_ID: u32 = 1;
     const FAKE_IFACE_NAME: &str = "fake-iface-name";
 
@@ -3269,7 +3267,7 @@ mod tests {
         wifi_state.lock().callback.replace(callback_proxy);
 
         let iface_manager = Arc::new(TestIfaceManager::new().mock_create_client_iface_failure());
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
             wlanix_stream,
@@ -3356,7 +3354,7 @@ mod tests {
         let iface_manager = Arc::new(
             TestIfaceManager::new().mock_create_client_iface_failure().mock_reset_phy_failure(),
         );
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
             wlanix_stream,
@@ -3771,7 +3769,7 @@ mod tests {
         wifi_sta_iface_proxy: fidl_wlanix::WifiStaIfaceProxy,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
         iface_manager: Arc<TestIfaceManager>,
-        power_manager: Arc<power_manager::TestPowerManager>,
+        power_manager: Arc<TestPowerManager>,
 
         // Note: keep the executor field last in the struct so it gets dropped last.
         exec: fasync::TestExecutor,
@@ -3817,7 +3815,7 @@ mod tests {
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(iface_manager);
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
@@ -4711,7 +4709,7 @@ mod tests {
         supplicant_sta_iface_callback_stream: fidl_wlanix::SupplicantStaIfaceCallbackRequestStream,
         telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
         iface_manager: Arc<TestIfaceManager>,
-        power_manager: Arc<power_manager::TestPowerManager>,
+        power_manager: Arc<TestPowerManager>,
 
         // Note: keep the executor field last in the struct so it gets dropped last.
         exec: fasync::TestExecutor,
@@ -4769,7 +4767,7 @@ mod tests {
 
         let wifi_state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new_with_client());
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let test_fut = serve_wlanix(
             wlanix_stream,
@@ -4861,7 +4859,7 @@ mod tests {
             stream,
             state,
             iface_manager,
-            Arc::new(power_manager::TestPowerManager::new()),
+            Arc::new(TestPowerManager::new()),
             TelemetrySender::new(telemetry_sender),
         );
         let mut wlanix_fut = pin!(wlanix_fut);
@@ -5467,7 +5465,7 @@ mod tests {
         let iface_manager = Arc::new(TestIfaceManager::new());
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let phy_id = 123;
 
         // Create a proxy and server to instantiate a FIDL request and responder.
@@ -5507,7 +5505,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let phy_id = 123;
 
         // Configure the reset Tx power scenario call to fail.
@@ -5550,7 +5548,7 @@ mod tests {
     fn test_set_tx_power_scenario_succeeds() {
         let mut exec = fasync::TestExecutor::new();
         let iface_manager = Arc::new(TestIfaceManager::new());
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let test_phy_id = 123;
@@ -5596,7 +5594,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let power_manager = Arc::new(power_manager::TestPowerManager::new());
+        let power_manager = Arc::new(TestPowerManager::new());
         let test_phy_id = 123;
 
         // Configure the set Tx power scenario call to fail.
