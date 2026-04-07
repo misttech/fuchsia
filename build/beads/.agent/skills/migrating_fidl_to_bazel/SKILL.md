@@ -19,23 +19,28 @@ GN to Bazel.
     See `assets/copyright_header_template.md` for the copyright header template.
     Add the copyright header to the top of the file.
 
-3.  Define the equivalent Bazel target for the FIDL library. Copy all comments
-    from the `BUILD.gn` file. Map the attributes as follows:
+3.  Define the equivalent Bazel target for the FIDL library. Use `fidl_library`
+    loaded from `//build/bazel/rules/fidl:fidl_library.bzl`.
+
+    > [!IMPORTANT]
+    > **Preserve Comments:** Except the copyright header, you MUST copy all
+    comments from the `BUILD.gn` file to the `BUILD.bazel` file. If a comment
+    is above or on the same line as an attribute in `BUILD.gn`, it should be
+    placed in the same relative position to the mapped attribute in `BUILD.bazel`.
+
+    Map the attributes as follows:
     -   `sources` -> `srcs`
     -   `public_deps` -> `deps`
     -   `sdk_area` -> `api_area`
     -   `sdk_category` -> `category`
     -   `enable_* = true` -> `enable_* = True`
     -   `visibility = ["*"]` -> `visibility = ["//visibility:public"]`
-    *(For other values of `visibility`, map to the corresponding visibility in
-    Bazel).*
-4.  If an attribute has a comment just above it or at the same line with it in
-    the BUILD.gn, copy the comment to the same position related to the mapped
-    attribute in the BUILD.bazel file.
-    *(Example: If a comment is above `sources = [`, it should sit directly
-    above `srcs = [` in the `BUILD.bazel` file).*
-5.  If dependencies are missing Bazel targets, migrate those dependencies first.
-6.  Verify the Bazel target builds successfully:
+    *(For other values of `visibility`, map to the corresponding visibility
+    in Bazel).*
+    *(Example: If a comment is above `excluded_checks = [`, it should sit directly
+    above `excluded_checks = [` in the `BUILD.bazel` file).*
+4.  If dependencies are missing Bazel targets, migrate those dependencies first.
+5.  Verify the Bazel target builds successfully:
 
     ```bash
     fx bazel build --config=fuchsia //sdk/fidl/{library_name}:{library_name}
@@ -61,22 +66,21 @@ GN to Bazel.
 
 ## 3. Sync FIDL targets back to GN
 
-1.  Remove the `fidl(...)` target, and if the `//build/fidl/fidl.gni`is imported
-    in the `//build/tools/bazel2gn/bazel_migration.gni`, remove the `import`
-    statement from the `BUILD.gn`, too.
+1.  Remove the `fidl(...)` target and the `import("//build/fidl/fidl.gni")`
+    statement from the `BUILD.gn` file.
 2.  Sync the target back from Bazel to GN using the `syncing-bazel-to-gn` skill
     (see `../syncing_bazel_to_gn/SKILL.md`).
 
-## 4. Verification and Cleanup
+## 4. Review, Verification and Cleanup
 
-1.  Format your changes:
+1.  **Review the changed code** using the checklist in
+    `references/migration_code_review_checklist.md`.
+
+2.  Format your changes:
 
     ```bash
     fx format-code --parallel
     ```
-
-2. Review the changed code with the checklist in
-    `references/migration_code_review_checklist.md`.
 
 3.  Verify the build executes correctly for compatibility tests:
 
