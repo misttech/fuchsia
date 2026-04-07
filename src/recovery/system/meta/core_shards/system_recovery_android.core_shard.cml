@@ -24,6 +24,11 @@
     ],
     offer: [
         {
+            protocol: "fuchsia.hardware.adb.StateController",
+            from: "#adb",
+            to: "#system_recovery",
+        },
+        {
             protocol: [
                 "fuchsia.boot.Arguments",
                 "fuchsia.hardware.power.statecontrol.Admin",

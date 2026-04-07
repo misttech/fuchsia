@@ -187,7 +187,14 @@ class FakeAdbDriver {
 
   class DeviceServer : public fidl::Server<fuchsia_hardware_adb::Device> {
    public:
-    explicit DeviceServer(FakeAdbDriver* adb) : impl_(&adb->impl_) {}
+    explicit DeviceServer(FakeAdbDriver* adb)
+        : impl_(&adb->impl_), loop_(&kAsyncLoopConfigNeverAttachToThread) {
+      EXPECT_EQ(loop_.StartThread("adb-test-device-thread"), ZX_OK);
+    }
+
+    void Bind(fidl::ServerEnd<fuchsia_hardware_adb::Device> server) {
+      binding_.emplace(fidl::BindServer(loop_.dispatcher(), std::move(server), this));
+    }
 
     void StartAdb(StartAdbRequest& request, StartAdbCompleter::Sync& completer) override {
       ASSERT_TRUE(expect_start_ > 0);
@@ -197,13 +204,20 @@ class FakeAdbDriver {
       completer.Reply(fit::success());
     }
 
-    void StopAdb(StopAdbCompleter::Sync& completer) override { completer.Reply(fit::success()); }
+    void StopAdb(StopAdbCompleter::Sync& completer) override {
+      stop_called_++;
+      completer.Reply(fit::success());
+    }
+
+    std::atomic_uint32_t stop_called_ = 0;
 
    private:
     friend class FakeAdbDriver;
     UsbAdbImplServer* impl_;
 
     std::atomic_uint32_t expect_start_ = 0;
+    async::Loop loop_;
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_adb::Device>> binding_;
   } device_;
 };
 
@@ -248,23 +262,19 @@ class AdbTest : public testing::Test {
     // The test device connector
     class TestConnector : public DeviceConnector {
      public:
-      explicit TestConnector(async_dispatcher_t* dispatcher, FakeAdbDriver* fake_driver)
-          : dispatcher_(dispatcher), fake_driver_(fake_driver) {}
+      explicit TestConnector(FakeAdbDriver* fake_driver) : fake_driver_(fake_driver) {}
 
       zx::result<fidl::ClientEnd<fuchsia_hardware_adb::Device>> ConnectToFirstDevice() override {
         zx::channel server, client;
         EXPECT_EQ(zx::channel::create(0, &server, &client), ZX_OK);
-        driver_binding_.emplace(fidl::BindServer(
-            dispatcher_, fidl::ServerEnd<fuchsia_hardware_adb::Device>(std::move(server)),
-            &(fake_driver_->device_)));
+        fake_driver_->device_.Bind(
+            fidl::ServerEnd<fuchsia_hardware_adb::Device>(std::move(server)));
         return zx::ok(fidl::ClientEnd<fuchsia_hardware_adb::Device>(std::move(client)));
       }
 
      private:
-      async_dispatcher_t* dispatcher_;
-      std::optional<fidl::ServerBindingRef<fuchsia_hardware_adb::Device>> driver_binding_;
       FakeAdbDriver* fake_driver_;
-    } test_connector(fidl_loop_.dispatcher(), &fake_driver_);
+    } test_connector(&fake_driver_);
     fake_driver_.ExpectStart();
     EXPECT_EQ(dev_->Init(&test_connector), ZX_OK);
   }
@@ -272,8 +282,9 @@ class AdbTest : public testing::Test {
     while (!fake_driver_.expectations_empty()) {
       usleep(1'000);
     }
-    dev_.reset();
     fake_driver_.TearDown();
+    fidl_loop_.RunUntilIdle();
+    dev_.reset();
     fidl_loop_.Shutdown();
   }
 
@@ -310,6 +321,38 @@ TEST_F(AdbTest, ConnectTest) {
   fake_driver_.ExpectQueueTx(
       0, std::vector<uint8_t>(connection_string.begin(), connection_string.end()));
   fake_driver_.SendConnect();
+}
+
+TEST_F(AdbTest, RecoveryConnectTest) {
+  set_system_type(kCsRecovery);
+  std::string connection_string =
+      "recovery::ro.product.name=zircon;ro.product.model=zircon;ro.product.device=zircon;";
+  fake_driver_.ExpectQueueTx(
+      0, {
+             .msg =
+                 {
+                     .command = A_CNXN,
+                     .arg0 = A_VERSION,
+                     .arg1 = MAX_PAYLOAD,
+                     .data_length = static_cast<uint32_t>(connection_string.size()),
+                     .data_check = 0,
+                     .magic = A_CNXN ^ 0xffffffff,
+                 },
+             .payload = {},
+         });
+  fake_driver_.ExpectQueueTx(
+      0, std::vector<uint8_t>(connection_string.begin(), connection_string.end()));
+  fake_driver_.SendConnect();
+}
+
+TEST_F(AdbTest, ResetTest) {
+  fake_driver_.ExpectStart();
+  dev_->Reset();
+  EXPECT_EQ(fake_driver_.device_.stop_called_.load(), 1UL);
+
+  while (!fake_driver_.expectations_empty()) {
+    usleep(1'000);
+  }
 }
 
 // Integration tests
@@ -354,10 +397,10 @@ class AdbRealmTest : public AdbTest, public loop_fixture::RealLoop {
   }
 
   void TearDown() override {
+    AdbTest::TearDown();
     bool complete = false;
     realm_->Teardown([&](fit::result<fuchsia::component::Error> result) { complete = true; });
     RunLoopUntil([&]() { return complete; });
-    AdbTest::TearDown();
   }
 
   void SendConnect() {

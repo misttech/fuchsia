@@ -125,6 +125,8 @@ enum ConnectionState {
 };
 
 std::string to_string(ConnectionState state);
+void set_system_type(ConnectionState state);
+ConnectionState get_system_type();
 
 inline bool ConnectionStateIsOnline(ConnectionState state) {
   switch (state) {

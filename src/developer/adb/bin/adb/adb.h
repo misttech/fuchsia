@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
 
+#include <atomic>
 #include <map>
 
 #include "service-manager.h"
@@ -36,6 +37,8 @@ class Adb : public AdbBase {
 
   static zx::result<std::unique_ptr<Adb>> Create(async_dispatcher_t* dispatcher);
 
+  void Reset();
+
   // AdbDaemonBase functions
   bool SendUsbPacket(uint8_t* buf, size_t len) override;
   zx::result<zx::socket> GetServiceSocket(std::string_view service_name,
@@ -47,6 +50,7 @@ class Adb : public AdbBase {
   // Starts this implementation by connecting to underlying fuchsia_hardware_adb::UsbAdbImpl and
   // creating required connections
   zx_status_t Init(DeviceConnector* connector);
+  zx_status_t StartUsbAdbImpl();
 
   // Parses packet received at the end of fuchsia_hardware_adb::UsbAdbImpl::Receive, forwards
   // it to adb-protocol, and sends another fuchsia_hardware_adb::UsbAdbImpl::Receive request
@@ -55,6 +59,7 @@ class Adb : public AdbBase {
 
   async_dispatcher_t* dispatcher_;
   fidl::WireSharedClient<fuchsia_hardware_adb::UsbAdbImpl> impl_;
+  fidl::ClientEnd<fuchsia_hardware_adb::Device> device_client_;
 
   // Handle to the third party library implementation of ADB protocol.
   atransport transport_;
@@ -69,6 +74,7 @@ class Adb : public AdbBase {
   // completely received, copied_len_ should be 0.
   size_t copied_len_;
 
+  std::atomic<bool> resetting_ = false;
   ServiceManager service_manager_;
 };
 

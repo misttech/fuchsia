@@ -10,11 +10,33 @@
         runner: "elf",
         binary: "bin/adb",
     },
+    capabilities: [
+        { protocol: "fuchsia.hardware.adb.StateController" },
+    ],
     use: [
         { service: "fuchsia.hardware.adb.Service" },
         {
             protocol: "fuchsia.component.Realm",
             from: "parent",
+        },
+        {
+            directory: "build-info",
+            rights: [ "r*" ],
+            path: "/config/build-info",
+        },
+        {
+            config: "fuchsia.adb.IsRecovery",
+            from: "parent",
+            key: "is_recovery",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.hardware.adb.StateController",
+            from: "self",
         },
     ],
 }

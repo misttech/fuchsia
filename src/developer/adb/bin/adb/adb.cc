@@ -4,6 +4,7 @@
 
 #include "adb.h"
 
+#include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/syslog/cpp/macros.h>
@@ -171,33 +172,47 @@ zx_status_t Adb::Init(DeviceConnector* connector) {
                    << ": " << dev.error_value();
     return dev.is_error() ? dev.error_value() : ZX_ERR_NOT_CONNECTED;
   }
+  device_client_ = std::move(dev.value());
 
   auto fd_connection =
       std::make_unique<BlockingConnectionAdapter>(std::make_unique<FdConnection>(this));
   transport_.SetConnection(std::move(fd_connection));
   transport_.connection()->Start();
 
-  auto ends = fidl::CreateEndpoints<fuchsia_hardware_adb::UsbAdbImpl>();
-  if (!ends.is_ok()) {
-    return ends.status_value();
+  auto status = StartUsbAdbImpl();
+  if (status != ZX_OK) {
+    return status;
   }
 
-  impl_.Bind(std::move(ends->client), dispatcher_);
-  impl_->Receive().Then(fit::bind_member<&Adb::ReceiveCallback>(this));
-
-  auto result = fidl::WireCall(dev.value())->StartAdb(std::move(ends->server));
-  if (result->is_error()) {
-    FX_LOGS(ERROR) << "Could not call start for UsbAdbImpl " << result->error_value();
-    return result->error_value();
-  }
-
-  auto status = service_manager_.Init();
+  status = service_manager_.Init();
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Could not initialize service manager " << status;
     return status;
   }
 
   FX_LOGS(DEBUG) << "Adb successfully created";
+  return ZX_OK;
+}
+
+zx_status_t Adb::StartUsbAdbImpl() {
+  auto ends = fidl::CreateEndpoints<fuchsia_hardware_adb::UsbAdbImpl>();
+  if (!ends.is_ok()) {
+    return ends.status_value();
+  }
+
+  impl_ = fidl::WireSharedClient<fuchsia_hardware_adb::UsbAdbImpl>(
+      std::move(ends->client), dispatcher_, fidl::ObserveTeardown([this] {
+        if (resetting_.exchange(false)) {
+          StartUsbAdbImpl();
+        }
+      }));
+  impl_->Receive().Then(fit::bind_member<&Adb::ReceiveCallback>(this));
+
+  auto result = fidl::WireCall(device_client_)->StartAdb(std::move(ends->server));
+  if (result->is_error()) {
+    FX_LOGS(ERROR) << "Could not call start for UsbAdbImpl " << result->error_value();
+    return result->error_value();
+  }
   return ZX_OK;
 }
 
@@ -227,6 +242,15 @@ zx::result<std::unique_ptr<Adb>> Adb::Create(async_dispatcher_t* dispatcher) {
   }
 
   return zx::ok(std::move(adb));
+}
+
+void Adb::Reset() {
+  auto result = fidl::WireCall(device_client_)->StopAdb();
+  if (!result.ok()) {
+    FX_PLOGS(ERROR, result.status()) << "Failed to stop adb";
+  }
+  resetting_ = true;
+  impl_.AsyncTeardown();
 }
 
 }  // namespace adb

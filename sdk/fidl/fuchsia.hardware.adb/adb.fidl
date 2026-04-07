@@ -85,3 +85,39 @@ closed protocol Provider {
 service Service {
     adb client_end:Device;
 };
+
+/// Control the state of ADB.
+@discoverable
+@available(added=HEAD)
+open protocol StateController {
+    /// Set the current system type of ADB (e.g. device, recovery, sideload).
+    /// This method updates the system type string sent to the host and initiates a reset
+    /// of the USB ADB connection so that the host can discover the device again with the
+    /// new system type state.
+    flexible SetSystemType(struct {
+        system_type SystemType;
+    }) -> () error zx.Status;
+};
+
+/// Represents the device's system type sent during the ADB connection handshake (A_CNXN).
+/// This identifies the mode the device is currently operating in to the ADB host.
+///
+/// The connection string in ADB, sent during the A_CNXN handshake, is structured as
+/// `<systemtype>:<serialno>:<banner>`.
+/// -  `<systemtype>`: Identifies the device's mode and corresponds to the values in `SystemType`.
+/// -  `<serialno>`: The device's serial number. This field is commonly empty.
+/// -  `<banner>`: Contains metadata about the device, such as properties like product name, model,
+///    and supported features (e.g., "ro.product.name=...", "features=...").
+@available(added=HEAD)
+type SystemType = flexible enum : uint32 {
+    /// The device is in normal boot.
+    DEVICE = 1;
+    /// The device is in recovery.
+    RECOVERY = 2;
+    /// The device is in recovery sideload mode.
+    SIDELOAD = 3;
+    /// The device is in recovery rescue mode.
+    RESCUE = 4;
+    /// The device is in bootloader.
+    BOOTLOADER = 5;
+};

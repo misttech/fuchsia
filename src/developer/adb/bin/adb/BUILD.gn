@@ -23,13 +23,25 @@ executable("adb") {
     "adb.cc",
     "main.cc",
     "service-manager.cc",
+    "state-controller.cc",
   ]
-  deps = [ ":common" ]
+  deps = [
+    ":adb-config",
+    ":common",
+  ]
+}
+
+fuchsia_component_manifest("manifest") {
+  component_name = "adb"
+  manifest = "meta/adb.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("adb-config") {
+  cm_label = ":manifest"
 }
 
 fuchsia_component("adb-component") {
-  component_name = "adb"
-  manifest = "meta/adb.cml"
+  cm_label = ":manifest"
   deps = [ ":adb" ]
 }
 

@@ -96,6 +96,10 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                     )?;
                     builder.platform_bundle("recovery_android")?;
                     configure_platform_system_recovery(context, config, builder)?;
+                    builder.set_config_capability(
+                        "fuchsia.adb.IsRecovery",
+                        Config::new(ConfigValueType::Bool, true.into()),
+                    )?;
                 }
                 SystemRecovery::Bootfs(bootfs_recovery_config) => {
                     // Bootfs recovery can be part of a product directly and so is allowed at Standard.

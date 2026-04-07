@@ -33,6 +33,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -43,6 +44,10 @@
 #include "transport.h"
 
 static std::atomic<int> active_connections = 0;
+static std::atomic<ConnectionState> g_current_system_type = kCsDevice;
+
+void set_system_type(ConnectionState state) { g_current_system_type = state; }
+ConnectionState get_system_type() { return g_current_system_type; }
 
 static void IncrementActiveConnections() {
   active_connections++;
@@ -227,29 +232,25 @@ static void send_close(unsigned local, unsigned remote, atransport* t) {
 std::string get_connection_string() {
   std::vector<std::string> connection_properties;
 
-  static const char* cnxn_props[] = {
-      "ro.product.name",
-      "ro.product.model",
-      "ro.product.device",
-  };
+  static std::string product = "zircon";
+  static std::string board = "zircon";
+  static bool properties_initialized = false;
 
-  for (const auto& prop : cnxn_props) {
-    std::string value = std::string(prop) + "=" + "zircon";  // android::base::GetProperty(prop,
-                                                             // "");
-    connection_properties.push_back(value);
+  if (!properties_initialized) {
+    std::ifstream product_file("/config/build-info/product");
+    if (product_file.is_open()) {
+      std::getline(product_file, product);
+    }
+    std::ifstream board_file("/config/build-info/board");
+    if (board_file.is_open()) {
+      std::getline(board_file, board);
+    }
+    properties_initialized = true;
   }
 
-  char s[1024];
-  // sprintf(s, "features=%s", FeatureSetToString(supported_features()).c_str());  // NOT SURE IF
-  // COMMENTHING THIS OUT WILL BREAK STUFF BUT... let's try connection_properties.push_back(s);
-
-  std::string connect_props = "";
-  for (auto i : connection_properties) {
-    connect_props += i + ';';
-  }
-
-  sprintf(s, "device::%s", connect_props.c_str());
-  return s;
+  std::string connect_props = "ro.product.name=" + product + ";ro.product.model=" + board +
+                              ";ro.product.device=" + board + ";";
+  return to_string(get_system_type()) + "::" + connect_props;
 }
 
 void send_tls_request(atransport* t) {
@@ -567,8 +568,7 @@ void handle_packet(apacket* p, atransport* t) {
 
 // Puneetha: This is mainly for reverse tunneling
 bool handle_forward_request(const char* service, atransport* transport, int reply_fd) {
-  return handle_forward_request(
-      service, [transport](std::string*) { return transport; }, reply_fd);
+  return handle_forward_request(service, [transport](std::string*) { return transport; }, reply_fd);
 }
 
 // Try to handle a network forwarding request.

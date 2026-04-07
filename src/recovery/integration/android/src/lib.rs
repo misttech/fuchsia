@@ -7,10 +7,17 @@
 use bootloader_message::{BootloaderMessage, BootloaderMessageRaw};
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_fshost::{RecoveryMarker, RecoveryRequest, RecoveryRequestStream};
+use fidl_fuchsia_hardware_adb as fadb;
+use fidl_fuchsia_hardware_display as fdisplay;
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMarker, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
+use fidl_fuchsia_input_report as finput;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_recovery::{FactoryResetMarker, FactoryResetRequest, FactoryResetRequestStream};
+use fidl_fuchsia_recovery_android as frecovery_android;
+use fidl_fuchsia_storage_block as fstorage_block;
+use fidl_fuchsia_sysmem2 as fsysmem2;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::channel::mpsc;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
@@ -20,11 +27,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use vfs::execution_scope::ExecutionScope;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
 use zerocopy::IntoBytes as _;
-use {
-    fidl_fuchsia_hardware_display as fdisplay, fidl_fuchsia_input_report as finput,
-    fidl_fuchsia_io as fio, fidl_fuchsia_recovery_android as frecovery_android,
-    fidl_fuchsia_storage_block as fstorage_block, fidl_fuchsia_sysmem2 as fsysmem2,
-};
 
 struct TestEnvBuilder {
     recovery_args: String,
@@ -92,6 +94,18 @@ impl TestEnvBuilder {
                         let () = reboot_service.run_reboot_service(stream).await.unwrap();
                     }
                 }),
+                fadb::StateControllerMarker::PROTOCOL_NAME => vfs::service::host(move |mut stream: fadb::StateControllerRequestStream| {
+                    async move {
+                        while let Some(Ok(request)) = stream.next().await {
+                            match request {
+                                fadb::StateControllerRequest::SetSystemType { system_type: _, responder } => {
+                                    responder.send(Ok(())).unwrap();
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }),
                 RecoveryMarker::PROTOCOL_NAME => vfs::service::host(move |mut stream: RecoveryRequestStream| {
                     let mount_called = Arc::clone(&mock_fshost_mount_called);
                     async move {
@@ -135,6 +149,7 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<FactoryResetMarker>())
                     .capability(Capability::protocol::<AdminMarker>())
                     .capability(Capability::protocol::<RecoveryMarker>())
+                    .capability(Capability::protocol::<fadb::StateControllerMarker>())
                     .from(&service_reflector)
                     .to(&system_recovery),
             )

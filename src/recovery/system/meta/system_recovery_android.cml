@@ -38,6 +38,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.hardware.adb.StateController",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],

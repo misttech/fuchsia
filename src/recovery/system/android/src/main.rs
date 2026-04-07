@@ -23,12 +23,13 @@ use euclid::size2;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::ShutdownAction;
 use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_recovery_android::{UpdaterMarker, UpdaterRequest, UpdaterRequestStream};
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use std::sync::Arc;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 mod bootloader;
 mod menu;
@@ -558,6 +559,26 @@ impl ViewAssistant for RecoveryViewAssistant {
                 let exposed_dir = Arc::clone(&self.exposed_dir);
                 let svc_dir = Arc::clone(&self.svc_dir);
                 fasync::Task::local(async move {
+                    let state_controller = match fuchsia_component::client::connect_to_protocol::<
+                        fidl_fuchsia_hardware_adb::StateControllerMarker,
+                    >() {
+                        Ok(state_controller) => {
+                            if let Err(e) = state_controller
+                                .set_system_type(fidl_fuchsia_hardware_adb::SystemType::Sideload)
+                                .await
+                            {
+                                log::error!(
+                                    "Failed to set sideload system type to StateController: {e:?}"
+                                );
+                            }
+                            Some(state_controller)
+                        }
+                        Err(e) => {
+                            log::error!("Failed to connect to StateController for adb: {e:?}");
+                            None
+                        }
+                    };
+
                     let mut receiver = sideload_request_receiver.lock().await;
                     let Some(request) = receiver.next().await else {
                         log::error!("Sideload request sender dropped");
@@ -584,6 +605,18 @@ impl ViewAssistant for RecoveryViewAssistant {
                     view_sender.queue_message(if auto_reboot {
                         RecoveryMessages::Shutdown { action: ShutdownAction::Reboot }
                     } else {
+                        if let Some(state_controller) = state_controller {
+                            // Give adb sideload sometime to shutdown the server and send the
+                            // "sideload done" message before we set the system type which will
+                            // reset adb.
+                            fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+                            if let Err(e) = state_controller
+                                .set_system_type(fidl_fuchsia_hardware_adb::SystemType::Recovery)
+                                .await
+                            {
+                                log::error!("Failed to reset system type to recovery: {e:?}");
+                            }
+                        }
                         RecoveryMessages::TaskDone
                     });
                 })

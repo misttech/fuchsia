@@ -22,6 +22,17 @@
     ],
     offer: [
         {
+            config: "fuchsia.adb.IsRecovery",
+            from: "parent",
+            to: [ "#adb" ],
+            availability: "optional",
+        },
+        {
+            directory: "build-info",
+            from: "parent",
+            to: [ "#adb" ],
+        },
+        {
             service: "fuchsia.hardware.adb.Service",
             from: "parent",
             to: [ "#adb" ],

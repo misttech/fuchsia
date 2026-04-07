@@ -8,24 +8,53 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include "adb.h"
+#include "src/developer/adb/bin/adb/adb_config.h"
+#include "src/developer/adb/bin/adb/state-controller.h"
+#include "src/developer/adb/third_party/adb/adb-protocol.h"
 
 int main(int argc, char** argv) {
-  fuchsia_logging::LogSettingsBuilder builder;
-  builder.WithTags({"adb"}).BuildAndInitialize();
+  fuchsia_logging::LogSettingsBuilder log_builder;
+  log_builder.WithTags({"adb"}).BuildAndInitialize();
 
-  async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
-  auto status = loop.StartThread("adb-thread");
+  auto config = adb_config::Config::TakeFromStartupHandle();
+  if (config.is_recovery()) {
+    set_system_type(kCsRecovery);
+  }
+
+  async::Loop adb_loop{&kAsyncLoopConfigNeverAttachToThread};
+  auto status = adb_loop.StartThread("adb-thread");
   if (status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not start loop";
+    FX_LOGS(ERROR) << "Could not start adb_loop";
     return status;
   }
 
-  auto adb = adb::Adb::Create(loop.dispatcher());
+  async::Loop main_loop{&kAsyncLoopConfigNeverAttachToThread};
+  component::OutgoingDirectory outgoing(main_loop.dispatcher());
+  adb::StateControllerServer state_controller;
+  if (zx::result result = outgoing.AddUnmanagedProtocol<fuchsia_hardware_adb::StateController>(
+          state_controller.bind_handler(main_loop.dispatcher()));
+      result.is_error()) {
+    FX_LOGS(ERROR) << "Could not add StateController protocol: " << result.status_string();
+    return result.error_value();
+  }
+
+  if (zx::result result = outgoing.ServeFromStartupInfo(); result.is_error()) {
+    FX_LOGS(ERROR) << "Could not serve outgoing directory: " << result.status_string();
+    return result.error_value();
+  }
+
+  auto adb = adb::Adb::Create(adb_loop.dispatcher());
   if (adb.is_error()) {
     FX_LOGS(ERROR) << "Could not create adb " << adb.error_value();
     return adb.error_value();
   }
 
-  loop.JoinThreads();
+  state_controller.set_reset_callback([&]() {
+    if (adb.is_ok()) {
+      adb.value()->Reset();
+    }
+  });
+
+  main_loop.Run();
   return ZX_OK;
 }

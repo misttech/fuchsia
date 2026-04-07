@@ -13,6 +13,7 @@
     offer: [
         {
             config: [
+                "fuchsia.adb.IsRecovery",
                 "fuchsia.bluetooth.FastPairProvider",
                 "fuchsia.bluetooth.LegacyPairing",
                 "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
