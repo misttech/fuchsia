@@ -54,5 +54,7 @@
         "**/prebuilt_symlink",
         "**/__pycache__",
         "out"
-    ]
+    ],
+    "reportUnusedCallResult": false,
+    "reportAny": false
 }
