@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+fidl_library(
+    name = "fuchsia.component.internal",
+    srcs = [
+        "capability_source.fidl",
+        "component_capability.fidl",
+        "component_id_index.fidl",
+        "config.fidl",
+        "event_stream_route_metadata.fidl",
+        "injection.fidl",
+        "internal_capability.fidl",
+        "sandbox.fidl",
+    ],
+    # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+    excluded_checks = [
+        "invalid-case-for-decl-name",
+        "vector-bounds-not-specified",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//sdk/fidl/fuchsia.component",
+        "//sdk/fidl/fuchsia.component.decl",
+        "//sdk/fidl/fuchsia.component.sandbox",
+        "//sdk/fidl/fuchsia.sys2",
+    ],
+)
