@@ -63,15 +63,10 @@ if (is_host) {
     sources = [ "spdx_test.go" ]
     embed = [ ":result" ]
     embedsrcs = [
-      "testdata/spdx/multi_package/filtered_projects.json",
       "testdata/spdx/multi_package/want.json",
-      "testdata/spdx/multi_package_multi_license/filtered_projects.json",
       "testdata/spdx/multi_package_multi_license/want.json",
-      "testdata/spdx/multi_package_one_license/filtered_projects.json",
       "testdata/spdx/multi_package_one_license/want.json",
-      "testdata/spdx/multi_package_one_notice/filtered_projects.json",
       "testdata/spdx/multi_package_one_notice/want.json",
-      "testdata/spdx/one_package/filtered_projects.json",
       "testdata/spdx/one_package/want.json",
     ]
     deps = [

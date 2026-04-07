@@ -37,6 +37,19 @@ func TestDirectoryWithSkips(t *testing.T) {
 	runDirectoryTest("skipdir", t)
 }
 
+type expectedDir struct {
+	Name     string         `json:"name"`
+	Path     string         `json:"path"`
+	Files    []expectedFile `json:"files"`
+	Children []expectedDir  `json:"children"`
+}
+
+type expectedFile struct {
+	Name    string `json:"name"`
+	SPDXID  string `json:"spdxID"`
+	Project string `json:"project"`
+}
+
 func runDirectoryTest(name string, t *testing.T) {
 	t.Helper()
 
@@ -47,8 +60,8 @@ func runDirectoryTest(name string, t *testing.T) {
 	testutil.DumpTestData(t, testDataFS, tempDir)
 	testDataDir := filepath.Join(tempDir, "testdata")
 
-	// Create a Directory object from the want.json file.
-	want := &Directory{}
+	// Create an expectedDir object from the want.json file.
+	want := &expectedDir{}
 	decodeJSON(filepath.Join(testDataDir, name, "want.json"), want, t)
 
 	config := NewConfig()
@@ -93,7 +106,7 @@ func decodeJSON(path string, obj any, t *testing.T) {
 	}
 }
 
-func diffDirectories(want, got *Directory, t *testing.T) {
+func diffDirectories(want *expectedDir, got *Directory, t *testing.T) {
 	t.Helper()
 
 	if want.Name != got.Name {
@@ -102,23 +115,25 @@ func diffDirectories(want, got *Directory, t *testing.T) {
 
 	if len(want.Files) != len(got.Files) {
 		t.Errorf("%s: files length mismatch:(-want +got):\n-%d\n+%d", t.Name(), len(want.Files), len(got.Files))
-	}
-	for i := range want.Files {
-		w := want.Files[i]
-		g := got.Files[i]
+	} else {
+		for i := range want.Files {
+			w := want.Files[i]
+			g := got.Files[i]
 
-		if w.Name() != g.Name() {
-			t.Errorf("%s: file names mismatch:(-want +got):\n-%s\n+%s", t.Name(), w.Name(), g.Name())
-		}
-		if w.SPDXID() != g.SPDXID() {
-			t.Errorf("%s: file SPDXID mismatch:(-want +got):\n-%s\n+%s", t.Name(), w.SPDXID(), g.SPDXID())
+			if w.Name != g.Name() {
+				t.Errorf("%s: file names mismatch:(-want +got):\n-%s\n+%s", t.Name(), w.Name, g.Name())
+			}
+			if w.SPDXID != g.SPDXID() {
+				t.Errorf("%s: file SPDXID mismatch:(-want +got):\n-%s\n+%s", t.Name(), w.SPDXID, g.SPDXID())
+			}
 		}
 	}
 
 	if len(want.Children) != len(got.Children) {
 		t.Errorf("%s: children length mismatch:(-want +got):\n-%d\n+%d", t.Name(), len(want.Children), len(got.Children))
-	}
-	for i := range want.Children {
-		diffDirectories(want.Children[i], got.Children[i], t)
+	} else {
+		for i := range want.Children {
+			diffDirectories(&want.Children[i], got.Children[i], t)
+		}
 	}
 }

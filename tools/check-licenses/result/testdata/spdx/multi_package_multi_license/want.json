@@ -1,133 +1,133 @@
 {
-  "spdxVersion": "SPDX-2.2",
-  "dataLicense": "CC0-1.0",
-  "SPDXID": "SPDXRef-DOCUMENT",
-  "documentNamespace": "fuchsia--{da39a3ee5e6b4b0d3255bfef95601890afd80709 []}",
-  "DocumentComment": "",
-  "creationInfo": {
-    "creators": [
-      "Tool: fuchsia.googlesource.com/fuchsia/+/refs/head/main/tools/check-licenses"
+    "spdxVersion": "SPDX-2.2",
+    "dataLicense": "CC0-1.0",
+    "SPDXID": "SPDXRef-DOCUMENT",
+    "documentNamespace": "fuchsia--{da39a3ee5e6b4b0d3255bfef95601890afd80709 []}",
+    "DocumentComment": "",
+    "creationInfo": {
+        "creators": [
+            "Tool: fuchsia.googlesource.com/fuchsia/+/refs/head/main/tools/check-licenses"
+        ],
+        "created": "SKIP ME"
+    },
+    "packages": [
+        {
+            "name": "PackageA",
+            "SPDXID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25",
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": true,
+            "PackageVerificationCode": {
+                "packageVerificationCodeValue": "0"
+            },
+            "checksums": [],
+            "licenseConcluded": "(LicenseRef-filedata-7b7cd2a2c6374e5b933036ca020d12c9) AND (LicenseRef-filedata-b707cf755f76b78462b3eafbb76eda16) AND (LicenseRef-filedata-cf8acd4c6b8984d7e7257f07444bfc4e)",
+            "licenseInfoFromFiles": [],
+            "licenseDeclared": "NOASSERTION",
+            "copyrightText": "NOASSERTION",
+            "Files": [],
+            "annotations": []
+        },
+        {
+            "name": "PackageB",
+            "SPDXID": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e",
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": true,
+            "PackageVerificationCode": {
+                "packageVerificationCodeValue": "0"
+            },
+            "checksums": [],
+            "licenseConcluded": "(LicenseRef-filedata-b951a998bb7f0115a94735858e09a4d1)",
+            "licenseInfoFromFiles": [],
+            "licenseDeclared": "NOASSERTION",
+            "copyrightText": "NOASSERTION",
+            "Files": [],
+            "annotations": []
+        },
+        {
+            "name": "PackageC",
+            "SPDXID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc",
+            "downloadLocation": "NOASSERTION",
+            "filesAnalyzed": true,
+            "PackageVerificationCode": {
+                "packageVerificationCodeValue": "0"
+            },
+            "checksums": [],
+            "licenseConcluded": "",
+            "licenseInfoFromFiles": [],
+            "licenseDeclared": "NOASSERTION",
+            "copyrightText": "NOASSERTION",
+            "Files": [],
+            "annotations": []
+        }
     ],
-    "created": "SKIP ME"
-  },
-  "packages": [
-    {
-      "name": "PackageA",
-      "SPDXID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25",
-      "downloadLocation": "NOASSERTION",
-      "filesAnalyzed": true,
-      "PackageVerificationCode": {
-        "packageVerificationCodeValue": "0"
-      },
-      "checksums": [],
-      "licenseConcluded": "(testing123_1) AND (testing123_2) AND (testing123_3)",
-      "licenseInfoFromFiles": [],
-      "licenseDeclared": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "Files": [],
-      "annotations": []
-    },
-    {
-      "name": "PackageB",
-      "SPDXID": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e",
-      "downloadLocation": "NOASSERTION",
-      "filesAnalyzed": true,
-      "PackageVerificationCode": {
-        "packageVerificationCodeValue": "0"
-      },
-      "checksums": [],
-      "licenseConcluded": "(testing123_4)",
-      "licenseInfoFromFiles": [],
-      "licenseDeclared": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "Files": [],
-      "annotations": []
-    },
-    {
-      "name": "PackageC",
-      "SPDXID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc",
-      "downloadLocation": "NOASSERTION",
-      "filesAnalyzed": true,
-      "PackageVerificationCode": {
-        "packageVerificationCodeValue": "0"
-      },
-      "checksums": [],
-      "licenseConcluded": "",
-      "licenseInfoFromFiles": [],
-      "licenseDeclared": "NOASSERTION",
-      "copyrightText": "NOASSERTION",
-      "Files": [],
-      "annotations": []
-    }
-  ],
-  "files": [],
-  "hasExtractedLicensingInfos": [
-    {
-      "name": "Example License File for ProjectA",
-      "licenseId": "testing123_1",
-      "extractedText": "package A 1st license file",
-      "seeAlsos": [
-        "www.example.com",
-        "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license/path1"
-      ]
-    },
-    {
-      "name": "2nd Example License File for ProjectA",
-      "licenseId": "testing123_2",
-      "extractedText": "package A 2nd license file",
-      "seeAlsos": [
-        "www.example.com",
-        "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license/path2"
-      ]
-    },
-    {
-      "name": "3rd Example License File for ProjectA",
-      "licenseId": "testing123_3",
-      "extractedText": "package A 3rd license file",
-      "seeAlsos": [
-        "www.example.com",
-        "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license/path3"
-      ]
-    },
-    {
-      "name": "Example License File for ProjectB",
-      "licenseId": "testing123_4",
-      "extractedText": "package B license file",
-      "seeAlsos": [
-        "www.example.com",
-        "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license_b/path"
-      ]
-    }
-  ],
-  "relationships": [
-    {
-      "spdxElementId": {
-        "ElementRefID": "SPDXRef-DOCUMENT"
-      },
-      "relatedSpdxElement": {
-        "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
-      },
-      "relationshipType": "DESCRIBES"
-    },
-    {
-      "spdxElementId": {
-        "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
-      },
-      "relatedSpdxElement": {
-        "ElementRefID": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e"
-      },
-      "relationshipType": "CONTAINS"
-    },
-    {
-      "spdxElementId": {
-        "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
-      },
-      "relatedSpdxElement": {
-        "ElementRefID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc"
-      },
-      "relationshipType": "CONTAINS"
-    }
-  ],
-  "annotations": [],
-  "snippets": []
+    "files": [],
+    "hasExtractedLicensingInfos": [
+        {
+            "name": "PackageA",
+            "licenseId": "LicenseRef-filedata-7b7cd2a2c6374e5b933036ca020d12c9",
+            "extractedText": "package A 1st license file",
+            "seeAlsos": [
+                "www.example.com",
+                "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license/path1"
+            ]
+        },
+        {
+            "name": "PackageA",
+            "licenseId": "LicenseRef-filedata-b707cf755f76b78462b3eafbb76eda16",
+            "extractedText": "package A 2nd license file",
+            "seeAlsos": [
+                "www.example.com",
+                "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license/path2"
+            ]
+        },
+        {
+            "name": "PackageA",
+            "licenseId": "LicenseRef-filedata-cf8acd4c6b8984d7e7257f07444bfc4e",
+            "extractedText": "package A 3rd license file",
+            "seeAlsos": [
+                "www.example.com",
+                "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license/path3"
+            ]
+        },
+        {
+            "name": "PackageB",
+            "licenseId": "LicenseRef-filedata-b951a998bb7f0115a94735858e09a4d1",
+            "extractedText": "package B license file",
+            "seeAlsos": [
+                "www.example.com",
+                "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_multi_license_b/path"
+            ]
+        }
+    ],
+    "relationships": [
+        {
+            "spdxElementId": {
+                "ElementRefID": "SPDXRef-DOCUMENT"
+            },
+            "relatedSpdxElement": {
+                "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
+            },
+            "relationshipType": "DESCRIBES"
+        },
+        {
+            "spdxElementId": {
+                "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
+            },
+            "relatedSpdxElement": {
+                "ElementRefID": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e"
+            },
+            "relationshipType": "CONTAINS"
+        },
+        {
+            "spdxElementId": {
+                "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
+            },
+            "relatedSpdxElement": {
+                "ElementRefID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc"
+            },
+            "relationshipType": "CONTAINS"
+        }
+    ],
+    "annotations": [],
+    "snippets": []
 }

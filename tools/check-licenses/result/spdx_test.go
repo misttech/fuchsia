@@ -7,14 +7,15 @@ package result
 import (
 	"embed"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	spdx_common "github.com/spdx/tools-golang/spdx/common"
 	spdx "github.com/spdx/tools-golang/spdx/v2_2"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
@@ -57,8 +58,7 @@ func runTest(folder string, t *testing.T) {
 	tempDir := t.TempDir()
 	testutil.DumpTestData(t, testDataFS, tempDir)
 	testDataDir := filepath.Join(tempDir, "testdata")
-	projectsJSONPath := filepath.Join(testDataDir, "spdx", folder, "filtered_projects.json")
-	projects := loadProjectsJSON(projectsJSONPath, t)
+	projects := loadProjects(tempDir, folder)
 	root := projects[0]
 
 	_, err := generateSPDXDoc(t.Name(), projects, root)
@@ -75,20 +75,62 @@ func runTest(folder string, t *testing.T) {
 	}
 }
 
-func loadProjectsJSON(path string, t *testing.T) []*project.Project {
-	t.Helper()
+func addLicense(tempDir string, p *project.Project, relPath string, fileType file.FileType, content string) {
+	absPath := filepath.Join(tempDir, relPath)
+	os.MkdirAll(filepath.Dir(absPath), 0755)
+	os.WriteFile(absPath, []byte(content), 0644)
+	f, _ := file.LoadFile(absPath, fileType, p.Name)
+	f.SetURL("www.example.com")
+	p.LicenseFiles = append(p.LicenseFiles, f)
+}
 
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("%s: failed to read in json file [%s]: %v", t.Name(), path, err)
+func loadProjects(tempDir, folder string) []*project.Project {
+	file.Config.FuchsiaDir = tempDir
+	switch folder {
+	case "one_package":
+		return []*project.Project{
+			{Root: "fake/path", Name: "One Package Test Project", SPDXID: "Package-3499410769"},
+		}
+	case "multi_package":
+		p1 := &project.Project{Root: "fake/path", Name: "PackageA", SPDXID: "Package-72237883"}
+		addLicense(tempDir, p1, "fake/multi_package/path", file.SingleLicense, "Example License Text for PackageA")
+		return []*project.Project{
+			p1,
+			{Root: "fake/path2", Name: "PackageB", SPDXID: "Package-852005636"},
+			{Root: "fake/path3", Name: "PackageC", SPDXID: "Package-1864736318"},
+		}
+	case "multi_package_one_license":
+		p1 := &project.Project{Root: "fake/path", Name: "PackageA", SPDXID: "Package-72237883"}
+		addLicense(tempDir, p1, "fake/multi_package_one_license/path", file.SingleLicense, "Testing Testing 123")
+		return []*project.Project{
+			p1,
+			{Root: "fake/path2", Name: "PackageB", SPDXID: "Package-852005636"},
+			{Root: "fake/path3", Name: "PackageC", SPDXID: "Package-1864736318"},
+		}
+	case "multi_package_multi_license":
+		p1 := &project.Project{Root: "fake/path", Name: "PackageA", SPDXID: "Package-72237883"}
+		addLicense(tempDir, p1, "fake/multi_package_multi_license/path1", file.SingleLicense, "package A 1st license file")
+		addLicense(tempDir, p1, "fake/multi_package_multi_license/path2", file.SingleLicense, "package A 2nd license file")
+		addLicense(tempDir, p1, "fake/multi_package_multi_license/path3", file.SingleLicense, "package A 3rd license file")
+		p2 := &project.Project{Root: "fake/path2", Name: "PackageB", SPDXID: "Package-852005636"}
+		addLicense(tempDir, p2, "fake/multi_package_multi_license_b/path", file.SingleLicense, "package B license file")
+		return []*project.Project{
+			p1,
+			p2,
+			{Root: "fake/path3", Name: "PackageC", SPDXID: "Package-1864736318"},
+		}
+	case "multi_package_one_notice":
+		p1 := &project.Project{Root: "fake/path", Name: "ProjectA", SPDXID: "Package-257155980"}
+		addLicense(tempDir, p1, "fake/multi_package/path", file.MultiLicenseGoogle, "ProjectA\nTesting 123 1\n=================\nProjectA\nTesting 123 2\n=================\nProjectA\nTesting 123 3\n=================")
+		p2 := &project.Project{Root: "fake/path2", Name: "ProjectB", SPDXID: "Package-3300990661"}
+		addLicense(tempDir, p2, "fake/multi_package/path2", file.MultiLicenseGoogle, "ProjectB\nTesting 123 4\n=================")
+		return []*project.Project{
+			p1,
+			p2,
+			{Root: "fake/path3", Name: "PackageC", SPDXID: "Package-1864736318"},
+		}
 	}
-
-	var projects []*project.Project
-	err = json.Unmarshal(content, &projects)
-	if err != nil {
-		t.Fatalf("%s: failed to unmarshal projects data [%s]: %v", t.Name(), path, err)
-	}
-	return projects
+	return nil
 }
 
 func loadWantGot(wantPath, gotPath string, t *testing.T) (*spdx.Document, *spdx.Document) {
@@ -110,6 +152,9 @@ func loadWantGot(wantPath, gotPath string, t *testing.T) (*spdx.Document, *spdx.
 		t.Fatalf("%s: failed to read in json file [%s]: %v", t.Name(), gotPath, err)
 	}
 
+	// Update golden files
+	// os.WriteFile(filepath.Join("../../tools/check-licenses/result/testdata/spdx", filepath.Base(filepath.Dir(wantPath)), "want.json"), content, 0644)
+
 	var got *spdx.Document
 	err = json.Unmarshal(content, &got)
 	if err != nil {
@@ -122,9 +167,20 @@ func loadWantGot(wantPath, gotPath string, t *testing.T) (*spdx.Document, *spdx.
 	// JSON unmarshalling of the SPDX DocElementID is broken.
 	// I will file a bug against the open source project.
 	//   https://github.com/spdx/tools-golang/blob/main/spdx/common/identifier.go#L100
+	cleanID := func(id spdx_common.ElementID) spdx_common.ElementID {
+		s := string(id)
+		if idx := strings.Index(s, "\""); idx != -1 {
+			return spdx_common.ElementID(s[:idx])
+		}
+		return id
+	}
+	for _, r := range want.Relationships {
+		r.RefA.ElementRefID = cleanID(r.RefA.ElementRefID)
+		r.RefB.ElementRefID = cleanID(r.RefB.ElementRefID)
+	}
 	for _, r := range got.Relationships {
-		r.RefA.ElementRefID = spdx_common.ElementID(fmt.Sprintf("%s\"\n      }", r.RefA.ElementRefID))
-		r.RefB.ElementRefID = spdx_common.ElementID(fmt.Sprintf("%s\"\n      }", r.RefB.ElementRefID))
+		r.RefA.ElementRefID = cleanID(r.RefA.ElementRefID)
+		r.RefB.ElementRefID = cleanID(r.RefB.ElementRefID)
 	}
 
 	return want, got
