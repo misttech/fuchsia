@@ -248,6 +248,9 @@ mod tests {
         }
 
         // Make sure that all the VMOs got properly cleaned up.
+        parent_vmo
+            .wait_one(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE)
+            .expect("wait for zero children failed");
         assert_eq!(parent_vmo.info().expect("info failed").num_children, 0);
         assert!(clones().lock().is_empty());
     }
@@ -292,6 +295,9 @@ mod tests {
         }
 
         // Make sure that all the VMOs got properly cleaned up.
+        parent_vmo
+            .wait_one(zx::Signals::VMO_ZERO_CHILDREN, zx::MonotonicInstant::INFINITE)
+            .expect("wait for zero children failed");
         assert_eq!(parent_vmo.info().expect("info failed").num_children, 0);
         assert!(clones().lock().is_empty());
     }
