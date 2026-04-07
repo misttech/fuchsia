@@ -266,10 +266,8 @@ _BAZEL_PRE_COMMAND_ARGS+=(
   --bazelrc="${_INVOCATION_BAZELRC}"
 )
 
-# Use a shared disk cache if FUCHSIA_BAZEL_DISK_CACHE is set and
-# --config=remote is not used. Bazel documentation states that --disk_cache
-# is compatible with remote caching, but RBE documentation says otherwise
-# so err on the side of caution. This path must be absolute.
+# Use a shared disk cache if FUCHSIA_BAZEL_DISK_CACHE is set. Bazel
+# documentation states that --disk_cache is compatible with remote caching.
 #
 # This is useful when several checkouts are used on the same machine,
 # or when performing repeated clean builds frequently.
@@ -278,7 +276,7 @@ _BAZEL_PRE_COMMAND_ARGS+=(
 # collection, which will be performed by Bazel in the background when idle.
 # If undefined, the cache is unlimited, and users will need to clean it
 # manually.
-[[ -n "${FUCHSIA_BAZEL_DISK_CACHE}" && -z "${has_remote_config}" && -n "${_BAZEL_COMMAND}" ]] && {
+[[ -n "${FUCHSIA_BAZEL_DISK_CACHE}" && -n "${_BAZEL_COMMAND}" ]] && {
   if [[ "${FUCHSIA_BAZEL_DISK_CACHE}" =~ ^/ ]]; then
     _BAZEL_EXTRA_ARGS+=(--disk_cache="${FUCHSIA_BAZEL_DISK_CACHE}")
     if [[ -n "${FUCHSIA_BAZEL_DISK_CACHE_SIZE}" ]]; then
