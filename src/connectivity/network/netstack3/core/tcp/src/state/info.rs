@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::fmt::Debug;
 use core::time::Duration;
 
 use derivative::Derivative;
-use netstack3_base::Instant;
+use netstack3_base::{Inspectable, Inspector, Instant};
 
 use crate::internal::buffer::{ReceiveBuffer, SendBuffer};
 use crate::internal::congestion::LossRecoveryMode;
@@ -42,6 +43,48 @@ pub struct TcpSocketInfo<I> {
     pub segs_in: u64,
     /// Timestamp of the last data sent.
     pub last_data_sent: Option<I>,
+}
+
+impl<I: Instant> Inspectable for TcpSocketInfo<I> {
+    fn record<II: Inspector>(&self, inspector: &mut II) {
+        let Self {
+            ca_state,
+            rto,
+            rtt,
+            rtt_var,
+            snd_ssthresh,
+            snd_cwnd,
+            last_ack_recv,
+            last_data_sent,
+
+            // Already recorded by the caller.
+            state: _,
+            // These metrics are exported under the`Counters` inspect node.
+            retransmits: _,
+            segs_out: _,
+            segs_in: _,
+        } = self;
+
+        inspector.record_debug("CongestionControlState", ca_state);
+        if let Some(rto) = rto {
+            inspector.record_uint("RtoMs", u64::try_from(rto.as_millis()).unwrap_or(u64::MAX));
+        }
+        if let Some(rtt) = rtt {
+            inspector.record_uint("RttMs", u64::try_from(rtt.as_millis()).unwrap_or(u64::MAX));
+        }
+        if let Some(rtt_var) = rtt_var {
+            inspector
+                .record_uint("RttVarMs", u64::try_from(rtt_var.as_millis()).unwrap_or(u64::MAX));
+        }
+        inspector.record_uint("SndSsthresh", *snd_ssthresh);
+        inspector.record_uint("SndCwnd", *snd_cwnd);
+        if let Some(last_ack_recv) = last_ack_recv {
+            inspector.record_inspectable_value("LastAckRecv", last_ack_recv);
+        }
+        if let Some(last_data_sent) = last_data_sent {
+            inspector.record_inspectable_value("LastDataSent", last_data_sent);
+        }
+    }
 }
 
 /// The state of congestion control.
@@ -515,5 +558,43 @@ mod tests {
                 last_data_sent: None,
             }
         );
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    #[test]
+    fn test_inspect_tcp_socket_info() {
+        use diagnostics_assertions::assert_data_tree;
+        use diagnostics_traits::FuchsiaInspector;
+        use fuchsia_inspect::Inspector;
+
+        let info = TcpSocketInfo::<FakeInstant> {
+            state: TcpSocketState::Established,
+            ca_state: CongestionControlState::Open,
+            rto: Some(Duration::from_millis(200)),
+            rtt: Some(Duration::from_millis(50)),
+            rtt_var: Some(Duration::from_millis(25)),
+            snd_ssthresh: 1000,
+            snd_cwnd: 2000,
+            retransmits: 5,
+            last_ack_recv: None,
+            segs_out: 10,
+            segs_in: 20,
+            last_data_sent: None,
+        };
+
+        let inspector = Inspector::new(Default::default());
+        let mut bindings_inspector = FuchsiaInspector::<()>::new(inspector.root());
+        info.record(&mut bindings_inspector);
+
+        let mut exec = fuchsia_async::TestExecutor::new();
+
+        assert_data_tree!(@executor exec, inspector, "root": {
+            "CongestionControlState": "Open",
+            "RtoMs": 200u64,
+            "RttMs": 50u64,
+            "RttVarMs": 25u64,
+            "SndSsthresh": 1000u64,
+            "SndCwnd": 2000u64,
+        });
     }
 }

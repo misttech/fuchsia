@@ -215,6 +215,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         Counters: {
                             PassiveConnectionOpenings: 0u64,
                             ActiveConnectionOpenings: 0u64,
@@ -269,6 +274,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         Counters: {
                             PassiveConnectionOpenings: 0u64,
                             ActiveConnectionOpenings: 0u64,
@@ -323,6 +333,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         AcceptQueue: {
                             BacklogSize: BACKLOG,
                             NumPending: 0u64,
@@ -384,6 +399,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv4",
                         State: "SynSent",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         Counters: {
                             PassiveConnectionOpenings: 0u64,
                             ActiveConnectionOpenings: 1u64,
@@ -438,6 +458,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         Counters: {
                             PassiveConnectionOpenings: 0u64,
                             ActiveConnectionOpenings: 0u64,
@@ -492,6 +517,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         Counters: {
                             PassiveConnectionOpenings: 0u64,
                             ActiveConnectionOpenings: 0u64,
@@ -546,6 +576,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         Mark2: MARK_2,
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         AcceptQueue: {
                             BacklogSize: BACKLOG,
                             NumPending: 0u64,
@@ -607,6 +642,11 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
                         TransportProtocol: "TCP",
                         NetworkProtocol: "IPv6",
                         State: "SynSent",
+                        TcpInfo: {
+                            CongestionControlState: "Open",
+                            SndCwnd: 0u64,
+                            SndSsthresh: 0u64,
+                        },
                         Counters: {
                             PassiveConnectionOpenings: 0u64,
                             ActiveConnectionOpenings: 1u64,

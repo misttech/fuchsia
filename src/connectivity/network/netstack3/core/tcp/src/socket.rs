@@ -4496,6 +4496,7 @@ where
                         IpVersion::V6 => "IPv6",
                     },
                 );
+                let info = socket_state.tcp_info(socket_id.counters());
                 let TcpSocketState { socket_state, sharing: _, ip_options: _, socket_options } =
                     socket_state;
                 node.delegate_inspectable(&socket_options.ip_options.marks);
@@ -4549,6 +4550,9 @@ where
                         node.record_display("State", state);
                     }
                 }
+                node.record_child("TcpInfo", |node| {
+                    node.delegate_inspectable(&info);
+                });
                 node.record_child("Counters", |node| {
                     node.delegate_inspectable(&CombinedTcpCounters {
                         with_socket: socket_id.counters(),
