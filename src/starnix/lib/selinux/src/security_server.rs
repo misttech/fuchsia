@@ -771,7 +771,7 @@ mod tests {
         CommonFsNodePermission, DirPermission, FileClass, FilePermission, ForClass, KernelClass,
         ProcessPermission,
     };
-    use std::num::NonZeroU64;
+    use std::num::NonZeroU32;
 
     const TESTSUITE_BINARY_POLICY: &[u8] = include_bytes!("../testdata/policies/selinux_testsuite");
     const TESTS_BINARY_POLICY: &[u8] =
@@ -1684,7 +1684,7 @@ mod tests {
                 granted: true,
                 audit: true,
                 permissive: false,
-                todo_bug: Some(NonZeroU64::new(1).unwrap())
+                todo_bug: Some(NonZeroU32::new(1).unwrap())
             }
         );
         assert!(result.permit());
@@ -1729,7 +1729,7 @@ mod tests {
                 granted: true,
                 audit: true,
                 permissive: false,
-                todo_bug: Some(NonZeroU64::new(2).unwrap())
+                todo_bug: Some(NonZeroU32::new(2).unwrap())
             }
         );
         assert!(result.permit());
@@ -1771,7 +1771,7 @@ mod tests {
                 granted: true,
                 audit: true,
                 permissive: true,
-                todo_bug: Some(NonZeroU64::new(4).unwrap())
+                todo_bug: Some(NonZeroU32::new(4).unwrap())
             }
         );
         assert!(result.permit());
@@ -1789,7 +1789,7 @@ mod tests {
                 granted: true,
                 audit: true,
                 permissive: false,
-                todo_bug: Some(NonZeroU64::new(5).unwrap())
+                todo_bug: Some(NonZeroU32::new(5).unwrap())
             }
         );
         assert!(result.permit());
@@ -1804,7 +1804,7 @@ mod tests {
                 granted: true,
                 audit: true,
                 permissive: false,
-                todo_bug: Some(NonZeroU64::new(5).unwrap())
+                todo_bug: Some(NonZeroU32::new(5).unwrap())
             }
         );
         assert!(result.permit());
@@ -1819,7 +1819,7 @@ mod tests {
                 granted: true,
                 audit: true,
                 permissive: false,
-                todo_bug: Some(NonZeroU64::new(5).unwrap())
+                todo_bug: Some(NonZeroU32::new(5).unwrap())
             }
         );
         assert!(result.permit());

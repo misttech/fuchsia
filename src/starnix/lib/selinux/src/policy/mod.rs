@@ -29,7 +29,7 @@ use symbols::{find_class_by_name, find_common_symbol_by_name_bytes};
 
 use anyhow::Context as _;
 use std::fmt::{Debug, Display, LowerHex};
-use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU8, NonZeroU32};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -98,7 +98,7 @@ pub struct AccessDecision {
 
     /// If this field is set then denials should be audit-logged with "todo_deny" as the reason, with
     /// the `bug` number included in the audit message.
-    pub todo_bug: Option<NonZeroU64>,
+    pub todo_bug: Option<NonZeroU32>,
 }
 
 impl Default for AccessDecision {
@@ -570,7 +570,7 @@ pub struct KernelAccessDecision {
     pub allow: AccessVector,
     pub audit: AccessVector,
     pub flags: u32,
-    pub todo_bug: Option<NonZeroU64>,
+    pub todo_bug: Option<NonZeroU32>,
 }
 
 /// An owner of policy information that can translate [`crate::Permission`] values into

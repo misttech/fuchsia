@@ -7,13 +7,13 @@ use crate::{KernelClass, ObjectClass};
 
 use anyhow::{anyhow, bail};
 use std::collections::HashMap;
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 use strum::VariantArray as _;
 
 /// Encapsulates a set of access-check exceptions parsed from a supplied configuration.
 pub(super) struct ExceptionsConfig {
-    todo_deny_entries: HashMap<ExceptionsEntry, NonZeroU64>,
-    permissive_entries: HashMap<TypeId, NonZeroU64>,
+    todo_deny_entries: HashMap<ExceptionsEntry, NonZeroU32>,
+    permissive_entries: HashMap<TypeId, NonZeroU32>,
 }
 
 impl ExceptionsConfig {
@@ -40,7 +40,7 @@ impl ExceptionsConfig {
         source: TypeId,
         target: TypeId,
         class: ObjectClass,
-    ) -> Option<NonZeroU64> {
+    ) -> Option<NonZeroU32> {
         self.todo_deny_entries
             .get(&ExceptionsEntry { source, target, class })
             .or_else(|| self.permissive_entries.get(&source))
@@ -147,14 +147,14 @@ struct ExceptionsEntry {
 }
 
 /// Returns the numeric bug Id parsed from a bug URL reference.
-fn bug_ref_to_id(bug_ref: &str) -> Result<NonZeroU64, anyhow::Error> {
+fn bug_ref_to_id(bug_ref: &str) -> Result<NonZeroU32, anyhow::Error> {
     let bug_id_part = bug_ref
         .strip_prefix("b/")
         .or_else(|| bug_ref.strip_prefix("https://fxbug.dev/"))
         .ok_or_else(|| {
             anyhow!("Expected bug Identifier of the form b/<id> or https://fxbug.dev/<id>")
         })?;
-    bug_id_part.parse::<NonZeroU64>().map_err(|_| anyhow!("Malformed bug Id: {}", bug_id_part))
+    bug_id_part.parse::<NonZeroU32>().map_err(|_| anyhow!("Malformed bug Id: {}", bug_id_part))
 }
 
 /// Returns the `KernelClass` corresponding to the supplied `name`, if any.
@@ -267,7 +267,7 @@ mod tests {
                 test_data.defined_target,
                 KernelClass::File.into()
             ),
-            Some(NonZeroU64::new(1).unwrap())
+            Some(NonZeroU32::new(1).unwrap())
         );
 
         // Matching source, target and kernel class identified via policy-defined Id will resolve to
@@ -278,7 +278,7 @@ mod tests {
                 test_data.defined_target,
                 test_data.expect_policy_class("file")
             ),
-            Some(NonZeroU64::new(1).unwrap())
+            Some(NonZeroU32::new(1).unwrap())
         );
 
         // Matching source, target and non-kernel class will resolve.
@@ -288,7 +288,7 @@ mod tests {
                 test_data.defined_target,
                 test_data.expect_policy_class(NON_KERNEL_CLASS),
             ),
-            Some(NonZeroU64::new(4).unwrap())
+            Some(NonZeroU32::new(4).unwrap())
         );
 
         // Mismatched class, source or target returns no Id.

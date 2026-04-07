@@ -43,7 +43,7 @@ use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{AUDIT_AVC, SELINUX_MAGIC, errno, error, statfs};
 use std::borrow::Cow;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, Weak};
@@ -782,7 +782,7 @@ impl SeLinuxApiOps for AccessApi {
                 // so emit a track-stub report and a description of the request and result.
                 // Leave all permissions `decided`, so that only the first such failure is audited.
                 __track_stub_inner(
-                    BugRef::from(todo_bug),
+                    BugRef::from(NonZeroU64::new(todo_bug.get() as u64).unwrap()),
                     "Enforce SELinuxFS access API",
                     None,
                     std::panic::Location::caller(),

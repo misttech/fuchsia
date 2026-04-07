@@ -17,7 +17,7 @@ use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
 use std::collections::HashMap;
 use std::fmt::{Display, Error};
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;
 
 /// Represents a unique auditable instance, for rate limiting purposes.
@@ -26,11 +26,11 @@ struct AuditableInstance {
     source_sid: SecurityId,
     target_sid: SecurityId,
     class: KernelClass,
-    bug: NonZeroU64,
+    bug: NonZeroU32,
 }
 
 /// Stores count of todo_deny logged per auditable instance.
-static TODO_DENY_COUNTS: LazyLock<Mutex<HashMap<AuditableInstance, u64>>> =
+static TODO_DENY_COUNTS: LazyLock<Mutex<HashMap<AuditableInstance, u32>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Checks whether an audit log entry should still be emitted for this audit instance.
@@ -38,10 +38,10 @@ fn should_audit(
     source_sid: SecurityId,
     target_sid: SecurityId,
     class: KernelClass,
-    bug: NonZeroU64,
+    bug: NonZeroU32,
 ) -> bool {
     // Audit-log the first few denials, but skip further denials to avoid logspamming.
-    const MAX_TODO_AUDIT_DENIALS: u64 = 5;
+    const MAX_TODO_AUDIT_DENIALS: u32 = 5;
 
     let mut counts = TODO_DENY_COUNTS.lock();
     let count = counts.entry(AuditableInstance { source_sid, target_sid, class, bug }).or_default();
@@ -74,7 +74,7 @@ fn should_audit(
 pub enum Auditable<'a> {
     // keep-sorted start
     AuditContext(&'a [Auditable<'a>]),
-    Bug(u64),
+    Bug(u32),
     CurrentTask,
     DirEntry(&'a DirEntry),
     FileObject(&'a FileObject),
@@ -93,7 +93,7 @@ pub enum Auditable<'a> {
 }
 
 impl Auditable<'_> {
-    fn from_bug(bug_id: u64) -> Self {
+    fn from_bug(bug_id: u32) -> Self {
         Auditable::Bug(bug_id)
     }
 }
@@ -209,7 +209,7 @@ pub(super) fn audit_decision(
 
     // If there is an associated bug then add it to the audit context.
     let audit_data_with_bug =
-        [Auditable::from_bug(result.todo_bug.map(NonZeroU64::get).unwrap_or(0)), audit_data];
+        [Auditable::from_bug(result.todo_bug.map(NonZeroU32::get).unwrap_or(0)), audit_data];
     let audit_data =
         if result.todo_bug.is_some() { (&audit_data_with_bug).into() } else { audit_data };
 
@@ -252,7 +252,8 @@ pub(super) fn audit_todo_decision(
     audit_context: Auditable<'_>,
 ) {
     if result.todo_bug.is_none() {
-        result.todo_bug = Some(bug.into());
+        let bug_id: NonZeroU64 = bug.into();
+        result.todo_bug = Some(NonZeroU32::new(bug_id.get() as u32).unwrap());
         audit_decision(
             current_task,
             permission_check,

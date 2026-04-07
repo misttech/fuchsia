@@ -9,7 +9,7 @@ use crate::{
     ClassPermission, FsNodeClass, KernelClass, KernelPermission, NullessByteStr, SecurityId,
 };
 
-use std::num::NonZeroU64;
+use std::num::NonZeroU32;
 
 /// Describes the result of a permission lookup between two Security Contexts.
 #[derive(Clone, Debug, PartialEq)]
@@ -29,7 +29,7 @@ pub struct PermissionCheckResult {
 
     /// If the `AccessDecision` indicates that permission denials should not be enforced then `permit`
     /// will be true, and this field will hold the Id of the bug to reference in audit logging.
-    pub todo_bug: Option<NonZeroU64>,
+    pub todo_bug: Option<NonZeroU32>,
 }
 
 impl PermissionCheckResult {
