@@ -5,6 +5,7 @@ description: Guide for migrating Fuchsia drivers from Driver Framework v1 (DFv1)
 # Migration Guide: DFv1 to DFv2
 
 You are a coding agent tasked with migrating drivers in the Fuchsia codebase from DFv1 to DFv2.
+This work is tracked in Bug 500358249.
 Your objective is to update the driver's interfaces, services, and build configuration to comply with DFv2 standards.
 
 ## Mandatory Workflow Checklist
@@ -149,6 +150,7 @@ Follow the Git commit message guidelines in `GEMINI.md` or the project style gui
 *   **Missing `fdf_` Symbols at Link Time**: If the linker fails with undefined symbols like `fdf_arena_create`, add `//src/devices/lib/driver:driver_runtime` to `deps` in `BUILD.gn`.
 *   **Ambient DDK Dependencies**: If the driver uses a library that has not been migrated to DFv2 and still includes DDK headers (e.g., `<lib/ddk/driver.h>`), you may need to keep `//src/lib/ddk` in `deps` temporarily.
 *   **Dispatcher Usage**: When passing a dispatcher to FIDL bindings, `dispatcher()` (which returns `fdf::UnownedSynchronizedDispatcher`) can often be used directly or converted as needed.
+*   **Contiguous Buffer Allocation Size**: When using `dma_buffer::CreateContiguous` (or `zx_vmo_create_contiguous`), the requested size MUST be a multiple of the page size. If you pass a size that is not page-aligned, it will fail with `ZX_ERR_INVALID_ARGS` (-10). Ensure you round up the size to `zx_system_get_page_size()` before allocating.
 
 ## 7. References
 
