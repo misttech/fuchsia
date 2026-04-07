@@ -29,7 +29,7 @@ use std::ptr::NonNull;
 ///
 /// See `zx_restricted_bind_state`.
 pub struct RestrictedState {
-    pub bound_state: NonNull<zx::sys::zx_restricted_exception_t>,
+    pub bound_state: NonNull<zx::sys::zx_restricted_state_t>,
     state_size: usize,
 }
 
@@ -41,12 +41,17 @@ impl RestrictedState {
     /// restricted state (registers) of the task.
     pub fn bind_and_map(
         register_state: &mut RegisterState<RegisterStorageEnum>,
+        exception_report: &mut zx::sys::zx_exception_report_t,
     ) -> Result<Self, zx::Status> {
         firehose_trace_duration!(CATEGORY_STARNIX, NAME_MAP_RESTRICTED_STATE);
         let mut out_vmo_handle = 0;
         // SAFETY: `out_vmo_handle` is a valid pointer to a handle on the stack.
         let status = zx::Status::from_raw(unsafe {
-            zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle, std::ptr::null_mut())
+            zx::sys::zx_restricted_bind_state(
+                0,
+                &mut out_vmo_handle,
+                std::ptr::from_mut(exception_report),
+            )
         });
         match { status } {
             zx::Status::OK => {
@@ -83,7 +88,7 @@ impl RestrictedState {
 
         // This memory is not managed by Rust's stack, heap, etc. so treat it as "foreign" memory
         // with no provenance.
-        let state_address: *mut zx::sys::zx_restricted_exception_t =
+        let state_address: *mut zx::sys::zx_restricted_state_t =
             std::ptr::without_provenance_mut(state_address);
         assert!(state_address.is_aligned(), "Zircon must map restricted-state-aligned memory");
         let bound_state =
@@ -93,21 +98,13 @@ impl RestrictedState {
         // state of the current thread.
         // SAFETY: `bound_state` is valid to read/write to as long as `RestrictedState` is live.
         unsafe {
-            let vmo_ptr = std::ptr::addr_of_mut!((*bound_state.as_ptr()).state);
+            let vmo_ptr = bound_state.as_ptr();
             vmo_ptr.write(**register_state);
             register_state.real_registers =
                 RegisterStorageEnum::Vmo(MappedVmoRegs(NonNull::new_unchecked(vmo_ptr)));
         }
 
         Ok(Self { state_size, bound_state })
-    }
-
-    pub fn read_exception(&self) -> zx::ExceptionReport {
-        // SAFETY: `bound_state` is valid to read from as long as `RestrictedState` is live.
-        let raw = unsafe { self.bound_state.read() };
-
-        // SAFETY: `raw` was written by Zircon during a restricted exit.
-        unsafe { zx::ExceptionReport::from_raw(raw.exception) }
     }
 }
 

@@ -28,6 +28,7 @@ rustc_library("starnix_syscall_loop") {
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:paste",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]

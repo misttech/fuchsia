@@ -22,18 +22,32 @@ use starnix_syscalls::decls::{Syscall, SyscallDecl};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
+use zerocopy::FromZeros;
 
 mod table;
 
 pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> ExitStatus {
-    match RestrictedState::bind_and_map(&mut current_task.thread_state.registers) {
-        Ok(restricted_state) => match run_task(locked, current_task, restricted_state) {
-            Ok(ok) => ok,
-            Err(error) => {
-                log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
-                ExitStatus::Kill(SignalInfo::kernel(SIGKILL))
+    // Zircon will populate this report on restricted exception exits. Initialize it to all zero
+    // since we're just reserving storage.
+    let mut exception_report = zx::sys::zx_exception_report_t::new_zeroed();
+    match RestrictedState::bind_and_map(
+        &mut current_task.thread_state.registers,
+        &mut exception_report,
+    ) {
+        Ok(restricted_state) => {
+            match run_task(
+                locked,
+                current_task,
+                restricted_state.bound_state.as_ptr(),
+                &exception_report,
+            ) {
+                Ok(ok) => ok,
+                Err(error) => {
+                    log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
+                    ExitStatus::Kill(SignalInfo::kernel(SIGKILL))
+                }
             }
-        },
+        }
         Err(error) => {
             log_error!("failed to map mode state vmo, {error:?}! treating as SIGKILL");
             ExitStatus::Kill(SignalInfo::kernel(SIGKILL))
@@ -55,7 +69,7 @@ unsafe extern "C" {
         options: u32,
         restricted_exit_callback: RestrictedExitCallback,
         restricted_exit_callback_context: *mut RestrictedEnterContext<'_>,
-        restricted_state: *mut zx::sys::zx_restricted_exception_t,
+        restricted_state: *mut zx::sys::zx_restricted_state_t,
         extended_pstate_ptr_ptr: *mut ExtendedPstatePointer,
     ) -> zx::sys::zx_status_t;
 }
@@ -64,9 +78,9 @@ const RESTRICTED_ENTER_OPTIONS: u32 = 0;
 
 struct RestrictedEnterContext<'a> {
     current_task: &'a mut CurrentTask,
-    restricted_state: RestrictedState,
     error_context: Option<ErrorContext>,
     exit_status: Result<ExitStatus, Error>,
+    exception_report_raw: *const zx::sys::zx_exception_report_t,
 }
 
 /// Runs the `current_task` to completion.
@@ -85,7 +99,8 @@ struct RestrictedEnterContext<'a> {
 fn run_task(
     locked: &mut Locked<Unlocked>,
     current_task: &mut CurrentTask,
-    restricted_state: RestrictedState,
+    restricted_state_ptr: *mut zx::sys::zx_restricted_state_t,
+    exception_report_raw: *const zx::sys::zx_exception_report_t,
 ) -> Result<ExitStatus, Error> {
     set_current_task_info(
         current_task.task.command(),
@@ -107,20 +122,15 @@ fn run_task(
         return Ok(exit_status);
     }
 
-    // The restricted_state_ptr points at our bound state. It will remain the
-    // same value for the duration of the restricted loop. The value it points
-    // out will be mutated by restricted_enter_loop.
-    let restricted_state_ptr = restricted_state.bound_state.as_ptr();
-
     // This extended pstate pointer points to the storage for extended processor
     // state (vector and FP registers).
     let mut extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
 
     let mut restricted_enter_context = RestrictedEnterContext {
         current_task,
-        restricted_state,
         error_context,
         exit_status: Err(errno!(ENOEXEC).into()),
+        exception_report_raw,
     };
 
     #[allow(
@@ -165,44 +175,48 @@ extern "C" fn restricted_exit_callback_c(
     restricted_exit_callback(
         reason_code,
         restricted_context.current_task,
-        &mut restricted_context.restricted_state,
         &mut restricted_context.error_context,
         &mut restricted_context.exit_status,
         extended_pstate_ptr,
+        restricted_context.exception_report_raw,
     )
 }
 
 fn restricted_exit_callback(
     reason_code: zx::sys::zx_restricted_reason_t,
     current_task: &mut CurrentTask,
-    restricted_state: &mut RestrictedState,
     error_context: &mut Option<ErrorContext>,
     exit_status: &mut Result<ExitStatus, Error>,
     extended_pstate_ptr: &mut ExtendedPstatePointer,
+    exception_report_raw: *const zx::sys::zx_exception_report_t,
 ) -> bool {
     debug_assert_eq!(
         current_task.thread_state.restart_code, None,
         "restart_code should only ever be Some() in normal mode",
     );
 
-    let ret =
-        match process_restricted_exit(reason_code, current_task, restricted_state, error_context) {
-            Ok(None) => {
-                // Keep going!
+    let ret = match process_restricted_exit(
+        reason_code,
+        current_task,
+        error_context,
+        exception_report_raw,
+    ) {
+        Ok(None) => {
+            // Keep going!
 
-                *extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
+            *extended_pstate_ptr = current_task.thread_state.extended_pstate.as_ptr();
 
-                true
-            }
-            Ok(Some(completed_exit_status)) => {
-                *exit_status = Ok(completed_exit_status);
-                false
-            }
-            Err(error) => {
-                *exit_status = Err(error);
-                false
-            }
-        };
+            true
+        }
+        Ok(Some(completed_exit_status)) => {
+            *exit_status = Ok(completed_exit_status);
+            false
+        }
+        Err(error) => {
+            *exit_status = Err(error);
+            false
+        }
+    };
 
     debug_assert_eq!(
         current_task.thread_state.restart_code, None,
@@ -215,8 +229,8 @@ fn restricted_exit_callback(
 fn process_restricted_exit(
     reason_code: zx::sys::zx_restricted_reason_t,
     current_task: &mut CurrentTask,
-    restricted_state: &mut RestrictedState,
     error_context: &mut Option<ErrorContext>,
+    exception_report_raw: *const zx::sys::zx_exception_report_t,
 ) -> Result<Option<ExitStatus>, Error> {
     // We can't hold any locks entering restricted mode so we can't be holding any locks on exit.
     #[allow(
@@ -240,14 +254,10 @@ fn process_restricted_exit(
         }
         zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
             firehose_trace_duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
-            let restricted_exception = restricted_state.read_exception();
-            let exception_result = current_task.process_exception(locked, &restricted_exception);
-            process_completed_exception(
-                locked,
-                current_task,
-                exception_result,
-                restricted_exception,
-            );
+            // SAFETY: `exception_report_raw` was written by Zircon during this restricted exit.
+            let exception_report = unsafe { zx::ExceptionReport::from_raw(*exception_report_raw) };
+            let exception_result = current_task.process_exception(locked, &exception_report);
+            process_completed_exception(locked, current_task, exception_result, exception_report);
         }
         zx::sys::ZX_RESTRICTED_REASON_KICK => {
             firehose_trace_instant!(
