@@ -23,29 +23,6 @@ impl Deref for ProjectId {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Hash, Eq, Serialize)]
-pub struct CustomerId(pub u32);
-
-impl fmt::Display for CustomerId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Default for CustomerId {
-    fn default() -> Self {
-        CustomerId(1)
-    }
-}
-
-impl Deref for CustomerId {
-    type Target = u32;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 #[derive(Copy, Clone, Debug, Deserialize, Hash, PartialEq, Eq, Serialize)]
 pub struct MetricId(pub u32);
 

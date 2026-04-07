@@ -17,28 +17,26 @@ use fidl_fuchsia_metrics::{
 };
 use fuchsia_inspect::{ArrayProperty, NumericProperty};
 use log::{error, warn};
-use sampler_config::runtime::{MetricConfig, ProjectConfig};
+use sampler_config::runtime::{DataSetConfig, MetricConfig, ProjectConfig};
 use sampler_config::{EventCode, MetricId, MetricType};
 use selectors::SelectorExt;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-// `Project` maps the contents of a project file.
+// `Project` maps the contents of a project.
 //
-// There may be more than one `Project` per project id, since multiple
-// project files for one project are supported. For example, that is how
-// you would set different poll rates across metrics associated with one
-// project id.
+// Project **files** are de-duplicated per project ID,
+// so even if there are multiple project files with the same ID,
+// there is exactly one `Project`.
 #[derive(Debug)]
 pub struct Project<'a> {
     logger: MetricEventLoggerProxy,
-    metrics: Vec<MetricConfig>,
+    data_sets: Vec<DataSetConfig>,
     // This cache is safe because Sampler does not share project state
     // between threads. Since it does not serve a protocol and need to spawn
     // handlers, access is always sequential when a new event arrives on the
     // single SampleSinkServer stream.
     cache: HashMap<(MetricId, Vec<EventCode>), Property>,
-    interval: zx::MonotonicDuration,
     stats: Option<&'a ProjectStats>,
 }
 
@@ -48,26 +46,16 @@ impl<'a> Project<'a> {
         config: ProjectConfig,
         stats: Option<&'a ProjectStats>,
     ) -> Result<Project<'a>, Error<'static>> {
-        let ProjectConfig { project_id, customer_id, metrics, .. } = config;
+        let ProjectConfig { project_id, data_sets, .. } = config;
         let (logger, logger_server) = create_proxy();
         logger_factory
             .create_metric_event_logger(
-                &ProjectSpec {
-                    customer_id: Some(*customer_id),
-                    project_id: Some(*project_id),
-                    ..Default::default()
-                },
+                &ProjectSpec { project_id: Some(*project_id), ..Default::default() },
                 logger_server,
             )
             .await??;
 
-        Ok(Project {
-            logger,
-            metrics,
-            cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(config.poll_rate_sec),
-            stats,
-        })
+        Ok(Project { logger, data_sets, cache: HashMap::new(), stats })
     }
 
     pub async fn log(
@@ -76,77 +64,81 @@ impl<'a> Project<'a> {
         // None when there is a last gasp happening before shutdown.
         since_startup: Option<zx::MonotonicDuration>,
     ) -> Result<Vec<MetricConfig>, Error<'_>> {
-        // This protects against the same selector being used for multiple metrics
-        // across project files. It relies on the fact that every metric in one project
-        // file has the same interval, and that `Project` maps to a project file.
-        if let Some(since_startup) = since_startup
-            && since_startup.into_seconds() % self.interval.into_seconds() != 0
-        {
-            return Ok(vec![]);
-        }
+        let mut upload_once_values = vec![];
+        for data_set in &mut self.data_sets {
+            // This protects against the same selector being used for multiple metrics
+            // across project files. It relies on the fact that every metric in one project
+            // file has the same interval, and that `Project` maps to a project file.
+            if let Some(since_startup) = since_startup
+                && since_startup.into_seconds() % data_set.poll_rate_sec != 0
+            {
+                continue;
+            }
 
-        let mut metric_events = vec![];
-        let cache = &mut self.cache;
-        for tree in data {
-            for metric in &self.metrics {
-                let selectors_for_this_tree = tree
-                    .moniker
-                    .match_against_selectors(metric.selectors.iter())
-                    .filter_map(|s| match s {
-                        Ok(s) => Some(s),
-                        Err(e) => {
-                            error!(
-                                e:?;
-                                "Invalid selector. Fix config or file a bug against Sampler."
-                            );
-                            None
-                        }
-                    });
-                let Some(item) = Self::select_first_match(selectors_for_this_tree, tree) else {
-                    continue;
-                };
+            let cache = &mut self.cache;
+            let mut metric_events = vec![];
+            for tree in data {
+                for metric in &data_set.metrics {
+                    let selectors_for_this_tree = tree
+                        .moniker
+                        .match_against_selectors(metric.selectors.iter())
+                        .filter_map(|s| match s {
+                            Ok(s) => Some(s),
+                            Err(e) => {
+                                error!(
+                                    e:?;
+                                    "Invalid selector. Fix config or file a bug against Sampler."
+                                );
+                                None
+                            }
+                        });
+                    let Some(item) = Self::select_first_match(selectors_for_this_tree, tree) else {
+                        continue;
+                    };
 
-                match Self::convert_to_metric(cache, item, metric) {
-                    Ok(Some(m)) => {
-                        if let Some(stats) = &self.stats {
-                            stats.events.borrow_mut().add_entry(|n| {
-                                n.record_uint("metric_id", *metric.metric_id as u64);
-                                let ec = n.create_uint_array("ec", metric.event_codes.len());
-                                for (idx, c) in metric.event_codes.iter().enumerate() {
-                                    ec.set(idx, **c as u64);
-                                }
-                                n.record(ec);
-                            });
+                    match Self::convert_to_metric(cache, item, metric) {
+                        Ok(Some(m)) => {
+                            if let Some(stats) = &self.stats {
+                                stats.events.borrow_mut().add_entry(|n| {
+                                    n.record_uint("metric_id", *metric.metric_id as u64);
+                                    let ec = n.create_uint_array("ec", metric.event_codes.len());
+                                    for (idx, c) in metric.event_codes.iter().enumerate() {
+                                        ec.set(idx, **c as u64);
+                                    }
+                                    n.record(ec);
+                                });
+                            }
+                            metric_events.push(m);
                         }
-                        metric_events.push(m);
+                        Ok(None) => {}
+                        Err(err) => warn!(err:?; "Error converting Inspect to Cobalt metric"),
                     }
-                    Ok(None) => {}
-                    Err(err) => warn!(err:?; "Error converting Inspect to Cobalt metric"),
                 }
             }
+
+            self.logger.log_metric_events(&metric_events).await??;
+            self.stats.map(|stats| stats.cobalt_logs_sent.add(metric_events.len() as u64));
+
+            let mut original_metrics = vec![];
+
+            std::mem::swap(&mut original_metrics, &mut data_set.metrics);
+            let (upload_once_values_for_data_set, filtered_metrics) =
+                original_metrics.into_iter().partition(|metric| {
+                    metric.upload_once
+                        && metric_events.iter().any(|me| {
+                            me.metric_id == *metric.metric_id
+                                && me
+                                    .event_codes
+                                    .iter()
+                                    .copied()
+                                    .map(EventCode)
+                                    .eq(metric.event_codes.iter().copied())
+                        })
+                });
+
+            data_set.metrics = filtered_metrics;
+            upload_once_values.extend(upload_once_values_for_data_set);
         }
-
-        self.logger.log_metric_events(&metric_events).await??;
-        self.stats.map(|stats| stats.cobalt_logs_sent.add(metric_events.len() as u64));
-
-        let mut original_metrics = vec![];
-
-        std::mem::swap(&mut original_metrics, &mut self.metrics);
-        let (upload_once_values, filtered_metrics) =
-            original_metrics.into_iter().partition(|metric| {
-                metric.upload_once
-                    && metric_events.iter().any(|me| {
-                        me.metric_id == *metric.metric_id
-                            && me
-                                .event_codes
-                                .iter()
-                                .copied()
-                                .map(EventCode)
-                                .eq(metric.event_codes.iter().copied())
-                    })
-            });
-
-        self.metrics = filtered_metrics;
 
         Ok(upload_once_values)
     }
@@ -598,20 +590,13 @@ mod test {
             event_codes: vec![],
             selectors: vec![],
             upload_once: false,
-            project_id: None,
         }
     }
 
     // needs to be async for create_proxy (or manually create executor)
     async fn create_empty_project() -> Project<'static> {
         let (logger, _) = fidl::endpoints::create_proxy::<MetricEventLoggerMarker>();
-        Project {
-            logger,
-            metrics: vec![],
-            cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(1),
-            stats: None,
-        }
+        Project { logger, data_sets: vec![], cache: HashMap::new(), stats: None }
     }
 
     fn test_data(timestamp_nanos: i64, hierarchy: DiagnosticsHierarchy) -> Vec<InspectData> {
@@ -670,16 +655,17 @@ mod test {
         let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
         let mut project = Project {
             logger,
-            metrics: vec![MetricConfig {
-                selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
-                metric_id: MetricId(0),
-                metric_type: MetricType::IntHistogram,
-                event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
-                upload_once: false,
-                project_id: None,
+            data_sets: vec![DataSetConfig {
+                metrics: vec![MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::IntHistogram,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
+                    upload_once: false,
+                }],
+                poll_rate_sec: 1,
             }],
             cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
 
@@ -779,7 +765,7 @@ mod test {
                     size: 2,
                 }),
             );
-            let config = &project.metrics[0];
+            let config = &project.data_sets[0].metrics[0];
             let actual = Project::convert_to_metric(
                 &mut project.cache,
                 SelectResult::Properties(vec![Cow::Owned(prop)]),
@@ -797,16 +783,17 @@ mod test {
         let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
         let mut project = Project {
             logger,
-            metrics: vec![MetricConfig {
-                selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
-                metric_id: MetricId(0),
-                metric_type: MetricType::String,
-                event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
-                upload_once: false,
-                project_id: None,
+            data_sets: vec![DataSetConfig {
+                metrics: vec![MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::String,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
+                    upload_once: false,
+                }],
+                poll_rate_sec: 1,
             }],
             cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
 
@@ -895,16 +882,17 @@ mod test {
         let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
         let mut project = Project {
             logger,
-            metrics: vec![MetricConfig {
-                selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
-                metric_id: MetricId(0),
-                metric_type: MetricType::Integer,
-                event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
-                upload_once: false,
-                project_id: None,
+            data_sets: vec![DataSetConfig {
+                metrics: vec![MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Integer,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
+                    upload_once: false,
+                }],
+                poll_rate_sec: 1,
             }],
             cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
 
@@ -1043,16 +1031,17 @@ mod test {
         let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
         let mut project = Project {
             logger,
-            metrics: vec![MetricConfig {
-                selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
-                metric_id: MetricId(0),
-                metric_type: MetricType::Occurrence,
-                event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
-                upload_once: false,
-                project_id: None,
+            data_sets: vec![DataSetConfig {
+                metrics: vec![MetricConfig {
+                    selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
+                    metric_id: MetricId(0),
+                    metric_type: MetricType::Occurrence,
+                    event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
+                    upload_once: false,
+                }],
+                poll_rate_sec: 1,
             }],
             cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
 
@@ -1132,7 +1121,7 @@ mod test {
         {
             // decrease from the previous value of 10 which is in the cache
             let int_prop = Property::Int("value".to_string(), 9);
-            let config = &project.metrics[0];
+            let config = &project.data_sets[0].metrics[0];
             let actual = Project::convert_to_metric(
                 &mut project.cache,
                 SelectResult::Properties(vec![Cow::Owned(int_prop)]),
@@ -1894,36 +1883,37 @@ mod test {
         let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
         let mut project = Project {
             logger,
-            metrics: vec![
-                MetricConfig {
-                    selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
-                    metric_id: MetricId(0),
-                    metric_type: MetricType::Integer,
-                    event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
-                    upload_once: false,
-                    project_id: None,
-                },
-                MetricConfig {
-                    selectors: vec![parse_verbose("moniker/for/test:root:upload_once").unwrap()],
-                    metric_id: MetricId(0),
-                    metric_type: MetricType::Integer,
-                    event_codes: vec![EventCode(1), EventCode(2), EventCode(0)],
-                    upload_once: true,
-                    project_id: None,
-                },
-                MetricConfig {
-                    selectors: vec![
-                        parse_verbose("moniker/for/test:root:upload_once_later").unwrap(),
-                    ],
-                    metric_id: MetricId(0),
-                    metric_type: MetricType::Integer,
-                    event_codes: vec![EventCode(1), EventCode(0), EventCode(0)],
-                    upload_once: true,
-                    project_id: None,
-                },
-            ],
+            data_sets: vec![DataSetConfig {
+                metrics: vec![
+                    MetricConfig {
+                        selectors: vec![parse_verbose("moniker/for/test:root:foo").unwrap()],
+                        metric_id: MetricId(0),
+                        metric_type: MetricType::Integer,
+                        event_codes: vec![EventCode(1), EventCode(2), EventCode(3)],
+                        upload_once: false,
+                    },
+                    MetricConfig {
+                        selectors: vec![
+                            parse_verbose("moniker/for/test:root:upload_once").unwrap(),
+                        ],
+                        metric_id: MetricId(0),
+                        metric_type: MetricType::Integer,
+                        event_codes: vec![EventCode(1), EventCode(2), EventCode(0)],
+                        upload_once: true,
+                    },
+                    MetricConfig {
+                        selectors: vec![
+                            parse_verbose("moniker/for/test:root:upload_once_later").unwrap(),
+                        ],
+                        metric_id: MetricId(0),
+                        metric_type: MetricType::Integer,
+                        event_codes: vec![EventCode(1), EventCode(0), EventCode(0)],
+                        upload_once: true,
+                    },
+                ],
+                poll_rate_sec: 1,
+            }],
             cache: HashMap::new(),
-            interval: zx::MonotonicDuration::from_seconds(1),
             stats: None,
         };
 
@@ -1967,7 +1957,6 @@ mod test {
                     metric_type: MetricType::Integer,
                     event_codes: vec![EventCode(1), EventCode(2), EventCode(0)],
                     upload_once: true,
-                    project_id: None,
                 },]
             );
             assert_eq!(expected, events);
@@ -2012,7 +2001,6 @@ mod test {
                     metric_type: MetricType::Integer,
                     event_codes: vec![EventCode(1), EventCode(0), EventCode(0)],
                     upload_once: true,
-                    project_id: None,
                 },]
             );
             assert_eq!(expected, events);

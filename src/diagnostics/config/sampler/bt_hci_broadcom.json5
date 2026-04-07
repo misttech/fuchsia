@@ -1,13 +1,17 @@
 {
-    metrics: [
-        // Broadcom core dumps (ID 109)
+    data_sets: [
         {
-            event_codes: [],
-            metric_id: 109,
-            metric_type: "Occurrence",
-            selector: "bootstrap/*-drivers\\:*:[name=bt-hci-broadcom]root:core_dump_count",
+            metrics: [
+                // Broadcom core dumps (ID 109)
+                {
+                    event_codes: [],
+                    metric_id: 109,
+                    metric_type: "Occurrence",
+                    selector: "bootstrap/*-drivers\\:*:[name=bt-hci-broadcom]root:core_dump_count",
+                },
+            ],
+            poll_rate_sec: 3600,
         },
     ],
-    poll_rate_sec: 3600,
     project_id: 2322225253,
 }

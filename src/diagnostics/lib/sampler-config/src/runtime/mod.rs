@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common::{CustomerId, EventCode, MetricId, MetricType, ProjectId};
+use crate::common::{EventCode, MetricId, MetricType, ProjectId};
 use fidl_fuchsia_diagnostics::Selector;
 use selectors::SelectorDisplayOptions;
 use serde::ser::{Error, SerializeSeq};
@@ -14,11 +14,14 @@ pub struct ProjectConfig {
     /// Project ID that metrics are being sampled and forwarded on behalf of.
     pub project_id: ProjectId,
 
-    /// Customer ID that metrics are being sampled and forwarded on behalf of.
-    /// This will default to 1 if not specified.
-    #[serde(default)]
-    pub customer_id: CustomerId,
+    /// Groupings of metrics that share a poll rate for this project.
+    pub data_sets: Vec<DataSetConfig>,
+}
 
+/// Grouping unit for metrics within a single project that share a polling
+/// frequency.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct DataSetConfig {
     /// The frequency with which metrics are sampled, in seconds.
     #[serde(deserialize_with = "crate::utils::greater_than_zero")]
     pub poll_rate_sec: i64,
@@ -54,11 +57,6 @@ pub struct MetricConfig {
     /// it becomes available to the sampler. Defaults to false.
     #[serde(default)]
     pub upload_once: bool,
-
-    /// Optional project id. When present this project id will be used instead of the top-level
-    /// project id.
-    // TODO(https://fxbug.dev/42071858): remove this when we support batching.
-    pub project_id: Option<ProjectId>,
 }
 
 pub fn selectors_to_string<S>(selectors: &[Selector], serializer: S) -> Result<S::Ok, S::Error>
@@ -83,34 +81,36 @@ mod test {
     fn parse_valid_sampler_config() {
         let ok_json = r#"{
             "project_id": 5,
-            "poll_rate_sec": 60,
-            "metrics": [
-              {
-                "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
-                "metric_id": 1,
-                "metric_type": "Occurrence",
-                "event_codes": [0, 0]
-              }
-            ]
+            "data_sets": [{
+              "poll_rate_sec": 60,
+              "metrics": [
+                {
+                  "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
+                  "metric_id": 1,
+                  "metric_type": "Occurrence",
+                  "event_codes": [0, 0]
+                }
+              ]
+            }]
         }"#;
 
         let config: ProjectConfig = serde_json5::from_str(ok_json).expect("parse json");
         assert_eq!(config, ProjectConfig {
             project_id: ProjectId(5),
-            poll_rate_sec: 60,
-            customer_id: CustomerId(1),
-            metrics: vec![
-                MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None,
-                    upload_once: false,
-                }
-            ]
+            data_sets: vec![DataSetConfig {
+                poll_rate_sec: 60,
+                metrics: vec![
+                    MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        event_codes: vec![EventCode(0), EventCode(0)],
+                        upload_once: false,
+                    }
+                ]
+            }]
         });
     }
 
@@ -118,16 +118,18 @@ mod test {
     fn parse_valid_sampler_config_json5() {
         let ok_json = r#"{
           project_id: 5,
-          poll_rate_sec: 3,
-          metrics: [
-            {
-              // Test comment for json5 portability.
-              selector: "single_counter_test_component:root:counter",
-              metric_id: 1,
-              metric_type: "Occurrence",
-              event_codes: [0, 0]
-            }
-          ]
+          data_sets: [{
+            poll_rate_sec: 3,
+            metrics: [
+              {
+                // Test comment for json5 portability.
+                selector: "single_counter_test_component:root:counter",
+                metric_id: 1,
+                metric_type: "Occurrence",
+                event_codes: [0, 0]
+              }
+            ]
+          }]
         }"#;
 
         let config: ProjectConfig = serde_json5::from_str(ok_json).expect("parse json");
@@ -135,18 +137,18 @@ mod test {
             config,
             ProjectConfig {
                 project_id: ProjectId(5),
-                poll_rate_sec: 3,
-                customer_id: CustomerId(1),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("single_counter_test_component:root:counter")
-                            .unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: false,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None,
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 3,
+                    metrics: vec![MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("single_counter_test_component:root:counter")
+                                .unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        upload_once: false,
+                        event_codes: vec![EventCode(0), EventCode(0)],
+                    }]
                 }]
             }
         );
@@ -156,15 +158,17 @@ mod test {
     fn parse_valid_sampler_config_multiple_selectors() {
         let ok_json = r#"{
           project_id: 5,
-          poll_rate_sec: 3,
-          metrics: [
-            {
-              selector: ["component:root:one", "component:root:two"],
-              metric_id: 1,
-              metric_type: "Occurrence",
-              event_codes: [0, 0]
-            }
-          ]
+          data_sets: [{
+            poll_rate_sec: 3,
+            metrics: [
+              {
+                selector: ["component:root:one", "component:root:two"],
+                metric_id: 1,
+                metric_type: "Occurrence",
+                event_codes: [0, 0]
+              }
+            ]
+          }]
         }"#;
 
         let config: ProjectConfig = serde_json5::from_str(ok_json).expect("parse json");
@@ -172,18 +176,18 @@ mod test {
             config,
             ProjectConfig {
                 project_id: ProjectId(5),
-                poll_rate_sec: 3,
-                customer_id: CustomerId(1),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("component:root:one").unwrap(),
-                        selectors::parse_verbose("component:root:two").unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: false,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None,
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 3,
+                    metrics: vec![MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("component:root:one").unwrap(),
+                            selectors::parse_verbose("component:root:two").unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        upload_once: false,
+                        event_codes: vec![EventCode(0), EventCode(0)],
+                    }]
                 }]
             }
         );
@@ -205,17 +209,19 @@ mod test {
     fn parse_optional_args() {
         let true_json = r#"{
            "project_id": 5,
-           "poll_rate_sec": 60,
-           "metrics": [
-             {
-               // Test comment for json5 portability.
-               "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
-               "metric_id": 1,
-               "metric_type": "Occurrence",
-               "event_codes": [0, 0],
-               "upload_once": true,
-             }
-           ]
+           "data_sets": [{
+             "poll_rate_sec": 60,
+             "metrics": [
+               {
+                 // Test comment for json5 portability.
+                 "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
+                 "metric_id": 1,
+                 "metric_type": "Occurrence",
+                 "event_codes": [0, 0],
+                 "upload_once": true,
+               }
+             ]
+           }]
          }"#;
 
         let config: ProjectConfig = serde_json5::from_str(true_json).expect("parse json");
@@ -223,51 +229,53 @@ mod test {
             config,
             ProjectConfig {
                 project_id: ProjectId(5),
-                poll_rate_sec: 60,
-                customer_id: CustomerId(1),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: true,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None,
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        upload_once: true,
+                        event_codes: vec![EventCode(0), EventCode(0)],
+                    }]
                 }]
             }
         );
 
         let false_json = r#"{
           "project_id": 5,
-          "poll_rate_sec": 60,
-          "metrics": [
-            {
-              // Test comment for json5 portability.
-              "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
-              "metric_id": 1,
-              "metric_type": "Occurrence",
-              "event_codes": [0, 0],
-              "upload_once": false,
-            }
-          ]
+          "data_sets": [{
+            "poll_rate_sec": 60,
+            "metrics": [
+              {
+                // Test comment for json5 portability.
+                "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
+                "metric_id": 1,
+                "metric_type": "Occurrence",
+                "event_codes": [0, 0],
+                "upload_once": false,
+              }
+            ]
+          }]
         }"#;
         let config: ProjectConfig = serde_json5::from_str(false_json).expect("parse json");
         assert_eq!(
             config,
             ProjectConfig {
                 project_id: ProjectId(5),
-                poll_rate_sec: 60,
-                customer_id: CustomerId(1),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: false,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        upload_once: false,
+                        event_codes: vec![EventCode(0), EventCode(0)],
+                    }]
                 }]
             }
         );
@@ -276,69 +284,35 @@ mod test {
     fn default_customer_id() {
         let default_json = r#"{
           "project_id": 5,
-          "poll_rate_sec": 60,
-          "metrics": [
-            {
-              "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
-              "metric_id": 1,
-              "metric_type": "Occurrence",
-              "event_codes": [0, 0]
-            }
-          ]
-        }"#;
-        let with_customer_id_json = r#"{
-            "customer_id": 6,
-            "project_id": 5,
-            "poll_rate_sec": 3,
+          "data_sets": [{
+            "poll_rate_sec": 60,
             "metrics": [
               {
-                "selector": "single_counter_test_component:root:counter",
+                "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
                 "metric_id": 1,
                 "metric_type": "Occurrence",
                 "event_codes": [0, 0]
               }
             ]
-          }
-          "#;
+          }]
+        }"#;
 
         let config: ProjectConfig = serde_json5::from_str(default_json).expect("deserialize");
         assert_eq!(
             config,
             ProjectConfig {
                 project_id: ProjectId(5),
-                poll_rate_sec: 60,
-                customer_id: CustomerId(1),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: false,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None,
-                }],
-            }
-        );
-
-        let config: ProjectConfig =
-            serde_json5::from_str(with_customer_id_json).expect("deserialize");
-        assert_eq!(
-            config,
-            ProjectConfig {
-                project_id: ProjectId(5),
-                poll_rate_sec: 3,
-                customer_id: CustomerId(6),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("single_counter_test_component:root:counter")
-                            .unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: false,
-                    event_codes: vec![EventCode(0), EventCode(0)],
-                    project_id: None,
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        upload_once: false,
+                        event_codes: vec![EventCode(0), EventCode(0)],
+                    }],
                 }]
             }
         );
@@ -348,14 +322,16 @@ mod test {
     fn missing_event_codes_ok() {
         let default_json = r#"{
           "project_id": 5,
-          "poll_rate_sec": 60,
-          "metrics": [
-            {
-              "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
-              "metric_id": 1,
-              "metric_type": "Occurrence",
-            }
-          ]
+          "data_sets": [{
+            "poll_rate_sec": 60,
+            "metrics": [
+              {
+                "selector": "bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests",
+                "metric_id": 1,
+                "metric_type": "Occurrence",
+              }
+            ]
+          }]
         }"#;
 
         let config: ProjectConfig = serde_json5::from_str(default_json).expect("deserialize");
@@ -363,17 +339,17 @@ mod test {
             config,
             ProjectConfig {
                 project_id: ProjectId(5),
-                poll_rate_sec: 60,
-                customer_id: CustomerId(1),
-                metrics: vec![MetricConfig {
-                    selectors: vec![
-                        selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
-                    ],
-                    metric_id: MetricId(1),
-                    metric_type: MetricType::Occurrence,
-                    upload_once: false,
-                    event_codes: vec![],
-                    project_id: None,
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![MetricConfig {
+                        selectors: vec![
+                            selectors::parse_verbose("bootstrap/archivist:root/all_archive_accessor:inspect_batch_iterator_get_next_requests").unwrap(),
+                        ],
+                        metric_id: MetricId(1),
+                        metric_type: MetricType::Occurrence,
+                        upload_once: false,
+                        event_codes: vec![],
+                    }]
                 }]
             }
         );

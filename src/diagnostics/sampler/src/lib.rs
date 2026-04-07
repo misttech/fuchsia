@@ -76,15 +76,13 @@ pub async fn main() -> Result<(), AnyhowError> {
     let mut projects = futures::stream::iter(config.project_configs)
         .filter_map(|project_config| async {
             let project_id = *project_config.project_id;
-            let customer_id = *project_config.customer_id;
             let stats = config.stats.projects.get(&project_config.project_id);
             match Project::new(&metric_logger_factory, project_config, stats).await {
                 Ok(project) => Some(project),
                 Err(e) => {
                     warn!(
                         e:?,
-                        project_id,
-                        customer_id;
+                        project_id;
                         "Sampler failed to configure a project",
                     );
                     None

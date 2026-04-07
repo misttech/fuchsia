@@ -25,7 +25,7 @@ pub(crate) async fn inspect_for_sampler_test_inner<S: InspectDataGetter>(getter:
     let mut reader = BufReader::new(file);
     let project_config: ProjectConfig =
         serde_json5::from_reader(&mut reader).expect("loaded sampler config");
-    for metric_config in &project_config.metrics {
+    for metric_config in project_config.data_sets.iter().flat_map(|ds| ds.metrics.iter()) {
         let selector = match &metric_config.selectors[..] {
             [selector] => selector,
             selectors => panic!("expected one selector but got {:#?}", selectors),

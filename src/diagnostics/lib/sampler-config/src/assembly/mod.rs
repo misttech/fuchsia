@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common::{CustomerId, EventCode, MetricId, MetricType, ProjectId};
+use crate::common::{EventCode, MetricId, MetricType, ProjectId};
 use crate::utils::OneOrMany;
 use anyhow::bail;
 use component_id_index::InstanceId;
@@ -11,22 +11,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-// At the moment there's no difference between the user facing project config and the one loaded at
-// runtime. This will change as we integrate Cobalt mappings.
-pub use crate::runtime::{MetricConfig, ProjectConfig};
+pub use crate::runtime::{DataSetConfig, MetricConfig, ProjectConfig};
 
 /// Configuration for a single FIRE project template to map Inspect data to its Cobalt metrics
-/// for all components in the ComponentIdInfo. Just like ProjectConfig except it uses MetricTemplate
-/// instead of MetricConfig.
+/// for all components in the ComponentIdInfo.
+///
+/// This type will get converted to an individual `ProjectConfig` and piped to Sampler.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct ProjectTemplate {
     /// Project ID that metrics are being sampled and forwarded on behalf of.
     pub project_id: ProjectId,
-
-    /// Customer ID that metrics are being sampled and forwarded on behalf of.
-    /// This will default to 1 if not specified.
-    #[serde(default)]
-    pub customer_id: CustomerId,
 
     /// The frequency with which metrics are sampled, in seconds.
     #[serde(deserialize_with = "crate::utils::greater_than_zero")]
@@ -38,7 +32,7 @@ pub struct ProjectTemplate {
 
 impl ProjectTemplate {
     pub fn expand(self, components: &ComponentIdInfoList) -> Result<ProjectConfig, anyhow::Error> {
-        let ProjectTemplate { project_id, customer_id, poll_rate_sec, metrics } = self;
+        let ProjectTemplate { project_id, poll_rate_sec, metrics } = self;
         let mut metric_configs = Vec::with_capacity(metrics.len() * components.len());
         for component in components.iter() {
             for metric in metrics.iter() {
@@ -47,7 +41,10 @@ impl ProjectTemplate {
                 }
             }
         }
-        Ok(ProjectConfig { project_id, customer_id, poll_rate_sec, metrics: metric_configs })
+
+        let data_sets = vec![DataSetConfig { poll_rate_sec, metrics: metric_configs }];
+
+        Ok(ProjectConfig { project_id, data_sets })
     }
 }
 
@@ -81,11 +78,6 @@ pub struct MetricTemplate {
     /// it becomes available to the sampler. Defaults to false.
     #[serde(default)]
     pub upload_once: bool,
-
-    /// Optional project id. When present this project id will be used instead of the top-level
-    /// project id.
-    // TODO(https://fxbug.dev/42071858): remove this when we support batching.
-    pub project_id: Option<ProjectId>,
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
@@ -156,14 +148,7 @@ impl IntoIterator for ComponentIdInfoList {
 
 impl MetricTemplate {
     fn expand(&self, component: &ComponentIdInfo) -> Result<Option<MetricConfig>, anyhow::Error> {
-        let MetricTemplate {
-            selectors,
-            metric_id,
-            metric_type,
-            event_codes,
-            upload_once,
-            project_id,
-        } = self;
+        let MetricTemplate { selectors, metric_id, metric_type, event_codes, upload_once } = self;
         let mut result_selectors = Vec::with_capacity(selectors.len());
         for selector in selectors {
             if let Some(selector_string) = interpolate_template(selector, component)? {
@@ -182,7 +167,6 @@ impl MetricTemplate {
             metric_id: *metric_id,
             metric_type: *metric_type,
             upload_once: *upload_once,
-            project_id: *project_id,
         }))
     }
 }
@@ -299,7 +283,6 @@ mod tests {
         let template = r#"{
             "project_id": 13,
             "poll_rate_sec": 60,
-            "customer_id": 8,
             "metrics": [
                 {
                 "selector": [
@@ -318,7 +301,6 @@ mod tests {
             ProjectTemplate {
                 project_id: ProjectId(13),
                 poll_rate_sec: 60,
-                customer_id: CustomerId(8),
                 metrics: vec![MetricTemplate {
                     selectors: vec![
                         "{MONIKER}:root/path2:leaf2".into(),
@@ -326,7 +308,6 @@ mod tests {
                         "asdf/qwer:root/path4:pre-{MONIKER}-post".into(),
                     ],
                     event_codes: vec![],
-                    project_id: None,
                     upload_once: false,
                     metric_id: MetricId(2),
                     metric_type: MetricType::Occurrence,
@@ -380,14 +361,12 @@ mod tests {
     fn template_expansion_basic() {
         let project_template = ProjectTemplate {
             project_id: ProjectId(13),
-            customer_id: CustomerId(7),
             poll_rate_sec: 60,
             metrics: vec![MetricTemplate {
                 selectors: vec!["{MONIKER}:root/path:leaf".into()],
                 metric_id: MetricId(1),
                 metric_type: MetricType::Occurrence,
                 event_codes: vec![EventCode(1), EventCode(2)],
-                project_id: None,
                 upload_once: true,
             }],
         };
@@ -415,34 +394,33 @@ mod tests {
             config,
             ProjectConfig {
                 project_id: ProjectId(13),
-                customer_id: CustomerId(7),
-                poll_rate_sec: 60,
-                metrics: vec![
-                    MetricConfig {
-                        selectors: vec![
-                            selectors::parse_selector::<FastError>("core/foo42:root/path:leaf")
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![
+                        MetricConfig {
+                            selectors: vec![
+                                selectors::parse_selector::<FastError>("core/foo42:root/path:leaf")
+                                    .unwrap()
+                            ],
+                            metric_id: MetricId(1),
+                            metric_type: MetricType::Occurrence,
+                            event_codes: vec![EventCode(42), EventCode(1), EventCode(2)],
+                            upload_once: true,
+                        },
+                        MetricConfig {
+                            selectors: vec![
+                                selectors::parse_selector::<FastError>(
+                                    "bootstrap/hello:root/path:leaf"
+                                )
                                 .unwrap()
-                        ],
-                        metric_id: MetricId(1),
-                        metric_type: MetricType::Occurrence,
-                        event_codes: vec![EventCode(42), EventCode(1), EventCode(2)],
-                        upload_once: true,
-                        project_id: None,
-                    },
-                    MetricConfig {
-                        selectors: vec![
-                            selectors::parse_selector::<FastError>(
-                                "bootstrap/hello:root/path:leaf"
-                            )
-                            .unwrap()
-                        ],
-                        metric_id: MetricId(1),
-                        metric_type: MetricType::Occurrence,
-                        event_codes: vec![EventCode(43), EventCode(1), EventCode(2)],
-                        upload_once: true,
-                        project_id: None,
-                    },
-                ],
+                            ],
+                            metric_id: MetricId(1),
+                            metric_type: MetricType::Occurrence,
+                            event_codes: vec![EventCode(43), EventCode(1), EventCode(2)],
+                            upload_once: true,
+                        },
+                    ],
+                }],
             }
         );
     }
@@ -452,7 +430,6 @@ mod tests {
         let project_template = ProjectTemplate {
             project_id: ProjectId(13),
             poll_rate_sec: 60,
-            customer_id: CustomerId(7),
             metrics: vec![MetricTemplate {
                 selectors: vec![
                     "{MONIKER}:root/path2:leaf2".into(),
@@ -462,7 +439,6 @@ mod tests {
                 metric_id: MetricId(2),
                 metric_type: MetricType::Occurrence,
                 event_codes: vec![],
-                project_id: None,
                 upload_once: false,
             }],
         };
@@ -490,50 +466,51 @@ mod tests {
             config,
             ProjectConfig {
                 project_id: ProjectId(13),
-                customer_id: CustomerId(7),
-                poll_rate_sec: 60,
-                metrics: vec![
-                    MetricConfig {
-                        selectors: vec![
-                            selectors::parse_selector::<FastError>("core/foo42:root/path2:leaf2")
+                data_sets: vec![DataSetConfig {
+                    poll_rate_sec: 60,
+                    metrics: vec![
+                        MetricConfig {
+                            selectors: vec![
+                                selectors::parse_selector::<FastError>(
+                                    "core/foo42:root/path2:leaf2"
+                                )
                                 .unwrap(),
-                            selectors::parse_selector::<FastError>(
-                                "foo/bar:root/core\\/foo42:leaf3"
-                            )
-                            .unwrap(),
-                            selectors::parse_selector::<FastError>(
-                                "asdf/qwer:root/path4:pre-core\\/foo42-post"
-                            )
-                            .unwrap()
-                        ],
-                        metric_id: MetricId(2),
-                        metric_type: MetricType::Occurrence,
-                        event_codes: vec![EventCode(42)],
-                        upload_once: false,
-                        project_id: None,
-                    },
-                    MetricConfig {
-                        selectors: vec![
-                            selectors::parse_selector::<FastError>(
-                                "bootstrap/hello:root/path2:leaf2"
-                            )
-                            .unwrap(),
-                            selectors::parse_selector::<FastError>(
-                                "foo/bar:root/bootstrap\\/hello:leaf3"
-                            )
-                            .unwrap(),
-                            selectors::parse_selector::<FastError>(
-                                "asdf/qwer:root/path4:pre-bootstrap\\/hello-post"
-                            )
-                            .unwrap()
-                        ],
-                        metric_id: MetricId(2),
-                        metric_type: MetricType::Occurrence,
-                        event_codes: vec![EventCode(43)],
-                        upload_once: false,
-                        project_id: None,
-                    },
-                ],
+                                selectors::parse_selector::<FastError>(
+                                    "foo/bar:root/core\\/foo42:leaf3"
+                                )
+                                .unwrap(),
+                                selectors::parse_selector::<FastError>(
+                                    "asdf/qwer:root/path4:pre-core\\/foo42-post"
+                                )
+                                .unwrap()
+                            ],
+                            metric_id: MetricId(2),
+                            metric_type: MetricType::Occurrence,
+                            event_codes: vec![EventCode(42)],
+                            upload_once: false,
+                        },
+                        MetricConfig {
+                            selectors: vec![
+                                selectors::parse_selector::<FastError>(
+                                    "bootstrap/hello:root/path2:leaf2"
+                                )
+                                .unwrap(),
+                                selectors::parse_selector::<FastError>(
+                                    "foo/bar:root/bootstrap\\/hello:leaf3"
+                                )
+                                .unwrap(),
+                                selectors::parse_selector::<FastError>(
+                                    "asdf/qwer:root/path4:pre-bootstrap\\/hello-post"
+                                )
+                                .unwrap()
+                            ],
+                            metric_id: MetricId(2),
+                            metric_type: MetricType::Occurrence,
+                            event_codes: vec![EventCode(43)],
+                            upload_once: false,
+                        },
+                    ],
+                }],
             }
         );
     }

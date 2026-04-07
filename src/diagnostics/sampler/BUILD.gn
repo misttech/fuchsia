@@ -45,6 +45,7 @@ rustc_library("lib") {
 
   test_deps = [
     "//src/lib/diagnostics/selectors",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
@@ -56,6 +57,12 @@ rustc_library("lib") {
     "src/error.rs",
     "src/lib.rs",
     "src/project.rs",
+  ]
+
+  inputs = [
+    "testing/realm-factory/configs/reboot_required_config.json",
+    "testing/realm-factory/configs/test_config.json",
+    "testing/realm-factory/configs/test_config_2.json",
   ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]

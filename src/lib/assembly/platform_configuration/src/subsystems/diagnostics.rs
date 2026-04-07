@@ -440,8 +440,8 @@ mod tests {
         ComponentInitialInterest, PersistenceConfig, SamplerConfig, UrlOrMoniker,
     };
     use camino::Utf8PathBuf;
-    use sampler_config::runtime::MetricConfig;
-    use sampler_config::{CustomerId, EventCode, MetricId, MetricType, ProjectId};
+    use sampler_config::runtime::{DataSetConfig, MetricConfig};
+    use sampler_config::{EventCode, MetricId, MetricType, ProjectId};
     use serde_json::{Number, Value, json};
     use std::fs::File;
     use tempfile::TempDir;
@@ -500,18 +500,22 @@ mod tests {
                     ],
                     "project_configs": [
                         {
-                            "metrics": [
+                            "data_sets": [
                                 {
-                                    "event_codes": [
-                                        0,
-                                        1
+                                    "metrics": [
+                                        {
+                                            "event_codes": [
+                                                0,
+                                                1
+                                            ],
+                                            "metric_id": 104,
+                                            "metric_type": "Occurrence",
+                                            "selector": "single_counter:root/samples:counter"
+                                        },
                                     ],
-                                    "metric_id": 104,
-                                    "metric_type": "Occurrence",
-                                    "selector": "single_counter:root/samples:counter"
-                                }
+                                    "poll_rate_sec": 3000
+                                },
                             ],
-                            "poll_rate_sec": 3000,
                             "project_id": 5
                         }
                     ],
@@ -928,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_smapler_config() {
+    fn test_load_sampler_config() {
         let resource_dir = ResourceDir::new();
         let fire_test_template = resource_dir.write(
             "test_fire_template.json",
@@ -959,18 +963,22 @@ mod tests {
         let test_sampler_project = resource_dir.write(
             "test_project.json",
             json!({
-                "metrics": [
+                "data_sets": [
                     {
-                        "event_codes": [
-                            0,
-                            0
+                        "metrics": [
+                            {
+                                "event_codes": [
+                                    0,
+                                    0
+                                ],
+                                "metric_id": 102,
+                                "metric_type": "Integer",
+                                "selector": "bootstrap/bar/baz:root/samples:some_integer"
+                            },
                         ],
-                        "metric_id": 102,
-                        "metric_type": "Integer",
-                        "selector": "bootstrap/bar/baz:root/samples:some_integer"
+                        "poll_rate_sec": 3,
                     },
                 ],
-                "poll_rate_sec": 3,
                 "project_id": 5
             }),
         );
@@ -1023,114 +1031,119 @@ mod tests {
             vec![
                 ProjectConfig {
                     project_id: ProjectId(5),
-                    customer_id: CustomerId(1),
-                    poll_rate_sec: 3000,
-                    metrics: vec![
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "single_counter:root/samples:counter"
-                                    ).unwrap(),
+                    data_sets: vec![
+                        DataSetConfig{
+                            poll_rate_sec: 3000,
+                            metrics: vec![
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "single_counter:root/samples:counter"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(104),
+                                    metric_type: MetricType::Occurrence,
+                                    event_codes: vec![EventCode(0), EventCode(1)],
+                                    upload_once: false,
+                                }
                             ],
-                            metric_id: MetricId(104),
-                            metric_type: MetricType::Occurrence,
-                            event_codes: vec![EventCode(0), EventCode(1)],
-                            upload_once: false,
-                            project_id: None,
-                        }
-                    ]
+                        },
+                    ],
                 },
                 ProjectConfig {
                     project_id: ProjectId(5),
-                    customer_id: CustomerId(1),
-                    poll_rate_sec: 3,
-                    metrics: vec![
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "bootstrap/bar/baz:root/samples:some_integer"
-                                    ).unwrap(),
+                    data_sets: vec![
+                        DataSetConfig{
+                            poll_rate_sec: 3,
+                            metrics: vec![
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "bootstrap/bar/baz:root/samples:some_integer"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(102),
+                                    metric_type: MetricType::Integer,
+                                    event_codes: vec![EventCode(0), EventCode(0)],
+                                    upload_once: false,
+                                }
                             ],
-                            metric_id: MetricId(102),
-                            metric_type: MetricType::Integer,
-                            event_codes: vec![EventCode(0), EventCode(0)],
-                            upload_once: false,
-                            project_id: None,
-                        }
-                    ]
+                        },
+                    ],
                 },
                 ProjectConfig {
                     project_id: ProjectId(13),
-                    customer_id: CustomerId(1),
-                    poll_rate_sec: 3,
-                    metrics: vec![
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "component:root/samples:1111111111111111111111111111111111111111111111111111111111111111"
-                                    ).unwrap(),
+                    data_sets: vec![
+                        DataSetConfig {
+                            poll_rate_sec: 3,
+                            metrics: vec![
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "component:root/samples:1111111111111111111111111111111111111111111111111111111111111111"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(3),
+                                    metric_type: MetricType::Integer,
+                                    event_codes: vec![EventCode(1)],
+                                    upload_once: true,
+                                },
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "component:root/samples:2222222222222222222222222222222222222222222222222222222222222222"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(3),
+                                    metric_type: MetricType::Integer,
+                                    event_codes: vec![EventCode(2)],
+                                    upload_once: true,
+                                }
                             ],
-                            metric_id: MetricId(3),
-                            metric_type: MetricType::Integer,
-                            event_codes: vec![EventCode(1)],
-                            upload_once: true,
-                            project_id: None,
-                        },
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "component:root/samples:2222222222222222222222222222222222222222222222222222222222222222"
-                                    ).unwrap(),
-                            ],
-                            metric_id: MetricId(3),
-                            metric_type: MetricType::Integer,
-                            event_codes: vec![EventCode(2)],
-                            upload_once: true,
-                            project_id: None,
                         }
-                    ]
+                    ],
                 },
                 ProjectConfig {
                     project_id: ProjectId(13),
-                    customer_id: CustomerId(1),
-                    poll_rate_sec: 1200,
-                    metrics: vec![
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "<component_manager>:root/stats/histograms:core\\/foo"
-                                    ).unwrap(),
+                    data_sets: vec![
+                        DataSetConfig{
+                            poll_rate_sec: 1200,
+                            metrics: vec![
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "<component_manager>:root/stats/histograms:core\\/foo"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(1),
+                                    metric_type: MetricType::IntHistogram,
+                                    event_codes: vec![EventCode(1)],
+                                    upload_once: false,
+                                },
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "<component_manager>:root/stats/histograms:core\\/bar"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(1),
+                                    metric_type: MetricType::IntHistogram,
+                                    event_codes: vec![EventCode(2)],
+                                    upload_once: false,
+                                },
+                                MetricConfig {
+                                    selectors: vec![
+                                        selectors::parse_verbose(
+                                        "<component_manager>:root/stats/histograms:core\\/baz"
+                                            ).unwrap(),
+                                    ],
+                                    metric_id: MetricId(1),
+                                    metric_type: MetricType::IntHistogram,
+                                    event_codes: vec![EventCode(3)],
+                                    upload_once: false,
+                                },
                             ],
-                            metric_id: MetricId(1),
-                            metric_type: MetricType::IntHistogram,
-                            event_codes: vec![EventCode(1)],
-                            upload_once: false,
-                            project_id: None,
-                        },
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "<component_manager>:root/stats/histograms:core\\/bar"
-                                    ).unwrap(),
-                            ],
-                            metric_id: MetricId(1),
-                            metric_type: MetricType::IntHistogram,
-                            event_codes: vec![EventCode(2)],
-                            upload_once: false,
-                            project_id: None,
-                        },
-                        MetricConfig {
-                            selectors: vec![
-                                selectors::parse_verbose(
-                                "<component_manager>:root/stats/histograms:core\\/baz"
-                                    ).unwrap(),
-                            ],
-                            metric_id: MetricId(1),
-                            metric_type: MetricType::IntHistogram,
-                            event_codes: vec![EventCode(3)],
-                            upload_once: false,
-                            project_id: None,
-                        },
+                        }
                     ]
                 }
             ]
