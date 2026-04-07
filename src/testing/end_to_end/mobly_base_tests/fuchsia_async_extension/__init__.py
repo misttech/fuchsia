@@ -107,13 +107,69 @@ class _AsyncBaseTestClassMeta(_BaseTestClass):
                 setattr(cls, attr_name, make_sync_wrapper(attr_value))
 
 
+class TestCases:
+    """Base class for modular test cases."""
+
+    def __init__(self) -> None:
+        self._mobly_test: "AsyncBaseTestClass | None" = None
+
+    @property
+    def test(self) -> "AsyncBaseTestClass":
+        assert (
+            self._mobly_test is not None
+        ), "mobly_test was not injected properly."
+        return self._mobly_test
+
+    async def setup_test(
+        self,
+    ) -> None:
+        """Called before each test case."""
+
+    async def teardown_test(self) -> None:
+        """Called after each test case."""
+
+    @classmethod
+    def inject_test_cases(cls, mobly_test: "AsyncBaseTestClass") -> None:
+        tc_instance = cls()
+        tc_instance._mobly_test = mobly_test
+        for attr_name, method in inspect.getmembers(cls, callable):
+            if attr_name.startswith("test_"):
+
+                @functools.wraps(method)
+                async def wrapper(
+                    *args: Any, method: Any = method, **kwargs: Any
+                ) -> None:
+                    try:
+                        await tc_instance.setup_test()
+
+                        if inspect.iscoroutinefunction(method):
+                            await method(tc_instance, *args, **kwargs)
+                        else:
+                            method(tc_instance, *args, **kwargs)
+                    finally:
+                        await tc_instance.teardown_test()
+
+                mobly_test.generate_tests(
+                    test_logic=wrapper,
+                    name_func=lambda *a, name=attr_name: name,
+                    arg_sets=[()],
+                )
+
+
 class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
     # These methods intentionally mask their Mobly synchronous counterparts.
     # This ensures each subclass of this one will define these methods as async,
     # because mypy checks will enforce that. Then the __init_subclass__ in
     # _AsyncBaseTestClassMeta will wrap them with make_sync_wrapper.
+
+    TEST_CASES: Sequence[type[TestCases]] | None = None
+
     async def pre_run(self) -> None:
-        pass
+        if self.TEST_CASES is None:
+            return
+
+        for tc in self.TEST_CASES:
+            tc.inject_test_cases(self)
 
     async def setup_generated_tests(self) -> None:
         pass

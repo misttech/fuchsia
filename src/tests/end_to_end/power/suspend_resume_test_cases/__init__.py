@@ -5,7 +5,7 @@
 import logging
 import pathlib
 from datetime import timedelta
-from typing import Callable
+from typing import Any, Callable
 
 import fuchsia_base_test
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
@@ -18,15 +18,6 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test cases for suspend and resume."""
-
-    async def setup_test(
-        self,
-        fuchsia_devices: list[FuchsiaDevice],
-        output_file_path: Callable[[str], pathlib.Path],
-    ) -> None:
-        await super().setup_test(fuchsia_devices, output_file_path)
-        self.dut = fuchsia_devices[0]
-        self.output_file_path = output_file_path
 
     async def test_suspend_resume(self) -> None:
         await power.suspend_resume(

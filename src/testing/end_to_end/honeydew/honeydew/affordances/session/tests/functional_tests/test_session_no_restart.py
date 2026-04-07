@@ -4,8 +4,6 @@
 """Mobly test for Session affordance."""
 
 import logging
-import pathlib
-from typing import Callable
 
 import fuchsia_base_test
 from mobly import asserts, test_runner
@@ -13,7 +11,6 @@ from mobly import asserts, test_runner
 from honeydew import errors
 from honeydew.affordances.session import errors as session_errors
 from honeydew.affordances.session import session_using_ffx
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import common
 
@@ -26,16 +23,6 @@ _TILE_URL = (
 
 class SessionNoRestartTestCases(fuchsia_base_test.FuchsiaTestCases):
     """Test logic for Session affordance without restart."""
-
-    async def setup_test(
-        self,
-        fuchsia_devices: list[FuchsiaDevice],
-        output_file_path: Callable[[str], pathlib.Path],
-    ) -> None:
-        await super().setup_test(fuchsia_devices, output_file_path)
-        self.fuchsia_devices = fuchsia_devices
-        self.output_file_path = output_file_path
-        self.dut = self.fuchsia_devices[0]
 
     async def test_add_component(self) -> None:
         """Test case for session.add_component()"""

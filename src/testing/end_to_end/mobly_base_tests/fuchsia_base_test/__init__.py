@@ -34,6 +34,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 P = ParamSpec("P")
 T = TypeVar("T")
 
+
 # LINT.IfChange
 HEALTH_CHECK_FAILURE_MESSAGE = (
     "One or more FuchsiaDevice's health check failed in "
@@ -83,45 +84,54 @@ class TracingOn(enum.StrEnum):
     NEVER = "never"
 
 
-class FuchsiaTestCases:
-    """Base class for modular test cases."""
+class FuchsiaTestCases(fuchsia_async_extension.TestCases):
+    TAG: str
+    tests: list[str]
+    root_output_path: str
+    log_path: str
+    user_params: dict[str, Any]
+    controller_configs: dict[str, Any]
+    current_test_info: Any
 
-    async def setup_test(  # type: ignore
-        self,
-        fuchsia_devices: list[fuchsia_device.FuchsiaDevice],
-        output_file_path: Callable[[str], pathlib.Path],
-    ):
-        """Called before each test case."""
+    fuchsia_devices: list[fuchsia_device.FuchsiaDevice]
+    dut: fuchsia_device.FuchsiaDevice
+    snapshot_on: SnapshotOn
+    tracing_on: TracingOn
+    test_case_path: str
 
-    async def teardown_test(self):  # type: ignore
-        """Called after each test case."""
+    @property
+    def test(self) -> "FuchsiaBaseTest":
+        # Downcast super().test to FuchsiaBaseTest. This avoids the
+        # complexity of making FuchsiaTestCases a generic type which
+        # leads to a paradox where we want FuchsiaTestCases to be
+        # covariant but including the generic in any method makes
+        # FuchsiaTestCases contravariant.
+        test = super().test
+        assert isinstance(test, FuchsiaBaseTest)
+        return test
 
-    def inject_test_cases(self, mobly_test: "FuchsiaBaseTest") -> None:
-        for attr_name, method in inspect.getmembers(self, callable):
-            if attr_name.startswith("test_"):
+    async def setup_test(self) -> None:
+        await super().setup_test()
 
-                @functools.wraps(method)
-                async def wrapper(
-                    *args: Any, method: Any = method, **kwargs: Any
-                ) -> None:
-                    try:
-                        await self.setup_test(
-                            mobly_test.fuchsia_devices,
-                            mobly_test.output_file_path,
-                        )
+        # Copy public fields from BaseTestClass
+        self.TAG = self.test.TAG
+        self.tests = self.test.tests
+        self.root_output_path = self.test.root_output_path
+        self.log_path = self.test.log_path
+        self.user_params = self.test.user_params
+        self.controller_configs = self.test.controller_configs
+        self.current_test_info = self.test.current_test_info
 
-                        if inspect.iscoroutinefunction(method):
-                            await method(*args, **kwargs)
-                        else:
-                            method(*args, **kwargs)
-                    finally:
-                        await self.teardown_test()
+        # Copy public fields from FuchsiaBaseTest
+        self.fuchsia_devices = self.test.fuchsia_devices
+        self.test_case_path = self.test.test_case_path
+        self.snapshot_on = self.test.snapshot_on
+        self.tracing_on = self.test.tracing_on
+        self.dut = self.fuchsia_devices[0]
 
-                mobly_test.generate_tests(
-                    test_logic=wrapper,
-                    name_func=lambda *a, name=attr_name: name,
-                    arg_sets=[()],
-                )
+    # Copy public methods from FuchsiaBaseTest
+    def output_file_path(self, file_name: str) -> pathlib.Path:
+        return self.test.output_file_path(file_name)
 
 
 class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
@@ -142,14 +152,9 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             Default value is "never".
     """
 
-    TEST_CASES: list[type[FuchsiaTestCases]] | None = None
-
-    async def pre_run(self):  # type: ignore
-        if self.TEST_CASES is None:
-            return
-
-        for tc in self.TEST_CASES:
-            tc().inject_test_cases(self)
+    snapshot_on: SnapshotOn
+    tracing_on: TracingOn
+    test_case_path: str
 
     async def setup_class(self):  # type: ignore
         """setup_class is called once before running tests.
@@ -560,7 +565,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         )
 
         try:
-            self.snapshot_on: SnapshotOn = SnapshotOn(snapshot_on)
-            self.tracing_on: TracingOn = TracingOn(tracing_on)
+            self.snapshot_on = SnapshotOn(snapshot_on)
+            self.tracing_on = TracingOn(tracing_on)
         except ValueError as e:
             raise signals.TestAbortClass("invalid metric user_param") from e
