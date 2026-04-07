@@ -49,6 +49,12 @@ type NodeInfo = table {
     /// Information about the node's bus topology.
     @available(added=26)
     11: bus_topology vector<fuchsia.driver.framework.BusInfo>:MAX_SEGMENTS;
+
+    /// The topological path of the node in devfs.
+    // TODO(https://fxbug.dev/500119481): Remove this field once all clients are
+    // migrated away from devfs.
+    @available(added=NEXT)
+    12: topological_path string:NODE_MONIKER_MAX;
 };
 
 /// Information about a node binding to either a driver or a composite.

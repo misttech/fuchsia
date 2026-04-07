@@ -8,6 +8,8 @@ use crate::subcommands::node::common;
 
 use anyhow::Result;
 use args::ShowNodeCommand;
+use flex_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_framework as fdf;
 #[cfg(feature = "fdomain")]
 use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
@@ -15,7 +17,6 @@ use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 use serde::Serialize;
 use std::io::Write;
-use {flex_fuchsia_driver_development as fdd, flex_fuchsia_driver_framework as fdf};
 
 #[derive(Serialize)]
 pub struct NodeDetails {
@@ -29,6 +30,9 @@ pub struct NodeDetails {
     pub bus_topology: Vec<BusTopology>,
     pub properties: Vec<NodeProperty>,
     pub offers: Vec<NodeOffer>,
+    // TODO(https://fxbug.dev/500119481): Remove this field once all clients are
+    // migrated away from devfs.
+    pub topological_path: String,
 }
 
 #[derive(Serialize)]
@@ -167,6 +171,7 @@ pub async fn get_node_details(
         bus_topology,
         properties,
         offers,
+        topological_path: node.topological_path.unwrap_or_default(),
     })
 }
 
@@ -283,6 +288,8 @@ fn print_table(node: fdd::NodeInfo, with_style: bool, writer: &mut dyn Write) ->
 
     table.add_row(row!(r->"Name:", name));
     table.add_row(row!(r->"Moniker:", moniker));
+    let topo_path = node.topological_path.unwrap_or_default();
+    table.add_row(row!(r->"Topological Path:", topo_path));
     table.add_row(row!(r->"Owner:", owner));
     table.add_row(row!(r->"Node State:", state));
     table.add_row(row!(r->"Host Koid:", koid));

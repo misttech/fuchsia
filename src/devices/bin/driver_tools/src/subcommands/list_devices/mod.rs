@@ -7,14 +7,13 @@ pub mod args;
 use crate::common::{node_property_key_to_string, node_property_value_to_string};
 use anyhow::{Result, anyhow};
 use args::ListDevicesCommand;
+use fidl_fuchsia_component_decl as fdecl;
+use flex_fuchsia_driver_development as fdd;
+use flex_fuchsia_driver_framework as fdf;
 use fuchsia_driver_dev::Device;
 #[cfg(feature = "fdomain")]
 use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
-use {
-    fidl_fuchsia_component_decl as fdecl, flex_fuchsia_driver_development as fdd,
-    flex_fuchsia_driver_framework as fdf,
-};
 
 trait DevicePrinter {
     fn print(&self) -> Result<()>;
@@ -30,8 +29,10 @@ impl DevicePrinter for Device {
     fn print_verbose(&self) -> Result<()> {
         let moniker = self.get_moniker().expect("Node does not have a moniker");
         let (_, name) = moniker.rsplit_once('.').unwrap_or(("", &moniker));
+        let topological_path = self.0.topological_path.as_deref().unwrap_or("None");
         println!("{0: <9}: {1}", "Name", name);
         println!("{0: <9}: {1}", "Moniker", moniker);
+        println!("{0: <9}: {1}", "Topology", topological_path);
 
         if self.0.quarantined == Some(true)
             && self.0.bound_driver_url != Some("unbound".to_string())

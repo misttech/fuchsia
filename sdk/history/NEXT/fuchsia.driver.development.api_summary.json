@@ -618,6 +618,12 @@
         "type": "bool"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.driver.development/NodeInfo.topological_path",
+        "ordinal": "12",
+        "type": "string:1024"
+    },
+    {
         "kind": "table",
         "name": "fuchsia.driver.development/NodeInfo"
     },

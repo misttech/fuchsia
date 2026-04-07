@@ -79,13 +79,12 @@ zx::result<fdd::wire::NodeInfo> CreateDeviceInfo(fidl::AnyArena& allocator,
   }
 
   device_info.moniker(fidl::StringView(allocator, node->MakeComponentMoniker()));
+  device_info.topological_path(fidl::StringView(allocator, node->MakeTopologicalPath()));
 
   device_info.quarantined(node->quarantined());
   device_info.bound_driver_url(fidl::StringView(allocator, node->driver_url()));
 
   SetNodeInfoBuilderNodeProperties(allocator, *node, device_info);
-
-  // TODO(https://fxbug.dev/42172220): Get topological path
 
   auto driver_host = node->driver_host();
   if (node->is_bound() && driver_host) {
