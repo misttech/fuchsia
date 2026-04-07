@@ -37,14 +37,24 @@ class FakeBti final : public fake_object::FakeObject {
   zx_status_t get_info(zx_handle_t handle, uint32_t topic, void* buffer, size_t buffer_size,
                        size_t* actual_count, size_t* avail_count) override;
 
-  uint64_t& pmo_count() { return pmo_count_; }
+  uint64_t pmo_count() const {
+    std::lock_guard guard(lock_);
+    return pmo_count_;
+  }
+
+  void UpdatePmoCount(int delta) {
+    std::lock_guard guard(lock_);
+    pmo_count_ += delta;
+  }
 
   void set_paddrs(cpp20::span<const zx_paddr_t> paddrs) {
+    std::lock_guard guard(lock_);
     paddrs_.assign(paddrs.begin(), paddrs.end());
     paddrs_index_ = 0;
   }
 
   bool PopulatePaddrs(zx_paddr_t* paddrs, size_t paddrs_count) {
+    std::lock_guard guard(lock_);
     for (size_t i = 0; i < paddrs_count; i++) {
       if (paddrs_.empty()) {
         paddrs[i] = FAKE_BTI_PHYS_ADDR;
@@ -153,9 +163,9 @@ class FakeBti final : public fake_object::FakeObject {
 
   mutable std::mutex lock_;
   std::vector<PinnedVmoInfo> pinned_vmos_ __TA_GUARDED(lock_);
-  std::vector<zx_paddr_t> paddrs_;
-  size_t paddrs_index_ = 0;
-  uint64_t pmo_count_ = 0;
+  std::vector<zx_paddr_t> paddrs_ __TA_GUARDED(lock_);
+  size_t paddrs_index_ __TA_GUARDED(lock_) = 0;
+  uint64_t pmo_count_ __TA_GUARDED(lock_) = 0;
 };
 
 class FakePmt final : public fake_object::FakeObject {
@@ -388,7 +398,7 @@ zx_status_t zx_bti_pin(zx_handle_t bti_handle, uint32_t options, zx_handle_t vmo
   zx::result add_status = fake_object::FakeHandleTable().Add(std::move(new_pmt));
   if (add_status.is_ok()) {
     *out = add_status.value();
-    ++bti_obj->pmo_count();
+    bti_obj->UpdatePmoCount(1);
   }
 
   if (add_status.is_error()) {
@@ -414,7 +424,7 @@ zx_status_t zx_pmt_unpin(zx_handle_t handle) {
   std::shared_ptr<fake_bti::FakePmt> pmt =
       std::static_pointer_cast<fake_bti::FakePmt>(get_status.value());
   pmt->Unpin();
-  --pmt->bti().pmo_count();
+  pmt->bti().UpdatePmoCount(-1);
   zx::result remove_status = fake_object::FakeHandleTable().Remove(handle);
   ZX_ASSERT_MSG(remove_status.is_ok(), "fake pmt_unpin: Failed to remove handle %u: %s\n", handle,
                 zx_status_get_string(remove_status.status_value()));
