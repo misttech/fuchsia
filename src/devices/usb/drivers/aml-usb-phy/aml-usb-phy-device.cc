@@ -183,7 +183,8 @@ zx::result<> AmlUsbPhyDevice::Start() {
                              dr_mode.value());
       } break;
       case fuchsia_hardware_usb_phy::ProtocolVersion::kUsb30: {
-        usbphy3.emplace_back(std::move(*mmio), is_otg_capable.value(), dr_mode.value());
+        usbphy3.emplace_back(usbphy3.size(), std::move(*mmio), is_otg_capable.value(),
+                             dr_mode.value());
       } break;
       default:
         fdf::error("Unsupported protocol type {}", static_cast<uint32_t>(protocol.value()));
@@ -262,8 +263,8 @@ zx::result<> AmlUsbPhyDevice::CreateNode() {
       return zx::error(result.status());
     }
   }
-  controller_.Bind(std::move(controller_endpoints.client));
-  node_.Bind(std::move(node_endpoints->client));
+  controller_.Bind(std::move(controller_endpoints.client), dispatcher());
+  node_client_ = std::move(node_endpoints->client);
 
   return zx::ok();
 }
@@ -299,53 +300,76 @@ zx::result<> AmlUsbPhyDevice::ChildNode::Publish() {
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, property_did_),
   };
-  zx::result child = fdf::AddChild(parent_->node_.client_end(), *fdf::Logger::GlobalInstance(),
+  zx::result child = fdf::AddChild(parent_->node_client_.borrow(), *fdf::Logger::GlobalInstance(),
                                    name_, properties, offers);
   if (child.is_error()) {
     fdf::error("Failed to add child: {} for device {}", child, name_);
     return child.take_error();
   }
-  child_controller_.Bind(std::move(child.value()));
+  child_controller_.Bind(std::move(child.value()), parent_->dispatcher(), this);
+  fdf::info("Add {} completed", name_.data());
   return zx::ok();
 }
 
-zx::result<> AmlUsbPhyDevice::ChildNode::UnPublish() {
+void AmlUsbPhyDevice::ChildNode::UnPublish(UnPublishCompleter completer) {
   std::lock_guard<std::mutex> _(lock_);
   if (count_ == 0) {
     // Nothing to remove.
-    return zx::ok();
+    completer(zx::ok());
+    return;
   }
   count_--;
   if (count_ != 0) {
     // Has more instances.
-    return zx::ok();
+    completer(zx::ok());
+    return;
   }
 
-  zx::result<> ret = zx::ok();
   // Reset.
-  if (child_controller_) {
+  if (child_controller_.is_valid()) {
+    completer_ = std::move(completer);
     auto result = child_controller_->Remove();
     if (!result.ok()) {
-      fdf::error("Failed to remove {}. {}", name_.data(), result.FormatDescription().c_str());
-      ret = zx::error(result.status());
+      fdf::error("Failed to remove {}. Status: {}", name_.data(), result.status_string());
+      child_controller_ = {};
+      UnPublishCompleter c = std::move(completer_);
+      if (c) {
+        c(zx::error(result.status()));
+      }
     }
-    child_controller_.TakeClientEnd().reset();
+  } else {
+    completer(zx::ok());
   }
+
   {
     zx::result result =
         parent_->outgoing()->RemoveService<fuchsia_hardware_usb_phy::Service>(name_);
     if (result.is_error()) {
       fdf::error("Failed to remove device service for {}:{}", name_.data(), result);
-      ret = result;
     }
   }
-  return ret;
+}
+
+void AmlUsbPhyDevice::ChildNode::on_fidl_error(fidl::UnbindInfo info) {
+  UnPublishCompleter completer;
+  {
+    std::lock_guard<std::mutex> _(lock_);
+    completer = std::move(completer_);
+    child_controller_ = {};
+  }
+  if (completer) {
+    if (info.is_peer_closed()) {
+      completer(zx::ok());
+    } else {
+      completer(zx::error(info.status()));
+    }
+  }
+  fdf::info("Remove {} completed", name_.data());
 }
 
 void AmlUsbPhyDevice::Stop() {
-  auto status = controller_->Remove();
-  if (!status.ok()) {
-    fdf::error("Could not remove child: {}", status.status_string());
+  if (controller_.is_valid()) {
+    (void)controller_->Remove();
   }
 }
 
@@ -353,7 +377,11 @@ zx::result<fdf::MmioBuffer> AmlUsbPhyDevice::MapMmio(fdf::PDev& pdev, uint32_t i
   return pdev.MapMmio(idx);
 }
 
-void AmlUsbPhyDevice::UnbindOnFailure() { node_.TakeClientEnd().TakeChannel().reset(); }
+void AmlUsbPhyDevice::UnbindOnFailure() {
+  if (controller_.is_valid()) {
+    (void)controller_->Remove();
+  }
+}
 
 }  // namespace aml_usb_phy
 

@@ -10,12 +10,15 @@
 #include <lib/zx/clock.h>
 #include <lib/zx/interrupt.h>
 
+#include <string>
+
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gtest/gtest.h>
 #include <soc/aml-common/aml-registers.h>
 
 #include "src/devices/registers/testing/mock-registers/mock-registers.h"
 #include "src/devices/usb/drivers/aml-usb-phy/usb-phy-regs.h"
+#include "src/devices/usb/drivers/aml-usb-phy/usb-phy3-regs.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace aml_usb_phy {
@@ -28,8 +31,23 @@ class FakeMmio {
   FakeMmio() : region_(sizeof(uint32_t), kRegisterCount) {
     for (size_t c = 0; c < kRegisterCount; c++) {
       region_[c * sizeof(uint32_t)].SetReadCallback([this, c]() { return reg_values_[c]; });
-      region_[c * sizeof(uint32_t)].SetWriteCallback(
-          [this, c](uint64_t value) { reg_values_[c] = value; });
+      region_[c * sizeof(uint32_t)].SetWriteCallback([this, c](uint64_t value) {
+        reg_values_[c] = value;
+        // Automatically acknowledge CR bus access for PHY3.
+        if (c * sizeof(uint32_t) == PHY3_R4_OFFSET) {
+          if (value & (1 << 19 /* cap_addr */ | 1 << 18 /* cap_data */ | 1 << 1 /* read */ |
+                       1 << 0 /* write */)) {
+            reg_values_[PHY3_R5_OFFSET >> 2] |= (1 << 16 /* cr_ack */);
+          } else {
+            reg_values_[PHY3_R5_OFFSET >> 2] &= ~(1 << 16 /* cr_ack */);
+          }
+        }
+        // Automatically set PHY ready for USB 2.0 PHYs (U2P_R1).
+        if (c * sizeof(uint32_t) == U2P_R1_OFFSET ||
+            c * sizeof(uint32_t) == (U2P_R1_OFFSET + U2P_REGISTER_OFFSET)) {
+          reg_values_[c] |= (1 << 0 /* phy_rdy */);
+        }
+      });
     }
   }
 
@@ -148,12 +166,13 @@ class AmlUsbPhyTest : public testing::Test {
     driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(interrupt_); });
     ASSERT_OK(driver_test_.StartDriver());
 
-    driver_test_.runtime().RunUntil(
-        [this]() {
-          return driver_test_.RunInNodeContext<bool>(
-              [](auto& node) { return node.children().size() == 1; });
-        },
-        zx::usec(1000));
+    // Wait for Init() to publish initial children.
+    // Init() includes an OTG stabilization delay of 1s plus Mode 0 (Host) publication.
+    // In this test environment, xhci is added as a sibling of the driver node under the root.
+    driver_test_.runtime().RunUntil([this]() {
+      return driver_test_.RunInNodeContext<bool>(
+          [](auto& node) { return node.children().size() == 1; });
+    });
   }
 
   void TearDown() override {
@@ -188,16 +207,18 @@ class AmlUsbPhyTest : public testing::Test {
 
   void CheckDevices(std::span<const std::string> devices) {
     driver_test_.RunInNodeContext([&](auto& node) {
-      const std::string kAmlUsbPhyDeviceName{AmlUsbPhyDevice::kDeviceName};
       auto& children = node.children();
 
-      ASSERT_TRUE(children.contains(kAmlUsbPhyDeviceName));
-      auto& aml_usb_phy_device_node_children = children.at(kAmlUsbPhyDeviceName).children();
+      // We expect the driver node itself to be present.
+      ASSERT_TRUE(children.contains(std::string(AmlUsbPhyDevice::kDeviceName)));
+      auto& aml_usb_phy_device_node_children =
+          children.at(std::string(AmlUsbPhyDevice::kDeviceName)).children();
 
-      ASSERT_EQ(aml_usb_phy_device_node_children.size(), devices.size());
       for (const auto& device : devices) {
         EXPECT_TRUE(aml_usb_phy_device_node_children.contains(device));
       }
+      // Verify no extra devices are present beyond the driver and the requested devices.
+      ASSERT_EQ(aml_usb_phy_device_node_children.size(), devices.size());
     });
   }
 
@@ -219,11 +240,12 @@ TEST_F(AmlUsbPhyTest, SetMode) {
 
   // Trigger interrupt, and switch to Peripheral mode.
   TriggerInterruptAndCheckMode(fuchsia_hardware_usb_phy::Mode::kPeripheral);
+  // PHY 0 and 2 are still in Host mode (xhci), while PHY 1 is now in Peripheral mode (dwc2).
   CheckDevices(std::vector<std::string>{"xhci", "dwc2"});
 
   // Trigger interrupt, and switch (back) to Host mode.
   TriggerInterruptAndCheckMode(fuchsia_hardware_usb_phy::Mode::kHost);
-  // The dwc2 device should be removed.
+  // The dwc2 device should be removed, leaving only xhci.
   CheckDevices(std::vector<std::string>{"xhci"});
 }
 

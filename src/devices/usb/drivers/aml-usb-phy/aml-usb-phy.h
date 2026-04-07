@@ -7,8 +7,14 @@
 
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/fit/function.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/result.h>
+
+#include <memory>
+#include <vector>
 
 #include <fbl/macros.h>
 
@@ -62,7 +68,8 @@ class AmlUsbPhy : public fidl::Server<fuchsia_hardware_usb_phy::UsbPhy> {
   zx_status_t InitPhy3();
   zx_status_t InitOtg();
 
-  zx::result<> ChangeMode(UsbPhyBase& phy, fuchsia_hardware_usb_phy::Mode new_mode);
+  void ChangeMode(UsbPhyBase& phy, fuchsia_hardware_usb_phy::Mode new_mode,
+                  fit::callback<void(zx::result<>)> completer);
 
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
@@ -85,6 +92,8 @@ class AmlUsbPhy : public fidl::Server<fuchsia_hardware_usb_phy::UsbPhy> {
   // S905D3.
   const bool needs_hack_;
   bool dwc2_connected_ = false;
+
+  std::vector<std::unique_ptr<async::TaskClosure>> init_tasks_;
 };
 
 }  // namespace aml_usb_phy

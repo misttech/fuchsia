@@ -37,7 +37,7 @@ void dump_phy2_regs(uint32_t idx, const fdf::MmioBuffer& mmio) {
 }  // namespace
 
 void UsbPhy2::dump_regs() const {
-  fdf::info("    UsbPhy2[{}]", idx());
+  fdf::info("    {}", name());
   dump_phy2_regs(idx(), mmio());
 }
 
@@ -143,7 +143,7 @@ void UsbPhy2::SetModeInternal(fuchsia_hardware_usb_phy::Mode mode, fdf::MmioBuff
     return;
   }
 
-  fdf::info("Entering USB {} Mode",
+  fdf::info("{}: Entering USB {} Mode", name(),
             mode == fuchsia_hardware_usb_phy::Mode::kHost ? "Host" : "Peripheral");
 
   if (mode == phy_mode())
@@ -165,7 +165,7 @@ void UsbPhy2::SetModeInternal(fuchsia_hardware_usb_phy::Mode mode, fdf::MmioBuff
         .WriteTo(&usbctrl_mmio);
   }
 
-  U2P_R0_V2::Get(idx_)
+  U2P_R0_V2::Get(idx())
       .ReadFrom(&usbctrl_mmio)
       .set_host_device(mode == fuchsia_hardware_usb_phy::Mode::kHost)
       .set_por(0)

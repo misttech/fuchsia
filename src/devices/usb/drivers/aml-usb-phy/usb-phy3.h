@@ -13,8 +13,10 @@ namespace aml_usb_phy {
 
 class UsbPhy3 final : public UsbPhyBase {
  public:
-  UsbPhy3(fdf::MmioBuffer mmio, bool is_otg_capable, fuchsia_hardware_usb_phy::Mode dr_mode)
-      : UsbPhyBase(std::move(mmio), is_otg_capable, dr_mode) {}
+  UsbPhy3(uint8_t idx, fdf::MmioBuffer mmio, bool is_otg_capable,
+          fuchsia_hardware_usb_phy::Mode dr_mode)
+      : UsbPhyBase(idx, fuchsia_hardware_usb_phy::ProtocolVersion::kUsb30, std::move(mmio),
+                   is_otg_capable, dr_mode) {}
 
   zx_status_t Init(fdf::MmioBuffer& usbctrl_mmio);
 

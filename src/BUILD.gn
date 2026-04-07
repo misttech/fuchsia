@@ -144,11 +144,6 @@ bazel_test_package_group("bazel_tests") {
           "//src/devices/usb/drivers/aml-usb-phy:aml-usb-phy-test-package"
       test_package_name = "aml-usb-phy-test"
       test_component_names = [ "aml-usb-phy-test-bin" ]
-      test_specs = {
-        log_settings = {
-          max_severity = "ERROR"
-        }
-      }
     },
     {
       test_package_target =

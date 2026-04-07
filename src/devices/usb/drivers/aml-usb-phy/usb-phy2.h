@@ -17,18 +17,15 @@ class UsbPhy2 final : public UsbPhyBase {
  public:
   UsbPhy2(uint8_t idx, fdf::MmioBuffer mmio, bool is_otg_capable,
           fuchsia_hardware_usb_phy::Mode dr_mode)
-      : UsbPhyBase(std::move(mmio), is_otg_capable, dr_mode), idx_(idx) {}
+      : UsbPhyBase(idx, fuchsia_hardware_usb_phy::ProtocolVersion::kUsb20, std::move(mmio),
+                   is_otg_capable, dr_mode) {}
 
   void InitPll(fuchsia_hardware_usb_phy::AmlogicPhyType type, bool needs_hack);
-
-  uint8_t idx() const { return idx_; }
 
   void dump_regs() const override;
 
  private:
   void SetModeInternal(fuchsia_hardware_usb_phy::Mode mode, fdf::MmioBuffer& usbctrl_mmio) override;
-
-  const uint8_t idx_;  // For indexing into usbctrl_mmio.
 };
 
 }  // namespace aml_usb_phy
