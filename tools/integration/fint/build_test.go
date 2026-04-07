@@ -53,7 +53,7 @@ func (m fakeBuildModules) Tools() build.Tools                            { retur
 
 type fakeBuildAPIClient struct{}
 
-func (c fakeBuildAPIClient) ExportDebugSymbols(ctx context.Context, dir string) error {
+func (c fakeBuildAPIClient) ExportDebugSymbols(ctx context.Context, dir string, withBreakpad bool) error {
 	return os.WriteFile(filepath.Join(dir, "debug_symbols.json"), []byte(`[]`), 0o600)
 }
 
@@ -198,6 +198,9 @@ func TestBuild(t *testing.T) {
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
+				LogFiles: map[string]string{
+					"debug_symbols.json": filepath.Join(artifactDir, "debug_symbols.json"),
+				},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
 			mustRun: []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --error_logging_output=[^ ]+ --chrome_trace ninja_build_trace\.json\.gz --action_metrics_output ninja_action_metrics\.json$`},
@@ -218,10 +221,11 @@ func TestBuild(t *testing.T) {
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
-				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 				LogFiles: map[string]string{
+					"debug_symbols.json":   filepath.Join(artifactDir, "debug_symbols.json"),
 					"ninja dry run output": filepath.Join(artifactDir, "ninja_dry_run_output"),
 				},
+				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
 		},
 		{
@@ -344,6 +348,9 @@ func TestBuild(t *testing.T) {
 					filepath.Join(buildDir, "sub1", buildstatsJSONName),
 					filepath.Join(buildDir, "sub2", buildstatsJSONName),
 				},
+				LogFiles: map[string]string{
+					"debug_symbols.json": filepath.Join(artifactDir, "debug_symbols.json"),
+				},
 				NinjatraceJsonFiles: []string{
 					filepath.Join(buildDir, ninjatraceJSONName),
 					filepath.Join(buildDir, "sub1", ninjatraceJSONName),
@@ -366,6 +373,9 @@ func TestBuild(t *testing.T) {
 					filepath.Join(buildDir, buildstatsJSONName),
 					filepath.Join(buildDir, "sub/sub4", buildstatsJSONName),
 				},
+				LogFiles: map[string]string{
+					"debug_symbols.json": filepath.Join(artifactDir, "debug_symbols.json"),
+				},
 				NinjatraceJsonFiles: []string{
 					filepath.Join(buildDir, ninjatraceJSONName),
 					filepath.Join(buildDir, "sub/sub4", ninjatraceJSONName),
@@ -382,10 +392,11 @@ func TestBuild(t *testing.T) {
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
-				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 				LogFiles: map[string]string{
+					"debug_symbols.json": filepath.Join(artifactDir, "debug_symbols.json"),
 					"explain_output.txt": filepath.Join(artifactDir, "explain_output.txt"),
 				},
+				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
 		},
 		{
@@ -443,7 +454,11 @@ func TestBuild(t *testing.T) {
 				return nil
 			},
 			// these errors are now ignored
-			expectedArtifacts: &fintpb.BuildArtifacts{},
+			expectedArtifacts: &fintpb.BuildArtifacts{
+				LogFiles: map[string]string{
+					"debug_symbols.json": filepath.Join(artifactDir, "debug_symbols.json"),
+				},
+			},
 		},
 		{
 			name: "extra ad-hoc ninja targets",

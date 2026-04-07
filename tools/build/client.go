@@ -78,16 +78,17 @@ func (c BuildAPIClient) GetModulePaths() ([]string, error) {
 	return paths, nil
 }
 
-func (c BuildAPIClient) ExportDebugSymbols(ctx context.Context, outputDir string) error {
-	cmd := exec.CommandContext(
-		ctx,
-		c.toolPath,
+func (c BuildAPIClient) ExportDebugSymbols(ctx context.Context, outputDir string, withBreakpad bool) error {
+	args := []string{
 		"--build-dir",
 		c.buildDir,
 		"export_last_build_debug_symbols",
-		"--with-breakpad-symbols",
 		fmt.Sprintf("--output-dir=%s", outputDir),
-	)
+	}
+	if withBreakpad {
+		args = append(args, "--with-breakpad-symbols")
+	}
+	cmd := exec.CommandContext(ctx, c.toolPath, args...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("export_last_build_debug_symbols failed: %w", err)
