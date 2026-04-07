@@ -9,6 +9,7 @@
 #   --rbe : enable RBE using reproxy
 #   --resultstore : enable uploading build metadata to ResultStore service
 #   --profile : enable system profiling during build
+#   --experimental-tui : enable terminal UI for monitoring build
 
 set -euo pipefail
 
@@ -24,6 +25,7 @@ source "${FUCHSIA_DIR}/tools/devshell/lib/platform.sh"
 readonly profile_wrapper="${FUCHSIA_DIR}/build/profile/profile_wrap.sh"
 readonly reproxy_wrapper="${FUCHSIA_DIR}/build/rbe/fuchsia-reproxy-wrap.sh"
 readonly rsproxy_wrapper="${FUCHSIA_DIR}/build/resultstore/fuchsia-rsproxy-wrap.sh"
+readonly tui_wrapper="${FUCHSIA_DIR}/build/tui/build-tui-wrap.sh"
 
 verbose=0
 function debug() {
@@ -61,6 +63,8 @@ options:
   --pre-build-uploads : configure-time invocation artifacts to upload
   --post-build-uploads : end-of-build invocation artifacts to upload
 
+  --experimental-tui : enable terminal UI for monitoring build
+
   The wrapped build command follows --.
 EOF
 }
@@ -70,6 +74,7 @@ collect_system_profile=0  # fx build-profile
 dry_run=0
 enable_resultstore=0
 needs_reproxy_rbe=0
+tui=0
 
 ### Configuration.
 # Parse command-line arguments.
@@ -134,6 +139,8 @@ do
     --pre-build-uploads) prev_opt=pre_build_uploads ;;
     --post-build-uploads=*) post_build_uploads="$optarg" ;;
     --post-build-uploads) prev_opt=post_build_uploads ;;
+
+    --experimental-tui) tui=1 ;;
 
     # Stop option processing.
     --) shift; break ;;
@@ -247,6 +254,24 @@ loas_type_arg=()
 ### Composition.
 # Stack prefix wrappers based on enabled features.
 
+maybe_tui_wrap=()
+if [[ "$tui" == 1 ]]
+then
+  debug "TUI enabled."
+  readonly tui_logdir="$log_dir/tui_logs"
+  maybe_tui_wrap=(
+    "$tui_wrapper"
+    --log-dir "$tui_logdir"
+    --
+  )
+  # Nothing to upload.  But if we ever want to upload artifacts such as logs
+  # or checkpoints to ResultStore, this wrapper layer must move inside the
+  # resultstore (rsproxy) wrapper layer below.
+
+  # If fint ever wants any artifacts from the TUI, the their wrap positions
+  # need to be swapped.
+fi
+
 maybe_fint_build_wrap=()
 # TODO: support fint build wrapper (for infra)
 
@@ -341,6 +366,7 @@ fi
 
 ### Execution.
 readonly full_cmd=(
+  "${maybe_tui_wrap[@]}"
   "${maybe_fint_build_wrap[@]}"
   "${maybe_resultstore_wrap[@]}"
   "${maybe_profile_wrap[@]}"

@@ -170,6 +170,7 @@ host_script_test_data("fx_bash_tests") {
         "//build/profile/profile_wrap.sh",
         "//build/rbe/fuchsia-reproxy-wrap.sh",
         "//build/resultstore/fuchsia-rsproxy-wrap.sh",
+        "//build/tui/build-tui-wrap.sh",
       ]
     },
     {

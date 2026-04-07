@@ -45,6 +45,7 @@ BT_MOCKED_TOOLS=(
   "build/rbe/fuchsia-reproxy-wrap.sh"
   "build/profile/profile_wrap.sh"
   "build/resultstore/fuchsia-rsproxy-wrap.sh"
+  "build/tui/build-tui-wrap.sh"
   "${MOCK_PYTHON3}"
 )
 
@@ -122,6 +123,7 @@ EOF
   btf::make_pass_through_mock "build/rbe/fuchsia-reproxy-wrap.sh"
   btf::make_pass_through_mock "build/profile/profile_wrap.sh"
   btf::make_pass_through_mock "build/resultstore/fuchsia-rsproxy-wrap.sh"
+  btf::make_pass_through_mock "build/tui/build-tui-wrap.sh"
 
   # Ensure RBE appears enabled to test that orchestration works.
   echo '{"local_only": false}' > "${TEST_BUILD_DIR}/rbe_settings.json"
