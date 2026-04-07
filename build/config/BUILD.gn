@@ -823,6 +823,10 @@ config("default_warnings") {
     # TODO(https://fxbug.dev/495789303): Disable "-Wunused-but-set-variable" until
     # all instances are fixed.
     ":Wno-unused-but-set-variable",
+
+    # TODO(https://fxbug.dev/500111548): Disable "-Wunused-but-set-global" until
+    # all instances are fixed.
+    ":Wno-unused-but-set-global",
   ]
 }
 
@@ -1229,6 +1233,13 @@ config("Wno-unused-but-set-variable") {
     "//vendor/*",
     "//zircon/third_party/uapp/dash",
   ]
+}
+
+# Config to suppress Wunused-but-set-global warning in the third party code
+# that doesn't comply with.
+config("Wno-unused-but-set-global") {
+  cflags = [ "-Wno-unused-but-set-global" ]
+  visibility = [ "//vendor/*" ]
 }
 
 # Config to suppress Wbitwise-instead-of-logical warning in the third party code
