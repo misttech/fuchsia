@@ -54,7 +54,7 @@ declare_args() {
   # Default [ThreadSanitizer](https://clang.llvm.org/docs/ThreadSanitizer.html)
   # options (before the `TSAN_OPTIONS` environment variable is read at runtime).
   # This can be set as a build argument to affect most "tsan" variants in
-  # $variants (which see), or overrideen in $toolchain_args in one of those
+  # $variants (which see), or overridden in $toolchain_args in one of those
   # variants. This can be a list of strings or a single string.
   #
   # Note that even if this is empty, programs in this build **cannot** define
