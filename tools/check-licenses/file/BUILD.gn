@@ -41,7 +41,6 @@ if (is_host) {
       "filedata.go",
       "filetype.go",
       "init.go",
-      "json.go",
       "metrics.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]

@@ -13,7 +13,6 @@ go_library(
         "filedata.go",
         "filetype.go",
         "init.go",
-        "json.go",
         "metrics.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/file",
