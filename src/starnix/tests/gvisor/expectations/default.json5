@@ -602,6 +602,7 @@
                 "ProcSelfMaps.AnonNameSharedAnon",
                 "ProcTask.VerifyTaskChildren",
                 "ProcTask.VerifyTaskDirNlinks",
+                "ProcSysKernel.RandomizeVaSpace",
                 "ProcSysKernelHostname.MatchesUname",
                 "ProcSysVmMaxmapCount.HasNumericValue",
                 "ProcSysVmMmapMinAddr.HasNumericValue",
@@ -879,6 +880,7 @@
                 "AllInetTests/UdpSocketTest.RecvErrorConnRefused/*",
                 "AllInetTests/UdpSocketTest.RecvErrorConnRefusedOtherAFSockOpt/*",
                 "AllInetTests/UdpSocketTest.SetSocketDetachFilter/*",
+                "AllInetTests/UdpSocketTest.SetPMTUD/*",
 
                 // packet_socket_raw_test
                 "AllInetTests/RawPacketTest.SetSocketRecvBuf/0",
