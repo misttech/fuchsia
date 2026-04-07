@@ -5,10 +5,7 @@
 package artifactory
 
 import (
-	"archive/tar"
 	"fmt"
-	"log"
-	"os"
 	"path"
 	"path/filepath"
 
@@ -16,13 +13,7 @@ import (
 )
 
 const (
-	// uefiImageName is the canonical name of an x64 UEFI image in the
-	// manifest.
-	uefiImageName = "uefi-disk"
-	// gceUploadName is the canonical name of the uploaded GCE image.
-	gceUploadName = "disk.tar.gz"
-	// gceImageName is the canonical expected name of a source image in GCE.
-	gceImageName = "disk.raw"
+
 	// elfSizesName is the canonical expected name of ELF sizes JSON file.
 	elfSizesName = "elf_sizes.json"
 )
@@ -65,26 +56,7 @@ func imageUploads(mods imgModules, namespace string) ([]Upload, error) {
 				Source:      filepath.Join(mods.BuildDir(), elfSizesPath),
 				Destination: path.Join(namespace, elfSizesName),
 			})
-		case uefiImageName:
-			srcPath := filepath.Join(mods.BuildDir(), img.Path)
-			info, err := os.Stat(srcPath)
-			if err != nil {
-				log.Printf("failed to stat gce image on disk: %s", err)
-				continue
-			}
-			dest := filepath.Join(filepath.Dir(img.Path), gceUploadName)
-			files = append(files, Upload{
-				Source:      srcPath,
-				Destination: path.Join(namespace, dest),
-				Compress:    true,
-				Signed:      true,
-				TarHeader: &tar.Header{
-					Format: tar.FormatGNU,
-					Name:   gceImageName,
-					Mode:   0666,
-					Size:   info.Size(),
-				},
-			})
+
 		}
 	}
 	return files, nil

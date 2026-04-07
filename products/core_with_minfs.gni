@@ -27,4 +27,3 @@ fuchsia_product_assembly_config_label = "//products/core:core_with_minfs"
 zedboot_product_assembly_config_label = "//products/zedboot:zedboot_with_minfs"
 data_filesystem_format = "minfs"
 fxfs_blob = false
-product_skip_uefi_disk = false

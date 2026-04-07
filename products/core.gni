@@ -25,5 +25,3 @@
 
 bazel_product_bundle_prefix = "//products/core:product_bundle"
 use_bazel_images_only = true
-
-product_skip_uefi_disk = false

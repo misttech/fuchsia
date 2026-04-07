@@ -43,7 +43,6 @@ blobfs_capacity = 10485760000  # 10000 MiB
 max_blob_contents_size =
     5216665600  # 4975 MiB. Leaves 50 MiB for the update package.
 
-build_uefi_disk = true
 assembly_generate_fvm_fastboot = true
 
 zircon_a_partition = "zircon_a"

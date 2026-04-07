@@ -5,9 +5,6 @@
 package artifactory
 
 import (
-	"archive/tar"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -33,20 +30,13 @@ func (m mockModules) Images() []build.Image {
 }
 
 func TestImageUploads(t *testing.T) {
-	// Create a temporary disk.raw image.
-	dir := t.TempDir()
-	name := filepath.Join(dir, "disk.raw")
-	content := []byte("Hello World!")
-	if err := os.WriteFile(name, content, 0o600); err != nil {
-		t.Fatalf("failed to write to fake disk.raw file: %s", err)
-	}
 	m := &mockModules{
-		buildDir: dir,
+		buildDir: "BUILD_DIR",
 		imgs: []build.Image{
 			{
-				Name: "uefi-disk",
-				Path: "disk.raw",
-				Type: "blk",
+				Name: "some-other-image",
+				Path: "image.bin",
+				Type: "bin",
 			},
 		},
 	}
@@ -55,18 +45,6 @@ func TestImageUploads(t *testing.T) {
 			Source:      "BUILD_DIR/IMAGE_MANIFEST",
 			Destination: "namespace/IMAGE_MANIFEST",
 			Signed:      true,
-		},
-		{
-			Source:      name,
-			Destination: filepath.Join("namespace", gceUploadName),
-			Compress:    true,
-			Signed:      true,
-			TarHeader: &tar.Header{
-				Format: tar.FormatGNU,
-				Name:   gceImageName,
-				Mode:   0o666,
-				Size:   int64(len(content)),
-			},
 		},
 	}
 	got, err := imageUploads(m, "namespace")

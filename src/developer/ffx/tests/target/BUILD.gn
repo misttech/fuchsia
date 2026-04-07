@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 
 test_deps = []
 
-if (is_host && target_cpu == "x64" && build_uefi_disk) {
+if (is_host && target_cpu == "x64") {
   rustc_test("ffx_target_test") {
     testonly = true
     edition = "2024"
