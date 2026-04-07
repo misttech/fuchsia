@@ -9,7 +9,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import stdio_redirection
-from bazel_action_utils import BazelStderrDebugLineFilter, find_prefix_in_input
+from bazel_action_utils import (
+    BazelStderrDebugLineFilter,
+    BazelStderrDebugLineRecorder,
+    find_prefix_in_input,
+)
 
 
 class FindPrefixInInputTest(unittest.TestCase):
@@ -102,6 +106,49 @@ class BazelStderrDebugLineFilterTest(unittest.TestCase):
             self.output.data,
             b"foooo\nsomething\nDEBUG: KEEP ME\nsomething else\n",
         )
+
+
+class BazelStderrDebugLineRecorderTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.output = stdio_redirection.BytesOutputSink()
+
+    def test_recording(self) -> None:
+        prefix_map = {
+            "first": b"PREFIX1=",
+            "second": b"PREFIX2=",
+        }
+        recorder = BazelStderrDebugLineRecorder(self.output, prefix_map)
+
+        self.assertTrue(recorder.write(b"line 1\n"))
+        self.assertTrue(recorder.write(b"DEBUG: PREFIX1=value 1\n"))
+        self.assertTrue(recorder.write(b"line 2\n"))
+        self.assertTrue(recorder.write(b"DEBUG: PREFIX2=value 2\n"))
+        self.assertTrue(recorder.write(b"DEBUG: PREFIX1=value 3\n"))
+        self.assertTrue(recorder.write(b"line 3\n"))
+
+        # Verify the filtered output stream contains the non-debug lines
+        self.assertEqual(
+            self.output.data,
+            b"line 1\nline 2\nline 3\n",
+        )
+
+        # Verify recorded values
+        self.assertEqual(
+            recorder.get_recorded_values("first"), ["value 1", "value 3"]
+        )
+        self.assertEqual(recorder.get_recorded_values("second"), ["value 2"])
+
+        self.assertDictEqual(
+            recorder.get_all_recorded_values(),
+            {
+                "first": ["value 1", "value 3"],
+                "second": ["value 2"],
+            },
+        )
+
+        # Verify invalid names throw AssertionError
+        with self.assertRaises(AssertionError):
+            recorder.get_recorded_values("third")
 
 
 if __name__ == "__main__":

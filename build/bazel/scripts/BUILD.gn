@@ -73,6 +73,14 @@ if (is_host) {
     ]
   }
 
+  python_build_time_tests("bazel_source_path_mapper_test") {
+    tests = [ "bazel_source_path_mapper_test.py" ]
+    inputs = [
+      "build_utils.py",
+      "bazel_source_path_mapper.py",
+    ]
+  }
+
   python_build_time_tests("stdio_redirection_test") {
     tests = [ "stdio_redirection_test.py" ]
     inputs = [ "stdio_redirection.py" ]
@@ -104,6 +112,7 @@ group("tests") {
     ":bazel_action_utils_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
+    ":bazel_source_path_mapper_test($host_toolchain)",
     ":bazel_tests_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
     ":minimal_workspace_test($host_toolchain)",

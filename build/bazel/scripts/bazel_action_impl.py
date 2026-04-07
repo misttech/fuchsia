@@ -13,7 +13,6 @@ import shlex
 import shutil
 import sys
 import typing as T
-from functools import partial
 from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
@@ -21,6 +20,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 # LINT.IfChange(imports)
 import bazel_action_utils
 import bazel_label_mapper
+import bazel_source_path_mapper
 import build_utils
 import stdio_redirection
 import thread_pool_helpers
@@ -598,55 +598,70 @@ class BazelActionRunner(object):
             )
         )
 
+        # A dictionary mapping target labels to sets of input file paths.
+        input_file_paths: dict[str, set[str]] = {}
+
         time_profile.start(
             "sourcefiles_query",
             "Bazel cquery to find all the source files for each target",
         )
         # genqueries is keyed by Bazel target, so we can use that here.
         for target in genqueries:
-            source_file_labels = self.query_for_source_inputs(
-                configured_args,
-                target,
+            input_file_paths[target] = self.query_for_source_inputs(
+                configured_args, target
             )
-            input_file_labels[target].extend(source_file_labels)
 
         time_profile.start("map_labels_to_paths")
         # now map all the labels into source files.  This is rather slow, so
         # reuse the same label mapper so that it can cache results that are
         # in common between the different targets.
-        mapper = bazel_label_mapper.BazelLabelMapper(
+        label_mapper = bazel_label_mapper.BazelLabelMapper(
             str(self.paths.workspace), str(self.paths.ninja_build_dir)
         )
         input_files = dict(
             [
-                (target, list(mapper.get_sources_for_labels(labels)))
+                (target, list(label_mapper.get_sources_for_labels(labels)))
                 for target, labels in input_file_labels.items()
             ]
         )
+
+        time_profile.start("map_source_paths")
+        source_prefix = (
+            os.path.relpath(self.paths.fuchsia_dir, self.paths.ninja_build_dir)
+            + "/"
+        )
+        source_mapper = bazel_source_path_mapper.BazelSourcePathMapper(
+            self.paths
+        )
+        for target, paths in input_file_paths.items():
+            sources = []
+            for path in paths:
+                source_path = source_mapper.resolve_path(path)
+                if source_path:
+                    sources.append(source_prefix + source_path)
+            input_files[target].extend(sources)
+
         time_profile.stop()
+
         return input_files
 
     def query_for_source_inputs(
         self,
         configured_args: list[str],
         target: str,
-    ) -> list[str]:
+    ) -> set[str]:
         """Given a Bazel target, query to find all the input source files it needs."""
 
-        # Perform a cquery to get all source inputs for the target. This
-        # returns a list of Bazel labels followed by "(null)" because these
-        # are never configured during analysis. E.g.:
-        #
-        #  //build/bazel/examples/hello_world:hello_world (null)
-        #
+        # Perform a cquery to get all source inputs for the target. This uses --output=files
+        # to return a list of file paths, which avoids the need to translate Bazel labels
+        # to paths.
         bazel_source_files = run_bazel_query(
             self.query_cache,
             self.launcher,
             "cquery",
             [
                 "--config=quiet",
-                "--output",
-                "label",
+                "--output=files",
                 f'kind("source file", deps({target}))',
             ]
             + configured_args,
@@ -657,8 +672,7 @@ class BazelActionRunner(object):
         if _DEBUG:
             debug("SOURCE FILES:\n%s\n" % "\n".join(bazel_source_files))
 
-        # Remove the ' (null)' suffix of each result line and return
-        return [l.removesuffix(" (null)") for l in bazel_source_files]
+        return set(bazel_source_files)
 
     def _invoke_bazel_and_return_debug_symbols(
         self,
@@ -685,17 +699,15 @@ class BazelActionRunner(object):
         # The Bazel stderr must always be captured to extract DEBUG statements
         # that include the paths to debug symbol manifests. However, they should
         # be only printed when quiet is False.
-        debug_symbol_manifest_paths: list[str] = []
-
-        debug_symbol_manifest_filtering_sink = (
-            bazel_action_utils.BazelStderrDebugLineFilter(
-                stderr_sink,
-                partial(bazel_debug_line_filter, debug_symbol_manifest_paths),
-            )
+        bazel_debug_line_recorder = bazel_action_utils.BazelStderrDebugLineRecorder(
+            stderr_sink,
+            prefix_map={
+                "debug_symbol_manifest_paths": _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX
+            },
         )
 
         with stdio_redirection.PipeOutputSink(
-            debug_symbol_manifest_filtering_sink, use_pty=is_stderr_pty
+            bazel_debug_line_recorder, use_pty=is_stderr_pty
         ) as pty_stderr:
             # This makes mypy happy, as it can't detect the type correctly in the 'with' statement
             assert isinstance(pty_stderr, stdio_redirection.PipeOutputSink)
@@ -760,7 +772,9 @@ class BazelActionRunner(object):
             )
             raise BazelActionError()
 
-        return debug_symbol_manifest_paths
+        return bazel_debug_line_recorder.get_recorded_values(
+            "debug_symbol_manifest_paths"
+        )
 
     def _handle_debug_symbols(
         self,
@@ -865,33 +879,6 @@ def calculate_jobs_param(
             jobs = int(job_count)
 
     return f"--jobs={jobs}" if jobs else None
-
-
-def bazel_debug_line_filter(manifest_paths: list[str], line: bytes) -> bool:
-    """Filters a DEBUG line from Bazel stderr and extracts debug manifest paths.
-
-    This function is used as a filter for `BazelStderrDebugLineFilter`.  See
-    BazelStderrDebugLineFilter documentation for details.
-
-    Args:
-        manifest_paths: A list of strings. If a debug symbol manifest path is found
-            in the `line`, it will be decoded and appended to this list. This list
-            is mutated by the function.
-        line: The bytes line read from Bazel's stderr.
-
-    Returns:
-        True if the line contains a debug symbol manifest path and should be
-        filtered out (i.e., not printed to the actual stderr). False otherwise.
-
-    """
-    path_prefix = _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX
-    pos = line.find(path_prefix)
-    if pos < 0:
-        return False  # Keep this line
-    manifest_paths.append(
-        line[pos + len(path_prefix) :].decode("utf-8").strip()
-    )
-    return True  # Skip this line
 
 
 def verify_unknown_gn_targets(

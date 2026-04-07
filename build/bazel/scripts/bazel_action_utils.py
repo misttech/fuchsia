@@ -11,6 +11,7 @@
 
 """
 
+import collections
 import dataclasses
 import json
 import os
@@ -609,3 +610,76 @@ class BazelStderrDebugLineFilter(stdio_redirection.OutputSink):
         if self._buffer:
             self._output.write(self._buffer)
             self._buffer = b""
+
+
+class BazelStderrDebugLineRecorder(BazelStderrDebugLineFilter):
+    """An OutputSink that filters and records DEBUG lines in Bazel's stderr stream.
+
+    Usage is:
+      - Create instance, passing a map from names to prefixes that must appear in the
+        debug line.
+
+      - Pass the instance to a stdio_redirection.PipeOutputSink, using the
+        PipeOutputSink's get_write_fd() method as the stderr argument to the
+        subprocess.run() call.
+
+      - After the subprocess returns, call get_recorded_values() for each name
+        to retrieve the recorded values.
+    """
+
+    def __init__(
+        self, output: stdio_redirection.OutputSink, prefix_map: dict[str, bytes]
+    ) -> None:
+        """Create instance.
+
+        Args:
+            output: The OutputSink that will receive filtered output.
+            prefix_map: A map from names to binary prefixes that must appear in the
+                debug line. The value following the prefix will be recorded by the instance.
+        """
+        self._prefix_map = prefix_map
+        self._recorded_values: dict[str, list[str]] = collections.defaultdict(
+            list
+        )
+        super().__init__(output, self._debug_line_filter)
+
+    def get_all_recorded_values(self) -> dict[str, list[str]]:
+        """Return the recorded values for all names.
+
+        Returns:
+            A dictionary mapping each prefix_map key name to the list of corresponding line
+            outputs extracted from Bazel's stderr (without the prefix).
+        """
+        return {
+            name: self._recorded_values.get(name, [])
+            for name in self._prefix_map.keys()
+        }
+
+    def get_recorded_values(self, name: str) -> list[str]:
+        """Return the recorded values for a given name.
+
+        Args:
+            name: The name to retrieve the recorded values for.
+              This must match one of the names passed as keys of the prefix_map constructor
+              argument.
+
+        Returns:
+            A list of recorded values for the given name.
+        """
+        assert (
+            name in self._prefix_map
+        ), f"Name {name} not found in prefix map, must be one of: {self._prefix_map.keys()}"
+
+        return self._recorded_values.get(name, [])
+
+    def _debug_line_filter(self, line: bytes) -> bool:
+        """Internal: filter DEBUG lines and record the values associated with each prefix."""
+        for name, prefix in self._prefix_map.items():
+            pos = line.find(prefix)
+            if pos < 0:
+                continue  # Try with next filter.
+            self._recorded_values[name].append(
+                line[pos + len(prefix) :].decode("utf-8").strip()
+            )
+            return True  # Skip this line, its content was recorded.
+        return False  # Keep this line
