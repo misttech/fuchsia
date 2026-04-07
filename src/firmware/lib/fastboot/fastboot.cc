@@ -17,6 +17,8 @@
 #include <zircon/status.h>
 
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <thread>
@@ -33,7 +35,6 @@
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace fastboot {
-
 namespace {
 
 using fuchsia_hardware_power_statecontrol::wire::ShutdownAction;
@@ -657,6 +658,18 @@ zx::result<> Fastboot::HandleShutdown(Transport* transport, ShutdownAction actio
                         "Failed to connect to power state control service: ", transport,
                         zx::error(admin.status_value()));
   }
+
+  // If we were writing a new blob image, we need to wait for the background sync to complete to
+  // ensure there won't be any unintended data loss.
+  if (blob_writer_) {
+    auto status = blob_writer_->JoinSyncThread();
+    blob_writer_.reset();
+    if (status.is_error()) {
+      return SendResponse(ResponseType::kFail, "Background sync failed", transport, status)
+          .take_error();
+    }
+  }
+
   // Send an okay response early, regardless of the result. Once the system reboots or shuts down,
   // we have no chance to send the response.
   {
@@ -853,7 +866,14 @@ zx::result<> Fastboot::OemInstallBlobImage(const std::string& command, Transport
   // *NOTE*: InstallBlobImage requires exclusive access to the system container, and will
   // block if the system container is currently mounted. By dropping the writer state, we release
   // the mount token we got when flashing the blob volume, allowing installation to proceed.
-  blob_writer_ = std::nullopt;
+  if (blob_writer_) {
+    auto status = blob_writer_->JoinSyncThread();
+    blob_writer_.reset();
+    if (status.is_error()) {
+      return SendResponse(ResponseType::kFail, "Background sync failed", transport, status)
+          .take_error();
+    }
+  }
 
   auto response = fidl::WireCall(*recovery)->InstallBlobImage();
   if (response.status() != ZX_OK) {
@@ -891,9 +911,11 @@ zx::result<> Fastboot::UpdateSuper(const std::string& command, Transport* transp
 }
 
 zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
-  // If we're going to write the payload to the sparse partition instead, do nothing.
-  if (flash_blob_target_ == FlashBlobTarget::kSuper) {
-    return zx::ok();
+  switch (flash_blob_target_) {
+    case FlashBlobTarget::kBlob:
+      break;
+    case FlashBlobTarget::kSuper:
+      return zx::ok();  // We'll overwrite super instead, nothing to prepare.
   }
   // Ensure this chunk is in the Android sparse format.
   const std::optional<uint64_t> unsparsed_size = GetUnsparsedSize(download_vmo_mapper_);
@@ -905,19 +927,9 @@ zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
   // If we already have a valid image handle from a previous chunk, ensure we have enough space for
   // this one.
   if (blob_writer_) {
-    if (unsparsed_size > blob_writer_->image_size) {
-      auto resize_response = fidl::WireCall(blob_writer_->image_file)->Resize(*unsparsed_size);
-      if (resize_response.status() != ZX_OK) {
-        return SendResponse(ResponseType::kFail, "Transport error when resizing image file",
-                            transport, zx::error(resize_response.status()))
-            .take_error();
-      }
-      if (resize_response->is_error()) {
-        return SendResponse(ResponseType::kFail, "Failed to resize image file", transport,
-                            zx::error(resize_response->error_value()))
-            .take_error();
-      }
-      blob_writer_->image_size = *unsparsed_size;
+    if (auto status = blob_writer_->EnsureSize(*unsparsed_size); status.is_error()) {
+      return SendResponse(ResponseType::kFail, "Failed to resize image file", transport, status)
+          .take_error();
     }
     return zx::ok();
   }
@@ -1005,13 +1017,9 @@ zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
         .take_error();
   }
 
-  blob_writer_ = BlobImageWriter{
-      .image_file = std::move(image_file),
-      .mount_token = std::move(mount_token),
-      .file_vmo = std::move(file_vmo),
-      .fill_buffer = std::move(fill_buffer),
-      .image_size = *unsparsed_size,
-  };
+  blob_writer_ = std::make_unique<BlobImageWriter>(std::move(image_file), std::move(mount_token),
+                                                   std::move(file_vmo), std::move(fill_buffer),
+                                                   *unsparsed_size);
   return zx::ok();
 }
 
@@ -1023,35 +1031,36 @@ zx::result<> Fastboot::FlashBlob(Transport* transport) {
   if (flash_blob_target_ == FlashBlobTarget::kSuper) {
     return FlashSuper(transport);
   }
-  ZX_ASSERT(blob_writer_.has_value());  // Should be initialized by PrepareFlashBlob.
+  ZX_ASSERT(blob_writer_ != nullptr);  // Should be initialized by PrepareFlashBlob.
+
+  if (auto status = blob_writer_->CheckSyncError(); status.is_error()) {
+    return SendResponse(ResponseType::kFail, "Background sync failed", transport, status)
+        .take_error();
+  }
 
   // Unsparse the download buffer directly into the file-backed VMO.
-  auto unsparse_result = Unsparse(/*src=*/download_vmo_mapper_, /*dst=*/blob_writer_->file_vmo,
-                                  blob_writer_->fill_buffer, &LogUnsparseError);
+  auto unsparse_result = Unsparse(/*src=*/download_vmo_mapper_, /*dst=*/blob_writer_->file_vmo(),
+                                  blob_writer_->fill_buffer(), &LogUnsparseError);
   if (unsparse_result.is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to unsparse payload", transport,
                         unsparse_result.take_error());
   }
-  // Ensure the data has been flushed to disk. This is expensive, but ensures that if the device
-  // does not gracefully reboot after the flash command succeeds, it will still boot successfully.
-  // If we don't do this, it's possible the data may not have been flushed and the system image will
-  // be incomplete.
-  // TODO(https://fxbug.dev/460510280): Investigate how we can reduce the cost of flushing data to
-  // disk. We might be able to provide a hint to the filesystem to more aggressively flush dirty
-  // pages or have a background thread that flushes the file handle in parallel with chunk writing.
-  auto sync_response = fidl::WireCall(blob_writer_->image_file)->Sync();
-  if (sync_response.status() != ZX_OK) {
-    return SendResponse(ResponseType::kFail, "Transport error flushing image file to disk",
-                        transport, zx::error(sync_response.status()));
-  }
-  if (sync_response->is_error()) {
-    return SendResponse(ResponseType::kFail, "Failed to sync image file to disk", transport,
-                        zx::error(sync_response->error_value()));
-  }
+
+  blob_writer_->QueueSync();
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
 zx::result<> Fastboot::FlashSuper(Transport* transport) {
+  // Make sure we aren't writing to the blob volume, since we're about to overwrite all of super.
+  if (blob_writer_) {
+    auto status = blob_writer_->JoinSyncThread();
+    blob_writer_.reset();
+    if (status.is_error()) {
+      // Don't fail the whole operation, just log the error.
+      FX_LOGST(ERROR, kFastbootLogTag) << "Background sync failed: " << status.status_string();
+    }
+  }
+
   const std::optional<uint64_t> unsparsed_size = GetUnsparsedSize(download_vmo_mapper_);
   if (!unsparsed_size.has_value()) {
     return SendResponse(ResponseType::kFail, "super must be in Android sparse format.", transport,
@@ -1104,6 +1113,83 @@ zx::result<> Fastboot::WipeUserdata(Transport* transport) {
   // instead directly overwrite the super partition with the new system image.
   flash_blob_target_ = FlashBlobTarget::kSuper;
   return SendResponse(ResponseType::kOkay, "", transport);
+}
+
+Fastboot::BlobImageWriter::BlobImageWriter(fidl::ClientEnd<fuchsia_io::File> image_file,
+                                           zx::eventpair mount_token, zx::vmo file_vmo,
+                                           fzl::OwnedVmoMapper fill_buffer, uint64_t image_size)
+    : image_file_(std::move(image_file)),
+      mount_token_(std::move(mount_token)),
+      file_vmo_(std::move(file_vmo)),
+      fill_buffer_(std::move(fill_buffer)),
+      image_size_(image_size) {
+  // Start the background thread that waits for chunks to be written and syncs them in parallel.
+  sync_thread_ = std::jthread([this](std::stop_token stoken) {
+    while (true) {
+      {
+        std::unique_lock lock(mutex_);
+        cv_.wait(lock, stoken, [this] { return sync_requested_; });
+        const bool sync_requested = std::exchange(sync_requested_, false);
+        if (!sync_requested && stoken.stop_requested()) {
+          break;
+        }
+      }
+
+      auto sync_response = fidl::WireCall(image_file_)->Sync();
+      if (sync_response.status() != ZX_OK) {
+        std::lock_guard lock(mutex_);
+        sync_error_ = zx::error(sync_response.status());
+        break;
+      }
+      if (sync_response->is_error()) {
+        std::lock_guard lock(mutex_);
+        sync_error_ = zx::error(sync_response->error_value());
+        break;
+      }
+    }
+  });
+}
+
+Fastboot::BlobImageWriter::~BlobImageWriter() {
+  sync_thread_.request_stop();
+  cv_.notify_one();
+}
+
+zx::result<> Fastboot::BlobImageWriter::EnsureSize(uint64_t new_size) {
+  if (new_size <= image_size_) {
+    return zx::ok();
+  }
+  auto resize_response = fidl::WireCall(image_file_)->Resize(new_size);
+  if (resize_response.status() != ZX_OK) {
+    return zx::error(resize_response.status());
+  }
+  if (resize_response->is_error()) {
+    return zx::error(resize_response->error_value());
+  }
+  image_size_ = new_size;
+  return zx::ok();
+}
+
+zx::result<> Fastboot::BlobImageWriter::CheckSyncError() {
+  std::lock_guard lock(mutex_);
+  return sync_error_ ? *sync_error_ : zx::ok();
+}
+
+zx::result<> Fastboot::BlobImageWriter::JoinSyncThread() {
+  if (sync_thread_.joinable()) {
+    sync_thread_.request_stop();
+    sync_thread_.join();
+  }
+  return sync_error_ ? *sync_error_ : zx::ok();
+}
+
+void Fastboot::BlobImageWriter::QueueSync() {
+  ZX_ASSERT(sync_thread_.joinable());
+  {
+    std::lock_guard lock(mutex_);
+    sync_requested_ = true;
+  }
+  cv_.notify_one();
 }
 
 }  // namespace fastboot

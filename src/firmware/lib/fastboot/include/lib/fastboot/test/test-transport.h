@@ -32,6 +32,12 @@ class TestTransport : public Transport {
   // Add a packet to the input stream.
   void AddInPacket(const void* data, size_t size);
 
+  // Add a null-terminated string constant to the input stream.
+  template <size_t N>
+  void AddInPacket(const char (&data)[N]) {
+    return AddInPacket(data, N - 1);
+  }
+
   // Add a packet from a container object to the input stream.
   template <typename T>
   void AddInPacket(const T& container) {

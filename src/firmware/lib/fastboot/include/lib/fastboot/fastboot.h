@@ -14,8 +14,12 @@
 #include <stddef.h>
 #include <zircon/status.h>
 
+#include <condition_variable>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 
 #include "fastboot_base.h"
@@ -123,28 +127,14 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<> FlashSuper(Transport *transport);
 
   /// Holds the state persisted across chunks when flashing a new blob volume image.
-  struct BlobImageWriter {
-    /// Handle to the image file in the system container. This is where the unsparsed system image
-    /// containing the new blob volume should be written to.
-    fidl::ClientEnd<fuchsia_io::File> image_file;
-    /// Mount token which keeps the system container mounted. The system container will be unmounted
-    /// asynchronously when this is dropped. As long as the image file has been flushed to disk, it
-    /// should be safe to reboot even without gracefully unmounting the filesystem.
-    zx::eventpair mount_token;
-    /// VMO backing the image file.
-    zx::vmo file_vmo;
-    /// Buffer used to optimize writing of fill chunks when unsparsing the system image.
-    fzl::OwnedVmoMapper fill_buffer;
-    /// Unsparsed size of the image.
-    uint64_t image_size;
-  };
+  class BlobImageWriter;
 
   size_t max_download_size_;
   fzl::OwnedVmoMapper download_vmo_mapper_;
   // Channel to svc.
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
   fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
-  std::optional<BlobImageWriter> blob_writer_;
+  std::unique_ptr<BlobImageWriter> blob_writer_;
   /// Used to control what the target of "flash blob" requests are.
   ///
   /// By default, flashing blob writes the new system image into a temporary volume, and completes
@@ -154,6 +144,48 @@ class __EXPORT Fastboot : public FastbootBase {
   /// volumes. This makes flashing slightly quicker, and allows us to more easily reason about the
   /// state of the device.
   FlashBlobTarget flash_blob_target_ = FlashBlobTarget::kBlob;
+};
+
+class Fastboot::BlobImageWriter {
+ public:
+  BlobImageWriter(fidl::ClientEnd<fuchsia_io::File> image_file, zx::eventpair mount_token,
+                  zx::vmo file_vmo, fzl::OwnedVmoMapper fill_buffer, uint64_t image_size);
+  ~BlobImageWriter();
+
+  BlobImageWriter(BlobImageWriter &&) = delete;
+  BlobImageWriter &operator=(BlobImageWriter &&) = delete;
+
+  zx::vmo &file_vmo() { return file_vmo_; }
+  fzl::OwnedVmoMapper &fill_buffer() { return fill_buffer_; }
+
+  zx::result<> EnsureSize(uint64_t new_size);
+
+  zx::result<> CheckSyncError();
+
+  zx::result<> JoinSyncThread();
+
+  void QueueSync();
+
+ private:
+  /// Handle to the image file in the system container. This is where the unsparsed system image
+  /// containing the new blob volume should be written to.
+  fidl::ClientEnd<fuchsia_io::File> image_file_;
+  /// Mount token which keeps the system container mounted. The system container will be unmounted
+  /// asynchronously when this is dropped. As long as the image file has been flushed to disk, it
+  /// should be safe to reboot even without gracefully unmounting the filesystem.
+  zx::eventpair mount_token_;
+  /// VMO backing the image file.
+  zx::vmo file_vmo_;
+  /// Buffer used to optimize writing of fill chunks when unsparsing the system image.
+  fzl::OwnedVmoMapper fill_buffer_;
+  /// Unsparsed size of the image.
+  uint64_t image_size_;
+
+  std::mutex mutex_;
+  std::condition_variable_any cv_;
+  std::jthread sync_thread_;
+  bool sync_requested_ = false;
+  std::optional<zx::result<>> sync_error_ = std::nullopt;
 };
 
 }  // namespace fastboot

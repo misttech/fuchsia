@@ -4,6 +4,8 @@
 
 #include <fidl/fuchsia.fshost/cpp/fidl.h>
 #include <fidl/fuchsia.fshost/cpp/test_base.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fastboot/fastboot.h>
@@ -49,6 +51,14 @@ class VmoFile final : public fs::VmoFile {
   explicit VmoFile(zx::vmo vmo)
       : fs::VmoFile(std::move(vmo), kMaxBlobImageSize, /*writable*/ true) {}
 
+  /// Returns a promise that the next Sync operation will resolve with the given value.
+  std::promise<zx_status_t> GetSyncPromise() {
+    std::promise<zx_status_t> promise;
+    sync_future_ = promise.get_future();
+    return promise;
+  }
+
+ private:
   zx_status_t Truncate(size_t len) final {
     if (len > kMaxBlobImageSize) {
       return ZX_ERR_NO_SPACE;
@@ -56,7 +66,12 @@ class VmoFile final : public fs::VmoFile {
     return ZX_OK;
   }
 
-  void Sync(SyncCallback closure) final { closure(ZX_OK); }
+  void Sync(SyncCallback closure) final {
+    closure(sync_future_ ? sync_future_->get() : ZX_OK);
+    sync_future_.reset();
+  }
+
+  std::optional<std::future<zx_status_t>> sync_future_;
 
  protected:
   friend fbl::internal::MakeRefCountedHelper<VmoFile>;
@@ -123,6 +138,23 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
     std::atomic<bool> data_volume_shredded_ = false;
   };
 
+  class MockPowerStateControl
+      : public fidl::testing::WireTestBase<fuchsia_hardware_power_statecontrol::Admin> {
+   public:
+    void Shutdown(ShutdownRequestView request, ShutdownCompleter::Sync& completer) override {
+      shutdown_called_ = true;
+      completer.ReplySuccess();
+    }
+    void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+      FAIL() << "Unexpected call to fuchsia.hardware.power.statecontrol/Admin: " << name;
+      completer.Close(ZX_ERR_NOT_SUPPORTED);
+    }
+    bool shutdown_called() const { return shutdown_called_; }
+
+   private:
+    std::atomic<bool> shutdown_called_ = false;
+  };
+
  protected:
   FastbootFlashBlobTest() = default;
 
@@ -154,6 +186,15 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
           return ZX_OK;
         }));
 
+    power_mock_ = std::make_unique<MockPowerStateControl>();
+    svc_dir->AddEntry(
+        fidl::DiscoverableProtocolName<fuchsia_hardware_power_statecontrol::Admin>,
+        fbl::MakeRefCounted<fs::Service>(
+            [this](fidl::ServerEnd<fuchsia_hardware_power_statecontrol::Admin> request) {
+              fidl::BindServer(loop_.dispatcher(), std::move(request), power_mock_.get());
+              return ZX_OK;
+            }));
+
     auto [client, server] = fidl::Endpoints<fio::Directory>::Create();
     vfs_.ServeDirectory(svc_dir, std::move(server));
     svc_client_ = std::move(client);
@@ -169,6 +210,10 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
 
   fidl::ClientEnd<fio::Directory> TakeSvcClient() { return std::move(svc_client_); }
 
+  std::promise<zx_status_t> GetSyncPromise() {
+    return recovery_server_->image_file_->GetSyncPromise();
+  }
+
   const zx::vmo& image_vmo() const { return recovery_server_->image_file_->vmo(); }
 
   bool data_volume_shredded() const { return admin_server_->data_volume_shredded_; }
@@ -179,11 +224,14 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
 
   void set_get_blob_image_unformatted() { recovery_server_->is_unformatted_ = true; }
 
+  bool shutdown_called() const { return power_mock_->shutdown_called(); }
+
  private:
   async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
   fs::ManagedVfs vfs_{loop_.dispatcher()};
   std::unique_ptr<MockFshostRecovery> recovery_server_;
   std::unique_ptr<MockFshostAdmin> admin_server_;
+  std::unique_ptr<MockPowerStateControl> power_mock_;
   paver_test::FakePaver paver_;
   fidl::ClientEnd<fio::Directory> svc_client_;
 };
@@ -195,9 +243,8 @@ TEST_F(FastbootFlashBlobTest, ImageMustBeAndroidSparseFormat) {
   // correct magic.
   std::vector<uint8_t> image(sizeof(sparse_header_t));
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
-  std::string command = "flash:blob";
   TestTransport transport;
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_error()) << "flash command should fail with a non-sparse image";
   ASSERT_EQ(ret.status_value(), ZX_ERR_NOT_SUPPORTED) << ret.status_string();
@@ -217,9 +264,8 @@ TEST_F(FastbootFlashBlobTest, FailsIfImageIsTooLarge) {
       << "unsparsed image size is not large enough to exceed maximum image size";
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
-  std::string command = "flash:blob";
   TestTransport transport;
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_error()) << "flash command should fail if image is too large";
   ASSERT_EQ(ret.status_value(), ZX_ERR_NO_SPACE) << ret.status_string();
@@ -255,9 +301,8 @@ TEST_F(FastbootFlashBlobTest, HandlesAllChunkTypes) {
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
   // Issue the flash command, and ensure it succeeds.
-  std::string command = "flash:blob";
   TestTransport transport;
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   const std::vector<std::string> expected_packets = {"OKAY"};
@@ -305,9 +350,8 @@ TEST_F(FastbootFlashBlobTest, ResparsedImage) {
     }
     // Stage the image and ensure it is flashed correctly.
     ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, builder.Build()));
-    std::string command = "flash:blob";
     TestTransport transport;
-    transport.AddInPacket(command);
+    transport.AddInPacket("flash:blob");
     zx::result<> ret = fastboot.ProcessPacket(&transport);
     ASSERT_TRUE(ret.is_ok()) << ret.status_string();
     const std::vector<std::string> expected_packets = {"OKAY"};
@@ -326,9 +370,9 @@ TEST_F(FastbootFlashBlobTest, ResparsedImage) {
 /// Issuing update-super command without :wipe should not affect flash blob.
 TEST_F(FastbootFlashBlobTest, UpdateSuperDoesNotChangeBlobTarget) {
   Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
-  std::string command = "update-super:super";
+
   TestTransport transport;
-  transport.AddInPacket(command);
+  transport.AddInPacket("update-super:super");
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   const std::vector<std::string> expected_packets = {"OKAY"};
@@ -337,8 +381,7 @@ TEST_F(FastbootFlashBlobTest, UpdateSuperDoesNotChangeBlobTarget) {
   const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
-  command = "flash:blob";
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
@@ -356,9 +399,8 @@ TEST_F(FastbootFlashBlobTest, UpdateSuperDoesNotChangeBlobTarget) {
 TEST_F(FastbootFlashBlobTest, UpdateSuperWipeChangesFlashBlobTarget) {
   Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
 
-  std::string command = "update-super:super:wipe";
   TestTransport transport;
-  transport.AddInPacket(command);
+  transport.AddInPacket("update-super:super:wipe");
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   const std::vector<std::string> expected_packets = {"OKAY"};
@@ -368,9 +410,8 @@ TEST_F(FastbootFlashBlobTest, UpdateSuperWipeChangesFlashBlobTarget) {
   const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
-  command = "flash:blob";
   paver().set_expected_payload_size(image.size());
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
@@ -390,9 +431,8 @@ TEST_F(FastbootFlashBlobTest, UpdateSuperWipeChangesFlashBlobTarget) {
 TEST_F(FastbootFlashBlobTest, EraseUserdataChangesFlashBlobTarget) {
   Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
 
-  std::string command = "erase:userdata";
   TestTransport transport;
-  transport.AddInPacket(command);
+  transport.AddInPacket("erase:userdata");
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   const std::vector<std::string> expected_packets = {"OKAY"};
@@ -402,9 +442,8 @@ TEST_F(FastbootFlashBlobTest, EraseUserdataChangesFlashBlobTarget) {
   const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
-  command = "flash:blob";
   paver().set_expected_payload_size(image.size());
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
@@ -428,10 +467,9 @@ TEST_F(FastbootFlashBlobTest, UnformattedDiskFormatChangesFlashBlobTarget) {
   const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
-  std::string command = "flash:blob";
   TestTransport transport;
   paver().set_expected_payload_size(image.size());
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   zx::result ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   const std::vector<std::string> expected_packets = {"OKAY"};
@@ -456,15 +494,104 @@ TEST_F(FastbootFlashBlobTest, FlashBlobFailsWithCorruptFilesystem) {
   const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
   ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
 
-  std::string command = "flash:blob";
   TestTransport transport;
   paver().set_expected_payload_size(image.size());
-  transport.AddInPacket(command);
+  transport.AddInPacket("flash:blob");
   zx::result ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_error()) << "flash:blob should fail if filesystem is corrupt";
   ASSERT_EQ(ret.status_value(), ZX_ERR_IO_DATA_INTEGRITY) << ret.status_string();
   ASSERT_EQ(transport.GetOutPackets().size(), 1ULL);
   ASSERT_EQ(transport.GetOutPackets()[0].compare(0, 4, "FAIL"), 0);
+}
+
+TEST_F(FastbootFlashBlobTest, ReportsSyncErrorOnNextCommand) {
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  std::promise<zx_status_t> sync_promise = GetSyncPromise();
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  TestTransport transport;
+  transport.AddInPacket("flash:blob");
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+
+  // Fail the sync.
+  sync_promise.set_value(ZX_ERR_IO);
+
+  // The next fastboot command should return the sync error. This includes flashing subsequent
+  // chunks, but since sync happens in parallel, we can't guarantee that the future was resolved
+  // before the next command is processed. However, we can use `oem install-blob-image` to force the
+  // sync thread to be joined, which should also report the sync error back. We should also make
+  // the flash:blob command block until any outstanding sync has been completed, but this will
+  // negatively impact performance.
+  transport.AddInPacket("oem install-blob-image");
+  ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_error());
+  ASSERT_EQ(ret.status_value(), ZX_ERR_IO);
+}
+
+TEST_F(FastbootFlashBlobTest, ShutdownWaitsForPendingSync) {
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  std::promise<zx_status_t> sync_promise = GetSyncPromise();
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  TestTransport transport;
+  transport.AddInPacket("flash:blob");
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+
+  // Issue a reboot command in a background thread.
+  std::promise<zx::result<>> reboot_promise;
+  std::thread reboot_thread([&fastboot, &reboot_promise]() {
+    TestTransport transport;
+    std::string reboot_cmd = "reboot";
+    transport.AddInPacket(reboot_cmd);
+    reboot_promise.set_value(fastboot.ProcessPacket(&transport));
+  });
+
+  // Complete the sync so the reboot command finishes.
+  sync_promise.set_value(ZX_OK);
+
+  auto reboot_ret = reboot_promise.get_future().get();
+  ASSERT_TRUE(reboot_ret.is_ok()) << reboot_ret.status_string();
+  reboot_thread.join();  // Should block until the sync promise is resolved.
+  ASSERT_TRUE(shutdown_called());
+}
+
+TEST_F(FastbootFlashBlobTest, SyncErrorDoesNotPreventRebootMoreThanOnce) {
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  std::promise<zx_status_t> sync_promise = GetSyncPromise();
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  TestTransport transport;
+  transport.AddInPacket("flash:blob");
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+
+  // Fail the sync.
+  sync_promise.set_value(ZX_ERR_IO);
+
+  // The first reboot should fail and report the sync error.
+  transport.AddInPacket("reboot");
+  ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_error());
+  ASSERT_EQ(ret.status_value(), ZX_ERR_IO);
+  ASSERT_FALSE(shutdown_called());
+
+  // The next reboot should succeed because the blob_writer_ was reset after the first reboot caught
+  // the error.
+  transport.AddInPacket("reboot");
+  ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  ASSERT_TRUE(shutdown_called());
 }
 
 }  // namespace
