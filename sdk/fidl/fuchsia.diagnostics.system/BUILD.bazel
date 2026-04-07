@@ -10,7 +10,6 @@ fidl_library(
         "log_freeze.fidl",
     ],
     api_area = "Diagnostics",
-    api_file_path = "fuchsia.diagnostics.system.api",
     category = "partner",
     stable = True,
     visibility = ["//visibility:public"],

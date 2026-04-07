@@ -10,7 +10,6 @@ fidl_library(
         "logger.fidl",
     ],
     api_area = "Diagnostics",
-    api_file_path = "fuchsia.logger.api",
     category = "partner",
     enable_hlcpp = True,
     enable_rust_next = True,

@@ -36,7 +36,6 @@ if (is_host) {
 fidl("fuchsia.diagnostics.host") {
   sources = [ "reader.fidl" ]
   sdk_area = "Developer"
-  api = "fuchsia.diagnostics.host.api"
   sdk_category = "host_tool"
   stable = true
   visibility = [ "*" ]

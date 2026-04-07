@@ -36,7 +36,6 @@ if (is_host) {
 fidl("fuchsia.logger") {
   sources = [ "logger.fidl" ]
   sdk_area = "Diagnostics"
-  api = "fuchsia.logger.api"
   sdk_category = "partner"
   enable_hlcpp = true
   enable_rust_next = true

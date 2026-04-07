@@ -36,7 +36,6 @@ if (is_host) {
 fidl("fuchsia.diagnostics.system") {
   sources = [ "log_freeze.fidl" ]
   sdk_area = "Diagnostics"
-  api = "fuchsia.diagnostics.system.api"
   sdk_category = "partner"
   stable = true
   visibility = [ "*" ]
