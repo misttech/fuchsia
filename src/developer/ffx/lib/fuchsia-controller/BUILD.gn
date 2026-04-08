@@ -74,10 +74,7 @@ python_library("fuchsia_controller_py") {
     "cpp:fuchsia_controller_internal",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
   ]
-  sources = [
-    "__init__.py",
-    "wrappers.py",
-  ]
+  sources = [ "__init__.py" ]
 
   # Ensure all FIDL dependencies meet the compatibility and stability
   # requirements.
@@ -152,7 +149,6 @@ group("tests") {
       "tests:fuchsia_controller_fidl_common_test",
       "tests:fuchsia_controller_isolate_directory_test",
       "tests:fuchsia_controller_socket_test",
-      "tests:fuchsia_controller_wrappers_test",
     ]
   }
 }
