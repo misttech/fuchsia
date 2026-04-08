@@ -13,7 +13,8 @@ use ::routing::bedrock::request_metadata::Metadata;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
 use ::routing::capability_source::{
-    BuiltinSource, CapabilitySource, ComponentCapability, InternalCapability, NamespaceSource,
+    BuiltinSource, CapabilitySource, ComponentCapability, InternalCapability,
+    InternalEventStreamCapability, NamespaceSource,
 };
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
 use ::routing::policy::{GlobalPolicyChecker, ScopedPolicyChecker};
@@ -21,9 +22,12 @@ use ::routing::resolving::ComponentAddress;
 use anyhow::format_err;
 use async_trait::async_trait;
 use cm_config::{RuntimeConfig, SecurityPolicy};
-use cm_rust::{Availability, CapabilityTypeName};
+use cm_rust::{Availability, CapabilityTypeName, FidlIntoNative};
 use cm_types::{Name, RelativePath, Url};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_io as fio;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt, future};
 use hooks::EventType;
@@ -33,7 +37,6 @@ use sandbox::{Capability, Data, DirConnector, Router, RouterResponse, WeakInstan
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::{ExecutionScope, Path, ToObjectRequest, WeakExecutionScope};
-use {fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_io as fio};
 
 /// Constructs a [ComponentInput] that contains built-in capabilities.
 pub struct RootInputBuilder {
@@ -430,7 +433,7 @@ impl RootInputBuilder {
                             &mut object_request,
                         ),
                     )
-                    .expect("TODO");
+                    .expect("missing built-in runner");
                 future::ready(Ok(())).boxed()
             }),
         );
@@ -462,8 +465,16 @@ impl RootInputBuilder {
                     async move {
                         if debug {
                             let name = Name::new(event_type.as_str()).unwrap();
+                            let request = request.expect("missing request on event stream route");
+                            let route_metadata: finternal::EventStreamRouteMetadata =
+                                request.metadata.get_metadata().expect("missing route metadata");
                             let capability_source = CapabilitySource::Builtin(BuiltinSource {
-                                capability: InternalCapability::EventStream(name),
+                                capability: InternalCapability::EventStream(
+                                    InternalEventStreamCapability {
+                                        name,
+                                        route_metadata: route_metadata.fidl_into_native(),
+                                    },
+                                ),
                             });
                             return Ok(RouterResponse::Debug(
                                 capability_source.try_into().unwrap(),

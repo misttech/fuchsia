@@ -12,7 +12,7 @@ use crate::bedrock::with_service_renames_and_filter::WithServiceRenamesAndFilter
 use crate::capability_source::{
     AggregateCapability, AggregateInstance, AggregateMember, AnonymizedAggregateSource,
     CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
-    InternalCapability, VoidSource,
+    InternalCapability, InternalEventStreamCapability, VoidSource,
 };
 use crate::component_instance::{ComponentInstanceInterface, WeakComponentInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
@@ -1930,7 +1930,12 @@ impl<C: ComponentInstanceInterface + 'static> UnavailableRouter<C> {
             OfferDecl::Storage(_) => InternalCapability::Storage(name),
             OfferDecl::Runner(_) => InternalCapability::Runner(name),
             OfferDecl::Resolver(_) => InternalCapability::Resolver(name),
-            OfferDecl::EventStream(_) => InternalCapability::EventStream(name),
+            OfferDecl::EventStream(_) => {
+                InternalCapability::EventStream(InternalEventStreamCapability {
+                    name,
+                    route_metadata: Default::default(),
+                })
+            }
             OfferDecl::Dictionary(_) => InternalCapability::Dictionary(name),
             OfferDecl::Config(_) => InternalCapability::Config(name),
         };

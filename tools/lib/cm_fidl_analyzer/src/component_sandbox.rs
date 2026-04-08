@@ -7,13 +7,15 @@ use crate::component_model::DynamicDictionaryConfig;
 use ::routing::DictExt;
 use ::routing::bedrock::aggregate_router::AggregateSource;
 use ::routing::bedrock::program_output_dict;
+use ::routing::bedrock::request_metadata::Metadata;
 use ::routing::bedrock::sandbox_construction::EventStreamSourceRouter;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_policy_check::WithPolicyCheck;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
 use ::routing::capability_source::{
     BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
-    ComponentSource, FrameworkSource, InternalCapability, NamespaceSource,
+    ComponentSource, FrameworkSource, InternalCapability, InternalEventStreamCapability,
+    NamespaceSource,
 };
 use ::routing::component_instance::{
     WeakComponentInstanceInterface, WeakExtendedInstanceInterface,
@@ -25,11 +27,17 @@ use ::routing::policy::GlobalPolicyChecker;
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
 use cm_rust::{
-    CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue, ConfigurationDecl,
-    DeliveryType, DictionaryDecl, ProtocolDecl,
+    CapabilityDecl, CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue,
+    ConfigurationDecl, DeliveryType, DictionaryDecl, FidlIntoNative, ProtocolDecl,
 };
 use cm_types::{Availability, Path};
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
@@ -40,10 +48,6 @@ use sandbox::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-};
 
 fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Router<T>
 where
@@ -89,7 +93,6 @@ pub fn build_root_component_input(
             match capability_decl {
                 cm_rust::CapabilityDecl::Protocol(_)
                 | cm_rust::CapabilityDecl::Directory(_)
-                | cm_rust::CapabilityDecl::EventStream(_)
                 | cm_rust::CapabilityDecl::Resolver(_)
                 | cm_rust::CapabilityDecl::Runner(_) => Some((
                     capability_decl.name().clone(),
@@ -114,23 +117,6 @@ pub fn build_root_component_input(
             | CapabilityTypeName::Runner
             | CapabilityTypeName::Resolver => {
                 let router = Router::<Connector>::new_debug(data)
-                    .with_policy_check::<ComponentInstanceForAnalyzer>(
-                        capability_source,
-                        policy.clone(),
-                    );
-                WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
-                    router,
-                    capability_type,
-                )
-                .availability(Availability::Required)
-                .target_above_root(top_instance)
-                .error_info(route_request_info)
-                .error_reporter(NullErrorReporter {})
-                .build()
-                .into()
-            }
-            CapabilityTypeName::EventStream => {
-                let router = Router::<Dict>::new_debug(data)
                     .with_policy_check::<ComponentInstanceForAnalyzer>(
                         capability_source,
                         policy.clone(),
@@ -190,6 +176,53 @@ pub fn build_root_component_input(
                 .insert_capability(&name, router_capability)
                 .expect("failed to insert builtin runner into dictionary");
         }
+    }
+    let event_stream_decls =
+        runtime_config.builtin_capabilities.iter().filter_map(|capability_decl| {
+            match capability_decl {
+                cm_rust::CapabilityDecl::EventStream(es) => Some(es),
+                _ => None,
+            }
+        });
+    for event_stream_decl in event_stream_decls {
+        let event_stream_name = event_stream_decl.name.clone();
+        let router = Router::<Dict>::new(
+            move |request: Option<sandbox::Request>, debug: bool, _target: WeakInstanceToken| {
+                let event_stream_name = event_stream_name.clone();
+                async move {
+                    assert!(debug);
+                    let request = request.expect("missing request on event stream route");
+                    let route_metadata: finternal::EventStreamRouteMetadata =
+                        request.metadata.get_metadata().expect("missing route metadata");
+                    let capability_source = CapabilitySource::Builtin(BuiltinSource {
+                        capability: InternalCapability::EventStream(
+                            InternalEventStreamCapability {
+                                name: event_stream_name.clone(),
+                                route_metadata: route_metadata.fidl_into_native(),
+                            },
+                        ),
+                    });
+                    return Ok(RouterResponse::Debug(capability_source.try_into().unwrap()));
+                }
+                .boxed()
+            },
+        );
+        let porcelain_router =
+            WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
+                router,
+                CapabilityTypeName::EventStream,
+            )
+            .availability(Availability::Required)
+            .target_above_root(top_instance)
+            .error_info(RouteRequestErrorInfo::from(&CapabilityDecl::EventStream(
+                event_stream_decl.clone(),
+            )))
+            .error_reporter(NullErrorReporter {})
+            .build();
+        root_component_input
+            .capabilities()
+            .insert_capability(&event_stream_decl.name, porcelain_router.into())
+            .expect("failed to insert builtin capability into dictionary");
     }
     root_component_input
 }

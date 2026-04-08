@@ -8,10 +8,11 @@ use crate::{
 };
 use cm_rust::*;
 use cm_rust_testing::*;
+use fidl_fuchsia_io as fio;
 use moniker::Moniker;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use {fidl_fuchsia_io as fio, zx_status};
+use zx_status;
 
 pub struct CommonAvailabilityTest<T: RoutingTestModelBuilder> {
     builder: PhantomData<T>,
@@ -223,7 +224,7 @@ impl<T: RoutingTestModelBuilder> CommonAvailabilityTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute { component: "/".to_string(), scope: None }],
+                    scope: Some(ComponentEventRoute { component: ".".to_string(), scope: None }),
                     name: "started".parse().unwrap(),
                 },
             ] {

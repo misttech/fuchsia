@@ -24,15 +24,16 @@ use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_internal as component_internal;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
+use futures::FutureExt;
 use moniker::Moniker;
 use router_error::Explain;
 use routing::capability_source::{
     BuiltinSource, CapabilitySource, ComponentCapability, ComponentSource, FrameworkSource,
-    InternalCapability, NamespaceSource,
+    InternalCapability, InternalEventStreamCapability, NamespaceSource,
 };
 use routing::component_instance::ComponentInstanceInterface;
+use routing::debug_route_sandbox_path;
 use routing::error::RoutingError;
-use routing::mapper::RouteSegment;
 use routing_test_helpers::{
     CheckUse, ComponentEventRoute, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     ServiceInstance,
@@ -45,8 +46,6 @@ use thiserror::Error;
 use zx_status;
 
 const TEST_URL_PREFIX: &str = "test:///";
-// Placeholder for when a component resolves to itself, and its name is unknown as a result.
-const USE_TARGET_PLACEHOLDER_NAME: &str = "target";
 const BOOT_SCHEME: &str = "fuchsia-boot";
 
 fn make_test_url(component_name: &str) -> String {
@@ -221,39 +220,47 @@ impl RoutingTestForAnalyzer {
     fn assert_event_stream_scope(
         &self,
         use_decl: &UseEventStreamDecl,
-        scope: &Vec<ComponentEventRoute>,
+        expected_scope: &ComponentEventRoute,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) {
         // Perform secondary routing to find scope
-        let (result, mut segments) =
-            ComponentModelForAnalyzer::route_event_stream_sync(use_decl.clone(), &target);
-        result.expect("Expected event_stream routing to succeed.");
+        let result = Self::route_event_stream_sync(use_decl.clone(), &target);
+        let source = result.expect("Expected event_stream routing to succeed.");
+        let route_metadata = match source {
+            CapabilitySource::Builtin(BuiltinSource {
+                capability:
+                    InternalCapability::EventStream(InternalEventStreamCapability {
+                        name: _,
+                        route_metadata,
+                    }),
+            }) => route_metadata,
+            other_value => panic!("unexpected route source: {other_value:?}"),
+        };
+        let actual_scope = ComponentEventRoute {
+            component: route_metadata
+                .scope_moniker
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| ".".to_string()),
+            scope: route_metadata.scope.map(|scope_list| {
+                scope_list
+                    .into_iter()
+                    .map(|ref_| match ref_ {
+                        EventScope::Child(child_ref) => child_ref.name.to_string(),
+                        EventScope::Collection(name) => name.to_string(),
+                    })
+                    .collect()
+            }),
+        };
+        assert_eq!(expected_scope, &actual_scope);
+    }
 
-        let mut route = use_decl
-            .scope
-            .as_ref()
-            .map(|scope| {
-                let route = ComponentEventRoute {
-                    component: USE_TARGET_PLACEHOLDER_NAME.to_string(),
-                    scope: Some(
-                        scope
-                            .iter()
-                            .map(|s| match s {
-                                cm_rust::EventScope::Child(child) => child.name.to_string(),
-                                cm_rust::EventScope::Collection(collection) => {
-                                    collection.to_string()
-                                }
-                            })
-                            .collect(),
-                    ),
-                };
-                vec![route]
-            })
-            .unwrap_or_default();
-        segments.reverse();
-        // Generate a unified route from the component topology
-        generate_unified_route(&segments, &mut route);
-        assert_eq!(scope, &route);
+    pub fn route_event_stream_sync(
+        request: UseEventStreamDecl,
+        target: &Arc<ComponentInstanceForAnalyzer>,
+    ) -> Result<CapabilitySource, RoutingError> {
+        debug_route_sandbox_path(target, format!("program_input/namespace{}", &request.target_path))
+            .now_or_never()
+            .expect("future was not ready immediately")
     }
 
     fn find_matching_use(
@@ -411,42 +418,6 @@ impl RoutingTestForAnalyzer {
     }
 }
 
-fn segment_to_component_event_route(segment: &RouteSegment) -> Option<ComponentEventRoute> {
-    let (moniker, offer) = match segment {
-        RouteSegment::OfferBy { moniker, capability } => (moniker, capability),
-        _ => return None,
-    };
-    let event_stream_offer = match offer {
-        OfferDecl::EventStream(o) => o,
-        _ => return None,
-    };
-    let scopes = match &event_stream_offer.scope {
-        Some(scope) => Some(
-            scope
-                .iter()
-                .map(|s| match s {
-                    cm_rust::EventScope::Child(child) => child.name.to_string(),
-                    cm_rust::EventScope::Collection(collection) => collection.to_string(),
-                })
-                .collect(),
-        ),
-        None => None,
-    };
-    let moniker_name = match moniker.leaf() {
-        Some(l) => l.name().to_string(),
-        None => "/".to_string(),
-    };
-    Some(ComponentEventRoute { component: moniker_name, scope: scopes })
-}
-
-fn generate_unified_route(segments: &Vec<RouteSegment>, routes: &mut Vec<ComponentEventRoute>) {
-    for segment in segments {
-        if let Some(route) = segment_to_component_event_route(segment) {
-            routes.push(route)
-        }
-    }
-}
-
 #[async_trait]
 impl RoutingTestModel for RoutingTestForAnalyzer {
     type C = ComponentInstanceForAnalyzer;
@@ -522,7 +493,9 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
                 let Ok(UseDecl::EventStream(use_decl)) = find_decl else {
                     panic!("missing use decl for successfully routed event stream");
                 };
-                self.assert_event_stream_scope(&use_decl, &scope, &target);
+                if let Some(scope) = scope.as_ref() {
+                    self.assert_event_stream_scope(&use_decl, scope, &target);
+                }
             }
             _ => (),
         }
@@ -936,7 +909,7 @@ mod tests {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![],
+                    scope: None,
                     name: "started".parse().unwrap(),
                 },
             )
@@ -1038,10 +1011,10 @@ mod tests {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["b".to_string(), "c".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -1052,10 +1025,10 @@ mod tests {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["b".to_string(), "c".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -1066,16 +1039,10 @@ mod tests {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![
-                        ComponentEventRoute {
-                            component: "/".to_string(),
-                            scope: Some(vec!["b".to_string(), "c".to_string()]),
-                        },
-                        ComponentEventRoute {
-                            component: "c".to_string(),
-                            scope: Some(vec!["e".to_string()]),
-                        },
-                    ],
+                    scope: Some(ComponentEventRoute {
+                        component: "c".to_string(),
+                        scope: Some(vec!["e".to_string()]),
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )

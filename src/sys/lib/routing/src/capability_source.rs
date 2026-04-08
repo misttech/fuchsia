@@ -541,10 +541,26 @@ pub enum InternalCapability {
     Directory(Name),
     Runner(Name),
     Config(Name),
-    EventStream(Name),
+    EventStream(InternalEventStreamCapability),
     Resolver(Name),
     Storage(Name),
     Dictionary(Name),
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, Debug, PartialEq, Clone, Eq)]
+#[fidl_decl(fidl_table = "finternal::InternalEventStreamCapability")]
+pub struct InternalEventStreamCapability {
+    pub name: Name,
+    pub route_metadata: EventStreamRouteMetadata,
+}
+
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, Default, Debug, PartialEq, Clone, Eq)]
+#[fidl_decl(fidl_table = "finternal::EventStreamRouteMetadata")]
+pub struct EventStreamRouteMetadata {
+    pub scope_moniker: Option<String>,
+    pub scope: Option<Box<[cm_rust::EventScope]>>,
 }
 
 impl InternalCapability {
@@ -584,7 +600,7 @@ impl InternalCapability {
             InternalCapability::Directory(name) => &name,
             InternalCapability::Runner(name) => &name,
             InternalCapability::Config(name) => &name,
-            InternalCapability::EventStream(name) => &name,
+            InternalCapability::EventStream(InternalEventStreamCapability { name, .. }) => &name,
             InternalCapability::Resolver(name) => &name,
             InternalCapability::Storage(name) => &name,
             InternalCapability::Dictionary(name) => &name,
@@ -609,15 +625,15 @@ impl fmt::Display for InternalCapability {
 impl From<CapabilityDecl> for InternalCapability {
     fn from(capability: CapabilityDecl) -> Self {
         match capability {
-            CapabilityDecl::Service(c) => InternalCapability::Service(c.name),
-            CapabilityDecl::Protocol(c) => InternalCapability::Protocol(c.name),
-            CapabilityDecl::Directory(c) => InternalCapability::Directory(c.name),
-            CapabilityDecl::Storage(c) => InternalCapability::Storage(c.name),
-            CapabilityDecl::Runner(c) => InternalCapability::Runner(c.name),
-            CapabilityDecl::Resolver(c) => InternalCapability::Resolver(c.name),
-            CapabilityDecl::EventStream(c) => InternalCapability::EventStream(c.name),
-            CapabilityDecl::Dictionary(c) => InternalCapability::Dictionary(c.name),
-            CapabilityDecl::Config(c) => InternalCapability::Config(c.name),
+            CapabilityDecl::Service(c) => c.into(),
+            CapabilityDecl::Protocol(c) => c.into(),
+            CapabilityDecl::Directory(c) => c.into(),
+            CapabilityDecl::Storage(c) => c.into(),
+            CapabilityDecl::Runner(c) => c.into(),
+            CapabilityDecl::Resolver(c) => c.into(),
+            CapabilityDecl::EventStream(c) => c.into(),
+            CapabilityDecl::Dictionary(c) => c.into(),
+            CapabilityDecl::Config(c) => c.into(),
         }
     }
 }
@@ -654,7 +670,10 @@ impl From<ResolverDecl> for InternalCapability {
 
 impl From<EventStreamDecl> for InternalCapability {
     fn from(event: EventStreamDecl) -> Self {
-        Self::EventStream(event.name)
+        Self::EventStream(InternalEventStreamCapability {
+            name: event.name,
+            route_metadata: Default::default(),
+        })
     }
 }
 
@@ -664,9 +683,15 @@ impl From<StorageDecl> for InternalCapability {
     }
 }
 
-impl From<cm_rust::ConfigurationDecl> for InternalCapability {
-    fn from(config: cm_rust::ConfigurationDecl) -> Self {
+impl From<ConfigurationDecl> for InternalCapability {
+    fn from(config: ConfigurationDecl) -> Self {
         Self::Config(config.name)
+    }
+}
+
+impl From<DictionaryDecl> for InternalCapability {
+    fn from(dictionary: DictionaryDecl) -> Self {
+        Self::Dictionary(dictionary.name)
     }
 }
 

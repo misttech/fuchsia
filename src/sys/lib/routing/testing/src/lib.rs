@@ -144,7 +144,7 @@ pub enum CheckUse {
     },
     EventStream {
         path: cm_types::Path,
-        scope: Vec<ComponentEventRoute>,
+        scope: Option<ComponentEventRoute>,
         name: Name,
         expected_res: ExpectedResult,
     },
@@ -2515,100 +2515,6 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
             .await;
     }
 
-    /*
-        TODO(https://fxbug.dev/42059303): Allow exposing from parent.
-
-        /// Tests exposing an event_stream from a child through its parent down to another
-        /// unrelated child.
-        ///        a
-        ///         \
-        ///          b
-        ///          /\
-        ///          c f
-        ///          /\
-        ///          d e
-        /// c exposes started with a scope of e (but not d)
-        /// to b, which then offers that to f.
-        pub async fn test_expose_event_stream_with_scope(&self) {
-            let components = vec![
-                ("a", ComponentDeclBuilder::new().child_default("b").build()),
-                (
-                    "b",
-                    ComponentDeclBuilder::new()
-                        .offer(OfferDecl::EventStream(OfferEventStreamDecl {
-                            source: OfferSource::Child(ChildRef {
-                                name: "c".to_string(),
-                                collection: None,
-                            }),
-                            source_name: "started".parse().unwrap(),
-                            scope: None,
-                            filter: None,
-                            target: OfferTarget::Child(ChildRef {
-                                name: "f".to_string(),
-                                collection: None,
-                            }),
-                            target_name: "started".parse().unwrap(),
-                            availability: Availability::Required,
-                        }))
-                        .child_default("c")
-                        .child_default("f")
-                        .build(),
-                ),
-                (
-                    "c",
-                    ComponentDeclBuilder::new()
-                        .expose(ExposeDecl::EventStream(ExposeEventStreamDecl {
-                            source: ExposeSource::Framework,
-                            source_name: "started".parse().unwrap(),
-    source_dictionary: Default::default(),
-                            scope: Some(vec![EventScope::Child(ChildRef {
-                                name: "e".to_string(),
-                                collection: None,
-                            })]),
-                            target: ExposeTarget::Parent,
-                            target_name: "started".parse().unwrap(),
-                        }))
-                        .child_default("d")
-                        .child_default("e")
-                        .build(),
-                ),
-                ("d", ComponentDeclBuilder::new().build()),
-                ("e", ComponentDeclBuilder::new().build()),
-                (
-                    "f",
-                    ComponentDeclBuilder::new()
-                        .use_(UseBuilder::event_stream()
-                            .name("started")
-                            .path("/event/stream"))
-                        .build()
-                ),
-            ];
-
-            let mut builder = T::new("a", components);
-            builder.set_builtin_capabilities(vec![CapabilityDecl::EventStream(EventStreamDecl {
-                name: "started".parse().unwrap(),
-            })]);
-
-            let model = builder.build().await;
-            model
-                .check_use(
-                    vec!["b", "f"].into(),
-                    CheckUse::EventStream {
-                        expected_res: ExpectedResult::Ok,
-                        path: "/event/stream".parse().unwrap(),
-                        scope: vec![
-                            ComponentEventRoute {
-                                component: "c".to_string(),
-                                scope: Some(vec!["e".to_string()]),
-                            },
-                            ComponentEventRoute { component: "b".to_string(), scope: None },
-                        ],
-                        name: "started".parse().unwrap(),
-                    },
-                )
-                .await;
-        }*/
-
     /// Tests event stream aliasing (scoping rules are applied correctly)
     ///        root
     ///        |
@@ -2699,10 +2605,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["b".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2713,10 +2619,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["d".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2728,10 +2634,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["c".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2763,7 +2669,7 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![],
+                    scope: None,
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2873,10 +2779,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["b".to_string(), "c".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2887,10 +2793,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute {
-                        component: "/".to_string(),
+                    scope: Some(ComponentEventRoute {
+                        component: ".".to_string(),
                         scope: Some(vec!["b".to_string(), "c".to_string()]),
-                    }],
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2901,16 +2807,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/event/stream".parse().unwrap(),
-                    scope: vec![
-                        ComponentEventRoute {
-                            component: "/".to_string(),
-                            scope: Some(vec!["b".to_string(), "c".to_string()]),
-                        },
-                        ComponentEventRoute {
-                            component: "c".to_string(),
-                            scope: Some(vec!["e".to_string()]),
-                        },
-                    ],
+                    scope: Some(ComponentEventRoute {
+                        component: "c".to_string(),
+                        scope: Some(vec!["e".to_string()]),
+                    }),
                     name: "started".parse().unwrap(),
                 },
             )
@@ -2957,7 +2857,7 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::EventStream {
                     expected_res: ExpectedResult::Ok,
                     path: "/svc/fuchsia.component.EventStream".parse().unwrap(),
-                    scope: vec![ComponentEventRoute { component: "/".to_string(), scope: None }],
+                    scope: Some(ComponentEventRoute { component: ".".to_string(), scope: None }),
                     name: "capability_requested_on_a".parse().unwrap(),
                 },
             )

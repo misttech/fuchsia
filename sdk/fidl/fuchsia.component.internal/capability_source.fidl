@@ -92,6 +92,11 @@ type RemotedAt = table {
     2: type_name string:MAX;
 };
 
+type InternalEventStreamCapability = table {
+    1: name string:MAX;
+    2: route_metadata EventStreamRouteMetadata;
+};
+
 type AggregateMember = strict union {
     1: child fuchsia.component.decl.ChildRef;
     2: collection fuchsia.component.decl.name;

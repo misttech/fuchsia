@@ -9,8 +9,8 @@ use anyhow::{Context, Result, anyhow};
 use cm_config::RuntimeConfig;
 use cm_rust::{
     CapabilityTypeName, ComponentDecl, ExposeDecl, ExposeDeclCommon, ExposeTarget, OfferDecl,
-    OfferDeclCommon, OfferTarget, ProgramDecl, SourceName, UseDecl, UseDeclCommon,
-    UseEventStreamDecl, UseRunnerDecl, UseSource,
+    OfferDeclCommon, OfferTarget, ProgramDecl, SourceName, UseDecl, UseDeclCommon, UseRunnerDecl,
+    UseSource,
 };
 use cm_types::{IterablePath, Name, RelativePath, Url};
 use config_encoder::ConfigFields;
@@ -25,11 +25,10 @@ use routing::capability_source::{
 };
 use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
 use routing::error::{ComponentInstanceError, RoutingError};
-use routing::mapper::{RouteMapper, RouteSegment};
 use routing::policy::GlobalPolicyChecker;
 use routing::{
-    RouteSource, debug_route_sandbox_path, debug_route_sandbox_path_with_request,
-    debug_route_storage_backing_directory, route_event_stream,
+    debug_route_sandbox_path, debug_route_sandbox_path_with_request,
+    debug_route_storage_backing_directory,
 };
 use sandbox::{Capability, Data};
 use serde::{Deserialize, Serialize};
@@ -939,17 +938,6 @@ impl ComponentModelForAnalyzer {
                 Err(AnalyzerModelError::SourceInstanceNotExecutable(component.moniker().clone()))
             }
         }
-    }
-
-    pub fn route_event_stream_sync(
-        request: UseEventStreamDecl,
-        target: &Arc<ComponentInstanceForAnalyzer>,
-    ) -> (Result<RouteSource, RoutingError>, Vec<RouteSegment>) {
-        let mut mapper = RouteMapper::new();
-        let result = route_event_stream(request, target, &mut mapper)
-            .now_or_never()
-            .expect("future was not ready immediately");
-        (result, mapper.get_route())
     }
 
     pub fn collect_config_by_url(&self) -> anyhow::Result<BTreeMap<String, ConfigFields>> {
