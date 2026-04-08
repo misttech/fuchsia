@@ -239,6 +239,10 @@ _flag_configs = struct(
             # TODO(https://fxbug.dev/477786942): Fix violations and enable the following checks.
             # "-Wconversion",
             # "-Wimplicit-fallthrough",
+
+            # TODO(https://fxbug.dev/500111548): Disable "-Wunused-but-set-global" until
+            # all instances are fixed.
+            "-Wno-unused-but-set-global",
         ],
     ),
     # LINT.ThenChange(//build/config/BUILD.gn:default_warnings)
