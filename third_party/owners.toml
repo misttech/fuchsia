@@ -87,3 +87,7 @@
 'third_party/rust_crates/forks/fuse3' = ["src/storage/OWNERS"]
 
 'third_party/wayland' = ["src/graphics/OWNERS", "src/virtualization/OWNERS"]
+
+# network team
+'third_party/rust_crates/forks/trust-dns-resolver' = ["src/connectivity/network/OWNERS"]
+'third_party/rust_crates/forks/trust-dns-proto' = ["src/connectivity/network/OWNERS"]
