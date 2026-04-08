@@ -76,8 +76,7 @@ impl Interface for EmmcPartition {
                     block_count,
                     _unused,
                     vmo_offset,
-                    // TODO(https://fxbug.dev/42176727): Use read options
-                    options: _,
+                    options,
                 } => command_queue.submit_read(
                     self.partition,
                     request_id,
@@ -85,6 +84,7 @@ impl Interface for EmmcPartition {
                     *block_count,
                     request.vmo.as_ref().unwrap().clone(),
                     *vmo_offset,
+                    *options,
                     trace_flow_id,
                 ),
                 block_server::Operation::Write {

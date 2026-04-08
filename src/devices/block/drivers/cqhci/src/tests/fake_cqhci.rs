@@ -10,6 +10,7 @@ use fdf_component::ServiceOffer;
 use fdf_component::testing::harness::TestHarness;
 use fdf_fidl::{DriverChannel, FidlExecutor};
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, CqhciHostInfo, EmmcPartitionId};
+use fidl_next_fuchsia_hardware_inlineencryption as finlineencryption;
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc::{SdmmcHostCap, SdmmcHostInfo};
 use fuchsia_async as fasync;
@@ -147,6 +148,35 @@ impl rpmb::DriverRpmbServerHandler for MockRpmbServer {
         let _ = self.request_sender.unbounded_send(tx);
         let _ = rx.await;
         responder.respond(()).await.ok();
+    }
+}
+
+struct MockInlineEncryptionServer;
+
+impl finlineencryption::DriverDeviceServerHandler for MockInlineEncryptionServer {
+    async fn program_key(
+        &mut self,
+        _request: fidl_next::Request<finlineencryption::driver_device::ProgramKey, DriverChannel>,
+        responder: fidl_next::Responder<
+            finlineencryption::driver_device::ProgramKey,
+            DriverChannel,
+        >,
+    ) {
+        responder.respond(5u8).await.ok();
+    }
+
+    async fn derive_raw_secret(
+        &mut self,
+        _request: fidl_next::Request<
+            finlineencryption::driver_device::DeriveRawSecret,
+            DriverChannel,
+        >,
+        responder: fidl_next::Responder<
+            finlineencryption::driver_device::DeriveRawSecret,
+            DriverChannel,
+        >,
+    ) {
+        responder.respond(&[1u8, 2, 3, 4][..]).await.ok();
     }
 }
 
@@ -304,6 +334,10 @@ impl cqhci::ServiceHandler for Service {
     fn rpmb(&self, server_end: fidl_next::ServerEnd<fidl_next_fuchsia_hardware_rpmb::DriverRpmb>) {
         server_end
             .spawn_on(MockRpmbServer::new(self.rpmb_request_sender.clone()), &self.dispatcher);
+    }
+
+    fn inline_crypto(&self, server_end: fidl_next::ServerEnd<finlineencryption::DriverDevice>) {
+        server_end.spawn_on(MockInlineEncryptionServer, &self.dispatcher);
     }
 }
 

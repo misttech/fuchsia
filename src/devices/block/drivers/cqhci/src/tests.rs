@@ -9,6 +9,7 @@ pub use fake_cqhci::TestCommandQueueHost;
 use crate::CqhciDriver;
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fdf_component::testing::harness::DriverUnderTest;
+use fidl_fuchsia_hardware_block_volume::{self as fvolume};
 use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_mem as fmem;
@@ -45,6 +46,19 @@ async fn connect_block_client(
         .expect("failed to create block client")
 }
 
+fn connect_inline_encryption_proxy(
+    started_driver: &DriverUnderTest<'_, CqhciDriver>,
+    partition_name: &str,
+) -> fidl_fuchsia_hardware_inlineencryption::DeviceProxy {
+    let incoming = started_driver.driver_outgoing();
+    let service = incoming
+        .service::<fvolume::ServiceProxy>()
+        .instance(partition_name)
+        .connect()
+        .expect("failed to connect to service");
+
+    service.connect_to_inline_encryption().expect("failed to connect to inline encryption")
+}
 #[fuchsia::test]
 async fn test_driver_lifecycle() {
     let (_fixture, mut harness) = FakeCqhci::new(None);
@@ -525,6 +539,30 @@ async fn test_flush_while_queue_not_empty() {
     drop(unblock);
 
     futures::join!(read_fut, flush_fut);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_inline_crypto() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let proxy = connect_inline_encryption_proxy(&started_driver, "user");
+
+    let response = proxy
+        .program_key(b"my-wrapped-key", 4096)
+        .await
+        .expect("FIDL error")
+        .expect("program_key failed");
+    assert_eq!(response, 5);
+
+    let response = proxy
+        .derive_raw_secret(b"my-wrapped-key")
+        .await
+        .expect("FIDL error")
+        .expect("derive_raw_secret failed");
+    assert_eq!(response, vec![1, 2, 3, 4]);
 
     started_driver.stop_driver().await;
 }

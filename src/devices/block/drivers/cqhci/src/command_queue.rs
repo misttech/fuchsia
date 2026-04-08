@@ -1397,9 +1397,11 @@ impl CommandQueue {
         block_count: u32,
         vmo: Arc<zx::Vmo>,
         vmo_offset: u64,
+        options: block_server::ReadOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) {
         debug!("Read {block_count}@{block_offset}");
+        assert!(!options.inline_crypto.is_enabled, "TODO(https://fxbug.dev/490482694)");
         if let Err(status) = self.submit_transfer(
             partition,
             request_id,
@@ -1431,6 +1433,7 @@ impl CommandQueue {
         trace_flow_id: Option<NonZero<u64>>,
     ) {
         debug!("Write {block_count}@{block_offset}");
+        assert!(!options.inline_crypto.is_enabled, "TODO(https://fxbug.dev/490482694)");
         if let Err(status) = self.submit_transfer(
             partition,
             request_id,

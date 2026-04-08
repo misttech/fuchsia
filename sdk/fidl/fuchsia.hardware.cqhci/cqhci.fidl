@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.hardware.cqhci;
 
+using fuchsia.hardware.inlineencryption;
 using fuchsia.hardware.rpmb;
 using fuchsia.hardware.sdmmc;
 using zx;
@@ -50,4 +51,5 @@ closed protocol Cqhci {
 service Service {
     cqhci client_end:Cqhci;
     rpmb client_end:fuchsia.hardware.rpmb.DriverRpmb;
+    inline_crypto client_end:fuchsia.hardware.inlineencryption.DriverDevice;
 };

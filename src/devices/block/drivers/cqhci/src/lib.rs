@@ -12,18 +12,19 @@ use block_server::{BlockServer, RequestId};
 use fdf_component::{Driver, DriverContext, Node, ServiceInstance, driver_register};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_driver_framework::{NodeAddArgs, NodeControllerMarker, NodeError};
+use fidl_fuchsia_hardware_block_volume as fvolume;
+use fidl_fuchsia_hardware_inlineencryption as finlineencryption;
+use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::BlockInfo;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
+use fidl_next_fuchsia_hardware_rpmb as rpmb;
+use fuchsia_async as fasync;
 use fuchsia_async::Scope;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
 use log::{debug, error, info, warn};
 use zx::{HandleBased as _, Status};
-use {
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_storage_block as fblock,
-    fidl_next_fuchsia_hardware_rpmb as rpmb, fuchsia_async as fasync,
-};
 
 mod command_queue;
 mod dma_buffer;
@@ -54,8 +55,8 @@ async fn add_child(
     args: NodeAddArgs,
     controller: ServerEnd<NodeControllerMarker>,
 ) -> Result<(), NodeError> {
-    node.proxy().add_child(args, controller, None).await.map_err(|err| {
-        warn!(err:?; "FIDL error from add_child");
+    node.proxy().add_child(args, controller, None).await.map_err(|error| {
+        warn!(error:?; "FIDL error from add_child");
         NodeError::Internal
     })?
 }
@@ -67,10 +68,35 @@ async fn handle_node_requests(
     while let Some(request) = requests.next().await {
         match request? {
             fvolume::NodeRequest::AddChild { args, controller, responder } => {
-                let res = add_child(node.as_ref(), args, controller).await.inspect_err(|err| {
-                    error!(err:?; "Failed to add child node");
+                let res = add_child(node.as_ref(), args, controller).await.inspect_err(|error| {
+                    error!(error:?; "Failed to add child node");
                 });
                 responder.send(res)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn handle_inline_encryption_requests(
+    client: fidl_next::Client<fidl_next_fuchsia_hardware_inlineencryption::DriverDevice>,
+    mut stream: finlineencryption::DeviceRequestStream,
+) -> Result<(), anyhow::Error> {
+    while let Some(request) = stream.next().await {
+        match request? {
+            finlineencryption::DeviceRequest::ProgramKey {
+                wrapped_key,
+                data_unit_size,
+                responder,
+            } => match client.program_key(wrapped_key, data_unit_size).await? {
+                Ok(response) => responder.send(Ok(response.slot))?,
+                Err(status) => responder.send(Err(status))?,
+            },
+            finlineencryption::DeviceRequest::DeriveRawSecret { wrapped_key, responder } => {
+                match client.derive_raw_secret(wrapped_key).await? {
+                    Ok(response) => responder.send(Ok(&response.secret))?,
+                    Err(status) => responder.send(Err(status))?,
+                }
             }
         }
     }
@@ -145,8 +171,8 @@ impl rpmb::RpmbServerHandler for RpmbConnection {
     ) {
         match self.command_queue.get_rpmb_info().await {
             Ok(info) => {
-                if let Err(err) = responder.respond(info).await {
-                    log::warn!(err:?; "Failed to send rpmb GetDeviceInfo response");
+                if let Err(error) = responder.respond(info).await {
+                    log::warn!(error:?; "Failed to send rpmb GetDeviceInfo response");
                 }
             }
             Err(status) => {
@@ -179,8 +205,8 @@ fn get_cqhci_client(
     service: &ServiceInstance<cqhci::Service>,
 ) -> Result<Box<dyn CommandQueueHost>, zx::Status> {
     let (cqhci_client_end, cqhci_server_end) = fdf_fidl::create_channel();
-    service.cqhci(cqhci_server_end).map_err(|err| {
-        error!(err:?; "Failed to connect to Cqhci protocol");
+    service.cqhci(cqhci_server_end).map_err(|error| {
+        error!(error:?; "Failed to connect to Cqhci protocol");
         zx::Status::INVALID_ARGS
     })?;
     Ok(Box::new(cqhci_client_end.spawn()))
@@ -200,19 +226,29 @@ impl Driver for CqhciDriver {
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         info!("cqhci driver starting");
-        let (cqhci, rpmb) = {
+        let (cqhci, rpmb, inline_crypto) = {
             let service: ServiceInstance<cqhci::Service> =
                 context.incoming.service().connect_next().inspect_err(|status| {
                     error!(status:?; "Failed to connect to Cqhci service");
                 })?;
             let (rpmb_client_end, rpmb_server_end) = fdf_fidl::create_channel();
-            service.rpmb(rpmb_server_end).map_err(|err| {
-                error!(err:?; "Failed to connect to Rpmb protocol");
+            service.rpmb(rpmb_server_end).map_err(|error| {
+                error!(error:?; "Failed to connect to Rpmb protocol");
                 zx::Status::INVALID_ARGS
             })?;
             let rpmb = rpmb_client_end.spawn();
 
-            (get_cqhci_client(&service)?, rpmb)
+            let inline_crypto = {
+                let (client_end, server_end) = fdf_fidl::create_channel();
+                if let Err(error) = service.inline_crypto(server_end) {
+                    warn!(error:?; "Failed to connect to InlineCrypto protocol");
+                    None
+                } else {
+                    Some(client_end.spawn())
+                }
+            };
+
+            (get_cqhci_client(&service)?, rpmb, inline_crypto)
         };
 
         let vmar =
@@ -225,9 +261,9 @@ impl Driver for CqhciDriver {
         })?;
 
         let command_queue =
-            CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info).await.map_err(|err| {
-                error!(err:?; "Failed to initialize command queueing");
-                to_status(err)
+            CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info).await.map_err(|error| {
+                error!(error:?; "Failed to initialize command queueing");
+                to_status(error)
             })?;
 
         let mut fs = ServiceFs::new();
@@ -265,6 +301,7 @@ impl Driver for CqhciDriver {
         let partitions_clone = partitions.clone();
         let node = Arc::new(context.take_node()?);
         let node_clone = node.clone();
+        let inline_crypto_clone = inline_crypto.clone();
         let driver = CqhciDriver {
             _node: node,
             scope: Mutex::new(Some(scope)),
@@ -276,6 +313,7 @@ impl Driver for CqhciDriver {
                 fs.for_each_concurrent(None, move |(request, partition_name)| {
                     let partitions_clone = partitions_clone.clone();
                     let node_clone = node_clone.clone();
+                    let inline_crypto_clone = inline_crypto_clone.clone();
                     async move {
                         match request {
                             fvolume::ServiceRequest::Volume(requests) => {
@@ -283,11 +321,11 @@ impl Driver for CqhciDriver {
                                 let partition =
                                     partitions_clone.lock().get(&partition_name).cloned();
                                 if let Some(partition) = partition {
-                                    if let Err(err) =
+                                    if let Err(error) =
                                         partition.server.handle_requests(requests).await
                                     {
                                         error!(
-                                            err:?;
+                                            error:?;
                                             "Failed to handle requests for part {partition_name}"
                                         );
                                     }
@@ -297,16 +335,29 @@ impl Driver for CqhciDriver {
                             }
                             fvolume::ServiceRequest::Node(requests) => {
                                 let node_clone = node_clone.clone();
-                                if let Err(err) = handle_node_requests(node_clone, requests).await {
+                                if let Err(error) = handle_node_requests(node_clone, requests).await
+                                {
                                     error!(
-                                        err:?;
+                                        error:?;
                                         "Failed to handle node requests for part {partition_name}"
                                     );
                                 }
                             }
-                            fvolume::ServiceRequest::InlineEncryption(_) => {
-                                // TODO(https://fxbug.dev/42176727): Support inlineencryption
-                                error!("InlineEncryption not yet supported");
+                            fvolume::ServiceRequest::InlineEncryption(requests) => {
+                                if let Some(inline_crypto) = inline_crypto_clone.clone() {
+                                    if let Err(error) =
+                                        handle_inline_encryption_requests(inline_crypto, requests)
+                                            .await
+                                    {
+                                        error!(
+                                            error:?;
+                                            "Failed to handle inline encryption requests \
+                                             for part {partition_name}"
+                                        );
+                                    }
+                                } else {
+                                    error!("Inline encryption not supported by underlying device.");
+                                }
                             }
                         }
                     }

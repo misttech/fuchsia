@@ -617,6 +617,7 @@ pub struct TransferOptions {
     //// may have a performance impact.  Evaluate manually implementing PRE_BARRIER in software
     /// instead.
     pub queue_barrier: bool,
+    // TODO(https://fxbug.dev/490482694): Add support for inline encrypted transfers.
 }
 
 impl From<block_server::WriteOptions> for TransferOptions {

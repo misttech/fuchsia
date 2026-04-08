@@ -147,12 +147,6 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   const auto args =
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, block_name()).Build();
 
-  auto inline_crypto_client =
-      parent_->driver_incoming()->Connect<fuchsia_hardware_sdmmc::SdmmcService::InlineCrypto>();
-  if (inline_crypto_client.is_ok()) {
-    inline_encryption_client_ = fdf::WireSyncClient(std::move(*inline_crypto_client));
-  }
-
   auto result = parent_->root_node()->AddChild(args, std::move(controller_server_end),
                                                std::move(node_server_end));
   if (!result.ok()) {
@@ -193,6 +187,12 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
     }
 
     fdf::info("Adding rpmb device done");
+  }
+
+  auto inline_crypto_client =
+      parent_->driver_incoming()->Connect<fuchsia_hardware_sdmmc::SdmmcService::InlineCrypto>();
+  if (inline_crypto_client.is_ok()) {
+    inline_encryption_client_ = fdf::WireSyncClient(std::move(*inline_crypto_client));
   }
 
   if (cq_enabled) {
@@ -262,6 +262,7 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   }
 
   remove_device_on_error.cancel();
+
   return ZX_OK;
 }
 
@@ -301,6 +302,19 @@ zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
                                                   fdf::Dispatcher::GetCurrent()->get(),
                                                   fidl::kIgnoreBindingClosure),
   });
+  if (inline_encryption_client_.is_valid()) {
+    auto result = handler.add_inline_crypto(
+        [this](fdf::ServerEnd<fuchsia_hardware_inlineencryption::DriverDevice> server_end) {
+          auto result = parent_->driver_incoming()
+                            ->Connect<fuchsia_hardware_sdmmc::SdmmcService::InlineCrypto>(
+                                std::move(server_end));
+          if (result.is_error()) {
+            FDF_LOGL(ERROR, logger(), "Failed to connect to inline crypto: %s",
+                     result.status_string());
+          }
+        });
+    ZX_ASSERT(result.is_ok());
+  }
   cqhci_host_info_ = std::move(info);
 
   if (zx::result<> result = parent_->driver_outgoing()->AddService<fuchsia_hardware_cqhci::Service>(
