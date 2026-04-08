@@ -816,7 +816,8 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
         } else {
           // Force it the isolate list, don't care about races. If we happened to access it at the
           // same time then too bad.
-          list_node_t* target_queue = &isolate_queues_[0];
+          // Aged pages go to the standard priority isolate queue.
+          list_node_t* target_queue = &isolate_queues_[kIsolateQueueStandard];
           PageQueue old_queue = static_cast<PageQueue>(
               page->object.get_page_queue_ref().exchange(PageQueueReclaimIsolate));
           DEBUG_ASSERT(old_queue >= PageQueueReclaimBase);
@@ -917,6 +918,7 @@ void PageQueues::MaybeCheckActiveRatioAgingLocked(size_t pages) {
 
 void PageQueues::SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintptr_t page_offset,
                                             PageQueue queue) {
+  DEBUG_ASSERT(queue != PageQueueReclaimIsolate);
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
   DEBUG_ASSERT(!page->is_free());
   DEBUG_ASSERT(!list_in_list(&page->queue_node));
@@ -934,6 +936,7 @@ void PageQueues::SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintp
 }
 
 void PageQueues::MoveToQueueLockedList(vm_page_t* page, PageQueue queue) {
+  DEBUG_ASSERT(queue != PageQueueReclaimIsolate);
   DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
   DEBUG_ASSERT(!page->is_free());
   DEBUG_ASSERT(list_in_list(&page->queue_node));
@@ -942,13 +945,25 @@ void PageQueues::MoveToQueueLockedList(vm_page_t* page, PageQueue queue) {
   DEBUG_ASSERT(old_queue != PageQueueNone);
 
   list_delete(&page->queue_node);
-  if (queue == PageQueueReclaimIsolate) {
-    list_add_tail(&isolate_queues_[0], &page->queue_node);
-  } else {
-    list_add_head(&page_queues_[queue], &page->queue_node);
-  }
+  list_add_head(&page_queues_[queue], &page->queue_node);
   page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
   page_queue_counts_[queue].fetch_add(1, ktl::memory_order_relaxed);
+}
+
+void PageQueues::MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_index) {
+  DEBUG_ASSERT(isolate_queue_index < kNumIsolateQueues);
+  DEBUG_ASSERT(page->state() == vm_page_state::OBJECT);
+  DEBUG_ASSERT(!page->is_free());
+  DEBUG_ASSERT(list_in_list(&page->queue_node));
+  DEBUG_ASSERT(page->object.get_object());
+  uint32_t old_queue = page->object.get_page_queue_ref().exchange(PageQueueReclaimIsolate,
+                                                                  ktl::memory_order_relaxed);
+  DEBUG_ASSERT(old_queue != PageQueueNone);
+
+  list_delete(&page->queue_node);
+  list_add_tail(&isolate_queues_[isolate_queue_index], &page->queue_node);
+  page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
+  page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
 }
 
 void PageQueues::SetWired(vm_page_t* page, VmCowPages* object, uint64_t page_offset) {
@@ -1027,7 +1042,7 @@ void PageQueues::MoveToReclaim(vm_page_t* page) {
 void PageQueues::MoveToReclaimDontNeed(vm_page_t* page) {
   {
     Guard<CriticalMutex> guard{&list_lock_};
-    MoveToQueueLockedList(page, PageQueueReclaimIsolate);
+    MoveToIsolateLockedList(page, kIsolateQueueDontNeed);
   }
   MaybeCheckActiveRatioAging(1);
 }

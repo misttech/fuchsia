@@ -71,8 +71,15 @@ class PageQueues {
   // Number of different isolate queues that are available. Different isolate queues allow for
   // separating isolate pages into different buckets such that more nuanced choices on what page to
   // reclaim can be made.
-  // Presently there is no mechanism to separate pages and so the number of queues is kept at 1.
-  static constexpr size_t kNumIsolateQueues = 1;
+  // We use 2 queues to separate "Don't Need" pages (high reclamation priority, index 0) from
+  // standard aged pages (standard reclamation priority, index 1).
+  static constexpr size_t kIsolateQueueDontNeed = 0;
+  static constexpr size_t kIsolateQueueStandard = 1;
+  static constexpr size_t kNumIsolateQueues = 2;
+
+  static_assert(kIsolateQueueDontNeed < kNumIsolateQueues);
+  static_assert(kIsolateQueueStandard < kNumIsolateQueues);
+  static_assert(kIsolateQueueDontNeed < kIsolateQueueStandard);
 
   static constexpr zx_duration_mono_t kDefaultMinMruRotateTime = ZX_SEC(5);
   static constexpr zx_duration_mono_t kDefaultMaxMruRotateTime = ZX_SEC(5);
@@ -454,7 +461,7 @@ class PageQueues {
   void SetQueueBacklinkLockedList(vm_page_t* page, void* object, uintptr_t page_offset,
                                   PageQueue queue) TA_REQ(list_lock_);
   void MoveToQueueLockedList(vm_page_t* page, PageQueue queue) TA_REQ(list_lock_);
-
+  void MoveToIsolateLockedList(vm_page_t* page, size_t isolate_queue_index) TA_REQ(list_lock_);
   // Potentially calls |CheckActiveRatioAgingLocked| based on the kActiveInactiveErrorMargin.
   // |pages| indicates how many pages might have changed queue, and hence how much the ratio could
   // have changed by.
@@ -648,11 +655,13 @@ class PageQueues {
   ktl::array<list_node_t, PageQueueNumQueues> page_queues_ TA_GUARDED(list_lock_);
 
   // When a page is in the PageQueueReclaimIsolate state, instead of being in the page_queues_ list
-  // it is in, potentially one of several different, isolate_queuse_ lists. This is just an
+  // it is in, potentially one of several different, isolate_queues_ lists. This is just an
   // implementation simplification as there's no need to 'save' the memory of the unused list_node_t
-  // in the other page_queues_ array.
+  // in the other page_queues_ array. Note that PageQueueReclaimIsolate state is not a queue index,
+  // i.e. a page will have the PageQueueReclaimIsolate state irrespective of which isolate_queues_
+  // list it is in.
   // Pages in the PageQueueReclaimIsolate state are always exactly in the isolate_queues_ list, and
-  // similarly any page in the isolate_queues_ list is exactly in the PageQueueReclaimIsoalte state.
+  // similarly any page in the isolate_queues_ list is exactly in the PageQueueReclaimIsolate state.
   // In this way the isolate_queues_ are considered reclaimable, and are part of active/inactive
   // tracking, but do not support the MarkAccessed fastpath.
   ktl::array<list_node_t, kNumIsolateQueues> isolate_queues_ TA_GUARDED(list_lock_);

@@ -503,6 +503,100 @@ static bool pq_single_queue_fifo_order() {
   END_TEST;
 }
 
+static bool pq_isolate_dont_need_fifo_order() {
+  BEGIN_TEST;
+
+  PageQueues pq;
+
+  vm_page_t old_page = {};
+  vm_page_t new_page = {};
+  old_page.set_state(vm_page_state::OBJECT);
+  new_page.set_state(vm_page_state::OBJECT);
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
+  ASSERT_OK(status);
+
+  // Set up both pages and mark them "Don't Need".
+  // old_page is marked first, then new_page. Use different offsets to represent distinct pages.
+  pq.SetReclaim(&old_page, vmo->DebugGetCowPages().get(), 0);
+  pq.MoveToReclaimDontNeed(&old_page);
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&old_page));
+
+  pq.SetReclaim(&new_page, vmo->DebugGetCowPages().get(), 1);
+  pq.MoveToReclaimDontNeed(&new_page);
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&new_page));
+
+  // Peek the isolate queue. It should return old_page first (FIFO for Don't Need).
+  auto backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(backlink.has_value());
+  EXPECT_EQ(backlink->page, &old_page);
+
+  // Remove old_page to verify that the next page peeked is new_page.
+  pq.Remove(&old_page);
+  auto next_backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(next_backlink.has_value());
+  EXPECT_EQ(next_backlink->page, &new_page);
+
+  pq.Remove(&new_page);
+
+  END_TEST;
+}
+
+static bool pq_isolate_queues_priority() {
+  BEGIN_TEST;
+
+  PageQueues pq;
+
+  pq.SetActiveRatioMultiplier(0);
+  pq.StartThreads(0, ZX_TIME_INFINITE);
+
+  vm_page_t aged_page = {};
+  vm_page_t dont_need_page = {};
+  aged_page.set_state(vm_page_state::OBJECT);
+  dont_need_page.set_state(vm_page_state::OBJECT);
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
+  ASSERT_OK(status);
+
+  // Set up the first page and rotate queues until it reaches the isolate queue.
+  // Aged pages are placed in the standard isolate queue (isolate_queues_[1]).
+  pq.SetReclaim(&aged_page, vmo->DebugGetCowPages().get(), 0);
+  EXPECT_TRUE(pq.DebugPageIsReclaim(&aged_page));
+
+  size_t rotations = 0;
+  while (!pq.DebugPageIsReclaimIsolate(&aged_page) && rotations < 20) {
+    pq.RotateReclaimQueues();
+    rotations++;
+  }
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&aged_page));
+
+  // Set up the second page and mark it "Don't Need".
+  // "Don't Need" pages are placed in the high-priority isolate queue (isolate_queues_[0]).
+  pq.SetReclaim(&dont_need_page, vmo->DebugGetCowPages().get(), 0);
+  pq.MoveToReclaimDontNeed(&dont_need_page);
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&dont_need_page));
+
+  // Peek the isolate queue. PeekIsolate checks the high-priority queue (index 0)
+  // before the standard queue (index 1). Thus, the "Don't Need" page is returned first,
+  // verifying it is prioritized for eviction over the aged page.
+  auto backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(backlink.has_value());
+  EXPECT_EQ(backlink->page, &dont_need_page);
+
+  // Remove the high-priority "Don't Need" page to verify that the next page
+  // peeked from the isolate queue is the standard aged page.
+  pq.Remove(&dont_need_page);
+  auto next_backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(next_backlink.has_value());
+  EXPECT_EQ(next_backlink->page, &aged_page);
+
+  pq.Remove(&aged_page);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(page_queues_tests)
 VM_UNITTEST(pq_add_remove)
 VM_UNITTEST(pq_move_queues)
@@ -511,6 +605,8 @@ VM_UNITTEST(pq_rotate_queue)
 VM_UNITTEST(pq_toggle_dont_need_queue)
 VM_UNITTEST(pq_single_queue_fifo_order)
 VM_UNITTEST(pq_multiple_queues_fifo_order)
+VM_UNITTEST(pq_isolate_dont_need_fifo_order)
+VM_UNITTEST(pq_isolate_queues_priority)
 UNITTEST_END_TESTCASE(page_queues_tests, "pq", "PageQueues tests")
 
 }  // namespace vm_unittest
