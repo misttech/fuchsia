@@ -717,9 +717,125 @@ fn check_redirects(
 }
 
 fn check_rfcs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<RfcEntry>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064931): other checks for RfcEntry?
-    errors
+    let (items, errors) = parse_entries::<RfcEntry>(filename, yaml_value);
+    let mut errs = errors.unwrap_or_default();
+    if let Some(rfcs) = items {
+        let valid_statuses = vec![
+            "Accepted",
+            "Rejected",
+            "Template",
+            "Withdrawn",
+            "Draft",
+            "Obsolete",
+            "Superseded",
+            "Socialization",
+        ];
+        let mut seen_names = std::collections::HashSet::new();
+        for rfc in rfcs {
+            // Validate uniqueness of names
+            if !seen_names.insert(rfc.name.clone()) {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("duplicate RFC name {}", rfc.name),
+                ));
+            }
+            // Validate short_description is not empty
+            if rfc.short_description.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "invalid RFC short_description. Must not be empty",
+                ));
+            }
+            // Validate non-emptiness of authors/reviewers/area lists
+            if rfc.authors.is_empty() && rfc.status != "Template" {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "authors list must contain at least 1 entry",
+                ));
+            }
+            if rfc.reviewers.is_empty() && rfc.status != "Template" {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "reviewers list must contain at least 1 entry",
+                ));
+            }
+            // Validate area
+            if rfc.area.is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "area list must contain at least 1 entry",
+                ));
+            }
+
+            // Validate name
+            if !rfc.name.starts_with("RFC-") {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("invalid RFC name {}. Must start with 'RFC-'", rfc.name),
+                ));
+            }
+            // Validate title
+            if rfc.title.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "invalid RFC title. Must not be empty",
+                ));
+            }
+            // Validate status
+            if !valid_statuses.contains(&rfc.status.as_str()) {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("invalid RFC status {}", rfc.status),
+                ));
+            }
+            // Validate dates if provided
+            let mut validate_date = |d: &str| {
+                if !d.is_empty() {
+                    if d.len() != 10
+                        || d.chars().nth(4) != Some('-')
+                        || d.chars().nth(7) != Some('-')
+                        || !d.chars().filter(|c| c.is_ascii_digit()).count() == 8
+                    {
+                        errs.push(DocCheckError::new_error(
+                            1,
+                            filename.to_path_buf(),
+                            &format!("invalid date format {}. Must be YYYY-MM-DD", d),
+                        ));
+                    }
+                }
+            };
+            validate_date(&rfc.submitted);
+            validate_date(&rfc.reviewed);
+            // Validate gerrit change IDs are numeric
+            for id in &rfc.gerrit_change_id {
+                if !id.is_empty() && !id.chars().all(|c| c.is_ascii_digit()) {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("invalid gerrit_change_id format {}. Must be numeric", id),
+                    ));
+                }
+            }
+            // Check that 'file' exists relative to this file's folder.
+            let rfc_file_path = filename.parent().unwrap().join(&rfc.file);
+            if !path_helper::exists(&rfc_file_path) {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("RFC file {} does not exist", rfc.file),
+                ));
+            }
+        }
+    }
+    if errs.is_empty() { None } else { Some(errs) }
 }
 
 fn check_roadmap(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
@@ -946,6 +1062,48 @@ redirects:
             errors[1].message,
             "Directory: \"./docs/nonexistent-no-extension\" not found for wildcard redirect."
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_rfcs() -> Result<()> {
+        let filename = PathBuf::from("docs/contribute/governance/rfcs/_rfcs.yaml");
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- name: 'RFC-0001'
+  title: 'RFC Process'
+  short_description: 'The RFC process'
+  authors: ['someone@google.com']
+  file: '0001_rfc_process.md'
+  area: ['Governance']
+  issue: ['123']
+  gerrit_change_id: ['456']
+  status: 'Accepted'
+  reviewers: ['someoneelse@google.com']
+  submitted: '2020-01-01'
+  reviewed: '2020-01-02'
+- name: 'RFC-0002'
+  title: 'Missing File'
+  short_description: 'A missing file'
+  authors: ['someone@google.com']
+  file: 'missing.txt'
+  area: ['Governance']
+  issue: ['123']
+  gerrit_change_id: ['456']
+  status: 'Accepted'
+  reviewers: ['someoneelse@google.com']
+  submitted: '2020-01-01'
+  reviewed: '2020-01-02'
+          "#,
+        )?;
+
+        let result = check_rfcs(&filename, &yaml_value);
+
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "RFC file missing.txt does not exist");
 
         Ok(())
     }
