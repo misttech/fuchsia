@@ -7,6 +7,7 @@
 
 import contextlib
 import dataclasses
+import functools
 import json
 import os
 import shlex
@@ -1116,7 +1117,7 @@ class FileCleaner(contextlib.ExitStack):
         # Register each file's unlinking to be done as the exit
         # callback.
         for file in files:
-            self.callback(file.unlink)
+            self.callback(functools.partial(file.unlink, missing_ok=True))
 
 
 class _BazelOutputCopier(object):
