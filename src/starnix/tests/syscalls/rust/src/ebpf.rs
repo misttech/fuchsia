@@ -445,6 +445,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ebpf_egress() {
         root_required!();
 
@@ -475,6 +476,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ebpf_ingress() {
         root_required!();
 
@@ -504,6 +506,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ebpf_sock_create() {
         root_required!();
 
@@ -569,6 +572,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ebpf_setsockopt() {
         root_required!();
 
@@ -632,6 +636,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ebpf_getsockopt() {
         root_required!();
 
@@ -696,6 +701,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn ebpf_udp_recv() {
         root_required!();
 
