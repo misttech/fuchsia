@@ -288,7 +288,7 @@ def _get_file_maps(ctx):
 
 def _create_idk_atom_impl(ctx):
     if not ctx.attr.name.endswith("_idk"):
-        fail("IDK atom names must end with `_idk`.")
+        fail("IDK atom `name`s must end with `_idk`.")
 
     # Merge additional prebuild info dictionaries if necessary.
     additional_prebuild_info = ctx.attr.additional_prebuild_info
@@ -432,7 +432,7 @@ Possible values, from most restrictive to least restrictive:
         ),
         "idk_deps": attr.label_list(
             providers = [FuchsiaIdkAtomInfo],
-            doc = "Bazel labels for other SDK elements this element publicly depends on at build time." +
+            doc = "Bazel labels for other IDK atoms this element publicly depends on at build time." +
                   "These labels must point to `_create_idk_atom` targets.",
             mandatory = False,
         ),
@@ -631,7 +631,7 @@ def _idk_noop_atom_impl(name, visibility, **kwargs):
     # also need to be wrapped in a legacy macro to avoid "conflicts with an
     # existing macro" build errors.
     if not name.endswith("_idk"):
-        fail("`name` must end with '_idk'.")
+        fail("IDK atom `name`s must end with `_idk`.")
 
     _create_idk_atom(
         name = name,
@@ -648,7 +648,7 @@ Should be used in very specific situations where IDK elements are injected in
 IDKs in a way that is not reflected in the build graph. This allows IDK-related
 macros to handle such a target as any other IDK target.
 
-`name` must end with '_idk' (unlike other IDK macros).
+`name` must end with '_idk' (unlike most other IDK macros).
 """,
     implementation = _idk_noop_atom_impl,
     attrs = {

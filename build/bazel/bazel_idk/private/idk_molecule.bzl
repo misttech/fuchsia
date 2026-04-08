@@ -9,6 +9,9 @@ load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkM
 visibility(["//build/bazel/bazel_idk/..."])
 
 def _idk_molecule_impl(ctx):
+    if not ctx.attr.name.endswith("_idk"):
+        fail("IDK molecule `name`s must end with `_idk`.")
+
     all_deps_depset = depset(direct = ctx.files.deps)
     idk_deps = ctx.attr.deps
 
@@ -36,7 +39,8 @@ def _idk_molecule_impl(ctx):
     ]
 
 idk_molecule = rule(
-    doc = "Generate an IDK molecule containing atoms for Fuchsia targets.",
+    doc = "Generate an IDK molecule containing atoms for Fuchsia targets. " +
+          "`name` must end with '_idk' (unlike most other IDK macros).",
     implementation = _idk_molecule_impl,
     attrs = {
         "deps": attr.label_list(
@@ -49,7 +53,8 @@ idk_molecule = rule(
 
 idk_host_molecule = rule(
     doc = "Generate an IDK molecule containing atoms for the host. " +
-          "Only supports the current host platform.",
+          "Only supports the current host platform. " +
+          "`name` must end with '_idk' (unlike most other IDK macros).",
     implementation = _idk_molecule_impl,
     attrs = {
         "deps": attr.label_list(

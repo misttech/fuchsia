@@ -734,7 +734,7 @@ cc_library(
 )
 
 idk_molecule(
-    name = "test_submolecule",
+    name = "test_submolecule_idk",
     testonly = True,
     deps = [
         "platform_dependent_source_library_idk",
@@ -750,10 +750,10 @@ idk_molecule(
 )
 
 idk_molecule(
-    name = "test_molecule",
+    name = "test_molecule_idk",
     testonly = True,
     deps = [
-        ":test_submolecule",
+        ":test_submolecule_idk",
         # Tests compatibility testing with different expectations per API level.
         # As of F30+, this library has elements added at 28, 29, and NEXT.
         "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
@@ -864,7 +864,7 @@ filegroup(
     testonly = True,
     srcs = [
         # Depends on the IDK atom targets.
-        ":test_molecule",
+        ":test_molecule_idk",
 
         # Linking executables verifies that all deps are properly specified.
         ":test_executable_using_cc_shared_library",
@@ -896,7 +896,7 @@ filegroup(
         ":verify_platform_dependent_source_library_atom_info",
 
         # Build all the migrated atoms for the main platform build.
-        "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build",
+        "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build_idk",
 
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
@@ -1011,7 +1011,7 @@ build_idk_combinations(
 
         # TODO(https://fxbug.dev/443766378): Fix the
         # "unable to find library -lzircon", etc. errors and uncomment.
-        # ":test_molecule",
+        # ":test_molecule_idk",
         # ":test_executable",
 
         # A shared library that exercises use of the API level-specific golden IFS files.
