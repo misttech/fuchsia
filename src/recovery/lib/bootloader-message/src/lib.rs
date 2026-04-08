@@ -48,7 +48,7 @@ impl BootloaderMessage {
     /// Returns an iterator over all arguments specified in the bootloader message's recovery field.
     /// Arguments are assumed to use a newline character (`\n`) as a delimiter.
     fn recovery_args(&self) -> impl Iterator<Item = &str> {
-        self.recovery.split('\n')
+        self.recovery.split('\n').map(|arg| arg.trim()).filter(|arg| !arg.is_empty())
     }
 
     fn reason(&self) -> Option<&str> {
@@ -59,6 +59,7 @@ impl BootloaderMessage {
         let reason = self.reason();
         for arg in self.recovery_args().filter(|arg| !arg.starts_with(REASON_PREFIX)) {
             match arg {
+                "recovery" => {}
                 "--wipe_data" => handler.wipe_data(),
                 "--sideload" => handler.sideload(/*auto_reboot=*/ false),
                 "--sideload_auto_reboot" => handler.sideload(/*auto_reboot=*/ true),
@@ -185,5 +186,58 @@ mod tests {
         let msg = BootloaderMessage { command: long_string, ..Default::default() };
         let result: Result<BootloaderMessageRaw, _> = msg.try_into();
         assert!(result.is_err());
+    }
+
+    #[derive(Default)]
+    struct MockHandler {
+        wipe_data_called: bool,
+        sideload_called: Vec<bool>,
+        prompt_and_wipe_data_reason: Option<String>,
+        other_calls: Vec<(String, Option<String>)>,
+    }
+
+    impl RecoveryActionHandler for MockHandler {
+        fn wipe_data(&mut self) {
+            self.wipe_data_called = true;
+        }
+        fn sideload(&mut self, auto_reboot: bool) {
+            self.sideload_called.push(auto_reboot);
+        }
+        fn prompt_and_wipe_data(&mut self, reason: Option<&str>) {
+            self.prompt_and_wipe_data_reason = reason.map(String::from);
+        }
+        fn other(&mut self, arg: &str, reason: Option<&str>) {
+            self.other_calls.push((arg.to_string(), reason.map(String::from)));
+        }
+    }
+
+    #[test]
+    fn test_handle_recovery_actions() {
+        let msg = BootloaderMessage::with_args(
+            "recovery\n  \n--wipe_data\n--sideload\n--reason=test_reason\nunknown_arg",
+        );
+        let mut handler = MockHandler::default();
+        msg.handle_recovery_actions(&mut handler);
+
+        assert!(handler.wipe_data_called);
+        assert_eq!(handler.sideload_called, [false]);
+        assert_eq!(
+            handler.other_calls,
+            [("unknown_arg".to_string(), Some("test_reason".to_string()))]
+        );
+    }
+
+    #[test]
+    fn test_empty_recovery_string() {
+        let msg = BootloaderMessage::with_args("");
+        assert_eq!(msg.recovery_args().count(), 0);
+
+        let mut handler = MockHandler::default();
+        msg.handle_recovery_actions(&mut handler);
+
+        assert!(!handler.wipe_data_called);
+        assert!(handler.sideload_called.is_empty());
+        assert!(handler.prompt_and_wipe_data_reason.is_none());
+        assert!(handler.other_calls.is_empty());
     }
 }
