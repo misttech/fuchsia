@@ -18,7 +18,7 @@
 #include <kernel/lockdep.h>
 #include <kernel/mutex.h>
 #include <kernel/spinlock.h>
-#include <object/io_buffer_dispatcher.h>
+#include <object/dispatcher.h>
 #include <object/thread_dispatcher.h>
 #include <vm/pinned_vm_object.h>
 
@@ -52,19 +52,23 @@ struct ReadToken {
 
 }  // namespace sampler
 
-// A ThreadSampler is really just an IOBuffer with some added control methods on top to start and
-// stop sampling.
-class ThreadSamplerDispatcher : public IoBufferDispatcher {
+// A ThreadSampler manages sampling threads and writing the results out to per cpu buffers.
+class ThreadSamplerDispatcher
+    : public SoloDispatcher<ThreadSamplerDispatcher, ZX_DEFAULT_SAMPLER_RIGHTS> {
  public:
   ~ThreadSamplerDispatcher() override = default;
+
+  // When the user drops their end of the buffer/sampler, we need to stop sampling and clean up the
+  // state.
+  void on_zero_handles() override;
+
+  zx_obj_type_t get_type() const override { return ZX_OBJ_TYPE_SAMPLER; }
+
+  zx::result<> AddThread(const fbl::RefPtr<ThreadDispatcher>& thread);
 
   // Set a timer based on the configured duration. When the timer expires, the currently running
   // thread will be marked to take a sample.
   void SetCurrCpuTimer();
-
-  // When the user drops their end of the buffer/sampler, we need to stop sampling and clean up the
-  // state.
-  void OnPeerZeroHandlesLocked() TA_REQ(get_lock()) override;
 
   enum class SamplingState : uint8_t {
     Configured,
@@ -83,9 +87,9 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
 
   static zx::result<KernelHandle<ThreadSamplerDispatcher>> Create(
       const zx_sampler_config_t& config);
-  static zx::result<> Start(const fbl::RefPtr<IoBufferDispatcher>& disp);
-  static zx::result<> Stop(const fbl::RefPtr<IoBufferDispatcher>& disp);
-  static zx::result<> AddThread(const fbl::RefPtr<IoBufferDispatcher>& disp,
+  static zx::result<> Start(const fbl::RefPtr<ThreadSamplerDispatcher>& disp);
+  static zx::result<> Stop(const fbl::RefPtr<ThreadSamplerDispatcher>& disp);
+  static zx::result<> AddThread(const fbl::RefPtr<ThreadSamplerDispatcher>& disp,
                                 const fbl::RefPtr<ThreadDispatcher>& thread);
 
   // Given a thread's registers, pid, and tid, walk the thread's user stack and write each
@@ -106,22 +110,18 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
   // `len` _must_ be at least equal to the total size of the sampler buffers, which can be queried
   // by passing a nullptr `ptr`. In this case, no data will be written and the return value will be
   // the required minimum size of the buffer to write to.
-  static ktl::pair<zx_status_t, size_t> ReadUser(const fbl::RefPtr<IoBufferDispatcher>& disp,
+  static ktl::pair<zx_status_t, size_t> ReadUser(const fbl::RefPtr<ThreadSamplerDispatcher>& disp,
                                                  user_out_ptr<void> ptr, size_t len);
 
  protected:
   sampler::internal::PerCpuState& GetPerCpuState(size_t i) const { return per_cpu_state_[i]; }
 
-  ThreadSamplerDispatcher(fbl::RefPtr<PeerHolder<IoBufferDispatcher>> holder,
-                          IobEndpointId endpoint_id, fbl::RefPtr<SharedIobState> shared_state)
-      : IoBufferDispatcher(ktl::move(holder), endpoint_id, ktl::move(shared_state)) {}
+  ThreadSamplerDispatcher() = default;
 
-  // Create a ThreadSamplerDispatcher. The ThreadSamplerDispatcher is a peered object with one end
-  // readable and one end writable. The write end is retained by the kernel to write samples to. The
-  // user receives the read end of the buffer so that they may read the samples written.
-  static zx::result<> CreateImpl(const zx_sampler_config_t& config,
-                                 KernelHandle<ThreadSamplerDispatcher>& read_handle_out,
-                                 KernelHandle<ThreadSamplerDispatcher>& write_handle_out);
+  // Create a ThreadSamplerDispatcher. The ThreadSamplerDispatcher acts as a reference for userspace
+  // to safely access the global sampler state.
+  static zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> CreateImpl(
+      const zx_sampler_config_t& config);
 
   // Given information about a thread and its registers, walk its userstack and write out a sample
   // if sampling is enabled.
@@ -146,9 +146,10 @@ class ThreadSamplerDispatcher : public IoBufferDispatcher {
   fbl::Array<sampler::internal::PerCpuState> per_cpu_state_;
 
   DECLARE_SINGLETON_MUTEX(ThreadSamplerLock);
+
   // We have only a single global thread sampler at a time. Another callers will get
   // ZX_ERR_ALREADY_EXISTS until the existing sampler is released.
-  static KernelHandle<ThreadSamplerDispatcher> gThreadSampler_ TA_GUARDED(ThreadSamplerLock::Get());
+  static fbl::RefPtr<ThreadSamplerDispatcher> gThreadSampler_ TA_GUARDED(ThreadSamplerLock::Get());
 };
 
 #endif  // ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_THREAD_SAMPLER_H_

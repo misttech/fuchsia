@@ -15,7 +15,6 @@
 #include <zircon/rights.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls.h>
-#include <zircon/syscalls/iob.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/threads.h>
 #include <zircon/time.h>
@@ -63,16 +62,16 @@ void TestFn(zx::unowned_event event) {
 }
 
 // Call f for each record read from the sampler.
-zx::result<> ForEachRecord(const zx::iob& sampler, size_t buffer_size,
+zx::result<> ForEachRecord(zx_handle_t sampler, size_t buffer_size,
                            fit::function<void(std::span<uint64_t>)> f) {
   size_t max_size;
-  if (zx_status_t status = zx_sampler_read(sampler.get(), nullptr, 0, &max_size); status != ZX_OK) {
+  if (zx_status_t status = zx_sampler_read(sampler, nullptr, 0, &max_size); status != ZX_OK) {
     return zx::error(status);
   }
 
   size_t actual;
   std::vector<uint64_t> data(max_size / 8);
-  if (zx_status_t status = zx_sampler_read(sampler.get(), data.data(), max_size, &actual);
+  if (zx_status_t status = zx_sampler_read(sampler, data.data(), max_size, &actual);
       status != ZX_OK) {
     return zx::error(status);
   }
@@ -94,7 +93,7 @@ zx::result<> ForEachRecord(const zx::iob& sampler, size_t buffer_size,
   return zx::ok();
 }
 
-zx::result<size_t> CountRecords(const zx::iob& sampler, size_t buffer_size) {
+zx::result<size_t> CountRecords(zx_handle_t sampler, size_t buffer_size) {
   size_t record_count{0};
   if (zx::result res = ForEachRecord(sampler, buffer_size,
                                      [&record_count](std::span<uint64_t>) { record_count += 1; });
@@ -105,7 +104,7 @@ zx::result<size_t> CountRecords(const zx::iob& sampler, size_t buffer_size) {
   return zx::ok(record_count);
 }
 
-zx::result<size_t> CountRecordsContainingTid(const zx::iob& sampler, size_t buffer_size,
+zx::result<size_t> CountRecordsContainingTid(zx_handle_t sampler, size_t buffer_size,
                                              zx_koid_t desired_tid) {
   size_t record_count{0};
   auto f = [&record_count, desired_tid](std::span<uint64_t> record_data) {
@@ -139,7 +138,7 @@ TEST(ThreadSampler, StartStop) {
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
   };
-  zx::iob sampler;
+  zx_handle_t sampler;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -147,8 +146,7 @@ TEST(ThreadSampler, StartStop) {
   ASSERT_OK(result.status_value());
   zx::resource sampling_resource = std::move(result.value());
 
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
+  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -164,19 +162,20 @@ TEST(ThreadSampler, StartStop) {
   zx_handle_t native_handle = native_thread_get_zx_handle(sample_thread.native_handle());
 
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  ASSERT_OK(zx_sampler_start(sampler.get()));
+  ASSERT_OK(zx_sampler_start(sampler));
 
   zx_koid_t tid = GetTid(native_handle);
   ASSERT_NE(tid, ZX_KOID_INVALID);
 
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  ASSERT_OK(zx_sampler_stop(sampler.get()));
+  ASSERT_OK(zx_sampler_stop(sampler));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
 
   zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, 10);
+  ASSERT_OK(zx_handle_close(sampler));
 }
 
 TEST(ThreadSampler, SamplerLifetime) {
@@ -197,26 +196,26 @@ TEST(ThreadSampler, SamplerLifetime) {
   zx::resource sampling_resource = std::move(result.value());
 
   {
-    zx::iob buffers;
-    zx_status_t create_res =
-        zx_sampler_create(sampling_resource.get(), 0, &config, buffers.reset_and_get_address());
+    zx_handle_t sampler;
+    zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
     if constexpr (!sampler_enabled) {
       ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
       return;
     }
     ASSERT_OK(create_res);
 
-    zx::iob new_buffers;
+    zx_handle_t new_sampler;
     zx_status_t create_res_bad =
-        zx_sampler_create(sampling_resource.get(), 0, &config, new_buffers.reset_and_get_address());
+        zx_sampler_create(sampling_resource.get(), 0, &config, &new_sampler);
 
     EXPECT_EQ(create_res_bad, ZX_ERR_ALREADY_EXISTS);
+    ASSERT_OK(zx_handle_close(sampler));
   }
 
   // Once the buffer is released, a new sampler can now be created
-  zx::iob buffers;
-  ASSERT_OK(
-      zx_sampler_create(sampling_resource.get(), 0, &config, buffers.reset_and_get_address()));
+  zx_handle_t sampler;
+  ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
+  ASSERT_OK(zx_handle_close(sampler));
 }
 
 TEST(ThreadSampler, DroppedSampler) {
@@ -228,7 +227,7 @@ TEST(ThreadSampler, DroppedSampler) {
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
   };
-  zx::iob sampler;
+  zx_handle_t sampler;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -236,8 +235,7 @@ TEST(ThreadSampler, DroppedSampler) {
   ASSERT_OK(result.status_value());
   zx::resource sampling_resource = std::move(result.value());
 
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
+  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -255,18 +253,17 @@ TEST(ThreadSampler, DroppedSampler) {
   ASSERT_NE(tid, ZX_KOID_INVALID);
 
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-  ASSERT_OK(zx_sampler_start(sampler.get()));
+  ASSERT_OK(zx_sampler_start(sampler));
 
   // Drop the sampler mid session
-  sampler.reset();
+  ASSERT_OK(zx_handle_close(sampler));
 
   // And create a new one
-  create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
+  create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   ASSERT_OK(create_res);
-  ASSERT_OK(zx_sampler_start(sampler.get()));
+  ASSERT_OK(zx_sampler_start(sampler));
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  ASSERT_OK(zx_sampler_stop(sampler.get()));
+  ASSERT_OK(zx_sampler_stop(sampler));
 
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
   sample_thread.join();
@@ -274,107 +271,7 @@ TEST(ThreadSampler, DroppedSampler) {
   zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, 10);
-}
-
-TEST(ThreadSampler, BadIob) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
-  // We should not be able to pass in any arbitrary iob
-  size_t buffer_size = zx_system_get_page_size();
-  zx_sampler_config_t config{
-      .period = zx::msec(1).get(),
-      .buffer_size = buffer_size,
-  };
-  zx::iob sampler;
-
-  zx::unowned_resource system_resource = standalone::GetSystemResource();
-  zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
-  ASSERT_OK(result.status_value());
-  zx::resource sampling_resource = std::move(result.value());
-
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-  ASSERT_OK(create_res);
-
-  const uint64_t kIoBufferEpRwMap =
-      ZX_IOB_ACCESS_EP0_CAN_MAP_READ | ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE |
-      ZX_IOB_ACCESS_EP1_CAN_MAP_READ | ZX_IOB_ACCESS_EP1_CAN_MAP_WRITE;
-  zx_iob_region_t iob_config{
-      .type = ZX_IOB_REGION_TYPE_PRIVATE,
-      .access = kIoBufferEpRwMap,
-      .size = zx_system_get_page_size(),
-      .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
-      .private_region =
-          {
-              .options = 0,
-          },
-  };
-  zx_handle_t ep0, ep1;
-  EXPECT_OK(zx_iob_create(0, &iob_config, 1, &ep0, &ep1));
-
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_start(ep0));
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_start(ep1));
-  EXPECT_OK(zx_sampler_start(sampler.get()));
-
-  zx::event event;
-  ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
-  std::thread sample_thread{TestFn, event.borrow()};
-  ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_stop(ep0));
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_stop(ep1));
-  EXPECT_OK(zx_sampler_stop(sampler.get()));
-  ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
-  sample_thread.join();
-}
-
-TEST(ThreadSampler, NoRights) {
-  NEEDS_NEXT_SKIP(zx_sampler_create);
-
-  // We require ZX_RIGHT_APPLY_PROFILE on the returned iob in order to control sampling.
-  // If a handle lacks the rights, it should be denied access.
-  size_t buffer_size = zx_system_get_page_size();
-  zx_sampler_config_t config{
-      .period = zx::msec(1).get(),
-      .buffer_size = buffer_size,
-  };
-  zx::iob sampler;
-
-  zx::unowned_resource system_resource = standalone::GetSystemResource();
-  zx::result<zx::resource> result =
-      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_SAMPLING_BASE);
-  ASSERT_OK(result.status_value());
-  zx::resource sampling_resource = std::move(result.value());
-
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-  ASSERT_OK(create_res);
-
-  zx::iob no_right_sampler;
-  ASSERT_OK(sampler.duplicate(ZX_RIGHT_NONE, &no_right_sampler));
-
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_start(no_right_sampler.get()));
-  EXPECT_OK(zx_sampler_start(sampler.get()));
-
-  zx::event event;
-  ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
-  std::thread sample_thread{TestFn, event.borrow()};
-
-  ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
-
-  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_sampler_stop(no_right_sampler.get()));
-  EXPECT_OK(zx_sampler_stop(sampler.get()));
-  ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
-  sample_thread.join();
+  ASSERT_OK(zx_handle_close(sampler));
 }
 
 // We should be able to attach to a started but not running thread. If we do, we should be able to
@@ -387,7 +284,7 @@ TEST(ThreadSampler, NonRunningThread) {
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
   };
-  zx::iob sampler;
+  zx_handle_t sampler;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -396,8 +293,7 @@ TEST(ThreadSampler, NonRunningThread) {
   zx::resource sampling_resource = std::move(result.value());
 
   // Create the thread, but defer starting the thread until after we've attached to it.
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
+  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -411,7 +307,7 @@ TEST(ThreadSampler, NonRunningThread) {
 
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
-  ASSERT_OK(zx_sampler_start(sampler.get()));
+  ASSERT_OK(zx_sampler_start(sampler));
 
   zx_handle_t event_handle = event.get();
 
@@ -421,7 +317,7 @@ TEST(ThreadSampler, NonRunningThread) {
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
 
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  ASSERT_OK(zx_sampler_stop(sampler.get()));
+  ASSERT_OK(zx_sampler_stop(sampler));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
 
   ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
@@ -429,6 +325,7 @@ TEST(ThreadSampler, NonRunningThread) {
   zx::result<size_t> record_count = CountRecordsContainingTid(sampler, buffer_size, tid);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, size_t{10});
+  ASSERT_OK(zx_handle_close(sampler));
 }
 
 TEST(ThreadSampler, HighFrequency) {
@@ -442,7 +339,7 @@ TEST(ThreadSampler, HighFrequency) {
       .period = zx::usec(50).get(),
       .buffer_size = buffer_size,
   };
-  zx::iob sampler;
+  zx_handle_t sampler;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -450,8 +347,7 @@ TEST(ThreadSampler, HighFrequency) {
   ASSERT_OK(result.status_value());
   zx::resource sampling_resource = std::move(result.value());
 
-  zx_status_t create_res =
-      zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
+  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
   if constexpr (!sampler_enabled) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
@@ -470,9 +366,9 @@ TEST(ThreadSampler, HighFrequency) {
     ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
   }
 
-  ASSERT_OK(zx_sampler_start(sampler.get()));
+  ASSERT_OK(zx_sampler_start(sampler));
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
-  ASSERT_OK(zx_sampler_stop(sampler.get()));
+  ASSERT_OK(zx_sampler_stop(sampler));
 
   for (auto& event : events) {
     ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
@@ -484,6 +380,7 @@ TEST(ThreadSampler, HighFrequency) {
   zx::result<size_t> record_count = CountRecords(sampler, buffer_size);
   ASSERT_OK(record_count.status_value());
   ASSERT_GE(*record_count, 10);
+  ASSERT_OK(zx_handle_close(sampler));
 }
 
 }  // namespace
