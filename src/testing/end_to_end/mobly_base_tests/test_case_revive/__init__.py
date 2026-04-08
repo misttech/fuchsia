@@ -8,9 +8,8 @@ import importlib
 import inspect
 import logging
 from collections.abc import Callable
-from typing import Any, Awaitable, TypeVar
+from typing import Awaitable, TypeVar
 
-import fuchsia_async_extension
 from fuchsia_base_test import FuchsiaBaseTest
 from honeydew.auxiliary_devices.power_switch import power_switch
 
@@ -168,9 +167,9 @@ class TestCaseRevive(FuchsiaBaseTest):
             ],
         )
 
-    def _perform_op(
+    async def _perform_op(
         self, fuchsia_device_operation: FuchsiaDeviceOperation
-    ) -> Any:
+    ) -> None:
         """Perform user specified operation"""
 
         for fuchsia_device in self.fuchsia_devices:
@@ -178,18 +177,14 @@ class TestCaseRevive(FuchsiaBaseTest):
                 fuchsia_device_operation
                 == FuchsiaDeviceOperation.IDLE_SUSPEND_TIMER_RESUME
             ):
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    fuchsia_device.system_power_state_controller.idle_suspend_timer_based_resume(
-                        duration=self.user_params["resume_timer_duration_sec"],
-                        verify_duration=self.user_params.get(
-                            "verify_duration", True
-                        ),
-                    )
+                await fuchsia_device.system_power_state_controller.idle_suspend_timer_based_resume(
+                    duration=self.user_params["resume_timer_duration_sec"],
+                    verify_duration=self.user_params.get(
+                        "verify_duration", True
+                    ),
                 )
             elif fuchsia_device_operation == FuchsiaDeviceOperation.SOFT_REBOOT:
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    fuchsia_device.reboot()
-                )
+                await fuchsia_device.reboot()
             elif fuchsia_device_operation in [
                 FuchsiaDeviceOperation.HARD_REBOOT,
                 FuchsiaDeviceOperation.POWER_CYCLE,
@@ -199,7 +194,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     _DMC_MODULE,
                     _DMC_CLASS,
                 )
-                power_switch_class: Any = getattr(
+                power_switch_class = getattr(
                     importlib.import_module(_DMC_MODULE), _DMC_CLASS
                 )
 
@@ -215,10 +210,8 @@ class TestCaseRevive(FuchsiaBaseTest):
                     )
                 )
 
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    fuchsia_device.power_cycle(
-                        power_switch=self._power_switch, outlet=None
-                    )
+                await fuchsia_device.power_cycle(
+                    power_switch=self._power_switch, outlet=None
                 )
             elif (
                 fuchsia_device_operation
@@ -228,7 +221,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     f"'{fuchsia_device_operation}' operation is not supported by 'TestCaseRevive'"
                 )
 
-    def _logic_for_test_case_revive(
+    async def _logic_for_test_case_revive(
         self,
         test_case: str,
         fuchsia_device_operation: FuchsiaDeviceOperation,
@@ -276,7 +269,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     self, **pre_test_execution_fn_kwargs
                 )
                 if inspect.isawaitable(res):
-                    fuchsia_async_extension.get_loop().run_until_complete(res)
+                    await res
             else:
                 _LOGGER.info(
                     "[TestCaseRevive] - Calling %s which is the first step in the revived test sequence...",
@@ -284,7 +277,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                 )
                 res = pre_test_execution_fn(self)
                 if inspect.isawaitable(res):
-                    fuchsia_async_extension.get_loop().run_until_complete(res)
+                    await res
 
         if test_method_execution_frequency in [
             TestMethodExecutionFrequency.PRE_AND_POST,
@@ -297,18 +290,16 @@ class TestCaseRevive(FuchsiaBaseTest):
             )
             res = getattr(self, test_case)()
             if inspect.isawaitable(res):
-                fuchsia_async_extension.get_loop().run_until_complete(res)
+                await res
 
         _LOGGER.info(
             "[TestCaseRevive] - Performing %s operation on all Fuchsia devices "
             "that are part of the testbed...",
             fuchsia_device_operation,
         )
-        res = self._perform_op(
+        await self._perform_op(
             fuchsia_device_operation=fuchsia_device_operation
         )
-        if inspect.isawaitable(res):
-            fuchsia_async_extension.get_loop().run_until_complete(res)
 
         if test_method_execution_frequency in [
             TestMethodExecutionFrequency.PRE_AND_POST,
@@ -321,7 +312,7 @@ class TestCaseRevive(FuchsiaBaseTest):
             )
             res = getattr(self, test_case)()
             if inspect.isawaitable(res):
-                fuchsia_async_extension.get_loop().run_until_complete(res)
+                await res
 
         if post_test_execution_fn:
             if post_test_execution_fn_kwargs:
@@ -334,7 +325,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     self, **post_test_execution_fn_kwargs
                 )
                 if inspect.isawaitable(res):
-                    fuchsia_async_extension.get_loop().run_until_complete(res)
+                    await res
             else:
                 _LOGGER.info(
                     "[TestCaseRevive] - Calling %s which is the last step in the revived test sequence...",
@@ -342,7 +333,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                 )
                 res = post_test_execution_fn(self)
                 if inspect.isawaitable(res):
-                    fuchsia_async_extension.get_loop().run_until_complete(res)
+                    await res
 
     def _revived_test_case_name_func(
         self,
