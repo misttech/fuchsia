@@ -199,6 +199,19 @@ async fn handle_host_request(
                             }
                         }
                     }
+                    HostControllerRequest::SetLocalName { name, responder } => {
+                        match worker.set_local_name(name).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("SetLocalName encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
                     HostControllerRequest::_UnknownMethod { ordinal, .. } => {
                         error!(
                             "HostControllerRequest: unknown method received with ordinal {ordinal}"

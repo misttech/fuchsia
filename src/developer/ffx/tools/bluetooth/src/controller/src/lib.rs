@@ -14,6 +14,8 @@ use fuchsia_bluetooth::types::{HostInfo, addresses_to_custom_string};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 
+pub mod local_name;
+
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]
 pub struct ControllerTool {
@@ -35,12 +37,16 @@ impl FfxMain for ControllerTool {
                 if let Some(host) = hosts.first() {
                     writer.line(host.to_string())?;
                 } else {
-                    writer.line("No host found.")?;
+                    writer.line("No controller found.")?;
                 }
             }
             // ffx bluetooth controller list
             ControllerSubCommand::List(ref _cmd) => {
                 writer.line(get_hosts_list(&hosts).unwrap())?;
+            }
+            // ffx bluetooth controller local-name
+            ControllerSubCommand::LocalName(ref cmd) => {
+                local_name::handle_local_name(&self, cmd, &mut writer).await?;
             }
         }
         Ok(())

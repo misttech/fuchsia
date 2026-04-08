@@ -51,6 +51,7 @@ enum Request {
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
+    SetLocalName(String, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
         oneshot::Sender<
             Result<
@@ -229,6 +230,9 @@ impl WorkThread {
                 }
                 Request::SetConnectability(connectable, result_sender) => {
                     result_sender.send(proxies.set_connectability(connectable).await).unwrap();
+                }
+                Request::SetLocalName(name, result_sender) => {
+                    result_sender.send(proxies.set_local_name(name)).unwrap();
                 }
                 Request::StartLeScan(result_sender) => {
                     result_sender.send(proxies.start_le_scan(peer_cache.clone()).await).unwrap();
@@ -484,6 +488,13 @@ impl WorkThread {
     pub async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::SetConnectability(connectable, sender))?;
+        receiver.await?
+    }
+
+    // Set local name.
+    pub async fn set_local_name(&self, name: String) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::SetLocalName(name, sender))?;
         receiver.await?
     }
 
@@ -912,6 +923,12 @@ impl Proxies {
         }
         *self.suppress_connections_session.lock() = Some(token);
         Ok(())
+    }
+
+    fn set_local_name(&self, name: String) -> Result<(), anyhow::Error> {
+        self.access_proxy.set_local_name(name.as_str()).map_err(|fidl_error| {
+            anyhow!("fuchsia.bluetooth.sys.Access/SetLocalName error: {fidl_error}")
+        })
     }
 
     // Send peer update of those for which the address is known and return the list of those for

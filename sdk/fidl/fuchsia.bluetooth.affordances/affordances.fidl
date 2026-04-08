@@ -80,4 +80,12 @@ open protocol HostController {
         // Required. Set to true if making discoverable or false if revoking discoverability.
         1: discoverable bool;
     }) -> () error Error;
+
+    /// Set the active host's local name.
+    ///
+    /// + request `name` Name to assign to the host.
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible SetLocalName(struct {
+        name bt.DeviceName;
+    }) -> () error Error;
 };

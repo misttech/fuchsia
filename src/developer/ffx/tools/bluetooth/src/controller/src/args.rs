@@ -5,6 +5,9 @@
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 
+#[path = "local_name/args.rs"]
+pub mod local_name;
+
 // ffx bluetooth controller
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -24,6 +27,7 @@ pub struct ControllerCommand {
 pub enum ControllerSubCommand {
     Show(ShowCommand),
     List(ListCommand),
+    LocalName(local_name::LocalNameCommand),
 }
 /// ffx bluetooth controller show
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
