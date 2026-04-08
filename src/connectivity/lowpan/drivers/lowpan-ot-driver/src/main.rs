@@ -279,7 +279,7 @@ impl Config {
             }
         };
         if let Err(e) = ot_instance.set_vendor_sw_version(version) {
-            warn!("Failed to set the vendor sw version {:?}", e);
+            warn!("Failed to set the vendor sw version {:?} {:?}", version, e);
         }
 
         let publisher =
