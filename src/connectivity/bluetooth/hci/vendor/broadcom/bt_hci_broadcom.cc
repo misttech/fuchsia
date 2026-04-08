@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
+#include <inttypes.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/time.h>
@@ -94,6 +95,10 @@ namespace fhsi = fuchsia_hardware_serialimpl::wire;
 
 constexpr uint32_t kTargetBaudRate = 2000000;
 constexpr uint32_t kDefaultBaudRate = 115200;
+
+// Chips with a chip ID greater than or equal to this value support the "Fast Download"
+// feature for firmware loading.
+constexpr uint8_t kFastDownloadChipIdMin = 174;
 
 constexpr zx::duration kFirmwareDownloadDelay = zx::msec(50);
 
@@ -849,7 +854,7 @@ void BtHciBroadcom::NoteCoreDump() {
 
 constexpr auto kOpenFlags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flags::kProtocolFile;
 
-fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
+fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware(bool fast_download) {
   zx::vmo fw_vmo;
   size_t fw_size;
 
@@ -894,7 +899,26 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
   }
   fw_vmo.reset(backing_vmo.release());
 
-  return SendCommand(&kStartFirmwareDownloadCmd, sizeof(kStartFirmwareDownloadCmd))
+  fpromise::promise<std::vector<uint8_t>, zx_status_t> download_cmd_promise;
+  if (fast_download) {
+    std::array<std::byte, SetDownloadConfigCommand::MaxSizeInBytes()> storage;
+    auto view = MakeSetDownloadConfigCommandView(&storage);
+    view.header().opcode().Write(BroadcomOpCode::SET_DOWNLOAD_CONFIG);
+    view.header().parameter_total_size().Write(SetDownloadConfigCommand::parameter_size());
+    view.command_version().Write(0x00);
+    view.fast_download_mode().Write(0x01);
+    download_cmd_promise =
+        SendCommand(view)
+            .and_then([this](std::vector<uint8_t>& /*event*/) {
+              return SendCommand(&kStartFirmwareDownloadCmd, sizeof(kStartFirmwareDownloadCmd));
+            })
+            .box();
+  } else {
+    download_cmd_promise =
+        SendCommand(&kStartFirmwareDownloadCmd, sizeof(kStartFirmwareDownloadCmd));
+  }
+
+  return download_cmd_promise
       .or_else([](zx_status_t& status) -> fpromise::result<std::vector<uint8_t>, zx_status_t> {
         fdf::error("could not load firmware file");
         return fpromise::error(status);
@@ -906,9 +930,20 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
               return fpromise::result<void, zx_status_t>(fpromise::ok());
             });
       })
-      .and_then([this, fw_vmo = std::move(fw_vmo), fw_size]() mutable {
+      .and_then([this, fw_vmo = std::move(fw_vmo), fw_size,
+                 fast_download]() mutable -> fpromise::result<void, zx_status_t> {
+        zx::time start_time = async::Now(dispatcher_);
+
         // The firmware is a sequence of HCI commands containing the firmware data as payloads.
-        return SendVmoAsCommands(std::move(fw_vmo), fw_size);
+        zx_status_t status = SendVmoAsCommands(std::move(fw_vmo), fw_size, fast_download);
+        if (status != ZX_OK) {
+          return fpromise::error(status);
+        }
+
+        zx::duration firmware_duration = async::Now(dispatcher_) - start_time;
+        FDF_LOG(INFO, "Transferred firmware (duration: %" PRId64 " ms, fast: %d)",
+                firmware_duration.to_msecs(), fast_download);
+        return fpromise::ok();
       })
       .and_then([this]() -> fpromise::promise<void, zx_status_t> {
         if (is_uart_) {
@@ -933,19 +968,27 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
 }
 
 zx_status_t BtHciBroadcom::SendCommandSync(const void* command, size_t length) {
-  // send HCI command
+  zx_status_t status = SendCommandWithoutEvent(command, length);
+  if (status != ZX_OK) {
+    FDF_LOG(ERROR, "Failed to send command: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  return ReadEventSync().status_value();
+}
+
+zx_status_t BtHciBroadcom::SendCommandWithoutEvent(const void* command, size_t length) {
   fidl::Arena arena;
   auto command_vec = std::vector<uint8_t>(static_cast<const uint8_t*>(command),
                                           static_cast<const uint8_t*>(command) + length);
   auto command_view = fidl::VectorView<uint8_t>::FromExternal(command_vec);
+
   auto result =
       hci_transport_client_->Send(fhbt::wire::SentPacket::WithCommand(arena, command_view));
   if (result.status() != ZX_OK) {
     fdf::error("Failed to send command: {}", result.status_string());
-    return result.status();
   }
-
-  return ReadEventSync().status_value();
+  return result.status();
 }
 
 zx::result<std::vector<uint8_t>> BtHciBroadcom::ReadEventSync() {
@@ -982,7 +1025,7 @@ zx::result<std::vector<uint8_t>> BtHciBroadcom::ReadEventSync() {
   return zx::ok(std::move(packet_bytes));
 }
 
-fpromise::promise<void, zx_status_t> BtHciBroadcom::SendVmoAsCommands(zx::vmo vmo, size_t size) {
+zx_status_t BtHciBroadcom::SendVmoAsCommands(zx::vmo vmo, size_t size, bool fast_download) {
   size_t offset = 0;
 
   while (offset < size) {
@@ -993,12 +1036,12 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SendVmoAsCommands(zx::vmo vm
 
     if (read_amount < sizeof(HciCommandHeader)) {
       fdf::error("short HCI command in firmware download");
-      return fpromise::make_error_promise(ZX_ERR_INTERNAL);
+      return ZX_ERR_INTERNAL;
     }
 
     zx_status_t status = vmo.read(buffer, offset, read_amount);
     if (status != ZX_OK) {
-      return fpromise::make_error_promise(status);
+      return status;
     }
 
     HciCommandHeader header;
@@ -1006,17 +1049,33 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SendVmoAsCommands(zx::vmo vm
     size_t length = header.parameter_total_size + sizeof(header);
     if (read_amount < length) {
       fdf::error("short HCI command in firmware download");
-      return fpromise::make_error_promise(ZX_ERR_INTERNAL);
+      return ZX_ERR_INTERNAL;
     }
 
     offset += length;
-    if (zx_status_t status = SendCommandSync(buffer, length); status != ZX_OK) {
-      fdf::error("SendCommand failed in firmware download: {}", zx_status_get_string(status));
-      return fpromise::make_error_promise(status);
+    if (fast_download) {
+      if (zx_status_t status = SendCommandWithoutEvent(buffer, length); status != ZX_OK) {
+        fdf::error("SendCommand failed in firmware download: {}", zx_status_get_string(status));
+        return status;
+      }
+
+      // In Fast Download mode, only the Launch RAM command returns an event.
+      if (le16toh(header.opcode) == static_cast<uint16_t>(BroadcomOpCode::LAUNCH_RAM)) {
+        if (zx::result<std::vector<uint8_t>> res = ReadEventSync(); res.is_error()) {
+          fdf::error("Failed to read event for Launch RAM command: {}",
+                     zx_status_get_string(res.error_value()));
+          return res.error_value();
+        }
+      }
+    } else {
+      if (zx_status_t status = SendCommandSync(buffer, length); status != ZX_OK) {
+        fdf::error("SendCommand failed in firmware download: {}", zx_status_get_string(status));
+        return status;
+      }
     }
   }
 
-  return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
+  return ZX_OK;
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
@@ -1031,8 +1090,39 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
         return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
       })
       .and_then([this]() {
+        fdf::debug("sending read verbose config version info command");
+        std::array<std::byte, CommandHeader::MaxSizeInBytes()> storage;
+        auto view = MakeCommandHeaderView(&storage);
+        view.opcode().Write(BroadcomOpCode::READ_VERBOSE_CONFIG_VERSION_INFO);
+        view.parameter_total_size().Write(0);
+        return SendCommand(view);
+      })
+      .then([this](fpromise::result<std::vector<uint8_t>, zx_status_t>& result) {
+        bool fast_download_supported = false;
+        if (result.is_error()) {
+          fdf::error("Read verbose config command failed: {}",
+                     zx_status_get_string(result.error()));
+        } else {
+          const auto& cmd_complete = result.value();
+          auto event = MakeReadVerboseConfigVersionInfoCommandCompleteEventView(
+              cmd_complete.data(), cmd_complete.size());
+          if (event.Ok() && event.status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS &&
+              static_cast<uint16_t>(event.command_complete().command_opcode().Read()) ==
+                  static_cast<uint16_t>(BroadcomOpCode::READ_VERBOSE_CONFIG_VERSION_INFO)) {
+            uint8_t chip_id = event.chip_id().Read();
+            fdf::info("Chip ID: {}", chip_id);
+            if (chip_id >= kFastDownloadChipIdMin) {
+              fast_download_supported = true;
+            }
+          } else if (!event.Ok()) {
+            fdf::error("Read verbose config failed: response too short or invalid");
+          } else {
+            fdf::error("Read verbose config failed: {}",
+                       static_cast<uint8_t>(event.status().Read()));
+          }
+        }
         fdf::debug("loading firmware");
-        return LoadFirmware();
+        return LoadFirmware(fast_download_supported);
       })
       .and_then([this]() {
         fdf::debug("sending reset command");

@@ -149,7 +149,7 @@ class BtHciBroadcom final
   // Called when a core dump HCI event is received.
   void NoteCoreDump();
 
-  fpromise::promise<void, zx_status_t> LoadFirmware();
+  fpromise::promise<void, zx_status_t> LoadFirmware(bool fast_download);
 
   // Adds a client which passes through the given client, managing power states.
   fidl::ClientEnd<fuchsia_hardware_bluetooth::HciTransport> AddHciTransportClient(
@@ -157,9 +157,10 @@ class BtHciBroadcom final
 
   // Used by firmware loading
   zx_status_t SendCommandSync(const void* command, size_t length);
+  zx_status_t SendCommandWithoutEvent(const void* command, size_t length);
   zx::result<std::vector<uint8_t>> ReadEventSync();
 
-  fpromise::promise<void, zx_status_t> SendVmoAsCommands(zx::vmo vmo, size_t size);
+  zx_status_t SendVmoAsCommands(zx::vmo vmo, size_t size, bool fast_download);
 
   fpromise::promise<void, zx_status_t> Initialize();
 

@@ -42,14 +42,20 @@ namespace bt_hci_broadcom {
 
 namespace {
 namespace fhbt = fuchsia_hardware_bluetooth;
+
 // Firmware binaries are a sequence of HCI commands containing the firmware as payloads. For
 // testing, we use 1 HCI command with a 1 byte payload.
 const std::vector<uint8_t> kFirmware = {
-    0x01, 0x02,  // arbitrary "firmware opcode"
-    0x01,        // parameter_total_size
-    0x03         // payload
+    0x01,
+    0x02,  // arbitrary "firmware opcode"
+    0x01,  // parameter_total_size
+    0x03,  // payload
 };
+constexpr uint16_t kTestFirmwareOpCode = 0x0201;
 const std::vector<std::string> kFirmwarePaths = {"BCM4345C5.hcd", "BCM4381A1.hcd"};
+
+constexpr uint8_t kNoFastDownloadChipId = 173;
+constexpr uint8_t kFastDownloadChipId = 174;
 
 const std::array<uint8_t, 6> kMacAddress = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
 
@@ -60,6 +66,18 @@ const std::array<uint8_t, 6> kCommandCompleteEvent = {
     0x00, 0x00,  // command opcode (hardcoded for simplicity since this isn't checked by the driver)
     0x00,        // return_code (success)
 };
+
+std::vector<uint8_t> MakeReadVerboseConfigVersionInfoCommandCompleteEvent(uint8_t chip_id) {
+  return {
+      0x0e,  // command complete event code
+      0x05,  // parameter_total_size
+      0x01,  // num_hci_command_packets
+      0x79,  // command opcode LSB (ReadVerboseConfigVersionInfo)
+      0xfc,  // command opcode MSB (ReadVerboseConfigVersionInfo)
+      0x00,  // status (success)
+      chip_id,
+  };
+}
 
 using fuchsia_power_system::LeaseToken;
 class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology>,
@@ -230,29 +248,47 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
 
   // fhbt::HciTransport request handler implementations:
   void Send(SendRequest& request, SendCompleter::Sync& completer) override {
+    uint16_t opcode = 0xFFFF;
     if (request.Which() == fhbt::SentPacket::Tag::kCommand) {
       // The command opcode is the first two bytes.
       std::vector<uint8_t>& packet = request.command().value();
-      uint16_t opcode = static_cast<uint16_t>(packet[1] << 8) | static_cast<uint16_t>(packet[0]);
-      received_packets_.insert({opcode, packet});
+      opcode = static_cast<uint16_t>(packet[1] << 8) | static_cast<uint16_t>(packet[0]);
+      received_packets_.insert_or_assign(opcode, packet);
+
+      if (opcode == static_cast<uint16_t>(BroadcomOpCode::SET_DOWNLOAD_CONFIG)) {
+        auto view = MakeSetDownloadConfigCommandView(packet.data(), packet.size());
+        if (view.Ok() && view.fast_download_mode().Read() == 0x01) {
+          fast_download_mode_ = true;
+        }
+      }
+    }
+
+    if (opcode == static_cast<uint16_t>(BroadcomOpCode::LAUNCH_RAM) || opcode == kResetCmdOpCode) {
+      fast_download_mode_ = false;
     }
 
     std::vector<uint8_t> reply;
 
-    if (customized_reply_) {
+    if (fast_download_mode_ && opcode == kTestFirmwareOpCode) {
+      // Suppress event for firmware in fast download mode (reply remains empty).
+    } else if (opcode == static_cast<uint16_t>(BroadcomOpCode::READ_VERBOSE_CONFIG_VERSION_INFO)) {
+      reply = MakeReadVerboseConfigVersionInfoCommandCompleteEvent(chip_id_);
+    } else if (customized_reply_) {
       reply = *customized_reply_;
     } else {
       reply = std::vector<uint8_t>(kCommandCompleteEvent.data(),
                                    kCommandCompleteEvent.data() + kCommandCompleteEvent.size());
     }
 
-    hci_transport_binding_group_.ForEachBinding(
-        [&](const fidl::ServerBinding<fhbt::HciTransport>& binding) {
-          auto received_packet = fhbt::ReceivedPacket::WithEvent(reply);
-          fit::result<fidl::OneWayError> result =
-              fidl::SendEvent(binding)->OnReceive(received_packet);
-          ASSERT_FALSE(result.is_error());
-        });
+    if (!reply.empty()) {
+      hci_transport_binding_group_.ForEachBinding(
+          [&](const fidl::ServerBinding<fhbt::HciTransport>& binding) {
+            auto received_packet = fhbt::ReceivedPacket::WithEvent(reply);
+            fit::result<fidl::OneWayError> result =
+                fidl::SendEvent(binding)->OnReceive(received_packet);
+            ASSERT_FALSE(result.is_error());
+          });
+    }
     completer.Reply();
   }
 
@@ -274,6 +310,7 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
   }
 
   void SetSerialPid(uint16_t serial_pid) { serial_pid_ = serial_pid; }
+  void SetChipId(uint8_t chip_id) { chip_id_ = chip_id; }
 
   bool HasReceivedOpCode(uint16_t opcode) const { return received_packets_.contains(opcode); }
 
@@ -328,6 +365,8 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
  private:
   std::optional<std::vector<uint8_t>> customized_reply_;
   uint16_t serial_pid_ = PDEV_PID_BCM43458;
+  uint8_t chip_id_ = kNoFastDownloadChipId;
+  bool fast_download_mode_ = false;
   // The last command received for each opcode is stored.
   std::unordered_map<uint16_t, std::vector<uint8_t>> received_packets_;
 
@@ -692,6 +731,38 @@ TEST_F(BtHciBroadcomTest, EnablesLowPowerMode) {
     ASSERT_EQ(sleep_cmd.mode().Read(), SleepMode::UART);
     ASSERT_EQ(sleep_cmd.idle_threshold_device().Read(), 5);
     ASSERT_EQ(sleep_cmd.idle_threshold_host().Read(), 1);
+  });
+}
+
+TEST_F(BtHciBroadcomTest, FastDownloadSupportedChipId) {
+  SetMacAddressMetadata();
+  SetFirmware();
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.transport_device_.SetChipId(kFastDownloadChipId); });
+  ASSERT_TRUE(StartDriver().is_ok());
+
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    ASSERT_TRUE(env.transport_device_.HasReceivedOpCode(
+        static_cast<uint16_t>(BroadcomOpCode::SET_DOWNLOAD_CONFIG)));
+    auto fw_packet = env.transport_device_.LastPacketByOpCode(kTestFirmwareOpCode);
+    ASSERT_TRUE(fw_packet.has_value());
+    EXPECT_EQ(*fw_packet, kFirmware);
+  });
+}
+
+TEST_F(BtHciBroadcomTest, FastDownloadNotSupportedChipId) {
+  SetMacAddressMetadata();
+  SetFirmware();
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.transport_device_.SetChipId(kNoFastDownloadChipId); });
+  ASSERT_TRUE(StartDriver().is_ok());
+
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    ASSERT_FALSE(env.transport_device_.HasReceivedOpCode(
+        static_cast<uint16_t>(BroadcomOpCode::SET_DOWNLOAD_CONFIG)));
+    auto fw_packet = env.transport_device_.LastPacketByOpCode(kTestFirmwareOpCode);
+    ASSERT_TRUE(fw_packet.has_value());
+    EXPECT_EQ(*fw_packet, kFirmware);
   });
 }
 

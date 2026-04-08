@@ -10,7 +10,10 @@ import "pw_bluetooth/hci_common.emb" as hci
 
 enum BroadcomOpCode:
   [maximum_bits: 16]
-  WRITE_SLEEP_MODE = 0xFC27
+  WRITE_SLEEP_MODE                 = 0xFC27
+  SET_DOWNLOAD_CONFIG              = 0xFE72
+  LAUNCH_RAM                       = 0xFC4E
+  READ_VERBOSE_CONFIG_VERSION_INFO = 0xFC79
 
 
 struct CommandHeader:
@@ -41,3 +44,17 @@ struct WriteSleepModeCmd:
   $next [+1]         UInt           tri_state_uart_before_sleep
   $next [+3]         UInt:8[3]      usb_flags
   $next [+1]         UInt           pulsed_host_wake
+
+struct SetDownloadConfigCommand:
+  let hdr_size = CommandHeader.$size_in_bytes
+  let parameter_size = $size_in_bytes-hdr_size
+  0     [+hdr_size]  CommandHeader  header
+  $next [+1]         UInt           command_version
+  $next [+1]         UInt           fast_download_mode
+
+
+struct ReadVerboseConfigVersionInfoCommandCompleteEvent:
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode             status
+  $next [+1]         UInt                       chip_id
