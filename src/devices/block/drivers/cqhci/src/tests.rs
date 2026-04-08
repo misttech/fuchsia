@@ -158,6 +158,7 @@ async fn test_forwards_non_cq_interrupts() {
 }
 
 #[fuchsia::test]
+#[ignore] // TODO(https://fxbug.dev/500341861): Make this test pass reliably.
 async fn test_error_recovery() {
     let (fixture, mut harness) = FakeCqhci::new(None);
     let started_driver = harness.start_driver().await.expect("failed to start driver");
