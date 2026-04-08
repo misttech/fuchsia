@@ -6,7 +6,7 @@ use ffx_e2e_emu::IsolatedEmulator;
 use futures::StreamExt;
 use log::info;
 
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn override_echo_greeting_and_observe_in_logs() {
     let emu = IsolatedEmulator::start("test-ffx-run-parent-overrides").await.unwrap();
 

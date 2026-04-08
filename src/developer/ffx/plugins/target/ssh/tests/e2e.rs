@@ -6,7 +6,7 @@ use anyhow::Result;
 use ffx_e2e_emu::IsolatedEmulator;
 use pretty_assertions::assert_eq;
 
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn ssh_works_and_reports_failures() -> Result<()> {
     let emu = IsolatedEmulator::start("target-ssh").await?;
 

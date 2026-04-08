@@ -53,7 +53,7 @@ fn load_profile_file(path: &Path) -> Result<pprof::Profile> {
 
 // Note: Instantiating an IsolatedEmulator is a costly operation. For this reason, all the tests
 // are implemented as a single function sharing the same IsolatedEmulator instance.
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn test_ffx_profile_heapdump() {
     let scratch_dir = tempdir().expect("Failed to create a temporary directory");
     let emu = IsolatedEmulator::start("test-ffx-profile-heapdump").await.unwrap();

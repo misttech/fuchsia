@@ -8,7 +8,7 @@ use log::{info, warn};
 use std::path::PathBuf;
 use std::process::Command;
 
-#[fuchsia::test]
+#[fuchsia::test(logging_minimum_severity = "TRACE")]
 async fn dupefinder_smoke_test() {
     let test_dir = PathBuf::from(std::env::var("FUCHSIA_TEST_OUTDIR").unwrap());
     let dupefinder = PathBuf::from(std::env::var("DUPEFINDER_PATH").unwrap());

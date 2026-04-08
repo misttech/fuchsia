@@ -5,7 +5,7 @@
 use diagnostics_data::InspectData;
 use ffx_e2e_emu::IsolatedEmulator;
 
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn taking_lease_adds_lease_to_broker_inspect() {
     let emu = IsolatedEmulator::start("application-activity-test").await.unwrap();
 

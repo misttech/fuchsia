@@ -5,7 +5,7 @@
 use ffx_e2e_emu::IsolatedEmulator;
 use log::info;
 
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn override_echo_greeting_and_observe_in_logs() {
     let emu = IsolatedEmulator::start("test-ffx-create-parent-overrides").await.unwrap();
     let moniker = "/core/ffx-laboratory:create-parent-override-echo";

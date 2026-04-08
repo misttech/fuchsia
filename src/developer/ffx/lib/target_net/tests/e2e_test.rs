@@ -18,7 +18,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
 
 const LOCALHOST_UNSPECIFIED_PORT: SocketAddr = std_socket_addr!("127.0.0.1:0");
 
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn ffx_target_net_test() {
     info!("starting emulator...");
     let emu = IsolatedEmulator::start("ffx-target-net-test").await.unwrap();

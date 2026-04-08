@@ -5,7 +5,7 @@
 use ffx_e2e_emu::IsolatedEmulator;
 use log::info;
 
-#[fuchsia::test]
+#[fuchsia::test(logging = true)]
 async fn cat_file_from_package_and_subpackages_using_full_resolver() {
     let emu = IsolatedEmulator::start("test-ffx-explore-package-full").await.unwrap();
 
