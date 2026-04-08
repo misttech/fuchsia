@@ -122,12 +122,12 @@ class WlanScanTest(base_test.WifiBaseTest):
     def teardown_test(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_core_deprecated_sync.disconnect()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
 
     def teardown_class(self) -> None:
         self.download_logs()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
 
     def scan_while_connected(self, t: TestParams) -> None:
@@ -138,7 +138,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             if t.security == Security.WPA2
             else None
         )
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -155,7 +155,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=t.channel.band)
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             security = ConfigMapper.to_hostapd_security(t.security)
             setup_ap(
                 access_point=self.access_point,
@@ -239,7 +239,7 @@ class WlanScanTest(base_test.WifiBaseTest):
     def test_basic_scan_request(self) -> None:
         """Verify a general scan trigger returns at least one result"""
         ssid = AccessPointConfig.random_string(20)
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -255,7 +255,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             setup_ap(
                 access_point=self.access_point,
                 profile_name="whirlwind",

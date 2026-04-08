@@ -126,7 +126,7 @@ class PingTest(base_test.WifiBaseTest):
         band = Band.BAND_2G
         security = Security.NONE
 
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -147,6 +147,7 @@ class PingTest(base_test.WifiBaseTest):
             self.ap_ipv4 = self.openwrt_ap.get_addr("br-lan", "ipv4_private")
             self.ap_ipv6 = self.openwrt_ap.get_addr("br-lan", "ipv6_link_local")
         else:
+            assert self.access_point is not None
             setup_ap(
                 access_point=self.access_point,
                 profile_name="whirlwind",
@@ -190,7 +191,7 @@ class PingTest(base_test.WifiBaseTest):
             self.dut.disconnect()
             self.dut.reset_wifi()
         self.download_logs()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
         super().teardown_class()
 

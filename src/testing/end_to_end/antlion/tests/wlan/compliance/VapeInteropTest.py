@@ -5,7 +5,7 @@
 # found in the LICENSE file.
 
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
@@ -21,6 +21,8 @@ class VapeInteropTest(base_test.WifiBaseTest):
     * One Android or Fuchsia Device
     * One Whirlwind Access Point
     """
+
+    access_point: AccessPoint
 
     def setup_class(self) -> None:
         super().setup_class()

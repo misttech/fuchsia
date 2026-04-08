@@ -20,6 +20,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from mobly import asserts, signals, test_runner
+from mobly.config_parser import TestRunConfig
 from mobly_controller import openwrt_access_point
 from mobly_controller.openwrt_access_point import OpenWrtAP
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
@@ -45,6 +46,11 @@ class StartStopClientConnectionsTest(
     * One Access Point
     """
 
+    def __init__(self, configs: TestRunConfig) -> None:
+        super().__init__(configs)
+        self.openwrt_ap: OpenWrtAP | None = None
+        self.access_point: access_point.AccessPoint | None = None
+
     async def setup_class(self) -> None:
         await super().setup_class()
 
@@ -69,7 +75,7 @@ class StartStopClientConnectionsTest(
         )
         self.security_type = SecurityType.WPA2
 
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -86,7 +92,7 @@ class StartStopClientConnectionsTest(
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             security = hostapd_security.Security(
                 security_mode=hostapd_security.SecurityMode.WPA2,
                 password=self.password,
@@ -128,7 +134,7 @@ class StartStopClientConnectionsTest(
         await self.dut.wlan_policy.remove_all_networks()
         await self.dut.wlan_policy.wait_for_no_connections()
 
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
         await super().teardown_class()
 

@@ -141,6 +141,7 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
         self.dut.wifi_toggle_state(True)
 
     def teardown_test(self) -> None:
+        assert self.access_point is not None
         for ad in self.android_devices:
             ad.droid.wakeLockRelease()
             ad.droid.goToSleepNow()
@@ -152,6 +153,7 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
 
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
+        assert self.access_point is not None
         self.access_point.stop_all_aps()
 
     def setup_and_connect(self, settings: TestParams) -> None:
@@ -160,6 +162,7 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
         Args:
             settings: Test parameters
         """
+        assert self.access_point is not None
         ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
         security: Security | None = None
         password: str | None = None

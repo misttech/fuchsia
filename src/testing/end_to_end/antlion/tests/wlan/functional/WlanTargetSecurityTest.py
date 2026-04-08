@@ -32,8 +32,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import
 )
 
 
-# TODO(fxb/68956): Add security protocol check to mixed mode tests when info is
-# available.
+# TODO(https://fxbug.dev/68956): Add security protocol check to mixed mode tests
+# when info is available.
 class WlanTargetSecurityTest(base_test.WifiBaseTest):
     """Tests Fuchsia's target security concept and security upgrading
 
@@ -58,7 +58,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
     def teardown_test(self) -> None:
         self.dut.disconnect()
         self.download_logs()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
         super().teardown_test()
 
@@ -76,7 +76,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         # Length 13, so it can be used for WEP or WPA
         password = utils.rand_ascii_str(13)
 
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -98,6 +98,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
         else:
+            assert self.access_point is not None
             hostapd_security_mode = ConfigMapper.to_hostapd_security(security)
 
             security_profile = DeprecatedSecurity(
@@ -177,7 +178,7 @@ class WlanTargetSecurityTest(base_test.WifiBaseTest):
         )
 
     def skip_if_wep_not_supported(self) -> None:
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             raise signals.TestSkip("OpenWrt does not support WEP security")
 
     def test_reject_wep_ap_with_wpa_target_security(self) -> None:

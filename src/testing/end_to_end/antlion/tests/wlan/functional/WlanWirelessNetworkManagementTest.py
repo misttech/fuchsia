@@ -11,7 +11,7 @@ from typing import FrozenSet
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.radio_measurement import (
@@ -48,6 +48,8 @@ class WlanWirelessNetworkManagementTest(base_test.WifiBaseTest):
     Existing Fuchsia drivers do not yet support WNM features out-of-the-box, so this
     suite skips certain tests depending on whether specific WNM features are enabled.
     """
+
+    access_point: AccessPoint
 
     def pre_run(self) -> None:
         test_args: list[tuple[TestParams]] = []

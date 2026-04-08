@@ -53,7 +53,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
     def teardown_test(self) -> None:
         self.dut.disconnect()
         self.download_logs()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
 
     def setup_ap(
@@ -63,7 +63,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         security: Security,
         password: str | None = None,
     ) -> None:
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -80,7 +80,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=channel.band)
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             hostapd_band = ConfigMapper.to_hostapd_band(channel.band)
             hostapd_security = ConfigMapper.to_hostapd_security(security)
             setup_ap(
@@ -119,7 +119,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
             "Associated with WPA3 network using the wrong password",
         )
 
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
 
         # Setup a WPA2 Network

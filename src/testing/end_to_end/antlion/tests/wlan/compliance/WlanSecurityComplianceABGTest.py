@@ -11,7 +11,7 @@ from functools import wraps
 from typing import Callable
 
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
@@ -180,6 +180,8 @@ class WlanSecurityComplianceABGTest(base_test.WifiBaseTest):
     * One Android device or Fuchsia device
     * One Access Point
     """
+
+    access_point: AccessPoint
 
     def setup_class(self) -> None:
         super().setup_class()

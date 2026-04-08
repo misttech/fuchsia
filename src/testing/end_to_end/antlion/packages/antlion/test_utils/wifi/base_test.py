@@ -74,6 +74,8 @@ _T = TypeVar("_T")
 class WifiBaseTest(BaseTestClass):
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
+        self.openwrt_ap: OpenWrtAP | None = None
+        self.access_point: AccessPoint | None = None
         self.enable_packet_log = False
         self.packet_log_2g = hostapd_constants.AP_DEFAULT_CHANNEL_2G
         self.packet_log_5g = hostapd_constants.AP_DEFAULT_CHANNEL_5G

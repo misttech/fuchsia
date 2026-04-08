@@ -12,7 +12,7 @@ from pathlib import Path
 from statistics import pstdev
 
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.regulatory_channels import COUNTRY_CHANNELS
@@ -102,8 +102,11 @@ class ChannelSweepTest(base_test.WifiBaseTest):
     Note: Performance tests should be done in isolated testbed.
     """
 
+    access_point: AccessPoint
+
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
+        self.iperf_server: IPerfServerOverSsh | None = None
         self.log = logging.getLogger()
         self.channel_throughput: ChannelThroughputMap = {}
 
@@ -408,7 +411,7 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         tx_throughput and channel vs rx_throughput.
         """
         # If performance measurement is skipped
-        if not hasattr(self, "iperf_server") or not self.iperf_server:
+        if not self.iperf_server:
             return
 
         try:
@@ -611,6 +614,7 @@ class ChannelSweepTest(base_test.WifiBaseTest):
                 'DUT (%s) connected to network "%s"', self.dut.identifier, ssid
             )
 
+            assert self.iperf_server is not None
             self.iperf_server.renew_test_interface_ip_address()
             if not isinstance(self.iperf_server.test_interface, str):
                 raise TypeError(
@@ -678,7 +682,7 @@ class ChannelSweepTest(base_test.WifiBaseTest):
                     "rx throughput below the minimal threshold",
                 )
             except Exception as e:
-                if self.iperf_server._ssh_session:
+                if self.iperf_server and self.iperf_server._ssh_session:
                     ssh = self.iperf_server._ssh_session
                     self.log.warning(
                         "iperf ps aux:\n%s",

@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum, auto, unique
 
+from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
 from antlion.controllers.ap_lib.hostapd_constants import BandType
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
@@ -85,6 +86,8 @@ class WlanRvrTest(base_test.WifiBaseTest):
     * One Linux iPerf Server
     """
 
+    access_point: AccessPoint
+
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
         self.log = logging.getLogger()
@@ -123,7 +126,7 @@ class WlanRvrTest(base_test.WifiBaseTest):
 
         self.iperf_server = self.iperf_servers[0]
 
-        if hasattr(self, "iperf_clients") and self.iperf_clients:
+        if self.iperf_clients:
             self.dut_iperf_client = self.iperf_clients[0]
         else:
             self.dut_iperf_client = self.dut.create_iperf_client()

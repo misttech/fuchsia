@@ -164,9 +164,11 @@ class WlanRebootTest(base_test.WifiBaseTest):
 
     def setup_test(self) -> None:
         super().setup_test()
+        assert self.access_point is not None
         self.access_point.stop_all_aps()
 
     def teardown_test(self) -> None:
+        assert self.access_point is not None
         self.access_point.stop_all_aps()
         super().teardown_test()
 
@@ -187,6 +189,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
             security_mode: The type of security mode.
             password: The PSK or passphase.
         """
+        assert self.access_point is not None
         security_profile = Security(
             security_mode=security_mode, password=password
         )
@@ -217,6 +220,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
         ip_version: IpVersionType,
     ) -> None:
         """Validate the DUT is pingable."""
+        assert self.access_point is not None
         if band == BandType.BAND_2G:
             test_interface = self.access_point.wlan_2g
         elif band == BandType.BAND_5G:
@@ -324,6 +328,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 security_mode: security mode to set up either OPEN, WPA2, or WPA3.
                 ip_version: the ip version (ipv4 or ipv6)
         """
+        assert self.access_point is not None
         # TODO(b/286443517): Properly support WLAN on android devices.
         assert (
             self.fuchsia_device is not None

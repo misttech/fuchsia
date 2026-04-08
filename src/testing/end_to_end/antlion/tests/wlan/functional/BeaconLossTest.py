@@ -15,7 +15,7 @@ parameter in the test config file.
 import logging
 import time
 
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
@@ -26,6 +26,7 @@ from mobly.records import TestResultRecord
 
 
 class BeaconLossTest(base_test.WifiBaseTest):
+    access_point: AccessPoint
     MAX_ASSOCIATE_ATTEMPTS = 2
     # Default number of test iterations here.
     # Override using parameter in config file.

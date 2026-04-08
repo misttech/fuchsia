@@ -13,7 +13,7 @@ import time
 from typing import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.fuchsia_device import FuchsiaDevice
@@ -43,6 +43,7 @@ SEC_PER_KUS = 0.001024
 
 
 class ChannelSwitchTest(base_test.WifiBaseTest):
+    access_point: AccessPoint
     # Time to wait between issuing channel switches
     WAIT_BETWEEN_CHANNEL_SWITCHES_S = 15
 

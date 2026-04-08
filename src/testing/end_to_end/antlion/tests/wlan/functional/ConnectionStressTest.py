@@ -149,16 +149,16 @@ class ConnectionStressTest(base_test.WifiBaseTest):
     def teardown_test(self) -> None:
         self.dut.reset_wifi()
         self.download_logs()
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             self.openwrt_ap.stop_wifi()
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             self.access_point.stop_all_aps()
 
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             self.openwrt_ap.stop_wifi()
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             self.access_point.stop_all_aps()
 
     def connect_disconnect(self, test: TestParams) -> None:
@@ -167,7 +167,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
         Args:
             test: TestParams containing configuration
         """
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -184,7 +184,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=test.channel.band)
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             security = ConfigMapper.to_hostapd_security(test.security)
             setup_ap(
                 access_point=self.access_point,

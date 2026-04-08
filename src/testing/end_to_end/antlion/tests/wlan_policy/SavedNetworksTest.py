@@ -75,13 +75,13 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
 
     def teardown_class(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
-        if hasattr(self, "access_point"):
+        if self.access_point:
             self.access_point.stop_all_aps()
 
     def _has_saved_network(
@@ -122,7 +122,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             EnvironmentError if it fails to set up AP for test.
         """
         # Put together the security configuration of the network to be broadcasted.
-        if hasattr(self, "openwrt_ap"):
+        if self.openwrt_ap:
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -143,7 +143,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             )
             self.openwrt_ap.configure_wifi(config)
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
-        elif hasattr(self, "access_point"):
+        elif self.access_point:
             # Create an AP with default values other than the specified values.
             deprecated_security = ConfigMapper.to_hostapd_security(security)
             setup_ap(

@@ -112,7 +112,7 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
 
     def teardown_class(self) -> None:
-        if hasattr(self, "access_point") and self.access_point:
+        if self.access_point:
             self.access_point.stop_all_aps()
 
     # Tests

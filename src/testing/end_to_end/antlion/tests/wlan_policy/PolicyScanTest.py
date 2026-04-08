@@ -48,6 +48,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
             raise signals.TestFailure("No fuchsia devices found.")
         for fd in self.fuchsia_devices:
             fd.configure_wlan(association_mechanism="policy")
+
         if self.openwrt_aps:
             self.openwrt_ap = self.openwrt_aps[0]
         elif self.access_points:
