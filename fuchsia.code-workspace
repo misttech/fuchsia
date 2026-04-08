@@ -58,7 +58,7 @@
       "ms-python.python",
       "ms-python.mypy-type-checker",
       "ms-python.black-formatter",
-      "ms-python.vscode-pylance",
+      "detachhead.basedpyright",
 
       // The GN language server from Google
       "google.gn",
