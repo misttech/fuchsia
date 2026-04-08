@@ -39,6 +39,7 @@ group("tests") {
     "page_buf:tests",
     "range_map:tests",
     "selinux:tests",
+    "seq_lock:tests",
     "split_enum_storage:tests",
     "starnix_container:tests($host_toolchain)",
     "starnix_crypto:tests",

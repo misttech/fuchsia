@@ -418,11 +418,7 @@ impl FileOps for PerfEventFile {
 
         // Update metadata page now that we have new information.
         // Also update `data_head` to indicate that this first page has finished writing.
-        // SAFETY: Current usage has only one read call on the seq lock value (here), and
-        // one write call (a few lines down). This means that this read call will return
-        // correct data (no write occurring midway through read). fxr/1539565 will make
-        // sure read will return with correct values.
-        let mut metadata_value: PerfMetadataValue = unsafe { self.seq_lock.get() };
+        let mut metadata_value: PerfMetadataValue = self.seq_lock.get();
         let page_size = zx::system_get_page_size() as u64;
         metadata_value.data_head = page_size;
         metadata_value.data_size = buffer_size - page_size;

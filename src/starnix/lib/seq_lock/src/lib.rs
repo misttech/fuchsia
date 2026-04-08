@@ -127,6 +127,18 @@ impl<H: IntoBytes + Immutable, T: SeqLockable> SeqLock<H, T> {
         value: T,
         writable_vmo: zx::Vmo,
     ) -> Result<Self, zx::Status> {
+        const {
+            let write_size = match T::WRITE_SIZE {
+                WriteSize::Four => size_of::<u32>(),
+                WriteSize::Eight => size_of::<u64>(),
+            };
+            assert!(align_of::<T>() >= write_size, "T must be aligned to the write size");
+            assert!(size_of::<T>() % write_size == 0, "size of T must be a multiple of write size");
+            assert!(
+                Self::value_offset() % write_size == 0,
+                "value_offset must be aligned to the write size"
+            );
+        }
         let value_offset = Self::value_offset();
         let vmo_size = Self::vmo_size();
         // Populate the initial default values.
@@ -155,7 +167,6 @@ impl<H: IntoBytes + Immutable, T: SeqLockable> SeqLock<H, T> {
             readonly_vmo: readonly_vmo,
             _phantom_data: PhantomData,
         };
-
         Ok(status)
     }
 
@@ -166,18 +177,55 @@ impl<H: IntoBytes + Immutable, T: SeqLockable> SeqLock<H, T> {
     }
 
     /// Returns a read-only copy of the value as a T struct object.
-    ///
-    /// # Safety
-    ///
-    /// Only safe to use if there are no concurrent calls to `set_value()`.
-    pub unsafe fn get(&self) -> T {
-        let addr_ptr = (self.map_addr) as *const u8;
-        // SAFETY: `addr` is formatted as H, u32, T, so we should be able to point to
-        // the start of T by shifting by the value_offset().
-        let value_ptr = unsafe { addr_ptr.add(Self::value_offset()) as *const T };
-        // SAFETY: We know the data starting at the offset is a T struct.
-        let value: T = unsafe { std::ptr::read_unaligned(value_ptr) };
-        value
+    /// This read occurs with a sequence check to ensure that:
+    ///   1. Someone else is not already in the middle of writing the data
+    ///   2. The data had not been modified during the read
+    pub fn get(&self) -> T {
+        let mut value = std::mem::MaybeUninit::<T>::uninit();
+        let value_ptr = value.as_mut_ptr();
+        let starting_addr = self.map_addr + Self::value_offset();
+        let sequence_addr = self.map_addr + sequence_offset::<H>();
+
+        loop {
+            // Read sequence (lock) value.
+            // SAFETY: We know sequence is u32 hardcoded to sequence_addr.
+            let sequence = unsafe { atomic_load_u32_acquire(sequence_addr as *mut u32) };
+            if sequence % 2 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+
+            // Read data in chunks of u32 or u64 depending on the WriteSize for T.
+            if T::WRITE_SIZE == WriteSize::Four {
+                for i in 0..(size_of::<T>() / size_of::<u32>()) {
+                    let addr = starting_addr + i * size_of::<u32>();
+                    // SAFETY: User stated via WriteSize that T is made of u32s.
+                    let val = unsafe { atomic_load_u32_acquire(addr as *mut u32) };
+                    // SAFETY: We know value_ptr points to a T struct param.
+                    unsafe { (value_ptr as *mut u32).add(i).write(val) };
+                }
+            } else if T::WRITE_SIZE == WriteSize::Eight {
+                for i in 0..(size_of::<T>() / size_of::<u64>()) {
+                    let addr = starting_addr + i * size_of::<u64>();
+                    // SAFETY: User stated via WriteSize that T is made of u64s.
+                    let val = unsafe { atomic_load_u64_acquire(addr as *mut u64) };
+                    // SAFETY: We know value_ptr points to a T struct param.
+                    unsafe { (value_ptr as *mut u64).add(i).write(val) };
+                }
+            }
+
+            // Read sequence again to compare with earlier sequence value.
+            // SAFETY: We know sequence is u32 hardcoded to sequence_addr.
+            let current_sequence = unsafe { atomic_load_u32_acquire(sequence_addr as *mut u32) };
+            if sequence != current_sequence {
+                continue;
+            }
+            break;
+        }
+        // Only return after sequence checks are valid, otherwise loops to check again.
+        // SAFETY: By this point the value should be synced and valid. Also we know the
+        // data starting at the offset is a T struct.
+        unsafe { value.assume_init() }
     }
 
     /// Updates the value directly. Uses Seqlock pattern.
@@ -471,6 +519,93 @@ pub unsafe fn atomic_store_u64_release(addr: *mut u64, value: u64) {
     }
 }
 
+/// Performs an atomic acquire (load, or read) of a u32 from `addr`.
+/// You can use this to read the `sequence` or `lock` value.
+///
+/// # Safety
+/// `addr` must point to a valid address and be 4-byte aligned.
+pub unsafe fn atomic_load_u32_acquire(addr: *mut u32) -> u32 {
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+    compile_error!("This architecture is not supported");
+
+    let value: u32;
+    // SAFETY: addr must be a valid pointer and 4-byte aligned.
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        {
+            asm!(
+                "mov {val:e}, [{ptr}]",
+                ptr = in(reg) addr,
+                val = out(reg) value,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            asm!(
+                "ldar {val:w}, [{ptr}]",
+                ptr = in(reg) addr,
+                val = out(reg) value,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(target_arch = "riscv64")]
+        {
+            asm!(
+                "lw {val}, 0({ptr})",
+                "fence r, rw",
+                ptr = in(reg) addr,
+                val = out(reg) value,
+                options(nostack, preserves_flags)
+            );
+        }
+    }
+    value
+}
+
+/// Performs an atomic acquire (load, or read) of a u64 from `addr`.
+///
+/// # Safety
+/// `addr` must point to a valid address and be 8-byte aligned.
+pub unsafe fn atomic_load_u64_acquire(addr: *mut u64) -> u64 {
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+    compile_error!("This architecture is not supported");
+
+    let value: u64;
+    // SAFETY: addr must be a valid pointer and 8-byte aligned.
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        {
+            asm!(
+                "mov {val}, [{ptr}]",
+                ptr = in(reg) addr,
+                val = out(reg) value,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            asm!(
+                "ldar {val}, [{ptr}]",
+                ptr = in(reg) addr,
+                val = out(reg) value,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(target_arch = "riscv64")]
+        {
+            asm!(
+                "ld {val}, 0({ptr})",
+                "fence r, rw",
+                ptr = in(reg) addr,
+                val = out(reg) value,
+                options(nostack, preserves_flags)
+            );
+        }
+    }
+    value
+}
+
 impl<H: IntoBytes + Immutable, T: SeqLockable> Drop for SeqLock<H, T> {
     fn drop(&mut self) {
         // SAFETY: `self` owns the mapping, and does not dispense any references
@@ -480,5 +615,152 @@ impl<H: IntoBytes + Immutable, T: SeqLockable> Drop for SeqLock<H, T> {
                 .unmap(self.map_addr, Self::vmo_size())
                 .expect("failed to unmap SeqLock");
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerocopy::KnownLayout;
+
+    // Example struct that mirrors PerfMetadataValue.
+    #[repr(C)]
+    #[derive(IntoBytes, Immutable, KnownLayout, Copy, Clone, Debug, PartialEq, Default)]
+    struct WriteSizeEightStruct {
+        lock: u32,
+        val1: u32,
+        val2: u64,
+        val3: u64,
+    }
+
+    // SAFETY: This struct is composed of fields that are safe to write
+    // in 8-byte chunks (two u32s and u64s). It is only used for testing.
+    // It emulates a perf_event_value struct.
+    unsafe impl SeqLockable for WriteSizeEightStruct {
+        const WRITE_SIZE: WriteSize = WriteSize::Eight;
+        const HAS_INLINE_SEQUENCE: bool = true;
+        const VMO_NAME: &'static [u8] = b"test:write_size_eight";
+    }
+
+    #[test]
+    fn test_seqlock_gets_align_eight_with_sequence() {
+        let seqlock = SeqLock::<u64, WriteSizeEightStruct>::new(0, WriteSizeEightStruct::default())
+            .expect("failed to create seqlock");
+
+        let val = WriteSizeEightStruct {
+            lock: 0,
+            val1: 42,
+            val2: 123_456_789_012_345_678,
+            val3: 987_654_321_098_765_432,
+        };
+        seqlock.set_value(val);
+
+        let data = seqlock.get();
+        // The 'lock' field was incremented twice by set_value(),
+        // and not incremented for get().
+        assert_eq!(data.lock, 2);
+        assert_eq!(data.val1, val.val1);
+        assert_eq!(data.val2, val.val2);
+        assert_eq!(data.val3, val.val3);
+    }
+
+    // Example struct that mirrors SeLinuxStatusValue.
+    #[repr(C)]
+    #[derive(IntoBytes, Immutable, KnownLayout, Copy, Clone, Debug, PartialEq, Default)]
+    struct WriteSizeFourStruct {
+        val1: u32,
+        val2: u32,
+        val3: u32,
+    }
+
+    // SAFETY: This struct is composed of u32 fields, making it safe
+    // to write in 4-byte chunks. It is only used for testing.
+    // It emulates a SeLinuxStatusValue struct.
+    unsafe impl SeqLockable for WriteSizeFourStruct {
+        const WRITE_SIZE: WriteSize = WriteSize::Four;
+        const HAS_INLINE_SEQUENCE: bool = false;
+        const VMO_NAME: &'static [u8] = b"test:write_size_four";
+    }
+
+    #[test]
+    fn test_seqlock_gets_align_four() {
+        let seqlock = SeqLock::<u32, WriteSizeFourStruct>::new(0, WriteSizeFourStruct::default())
+            .expect("failed to create seqlock");
+
+        let val = WriteSizeFourStruct { val1: 42, val2: 123_456_789, val3: 987_654_321 };
+        seqlock.set_value(val);
+
+        let data = seqlock.get();
+        assert_eq!(data.val1, val.val1);
+        assert_eq!(data.val2, val.val2);
+        assert_eq!(data.val3, val.val3);
+    }
+
+    // Stress test for get() and set_value().
+    // For two threads, get() and set_value() should work on the same piece of memory.
+    // One thread tries to read a lot, and another writes a lot. This test verifies that,
+    // thanks to the seqlock, the data read is correct (didn't get overwritten mid-read).
+    // TODO(https://fxbug.dev/460246292): Handle cases for more than 1 writer thread.
+    #[test]
+    fn test_seqlock_handles_concurrent_gets_and_sets() {
+        let seqlock = std::sync::Arc::new(
+            SeqLock::<u64, WriteSizeEightStruct>::new(0, WriteSizeEightStruct::default())
+                .expect("failed to create seqlock"),
+        );
+
+        let seqlock_clone = std::sync::Arc::clone(&seqlock);
+        let seqlock_clone_2 = std::sync::Arc::clone(&seqlock);
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let barrier_clone = std::sync::Arc::clone(&barrier);
+
+        // Spawn 2 threads that run concurrently.
+        let writer_thread = std::thread::spawn(move || {
+            barrier.wait();
+            let start = std::time::Instant::now();
+            let mut i = 0u32;
+            while start.elapsed() < std::time::Duration::from_millis(200) {
+                let val = WriteSizeEightStruct { lock: 0, val1: i, val2: i as u64, val3: i as u64 };
+                seqlock_clone.set_value(val);
+                i += 1;
+            }
+        });
+        let reader_thread = std::thread::spawn(move || {
+            let mut reads = 0;
+            let mut last_valid_read = 0;
+            barrier_clone.wait();
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_millis(200) {
+                let data = seqlock_clone_2.get();
+                // All fields are the same (no mid-read writes).
+                assert_eq!(data.val1 as u64, data.val2);
+                assert_eq!(data.val2, data.val3);
+
+                // The sequence (lock) should be even (completed writes).
+                assert_eq!(data.lock % 2, 0);
+
+                // get() returns the latest value. The latest value might not increment exactly
+                // by 1 each time because the writer thread might have written zero or multiple
+                // times since we last read. So, we just verify that the latest value is higher
+                // than the previous value.
+                assert!(data.val1 >= last_valid_read);
+                last_valid_read = data.val1;
+                reads += 1;
+            }
+            reads
+        });
+
+        // Wait for both threads to finish.
+        writer_thread.join().unwrap();
+        let total_reads = reader_thread.join().unwrap();
+
+        // Check that reading actually happened.
+        assert!(total_reads > 1, "Expected threads to run concurrently");
+
+        // Check that writes actually happened.
+        let final_data = seqlock.get();
+        assert!(final_data.val1 > 0, "Expected some writes to happen");
+        assert_eq!(final_data.val1 as u64, final_data.val2);
+        assert_eq!(final_data.val2, final_data.val3);
+        assert_eq!(final_data.lock % 2, 0, "Sequence lock should be unlocked");
     }
 }
