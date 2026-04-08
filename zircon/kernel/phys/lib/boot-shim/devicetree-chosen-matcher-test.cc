@@ -37,6 +37,10 @@ class ChosenNodeMatcherTest
     ASSERT_TRUE(loaded_dtb.is_ok(), "%s", loaded_dtb.error_value().c_str());
     chosen_with_console_aml_dtb_ = std::move(loaded_dtb).value();
 
+    loaded_dtb = LoadDtb("chosen_no_uart_interrupts.dtb");
+    ASSERT_TRUE(loaded_dtb.is_ok(), "%s", loaded_dtb.error_value().c_str());
+    chosen_no_uart_interrupts_dtb_ = std::move(loaded_dtb).value();
+
     loaded_dtb = LoadDtb("chosen_with_console_and_stdout_path.dtb");
     ASSERT_TRUE(loaded_dtb.is_ok(), "%s", loaded_dtb.error_value().c_str());
     chosen_with_console_and_stdout_path_dtb_ = std::move(loaded_dtb).value();
@@ -62,12 +66,16 @@ class ChosenNodeMatcherTest
     chosen_with_translation_dtb_ = std::nullopt;
     chosen_with_console_and_stdout_path_dtb_ = std::nullopt;
     chosen_with_console_aml_dtb_ = std::nullopt;
+    chosen_no_uart_interrupts_dtb_ = std::nullopt;
     Mixin::TearDownTestSuite();
   }
 
   devicetree::Devicetree chosen() { return chosen_dtb_->fdt(); }
   devicetree::Devicetree chosen_with_console() { return chosen_with_console_dtb_->fdt(); }
   devicetree::Devicetree chosen_with_console_aml() { return chosen_with_console_aml_dtb_->fdt(); }
+  devicetree::Devicetree chosen_no_uart_interrupts() {
+    return chosen_no_uart_interrupts_dtb_->fdt();
+  }
   devicetree::Devicetree chosen_with_console_and_stdout_path() {
     return chosen_with_console_and_stdout_path_dtb_->fdt();
   }
@@ -79,6 +87,7 @@ class ChosenNodeMatcherTest
   static std::optional<LoadedDtb> chosen_dtb_;
   static std::optional<LoadedDtb> chosen_with_console_dtb_;
   static std::optional<LoadedDtb> chosen_with_console_aml_dtb_;
+  static std::optional<LoadedDtb> chosen_no_uart_interrupts_dtb_;
   static std::optional<LoadedDtb> chosen_with_console_and_stdout_path_dtb_;
   static std::optional<LoadedDtb> chosen_with_reg_offset_dtb_;
   static std::optional<LoadedDtb> chosen_unknown_intc_dtb_;
@@ -88,6 +97,7 @@ class ChosenNodeMatcherTest
 std::optional<LoadedDtb> ChosenNodeMatcherTest::chosen_dtb_ = std::nullopt;
 std::optional<LoadedDtb> ChosenNodeMatcherTest::chosen_with_console_dtb_ = std::nullopt;
 std::optional<LoadedDtb> ChosenNodeMatcherTest::chosen_with_console_aml_dtb_ = std::nullopt;
+std::optional<LoadedDtb> ChosenNodeMatcherTest::chosen_no_uart_interrupts_dtb_ = std::nullopt;
 std::optional<LoadedDtb> ChosenNodeMatcherTest::chosen_with_console_and_stdout_path_dtb_ =
     std::nullopt;
 std::optional<LoadedDtb> ChosenNodeMatcherTest::chosen_with_reg_offset_dtb_ = std::nullopt;
@@ -236,6 +246,28 @@ TEST_F(ChosenNodeMatcherTest, ChosenWithConsoleAndVendor) {
                          // no stdout-path is set in the chosen node, console should be
                          // used as a fallback.
                          .uart_absolute_path = "",
+                     });
+}
+
+TEST_F(ChosenNodeMatcherTest, ChosenNoUartInterrupts) {
+  auto fdt = chosen_no_uart_interrupts();
+  boot_shim::DevicetreeChosenNodeMatcher<AllUartDrivers> chosen_matcher("test", stdout);
+
+  ASSERT_TRUE(devicetree::Match(fdt, chosen_matcher));
+
+  CheckChosenMatcher(chosen_matcher,
+                     {
+                         .ramdisk_start = 0x48000000,
+                         .ramdisk_end = 0x58000000,
+                         .cmdline = "-foo=bar -bar=baz",
+                         .uart_config_name = uart::pl011::Driver::kConfigName,
+                         .uart_config =
+                             {
+                                 .mmio_phys = 0x9000000,
+                                 .irq = 0,
+                                 .flags = 0,
+                             },
+                         .uart_absolute_path = "/some-interrupt-controller/pl011uart@9000000",
                      });
 }
 

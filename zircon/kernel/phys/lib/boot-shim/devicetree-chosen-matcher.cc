@@ -82,16 +82,15 @@ devicetree::ScanState DevicetreeChosenNodeMatcherBase::SetUpUart(
     }
 
     if (!interrupts) {
-      OnError("UART Device does not provide interrupt cells.");
-      return devicetree::ScanState::kDone;
-    }
-
-    uart_irq_ = DevicetreeIrqResolver(interrupts->AsBytes());
-    if (auto result = uart_irq_.ResolveIrqController(decoder); result.is_ok()) {
-      if (!*result) {
-        return devicetree::ScanState::kActive;
+      Log("Warning: UART Device does not provide interrupt cells. Proceeding with irq = 0.\n");
+    } else {
+      uart_irq_ = DevicetreeIrqResolver(interrupts->AsBytes());
+      if (auto result = uart_irq_.ResolveIrqController(decoder); result.is_ok()) {
+        if (!*result) {
+          return devicetree::ScanState::kActive;
+        }
+        SetUartIrq();
       }
-      SetUartIrq();
     }
   }
   return devicetree::ScanState::kDone;
