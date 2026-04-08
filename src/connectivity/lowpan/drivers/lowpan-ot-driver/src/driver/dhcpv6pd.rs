@@ -243,6 +243,11 @@ impl DhcpV6Pd {
             });
         }
 
+        // Explicitly drop the `prefix_control.watch_prefix` channel in addition to
+        // the `PrefixControl` endpoint. Dropping the `PrefixControl` endpoint alone
+        // does not trigger the `Dhcpv6PrefixControlRequest` closure on the server
+        // side, see b/491112007 for more details.
+        inner.prefix_watch = None;
         inner.refresh_task = None;
     }
 
