@@ -1812,7 +1812,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                 .context("Failed to send GetProtocolFeatures")?;
         }
         Nl80211Cmd::TriggerScan => {
-            info!("Nl80211Cmd::TriggerScan");
+            info!("Nl80211Cmd::TriggerScan, attrs={:?}", message.payload.attrs);
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, iface_id)) => {
                     responder
