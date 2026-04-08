@@ -21,6 +21,11 @@ static_library("aarch64_assembly") {
   deps = [ "//src/starnix/lib/asm_utils" ]
 }
 
+static_library("x64_assembly") {
+  sources = [ "src/x86_64_asm.S" ]
+  deps = [ "//src/starnix/lib/asm_utils" ]
+}
+
 static_library("riscv64_vector") {
   sources = [ "src/riscv64_vector.S" ]
 }
@@ -38,6 +43,7 @@ rustc_library("lib") {
 
   if (target_cpu == "x64") {
     sources += [ "src/x86_64.rs" ]
+    deps += [ ":x64_assembly" ]
   } else if (target_cpu == "arm64") {
     sources += [ "src/aarch64.rs" ]
     deps += [ ":aarch64_assembly" ]

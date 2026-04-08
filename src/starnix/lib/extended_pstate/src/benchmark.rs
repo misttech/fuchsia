@@ -22,25 +22,17 @@
 // aarch64 processors provide only one mechanism for saving and restoring state.
 
 use criterion::Criterion;
-use extended_pstate::ExtendedPstateState;
+use extended_pstate::{ExtendedPstateState, restore_extended_pstate, save_extended_pstate};
 use fuchsia as _;
 use fuchsia_criterion::FuchsiaCriterion;
 use std::mem;
 use std::time::Duration;
 
 #[cfg(target_arch = "x86_64")]
-use extended_pstate::{
-    restore_extended_pstate, save_extended_pstate,
-    x86_64::{PREFERRED_STRATEGY, Strategy},
-};
+use extended_pstate::x86_64::{PREFERRED_STRATEGY, Strategy};
 
 #[cfg(target_arch = "aarch64")]
-unsafe extern "C" {
-    fn save_extended_pstate(state_addr: usize);
-    fn restore_extended_pstate(state_addr: usize);
-    fn save_extended_aarch32_pstate(state_addr: usize);
-    fn restore_extended_aarch32_pstate(state_addr: usize);
-}
+use extended_pstate::{restore_extended_aarch32_pstate, save_extended_aarch32_pstate};
 
 fn main() {
     let mut fc = FuchsiaCriterion::default();

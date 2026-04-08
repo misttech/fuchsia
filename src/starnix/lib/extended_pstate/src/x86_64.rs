@@ -23,6 +23,8 @@ const XSAVE_FEATURE_AVX: u64 = 1 << 2;
 // zircon/kernel/arch/x86/registers.cc ).
 pub const SUPPORTED_XSAVE_FEATURES: u64 = XSAVE_FEATURE_X87 | XSAVE_FEATURE_SSE | XSAVE_FEATURE_AVX;
 
+const NUM_XMM_REGS: usize = 16;
+
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 struct X87MMXState {
@@ -55,7 +57,7 @@ struct X86LegacySaveArea {
 
     st: [X87MMXState; 8],
 
-    xmm: [SSERegister; 16],
+    xmm: [SSERegister; NUM_XMM_REGS],
 }
 
 const_assert_eq!(std::mem::size_of::<X86LegacySaveArea>(), 416);
@@ -104,16 +106,6 @@ pub(crate) struct XSaveArea {
 
 const_assert_eq!(std::mem::size_of::<XSaveArea>(), XSAVE_AREA_SIZE);
 
-impl XSaveArea {
-    fn addr(&self) -> *const u8 {
-        self as *const _ as *const u8
-    }
-
-    fn addr_mut(&mut self) -> *mut u8 {
-        self as *mut _ as *mut u8
-    }
-}
-
 impl Default for XSaveArea {
     fn default() -> Self {
         Self { fxsave_area: Default::default(), xsave_header: [0; 64], avx_state: [0; 256] }
@@ -121,10 +113,13 @@ impl Default for XSaveArea {
 }
 
 #[derive(PartialEq, Debug, Copy, Clone, PartialOrd)]
+#[repr(u32)]
 pub enum Strategy {
-    XSaveOpt,
-    XSave,
-    FXSave,
+    // LINT.IfChange(strategy_discriminants)
+    XSaveOpt = 0,
+    XSave = 1,
+    FXSave = 2,
+    // LINT.ThenChange(x86_64_asm.S:strategy_discriminants)
 }
 
 pub static PREFERRED_STRATEGY: LazyLock<Strategy> = LazyLock::new(|| {
@@ -146,37 +141,6 @@ pub static PREFERRED_STRATEGY: LazyLock<Strategy> = LazyLock::new(|| {
 impl State {
     pub fn with_strategy(strategy: Strategy) -> Self {
         Self { buffer: XSaveArea::default(), strategy }
-    }
-
-    #[inline(always)]
-    pub(crate) fn save(&mut self) {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        match self.strategy {
-            Strategy::XSaveOpt => unsafe {
-                std::arch::x86_64::_xsaveopt(self.buffer.addr_mut(), SUPPORTED_XSAVE_FEATURES);
-            },
-            Strategy::XSave => unsafe {
-                std::arch::x86_64::_xsave(self.buffer.addr_mut(), SUPPORTED_XSAVE_FEATURES);
-            },
-            Strategy::FXSave => unsafe {
-                std::arch::x86_64::_fxsave(self.buffer.addr_mut());
-            },
-        }
-    }
-
-    #[inline(always)]
-    // Safety: See comment in lib.rs.
-    pub(crate) unsafe fn restore(&self) {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        match self.strategy {
-            Strategy::XSave | Strategy::XSaveOpt => unsafe {
-                std::arch::x86_64::_xrstor(self.buffer.addr(), SUPPORTED_XSAVE_FEATURES)
-            },
-            Strategy::FXSave => unsafe { std::arch::x86_64::_fxrstor(self.buffer.addr()) },
-        }
     }
 
     pub fn reset(&mut self) {
@@ -213,269 +177,116 @@ impl Default for State {
 #[cfg(test)]
 mod test {
     use super::*;
+    use core::arch::asm;
 
-    #[::fuchsia::test]
-    fn save_restore_sse_registers() {
-        use core::arch::asm;
+    const XMM_REG_SIZE: usize = std::mem::size_of::<u128>();
 
-        let write_custom_state = || {
-            // x87 FPU status word
-            //   x87 FPU Status Word: FSTSW/FNSTSW, FSTENV/FNSTENV
-            // Exception state lives in the status word
-            // The exception flags are “sticky” bits (once set, they remain set until explicitly cleared). They can be cleared by
-            // executing the FCLEX/FNCLEX (clear exceptions) instructions, by reinitializing the x87 FPU with the FINIT/FNINIT or
-            // FSAVE/FNSAVE instructions, or by overwriting the flags with an FRSTOR or FLDENV instruction.
+    #[fuchsia::test]
+    fn test_save_restore_x86_64() {
+        let mut state = crate::ExtendedPstateState::default();
+        let mut pstate_ptr_struct = crate::ExtendedPstatePointer { extended_pstate: &mut state };
+        let pstate_ptr = &mut pstate_ptr_struct as *mut crate::ExtendedPstatePointer;
 
-            // We expect the FPU stack to be empty. Pop a value to generate a stack underflow exception
-            let flt = [0u8; 8];
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fstp dword ptr [{flt}]", flt = in(reg) &flt as *const u8);
-            }
-            // Check that the IE and SF bits are 1 and the C1 flag is 0. [intel/vol1] 8.5.1.1 Stack Overflow or Underflow Exception (#IS)
-            let fpust = 0u16;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fnstsw [{fpust}]", fpust = in(reg)&fpust);
-            }
-            assert_eq!(fpust & 1 << 0, 0x1); // IE flag, bit 0
-            assert_eq!(fpust & 1 << 6, 1 << 6); // SF flag, bit 6
-            assert_eq!(fpust & 1 << 9, 0); // C1 flag, bit 9.
+        let mut restored_regs = [0u128; NUM_XMM_REGS];
+        let restored_regs_ptr = restored_regs.as_mut_ptr() as *mut u8;
 
-            // x87 FPU control word.
-            let mut fpucw = 0u16;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw);
-            }
-            // Unmask all 6 x87 exceptions
-            fpucw &= !0x3f;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fldcw [{fpucw}]", fpucw = in(reg) &fpucw);
-            }
-
-            let mut mxcsr = 0u32;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("stmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
-            }
-            // Unmask the lowest 3 exceptions.
-            mxcsr &= !(0x7 << 7);
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("ldmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
-            }
-
-            // Populate SSE registers
-            let vals_a = [0x42u8; 16];
-            let vals_b = [0x43u8; 16];
-            let vals_c = [0x44u8; 16];
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups xmm0, [{vals_a}]
-                          movups xmm1, [{vals_b}]
-                          movups xmm2, [{vals_c}]",
-                    vals_a = in(reg) &vals_a,
-                    vals_b = in(reg) &vals_b,
-                    vals_c = in(reg) &vals_c,
-                    out("xmm0") _,
-                    out("xmm1") _,
-                    out("xmm2") _,
-                );
-            }
-        };
-
-        let clear_state = || {
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                // Reinitialize x87 FPU
-                asm!("fninit");
-                // Reset SSE control state to all exceptions masked, no exceptions detected
-                let mxcsr = 0x3f << 7;
-                asm!("ldmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
-                // Clear SSE registers
-                asm!("xorps xmm0, xmm0
-                          xorps xmm1, xmm1
-                          xorps xmm2, xmm2",
-                    out("xmm0") _,
-                    out("xmm1") _,
-                    out("xmm2") _,
-                );
-            }
-        };
-
-        let dest = [0u8; 16];
-        let validate_state_cleared = || {
-            let fpust = 0u16;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fnstsw [{fpust}]", fpust = in(reg)&fpust);
-            }
-            assert_eq!(fpust, 0);
-
-            let fpucw = 0u16;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw)
-            };
-            assert_eq!(fpucw, 0x37f); // Initial FPU state per [intel/vol1] 8.1.5 x87 FPU Control Word
-
-            let mxcsr = 0u32;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("stmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
-            }
-            assert_eq!(mxcsr & 0x1f, 0); // No exceptions raised.
-            assert_eq!((mxcsr >> 7) & 0x3f, 0x3f); // All exceptions masked.
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups [{dest}], xmm0", dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups [{dest}], xmm1", dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups [{dest}], xmm2", dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0);
-            }
-        };
-
-        let validate_state_restored = || {
-            // x87 FPU status word
-
-            // Check that the IE and SF bits are 1 and the C1 flag is 0. [intel/vol1] 8.5.1.1 Stack Overflow or Underflow Exception (#IS)
-            let fpust = 0u16;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fnstsw [{fpust}]", fpust = in(reg)&fpust);
-            }
-            assert_eq!(fpust & 1 << 0, 0x1); // IE flag, bit 0
-            assert_eq!(fpust & 1 << 6, 1 << 6); // SF flag, bit 6
-            assert_eq!(fpust & 1 << 9, 0); // C1 flag, bit 9.
-
-            // x87 FPU control word
-            let fpucw = 0u16;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("fnstcw [{fpucw}]", fpucw = in(reg) &fpucw)
-            };
-            assert_eq!(fpucw, 0x340); // All exceptions masked, 64 bit precision, round to nearest.
-
-            let mxcsr = 0u32;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("stmxcsr [{mxcsr}]", mxcsr = in(reg) &mxcsr);
-            }
-            assert_eq!(mxcsr & 0x1f, 0); // No exceptions raised.
-            assert_eq!((mxcsr >> 7) & 0x3f, 0x38); // First 3 exceptions unmasked, rest masked.
-
-            // SSE registers
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups [{dest}], xmm0", dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x42);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups [{dest}], xmm1", dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x43);
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            unsafe {
-                asm!("movups [{dest}], xmm2", dest = in(reg) &dest);
-            }
-            for i in 0..16 {
-                assert_eq!(dest[i], 0x44);
-            }
-        };
-
-        let mut state = State::default();
-        write_custom_state();
-        state.save();
-        clear_state();
-        validate_state_cleared();
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            state.restore();
+        let base_sentinel: u128 = 0x01234567_89ABCDEF_FEDCBA98_76543210_u128;
+        let mut sentinels_xmm = [0u128; NUM_XMM_REGS];
+        for i in 0..NUM_XMM_REGS {
+            sentinels_xmm[i] = base_sentinel + i as u128;
         }
-        validate_state_restored();
+
+        // SAFETY: all memory accesses are to mutable variables on the stack and all clobbers are
+        // specified.
+        unsafe {
+            asm!(
+                // 1. Load sentinels into registers
+                "movdqu xmm0, [{sentinels_xmm}]",
+                "movdqu xmm1, [{sentinels_xmm} + 16]",
+                "movdqu xmm2, [{sentinels_xmm} + 32]",
+                "movdqu xmm3, [{sentinels_xmm} + 48]",
+                "movdqu xmm4, [{sentinels_xmm} + 64]",
+                "movdqu xmm5, [{sentinels_xmm} + 80]",
+                "movdqu xmm6, [{sentinels_xmm} + 96]",
+                "movdqu xmm7, [{sentinels_xmm} + 112]",
+                "movdqu xmm8, [{sentinels_xmm} + 128]",
+                "movdqu xmm9, [{sentinels_xmm} + 144]",
+                "movdqu xmm10, [{sentinels_xmm} + 160]",
+                "movdqu xmm11, [{sentinels_xmm} + 176]",
+                "movdqu xmm12, [{sentinels_xmm} + 192]",
+                "movdqu xmm13, [{sentinels_xmm} + 208]",
+                "movdqu xmm14, [{sentinels_xmm} + 224]",
+                "movdqu xmm15, [{sentinels_xmm} + 240]",
+
+                // 2. Call save routine
+                "mov rdi, r12",
+                "call {save_fn}",
+
+                // 3. Zero registers
+                "pxor xmm0, xmm0",
+                "pxor xmm1, xmm1",
+                "pxor xmm2, xmm2",
+                "pxor xmm3, xmm3",
+                "pxor xmm4, xmm4",
+                "pxor xmm5, xmm5",
+                "pxor xmm6, xmm6",
+                "pxor xmm7, xmm7",
+                "pxor xmm8, xmm8",
+                "pxor xmm9, xmm9",
+                "pxor xmm10, xmm10",
+                "pxor xmm11, xmm11",
+                "pxor xmm12, xmm12",
+                "pxor xmm13, xmm13",
+                "pxor xmm14, xmm14",
+                "pxor xmm15, xmm15",
+
+                // 4. Call restore routine
+                "mov rdi, r12",
+                "call {restore_fn}",
+
+                // 5. Save registers to buffer
+                "movdqu [r13], xmm0",
+                "movdqu [r13 + 16], xmm1",
+                "movdqu [r13 + 32], xmm2",
+                "movdqu [r13 + 48], xmm3",
+                "movdqu [r13 + 64], xmm4",
+                "movdqu [r13 + 80], xmm5",
+                "movdqu [r13 + 96], xmm6",
+                "movdqu [r13 + 112], xmm7",
+                "movdqu [r13 + 128], xmm8",
+                "movdqu [r13 + 144], xmm9",
+                "movdqu [r13 + 160], xmm10",
+                "movdqu [r13 + 176], xmm11",
+                "movdqu [r13 + 192], xmm12",
+                "movdqu [r13 + 208], xmm13",
+                "movdqu [r13 + 224], xmm14",
+                "movdqu [r13 + 240], xmm15",
+
+                sentinels_xmm = in(reg) &sentinels_xmm,
+                in("r12") pstate_ptr,
+                in("r13") restored_regs_ptr,
+                save_fn = sym crate::save_extended_pstate,
+                restore_fn = sym crate::restore_extended_pstate,
+                clobber_abi("C"),
+                out("rdi") _,
+                out("xmm0") _, out("xmm1") _, out("xmm2") _, out("xmm3") _,
+                out("xmm4") _, out("xmm5") _, out("xmm6") _, out("xmm7") _,
+                out("xmm8") _, out("xmm9") _, out("xmm10") _, out("xmm11") _,
+                out("xmm12") _, out("xmm13") _, out("xmm14") _, out("xmm15") _,
+            );
+        }
+
+        // Assertions
+        for i in 0..NUM_XMM_REGS {
+            assert_eq!(restored_regs[i], sentinels_xmm[i], "restored_regs[{}] mismatch", i);
+        }
+
+        let saved_xsave = state.get_x64_xsave_area();
+        for i in 0..NUM_XMM_REGS {
+            let offset = 160 + i * XMM_REG_SIZE;
+            let val =
+                u128::from_le_bytes(saved_xsave[offset..offset + XMM_REG_SIZE].try_into().unwrap());
+            assert_eq!(val, sentinels_xmm[i], "saved_xsave.xmm[{}] mismatch", i);
+        }
     }
 }

@@ -53,14 +53,8 @@ impl State {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::*;
     use core::arch::asm;
-
-    unsafe extern "C" {
-        fn save_extended_pstate(state_addr: usize);
-        fn restore_extended_pstate(state_addr: usize);
-        fn save_extended_aarch32_pstate(state_addr: usize);
-        fn restore_extended_aarch32_pstate(state_addr: usize);
-    }
 
     #[fuchsia::test]
     fn test_save_restore_64() {

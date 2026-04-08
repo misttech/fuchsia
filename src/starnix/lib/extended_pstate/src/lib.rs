@@ -64,13 +64,13 @@ impl ExtendedPstateState {
         Self { state: x86_64::State::with_strategy(strategy) }
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     fn save(&mut self) {
         self.state.save()
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "riscv64")]
     #[inline(always)]
     /// # Safety
     ///
@@ -148,7 +148,7 @@ pub union ExtendedPstatePointer {
 }
 
 // TODO(https://fxbug.dev/491848090) move other ISAs to use pure asm save/restore
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(target_arch = "riscv64")]
 #[unsafe(no_mangle)]
 /// Restores the current extended architectural process state.
 ///
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
 }
 
 // TODO(https://fxbug.dev/491848090) move other ISAs to use pure asm save/restore
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(target_arch = "riscv64")]
 #[unsafe(no_mangle)]
 /// Save the current extended architectural process state.
 ///
@@ -181,7 +181,19 @@ pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
     }
 }
 
-#[cfg(all(test, not(target_arch = "aarch64")))]
+// Provided by assembly targets.
+#[cfg(not(target_arch = "riscv64"))]
+unsafe extern "C" {
+    pub fn save_extended_pstate(state_addr: usize);
+    pub fn restore_extended_pstate(state_addr: usize);
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn save_extended_aarch32_pstate(state_addr: usize);
+    #[cfg(target_arch = "aarch64")]
+    pub fn restore_extended_aarch32_pstate(state_addr: usize);
+}
+
+#[cfg(all(test, target_arch = "riscv64"))]
 mod test {
     use super::*;
 
