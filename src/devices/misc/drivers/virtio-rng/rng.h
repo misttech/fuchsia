@@ -4,7 +4,8 @@
 #ifndef SRC_DEVICES_MISC_DRIVERS_VIRTIO_RNG_RNG_H_
 #define SRC_DEVICES_MISC_DRIVERS_VIRTIO_RNG_RNG_H_
 
-#include <lib/ddk/io-buffer.h>
+#include <lib/dma-buffer/buffer.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
 #include <stdlib.h>
@@ -12,17 +13,14 @@
 
 #include <memory>
 
-#include <ddktl/device.h>
-
 namespace virtio {
 
 class Ring;
 
-class RngDevice : public Device, public ddk::Device<RngDevice> {
+class RngDevice : public Device {
  public:
-  RngDevice(zx_device_t* bus_device, zx::bti bti, std::unique_ptr<Backend> backend);
+  RngDevice(zx::bti bti, std::unique_ptr<Backend> backend);
   virtual ~RngDevice();
-  void DdkRelease() { virtio::Device::Release(); }
 
   zx_status_t Init() override;
 
@@ -52,7 +50,20 @@ class RngDevice : public Device, public ddk::Device<RngDevice> {
 
   // the buffer used to receive entropy
   static constexpr size_t kBufferSize = ZX_CPRNG_ADD_ENTROPY_MAX_LEN;
-  io_buffer_t buf_;
+  std::unique_ptr<dma_buffer::ContiguousBuffer> buf_;
+};
+
+class RngDriver : public fdf::DriverBase {
+ public:
+  static constexpr char kDriverName[] = "virtio-rng";
+
+  RngDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  ~RngDriver() override = default;
+
+  zx::result<> Start() final;
+
+ private:
+  std::unique_ptr<RngDevice> device_;
 };
 
 }  // namespace virtio
