@@ -116,6 +116,14 @@ async fn reboot_direct_from_product(
             log::debug!("{e:?}");
             return Ok(());
         }
+        e @ Err(fidl::Error::ClientRead(_)) => {
+            // If it is a client read error then we errored out reading
+            // the response from the target. This happens when the reboot is
+            // successful (the transport shut down).
+            log::info!("Target reboot succeeded.");
+            log::debug!("{e:?}");
+            return Ok(());
+        }
         Err(e) => return Err(e).bug_context("Shutting down target"),
         Ok(res) => res,
     };
