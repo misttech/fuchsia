@@ -21,7 +21,6 @@ antlion_host_test("wifi_chip_existence_test") {
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
   ]
 }
@@ -39,7 +38,6 @@ antlion_host_test("wifi_chip_restart_test") {
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
   ]
 }
@@ -49,7 +47,6 @@ antlion_host_test("wifi_chip_correctness_and_consistency_test") {
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
   ]
 }
@@ -59,7 +56,6 @@ antlion_host_test("iface_lifecycle_test") {
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
   ]
 }
@@ -69,7 +65,6 @@ antlion_host_test("iface_correctness_and_consistency_test") {
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
   ]
 }
@@ -88,7 +83,6 @@ antlion_host_test("apf_test") {
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
   ]
 }

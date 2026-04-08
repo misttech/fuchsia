@@ -12,7 +12,6 @@ python_library("wlanix_testing") {
   library_deps = [
     "//src/testing/end_to_end/antlion",
     "//src/testing/end_to_end/honeydew",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
     "//third_party/mobly",
   ]

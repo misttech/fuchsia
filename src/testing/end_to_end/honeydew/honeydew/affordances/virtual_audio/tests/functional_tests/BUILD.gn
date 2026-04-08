@@ -17,7 +17,6 @@ if (is_host) {
     libraries = [
       "//src/testing/end_to_end/honeydew",
       "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
-      "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
     ]
 
     environments = [

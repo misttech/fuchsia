@@ -10,7 +10,6 @@ _common_test_libraries = [
   "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_python",
   "//src/testing/end_to_end/honeydew",
   "//src/testing/end_to_end/mobly_base_tests:test_case_revive",
-  "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
 ]
 
 python_mobly_test("blackout_integration_test_no_reboot") {
