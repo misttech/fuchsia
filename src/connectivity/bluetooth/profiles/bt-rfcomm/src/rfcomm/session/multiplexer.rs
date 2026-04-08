@@ -202,7 +202,7 @@ impl SessionMultiplexer {
             FlowControlMode::None
         };
         // Will be 0 if flow control is disabled.
-        let initial_credits = flow_control.initial_remote_credits().unwrap_or(0);
+        let initial_credits = flow_control.initial_remote_credits().unwrap_or_default();
 
         let channel = self.find_or_create_session_channel(dlci);
         if let Err(e) = channel.set_parameters(negotiated_max_packet_size, flow_control) {
@@ -238,7 +238,7 @@ impl SessionMultiplexer {
     /// Returns true if the provided `dlci` has been initialized and established in
     /// the multiplexer.
     pub fn dlci_established(&self, dlci: &DLCI) -> bool {
-        self.channels.get(dlci).map(|c| c.is_established()).unwrap_or(false)
+        self.channels.get(dlci).map(|c| c.is_established()).unwrap_or_default()
     }
 
     /// Returns true if at least one DLC has been established.

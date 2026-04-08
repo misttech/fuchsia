@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_bluetooth as bt;
+use fidl_fuchsia_bluetooth_sys as sys;
 #[cfg(target_os = "fuchsia")]
 use fuchsia_inspect as inspect;
-use {fidl_fuchsia_bluetooth as bt, fidl_fuchsia_bluetooth_sys as sys};
 
 use crate::error::Error;
 #[cfg(target_os = "fuchsia")]
@@ -228,7 +229,7 @@ impl From<sys::LeBondData> for LeBondData {
     fn from(src: sys::LeBondData) -> Self {
         Self {
             connection_parameters: src.connection_parameters,
-            services: src.services.unwrap_or(vec![]).iter().map(Into::into).collect(),
+            services: src.services.unwrap_or_default().iter().map(Into::into).collect(),
             peer_ltk: src.peer_ltk,
             local_ltk: src.local_ltk,
             irk: src.irk,
@@ -241,7 +242,7 @@ impl From<sys::BredrBondData> for BredrBondData {
     fn from(src: sys::BredrBondData) -> Self {
         Self {
             role_preference: src.role_preference,
-            services: src.services.unwrap_or(vec![]).iter().map(Into::into).collect(),
+            services: src.services.unwrap_or_default().iter().map(Into::into).collect(),
             link_key: src.link_key,
         }
     }

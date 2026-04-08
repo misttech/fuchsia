@@ -10,9 +10,13 @@ use bt_a2dp::connected_peers::ConnectedPeers;
 use bt_a2dp::peer::ControllerPool;
 use bt_a2dp::permits::Permits;
 use bt_a2dp::stream;
+use bt_avdtp as avdtp;
+use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_a2dp::{AudioModeRequest, AudioModeRequestStream, Role};
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_component::BinderMarker;
 use fidl_fuchsia_media::SessionAudioConsumerFactoryMarker;
+use fidl_fuchsia_media_sessions2 as sessions2;
 use fuchsia_async::{self as fasync, DurationExt};
 use fuchsia_bluetooth::assigned_numbers::AssignedNumber;
 use fuchsia_bluetooth::profile::{
@@ -20,16 +24,13 @@ use fuchsia_bluetooth::profile::{
 };
 use fuchsia_bluetooth::types::{PeerId, Uuid};
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::Inspect;
 use futures::{Stream, StreamExt};
 use log::{debug, error, info, trace, warn};
 use profile_client::{ProfileClient, ProfileEvent};
 use std::collections::HashSet;
 use std::sync::Arc;
-use {
-    bt_avdtp as avdtp, fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
-    fidl_fuchsia_media_sessions2 as sessions2, fuchsia_inspect as inspect,
-};
 
 mod avrcp_relay;
 mod config;
@@ -204,7 +205,7 @@ fn handle_services_found(
     let service_classes = find_service_classes(attributes);
     let service_names: Vec<&str> = service_classes.iter().map(|an| an.name).collect();
     let peer_preferred_directions = find_endpoint_directions(service_classes);
-    let profiles = find_profile_descriptors(attributes).unwrap_or(vec![]);
+    let profiles = find_profile_descriptors(attributes).unwrap_or_default();
     let profile_names: Vec<String> = profiles
         .iter()
         .filter_map(|p| {

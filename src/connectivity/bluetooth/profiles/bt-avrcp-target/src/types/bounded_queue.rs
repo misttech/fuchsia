@@ -51,7 +51,7 @@ impl<T> BoundedQueue<T> {
                     evicted = Some(ev);
                     1
                 })
-                .unwrap_or(0);
+                .unwrap_or_default();
         }
         self.monotonic_count += 1;
         self.current_count += 1;

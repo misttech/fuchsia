@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use async_utils::hanging_get::client::HangingGetStream;
 use derivative::Derivative;
 use fidl_fuchsia_bluetooth::PeerId;
@@ -527,7 +527,7 @@ impl TestCallManager {
         Ok(inner
             .peers
             .keys()
-            .map(|&id| (id.value, inner.active_peer.map(|active| active == id).unwrap_or(false)))
+            .map(|&id| (id.value, inner.active_peer.map(|active| active == id).unwrap_or_default()))
             .collect())
     }
 

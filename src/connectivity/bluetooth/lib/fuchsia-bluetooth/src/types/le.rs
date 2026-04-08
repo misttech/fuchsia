@@ -88,7 +88,7 @@ impl TryFrom<fidl::Peer> for Peer {
         Ok(Peer {
             id: src.id.map(PeerId::from).ok_or_else(|| Error::missing("le.Peer.id"))?,
             name: src.name,
-            connectable: src.connectable.unwrap_or(false),
+            connectable: src.connectable.unwrap_or_default(),
             rssi: src.rssi,
             advertising_data: src.advertising_data.map(|ad| ad.into()),
         })
@@ -103,23 +103,23 @@ impl From<fidl::AdvertisingData> for AdvertisingData {
             appearance: src.appearance,
             service_uuids: src
                 .service_uuids
-                .unwrap_or(vec![])
+                .unwrap_or_default()
                 .into_iter()
                 .map(|uuid| Uuid::from(uuid))
                 .collect(),
             service_data: src
                 .service_data
-                .unwrap_or(vec![])
+                .unwrap_or_default()
                 .into_iter()
                 .map(|data| data.into())
                 .collect(),
             manufacturer_data: src
                 .manufacturer_data
-                .unwrap_or(vec![])
+                .unwrap_or_default()
                 .into_iter()
                 .map(|data| data.into())
                 .collect(),
-            uris: src.uris.unwrap_or(vec![]),
+            uris: src.uris.unwrap_or_default(),
         }
     }
 }
@@ -140,23 +140,23 @@ impl TryFrom<fidl::AdvertisingDataDeprecated> for AdvertisingData {
                 .map_or(Ok(None), |v| v.map(Some))?,
             service_uuids: src
                 .service_uuids
-                .unwrap_or(vec![])
+                .unwrap_or_default()
                 .into_iter()
                 .map(|uuid| Uuid::from_str(&uuid).map_err(|e| e.into()))
                 .collect::<Result<Vec<Uuid>, Error>>()?,
             service_data: src
                 .service_data
-                .unwrap_or(vec![])
+                .unwrap_or_default()
                 .into_iter()
                 .map(ServiceData::try_from)
                 .collect::<Result<Vec<_>, Error>>()?,
             manufacturer_data: src
                 .manufacturer_specific_data
-                .unwrap_or(vec![])
+                .unwrap_or_default()
                 .into_iter()
                 .map(|data| data.into())
                 .collect(),
-            uris: src.uris.unwrap_or(vec![]),
+            uris: src.uris.unwrap_or_default(),
         })
     }
 }
@@ -232,7 +232,8 @@ impl fmt::Display for Peer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use {fidl_fuchsia_bluetooth as fbt, fidl_fuchsia_bluetooth_le as fble};
+    use fidl_fuchsia_bluetooth as fbt;
+    use fidl_fuchsia_bluetooth_le as fble;
 
     #[test]
     fn advertising_data_from_fidl_empty() {

@@ -35,7 +35,7 @@ impl ToProperty for bool {
 impl ToProperty for Option<bool> {
     type PropertyType = u64;
     fn to_property(&self) -> Self::PropertyType {
-        self.as_ref().map(bool::to_property).unwrap_or(FALSE_VALUE)
+        self.as_ref().map(bool::to_property).unwrap_or_default()
     }
 }
 
@@ -244,7 +244,7 @@ impl DataStreamInspect {
         self.bytes_per_second_current.set(transfer.calculate_throughput());
         self.last_update = Some(transfer);
         if let Some(started) = &self.started {
-            let secs: u64 = (at - *started).into_seconds().try_into().unwrap_or(0);
+            let secs: u64 = (at - *started).into_seconds().try_into().unwrap_or_default();
             self.streaming_secs.set(secs);
         }
     }

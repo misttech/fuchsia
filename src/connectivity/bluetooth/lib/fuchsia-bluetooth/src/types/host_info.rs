@@ -54,10 +54,10 @@ impl TryFrom<&fsys::HostInfo> for HostInfo {
             id: HostId::from(src.id.ok_or_else(|| Error::missing("HostInfo.id"))?),
             technology: src.technology.ok_or_else(|| Error::missing("HostInfo.technology"))?,
             addresses,
-            active: src.active.unwrap_or(false),
+            active: src.active.unwrap_or_default(),
             local_name: src.local_name.clone(),
-            discoverable: src.discoverable.unwrap_or(false),
-            discovering: src.discovering.unwrap_or(false),
+            discoverable: src.discoverable.unwrap_or_default(),
+            discovering: src.discovering.unwrap_or_default(),
         })
     }
 }
@@ -170,7 +170,8 @@ mod tests {
     use super::*;
 
     use diagnostics_assertions::assert_data_tree;
-    use {fidl_fuchsia_bluetooth as fbt, fuchsia_inspect as inspect};
+    use fidl_fuchsia_bluetooth as fbt;
+    use fuchsia_inspect as inspect;
 
     #[test]
     fn from_fidl_id_not_present() {

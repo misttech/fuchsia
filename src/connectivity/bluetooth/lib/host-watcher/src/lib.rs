@@ -6,8 +6,8 @@ use async_utils::hanging_get::client::HangingGetStream;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use fidl_fuchsia_bluetooth_sys as sys;
-use fuchsia_bluetooth::types::{Address, HostInfo};
 use fuchsia_bluetooth::Error;
+use fuchsia_bluetooth::types::{Address, HostInfo};
 use futures::ready;
 use futures::stream::{FusedStream, Stream, StreamExt};
 use log::trace;
@@ -91,7 +91,7 @@ impl HostWatcher {
     ) -> Result<Option<HostEvent>, Error> {
         let maybe_active = update
             .iter()
-            .find(|info| info.active.unwrap_or(false))
+            .find(|info| info.active.unwrap_or_default())
             .map(HostInfo::try_from)
             .transpose()?;
 
@@ -188,7 +188,7 @@ pub(crate) mod tests {
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use fuchsia_async as fasync;
-    use fuchsia_bluetooth::types::{example_host, HostId};
+    use fuchsia_bluetooth::types::{HostId, example_host};
     use std::pin::pin;
 
     #[track_caller]

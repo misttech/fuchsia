@@ -425,12 +425,12 @@ impl PeerTask {
             SlcRequest::GetAgIndicatorStatus { response } => {
                 let call_ind = self.calls.indicators();
                 let status = AgIndicators {
-                    service: self.network.service_available.unwrap_or(false),
+                    service: self.network.service_available.unwrap_or_default(),
                     call: call_ind.call,
                     callsetup: call_ind.callsetup,
                     callheld: call_ind.callheld,
-                    signal: self.network.signal_strength.map(|ss| ss as u8).unwrap_or(0),
-                    roam: self.network.roaming.unwrap_or(false),
+                    signal: self.network.signal_strength.map(|ss| ss as u8).unwrap_or_default(),
+                    roam: self.network.roaming.unwrap_or_default(),
                     battchg: self.battery_level,
                 };
                 // Update the procedure with the retrieved AG update.
@@ -952,13 +952,14 @@ mod tests {
         PeerHandlerRequest, PeerHandlerRequestStream, PeerHandlerWatchNextCallResponder,
         SignalStrength,
     };
+    use fidl_fuchsia_bluetooth_internal_a2dp as fidl_a2dp;
+    use fuchsia_async as fasync;
     use fuchsia_bluetooth::types::Channel;
     use futures::future::ready;
     use futures::stream::{FusedStream, Stream};
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::pin::pin;
-    use {fidl_fuchsia_bluetooth_internal_a2dp as fidl_a2dp, fuchsia_async as fasync};
 
     use crate::features::{AgFeatures, HfFeatures};
     use crate::peer::indicators::{AgIndicatorsReporting, HfIndicators};
@@ -1975,7 +1976,7 @@ mod tests {
                     let accepted_params = params.into_iter().find(|p| {
                         p.parameter_set
                             .map(|set| accept_parameter_sets.contains(&set))
-                            .unwrap_or(false)
+                            .unwrap_or_default()
                     });
                     if let Some(connect_params) = accepted_params {
                         control.send_on_connection_complete(&fidl_fuchsia_bluetooth_bredr::ScoConnectionOnConnectionCompleteRequest::ConnectedParams(connect_params)).unwrap();

@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use bitfield::bitfield;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_deviceid as di;
 use fuchsia_bluetooth::types::Uuid;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_deviceid as di};
 
 use crate::error::Error;
 
@@ -148,7 +149,7 @@ impl TryFrom<&di::DeviceIdentificationRecord> for DIRecord {
         let product_id = src.product_id.ok_or_else(|| Error::from(src))?;
         let version =
             src.version.as_ref().map(Version::try_from).ok_or_else(|| Error::from(src))??;
-        let primary = src.primary.unwrap_or(false);
+        let primary = src.primary.unwrap_or_default();
         let service_description = src.service_description.clone();
 
         Ok(DIRecord { vendor_id, product_id, version, primary, service_description })
@@ -250,11 +251,7 @@ impl DeviceIdentificationService {
         let records_with_primary = records.iter().filter(|r| r.primary).count();
         // It is invalid to specify more than one primary record. However, it is okay for no records
         // to be denoted as primary. See DI v1.3 Section 5.5.
-        if records_with_primary > 1 {
-            Err(Error::MultiplePrimaryRecords)
-        } else {
-            Ok(())
-        }
+        if records_with_primary > 1 { Err(Error::MultiplePrimaryRecords) } else { Ok(()) }
     }
 
     /// Builds the Device Identification service from a set of FIDL records.

@@ -66,10 +66,10 @@ pub struct NetworkInformationInspect {
 
 impl NetworkInformationInspect {
     pub fn update(&mut self, info: &NetworkInformation) {
-        self.service_available.set(info.service_available.unwrap_or(false));
+        self.service_available.set(info.service_available.unwrap_or_default());
         let signal = info.signal_strength.map_or_else(|| "".to_string(), |s| format!("{:?}", s));
         self.signal_strength.set(&signal);
-        self.roaming.set(info.roaming.unwrap_or(false));
+        self.roaming.set(info.roaming.unwrap_or_default());
     }
 }
 

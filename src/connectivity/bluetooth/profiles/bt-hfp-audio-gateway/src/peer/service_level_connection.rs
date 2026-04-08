@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use at_commands as at;
 use at_commands::{DeserializeBytes, SerDe};
 use bt_hfp::codec_id::CodecId;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use fuchsia_async as fasync;
 use fuchsia_async::Timer;
 use fuchsia_bluetooth::types::Channel;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::stream::{FusedStream, Stream, StreamExt};
@@ -15,7 +18,6 @@ use futures::{AsyncWrite, AsyncWriteExt, FutureExt};
 use log::{debug, info, warn};
 use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;
-use {at_commands as at, fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 use super::indicators::{AgIndicators, AgIndicatorsReporting, HfIndicators};
 use super::procedure::{IProcedure, Procedure, ProcedureError, ProcedureMarker, ProcedureRequest};
@@ -300,7 +302,7 @@ impl ServiceLevelConnection {
 
     /// Returns `true` if an active connection exists between the peers.
     pub fn connected(&self) -> bool {
-        self.connection.as_ref().map(|ch| !ch.is_terminated()).unwrap_or(false)
+        self.connection.as_ref().map(|ch| !ch.is_terminated()).unwrap_or_default()
     }
 
     /// Returns `true` if the channel has been initialized - namely the SLCI procedure has

@@ -321,7 +321,7 @@ impl PairingManagerInspect {
         else {
             return;
         };
-        let pairing_time_seconds = (at - start_time).into_seconds().try_into().unwrap_or(0);
+        let pairing_time_seconds = (at - start_time).into_seconds().try_into().unwrap_or_default();
         inspect_node.record_uint("pairing_time_seconds", pairing_time_seconds);
         let _ = bounded_list_node.add_entry(|node| {
             let _ = node.adopt(&inspect_node);

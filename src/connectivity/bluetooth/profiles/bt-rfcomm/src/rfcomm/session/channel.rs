@@ -4,7 +4,9 @@
 
 use bt_rfcomm::frame::{Frame, UserData};
 use bt_rfcomm::{DLCI, Role};
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::Channel;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, IValue, Inspect};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{BoxFuture, Fuse, Shared};
@@ -14,7 +16,6 @@ use futures::{
 use log::{info, trace, warn};
 use std::collections::VecDeque;
 use std::pin::pin;
-use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 use crate::rfcomm::inspect::{DuplexDataStreamInspect, FLOW_CONTROLLER, SessionChannelInspect};
 use crate::rfcomm::types::{Error, SignaledTask};
@@ -152,12 +153,12 @@ impl Credits {
 
     /// Reduces the local credit count by 1.
     fn decrement_local(&mut self) {
-        self.local.iset(self.local.checked_sub(1).unwrap_or(0));
+        self.local.iset(self.local.checked_sub(1).unwrap_or_default());
     }
 
     /// Reduces the remote credit count by 1.
     fn decrement_remote(&mut self) {
-        self.remote.iset(self.remote.checked_sub(1).unwrap_or(0));
+        self.remote.iset(self.remote.checked_sub(1).unwrap_or_default());
     }
 }
 

@@ -642,7 +642,7 @@ impl TryFrom<&fidl_bredr::ServiceDefinition> for ServiceDefinition {
                     .collect::<Result<Vec<Vec<ProtocolDescriptor>>, Error>>()
             })?;
         let profile_descriptors: Vec<fidl_bredr::ProfileDescriptor> =
-            src.profile_descriptors.clone().unwrap_or(vec![]);
+            src.profile_descriptors.clone().unwrap_or_default();
         let information: Result<Vec<Information>, Error> = src
             .information
             .as_ref()

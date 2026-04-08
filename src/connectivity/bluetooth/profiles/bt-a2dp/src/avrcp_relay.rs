@@ -7,7 +7,11 @@ use async_helpers::maybe_stream::MaybeStream;
 use battery_client::{BatteryClient, BatteryInfo, BatteryLevel};
 use fasync::TimeoutExt;
 use fidl::endpoints;
+use fidl_fuchsia_bluetooth_avrcp as avrcp;
+use fidl_fuchsia_media as media;
+use fidl_fuchsia_media_sessions2 as sessions2;
 use fidl_table_validation::ValidFidlTable;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_contrib::inspect_log;
@@ -17,10 +21,6 @@ use futures::{StreamExt, select};
 use log::{debug, info, trace};
 use std::fmt::Debug;
 use zx::MonotonicDuration;
-use {
-    fidl_fuchsia_bluetooth_avrcp as avrcp, fidl_fuchsia_media as media,
-    fidl_fuchsia_media_sessions2 as sessions2, fuchsia_async as fasync,
-};
 
 // Typically, AVRCP peer responds to requests within 0.2s.
 // We wait for ~2x longer to give ample time for peer to respond.
@@ -121,7 +121,7 @@ impl AvrcpRelay {
         self.player_status_node.record_bool("shuffle_on", latest.shuffle_on);
         self.player_status_node
             .record_string("content_type", &format!("{:?}", latest.content_type));
-        self.player_status_node.record_int("duration", latest.duration.unwrap_or(0));
+        self.player_status_node.record_int("duration", latest.duration.unwrap_or_default());
         let Some(timeline_fn) = latest.timeline_function else { return };
         self.player_status_node.record_child("timeline_function", |node| {
             node.record_int("subject_time", timeline_fn.subject_time);

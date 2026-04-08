@@ -37,7 +37,7 @@ use anyhow::format_err;
 use nom::bits::bits;
 use nom::bits::complete::{tag, take};
 use nom::combinator::cond;
-use nom::error::{make_error, Error, ErrorKind};
+use nom::error::{Error, ErrorKind, make_error};
 use nom::multi::count;
 use nom::{IResult, Offset, Parser};
 
@@ -196,7 +196,7 @@ impl Layer {
         let (input, use_same_config) =
             cond(layer_index > 0 && program_index > 0, take(1usize)).parse(input)?;
 
-        let use_same_config = use_same_config.unwrap_or(0);
+        let use_same_config: u8 = use_same_config.unwrap_or_default();
 
         let (input, audio_specific_config) =
             cond(use_same_config == 0, Self::parse_layer_config(audio_mux_version)).parse(input)?;

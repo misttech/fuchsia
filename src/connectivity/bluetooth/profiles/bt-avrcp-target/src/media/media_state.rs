@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
+use fidl_fuchsia_media as fidl_media_types;
 use fidl_fuchsia_media_sessions2::{self as fidl_media, SessionControlProxy, SessionInfoDelta};
 use log::{info, trace, warn};
 use std::fmt::Debug;
-use {fidl_fuchsia_bluetooth_avrcp as fidl_avrcp, fidl_fuchsia_media as fidl_media_types};
 
 use crate::media::media_types::{
+    MediaInfo, Notification, PlaybackRate, ValidPlayStatus, ValidPlayerApplicationSettings,
     avrcp_repeat_mode_to_media, avrcp_shuffle_mode_to_media, media_repeat_mode_to_avrcp,
-    media_shuffle_mode_to_avrcp, MediaInfo, Notification, PlaybackRate, ValidPlayStatus,
-    ValidPlayerApplicationSettings,
+    media_shuffle_mode_to_avrcp,
 };
 
 /// A fixed address for a MediaSession.
@@ -195,7 +196,7 @@ impl SessionInfo {
 
     /// Gets the track position, as defined by the AVRCP spec for notification of POS_CHANGED.
     fn get_track_position(&self) -> u32 {
-        self.playback_rate.map_or(std::u32::MAX, |r| r.current_position().unwrap_or(0))
+        self.playback_rate.map_or(std::u32::MAX, |r| r.current_position().unwrap_or_default())
     }
 
     /// Return a static value indicating the ID of the player.
@@ -349,7 +350,7 @@ impl From<SessionInfo> for Notification {
 pub(crate) mod tests {
     use super::*;
 
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use fidl::endpoints::{create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_media_sessions2::{self as fidl_media, *};
     use fuchsia_async as fasync;
@@ -406,21 +407,29 @@ pub(crate) mod tests {
         let _exec = fasync::TestExecutor::new();
         let (session_proxy, _) = create_proxy::<SessionControlMarker>();
         let media_state = MediaState::new(session_proxy);
-        assert!(media_state
-            .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Play)
-            .is_ok());
-        assert!(media_state
-            .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Pause)
-            .is_ok());
-        assert!(media_state
-            .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::FastForward)
-            .is_ok());
-        assert!(media_state
-            .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Lock)
-            .is_err());
-        assert!(media_state
-            .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Record)
-            .is_err());
+        assert!(
+            media_state.is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Play).is_ok()
+        );
+        assert!(
+            media_state
+                .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Pause)
+                .is_ok()
+        );
+        assert!(
+            media_state
+                .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::FastForward)
+                .is_ok()
+        );
+        assert!(
+            media_state
+                .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Lock)
+                .is_err()
+        );
+        assert!(
+            media_state
+                .is_supported_passthrough_command(fidl_avrcp::AvcPanelCommand::Record)
+                .is_err()
+        );
     }
 
     #[fuchsia::test]

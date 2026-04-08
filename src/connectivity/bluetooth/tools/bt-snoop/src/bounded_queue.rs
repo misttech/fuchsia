@@ -91,7 +91,8 @@ where
             if self.inner.is_empty() {
                 return;
             }
-            self.current_size -= self.inner.pop_front().map(|item| item.size_of()).unwrap_or(0);
+            self.current_size -=
+                self.inner.pop_front().map(|item| item.size_of()).unwrap_or_default();
         }
         self.current_size += item.size_of();
         self.inner.push_back(item);

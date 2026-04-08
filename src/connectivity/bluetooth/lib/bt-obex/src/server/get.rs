@@ -119,7 +119,7 @@ impl StagedData {
             first_packet
         } else {
             // Otherwise, subsequent chunk. This must always be populated, even if empty.
-            Some(self.rest.pop_front().unwrap_or(vec![]))
+            Some(self.rest.pop_front().unwrap_or_default())
         };
 
         // If `self.rest` is empty after grabbing the next chunk, then this is the final chunk of

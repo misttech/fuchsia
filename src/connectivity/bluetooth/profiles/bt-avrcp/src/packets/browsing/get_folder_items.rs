@@ -7,9 +7,9 @@ use packet_encoding::{Decodable, Encodable};
 use std::collections::HashSet;
 
 use crate::packets::{
-    adjust_byte_size, AdvancedDecodable, CharsetId, Error, FolderType, ItemType,
+    ATTRIBUTE_ID_LEN, AdvancedDecodable, CharsetId, Error, FolderType, ItemType,
     MediaAttributeEntries, MediaAttributeId, MediaType, PacketResult, PlaybackStatus, Scope,
-    StatusCode, ATTRIBUTE_ID_LEN,
+    StatusCode, adjust_byte_size,
 };
 
 const DEFAULT_PLAYER_FEATURE_BITS: fidl_avrcp::PlayerFeatureBits =
@@ -312,7 +312,7 @@ impl From<fidl_avrcp::MediaPlayerItem> for BrowseableItem {
     fn from(src: fidl_avrcp::MediaPlayerItem) -> BrowseableItem {
         // The player_id should always be provided. If not, default to the error
         // case of player_id = 0.
-        let player_id = src.player_id.unwrap_or(0);
+        let player_id = src.player_id.unwrap_or_default();
         // Audio
         let major_player_type = 0x1;
         // No sub type

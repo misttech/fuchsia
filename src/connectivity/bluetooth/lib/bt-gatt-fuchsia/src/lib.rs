@@ -7,6 +7,9 @@ use bt_gatt::*;
 use fidl::EventPair;
 use fidl::client::QueryResponseFut;
 use fidl::endpoints::RequestStream;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_gatt2 as fidl_gatt2;
+use fidl_fuchsia_bluetooth_le as fidl_le;
 use fidl_gatt2::{
     LocalServiceControlHandle, LocalServiceRequestStream, ServerPublishServiceResult,
     ValueChangedParameters,
@@ -21,10 +24,7 @@ use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Poll;
-use {
-    fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_gatt2 as fidl_gatt2,
-    fidl_fuchsia_bluetooth_le as fidl_le, zx,
-};
+use zx;
 
 #[cfg(test)]
 mod test;
@@ -226,7 +226,7 @@ fn to_gatt_advertising_data(
 fn to_gatt_scan_result(peer: &fidl_le::Peer) -> bt_gatt::central::ScanResult {
     bt_gatt::central::ScanResult {
         id: to_gatt_peer_id(&peer.id.unwrap()),
-        connectable: peer.connectable.unwrap_or(false),
+        connectable: peer.connectable.unwrap_or_default(),
         name: peer.name.clone().map_or(bt_gatt::central::PeerName::Unknown, |n| {
             bt_gatt::central::PeerName::CompleteName(n)
         }),
@@ -234,7 +234,7 @@ fn to_gatt_scan_result(peer: &fidl_le::Peer) -> bt_gatt::central::ScanResult {
             .advertising_data
             .clone()
             .map_or(Vec::new(), |d| to_gatt_advertising_data(d)),
-        advertising_sid: peer.advertising_sid.unwrap_or(0),
+        advertising_sid: peer.advertising_sid.unwrap_or_default(),
     }
 }
 

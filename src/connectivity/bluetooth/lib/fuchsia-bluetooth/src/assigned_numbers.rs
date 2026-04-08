@@ -35,7 +35,7 @@ impl AssignedNumber {
     }
 
     fn matches_abbreviation(&self, identifier: &str) -> bool {
-        self.abbreviation.map(|abbr| abbr == identifier).unwrap_or(false)
+        self.abbreviation.map(|abbr| abbr == identifier).unwrap_or_default()
     }
 
     fn matches_name(&self, identifier: &str) -> bool {

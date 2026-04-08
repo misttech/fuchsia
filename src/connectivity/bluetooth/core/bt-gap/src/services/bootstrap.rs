@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_bluetooth_sys::{self as sys, BootstrapRequest, BootstrapRequestStream};
 use fuchsia_bluetooth::types::{BondingData, Identity, PeerId};
 use futures::prelude::*;
@@ -69,7 +69,7 @@ fn validate(src: sys::Identity) -> Result<Identity, Error> {
     // A generated sequence of PeerIds to be used if any bonding data are missing Fuchsia
     // Identifiers
     let generate_random_ids = iter::repeat_with(PeerId::random);
-    let bonds = src.bonds.unwrap_or(vec![]);
+    let bonds = src.bonds.unwrap_or_default();
     // We'll fail if any BondingData is missing required fields - I think this is better than
     // silently dropping individual bonding datas
     let bonds = bonds

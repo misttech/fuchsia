@@ -19,7 +19,7 @@ pub struct LegacyAdvertisingState {
 impl From<fidl::LegacyAdvertisingState> for LegacyAdvertisingState {
     fn from(src: fidl::LegacyAdvertisingState) -> LegacyAdvertisingState {
         LegacyAdvertisingState {
-            enabled: src.enabled.unwrap_or(false),
+            enabled: src.enabled.unwrap_or_default(),
             type_: src.type_,
             address_type: src.address_type,
             interval_min: src.interval_min,

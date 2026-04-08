@@ -248,7 +248,7 @@ impl WorkThread {
                     }
                     let device_name = host_cache
                         .iter()
-                        .find(|info| info.active.unwrap_or(false))
+                        .find(|info| info.active.unwrap_or_default())
                         .and_then(|info| info.local_name.clone());
                     match proxies
                         .advertise_peripheral(connectable, address_type, device_name, timeout)

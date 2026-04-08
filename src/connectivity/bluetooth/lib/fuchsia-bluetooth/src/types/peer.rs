@@ -192,15 +192,15 @@ impl TryFrom<fsys::Peer> for Peer {
             id: src.id.ok_or_else(|| Error::missing("sys.Peer.id"))?.into(),
             address: src.address.ok_or_else(|| Error::missing("sys.Peer.address"))?.into(),
             technology: src.technology.ok_or_else(|| Error::missing("sys.Peer.technology"))?,
-            connected: src.connected.unwrap_or(false),
-            bonded: src.bonded.unwrap_or(false),
+            connected: src.connected.unwrap_or_default(),
+            bonded: src.bonded.unwrap_or_default(),
             name: src.name.clone(),
             appearance: src.appearance,
             device_class: src.device_class,
             rssi: src.rssi,
             tx_power: src.tx_power,
-            le_services: src.le_services.unwrap_or(vec![]).iter().map(Uuid::from).collect(),
-            bredr_services: src.bredr_services.unwrap_or(vec![]).iter().map(Uuid::from).collect(),
+            le_services: src.le_services.unwrap_or_default().iter().map(Uuid::from).collect(),
+            bredr_services: src.bredr_services.unwrap_or_default().iter().map(Uuid::from).collect(),
         })
     }
 }

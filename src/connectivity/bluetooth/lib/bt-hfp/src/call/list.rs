@@ -49,27 +49,21 @@ impl<T> List<T> {
 
     /// Retrieve a value by index. Returns `None` if the index does not point to a value.
     pub fn get(&self, index: Idx) -> Option<&T> {
-        match Self::to_internal_index(index) {
-            Some(index) => self.inner.get(index).map(|v| v.as_ref()).unwrap_or(None),
-            None => None,
-        }
+        let index = Self::to_internal_index(index)?;
+        self.inner.get(index).map(|v| v.as_ref()).unwrap_or_default()
     }
 
     /// Retrieve a mutable reference to a value by index. Returns `None` if the index does not point
     /// to a value.
     pub fn get_mut(&mut self, index: Idx) -> Option<&mut T> {
-        match Self::to_internal_index(index) {
-            Some(index) => self.inner.get_mut(index).map(|v| v.as_mut()).unwrap_or(None),
-            None => None,
-        }
+        let index = Self::to_internal_index(index)?;
+        self.inner.get_mut(index).map(|v| v.as_mut()).unwrap_or_default()
     }
 
     /// Remove a value by index. Returns `None` if the value did not point to a value.
     pub fn remove(&mut self, index: Idx) -> Option<T> {
-        match Self::to_internal_index(index) {
-            Some(index) => self.inner.get_mut(index).map(|v| v.take()).unwrap_or(None),
-            None => None,
-        }
+        let index = Self::to_internal_index(index)?;
+        self.inner.get_mut(index).map(|v| v.take()).unwrap_or_default()
     }
 
     /// Return an iterator of the calls and associated call indices.

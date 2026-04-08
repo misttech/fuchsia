@@ -198,20 +198,21 @@ pub(crate) mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_bluetooth as fidl_bt;
     use fidl_fuchsia_bluetooth_bredr::{
         Channel, ProfileDescriptor, ProtocolIdentifier, ServiceClassProfileIdentifier,
     };
+    use fuchsia_async as fasync;
     use fuchsia_bluetooth::profile::{Attribute, DataElement, ProtocolDescriptor};
     use fuchsia_bluetooth::types::Uuid;
     use futures::stream::StreamExt;
     use futures::task::Poll;
-    use {fidl_fuchsia_bluetooth as fidl_bt, fuchsia_async as fasync};
 
     /// Defines a Protocol requesting RFCOMM with the provided server `channel`.
     pub fn rfcomm_protocol_descriptor_list(
         channel: Option<ServerChannel>,
     ) -> Vec<ProtocolDescriptor> {
-        let params = channel.map(|c| vec![DataElement::Uint8(c.into())]).unwrap_or(vec![]);
+        let params = channel.map(|c| vec![DataElement::Uint8(c.into())]).unwrap_or_default();
         vec![
             ProtocolDescriptor { protocol: bredr::ProtocolIdentifier::L2Cap, params: vec![] },
             ProtocolDescriptor { protocol: bredr::ProtocolIdentifier::Rfcomm, params: params },
