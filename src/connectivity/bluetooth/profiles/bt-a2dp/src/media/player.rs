@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_utils::hanging_get::client::HangingGetStream;
 use bitfield::bitfield;
 use bt_a2dp::codec::MediaCodecConfig;
@@ -10,26 +10,27 @@ use bt_avdtp::{MediaCodecType, RtpHeader};
 use fidl::client::QueryResponseFut;
 use fidl_fuchsia_media::{
     AudioConsumerProxy, AudioConsumerStartFlags, AudioConsumerStatus, AudioSampleFormat,
-    AudioStreamType, Compression, SessionAudioConsumerFactoryMarker,
-    SessionAudioConsumerFactoryProxy, StreamPacket, StreamSinkProxy, NO_TIMESTAMP,
-    STREAM_PACKET_FLAG_DISCONTINUITY,
+    AudioStreamType, Compression, NO_TIMESTAMP, STREAM_PACKET_FLAG_DISCONTINUITY,
+    SessionAudioConsumerFactoryMarker, SessionAudioConsumerFactoryProxy, StreamPacket,
+    StreamSinkProxy,
 };
+use fuchsia_async as fasync;
 use fuchsia_audio_codec::StreamProcessor;
+use fuchsia_trace as trace;
 use futures::channel::mpsc;
 use futures::future::MapOk;
 use futures::io::{AsyncWrite, AsyncWriteExt};
 use futures::stream::FuturesUnordered;
 use futures::task::{Context, Poll};
-use futures::{ready, Future, FutureExt, StreamExt, TryFutureExt};
+use futures::{Future, FutureExt, StreamExt, TryFutureExt, ready};
 use log::{info, warn};
 use std::collections::HashSet;
 use std::io;
 use std::pin::Pin;
 use zx::{self as zx, HandleBased};
-use {fuchsia_async as fasync, fuchsia_trace as trace};
 
-use crate::latm::AudioMuxElement;
 use crate::DEFAULT_SAMPLE_RATE;
+use crate::latm::AudioMuxElement;
 
 // Max supported by AudioConsumer as defined in the FIDL interface
 const NUM_BUFFERS: usize = 16;
@@ -123,18 +124,13 @@ impl AudioConsumerSink {
     /// Returns "none" if no buffer is available, or if the buffers allocated aren't large enough
     /// for the frame.
     fn copy_to_buffer(&mut self, frame: &[u8]) -> Option<usize> {
-        let buffer_index = match self.buffers_free.iter().next() {
-            Some(idx) => *idx,
-            None => return None,
-        };
+        let buffer_index = *self.buffers_free.iter().next()?;
 
         let buffer = &mut self.buffers[buffer_index];
         if frame.len() > DEFAULT_BUFFER_LEN {
             return None;
         }
-        if let Err(_) = buffer.write(frame, 0) {
-            return None;
-        }
+        buffer.write(frame, 0).ok()?;
         if !self.buffers_free.remove(&buffer_index) {
             warn!("Used a free buffer twice somehow: {}", buffer_index);
         }
@@ -272,11 +268,7 @@ impl SbcHeader {
     /// Number of subbands based on the header bit.
     /// From Table 12.20 in the A2DP Spec.
     fn num_subbands(&self) -> usize {
-        if self.subbands() {
-            8
-        } else {
-            4
-        }
+        if self.subbands() { 8 } else { 4 }
     }
 
     /// Calculates the frame length.

@@ -56,27 +56,19 @@ pub fn elem_to_profile_descriptor(elem: &fidl_bredr::DataElement) -> Option<Prof
             return None;
         }
 
-        if seq[0].is_none() {
-            return None;
-        }
-        let profile_id = match **seq[0].as_ref().expect("not none") {
+        let profile_id = match **seq[0].as_ref()? {
             fidl_bredr::DataElement::Uuid(uuid) => {
                 let uuid: Uuid = uuid.into();
-                match uuid.try_into() {
-                    Err(_) => return None,
-                    Ok(profile_id) => profile_id,
-                }
+                uuid.try_into().ok()?
             }
             _ => return None,
         };
 
-        if seq[1].is_none() {
-            return None;
-        }
-        let [major_version, minor_version] = match **seq[1].as_ref().expect("not none") {
+        let [major_version, minor_version] = match **seq[1].as_ref()? {
             fidl_bredr::DataElement::Uint16(val) => val.to_be_bytes(),
             _ => return None,
         };
+
         return Some(ProfileDescriptor {
             profile_id: Some(profile_id),
             major_version: Some(major_version),

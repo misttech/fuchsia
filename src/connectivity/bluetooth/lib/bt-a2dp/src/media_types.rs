@@ -254,15 +254,9 @@ impl SbcCodecInfo {
         let available_frequencies = SbcSamplingFrequency::from_bits_truncate(
             a.0.sampling_frequency() & b.0.sampling_frequency(),
         );
-        let frequency = match available_frequencies.best() {
-            None => return None,
-            Some(freq) => freq,
-        };
+        let frequency = available_frequencies.best()?;
         let available_mode = a.channel_mode() & b.channel_mode();
-        let channel_mode = match available_mode.best() {
-            None => return None,
-            Some(mode) => mode,
-        };
+        let channel_mode = available_mode.best()?;
         // All sources and sinks must support these options. A2DP 1.3.2 Sec 4.3.2
         let allocation = SbcAllocation::LOUDNESS;
         let block_count = SbcBlockCount::SIXTEEN;
@@ -524,15 +518,9 @@ impl AacCodecInfo {
         let available_frequencies = AacSamplingFrequency::from_bits_truncate(
             a.0.sampling_frequency() & b.0.sampling_frequency(),
         );
-        let sampling_frequency = match available_frequencies.best() {
-            None => return None,
-            Some(freq) => freq,
-        };
+        let sampling_frequency = available_frequencies.best()?;
         let available_channels = a.channels() & b.channels();
-        let channels = match available_channels.best() {
-            None => return None,
-            Some(channels) => channels,
-        };
+        let channels = available_channels.best()?;
         let vbr = a.variable_bit_rate() && b.variable_bit_rate();
         // If either bitrate is unspecified, take the other one, otherwise, the minimum.
         // If both are unspecified, choose a reasonable one.
