@@ -7,6 +7,7 @@ const EXPECTED_CHECKSUM: &[u8] = &[
     0xcd, 0x57, 0xb2, 0xa2, 0x89, 0xbb, 0xb6, 0x11, 0xcf, 0x81, 0x50, 0xec, 0x06, 0xc5, 0x06, 0x4c,
     0x7c, 0xae, 0x79, 0x0f, 0xaa, 0x73, 0x0b, 0x6f, 0xa1, 0x02, 0xc3, 0x53, 0x7b, 0x94, 0xee, 0x1a,
 ];
+const EXPECTED_CHECKSUM_LENGTH: [u8; 2] = (EXPECTED_CHECKSUM.len() as u16).to_le_bytes();
 #[derive(Debug)]
 pub struct Config {
     pub my_flag: bool,
@@ -89,6 +90,38 @@ impl ComponentConfig for Config {
             my_vector_of_uint64: fidl_config.my_vector_of_uint64,
             my_vector_of_uint8: fidl_config.my_vector_of_uint8,
         })
+    }
+    fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        let fidl_config = FidlConfig {
+            my_flag: self.my_flag.clone(),
+            my_int16: self.my_int16.clone(),
+            my_int32: self.my_int32.clone(),
+            my_int64: self.my_int64.clone(),
+            my_int8: self.my_int8.clone(),
+            my_string: self.my_string.clone(),
+            my_uint16: self.my_uint16.clone(),
+            my_uint32: self.my_uint32.clone(),
+            my_uint64: self.my_uint64.clone(),
+            my_uint8: self.my_uint8.clone(),
+            my_vector_of_flag: self.my_vector_of_flag.clone(),
+            my_vector_of_int16: self.my_vector_of_int16.clone(),
+            my_vector_of_int32: self.my_vector_of_int32.clone(),
+            my_vector_of_int64: self.my_vector_of_int64.clone(),
+            my_vector_of_int8: self.my_vector_of_int8.clone(),
+            my_vector_of_string: self.my_vector_of_string.clone(),
+            my_vector_of_uint16: self.my_vector_of_uint16.clone(),
+            my_vector_of_uint32: self.my_vector_of_uint32.clone(),
+            my_vector_of_uint64: self.my_vector_of_uint64.clone(),
+            my_vector_of_uint8: self.my_vector_of_uint8.clone(),
+        };
+        let mut fidl_bytes = fidl::persist(&fidl_config).map_err(Error::Persist)?;
+        let mut bytes = Vec::with_capacity(
+            EXPECTED_CHECKSUM_LENGTH.len() + EXPECTED_CHECKSUM.len() + fidl_bytes.len(),
+        );
+        bytes.extend_from_slice(&EXPECTED_CHECKSUM_LENGTH);
+        bytes.extend_from_slice(EXPECTED_CHECKSUM);
+        bytes.append(&mut fidl_bytes);
+        Ok(bytes)
     }
     fn record_inspect(&self, inspector_node: &Node) {
         inspector_node.record_bool("my_flag", self.my_flag);

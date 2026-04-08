@@ -30,6 +30,17 @@ pub trait Config: Sized {
     /// Parse `Self` from `bytes`.
     fn from_bytes(bytes: &[u8]) -> Result<Self, Error>;
 
+    /// Returns a VMO containing the serialized version of `self`.
+    fn to_vmo(&self) -> Result<zx::Vmo, Error> {
+        let bytes = self.to_bytes()?;
+        let vmo = zx::Vmo::create(bytes.len() as u64).map_err(Error::VmoCreate)?;
+        vmo.write(&bytes, 0).map_err(Error::WritingConfigBytes)?;
+        Ok(vmo)
+    }
+
+    /// Returns the serialized version of `self`.
+    fn to_bytes(&self) -> Result<Vec<u8>, Error>;
+
     /// Record config into inspect node.
     fn record_inspect(&self, inspector_node: &Node);
 }
@@ -48,4 +59,10 @@ pub enum Error {
     ChecksumMismatch { expected_checksum: Vec<u8>, observed_checksum: Vec<u8> },
     #[error("Failed to unpersist the non-checksum bytes of the VMO as this library's FIDL type")]
     Unpersist(#[source] fidl::Error),
+    #[error("Failed to persist the config as this library's FIDL type")]
+    Persist(#[source] fidl::Error),
+    #[error("Failed to create VMO for config")]
+    VmoCreate(#[source] zx::Status),
+    #[error("Failed to write serialized config to VMO")]
+    WritingConfigBytes(#[source] zx::Status),
 }

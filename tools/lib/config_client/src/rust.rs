@@ -23,8 +23,14 @@ pub fn create_rust_wrapper(
     let expected_checksum =
         expected_checksum.iter().map(|b| Literal::from_str(&format!("{:#04x}", b)).unwrap());
 
-    let mut field_declarations = vec![];
-    let mut field_conversions = vec![];
+    // List of token streams that each define a field of a Config struct.
+    let mut lib_field_declarations = vec![];
+
+    // List of token streams that each set a field of a Config struct from a FidlConfig struct.
+    let mut set_lib_fields_from_fidl = vec![];
+
+    // List of token streams that each set a field of a FidlConfig struct from a Config struct.
+    let mut set_fidl_fields_from_lib = vec![];
 
     let mut record_inspect_ops = vec![];
     let mut inspect_uses = vec![quote!(Node)];
@@ -33,8 +39,12 @@ pub fn create_rust_wrapper(
     let mut needs_arithmetic_array_property = false;
 
     for field in &config_decl.fields {
-        let RustTokens { decl, conversion, record_inspect } =
-            get_rust_tokens(&field.key, &field.type_)?;
+        let RustTokens {
+            lib_field_declaration,
+            set_lib_field_from_fidl,
+            set_fidl_field_from_lib,
+            record_inspect,
+        } = get_rust_tokens(&field.key, &field.type_)?;
 
         if let ConfigValueType::Vector {
             nested_type: ConfigNestedValueType::String { .. }, ..
@@ -46,8 +56,9 @@ pub fn create_rust_wrapper(
         }
 
         record_inspect_ops.push(record_inspect);
-        field_declarations.push(decl);
-        field_conversions.push(conversion)
+        lib_field_declarations.push(lib_field_declaration);
+        set_lib_fields_from_fidl.push(set_lib_field_from_fidl);
+        set_fidl_fields_from_lib.push(set_fidl_field_from_lib);
     }
 
     if needs_arithmetic_array_property {
@@ -66,10 +77,11 @@ pub fn create_rust_wrapper(
         use std::convert::TryInto;
 
         const EXPECTED_CHECKSUM: &[u8] = &[#(#expected_checksum),*];
+        const EXPECTED_CHECKSUM_LENGTH: [u8; 2] = (EXPECTED_CHECKSUM.len() as u16).to_le_bytes();
 
         #[derive(Debug)]
         pub struct Config {
-            #(#field_declarations),*
+            #(#lib_field_declarations),*
         }
 
         impl Config {
@@ -117,7 +129,17 @@ pub fn create_rust_wrapper(
 
                 let fidl_config: FidlConfig = unpersist(bytes).map_err(Error::Unpersist)?;
 
-                Ok(Self { #(#field_conversions),* })
+                Ok(Self { #(#set_lib_fields_from_fidl),* })
+            }
+
+            fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+                let fidl_config = FidlConfig { #(#set_fidl_fields_from_lib),* };
+                let mut fidl_bytes = fidl::persist(&fidl_config).map_err(Error::Persist)?;
+                let mut bytes = Vec::with_capacity(EXPECTED_CHECKSUM_LENGTH.len() + EXPECTED_CHECKSUM.len() + fidl_bytes.len());
+                bytes.extend_from_slice(&EXPECTED_CHECKSUM_LENGTH);
+                bytes.extend_from_slice(EXPECTED_CHECKSUM);
+                bytes.append(&mut fidl_bytes);
+                Ok(bytes)
             }
 
             fn record_inspect(&self, inspector_node: &Node) {
@@ -130,8 +152,17 @@ pub fn create_rust_wrapper(
 }
 
 struct RustTokens {
-    decl: TokenStream,
-    conversion: TokenStream,
+    /// Stream of tokens that when combined define a single field of a Config struct.
+    lib_field_declaration: TokenStream,
+
+    /// Stream of tokens that when combined set a single field of a Config struct from a FidlConfig
+    /// struct.
+    set_lib_field_from_fidl: TokenStream,
+
+    /// Stream of tokens that when combined set a single field of a FidlConfig struct from a Config
+    /// struct.
+    set_fidl_field_from_lib: TokenStream,
+
     record_inspect: TokenStream,
 }
 
@@ -140,7 +171,7 @@ fn get_rust_tokens(key: &str, value_type: &ConfigValueType) -> Result<RustTokens
     let field = parse_str::<Ident>(&identifier)
         .map_err(|source| SourceGenError::InvalidIdentifier { input: key.to_string(), source })?;
 
-    let (record_inspect, decl) = match value_type {
+    let (record_inspect, lib_field_declaration) = match value_type {
         ConfigValueType::Bool => (
             quote! {
                 inspector_node.record_bool(#key, self.#field);
@@ -344,8 +375,16 @@ fn get_rust_tokens(key: &str, value_type: &ConfigValueType) -> Result<RustTokens
             ),
         },
     };
-    let conversion = quote! {
+    let set_lib_field_from_fidl = quote! {
         #field: fidl_config.#field
     };
-    Ok(RustTokens { decl, conversion, record_inspect })
+    let set_fidl_field_from_lib = quote! {
+        #field: self.#field.clone()
+    };
+    Ok(RustTokens {
+        lib_field_declaration,
+        set_lib_field_from_fidl,
+        set_fidl_field_from_lib,
+        record_inspect,
+    })
 }

@@ -211,6 +211,7 @@ type Config = struct {
                 0x88, 0xa5, 0x3e, 0xd4, 0xd1, 0x5c, 0x32, 0xe2, 0xb4, 0x49, 0x9e, 0x42, 0xeb, 0xa3,
                 0x32, 0xb1, 0xf5, 0xbb
             ];
+            const EXPECTED_CHECKSUM_LENGTH: [u8; 2] = (EXPECTED_CHECKSUM.len() as u16).to_le_bytes();
 
             #[derive(Debug)]
             pub struct Config {
@@ -283,6 +284,31 @@ type Config = struct {
                         unsafe_: fidl_config.unsafe_,
                         server_mode_: fidl_config.server_mode_
                     })
+                }
+
+                fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+                    let fidl_config = FidlConfig {
+                        snake_case_string: self.snake_case_string.clone(),
+                        lower_camel_case_string: self.lower_camel_case_string.clone(),
+                        upper_camel_case_string: self.upper_camel_case_string.clone(),
+                        const_case: self.const_case.clone(),
+                        string_that_has02_digits: self.string_that_has02_digits.clone(),
+                        mixed_lower_camel_snake_case_string: self
+                            .mixed_lower_camel_snake_case_string
+                            .clone(),
+                        mixed_upper_camel_snake_case_string: self
+                            .mixed_upper_camel_snake_case_string
+                            .clone(),
+                        multiple__underscores: self.multiple__underscores.clone(),
+                        unsafe_: self.unsafe_.clone(),
+                        server_mode_: self.server_mode_.clone()
+                    };
+                    let mut fidl_bytes = fidl::persist(&fidl_config).map_err(Error::Persist)?;
+                    let mut bytes = Vec::with_capacity(EXPECTED_CHECKSUM_LENGTH.len() + EXPECTED_CHECKSUM.len() + fidl_bytes.len());
+                    bytes.extend_from_slice(&EXPECTED_CHECKSUM_LENGTH);
+                    bytes.extend_from_slice(EXPECTED_CHECKSUM);
+                    bytes.append(&mut fidl_bytes);
+                    Ok(bytes)
                 }
 
                 fn record_inspect(&self, inspector_node: &Node) {
