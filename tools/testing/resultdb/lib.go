@@ -254,7 +254,11 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 	}
 	r.StatusV2 = testStatus
 	if testStatus == resultpb.TestResult_FAILED {
-		r.FailureReason = &resultpb.FailureReason{Kind: failureReasonKind, Errors: []*resultpb.FailureReason_Error{{Message: createTopLevelFailureReason(testDetail)}}}
+		r.FailureReason = &resultpb.FailureReason{Kind: failureReasonKind}
+		errorMessage := createTopLevelFailureReason(testDetail)
+		if errorMessage != "" {
+			r.FailureReason.Errors = []*resultpb.FailureReason_Error{{Message: errorMessage}}
+		}
 	} else if testStatus == resultpb.TestResult_SKIPPED {
 		r.SkippedReason = &resultpb.SkippedReason{Kind: resultpb.SkippedReason_OTHER, ReasonMessage: "skipped because unaffected"}
 	}
