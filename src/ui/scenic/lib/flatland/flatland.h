@@ -24,6 +24,7 @@
 
 #include "src/ui/lib/escher/flib/fence_queue.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
+#include "src/ui/scenic/lib/flatland/flatland_config.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter.h"
 #include "src/ui/scenic/lib/flatland/link_system.h"
 #include "src/ui/scenic/lib/flatland/transform_graph.h"
@@ -81,7 +82,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
           register_touch_source,
       fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
           register_mouse_source,
-      std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config = std::nullopt);
+      const FlatlandConfig& config);
 
   // Because this object captures its "this" pointer in internal closures, it is unsafe to copy or
   // move it. Disable all copy and move operations.
@@ -301,13 +302,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // For using as a unique identifier in tests only.
   scheduling::SessionId GetSessionId() const;
 
-  // If true, the FlatlandManager will skip sending present credits and future presentation infos
-  // to this client, and the client is expected to manage its own frame scheduling. This is
-  // intended for use by clients that are doing their own frame scheduling and do not want to be
-  // subject to the flow control of present credits and don't care about future presentation info.
-  //
-  // False by default.
-  bool config_skips_present_credits() const;
+  // Allow others to see how this Flatland session is configured.
+  const FlatlandConfig& config() const { return config_; }
 
  private:
   Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
@@ -324,7 +320,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
                register_touch_source,
            fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
                register_mouse_source,
-           std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config);
+           const FlatlandConfig& config);
 
   // `Flatland::New()` dispatches a task to invoke this.
   void Bind(fidl::ServerEnd<fuchsia_ui_composition::Flatland> server_end,
@@ -530,9 +526,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
 
-  // The configuration for this Flatland instance. If no configuration is provided, it means that
-  // the instance was not created by TrustedFlatlandFactory.
-  const std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config_;
+  // The configuration for this Flatland instance.
+  const FlatlandConfig config_;
 
   // Helper class that is responsible for managing the Flatland instance's FIDL connection, and also
   // provides an RAII approach to guaranteeing that `destroy_instance_function_` is invoked.

@@ -58,6 +58,7 @@ using allocation::MockBufferCollectionImporter;
 using allocation::cpp::BufferCollectionImportExportTokens;
 using flatland::ContentId;
 using flatland::Flatland;
+using flatland::FlatlandConfig;
 using flatland::FlatlandDisplay;
 using flatland::FlatlandPresenter;
 using flatland::GlobalMatrixVector;
@@ -320,8 +321,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         utils::CreateSysmemAllocatorClient(dispatcher(), "FlatlandTest::CreateAllocator"));
   }
 
-  std::shared_ptr<Flatland> CreateFlatland(
-      std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config = std::nullopt) {
+  std::shared_ptr<Flatland> CreateFlatland(const FlatlandConfig& config = FlatlandConfig{}) {
     auto session_id = scheduling::GetNextSessionId();
     std::vector<std::shared_ptr<BufferCollectionImporter>> importers;
     importers.push_back(buffer_collection_importer_);
@@ -369,7 +369,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
           /*destroy_instance_function=*/[]() {}, std::move(presenter), std::move(link_system),
           uber_struct_system->AllocateQueueForSession(session_id),
           /*buffer_collection_importers=*/{}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-          [](auto...) {}, std::nullopt);
+          [](auto...) {}, FlatlandConfig{});
 
       libsync::Completion completion;
       async::PostTask(client_loop_.dispatcher(), [&, dispatcher = client_loop_.dispatcher()]() {
@@ -766,8 +766,7 @@ bool PeerExists(const zx::unowned_channel& channel) {
 
 }  // namespace
 
-namespace flatland {
-namespace test {
+namespace flatland::test {
 
 TEST_F(FlatlandTest, PresentShouldReturnSuccess) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -5553,7 +5552,7 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
       /*destroy_instance_functon=*/[]() {}, flatland_presenter_, link_system_,
       uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
       [](auto...) {}, [](auto...) {}, [](auto...) {},
-      fuchsia_ui_composition::TrustedFlatlandConfig());
+      FlatlandConfig{.use_trusted_flatland_api = true});
   // Wait for Bind() to occur within Flatland::New().
   RunLoopUntilIdle();
 
@@ -5933,7 +5932,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
         [](auto...) {}, flatland_presenter_, link_system_,
         uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
         [](auto...) {}, [](auto...) {}, [](auto...) {},
-        fuchsia_ui_composition::TrustedFlatlandConfig());
+        FlatlandConfig{.use_trusted_flatland_api = true});
 
     auto status = child_flatland_thread_loop.StartThread();
     EXPECT_EQ(status, ZX_OK);
@@ -6037,7 +6036,7 @@ TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
       },
       flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(session_id),
       no_importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-      fuchsia_ui_composition::TrustedFlatlandConfig());
+      FlatlandConfig{.use_trusted_flatland_api = true});
 
   // Wait for server channel to be bound; see `Flatland::Bind()`.
   RunLoopUntilIdle();
@@ -6073,8 +6072,7 @@ TEST_F(FlatlandTest, CreateAndReleaseFilledRect) {
 }
 
 TEST_F(FlatlandTest, PresentWithScheduleAsapConfig) {
-  fuchsia_ui_composition::TrustedFlatlandConfig config;
-  config.schedule_asap() = true;
+  FlatlandConfig config{.schedule_asap = true};
   std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
 
   EXPECT_CALL(*mock_flatland_presenter_,
@@ -6124,8 +6122,7 @@ TEST_F(FlatlandTest, ReleaseImageImmediatelyUntrusted) {
 
 TEST_F(FlatlandTest, ReleaseImageImmediatelyTrusted) {
   // Create a trusted session.
-  // Passing an empty table table is considered "trusted" because we use std::optional to track it.
-  fuchsia_ui_composition::TrustedFlatlandConfig config;
+  FlatlandConfig config{.use_trusted_flatland_api = true};
   std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
 
   // Create an image to release.
@@ -6157,5 +6154,4 @@ TEST_F(FlatlandTest, ReleaseImageImmediatelyTrusted) {
 #undef PRESENT_WITH_ARGS
 #undef REGISTER_BUFFER_COLLECTION
 
-}  // namespace test
-}  // namespace flatland
+}  // namespace flatland::test

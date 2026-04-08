@@ -78,7 +78,7 @@ FlatlandManager::~FlatlandManager() {
 
 scheduling::SessionId FlatlandManager::CreateFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-    std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config) {
+    const FlatlandConfig& config) {
   CheckIsOnMainThread();
 
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
@@ -122,7 +122,7 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
   // TODO(fxbug.dev/491886218): Address the edge case where the only Flatland connection(s) that
   // require present credits, get disconnected but we continue to compute FuturePresentationInfo
   // for no reason.
-  if (!(config && config->skips_present_credits().value_or(false))) {
+  if (!config.skips_present_credits) {
     all_clients_opt_out_present_info_ = false;
   }
 
@@ -130,7 +130,7 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
                                std::bind(&FlatlandManager::DestroyInstanceFunction, this, id),
                                flatland_presenter_, link_system_,
                                uber_struct_system_->AllocateQueueForSession(id),
-                               buffer_collection_importers_, std::move(config));
+                               buffer_collection_importers_, config);
 
   zx_status_t status = instance->loop->loop().StartThread(name.c_str());
   FX_DCHECK(status == ZX_OK);
@@ -147,7 +147,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
     const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
         buffer_collection_importers,
-    std::optional<fuchsia_ui_composition::TrustedFlatlandConfig> config) const {
+    const FlatlandConfig& config) const {
   return Flatland::New(
       std::move(dispatcher_holder), fidl::HLCPPToNatural(std::move(request)), session_id,
       std::move(destroy_instance_function), std::move(flatland_presenter), std::move(link_system),
@@ -194,7 +194,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
                           register_mouse_source_(fidl::NaturalToHLCPP(mouse_source), view_ref_koid);
                         });
       },
-      std::move(config));
+      config);
 }
 
 void FlatlandManager::CreateFlatlandDisplay(
@@ -303,7 +303,7 @@ void FlatlandManager::SendHintsToStartRendering() {
     }
 
     // Skip sessions who aren't using present credits.
-    if (instance_kv->second->impl->config_skips_present_credits()) {
+    if (instance_kv->second->impl->config().skips_present_credits) {
       continue;
     }
 
