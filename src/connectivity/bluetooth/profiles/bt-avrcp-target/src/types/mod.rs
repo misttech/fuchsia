@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
+use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
+use fuchsia_async as fasync;
 use log::warn;
 use std::fmt::Debug;
-use {fidl_fuchsia_bluetooth_avrcp as fidl_avrcp, fuchsia_async as fasync};
 
 pub mod bounded_queue;
 
@@ -24,8 +25,8 @@ pub(crate) struct NotificationData {
     /// The current value of the notification when the client subscribed.
     current_value: Notification,
     /// The position change interval of the notification, for `TRACK_POS_CHANGED`.
-    // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
+    // Field is only used in the manual Debug impl for logging.
+    #[allow(dead_code)]
     pos_change_interval: u32,
     /// The time when we expect to reply automatically to the responder.
     expected_response_time: Option<fasync::MonotonicInstant>,

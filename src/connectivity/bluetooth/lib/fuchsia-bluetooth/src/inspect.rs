@@ -296,11 +296,9 @@ mod tests {
     fn debug_string() {
         #[derive(Debug)]
         struct Foo {
-            // TODO(https://fxbug.dev/42165549)
-            #[allow(unused)]
+            #[allow(dead_code)]
             bar: u8,
-            // TODO(https://fxbug.dev/42165549)
-            #[allow(unused)]
+            #[allow(dead_code)]
             baz: &'static str,
         }
         let foo = Foo { bar: 1, baz: "baz value" };

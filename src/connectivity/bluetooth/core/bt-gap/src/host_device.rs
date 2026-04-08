@@ -9,6 +9,8 @@ use fidl_fuchsia_bluetooth_host::{
     DiscoverySessionMarker, DiscoverySessionProxy, HostProxy, HostStartDiscoveryRequest,
     PeerWatcherGetNextResponse, PeerWatcherMarker,
 };
+use fidl_fuchsia_bluetooth_sys as sys;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::Inspectable;
 use fuchsia_bluetooth::types::{Address, BondingData, HostData, HostId, HostInfo, Peer, PeerId};
 use fuchsia_sync::RwLock;
@@ -17,7 +19,6 @@ use futures::{Future, FutureExt, TryFutureExt};
 use log::{debug, error, info, trace, warn};
 use std::pin::pin;
 use std::sync::{Arc, Weak};
-use {fidl_fuchsia_bluetooth_sys as sys, fuchsia_async as fasync};
 
 #[cfg(test)]
 use fidl_fuchsia_bluetooth_sys::TechnologyType;
@@ -63,14 +64,14 @@ pub struct HostDeviceState {
 /// path, the host address and the host id.
 #[derive(Clone, Debug)]
 pub struct HostDebugIdentifiers {
-    // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
+    // Field is only read by the Debug impl for logging.
+    #[allow(dead_code)]
     id: HostId,
-    // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
+    // Field is only read by the Debug impl for logging.
+    #[allow(dead_code)]
     address: Address,
-    // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
+    // Field is only read by the Debug impl for logging.
+    #[allow(dead_code)]
     path: String,
 }
 

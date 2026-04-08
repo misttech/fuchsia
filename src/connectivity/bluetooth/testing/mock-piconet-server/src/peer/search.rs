@@ -14,8 +14,9 @@ use crate::types::{RegisteredServiceId, ServiceRecord};
 struct SearchInfo {
     service_uuid: ServiceClassProfileIdentifier,
 
-    // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
+    /// The attribute IDs that were requested for this search.
+    // The field is only used in the Debug implementation for logging.
+    #[allow(dead_code)]
     attr_ids: Vec<u16>,
 
     proxy: SearchResultsProxy,
