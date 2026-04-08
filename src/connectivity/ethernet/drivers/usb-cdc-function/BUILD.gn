@@ -54,10 +54,13 @@ fuchsia_cc_driver("usb-cdc-function-driver") {
 }
 
 fuchsia_driver_component("usb-cdc-function") {
+  # LINT.IfChange(cdc_driver_component_name_tefmo)
   component_name = "usb-cdc-function"
   deps = [ ":usb-cdc-function-driver" ]
   info = "meta/usb-cdc-function-info.json"
   manifest = "meta/usb-cdc-function.cml"
+
+  # LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:cdc_driver_component_name_tefmo)
 }
 
 fuchsia_driver_package("package") {

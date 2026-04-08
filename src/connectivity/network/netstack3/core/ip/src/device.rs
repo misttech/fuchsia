@@ -1600,7 +1600,9 @@ pub fn add_ip_addr_subnet_with_config<
     addr_config: I::AddressConfig<BC::Instant>,
     _device_config: &I::Configuration,
 ) -> Result<CC::AddressId, ExistsError> {
+    // LINT.IfChange(netstack_ip_added_tefmo)
     info!("adding addr {addr_sub:?} config {addr_config:?} to device {device_id:?}");
+    // LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:netstack_ip_added_tefmo)
     let CommonAddressProperties { valid_until, preferred_lifetime } =
         I::get_common_props(&addr_config);
     let addr_id = core_ctx.add_ip_address(device_id, addr_sub, addr_config)?;

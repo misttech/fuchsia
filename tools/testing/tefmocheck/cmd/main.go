@@ -125,6 +125,12 @@ func main() {
 	// check finds a failure mode, then we skip running later checks because we assume
 	// they'll add no useful information.
 	checks := []tefmocheck.FailureModeCheck{}
+	checks = append(checks, &tefmocheck.CdcEthernetStateCheck{
+		RequiredTags: map[string]string{
+			"device_type": "Sorrel",
+			"product":     "vendor/google/products/fuchsia_internal.gni",
+		},
+	})
 	checks = append(checks, tefmocheck.NearbyStringsChecks()...)
 	checks = append(checks, tefmocheck.StringInLogsChecks()...)
 	checks = append(checks, tefmocheck.MassTestFailureCheck{MaxFailed: 5})

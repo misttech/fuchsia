@@ -322,6 +322,7 @@ pub struct InterfaceMetrics {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "lowercase")]
+// LINT.IfChange(device_class_enum_tefmo)
 pub enum DeviceClass {
     Virtual,
     Ethernet,
@@ -334,6 +335,7 @@ pub enum DeviceClass {
     Lowpan,
     Blackhole,
 }
+// LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:device_class_enum_tefmo)
 
 #[derive(Debug, Error)]
 #[error("unknown port class with ordinal: {unknown_ordinal}")]
@@ -3752,7 +3754,9 @@ pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
         enable_socket_proxy,
     } = Config::load(config_data)?;
 
+    // LINT.IfChange(netcfg_naming_policy_tefmo)
     info!("using naming policy: {interface_naming_policy:?}");
+    // LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:netcfg_naming_policy_tefmo)
     info!("using provisioning policy: {interface_provisioning_policy:?}");
 
     let inspector = fuchsia_inspect::component::inspector();

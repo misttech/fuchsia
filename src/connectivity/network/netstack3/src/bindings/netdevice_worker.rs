@@ -660,7 +660,9 @@ impl DeviceHandler {
 
             ctx.apply_interface_defaults(&core_id);
 
+            // LINT.IfChange(netstack_created_interface_tefmo)
             info!("created interface {:?}", core_id);
+            // LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:netstack_created_interface_tefmo)
             ctx.bindings_ctx().devices.add_device_and_start_publishing(binding_id_alloc, core_id);
 
             (binding_id, tx_task, link_multicast_task)

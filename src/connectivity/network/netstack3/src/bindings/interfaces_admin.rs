@@ -225,7 +225,9 @@ async fn run_blackhole_interface(
     let core_id = DeviceId::Blackhole(core_id);
     ns.ctx.apply_interface_defaults(&core_id);
 
+    // LINT.IfChange(netstack_created_interface_tefmo)
     info!("created interface {:?}", core_id);
+    // LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:netstack_created_interface_tefmo)
     ns.ctx.bindings_ctx().devices.add_device_and_start_publishing(binding_id_alloc, core_id);
 
     let interface_control_fut = pin!(run_interface_control(
@@ -2253,10 +2255,12 @@ mod enabled {
                 .ip_enabled
                 .expect("ip enabled must be informed");
 
+            // LINT.IfChange(netstack_ip_enabled_tefmo)
             info!(
                 "updated core state to ipv4_enabled={ipv4_enabled}, ipv6_enabled={ipv6_enabled} on {core_id:?}, \
                 prev v4={was_v4_previously_enabled},v6={was_v6_previously_enabled}"
             );
+            // LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:netstack_ip_enabled_tefmo)
         }
     }
 

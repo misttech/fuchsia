@@ -5,14 +5,14 @@
 use std::collections::HashSet;
 use std::pin::Pin;
 
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt as _};
 use fidl_fuchsia_net_ext::FromExt as _;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_name as fnet_name,
-    fidl_fuchsia_net_resources as fnet_resources,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-};
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
 
 use anyhow::Context as _;
 use async_utils::stream::{StreamMap, Tagged, WithTag as _};
@@ -130,7 +130,9 @@ pub(super) async fn start_client(
     interface_admin_auth: &fnet_resources::GrantForInterfaceAuthorization,
     configuration_streams: &mut ConfigurationStreamMap,
 ) -> Result<ClientState, errors::Error> {
+    // LINT.IfChange(netcfg_dhcp_start_tefmo)
     info!("starting DHCPv4 client for {} (id={})", interface_name, interface_id);
+    // LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:netcfg_dhcp_start_tefmo)
 
     let (route_set, server_end) =
         fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV4Marker>();
