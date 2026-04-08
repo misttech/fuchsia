@@ -157,7 +157,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     tracing_on: TracingOn
     """
 
-    async def setup_class(self):  # type: ignore
+    async def setup_class(self) -> None:
         """setup_class is called once before running tests.
 
         It does the following things:
@@ -184,7 +184,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 device.tracing.initialize(categories=self.trace_categories)
                 await device.tracing.start()
 
-    async def setup_test(self):  # type: ignore
+    async def setup_test(self) -> None:
         """setup_test is called once before running each test.
 
         It does the following things:
@@ -215,7 +215,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     device.tracing.initialize(categories=self.trace_categories)
                     await device.tracing.start()
 
-    async def teardown_test(self):  # type: ignore
+    async def teardown_test(self) -> None:
         """teardown_test is called once after running each test.
 
         It does the following things:
@@ -254,7 +254,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             _LOGGER.warning(HEALTH_CHECK_FAILURE_MESSAGE)
             raise signals.TestFailure(HEALTH_CHECK_FAILURE_MESSAGE)
 
-    async def teardown_class(self):  # type: ignore
+    async def teardown_class(self) -> None:
         """teardown_class is called once after running all tests.
 
         It does the following things:
@@ -300,7 +300,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 directory=self._teardown_class_artifacts
             )
 
-    async def on_fail(self, record):  # type: ignore
+    async def on_fail(self, record: TestResultRecord) -> None:
         """on_fail is called once when a test case fails.
 
         It does the following things:
@@ -336,13 +336,13 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     def output_file_path(self, file_name: str) -> pathlib.Path:
         return self._output_dir().joinpath(file_name)
 
-    async def on_pass(self, record):  # type: ignore
+    async def on_pass(self, record: TestResultRecord) -> None:
         pass
 
-    async def on_skip(self, record):  # type: ignore
+    async def on_skip(self, record: TestResultRecord) -> None:
         pass
 
-    async def _collect_snapshot(self, directory):  # type: ignore
+    async def _collect_snapshot(self, directory: str) -> None:
         """Collects snapshots for all the FuchsiaDevice objects and stores them
         in the directory specified.
 
@@ -406,7 +406,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
         return config.get(key) if config else None
 
-    async def _health_check_and_recover(self):  # type: ignore
+    async def _health_check_and_recover(self) -> None:
         """Ensure all FuchsiaDevice objects are healthy and if unhealthy perform
         a power_cycle in an attempt to recover.
         """
@@ -431,7 +431,9 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             "FuchsiaDevice objects..."
         )
 
-    async def _recover_device(self, fx_device):  # type: ignore[no-untyped-def]
+    async def _recover_device(
+        self, fx_device: fuchsia_device.FuchsiaDevice
+    ) -> None:
         """Try to recover the fuchsia device by power cycling it if the test has
         access to a power switch.
 
@@ -531,9 +533,9 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 None,
             )
 
-    async def _log_message_to_devices(  # type: ignore[no-untyped-def]
-        self, message, level
-    ):
+    async def _log_message_to_devices(
+        self, message: str, level: custom_types.LEVEL
+    ) -> None:
         """Log message in all the Fuchsia devices.
 
         Args:
