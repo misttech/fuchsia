@@ -899,8 +899,8 @@ Scheduler::DequeueResult Scheduler::DequeueDeadlineThread(SchedTime eligible_tim
   if (state.finish_time() <= eligible_time) {
     kcounter_add(counter_deadline_past, 1);
   }
-  trace = KTRACE_END_SCOPE(("start time", Round<uint64_t>(state.start_time_)),
-                           ("finish time", Round<uint64_t>(state.finish_time_)));
+  trace =
+      KTRACE_END_SCOPE(("start time", state.start_time()), ("finish time", state.finish_time()));
   return const_cast<Thread*>(eligible_thread);
 }
 
@@ -1198,12 +1198,11 @@ class Scheduler::ThreadDemand {
                                 INVALID_CPU,
                                 IsFairThread(woken_thread)};
 
-      LOCAL_KTRACE_INSTANT(
-          QUEUE, "ThreadDemand::Get", ("woken_thread_finish_time", woken_thread_finish_time),
-          ("woken_thread_last_cpu", demand.woken_thread_last_cpu()),
-          ("woken_thread_utilization", Round<uint32_t>(1000 * demand.woken_thread_utilization())),
-          ("current_thread_utilization",
-           Round<uint32_t>(1000 * demand.current_thread_utilization())));
+      LOCAL_KTRACE_INSTANT(QUEUE, "ThreadDemand::Get",
+                           ("woken_thread_finish_time", woken_thread_finish_time),
+                           ("woken_thread_last_cpu", demand.woken_thread_last_cpu()),
+                           ("woken_thread_utilization", demand.woken_thread_utilization()),
+                           ("current_thread_utilization", demand.current_thread_utilization()));
 
       return demand;
     }
@@ -1231,12 +1230,11 @@ class Scheduler::ThreadDemand {
                               current_thread->scheduler_state().curr_cpu(),
                               IsFairThread(woken_thread) && IsFairThread(current_thread)};
 
-    LOCAL_KTRACE_INSTANT(
-        QUEUE, "ThreadDemand::Get", ("woken_thread_finish_time", woken_thread_finish_time),
-        ("woken_thread_last_cpu", demand.woken_thread_last_cpu()),
-        ("woken_thread_utilization", Round<uint32_t>(1000 * demand.woken_thread_utilization())),
-        ("current_thread_utilization",
-         Round<uint32_t>(1000 * demand.current_thread_utilization())));
+    LOCAL_KTRACE_INSTANT(QUEUE, "ThreadDemand::Get",
+                         ("woken_thread_finish_time", woken_thread_finish_time),
+                         ("woken_thread_last_cpu", demand.woken_thread_last_cpu()),
+                         ("woken_thread_utilization", demand.woken_thread_utilization()),
+                         ("current_thread_utilization", demand.current_thread_utilization()));
 
     return demand;
   }
@@ -1376,12 +1374,11 @@ class Scheduler::CandidatePlacement {
       }
     }
 
-    LOCAL_KTRACE_INSTANT(
-        QUEUE, "evaluate", ("cpu", cpu_num), ("queue time", cpu_queue_time_ns),
-        ("actual rate", Round<int64_t>(cpu_processing_rate * 1000)),
-        ("current required rate", Round<int64_t>(current_required_processing_rate * 1000)),
-        ("new required rate", Round<int64_t>(new_required_processing_rate * 1000)),
-        ("estimated power delta nw", estimated_power_delta_nw));
+    LOCAL_KTRACE_INSTANT(QUEUE, "evaluate", ("cpu", cpu_num), ("queue time", cpu_queue_time_ns),
+                         ("actual rate", cpu_processing_rate),
+                         ("current required rate", current_required_processing_rate),
+                         ("new required rate", new_required_processing_rate),
+                         ("estimated power delta nw", estimated_power_delta_nw));
 
     return CandidatePlacement(cpu_num, scheduler->cluster(), cpu_queue_time_ns, cpu_processing_rate,
                               new_required_processing_rate, cpu_deadline_utilization,
@@ -1419,13 +1416,12 @@ class Scheduler::CandidatePlacement {
   // Returns true if this candidate is a better alternative than the current target.
   constexpr bool IsBetterThan(const CandidatePlacement& current_target,
                               const ThreadDemand& demand) const {
-    LOCAL_KTRACE_INSTANT(
-        QUEUE, "compare", ("Current queue time", current_target.queue_time_ns()),
-        ("Current cluster", current_target.cluster()),
-        ("Current deadline utilization",
-         Round<int64_t>(current_target.deadline_utilization() * 1000)),
-        ("Candidate queue time", queue_time_ns()), ("Candidate cluster", cluster()),
-        ("Candidate deadline utilization", Round<int64_t>(deadline_utilization() * 1000)));
+    LOCAL_KTRACE_INSTANT(QUEUE, "compare", ("Current queue time", current_target.queue_time_ns()),
+                         ("Current cluster", current_target.cluster()),
+                         ("Current deadline utilization", current_target.deadline_utilization()),
+                         ("Candidate queue time", queue_time_ns()),
+                         ("Candidate cluster", cluster()),
+                         ("Candidate deadline utilization", deadline_utilization()));
 
     if (demand.is_fair()) {
       // CPUs in the same logical cluster are considered equivalent in terms of
@@ -2124,9 +2120,7 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
                                                        ? bandwidth_reservation_cache_.Clear()
                                                        : bandwidth_reservation_cache_.Prune(now);
     if (utilization_to_remove > 0) {
-      LOCAL_KTRACE_INSTANT(
-          QUEUE, "clear/prune",
-          ("utilization_to_remove", Round<uint64_t>(utilization_to_remove * 1000)));
+      LOCAL_KTRACE_INSTANT(QUEUE, "clear/prune", ("utilization_to_remove", utilization_to_remove));
 
       UpdateTotalDeadlineUtilization(-utilization_to_remove);
 
@@ -2469,7 +2463,7 @@ SchedDuration Scheduler::CalculateTimeslice(const Thread* thread) {
   const SchedDuration time_slice_ns = fair_period_ * fair_utilization;
 
   trace = KTRACE_END_SCOPE(
-      ("fair utilization", Round<uint64_t>(fair_utilization * 1000)), ("time slice", time_slice_ns),
+      ("fair utilization", fair_utilization), ("time slice", time_slice_ns),
       ("weight", ep.weight().raw_value()),
       ("total weight", KTRACE_ANNOTATED_VALUE(AssertHeld(queue_lock_), weight_total_.raw_value())));
   return time_slice_ns;
@@ -2707,9 +2701,9 @@ void Scheduler::AdjustFairBandwidth(Thread* thread, SchedTime now) {
 
   trace =
       KTRACE_END_SCOPE(("r_i", old_remaining_time_slice_ns), ("r_i'", new_remaining_time_slice),
-                       ("r_{i,e}", state.remaining_time_slice_ns()),
-                       ("dU_i", Round<int64_t>(utilization_delta * 1000)), ("dT_i", period_delta),
-                       ("d_i", time_until_finish_time_ns), ("eligible", state.start_time() <= now));
+                       ("r_{i,e}", state.remaining_time_slice_ns()), ("dU_i", utilization_delta),
+                       ("dT_i", period_delta), ("d_i", time_until_finish_time_ns),
+                       ("eligible", state.start_time() <= now));
 }
 
 void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
@@ -3739,11 +3733,10 @@ void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
     }
   });
 
-  LOCAL_KTRACE_INSTANT(
-      QUEUE, "ReevaluateCurrentPowerLevel",
-      ("max_clamped_utilization", Round<int32_t>(1000 * max_clamped_demand)),
-      ("preceding_processing_rate", Round<int32_t>(1000 * preceding_processing_rate())),
-      ("processing_rate", Round<int32_t>(1000 * processing_rate())));
+  LOCAL_KTRACE_INSTANT(QUEUE, "ReevaluateCurrentPowerLevel",
+                       ("max_clamped_utilization", max_clamped_demand),
+                       ("preceding_processing_rate", preceding_processing_rate()),
+                       ("processing_rate", processing_rate()));
 
   if (max_clamped_demand <= preceding_processing_rate() || max_clamped_demand > processing_rate()) {
     PendPowerLevelRequestForRate(max_clamped_demand);

@@ -115,6 +115,16 @@ constexpr Argument<ArgumentType::kUint32, RefType::kId> MakeArgument(
   return {name, value.raw_value()};
 }
 
+// Until the FXT format supports fixed-point argument values, scale utilization
+// values by 1000 to improve the interpretability in trace event arguments. Use
+// int32_t for the more compact encoding, since visualized utilization values do
+// not need high precision and will not typically have large integral
+// components.
+constexpr Argument<ArgumentType::kInt32, RefType::kId> MakeArgument(StringRef<RefType::kId> name,
+                                                                    SchedUtilization value) {
+  return {name, ffl::Round<int32_t>(value * 1000)};
+}
+
 }  // namespace fxt
 
 namespace internal {
