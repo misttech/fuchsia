@@ -9,7 +9,7 @@ use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
 use target_holders::{NodenameHolder, SshAddrHolder};
@@ -31,7 +31,7 @@ pub enum StarnixSubCommand {
     Kill(kill::StarnixKillCommand),
 }
 
-#[derive(Debug, JsonSchema, Serialize)]
+#[derive(Debug, JsonSchema, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StarnixToolOutput {
     Adb(adb::AdbCommandOutput),

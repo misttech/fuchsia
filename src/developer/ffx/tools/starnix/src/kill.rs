@@ -5,7 +5,7 @@
 use argh::{ArgsInfo, FromArgs};
 use fho::{FfxContext, Result};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use {
     fdomain_fuchsia_developer_remotecontrol as rc,
     fdomain_fuchsia_starnix_container as fstarcontainer,
@@ -30,7 +30,7 @@ pub struct StarnixKillCommand {
     pub signal: u64,
 }
 
-#[derive(Debug, JsonSchema, Serialize)]
+#[derive(Debug, JsonSchema, Deserialize, Serialize)]
 pub struct KillCommandOutput {
     pub success: bool,
 }

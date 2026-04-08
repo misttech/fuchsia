@@ -17,7 +17,7 @@ use futures::{FutureExt, channel};
 use log::info;
 use netext::{MultithreadedTokioAsyncWrapper, TcpListenerStream, TokioAsyncReadExt};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use signal_hook::consts::signal::SIGINT;
 use signal_hook::iterator::Signals;
 use std::io::ErrorKind;
@@ -61,7 +61,7 @@ enum AdbSubcommand {
     Proxy(AdbProxyArgs),
 }
 
-#[derive(Debug, JsonSchema, Serialize)]
+#[derive(Debug, JsonSchema, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AdbCommandOutput {
     Connect(ConnectOutput),
@@ -196,7 +196,7 @@ impl AdbConnectArgs {
     }
 }
 
-#[derive(Debug, JsonSchema, Serialize)]
+#[derive(Debug, JsonSchema, Deserialize, Serialize)]
 pub struct ConnectOutput {
     serial_number: String,
 }

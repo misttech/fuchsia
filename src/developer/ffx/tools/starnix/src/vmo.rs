@@ -5,7 +5,7 @@
 use argh::{ArgsInfo, FromArgs};
 use fho::{FfxContext, Result};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use {
     fdomain_fuchsia_developer_remotecontrol as rc,
     fdomain_fuchsia_starnix_container as fstarcontainer,
@@ -48,7 +48,7 @@ pub async fn starnix_vmo(
     Ok(VmoCommandOutput { koid, references })
 }
 
-#[derive(Debug, JsonSchema, Serialize)]
+#[derive(Debug, JsonSchema, Deserialize, Serialize)]
 pub struct VmoCommandOutput {
     pub koid: u64,
     pub references: Vec<VmoReference>,
@@ -68,7 +68,7 @@ impl std::fmt::Display for VmoCommandOutput {
 }
 
 // Redefinition of fidl_fuchsia_starnix_container_common::VmoReference for JSON.
-#[derive(Debug, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct VmoReference {
     /// The Starnix pid of the process containing a file backed by the vmo.
     pub pid: u64,

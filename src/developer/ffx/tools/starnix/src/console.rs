@@ -11,7 +11,7 @@ use futures::future::FutureExt;
 use futures::join;
 use nix::unistd::dup;
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::os::unix::io::FromRawFd;
 use termion::raw::IntoRawMode;
 use {
@@ -166,7 +166,7 @@ automated test."
     Ok(ConsoleCommandOutput { exit_code })
 }
 
-#[derive(Debug, JsonSchema, Serialize)]
+#[derive(Debug, JsonSchema, Deserialize, Serialize)]
 pub struct ConsoleCommandOutput {
     exit_code: u8,
 }
