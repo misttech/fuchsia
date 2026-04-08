@@ -12,21 +12,34 @@ go_library(
         "file.go",
         "filedata.go",
         "metrics.go",
+        "notice.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/file",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         "//third_party/golibs:github.com/google/licenseclassifier/v2",
-        "//tools/check-licenses/file/notice",
         "//tools/lib/logger",
     ],
 )
 
 go_test(
     name = "file_test",
-    srcs = ["file_test.go"],
+    srcs = [
+        "file_test.go",
+        "notice_test.go",
+    ],
     embed = [":file"],
+    embedsrcs = [
+        "testdata/example_android",
+        "testdata/example_chromium",
+        "testdata/example_flutter",
+        "testdata/example_google",
+        "testdata/example_onedelimiter",
+    ],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//tools/check-licenses/testutil",
+    ],
 )

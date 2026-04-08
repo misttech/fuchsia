@@ -40,19 +40,32 @@ if (is_host) {
       "file.go",
       "filedata.go",
       "metrics.go",
+      "notice.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/licenseclassifier/v2",
-      "//tools/check-licenses/file/notice",
       "//tools/lib/logger",
     ]
   }
 }
 if (is_host) {
   go_test("file_test") {
-    sources = [ "file_test.go" ]
+    sources = [
+      "file_test.go",
+      "notice_test.go",
+    ]
     embed = [ ":file" ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
+    embedsrcs = [
+      "testdata/example_android",
+      "testdata/example_chromium",
+      "testdata/example_flutter",
+      "testdata/example_google",
+      "testdata/example_onedelimiter",
+    ]
+    deps = [
+      "//third_party/golibs:github.com/google/go-cmp/cmp",
+      "//tools/check-licenses/testutil",
+    ]
   }
 }

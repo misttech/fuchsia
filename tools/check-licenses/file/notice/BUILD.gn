@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# Empty file for now to keep the directory around for a subsequent cleanup CL.
+
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -30,35 +32,5 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 # A self-verification target for generated content in this file.
 if (is_host) {
   verify_bazel2gn("verify_bazel2gn") {
-  }
-}
-
-if (is_host) {
-  go_library("notice") {
-    sources = [
-      "android.go",
-      "chromium.go",
-      "data.go",
-      "flutter.go",
-      "google.go",
-      "one_delimiter.go",
-    ]
-    visibility = [ "//tools/check-licenses/*" ]
-    deps = [ "//tools/lib/logger" ]
-  }
-}
-if (is_host) {
-  go_test("notice_test") {
-    sources = [ "notice_test.go" ]
-    embed = [ ":notice" ]
-    embedsrcs = [
-      "testdata/example_chromium",
-      "testdata/example_flutter",
-      "testdata/example_google",
-    ]
-    deps = [
-      "//third_party/golibs:github.com/google/go-cmp/cmp",
-      "//tools/check-licenses/testutil",
-    ]
   }
 }

@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/file/notice"
 )
 
 // FileData holds the text information (and some metadata) for a given file.
@@ -90,7 +89,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 	// NOTICE files that contain text for multiple licenses.
 	// See the files in the /notice subdirectory for more info.
 	case MultiLicense:
-		ndata, err := notice.ParseOneDelimiter(f.absPath, content)
+		ndata, err := ParseOneDelimiter(f.absPath, content)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +103,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 		}
 
 	case MultiLicenseChromium:
-		ndata, err := notice.ParseChromium(f.absPath, content)
+		ndata, err := ParseChromium(f.absPath, content)
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +116,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 			})
 		}
 	case MultiLicenseFlutter:
-		ndata, err := notice.ParseFlutter(f.absPath, content)
+		ndata, err := ParseFlutter(f.absPath, content)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +129,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 			})
 		}
 	case MultiLicenseAndroid:
-		ndata, err := notice.ParseAndroid(f.absPath, content)
+		ndata, err := ParseAndroid(f.absPath, content)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +142,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 			})
 		}
 	case MultiLicenseGoogle:
-		ndata, err := notice.ParseGoogle(f.absPath, content)
+		ndata, err := ParseGoogle(f.absPath, content)
 		if err != nil {
 			return nil, err
 		}
