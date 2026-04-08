@@ -148,6 +148,7 @@ source_set("tests") {
     "unittests/compression_unittest.cc",
     "unittests/continuous_attribution_unittest.cc",
     "unittests/evictor_unittest.cc",
+    "unittests/page_queues_unittest.cc",
     "unittests/pmm_unittest.cc",
     "unittests/slab_unittest.cc",
     "unittests/test_helper.cc",
