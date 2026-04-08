@@ -14,7 +14,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::pin::Pin;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 use std::task::{Context, Poll, Waker, ready};
 
 mod channel;
@@ -460,11 +460,13 @@ impl ClientInner {
 
         loop {
             if let Poll::Ready(e) = self.transport.poll_send_messages(ctx) {
-                for state in std::mem::take(&mut self.socket_read_states).into_values() {
-                    state.wakers.into_iter().for_each(Waker::wake);
+                for mut state in std::mem::take(&mut self.socket_read_states).into_values() {
+                    state.queued.push_back(Err(Error::from(e.clone())));
+                    self.wakers_to_wake.extend(state.wakers);
                 }
-                for (_, state) in self.channel_read_states.drain() {
-                    state.wakers.into_iter().for_each(Waker::wake);
+                for (_, mut state) in self.channel_read_states.drain() {
+                    state.queued.push_back(Err(Error::from(e.clone())));
+                    self.wakers_to_wake.extend(state.wakers);
                 }
                 return Poll::Ready(Err(e));
             }
@@ -675,6 +677,61 @@ pub(crate) static DEAD_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
     })))
 });
 
+/// A wrapper around the FDomain client background future that ensures
+/// all pending transactions and reads are failed if the loop is dropped.
+///
+/// This prevents hangs when the transport is abruptly closed (e.g. during target reboot)
+/// by waking up any futures waiting for responses or data on channels/sockets.
+pub struct ClientLoop {
+    client: Weak<Client>,
+    fut: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+}
+
+impl Future for ClientLoop {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        self.fut.as_mut().poll(cx)
+    }
+}
+
+impl Drop for ClientLoop {
+    fn drop(&mut self) {
+        let Some(client) = self.client.upgrade() else {
+            return;
+        };
+
+        let (channel_read_states, socket_read_states, deferred_wakers) = {
+            let mut inner = client.0.lock();
+            let transactions = std::mem::take(&mut inner.transactions);
+            log::debug!("ClientLoop dropped, failing {} transactions", transactions.len());
+            for (_, v) in transactions {
+                let _ = v.handle(&mut *inner, Err(InnerError::Transport(None)));
+            }
+
+            let channel_read_states = std::mem::take(&mut inner.channel_read_states);
+            let socket_read_states = std::mem::take(&mut inner.socket_read_states);
+
+            let deferred_wakers = std::mem::replace(&mut inner.wakers_to_wake, Vec::new());
+
+            (channel_read_states, socket_read_states, deferred_wakers)
+        };
+
+        log::debug!("Failing reads on {} channels", channel_read_states.len());
+        for (_, mut state) in channel_read_states {
+            state.queued.push_back(Err(Error::Transport(None)));
+            state.wakers.into_iter().for_each(Waker::wake);
+        }
+
+        log::debug!("Failing reads on {} sockets", socket_read_states.len());
+        for (_, mut state) in socket_read_states {
+            state.queued.push_back(Err(Error::Transport(None)));
+            state.wakers.into_iter().for_each(Waker::wake);
+        }
+
+        deferred_wakers.into_iter().for_each(Waker::wake);
+    }
+}
+
 impl Client {
     /// Create a new FDomain client. The `transport` argument should contain the
     /// established connection to the target, ready to communicate the FDomain
@@ -712,7 +769,9 @@ impl Client {
             ret
         });
 
-        (ret, fut)
+        let client_loop = ClientLoop { client: Arc::downgrade(&ret), fut: Box::pin(fut) };
+
+        (ret, client_loop)
     }
 
     /// Get the namespace for the connected FDomain. Calling this more than once is an error.
