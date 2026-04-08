@@ -13,6 +13,7 @@ use futures::channel::mpsc::TrySendError;
 use futures::{Stream, StreamExt};
 use log::info;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -272,6 +273,15 @@ impl IsolatedEmulator {
             output.stdout
         );
         Ok(output.stdout)
+    }
+
+    /// Run an ffx command with JSON machine output, returning T parsed from stdout and logging any
+    /// stderr as an INFO message.
+    pub async fn ffx_json<T: DeserializeOwned>(&self, args: &[&str]) -> anyhow::Result<T> {
+        let mut all_args = vec!["--machine", "json"];
+        all_args.extend(args);
+        let output = self.ffx_output(&all_args).await?;
+        Ok(serde_json::from_str(&output).context("deserializing JSON")?)
     }
 
     /// Create an ffx command, which allows for streaming stdout/stderr.
