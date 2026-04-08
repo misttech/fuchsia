@@ -3038,13 +3038,13 @@ alias(
 
 alias(
     name = "trust-dns-proto-0.22.0",
-    actual = "//third_party/rust_crates/vendor/trust-dns-proto-0.22.0:trust_dns_proto",
+    actual = "//third_party/rust_crates/forks/trust-dns-proto-0.22.0:trust_dns_proto",
     tags = ["manual"],
 )
 
 alias(
     name = "trust-dns-proto",
-    actual = "//third_party/rust_crates/vendor/trust-dns-proto-0.22.0:trust_dns_proto",
+    actual = "//third_party/rust_crates/forks/trust-dns-proto-0.22.0:trust_dns_proto",
     tags = ["manual"],
 )
 

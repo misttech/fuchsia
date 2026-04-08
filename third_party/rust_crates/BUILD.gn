@@ -21217,15 +21217,15 @@ rustc_library("tracing-subscriber-v0_3_18") {
 license("trust-dns-proto-v0_22_0.license") {
   public_package_name = "trust_dns_proto"
   license_files = [
-    "//third_party/rust_crates/vendor/trust-dns-proto-0.22.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/trust-dns-proto-0.22.0/LICENSE-MIT",
+    "//third_party/rust_crates/forks/trust-dns-proto-0.22.0/LICENSE-APACHE",
+    "//third_party/rust_crates/forks/trust-dns-proto-0.22.0/LICENSE-MIT",
   ]
 }
 
 rustc_library("trust-dns-proto-v0_22_0") {
   crate_name = "trust_dns_proto"
   source_root =
-      "//third_party/rust_crates/vendor/trust-dns-proto-0.22.0/src/lib.rs"
+      "//third_party/rust_crates/forks/trust-dns-proto-0.22.0/src/lib.rs"
   output_name = "trust_dns_proto-b7c1414f1b98a98d"
   edition = "2018"
   disable_clippy = true
@@ -21283,6 +21283,7 @@ rustc_library("trust-dns-resolver-v0_22_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":trust-dns-proto-v0_22_0" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":futures-util-v0_3_31" ]
   deps += [ ":lazy_static-v1_5_0" ]
@@ -21291,7 +21292,6 @@ rustc_library("trust-dns-resolver-v0_22_0") {
   deps += [ ":smallvec-v1_15_1" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":tracing-v0_1_41" ]
-  deps += [ ":trust-dns-proto-v0_22_0" ]
 
   rustenv = [ "CARGO_PKG_VERSION=\"0.22.0\"" ]
 
