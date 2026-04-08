@@ -59,6 +59,9 @@
                 // TODO(https://fxbug.dev/342416456): Not Machina-specific. Rework the test to take
                 // into account logs from the system. Skipped since it's flakey.
                 "SyslogTest.ProcKmsgPoll",
+
+                // TODO(https://fxbug.dev/500700818): De-flake and re-enable.
+                "SysctlTest.DisableIpv6",
             ],
         },
         {
