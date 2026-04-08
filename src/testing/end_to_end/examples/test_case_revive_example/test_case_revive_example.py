@@ -6,39 +6,28 @@
 import logging
 
 import test_case_revive
-from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from mobly import test_runner
 from test_case_revive import TestMethodExecutionFrequency, opt_out, tag_test
 
-dut: FuchsiaDevice
-
 _LOGGER: logging.Logger = logging.getLogger(__name__)
-
-
-def _to_run_before_test(foo: int) -> None:
-    _LOGGER.info(
-        "This line should get printed at the beginning of the revived test. DUT name is: %s, foo = %s.",
-        dut.device_name,
-        foo,
-    )
-
-
-def _to_run_after_test(bar: int) -> None:
-    _LOGGER.info(
-        "This line should get printed at the end of the revived test. DUT name is: %s, bar = %s",
-        dut.device_name,
-        bar,
-    )
 
 
 class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
     """Example usage of test_case_revive.TestCaseRevive."""
 
-    async def setup_class(self) -> None:
-        await super().setup_class()
+    def _to_run_before_test(self, foo: int) -> None:
+        _LOGGER.info(
+            "This line should get printed at the beginning of the revived test. DUT name is: %s, foo = %s.",
+            self.dut.device_name,
+            foo,
+        )
 
-        global dut
-        dut = self.fuchsia_devices[0]
+    def _to_run_after_test(self, bar: int) -> None:
+        _LOGGER.info(
+            "This line should get printed at the end of the revived test. DUT name is: %s, bar = %s",
+            self.dut.device_name,
+            bar,
+        )
 
     @opt_out()
     def test_that_does_not_revive(self) -> None:

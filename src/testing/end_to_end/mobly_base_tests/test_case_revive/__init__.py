@@ -272,7 +272,9 @@ class TestCaseRevive(FuchsiaBaseTest):
                     pre_test_execution_fn.__qualname__,
                     pre_test_execution_fn_kwargs,
                 )
-                res = pre_test_execution_fn(**pre_test_execution_fn_kwargs)
+                res = pre_test_execution_fn(
+                    self, **pre_test_execution_fn_kwargs
+                )
                 if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
@@ -280,7 +282,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     "[TestCaseRevive] - Calling %s which is the first step in the revived test sequence...",
                     pre_test_execution_fn.__qualname__,
                 )
-                res = pre_test_execution_fn()
+                res = pre_test_execution_fn(self)
                 if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
 
@@ -328,7 +330,9 @@ class TestCaseRevive(FuchsiaBaseTest):
                     post_test_execution_fn.__qualname__,
                     post_test_execution_fn_kwargs,
                 )
-                res = post_test_execution_fn(**post_test_execution_fn_kwargs)
+                res = post_test_execution_fn(
+                    self, **post_test_execution_fn_kwargs
+                )
                 if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
             else:
@@ -336,7 +340,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                     "[TestCaseRevive] - Calling %s which is the last step in the revived test sequence...",
                     post_test_execution_fn.__qualname__,
                 )
-                res = post_test_execution_fn()
+                res = post_test_execution_fn(self)
                 if inspect.isawaitable(res):
                     fuchsia_async_extension.get_loop().run_until_complete(res)
 
