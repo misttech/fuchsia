@@ -78,7 +78,7 @@ fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetCon
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
     fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),
-    fuchsia::images2::PixelFormat format = fuchsia::images2::PixelFormat::B8G8R8A8,
+    fuchsia_images2::PixelFormat pixel_format = fuchsia_images2::PixelFormat::kB8G8R8A8,
     std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints = std::nullopt,
     std::optional<fuchsia::images2::PixelFormatModifier> pixel_format_modifier = std::nullopt);
 

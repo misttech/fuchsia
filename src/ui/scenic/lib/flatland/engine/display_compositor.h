@@ -204,7 +204,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   std::vector<allocation::ImageMetadata> AllocateDisplayRenderTargets(
       bool use_protected_memory, uint32_t num_render_targets, const fuchsia::math::SizeU& size,
-      fuchsia::images2::PixelFormat pixel_format,
+      fuchsia_images2::PixelFormat pixel_format,
       fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) FXL_LOCKS_EXCLUDED(lock_);
 
   // Generates a new FrameEventData struct to be used with a render target on a display.

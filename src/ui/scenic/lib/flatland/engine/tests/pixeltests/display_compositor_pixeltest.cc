@@ -4,6 +4,8 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
@@ -549,8 +551,8 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
   // into the engine.
   fuchsia::sysmem2::BufferCollectionSyncPtr SetupClientTextures(
       DisplayCompositor* display_compositor, allocation::GlobalBufferCollectionId collection_id,
-      fuchsia::images2::PixelFormat pixel_type, uint32_t width, uint32_t height, uint32_t num_vmos,
-      fuchsia::sysmem2::BufferCollectionInfo* collection_info) {
+      fuchsia::images2::PixelFormat pixel_format, uint32_t width, uint32_t height,
+      uint32_t num_vmos, fuchsia::sysmem2::BufferCollectionInfo* collection_info) {
     // Setup the buffer collection that will be used for the flatland rectangle's texture.
     auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator_);
 
@@ -568,7 +570,8 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =
         CreateBufferCollectionSyncPtrAndSetConstraints(
             sysmem_allocator_, std::move(local_token), num_vmos, width, height,
-            fidl::Clone(buffer_usage), pixel_type, fidl::Clone(memory_constraints),
+            fidl::Clone(buffer_usage), fidl::HLCPPToNatural(pixel_format),
+            fidl::Clone(memory_constraints),
             std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 
     // Have the client wait for buffers allocated so it can populate its information

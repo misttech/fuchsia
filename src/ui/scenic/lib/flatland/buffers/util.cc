@@ -4,6 +4,9 @@
 
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
+
 namespace flatland {
 
 fuchsia::sysmem2::BufferUsage get_none_usage() {
@@ -94,7 +97,7 @@ fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetCon
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count,
     uint32_t width, uint32_t height, fuchsia::sysmem2::BufferUsage usage,
-    fuchsia::images2::PixelFormat format,
+    fuchsia_images2::PixelFormat pixel_format,
     std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints,
     std::optional<fuchsia::images2::PixelFormatModifier> pixel_format_modifier) {
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
@@ -123,19 +126,19 @@ fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetCon
 
   auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
 
-  image_constraints.set_pixel_format(format);
+  image_constraints.set_pixel_format(fidl::NaturalToHLCPP(pixel_format));
 
   if (pixel_format_modifier.has_value()) {
     image_constraints.set_pixel_format_modifier(*pixel_format_modifier);
   }
 
-  switch (format) {
-    case fuchsia::images2::PixelFormat::B8G8R8A8:
-    case fuchsia::images2::PixelFormat::R8G8B8A8:
+  switch (pixel_format) {
+    case fuchsia_images2::PixelFormat::kB8G8R8A8:
+    case fuchsia_images2::PixelFormat::kR8G8B8A8:
       image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
       break;
-    case fuchsia::images2::PixelFormat::I420:
-    case fuchsia::images2::PixelFormat::NV12:
+    case fuchsia_images2::PixelFormat::kI420:
+    case fuchsia_images2::PixelFormat::kNv12:
       image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::REC709);
       break;
     default:

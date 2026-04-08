@@ -221,7 +221,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
       /*image_count*/ 1,
       /*width*/ kWidth,
       /*height*/ kHeight,
-      /*usage*/ fidl::Clone(flatland::get_none_usage()), fuchsia::images2::PixelFormat::B8G8R8A8,
+      /*usage*/ fidl::Clone(flatland::get_none_usage()), fuchsia_images2::PixelFormat::kB8G8R8A8,
       /*memory_constraints*/ std::nullopt,
       std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 

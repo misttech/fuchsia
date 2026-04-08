@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
@@ -132,7 +134,7 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
       sysmem_allocator, std::move(local_token),
       /*image_count*/ num_buffers,
       /*width*/ image_width,
-      /*height*/ image_height, std::move(buffer_usage), fuchsia::images2::PixelFormat::R8G8B8A8,
+      /*height*/ image_height, std::move(buffer_usage), fuchsia_images2::PixelFormat::kR8G8B8A8,
       std::make_optional(std::move(memory_constraints)),
       std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
   EXPECT_TRUE(collection_ptr.is_bound());
@@ -2352,13 +2354,13 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
   const uint32_t kTargetHeight = 32;
 
   // Set the local constraints for the Image.
-  const fuchsia::images2::PixelFormat pixel_format = GetParam();
+  fuchsia::images2::PixelFormat pixel_format = GetParam();
   auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
   auto image_collection = CreateBufferCollectionSyncPtrAndSetConstraints(
       sysmem_allocator, std::move(image_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
-      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), pixel_format,
+      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fidl::HLCPPToNatural(pixel_format),
       std::make_optional(fidl::Clone(memory_constraints)),
       std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 
@@ -2402,7 +2404,7 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
       sysmem_allocator, std::move(render_target_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
-      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fuchsia::images2::PixelFormat::R8G8B8A8,
+      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fuchsia_images2::PixelFormat::kR8G8B8A8,
       std::make_optional(fidl::Clone(memory_constraints)),
       std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 
@@ -2515,7 +2517,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
   const uint32_t kTargetHeight = 32;
 
   // Set the local constraints for the Image.
-  const fuchsia::images2::PixelFormat pixel_format = fuchsia::images2::PixelFormat::B8G8R8A8;
+  fuchsia::images2::PixelFormat pixel_format = fuchsia::images2::PixelFormat::B8G8R8A8;
   const fuchsia::sysmem2::BufferMemoryConstraints memory_constraints = [] {
     fuchsia::sysmem2::BufferMemoryConstraints memory_constraints;
     memory_constraints.set_secure_required(true);
@@ -2533,7 +2535,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
       sysmem_allocator, std::move(image_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
-      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), pixel_format,
+      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fidl::HLCPPToNatural(pixel_format),
       std::make_optional(fidl::Clone(memory_constraints)),
       std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 
@@ -2578,7 +2580,7 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
       sysmem_allocator, std::move(render_target_tokens.local_token),
       /*image_count*/ 1,
       /*width*/ kTargetWidth,
-      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fuchsia::images2::PixelFormat::R8G8B8A8,
+      /*height*/ kTargetHeight, fidl::Clone(buffer_usage), fuchsia_images2::PixelFormat::kR8G8B8A8,
       std::make_optional(fidl::Clone(memory_constraints)),
       std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
 

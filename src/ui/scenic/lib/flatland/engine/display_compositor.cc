@@ -1071,10 +1071,8 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
   // If we are creating vmos, we need a non-null buffer collection pointer to return back
   // to the caller.
   FX_DCHECK(out_collection_info);
-  auto pixel_format_clone = pixel_format;
   display_engine_data.render_targets = AllocateDisplayRenderTargets(
-      /*use_protected_memory=*/false, num_render_targets, size,
-      fidl::NaturalToHLCPP(pixel_format_clone), out_collection_info);
+      /*use_protected_memory=*/false, num_render_targets, size, pixel_format, out_collection_info);
 
   {
     std::scoped_lock lock(lock_);
@@ -1090,8 +1088,7 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
   // running out of protected memory.
   if (renderer_->SupportsRenderInProtected()) {
     display_engine_data.protected_render_targets = AllocateDisplayRenderTargets(
-        /*use_protected_memory=*/true, num_render_targets, size,
-        fidl::NaturalToHLCPP(pixel_format_clone), nullptr);
+        /*use_protected_memory=*/true, num_render_targets, size, pixel_format, nullptr);
   }
 }
 
@@ -1126,7 +1123,7 @@ bool DisplayCompositor::SetMinimumRgb(const uint8_t minimum_rgb) {
 
 std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderTargets(
     const bool use_protected_memory, const uint32_t num_render_targets,
-    const fuchsia::math::SizeU& size, const fuchsia::images2::PixelFormat pixel_format,
+    const fuchsia::math::SizeU& size, const fuchsia_images2::PixelFormat pixel_format,
     fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   fidl::Arena arena;
