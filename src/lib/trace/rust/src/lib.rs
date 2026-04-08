@@ -311,6 +311,16 @@ impl AsTraceStrRef for String {
     }
 }
 
+impl AsTraceStrRef for std::borrow::Cow<'static, str> {
+    #[inline]
+    fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
+        match self {
+            std::borrow::Cow::Borrowed(s) => s.as_trace_str_ref(context),
+            std::borrow::Cow::Owned(s) => s.as_trace_str_ref(context),
+        }
+    }
+}
+
 // This effectively makes deref coercion work for `as_trace_str_ref` calls.
 impl<T: AsTraceStrRef> AsTraceStrRef for &T {
     #[inline]

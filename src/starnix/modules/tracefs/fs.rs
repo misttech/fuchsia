@@ -13,7 +13,7 @@ use starnix_core::vfs::{
     FsNodeOps, FsStr, OutputBuffer,
 };
 use starnix_core::{fileops_impl_nonseekable, fileops_impl_noop_sync};
-use starnix_logging::track_stub;
+use starnix_logging::{CATEGORY_TRACE_META, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_types::PAGE_SIZE;
 use starnix_types::vfs::default_statfs;
@@ -193,6 +193,11 @@ impl FileOps for TraceRawFile {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         assert!(data.available() as u64 == *PAGE_SIZE);
+        let _guard = fuchsia_trace::async_enter!(
+            self.queue.async_id_read,
+            CATEGORY_TRACE_META,
+            self.queue.read_track_name()
+        );
         self.queue.read(data)
     }
 

@@ -25,7 +25,7 @@ pub const NAME_RUN_TASK: &'static str = "RunTask";
 pub const CATEGORY_ATRACE: &'static str = "starnix:atrace";
 
 // The trace category used for trace events about emitting trace events.
-pub const CATEGORY_TRACE_META: &'static str = "trace_meta";
+pub const CATEGORY_TRACE_META: &'static str = "starnix:trace_meta";
 
 // The name used to identify blob records from the container's Perfetto daemon.
 pub const NAME_PERFETTO_BLOB: &'static str = "starnix_perfetto";

@@ -319,22 +319,75 @@ pub struct TraceEventQueue {
 
     /// Inspect node used for diagnostics.
     tracefs_node: fuchsia_inspect::Node,
+
+    /// Async ID for read track grouping.
+    pub async_id_read: fuchsia_trace::Id,
+
+    /// Async ID for write track grouping.
+    pub async_id_write: fuchsia_trace::Id,
+
+    /// CPU ID for trace tracks.
+    pub cpu_id: u32,
 }
 
+const STATIC_READ_TRACK_NAMES: [&str; 8] = [
+    "Tracefs read 0",
+    "Tracefs read 1",
+    "Tracefs read 2",
+    "Tracefs read 3",
+    "Tracefs read 4",
+    "Tracefs read 5",
+    "Tracefs read 6",
+    "Tracefs read 7",
+];
+
+const STATIC_WRITE_TRACK_NAMES: [&str; 8] = [
+    "Tracefs write 0",
+    "Tracefs write 1",
+    "Tracefs write 2",
+    "Tracefs write 3",
+    "Tracefs write 4",
+    "Tracefs write 5",
+    "Tracefs write 6",
+    "Tracefs write 7",
+];
+
 impl<'a> TraceEventQueue {
-    pub fn new(inspect_node: &fuchsia_inspect::Node) -> Result<Self, Errno> {
+    pub fn new(inspect_node: &fuchsia_inspect::Node, cpu_id: u32) -> Result<Self, Errno> {
         let tracefs_node = inspect_node.create_child("tracefs");
         let metadata = TraceEventQueueMetadata::new();
         let ring_buffer: MemoryObject = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0)
             .map_err(|_| errno!(ENOMEM))?
             .into();
         let ring_buffer = ring_buffer.with_zx_name(b"starnix:tracefs");
+        let async_id_read = fuchsia_trace::Id::random();
+        let async_id_write = fuchsia_trace::Id::random();
+
         Ok(Self {
             tracing_enabled: AtomicBool::new(false),
             metadata: Mutex::new(metadata),
             ring_buffer,
             tracefs_node,
+            async_id_read,
+            async_id_write,
+            cpu_id,
         })
+    }
+
+    pub fn read_track_name(&self) -> std::borrow::Cow<'static, str> {
+        if let Some(&name) = STATIC_READ_TRACK_NAMES.get(self.cpu_id as usize) {
+            std::borrow::Cow::Borrowed(name)
+        } else {
+            std::borrow::Cow::Owned(format!("Tracefs read {}", self.cpu_id))
+        }
+    }
+
+    pub fn write_track_name(&self) -> std::borrow::Cow<'static, str> {
+        if let Some(&name) = STATIC_WRITE_TRACK_NAMES.get(self.cpu_id as usize) {
+            std::borrow::Cow::Borrowed(name)
+        } else {
+            std::borrow::Cow::Owned(format!("Tracefs write {}", self.cpu_id))
+        }
     }
 
     /**
@@ -342,7 +395,7 @@ impl<'a> TraceEventQueue {
      */
     pub fn from(kernel: &Kernel) -> Arc<Self> {
         kernel.expando.get_or_init(|| {
-            TraceEventQueue::new(&kernel.inspect_node)
+            TraceEventQueue::new(&kernel.inspect_node, 0)
                 .expect("TraceEventQueue constructed with valid options")
         })
     }
@@ -492,6 +545,7 @@ impl<'a> TraceEventQueue {
     /// Initializes a new page by setting the header's timestamp and clearing the rest of the page
     /// with 0's.
     fn initialize_page(&self, offset: u64, prev_timestamp: BootInstant) -> Result<(), Errno> {
+        fuchsia_trace::duration!(starnix_logging::CATEGORY_TRACE_META, "initialize_page");
         self.ring_buffer
             .write(&prev_timestamp.into_nanos().to_le_bytes(), offset)
             .map_err(|e| from_status_like_fdio!(e))?;
@@ -600,7 +654,7 @@ mod tests {
     #[fuchsia::test]
     fn read_empty_queue() {
         let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node).expect("create queue");
+        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
         let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);
         assert_eq!(queue.read(&mut buffer), error!(EAGAIN));
     }
@@ -608,7 +662,7 @@ mod tests {
     #[fuchsia::test]
     fn enable_disable_queue() {
         let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node).expect("create queue");
+        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
         assert_eq!(queue.ring_buffer.get_size(), 0);
 
         // Enable tracing and check the queue's state.
@@ -642,7 +696,7 @@ mod tests {
     #[fuchsia::test]
     fn single_trace_event_fails_read() {
         let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node).expect("create queue");
+        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
         queue.enable().expect("enable queue");
         // Create an event.
         let data = b"B|1234|slice_name";
@@ -660,7 +714,7 @@ mod tests {
     #[fuchsia::test]
     fn page_overflow() {
         let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node).expect("create queue");
+        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
         queue.enable().expect("enable queue");
         let queue_start_timestamp = queue.prev_timestamp();
         let pid = 1234;
