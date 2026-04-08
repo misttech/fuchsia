@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
+	"sync"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
 )
@@ -27,6 +28,7 @@ type FileData struct {
 	lineNumber  int
 	data        []byte
 
+	mu            sync.RWMutex
 	searchResults *classifierLib.Results
 
 	// ---------------
@@ -159,12 +161,17 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 		return nil, fmt.Errorf("File type %v is unknown for filedata processing.", f.fileType)
 	}
 
+	replacements := make([][2][]byte, len(Config.Replacements))
+	for i, r := range Config.Replacements {
+		replacements[i] = [2][]byte{[]byte(r.Replace), []byte(r.With)}
+	}
+
 	for _, d := range data {
 		// Some characters in license texts are not interpreted properly
 		// (mismatched encodings?) and end up as garbled characters in output files.
 		// We replace those characters with properly encoded ones here.
-		for _, r := range Config.Replacements {
-			d.data = bytes.ReplaceAll(d.data, []byte(r.Replace), []byte(r.With))
+		for _, r := range replacements {
+			d.data = bytes.ReplaceAll(d.data, r[0], r[1])
 		}
 
 		if d.libraryName == "" {
@@ -181,6 +188,15 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 }
 
 func (fd *FileData) Search() {
+	fd.mu.RLock()
+	if fd.searchResults != nil {
+		fd.mu.RUnlock()
+		return
+	}
+	fd.mu.RUnlock()
+
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
 	if fd.searchResults == nil {
 		results := classifier.Match(fd.data)
 		fd.searchResults = &results
@@ -188,26 +204,37 @@ func (fd *FileData) Search() {
 }
 
 // Getters
-func (fd *FileData) File() *File                           { return fd.file }
-func (fd *FileData) LibraryName() string                   { return fd.libraryName }
-func (fd *FileData) LineNumber() int                       { return fd.lineNumber }
-func (fd *FileData) Data() []byte                          { return fd.data }
-func (fd *FileData) LicenseType() string                   { return fd.licenseType }
-func (fd *FileData) PatternPath() string                   { return fd.patternPath }
-func (fd *FileData) URL() string                           { return fd.url }
-func (fd *FileData) BeingSurfaced() string                 { return fd.beingSurfaced }
-func (fd *FileData) SourceCodeIncluded() string            { return fd.sourceCodeIncluded }
-func (fd *FileData) SPDXName() string                      { return fd.spdxName }
-func (fd *FileData) SPDXID() string                        { return fd.spdxID }
-func (fd *FileData) SearchResults() *classifierLib.Results { return fd.searchResults }
+func (fd *FileData) File() *File                { return fd.file }
+func (fd *FileData) LibraryName() string        { return fd.libraryName }
+func (fd *FileData) LineNumber() int            { return fd.lineNumber }
+func (fd *FileData) Data() []byte               { fd.mu.RLock(); defer fd.mu.RUnlock(); return fd.data }
+func (fd *FileData) LicenseType() string        { return fd.licenseType }
+func (fd *FileData) PatternPath() string        { return fd.patternPath }
+func (fd *FileData) URL() string                { fd.mu.RLock(); defer fd.mu.RUnlock(); return fd.url }
+func (fd *FileData) BeingSurfaced() string      { return fd.beingSurfaced }
+func (fd *FileData) SourceCodeIncluded() string { return fd.sourceCodeIncluded }
+func (fd *FileData) SPDXName() string           { return fd.spdxName }
+func (fd *FileData) SPDXID() string             { fd.mu.RLock(); defer fd.mu.RUnlock(); return fd.spdxID }
+func (fd *FileData) SearchResults() *classifierLib.Results {
+	fd.mu.RLock()
+	defer fd.mu.RUnlock()
+	return fd.searchResults
+}
 
 // For copyright data, we want "filedata" to only contain the copyright
 // text. Not the rest of the source code in the given file.
 // This method lets us set the filedata data after detecting the copyright
 // header info.
 func (fd *FileData) SetData(data []byte) {
+	fd.mu.Lock()
 	fd.data = data
 	fd.hash = ""
+
+	h := fnv.New128a()
+	h.Write(fmt.Appendf(nil, "%s %s %s", fd.libraryName, fd.file.relPath, string(fd.data)))
+	fd.spdxID = fmt.Sprintf("LicenseRef-filedata-%x", h.Sum([]byte{}))
+	fd.mu.Unlock()
+
 	fd.Hash()
 }
 
@@ -223,7 +250,9 @@ func (fd *FileData) UpdateURLs(projectName string, projectURL string) {
 
 			prefix := ur.Prefix
 			if url, ok := ur.Replacements[fd.libraryName]; ok {
+				fd.mu.Lock()
 				fd.url = fmt.Sprintf("%v%v", prefix, url)
+				fd.mu.Unlock()
 				return
 			}
 		}
@@ -233,6 +262,9 @@ func (fd *FileData) UpdateURLs(projectName string, projectURL string) {
 // Hash the content of this filedata object, to help detect duplicate texts
 // and help reduce the final NOTICE filesize.
 func (fd *FileData) Hash() string {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+
 	if len(fd.hash) > 0 {
 		return fd.hash
 	}

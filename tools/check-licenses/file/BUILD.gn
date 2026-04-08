@@ -53,6 +53,7 @@ if (is_host) {
   go_test("file_test") {
     sources = [
       "file_test.go",
+      "filedata_test.go",
       "notice_test.go",
     ]
     embed = [ ":file" ]
