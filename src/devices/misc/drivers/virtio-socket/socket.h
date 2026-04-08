@@ -9,8 +9,8 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/io-buffer.h>
+#include <lib/dma-buffer/buffer.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fit/function.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
@@ -23,8 +23,6 @@
 #include <memory>
 #include <utility>
 
-#include <ddktl/device.h>
-#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/array.h>
 #include <fbl/auto_lock.h>
 #include <fbl/intrusive_double_list.h>
@@ -37,18 +35,13 @@ namespace virtio {
 namespace vsock = fuchsia_hardware_vsock;
 
 class SocketDevice;
-using DeviceType = ddk::Device<SocketDevice, ddk::Unbindable>;
 
-class SocketDevice : public Device, public DeviceType, public fidl::WireServer<vsock::Device> {
+class SocketDevice : public Device, public fidl::WireServer<vsock::Device> {
  public:
   struct ConnectionKey;
 
-  explicit SocketDevice(zx_device_t* device, zx::bti, std::unique_ptr<Backend> backend);
+  explicit SocketDevice(zx::bti bti, std::unique_ptr<Backend> backend);
   ~SocketDevice() override;
-
-  // DDKTL hooks:
-  void DdkRelease();
-  void DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
 
   // fuchsia.hardware.vsock.Device implementation.
   void Start(::fuchsia_hardware_vsock::wire::DeviceStartRequest* request,
@@ -69,6 +62,11 @@ class SocketDevice : public Device, public DeviceType, public fidl::WireServer<v
   void IrqRingUpdate() override;
   void IrqConfigChange() override;
   const char* tag() const override { return "virtio-vsock"; }
+
+  fidl::ProtocolHandler<vsock::Device> GetHandler() {
+    std::lock_guard lock(lock_);
+    return bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure);
+  }
 
   // ConnectionKey is mostly a wrapper around vsock::wire::Addr that provides
   // an equality operation for use as the Key in a HashMap.
@@ -111,25 +109,25 @@ class SocketDevice : public Device, public DeviceType, public fidl::WireServer<v
     void FreeBuffers();
 
     inline void Kick() {
-      assert(io_buffer_is_valid(&io_buffer_));
+      assert(io_buffer_);
       ring_.Kick();
     }
 
    protected:
     void* GetRawDesc(uint16_t id, uint32_t len, uint32_t offset = 0) {
       assert(len + offset <= buf_size_);
-      assert(io_buffer_is_valid(&io_buffer_));
-      uintptr_t base = reinterpret_cast<uintptr_t>(io_buffer_virt(&io_buffer_));
+      assert(io_buffer_);
+      uintptr_t base = reinterpret_cast<uintptr_t>(io_buffer_->virt());
       return reinterpret_cast<void*>(base + static_cast<uintptr_t>(id) * buf_size_ + offset);
     }
     Ring& ring() { return ring_; }
-    io_buffer_t& io_buffer() { return io_buffer_; }
+    dma_buffer::ContiguousBuffer* io_buffer() { return io_buffer_.get(); }
     uint32_t buf_size() const { return buf_size_; }
 
    private:
     Ring ring_;
     bool host_write_only_;
-    io_buffer_t io_buffer_;
+    std::unique_ptr<dma_buffer::ContiguousBuffer> io_buffer_;
     uint16_t count_;
     uint32_t buf_size_;
   };
@@ -432,6 +430,8 @@ class SocketDevice : public Device, public DeviceType, public fidl::WireServer<v
 
   fidl::ServerBindingGroup<fuchsia_hardware_vsock::Device> bindings_;
 };
+
+
 
 }  // namespace virtio
 

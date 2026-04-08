@@ -32,15 +32,14 @@ source_set("common") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//src/devices/bus/lib/virtio:virtio-dfv1",
-    "//src/devices/lib/driver",
+    "//sdk/lib/driver/component/cpp",
+    "//src/devices/bus/lib/virtio",
+    "//src/devices/lib/dma-buffer",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/lib/ddktl",
   ]
 }
 
 fuchsia_cc_driver("virtio_socket-driver") {
-  legacy = true
   output_name = "virtio_socket"
   sources = [ "socket_driver.cc" ]
   deps = [

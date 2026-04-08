@@ -7,8 +7,6 @@
 #include <assert.h>
 #include <fidl/fuchsia.hardware.vsock/cpp/wire.h>
 #include <lib/async/cpp/task.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/io-buffer.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/functional.h>
 #include <limits.h>
@@ -23,7 +21,6 @@
 #include <memory>
 #include <mutex>
 
-#include <ddktl/device.h>
 #include <fbl/algorithm.h>
 #include <fbl/array.h>
 #include <virtio/virtio.h>
@@ -56,9 +53,8 @@ static virtio_vsock_hdr_t make_hdr(const SocketDevice::ConnectionKey& key, uint1
   };
 }
 
-SocketDevice::SocketDevice(zx_device_t* bus_device, zx::bti bti, std::unique_ptr<Backend> backend)
+SocketDevice::SocketDevice(zx::bti bti, std::unique_ptr<Backend> backend)
     : virtio::Device(std::move(bti), std::move(backend)),
-      DeviceType(bus_device),
       rx_(this, kDataBacklog, kFrameSize),
       tx_(this, kDataBacklog, kFrameSize),
       event_(this, kEventBacklog, sizeof(virtio_vsock_event_t)),
@@ -170,12 +166,12 @@ zx_status_t SocketDevice::Init() {
   DeviceReset();
   DriverStatusAck();
   if (!(DeviceFeaturesSupported() & VIRTIO_F_VERSION_1)) {
-    zxlogf(ERROR, "%s: Legacy virtio interface is not supported by this driver", tag());
+    fdf::error("{}: Legacy virtio interface is not supported by this driver", tag());
     return ZX_ERR_NOT_SUPPORTED;
   }
   DriverFeaturesAck(VIRTIO_F_VERSION_1);
   if (zx_status_t status = DeviceStatusFeaturesOk(); status != ZX_OK) {
-    zxlogf(ERROR, "Feature negotiation failed: %s", zx_status_get_string(status));
+    fdf::error("Feature negotiation failed: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -187,24 +183,24 @@ zx_status_t SocketDevice::Init() {
   zx_status_t rc;
   rc = event_.Init(kEventId, bti());
   if (rc != ZX_OK) {
-    zxlogf(ERROR, "%s: Failed to allocate event ring: %s", tag(), zx_status_get_string(rc));
+    fdf::error("{}: Failed to allocate event ring: {}", tag(), zx_status_get_string(rc));
     return rc;
   }
   rc = rx_.Init(kRxId, bti());
   if (rc != ZX_OK) {
-    zxlogf(ERROR, "%s: Failed to allocate rx ring: %s", tag(), zx_status_get_string(rc));
+    fdf::error("{}: Failed to allocate rx ring: {}", tag(), zx_status_get_string(rc));
     return rc;
   }
   rc = tx_.Init(kTxId, bti());
   if (rc != ZX_OK) {
-    zxlogf(ERROR, "%s: Failed to allocate tx ring: %s", tag(), zx_status_get_string(rc));
+    fdf::error("{}: Failed to allocate tx ring: {}", tag(), zx_status_get_string(rc));
     return rc;
   }
   // Determine our bti contiguity.
   zx_info_bti_t bti_info;
   rc = bti_.get_info(ZX_INFO_BTI, &bti_info, sizeof(bti_info), nullptr, nullptr);
   if (rc != ZX_OK) {
-    zxlogf(ERROR, "%s: Failed to determine BTI contiguity", tag());
+    fdf::error("{}: Failed to determine BTI contiguity", tag());
     return rc;
   }
   bti_contiguity_ = bti_info.minimum_contiguity;
@@ -215,39 +211,17 @@ zx_status_t SocketDevice::Init() {
   // Setup our timer for retrying TX operations.
   rc = zx::timer::create(ZX_TIMER_SLACK_CENTER, ZX_CLOCK_MONOTONIC, &tx_retry_timer_);
   if (rc != ZX_OK) {
-    zxlogf(ERROR, "%s: Failed to create timer: %s", tag(), zx_status_get_string(rc));
+    fdf::error("{}: Failed to create timer: {}", tag(), zx_status_get_string(rc));
     return rc;
   }
   timer_wait_handler_.set_object(tx_retry_timer_.get());
   timer_wait_handler_.set_trigger(ZX_TIMER_SIGNALED);
 
-  // Export the service
-  zx::result<> result = DdkAddService<fuchsia_hardware_vsock::Service>(
-      fuchsia_hardware_vsock::Service::InstanceHandler({
-          .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                            fidl::kIgnoreBindingClosure),
-      }));
-  if (result.is_error()) {
-    zxlogf(ERROR, "%s: failed to add service: %s", tag(), result.status_string());
-    return result.status_value();
-  }
-
-  // Initialize the zx_device and publish us.
-  zx_status_t status = DdkAdd("virtio-vsock");
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: failed to add device: %s", tag(), zx_status_get_string(status));
-    return status;
-  }
   event_.RefillRing();
 
   cleanup.cancel();
   DriverStatusOk();
   return ZX_OK;
-}
-
-void SocketDevice::DdkRelease() {
-  std::lock_guard lock(lock_);
-  ReleaseLocked();
 }
 
 void SocketDevice::IrqRingUpdate() {
@@ -265,7 +239,7 @@ void SocketDevice::IrqRingUpdate() {
             if (event->id == VIRTIO_VSOCK_EVENT_TRANSPORT_RESET) {
               TransportResetLocked();
             } else {
-              zxlogf(ERROR, "%s: Received unknown event: %d", tag(), event->id);
+              fdf::error("{}: Received unknown event: {}", tag(), event->id);
             }
           });
 
@@ -296,8 +270,8 @@ void SocketDevice::IrqConfigChange() {
 
 void SocketDevice::ProcessRxDescriptor(virtio_vsock_hdr_t* header, void* data, uint32_t data_len) {
   if (header->dst_cid != cid_) {
-    zxlogf(ERROR, " %s: Received message for cid %d, but believe our cid is %d", tag(),
-           static_cast<uint32_t>(header->dst_cid), cid_);
+    fdf::error("{}: Received message for cid {}, but believe our cid is {}", tag(),
+               static_cast<uint32_t>(header->dst_cid), cid_);
     return;
   }
 
@@ -337,7 +311,7 @@ void SocketDevice::UpdateRxRingLocked() {
 void SocketDevice::RxOpLocked(ConnectionIterator conn, const ConnectionKey& key, uint16_t op) {
   switch (op) {
     case VIRTIO_VSOCK_OP_INVALID:
-      zxlogf(ERROR, "%s: Received invalid op", tag());
+      fdf::error("{}: Received invalid op", tag());
       break;
     case VIRTIO_VSOCK_OP_REQUEST:
       // Don't care if we have a connection or not, just send it to the
@@ -350,7 +324,7 @@ void SocketDevice::RxOpLocked(ConnectionIterator conn, const ConnectionKey& key,
     case VIRTIO_VSOCK_OP_RESPONSE: {
       // Check for existing partial connection.
       if (conn == connections_.end()) {
-        zxlogf(ERROR, "%s: Received response for unknown connection", tag());
+        fdf::error("{}: Received response for unknown connection", tag());
         // We weren't trying to make a connection, so reject this
         SendRstLocked(key);
         break;
@@ -402,10 +376,10 @@ void SocketDevice::RxOpLocked(ConnectionIterator conn, const ConnectionKey& key,
       break;
     case VIRTIO_VSOCK_OP_RW:
       // This case should've gone to RxOp_Data
-      zxlogf(ERROR, "%s: OP_RW not handled here", tag());
+      fdf::error("{}: OP_RW not handled here", tag());
       break;
     default:
-      zxlogf(ERROR, "%s: Unexpected op %d from host", tag(), op);
+      fdf::error("{}: Unexpected op {} from host", tag(), op);
       break;
   }
 }
@@ -545,12 +519,12 @@ void SocketDevice::EnableTxRetryTimerLocked() {
   if (!timer_wait_handler_.is_pending()) {
     zx_status_t status = tx_retry_timer_.set(zx::deadline_after(zx::sec(1)), zx::sec(1));
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s: Failed to set timer %s", tag(), zx_status_get_string(status));
+      fdf::error("{}: Failed to set timer {}", tag(), zx_status_get_string(status));
       return;
     }
     status = timer_wait_handler_.Begin(dispatcher_);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s: Failed to wait for timer %s", tag(), zx_status_get_string(status));
+      fdf::error("{}: Failed to wait for timer {}", tag(), zx_status_get_string(status));
       return;
     }
   }
@@ -625,7 +599,7 @@ void SocketDevice::ReleaseLocked() {
 
 void SocketDevice::TransportResetLocked() {
   // Reload the CID when receiving a reset.
-  zxlogf(INFO, "%s: Received transport reset!", tag());
+  fdf::info("{}: Received transport reset!", tag());
   for (auto& it : connections_) {
     it.Close(dispatcher_);
   }
@@ -650,8 +624,10 @@ zx_status_t SocketDevice::IoBufferRing::Init(uint16_t index, const zx::bti& bti)
   if (rc != ZX_OK) {
     return rc;
   }
-  rc = io_buffer_init(&io_buffer_, bti.get(), buf_size() * count_,
-                      IO_BUFFER_CONTIG | (host_write_only_ ? IO_BUFFER_RO : IO_BUFFER_RW));
+  auto factory = dma_buffer::CreateBufferFactory();
+  size_t size = buf_size() * count_;
+  size = fbl::round_up(size, static_cast<size_t>(zx_system_get_page_size()));
+  rc = factory->CreateContiguous(bti, size, 0, true, &io_buffer_);
   if (rc != ZX_OK) {
     return rc;
   }
@@ -661,7 +637,7 @@ zx_status_t SocketDevice::IoBufferRing::Init(uint16_t index, const zx::bti& bti)
   if (host_write_only_) {
     for (uint16_t id = 0; id < count_; id++) {
       struct vring_desc* desc = ring().DescFromIndex(id);
-      desc->addr = io_buffer_phys(&io_buffer_) + id * buf_size_;
+      desc->addr = io_buffer_->phys() + id * buf_size_;
       desc->len = buf_size_;
       desc->flags |= VRING_DESC_F_WRITE;
     }
@@ -669,18 +645,14 @@ zx_status_t SocketDevice::IoBufferRing::Init(uint16_t index, const zx::bti& bti)
   return ZX_OK;
 }
 
-void SocketDevice::IoBufferRing::FreeBuffers() {
-  if (io_buffer_is_valid(&io_buffer_)) {
-    io_buffer_release(&io_buffer_);
-  }
-}
+void SocketDevice::IoBufferRing::FreeBuffers() { io_buffer_.reset(); }
 
 SocketDevice::RxIoBufferRing::RxIoBufferRing(virtio::Device* device, uint16_t count,
                                              uint32_t buf_size)
     : IoBufferRing(device, count, buf_size, true) {}
 
 void SocketDevice::RxIoBufferRing::RefillRing() {
-  assert(io_buffer_is_valid(&io_buffer()));
+  assert(io_buffer());
   bool needs_kick = false;
   uint16_t id;
   struct vring_desc* desc;
@@ -700,9 +672,9 @@ void SocketDevice::RxIoBufferRing::ProcessDescriptors(F func) {
     uint16_t last_id = static_cast<uint16_t>(used_elem->id);
     struct vring_desc* desc = ring().DescFromIndex(last_id);
     if (desc->len < sizeof(H)) {
-      zxlogf(ERROR, "Descriptor is too short");
+      fdf::error("Descriptor is too short");
     } else if ((desc->flags & VRING_DESC_F_NEXT) != 0) {
-      zxlogf(ERROR, "Chained descriptors are not supported");
+      fdf::error("Chained descriptors are not supported");
     } else {
       func(reinterpret_cast<H*>(GetRawDesc(last_id, sizeof(H))), GetRawDesc(last_id, 0, sizeof(H)),
            static_cast<uint32_t>(used_elem->len - sizeof(H)));
@@ -726,7 +698,7 @@ SocketDevice::TxIoBufferRing::TxIoBufferRing(virtio::Device* device, uint16_t co
 void* SocketDevice::TxIoBufferRing::AllocInPlace(uint16_t* id) {
   struct vring_desc* desc = ring().AllocDescChain(1, id);
   if (desc) {
-    desc->addr = io_buffer_phys(&io_buffer()) + *id * buf_size();
+    desc->addr = io_buffer()->phys() + *id * buf_size();
     return GetRawDesc(*id, 0, sizeof(virtio_vsock_hdr_t));
   }
   return nullptr;
@@ -737,7 +709,7 @@ bool SocketDevice::TxIoBufferRing::AllocIndirect(const ConnectionKey& key, uint1
   if (!desc) {
     return false;
   }
-  desc->addr = io_buffer_phys(&io_buffer()) + *id * buf_size();
+  desc->addr = io_buffer()->phys() + *id * buf_size();
   *reinterpret_cast<ConnectionKey*>(
       GetRawDesc(*id, sizeof(ConnectionKey), sizeof(virtio_vsock_hdr_t))) = key;
   return true;
@@ -845,7 +817,7 @@ void SocketDevice::Connection::UpdateCredit(uint32_t buf, uint32_t fwd) {
 
 void SocketDevice::Connection::MakeActive(async_dispatcher_t* disp) {
   if (state_ != Connection::State::WAIT_RESPONSE) {
-    zxlogf(ERROR, "Received response for already established connection");
+    fdf::error("Received response for already established connection");
     return;
   }
   BeginWait(disp);
@@ -890,8 +862,8 @@ void SocketDevice::Connection::SetSocketTxThreshold(uint32_t threshold) {
       break;
     // Any other errors are not really expected to happen here.
     default:
-      zxlogf(ERROR, "failed to set socket tx threshold to %d: %s", threshold,
-             zx_status_get_string(status));
+      fdf::error("failed to set socket tx threshold to {}: {}", threshold,
+                 zx_status_get_string(status));
       break;
   }
 }
