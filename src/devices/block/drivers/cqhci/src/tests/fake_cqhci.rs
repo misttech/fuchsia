@@ -19,15 +19,15 @@ use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, SinkExt as _, Stream, StreamExt as _};
 use sdmmc_spec::{
-    CQHCI_CQ_CTL_OFFSET, CQHCI_CQ_IS_OFFSET, CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET,
-    CQHCI_CQ_TDLBA_OFFSET, CQHCI_CQ_TDLBAU_OFFSET, CQHCI_CQ_TERRI_OFFSET,
+    CQHCI_CQ_CFG_OFFSET, CQHCI_CQ_CTL_OFFSET, CQHCI_CQ_IS_OFFSET, CQHCI_CQ_TCN_OFFSET,
+    CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TDLBA_OFFSET, CQHCI_CQ_TDLBAU_OFFSET, CQHCI_CQ_TERRI_OFFSET,
     CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CommandQueueTDLDirectCmdEntry, CommandQueueTDLEntry,
-    CommandQueueTransferDescriptor, CqhciCqCtlRegister, CqhciCqInterruptStatusRegister,
-    CqhciCqTaskErrorRegister, EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK,
-    EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, EXT_CSD_CACHE_FLUSH_POLICY,
-    EXT_CSD_CACHE_FLUSH_POLICY_FIFO, EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG,
-    MMC_BLOCK_SIZE, MmcCommand, SDHCI_IS_OFFSET, SdhciInterruptStatusRegister, TransferAct,
-    TransferBytes,
+    CommandQueueTransferDescriptor, CqhciCqCfgRegister, CqhciCqCtlRegister,
+    CqhciCqInterruptStatusRegister, CqhciCqTaskErrorRegister, EXT_CSD_BARRIER_SUPPORT,
+    EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK,
+    EXT_CSD_CACHE_FLUSH_POLICY, EXT_CSD_CACHE_FLUSH_POLICY_FIFO, EXT_CSD_PARTITION_ACCESS_MASK,
+    EXT_CSD_PARTITION_CONFIG, MMC_BLOCK_SIZE, MmcCommand, SDHCI_IS_OFFSET,
+    SdhciInterruptStatusRegister, TransferAct, TransferBytes,
 };
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -458,6 +458,17 @@ impl mmio::Mmio for FakeMmio {
                     }
                     Ok(())
                 }
+                CQHCI_CQ_CFG_OFFSET => {
+                    if buf[idx] & CqhciCqCfgRegister::CQE_ENABLE.bits() != 0
+                        && value & CqhciCqCfgRegister::CQE_ENABLE.bits() == 0
+                    {
+                        // As per JESD84-B51B B.4.12 the doorbell is cleared when command queuing is
+                        // disabled.
+                        buf[CQHCI_CQ_TDBR_OFFSET / 4] = 0;
+                    }
+                    buf[idx] = value;
+                    Ok(())
+                }
                 _ => {
                     buf[idx] = value;
                     Ok(())
@@ -565,6 +576,16 @@ impl FakeTaskHandler {
                         );
                         state.halt = false;
                     }
+                    return;
+                }
+                // Return if HALT is set, or Command Queuing is disabled.
+                if state.load32(MmioRegionType::Cqhci, CQHCI_CQ_CTL_OFFSET)
+                    & CqhciCqCtlRegister::HALT.bits()
+                    != 0
+                    || state.load32(MmioRegionType::Cqhci, CQHCI_CQ_CFG_OFFSET)
+                        & CqhciCqCfgRegister::CQE_ENABLE.bits()
+                        == 0
+                {
                     return;
                 }
                 let doorbell = state.load32(MmioRegionType::Cqhci, CQHCI_CQ_TDBR_OFFSET as usize);
