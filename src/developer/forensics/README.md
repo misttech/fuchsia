@@ -1,15 +1,11 @@
-# Crash reporting
+# Feedback
 
 For development, it is often easier to dump the crash information in the logs as
-the crash happens on device. For devices in the field, we want to be able to
-send a report to a remote crash server as well as we might not have access to
-the devices' logs. We use
-[Crashpad](https://chromium.googlesource.com/crashpad/crashpad/+/HEAD/README.md)
-as the third-party client library to talk to the remote crash server.
-
-We control via JSON configuration files whether we upload the reports to a crash
-server and if so, to which crash server. By default, we create a report, but we
-do not upload it.
+the crash happens on device. For devices in the field, reports may be sent to a
+remote crash server, as access to the devices' logs might not be available.
+The `fuchsia.net.http.Loader` protocol is used to talk to the remote crash
+server. Whether reports are uploaded is controlled via
+[Assembly](https://fuchsia.dev/fuchsia-src/concepts/software_assembly/overview).
 
 ## Testing
 
@@ -62,9 +58,9 @@ Then, after running each one of the helper programs (see commands in sections
 below), you should then look each time for the following line in the syslog:
 
 ```sh
-(host)$ fx syslog --tag crash
+(host)$ ffx log --tag forensics
 ...
-successfully uploaded report at $URL...
+Successfully uploaded report at $URL...
 ...
 ```
 
@@ -77,15 +73,16 @@ set to the expected value.
 To run the unit and integration tests:
 
 ```sh
-(host) $ fx test crash-reports-tests
+(host) $ fx test //src/developer/forensics
 ```
 
-### Kernel crash
+### Root job termination
 
-The following command will cause a kernel panic:
+The following command causes the root job to be terminated due to a critical
+process death:
 
 ```sh
-(target)$ k crash
+(host)$ ffx component stop archivist.cm
 ```
 
 The device will then reboot and the system should detect the kernel crash log,

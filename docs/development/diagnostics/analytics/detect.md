@@ -25,7 +25,7 @@ Detect only generates crash reports if
 Crash reports are only sent to the server in some build configurations, or if
 explicitly enabled as explained in [Crash reporting].
 
-[Crash reporting]: /src/developer/forensics/crash_reports/README.md
+[Crash reporting]: /src/developer/forensics/README.md
 
 ## Snapshot triggers {#snapshot-triggers}
 
