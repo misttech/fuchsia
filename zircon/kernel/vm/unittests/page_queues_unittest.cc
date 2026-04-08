@@ -405,12 +405,112 @@ static bool pq_toggle_dont_need_queue() {
   END_TEST;
 }
 
+static bool pq_multiple_queues_fifo_order() {
+  BEGIN_TEST;
+
+  PageQueues pq;
+
+  pq.SetActiveRatioMultiplier(0);
+  pq.StartThreads(0, ZX_TIME_INFINITE);
+
+  vm_page_t old_page = {};
+  vm_page_t new_page = {};
+  old_page.set_state(vm_page_state::OBJECT);
+  new_page.set_state(vm_page_state::OBJECT);
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
+  ASSERT_OK(status);
+
+  // Set up old_page and rotate once to push it to the next queue.
+  pq.SetReclaim(&old_page, vmo->DebugGetCowPages().get(), 0);
+  EXPECT_TRUE(pq.DebugPageIsReclaim(&old_page));
+  pq.RotateReclaimQueues();
+
+  // Set up new_page.
+  pq.SetReclaim(&new_page, vmo->DebugGetCowPages().get(), 1);
+  EXPECT_TRUE(pq.DebugPageIsReclaim(&new_page));
+
+  // Rotate queues until both pages reach the isolate queue. Since new_page is one
+  // generation behind old_page, waiting for new_page ensures old_page is already there.
+  size_t rotations = 0;
+  while (!pq.DebugPageIsReclaimIsolate(&new_page) && rotations < 20) {
+    pq.RotateReclaimQueues();
+    rotations++;
+  }
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&old_page));
+  EXPECT_TRUE(pq.DebugPageIsReclaimIsolate(&new_page));
+
+  // Peek the isolate queue. Since old_page was aged first (older bucket), it should
+  // be peeked first (FIFO ordering at the bucket level).
+  auto backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(backlink.has_value());
+  EXPECT_EQ(backlink->page, &old_page);
+
+  // Remove old_page to verify that the next page peeked is new_page.
+  pq.Remove(&old_page);
+  auto next_backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(next_backlink.has_value());
+  EXPECT_EQ(next_backlink->page, &new_page);
+
+  pq.Remove(&new_page);
+
+  END_TEST;
+}
+
+static bool pq_single_queue_fifo_order() {
+  BEGIN_TEST;
+
+  PageQueues pq;
+
+  vm_page_t old_page = {};
+  vm_page_t new_page = {};
+  old_page.set_state(vm_page_state::OBJECT);
+  new_page.set_state(vm_page_state::OBJECT);
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = make_uncommitted_pager_vmo(2, false, false, &vmo);
+  ASSERT_OK(status);
+
+  pq.SetReclaim(&old_page, vmo->DebugGetCowPages().get(), 0);
+  pq.SetReclaim(&new_page, vmo->DebugGetCowPages().get(), 1);
+
+  size_t queue_a = 0, queue_b = 0;
+  EXPECT_TRUE(pq.DebugPageIsReclaim(&old_page, &queue_a));
+  EXPECT_TRUE(pq.DebugPageIsReclaim(&new_page, &queue_b));
+  EXPECT_EQ(queue_a, queue_b);  // Verify they are in the same queue (same generation)
+
+  // Age pages until they reach the LRU queue.
+  for (size_t i = 0; i < PageQueues::kNumReclaim - 1; i++) {
+    pq.RotateReclaimQueues();
+  }
+
+  // Peek the isolate list using the public PeekIsolate method.
+  // We expect pages to be processed in age order (oldest first, i.e., old_page before new_page).
+  // Since they are added to the tail of the isolate list, the oldest page (old_page) should be at
+  // the head of the isolate list.
+  auto backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(backlink.has_value());
+  EXPECT_EQ(backlink->page, &old_page);
+
+  pq.Remove(&old_page);
+  auto next_backlink = pq.PeekIsolate(PageQueues::kNumReclaim - 1);
+  ASSERT_TRUE(next_backlink.has_value());
+  EXPECT_EQ(next_backlink->page, &new_page);
+
+  pq.Remove(&new_page);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(page_queues_tests)
 VM_UNITTEST(pq_add_remove)
 VM_UNITTEST(pq_move_queues)
 VM_UNITTEST(pq_move_self_queue)
 VM_UNITTEST(pq_rotate_queue)
 VM_UNITTEST(pq_toggle_dont_need_queue)
+VM_UNITTEST(pq_single_queue_fifo_order)
+VM_UNITTEST(pq_multiple_queues_fifo_order)
 UNITTEST_END_TESTCASE(page_queues_tests, "pq", "PageQueues tests")
 
 }  // namespace vm_unittest

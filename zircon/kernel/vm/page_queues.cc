@@ -795,7 +795,9 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
 
       for (size_t iterations = 0;
            !list_is_empty(list) && !deferred_list.Full() && isolate_remaining > 0;) {
-        vm_page_t* page = list_remove_head_type(list, vm_page_t, queue_node);
+        // Newer pages accumulate at the head of the list, while older pages are at the tail.
+        // Pages are removed from the tail to ensure FIFO processing (oldest first).
+        vm_page_t* page = list_remove_tail_type(list, vm_page_t, queue_node);
         PageQueue page_queue = static_cast<PageQueue>(
             page->object.get_page_queue_ref().load(ktl::memory_order_relaxed));
         DEBUG_ASSERT(page_queue >= PageQueueReclaimBase);
@@ -805,6 +807,7 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
         // MarkAccessed had raced. Should this happen we know that the page is actually *very* old,
         // and so we will fall back to the case of forcibly changing its age to the new lru gen.
         if (page_queue != lru_queue && queue_is_valid(page_queue, lru_queue, mru_queue)) {
+          // Pages are added to the head because they are newer pages.
           list_add_head(&page_queues_[page_queue], &page->queue_node);
 
           if (do_sweeping && !page->is_loaned() && queue_is_active(page_queue, mru_queue)) {
@@ -820,6 +823,8 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isol
 
           page_queue_counts_[old_queue].fetch_sub(1, ktl::memory_order_relaxed);
           page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
+          // PeekIsolate peeks at the head. Pages are added to the tail of the isolate queue to
+          // preserve relative age (older pages at the head, newer at the tail).
           list_add_tail(target_queue, &page->queue_node);
           deferred_list.AddReclaimable(page, this);
           isolate_remaining--;
