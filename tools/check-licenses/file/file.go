@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // FileType is an "enum" describing the type of file this is.
@@ -72,6 +73,7 @@ type File struct {
 	projectName string
 	fileType    FileType
 
+	mu            sync.Mutex
 	contentLoaded bool
 	data          []*FileData
 	text          []byte
@@ -93,19 +95,24 @@ func (a Order) Less(i, j int) bool { return a[i].absPath < a[j].absPath }
 func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 	var err error
 
+	absPath := path
+	if absPath, err = filepath.Abs(path); err != nil {
+		return nil, err
+	}
+
 	// If this file was already created, return the previous File object.
-	if f, ok := AllFiles[path]; ok {
-		plusVal(RepeatedFileTraversal, path)
+	allFilesMu.RLock()
+	f, ok := AllFiles[absPath]
+	allFilesMu.RUnlock()
+	if ok {
+		plusVal(RepeatedFileTraversal, absPath)
 		return f, nil
 	}
 
 	// Verify that the file actually exists
-	if _, err := os.Stat(path); err != nil {
-		// If the above command fails, this file may be a symbolic link
-		if _, err := os.Lstat(path); err != nil {
-			// This filepath doesn't exist at all
-			return nil, err
-		}
+	fileInfo, err := os.Stat(absPath)
+	if err != nil {
+		return nil, err
 	}
 
 	relPath := path
@@ -115,29 +122,20 @@ func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 		}
 	}
 
-	absPath := path
-	if absPath, err = filepath.Abs(path); err != nil {
-		return nil, err
-	}
-
-	plusVal(NumFiles, path)
-	if Config.Extensions[filepath.Ext(path)] {
-		plusVal(NumPotentialLicenseFiles, path)
+	plusVal(NumFiles, absPath)
+	if Config.Extensions[filepath.Ext(absPath)] {
+		plusVal(NumPotentialLicenseFiles, absPath)
 	}
 
 	// TODO: Instead of skipping empty files here, mark them as
 	// "Empty" in the README.fuchsia file.
 	// Check if the file is empty
-	fileInfo, err := os.Stat(absPath)
-	if err != nil {
-		return nil, err
-	}
 	if fileInfo.Size() == 0 {
 		return nil, fmt.Errorf("Empty file")
 	}
 
-	name := filepath.Base(path)
-	f := &File{
+	name := filepath.Base(absPath)
+	f = &File{
 		name:        name,
 		absPath:     absPath,
 		relPath:     relPath,
@@ -150,10 +148,19 @@ func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 	h.Write(fmt.Appendf(nil, "%s %s", f.projectName, f.RelPath()))
 	f.spdxID = fmt.Sprintf("LicenseRef-file-%x", h.Sum([]byte{}))
 
-	AllFiles[path] = f
-	if ft != RegularFile {
-		AllLicenseFiles[path] = f
+	allFilesMu.Lock()
+	// Double-check to prevent TOCTOU race condition
+	if existingFile, exists := AllFiles[absPath]; exists {
+		allFilesMu.Unlock()
+		plusVal(RepeatedFileTraversal, absPath)
+		return existingFile, nil
 	}
+	AllFiles[absPath] = f
+	if ft != RegularFile {
+		AllLicenseFiles[absPath] = f
+	}
+	allFilesMu.Unlock()
+
 	return f, nil
 }
 
@@ -192,6 +199,8 @@ func (f *File) Data() ([]*FileData, error) {
 	if err := f.LoadContent(); err != nil {
 		return nil, err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.data, nil
 }
 
@@ -199,6 +208,8 @@ func (f *File) Text() ([]byte, error) {
 	if err := f.LoadContent(); err != nil {
 		return nil, err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.text, nil
 }
 
@@ -207,9 +218,15 @@ func (f *File) Text() ([]byte, error) {
 func (f *File) LicenseType() string {
 	// Use a map to remove duplicate license types.
 	licenseTypesMap := map[string]bool{}
-	for _, d := range f.data {
-		for _, m := range d.searchResults.Matches {
-			licenseTypesMap[m.Name] = true
+	data, err := f.Data()
+	if err != nil {
+		return ""
+	}
+	for _, d := range data {
+		if results := d.SearchResults(); results != nil {
+			for _, m := range results.Matches {
+				licenseTypesMap[m.Name] = true
+			}
 		}
 	}
 
@@ -225,6 +242,9 @@ func (f *File) LicenseType() string {
 }
 
 func (f *File) LoadContent() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.contentLoaded {
 		return nil
 	}
@@ -236,7 +256,7 @@ func (f *File) LoadContent() error {
 
 	// Some source files are extremely large.
 	// Only load in the top portion of regular files to save memory.
-	if f.fileType == RegularFile && len(content) > 0 {
+	if f.fileType == RegularFile && len(content) > 0 && Config.CopyrightSize > 0 {
 		content = content[:min(Config.CopyrightSize, len(content))]
 	}
 
@@ -252,13 +272,20 @@ func (f *File) LoadContent() error {
 }
 
 func (f *File) UnloadContent() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.data = nil
 	f.text = nil
 	f.contentLoaded = false
 }
 
 func (f *File) UpdateURLs(projectName string, projectURL string) {
-	for _, d := range f.data {
+	data, err := f.Data()
+	if err != nil {
+		return
+	}
+	for _, d := range data {
 		d.UpdateURLs(projectName, projectURL)
 	}
 }
@@ -284,7 +311,7 @@ func IsPossibleLicenseFile(path string) bool {
 	// that fit the above criteria. Skip those files.
 	//
 	// TODO: Migrate this list into the config file.
-	switch filepath.Ext(path) {
+	switch strings.ToLower(filepath.Ext(path)) {
 	case ".dart",
 		".tmpl",
 		".go",

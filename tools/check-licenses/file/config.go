@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sync"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
 )
@@ -17,6 +18,7 @@ const (
 )
 
 var (
+	allFilesMu      sync.RWMutex
 	AllFiles        map[string]*File
 	AllLicenseFiles map[string]*File
 	urlRegex        *regexp.Regexp
@@ -138,6 +140,9 @@ func (c *FileConfig) Merge(other *FileConfig) {
 
 	c.Replacements = append(c.Replacements, other.Replacements...)
 
+	if c.Extensions == nil {
+		c.Extensions = make(map[string]bool)
+	}
 	for k, v := range other.Extensions {
 		c.Extensions[k] = v
 	}
