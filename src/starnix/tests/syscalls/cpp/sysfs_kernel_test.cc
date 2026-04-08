@@ -16,8 +16,8 @@ class SysfsKernelTest : public ::testing::Test {
   void SetUp() override {
     // TODO(https://fxbug.dev/317285180) don't skip on baseline
     // Assume starnix always has /sys/kernel.
-    if (!test_helper::IsStarnix() && access("/sys/kernel", F_OK) == -1) {
-      GTEST_SKIP() << "/sys/kernel not available, skipping...";
+    if (!test_helper::IsStarnix() && access("/sys/kernel/wakeup_reasons", F_OK) == -1) {
+      GTEST_SKIP() << "/sys/kernel/wakeup_reasons not available, skipping...";
     }
   }
 };

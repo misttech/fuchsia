@@ -151,12 +151,6 @@
                 "SocketFault/SocketFault.ReadV/1",
                 "SocketFault/SocketFault.Write/1",
 
-                // TODO(https://fxbug.dev/437163361): Reliant on an Android-specific kernel feature.
-                "SysfsKernelTest.WakeupReasonsDirectoryContainDefaultsLastResumeReason",
-                "SysfsKernelTest.WakeupReasonsDirectoryContainDefaultsLastSuspendTime",
-                "SysfsKernelTest.WakeupReasonsDirectoryContainsExpectedContents",
-                "SysfsKernelTest.KernelDirectoryContainsExpectedContents",
-
                 // TODO(https://fxbug.dev/478981256): These expectations don't match the Machina system.
                 "SysfsPowerTest.PowerDirectoryContainsExpectedContents",
                 "SysfsPowerTest.LastResumeReasonFileContainsExpectedContents",
