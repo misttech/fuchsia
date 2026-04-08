@@ -107,6 +107,15 @@
             to: "#system-updater",
         },
         {
+            config: [
+                "fuchsia.system-updater.ConcurrentBlobFetches",
+                "fuchsia.system-updater.ConcurrentPackageResolves",
+            ],
+            from: "void",
+            to: "#system-updater",
+            availability: "optional",
+        },
+        {
             // Needed for passing repository configs to pkg-resolver
             directory: "config-data",
             from: "parent",

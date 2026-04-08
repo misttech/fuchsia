@@ -116,34 +116,14 @@ fuchsia_component("component") {
   deps = [ ":bin" ]
 }
 
-group("production-component-and-config") {
-  public_deps = [
-    ":component",
-    ":config_values_from_gn",
-  ]
-}
-
 fuchsia_package("system-updater") {
-  deps = [ ":production-component-and-config" ]
+  deps = [ ":component" ]
 }
 
 fuchsia_structured_config_rust_lib("config_lib") {
   cm_label = ":manifest"
   name = "system_updater_config"
   visibility = [ ":*" ]
-}
-
-structured_config_values = {
-  concurrent_package_resolves = 5
-  concurrent_blob_fetches = 5
-  verify_existing_blobs = false
-  manifest_public_keys = []
-}
-
-fuchsia_structured_config_values("config_values_from_gn") {
-  cm_label = ":manifest"
-
-  values = structured_config_values
 }
 
 fuchsia_unittest_package("system-updater-tests") {
@@ -156,23 +136,10 @@ fuchsia_unittest_package("system-updater-tests") {
   deps = [ ":bin_test" ]
 }
 
-fuchsia_component_manifest("isolated-manifest") {
-  component_name = "system-updater-isolated"
-  manifest = "meta/system-updater-isolated.cml"
-}
-
 fuchsia_component("isolated-v2") {
-  cm_label = ":isolated-manifest"
-  deps = [
-    ":bin",
-    ":config_values_from_gn_isolated",
-  ]
-}
-
-fuchsia_structured_config_values("config_values_from_gn_isolated") {
-  cm_label = ":isolated-manifest"
-
-  values = structured_config_values
+  manifest = "meta/system-updater-isolated.cml"
+  component_name = "system-updater-isolated"
+  deps = [ ":bin" ]
 }
 
 if (is_fuchsia) {

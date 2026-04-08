@@ -125,7 +125,9 @@ pub(crate) mod for_tests {
     use super::*;
     use crate::resolver::for_tests::{EMPTY_REPO_PATH, ResolverForTest};
     use blobfs_ramdisk::BlobfsRamdisk;
+    use fidl_fuchsia_metrics as fmetrics;
     use fidl_fuchsia_paver::PaverRequestStream;
+    use fuchsia_async as fasync;
     use fuchsia_component_test::{
         Capability, ChildOptions, DirectoryContents, RealmBuilder, RealmInstance, Ref, Route,
     };
@@ -135,7 +137,6 @@ pub(crate) mod for_tests {
     use mock_paver::{MockPaverService, MockPaverServiceBuilder, PaverEvent};
     use std::collections::BTreeSet;
     use std::sync::Arc;
-    use {fidl_fuchsia_metrics as fmetrics, fuchsia_async as fasync};
 
     pub const TEST_REPO_URL: &str = "fuchsia-pkg://fuchsia.com";
     pub struct UpdaterBuilder {
@@ -413,6 +414,12 @@ pub(crate) mod for_tests {
             realm_builder
                 .add_route(
                     Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ConcurrentBlobFetches",
+                        ))
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ConcurrentPackageResolves",
+                        ))
                         .capability(Capability::configuration(
                             "fuchsia.system-updater.VerifyExistingBlobs",
                         ))

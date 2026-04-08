@@ -11,6 +11,9 @@ use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl_fuchsia_feedback::FileReportResults;
 use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_metrics as fmetrics;
+use fidl_fuchsia_paver as fpaver;
 use fidl_fuchsia_pkg::{self as fpkg, PackageCacheRequestStream, PackageResolverRequestStream};
 use fidl_fuchsia_update::{
     AttemptsMonitorMarker, AttemptsMonitorRequest, AttemptsMonitorRequestStream,
@@ -21,6 +24,10 @@ use fidl_fuchsia_update::{
     NoUpdateAvailableData, State, UpdateInfo,
 };
 use fidl_fuchsia_update_channelcontrol::{ChannelControlMarker, ChannelControlProxy};
+use fidl_fuchsia_update_installer as finstaller;
+use fidl_fuchsia_update_installer_ext as installer;
+use fidl_fuchsia_update_verify as fupdate_verify;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
@@ -48,11 +55,6 @@ use std::fs::{self, create_dir};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_paver as fpaver,
-    fidl_fuchsia_update_installer as finstaller, fidl_fuchsia_update_installer_ext as installer,
-    fidl_fuchsia_update_verify as fupdate_verify, fuchsia_async as fasync,
-};
 
 const OMAHA_CLIENT_CML: &str = "#meta/omaha-client-service.cm";
 const SYSTEM_UPDATER_CML: &str = "#meta/system-updater.cm";
@@ -671,6 +673,12 @@ impl TestEnvBuilder {
             builder
                 .add_route(
                     Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ConcurrentBlobFetches",
+                        ))
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ConcurrentPackageResolves",
+                        ))
                         .capability(Capability::configuration(
                             "fuchsia.system-updater.VerifyExistingBlobs",
                         ))

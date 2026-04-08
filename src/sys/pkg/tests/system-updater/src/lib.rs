@@ -10,11 +10,21 @@ use ::update_package::manifest::{self, AssetType, OtaManifest};
 use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
+use cobalt_sw_delivery_registry as metrics;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
+use fidl_fuchsia_fxfs as ffxfs;
 use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_net_http as fhttp;
+use fidl_fuchsia_paver as paver;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
+use fidl_fuchsia_pkg_internal as fpkg_internal;
+use fidl_fuchsia_update_installer as finstaller;
 use fidl_fuchsia_update_installer_ext::{
     Initiator, Options, UpdateAttempt, UpdateAttemptError, start_update,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_hash::Hash;
@@ -38,12 +48,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 use zx::Status;
-use {
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fidl_fuchsia_net_http as fhttp, fidl_fuchsia_paver as paver, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_internal as fpkg_internal,
-    fidl_fuchsia_update_installer as finstaller, fuchsia_async as fasync,
-};
 
 mod board;
 mod cancel;
@@ -642,6 +646,20 @@ impl TestEnvBuilder {
                         "fuchsia.system-updater.VerifyExistingBlobs",
                     ))
                     .from(Ref::self_())
+                    .to(&system_updater),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.system-updater.ConcurrentBlobFetches",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.system-updater.ConcurrentPackageResolves",
+                    ))
+                    .from(Ref::void())
                     .to(&system_updater),
             )
             .await
