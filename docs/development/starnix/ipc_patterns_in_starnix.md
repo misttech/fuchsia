@@ -235,18 +235,18 @@ A code example that spawns a separate `kthread` that runs its own executor:
 This section contains a code example that demonstrates the syntax for accessing
 container-based FIDL protocols located within the container component.
 
-A code example showing how to connect to the `CryptManagement` protocol in the
-container namespace:
+A code example showing how to connect to the `StarnixVolumeProvider` protocol in
+the container namespace:
 
 ```rust {:.devsite-disable-click-to-copy}
-    let crypt_management_proxy = current_task
+    let volume_provider = current_task
         .kernel()
-        .connect_to_protocol_at_container_svc::<CryptManagementMarker>()
+        .connect_to_protocol_at_container_svc::<StarnixVolumeProviderMarker>()
         .map_err(|_| errno!(ENOENT))?
         .into_sync_proxy();
 ```
 
-(**Source**: [`//src/starnix/kernel/vfs/file_object.rs`][file-object-rs])
+(**Source**: [`//src/starnix/kernel/core/fs/fuchsia/remote_volume.rs`][remote-volume-rs])
 
 <!-- Reference links -->
 
@@ -257,4 +257,4 @@ container namespace:
 [scheduler-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/task/scheduler.rs;l=292-307;drc=e67d59f9bc9c30490cff16b773334cc8d834cf61
 [interval-timer-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/task/interval_timer.rs;l=269-287;drc=e67d59f9bc9c30490cff16b773334cc8d834cf61
 [framebuffer-server-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/device/framebuffer_server.rs;l=294-300;drc=4b45d8aad3e4e4c9aa489ade9b900077ad304170
-[file-object-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/vfs/file_object.rs;l=1023-1027;drc=ff18907ed445884c022aaeb64d1618b7f11b1696
+[remote-volume-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/core/fs/fuchsia/remote_volume.rs;l=274-278;drc=3f479a0300bc8094edeb8936742e05be8873789a
