@@ -537,6 +537,7 @@ class BazelActionRunner(object):
                 f'    expression = "buildfiles(deps({target}))",',
                 f'    scope = ["{target}"],',
                 f'    opts = ["--output=label"],',
+                f"    strict = False,",  # See https://fxbug.dev/500609897
                 f")",
                 "",
                 "",
