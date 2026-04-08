@@ -817,6 +817,15 @@ void brcmf_detach(brcmf_pub* drvr) {
 
   brcmf_bus_change_state(drvr->bus_if, BRCMF_BUS_DOWN);
 
+  /* Cancel all work items to ensure they don't access freed memory. */
+  if (drvr->config) {
+    drvr->config->signal_report_work.Cancel();
+    drvr->config->escan_timeout_work.Cancel();
+    drvr->config->disconnect_timeout_work.Cancel();
+    drvr->config->connect_timeout_work.Cancel();
+    drvr->config->roam_timeout_work.Cancel();
+    drvr->config->ap_start_timeout_work.Cancel();
+  }
   /* make sure primary interface removed last */
   for (int i = BRCMF_MAX_IFS - 1; i > -1; i--) {
     brcmf_remove_interface(drvr->iflist[i], false);

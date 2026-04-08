@@ -2719,6 +2719,10 @@ static zx_status_t brcmf_get_rssi_snr(net_device* ndev, int8_t* rssi_dbm, int8_t
 }
 
 static void cfg80211_signal_ind(net_device* ndev) {
+  if (ndev == nullptr) {
+    BRCMF_WARN("cfg80211_signal_ind called with null ndev");
+    return;
+  }
   struct brcmf_if* ifp = ndev_to_if(ndev);
   brcmf_cfg80211_info* cfg = ifp->drvr->config;
   std::shared_lock<std::shared_mutex> guard(ndev->if_proto_lock);
@@ -8189,6 +8193,8 @@ zx_status_t brcmf_cfg80211_del_iface(struct brcmf_cfg80211_info* cfg, struct wir
       ndev->sme_channel.reset();
       return brcmf_cfg80211_del_ap_iface(cfg, wdev);
     case fuchsia_wlan_common_wire::WlanMacRole::kClient:
+      // Make sure the signal reporter does not access the interface after it has been destroyed.
+      cfg->signal_report_work.Cancel();
       // Disconnect the client in an attempt to exit gracefully.
       brcmf_link_down(ifp->vif, fuchsia_wlan_ieee80211::ReasonCode::kUnspecifiedReason, false,
                       prof->bssid);
