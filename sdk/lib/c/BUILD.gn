@@ -45,17 +45,6 @@ libc_testonly_components = [
   "link",
 ]
 
-# libc conditionally exports weak sanitizer symbols to satisfy references to
-# these symbols from libc. They are not meant to be exported, the actual
-# symbols provided by the sanitizer libraries will be loaded before any user
-# code needs them. See sanitizer/{asan,hwasan,ubsan}-stubs.cc for detailed
-# explanations.
-libc_ifs_exclude = [
-  "__asan*",
-  "__hwasan*",
-  "__ubsan*",
-]
-
 if (use_llvm_libc_string_functions) {
   libc_components += [
     "string",
@@ -328,6 +317,17 @@ if (toolchain_variant.suffix != "") {
 }
 
 if (current_toolchain == libc_toolchain) {
+  # libc conditionally exports weak sanitizer symbols to satisfy references to
+  # these symbols from libc. They are not meant to be exported, the actual
+  # symbols provided by the sanitizer libraries will be loaded before any user
+  # code needs them. See sanitizer/{asan,hwasan,ubsan}-stubs.cc for detailed
+  # explanations.
+  libc_ifs_exclude = [
+    "__asan*",
+    "__hwasan*",
+    "__ubsan*",
+  ]
+
   # This builds the actual shared library.  It's only used indirectly via the
   # "libc" target, see below.
   shared_library("libc.so") {
@@ -393,6 +393,23 @@ if (current_toolchain == libc_toolchain) {
       # outcalls but happens to increase the number of relocs too.
       ldflags = [ "-Wl,-z,rela" ]
     }
+
+    validations = [ ":verify-abi" ]
+  }
+
+  verify_public_symbols("verify-abi") {
+    visibility = [ ":*" ]
+
+    deps = [ ":libc.so" ]
+    current = "$root_out_dir/libc.ifs"
+
+    reference = "libc.ifs"
+    library_name = "libc"
+
+    ifs_args = []
+    foreach(pattern, libc_ifs_exclude) {
+      ifs_args += [ "--exclude=$pattern" ]
+    }
   }
 
   # TODO(https://fxbug.dev/342469121): This is in an experimental state.
@@ -420,6 +437,8 @@ if (current_toolchain == libc_toolchain) {
       "//zircon/third_party/ulib/musl:common-impl",
     ]
 
+    validations = [ ":new-libc.verify-abi" ]
+
     # TODO(https://fxbug.dev/483475945): Work around RBE linking bug.
     configs += [ "//build/config/rbe:remote_link_scandeps_workaround" ]
   }
@@ -445,9 +464,6 @@ if (current_toolchain == libc_toolchain) {
       "//sdk/lib/c/startup:nostartfiles",
       "//sdk/lib/ld:startup",
     ]
-
-    # Just a good place to get this done.
-    deps = [ ":new-libc.verify-abi" ]
 
     data_deps = [ ":libc.so" ]
     metadata = {
@@ -556,8 +572,6 @@ group("libc") {
   # files can be input files of the setup and packaging targets that depend on
   # this "libc" wrapper target.
   public_deps = [ libc_impl_label ]
-
-  deps = [ ":verify_abi" ]
 }
 
 group("libc_fshost") {
@@ -571,21 +585,6 @@ group("libc_fshost") {
 
 bootfs_files_for_assembly("bootfs") {
   deps = [ libc_impl_label ]
-}
-
-verify_public_symbols("verify_abi") {
-  visibility = [ ":*" ]
-
-  deps = [ libc_impl_label ]
-  current = get_label_info(libc_impl_label, "root_out_dir") + "/libc.ifs"
-
-  reference = "libc.ifs"
-  library_name = "libc"
-
-  ifs_args = []
-  foreach(pattern, libc_ifs_exclude) {
-    ifs_args += [ "--exclude=$pattern" ]
-  }
 }
 
 # This is the linking stub that binaries are actually linked against.
