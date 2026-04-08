@@ -12,11 +12,12 @@ use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
-use fuchsia_async::{self as fasync, TimeoutExt};
+use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::lock::Mutex as MutexAsync;
-use futures::{FutureExt, TryFutureExt, TryStreamExt, select};
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, select};
 use ieee80211::{Bssid, MacAddr};
 use log::{error, info, warn};
 use state_recorder as power_observability_state_recorder;
@@ -34,6 +35,11 @@ use wlan_telemetry::{TelemetryEvent, TelemetrySender};
 const SCAN_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(60);
 const CONNECT_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(30);
 const DISCONNECT_TIMEOUT: fasync::MonotonicDuration = fasync::MonotonicDuration::from_seconds(10);
+// This is used for the time to wait between scans for the PNO scan software implementation.
+// Temporarily scan conservatively regardless of requested frequency to avoid excessive power usage.
+// TODO(https://fxbug.dev/498247761): Remove this when we move to hardware PNO.
+const TIME_WAIT_BETWEEN_SCHEDULED_SCANS: fasync::MonotonicDuration =
+    fasync::MonotonicDuration::from_minutes(5);
 
 // If the scan results are older than this duration when handling a connect request, refresh
 // the scan results.
@@ -41,7 +47,7 @@ const SCAN_CACHE_AGE_LIMIT: zx::BootDuration = zx::BootDuration::from_seconds(30
 
 #[async_trait]
 pub(crate) trait IfaceManager: Send + Sync {
-    type Client: ClientIface;
+    type Client: ClientIface + 'static;
 
     async fn list_phys(&self) -> Result<Vec<u16>, Error>;
     fn list_ifaces(&self) -> Vec<u16>;
@@ -381,7 +387,10 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn set_mac_address(&self, mac_addr: [u8; 6]) -> Result<(), zx::Status>;
     async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status>;
     async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status>;
-    async fn start_sched_scan(&self, request: fidl_wlanix::SchedScanRequest) -> Result<(), Error>;
+    async fn start_sched_scan(
+        &self,
+        request: fidl_wlanix::SchedScanRequest,
+    ) -> Result<Vec<fidl_sme::ScanResult>, Error>;
     async fn stop_sched_scan(&self) -> Result<(), Error>;
 }
 
@@ -405,6 +414,7 @@ pub(crate) struct SmeClientIface {
     sme_proxy: fidl_sme::ClientSmeProxy,
     last_scan_results: Arc<Mutex<Option<LastScanResults>>>,
     scan_abort_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    pno_scan_stop_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     connected_network: Arc<Mutex<Option<ConnectedNetwork>>>,
     // TODO(b/298030838): Remove unmanaged iface support when wlanix is the sole config path.
     wlanix_provisioned: bool,
@@ -462,6 +472,7 @@ impl SmeClientIface {
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
+            pno_scan_stop_signal: Arc::new(Mutex::new(None)),
             connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
@@ -842,13 +853,84 @@ impl ClientIface for SmeClientIface {
             .map_err(zx::Status::from_raw)
     }
 
-    async fn start_sched_scan(&self, request: fidl_wlanix::SchedScanRequest) -> Result<(), Error> {
-        warn!("SmeClientIface.start_sched_scan is not currently supported. request: {:?}", request);
-        Ok(())
+    async fn start_sched_scan(
+        &self,
+        request: fidl_wlanix::SchedScanRequest,
+    ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
+        info!("SmeClientIface.start_sched_scan called with request: {:?}", request);
+
+        // Note that one scan will be logged to metrics for a requested PNO scan even if many
+        // scans actually happen to find the network(s).
+        self.telemetry_sender.send(TelemetryEvent::ScanStart);
+        // Listen for signals to stop the scheduled scan.
+        let (stop_tx, mut stop_rx) = oneshot::channel();
+        self.pno_scan_stop_signal.lock().replace(stop_tx);
+
+        // Use FuturesUnordered to asynchronously listen for stop signals while scanning or waiting.
+        let mut scan_futures = FuturesUnordered::new();
+        let mut timer_futures = FuturesUnordered::new();
+        scan_futures.push(self.trigger_scan());
+
+        loop {
+            futures::select! {
+                // If a new PNO scan is started, the old stop_tx will be dropped, and we will get a
+                // cancelled channel message here.
+                _ = stop_rx => {
+                    info!("pno_scan_stop_signal triggered. Stopping PNO scan.");
+                    return Ok(vec![]);
+                }
+                scan_res = scan_futures.next() => {
+                    if let Some(res) = scan_res {
+                        match res {
+                            Ok(ScanEnd::Complete) => {
+                                self.telemetry_sender.send(TelemetryEvent::ScanResult {
+                                    result: wlan_telemetry::ScanResult::Complete {
+                                        num_results: self.get_last_scan_results().len(),
+                                    },
+                                });
+
+                                let results = self.get_last_scan_results();
+                                let matching_results = get_matching_scan_results(&request.match_sets, results);
+
+                                if matching_results.is_empty() {
+                                    timer_futures.push(fasync::Timer::new(TIME_WAIT_BETWEEN_SCHEDULED_SCANS.after_now()));
+                                } else {
+                                    return Ok(matching_results);
+                                }
+                            }
+                            Ok(ScanEnd::Cancelled) => {
+                                info!("Scan cancelled, will not continue PNO scans");
+                                self.telemetry_sender.send(TelemetryEvent::ScanResult {
+                                    result: wlan_telemetry::ScanResult::Cancelled,
+                                });
+                                return Err(format_err!("PNO scan was unexpectedly cancelled"));
+                            }
+                            Err(e) => {
+                                error!("Failed to run scan, will not continue PNO scans: {:?}", e);
+                                self.telemetry_sender.send(TelemetryEvent::ScanResult {
+                                    result: wlan_telemetry::ScanResult::Failed,
+                                });
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+                timer_res = timer_futures.next() => {
+                    if timer_res.is_some() {
+                        scan_futures.push(self.trigger_scan());
+                    }
+                }
+            }
+        }
     }
 
     async fn stop_sched_scan(&self) -> Result<(), Error> {
         warn!("SmeClientIface.stop_sched_scan called");
+        // If a PNO scan is running, it will listen for signals to cancel, so we just need to send one here.
+        if let Some(abort_tx) = self.pno_scan_stop_signal.lock().take() {
+            let _ = abort_tx.send(());
+            info!("Sent abort signal to PNO scan loop");
+        }
         Ok(())
     }
 }
@@ -889,6 +971,46 @@ fn connect_txn_event_name(event: &fidl_sme::ConnectTransactionEvent) -> &'static
         fidl_sme::ConnectTransactionEvent::OnDisconnect { .. } => "OnDisconnect",
         fidl_sme::ConnectTransactionEvent::OnSignalReport { .. } => "OnSignalReport",
         fidl_sme::ConnectTransactionEvent::OnChannelSwitched { .. } => "OnChannelSwitched",
+    }
+}
+
+fn get_matching_scan_results(
+    match_sets: &Option<Vec<fidl_wlanix::SchedScanMatchSet>>,
+    results: Vec<fidl_sme::ScanResult>,
+) -> Vec<fidl_sme::ScanResult> {
+    if let Some(match_sets) = match_sets {
+        // If no target networks are specified, return scan results, which will be sent up if non-empty.
+        if match_sets.is_empty() {
+            info!("Provided PNO scan match_sets is empty, returning any non-empty scan results");
+            results
+        } else {
+            results
+                .into_iter()
+                .filter(|r| {
+                    let result_rssi = r.bss_description.rssi_dbm;
+                    BssDescription::try_from(r.bss_description.clone())
+                        .map(|bss| {
+                            match_sets.iter().any(|match_set| {
+                                let is_ssid_match = match_set
+                                    .ssid
+                                    .as_ref()
+                                    .map(|match_ssid| *match_ssid == bss.ssid)
+                                    .unwrap_or(false);
+                                let is_rssi_match = match_set
+                                    .rssi_threshold
+                                    .map(|threshold| result_rssi > threshold)
+                                    .unwrap_or(true);
+                                is_ssid_match && is_rssi_match
+                            })
+                        })
+                        .unwrap_or(false)
+                })
+                .collect()
+        }
+    } else {
+        // If the match_sets wasn't provided, return scan results, which will be sent up if non-empty.
+        info!("PNO scan match_sets wasn't provided, returning any non-empty scan results");
+        results
     }
 }
 
@@ -1104,9 +1226,9 @@ pub mod test_utils {
         async fn start_sched_scan(
             &self,
             request: fidl_wlanix::SchedScanRequest,
-        ) -> Result<(), Error> {
+        ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
             self.calls.lock().push(ClientIfaceCall::StartSchedScan { _request: request });
-            Ok(())
+            Ok(self.scan_results.lock().clone())
         }
 
         async fn stop_sched_scan(&self) -> Result<(), Error> {
@@ -1508,6 +1630,7 @@ mod tests {
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
+            pno_scan_stop_signal: Arc::new(Mutex::new(None)),
             connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
@@ -1769,6 +1892,7 @@ mod tests {
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
+            pno_scan_stop_signal: Arc::new(Mutex::new(None)),
             connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: false, // set to false for this test
             bss_scorer: BssScorer::new(),
@@ -2025,6 +2149,178 @@ mod tests {
         wep_keys.set_key(key, 0).expect("Failed to build WEP key for test");
         wep_keys.set_index(0).expect("Failed to set WEP key for test");
         Credential::WepKey(wep_keys)
+    }
+
+    #[test]
+    fn test_start_sched_scan_exact_match() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let ssid = b"TestSSID";
+        let request = fidl_wlanix::SchedScanRequest {
+            ssids: Some(vec![]),
+            match_sets: Some(vec![fidl_wlanix::SchedScanMatchSet {
+                ssid: Some(ssid.to_vec()),
+                rssi_threshold: Some(-80),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let mut scan_fut = iface.start_sched_scan(request);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        // Respond to the SME scan request
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        let mut result = test_utils::fake_scan_result();
+        result.bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(ssid.to_vec()).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+            rssi_dbm: -70,
+        );
+
+        let scan_result =
+            wlan_common::scan::write_vmo(vec![result]).expect("Failed to write scan VMO");
+        responder.send(Ok(scan_result)).expect("Failed to send result");
+
+        let found_results =
+            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        assert_eq!(found_results.len(), 1);
+    }
+
+    #[test]
+    fn test_start_sched_scan_rssi_too_low() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface_and_fake_time();
+        let ssid = b"TestSSID";
+        let request = fidl_wlanix::SchedScanRequest {
+            ssids: Some(vec![]),
+            match_sets: Some(vec![fidl_wlanix::SchedScanMatchSet {
+                ssid: Some(ssid.to_vec()),
+                rssi_threshold: Some(-72),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let mut scan_fut = iface.start_sched_scan(request);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        // Respond to the scan request with the right SSID but a low RSSI
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        let mut result = test_utils::fake_scan_result();
+        result.bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(ssid.to_vec()).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+            rssi_dbm: -80,
+        );
+
+        let scan_result =
+            wlan_common::scan::write_vmo(vec![result]).expect("Failed to write scan VMO");
+        responder.send(Ok(scan_result)).expect("Failed to send result");
+
+        // Scan should NOT complete because no matches were found, and should trigger the loop to start another scan
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        let new_time = exec.now() + fasync::MonotonicDuration::from_minutes(6);
+        exec.set_fake_time(new_time);
+        let _ = exec.wake_expired_timers();
+
+        // Advance scan_fut so it handles the timer and requests the next scan
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        // The loop should schedule a new scan
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        // Now send a match to verify that the subsequent scan would succeed
+        let mut result = test_utils::fake_scan_result();
+        result.bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from(ssid.to_vec()).unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+            rssi_dbm: -50,
+        );
+        let scan_result =
+            wlan_common::scan::write_vmo(vec![result]).expect("Failed to write scan VMO");
+        responder.send(Ok(scan_result)).expect("Failed to send result");
+        let found_results =
+            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        assert_eq!(found_results.len(), 1);
+    }
+
+    #[test]
+    fn test_start_sched_scan_empty_match_sets() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let request = fidl_wlanix::SchedScanRequest {
+            ssids: Some(vec![]),
+            match_sets: Some(vec![]),
+            ..Default::default()
+        };
+        let mut scan_fut = iface.start_sched_scan(request);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        let mut result = test_utils::fake_scan_result();
+        result.bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
+            ssid: Ssid::try_from("OtherSSID").unwrap(),
+            bssid: [1, 2, 3, 4, 5, 6],
+            rssi_dbm: -70,
+        );
+
+        let scan_result =
+            wlan_common::scan::write_vmo(vec![result]).expect("Failed to write scan VMO");
+        responder.send(Ok(scan_result)).expect("Failed to send result");
+
+        // With an empty match set, any scan result counts as a match and completes the PNO scan loop.
+        let found_results =
+            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        assert_eq!(found_results.len(), 1);
+    }
+
+    #[test]
+    fn test_start_sched_scan_cancelled() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let request = fidl_wlanix::SchedScanRequest::default();
+        let mut scan_fut = iface.start_sched_scan(request);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        responder
+            .send(Err(fidl_sme::ScanErrorCode::CanceledByDriverOrFirmware))
+            .expect("Failed to send result");
+
+        // Should return empty list indicating PNO scan was aborted/cancelled
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
+    }
+
+    #[test]
+    fn test_start_sched_scan_stop_signal() {
+        let (mut exec, _monitor_stream, _sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let request = fidl_wlanix::SchedScanRequest::default();
+
+        let mut scan_fut = iface.start_sched_scan(request);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        let mut stop_fut = iface.stop_sched_scan();
+        assert_matches!(exec.run_until_stalled(&mut stop_fut), Poll::Ready(Ok(())));
+
+        // When the stop signal is received, the scan should complete and return an empty list
+        let found_results =
+            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        assert!(found_results.is_empty());
     }
 
     #[test_case(
