@@ -1728,6 +1728,7 @@ multiconst!(zx_restricted_reason_t, [
     ZX_RESTRICTED_REASON_SYSCALL = 0;
     ZX_RESTRICTED_REASON_EXCEPTION = 1;
     ZX_RESTRICTED_REASON_KICK = 2;
+    ZX_RESTRICTED_REASON_EXCEPTION_LOST = 3;
 ]);
 
 #[cfg(target_arch = "x86_64")]
