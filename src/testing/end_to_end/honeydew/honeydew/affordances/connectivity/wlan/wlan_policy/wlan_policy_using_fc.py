@@ -323,9 +323,6 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
 
     @ensure_ready
     async def set_country_code(self, country_code: CountryCode) -> None:
-        await self._set_country_code(country_code)
-
-    async def _set_country_code(self, country_code: CountryCode) -> None:
         """Sets DUT country code."""
         _LOGGER.info("Setting DUT country code to %s...", country_code)
         await self._location.set_region(country_code)
@@ -373,7 +370,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                     CountryCode.WORLDWIDE,
                     CountryCode.USER_XZ,
                 )
-                return await self._set_country_code(CountryCode.USER_XZ)
+                return await self.set_country_code(CountryCode.USER_XZ)
             else:
                 raise RuntimeError(
                     f"Failed to set DUT country code to {country_code}."

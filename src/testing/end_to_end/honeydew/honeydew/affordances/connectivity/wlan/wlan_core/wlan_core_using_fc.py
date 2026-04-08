@@ -287,10 +287,10 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         Raises:
             HoneydewWlanError: Error from WLAN stack
         """
-        iface_ids = await self._get_iface_id_list()
+        iface_ids = await self.get_iface_id_list()
 
         for iface_id in iface_ids:
-            info = await self._query_iface(iface_id)
+            info = await self.query_iface(iface_id)
             if info.role == f_wlan_common.WlanMacRole.CLIENT:
                 sme = await self._get_client_sme(iface_id)
                 try:
@@ -352,9 +352,6 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         Raises:
             HoneydewWlanError: DeviceMonitor.ListIfaces error
         """
-        return await self._get_iface_id_list()
-
-    async def _get_iface_id_list(self) -> Sequence[int]:
         try:
             return (await self._device_monitor_proxy.list_ifaces()).iface_list
         except FcTransportStatus as status:
@@ -390,14 +387,14 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         Raises:
             HoneydewWlanError: DeviceMonitor.ListIfaces or DeviceMonitor.QueryIface error
         """
-        wlan_iface_ids = await self._get_iface_id_list()
+        wlan_iface_ids = await self.get_iface_id_list()
         if not wlan_iface_ids:
             return WlanInterfaces(client={}, ap={})
 
         client: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
         ap: dict[MacAddress, f_wlan_device_service.QueryIfaceResponse] = {}
         for ids in wlan_iface_ids:
-            result = await self._query_iface(ids)
+            result = await self.query_iface(ids)
             mac = MacAddress.from_bytes(bytes(result.sta_addr))
             match result.role:
                 case f_wlan_common.WlanMacRole.CLIENT:
@@ -421,22 +418,6 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             iface_id: The wlan interface id to get info from.
 
         Returns:
-            QueryIfaceResponseWrapper from the SL4F server.
-
-        Raises:
-            HoneydewWlanError: DeviceMonitor.QueryIface error
-        """
-        return await self._query_iface(iface_id)
-
-    async def _query_iface(
-        self, iface_id: int
-    ) -> f_wlan_device_service.QueryIfaceResponse:
-        """Retrieves interface info for wlan iface id.
-
-        Args:
-            iface_id: The wlan interface id to get info from.
-
-        Return:
             QueryIfaceResponseWrapper from the SL4F server.
 
         Raises:
@@ -517,14 +498,14 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
             ID of the first WLAN interface found running with the specified
             role. The others are discarded.
         """
-        iface_ids = await self._get_iface_id_list()
+        iface_ids = await self.get_iface_id_list()
         if len(iface_ids) == 0:
             raise wlan_errors.NetworkInterfaceNotFoundError(
                 "No WLAN interface found"
             )
 
         for iface_id in iface_ids:
-            info = await self._query_iface(iface_id)
+            info = await self.query_iface(iface_id)
             if info.role == role:
                 return iface_id
 
