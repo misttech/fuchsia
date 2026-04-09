@@ -6,7 +6,8 @@ use diagnostics_data::{BuilderArgs, LogsData, LogsDataBuilder, Severity, Timesta
 use fdomain_client::AsHandleRef as _;
 use fdomain_client::fidl::DiscoverableProtocolMarker as _;
 use fdomain_fuchsia_developer_remotecontrol::{
-    IdentifyHostResponse, RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
+    IdentifyHostError, IdentifyHostResponse, RemoteControlMarker, RemoteControlProxy,
+    RemoteControlRequest,
 };
 use fdomain_fuchsia_diagnostics::{
     LogInterestSelector, LogSettingsMarker, LogSettingsRequest, LogSettingsRequestStream,
@@ -42,6 +43,8 @@ pub struct TestEnvironmentConfig {
     pub instances: Vec<Moniker>,
     pub send_connected_event: bool,
     pub show_initial_timestamp: bool,
+    pub fail_device_connection: bool,
+    pub hang_device_connection: bool,
 }
 
 pub fn test_log_with_severity(timestamp: i64, severity: Severity) -> LogsData {
@@ -113,6 +116,8 @@ impl Default for TestEnvironmentConfig {
             send_connected_event: false,
             boot_id: Some(1),
             show_initial_timestamp: false,
+            fail_device_connection: false,
+            hang_device_connection: false,
         }
     }
 }
@@ -179,6 +184,10 @@ impl TestEnvironment {
         self.state.mutable.borrow_mut().boot_timestamp = new_boot_timestamp;
     }
 
+    pub fn set_fail_device_connection(&mut self, fail: bool) {
+        self.state.mutable.borrow_mut().fail_device_connection = fail;
+    }
+
     pub fn disconnect_target(&mut self) {
         let mut mutable_state = self.state.mutable.borrow_mut();
         // This must have already been taken and is been awaited on.
@@ -216,6 +225,8 @@ impl State {
             mutable: RefCell::new(MutableState {
                 boot_timestamp: config.boot_timestamp,
                 boot_id: config.boot_id,
+                fail_device_connection: config.fail_device_connection,
+                hang_device_connection: config.hang_device_connection,
                 disconnect_rcv: Some(disconnect_rcv),
             }),
         }
@@ -225,6 +236,8 @@ impl State {
 struct MutableState {
     boot_timestamp: u64,
     boot_id: Option<u64>,
+    fail_device_connection: bool,
+    hang_device_connection: bool,
     disconnect_rcv: Option<oneshot::Receiver<()>>,
 }
 
@@ -310,14 +323,22 @@ fn setup_fake_rcs(client: &Arc<fdomain_client::Client>, state: Rc<State>) -> Rem
                     responder.send(Ok(())).unwrap();
                 }
                 RemoteControlRequest::IdentifyHost { responder } => {
-                    responder
-                        .send(Ok(&IdentifyHostResponse {
-                            nodename: Some(NODENAME.into()),
-                            boot_timestamp_nanos: Some(state.mutable.borrow().boot_timestamp),
-                            boot_id: state.mutable.borrow().boot_id,
-                            ..Default::default()
-                        }))
-                        .unwrap();
+                    let hang_device_connection = state.mutable.borrow().hang_device_connection;
+                    let fail_device_connection = state.mutable.borrow().fail_device_connection;
+                    if hang_device_connection {
+                        // Hang indefinitely to test timeout!
+                    } else if fail_device_connection {
+                        responder.send(Err(IdentifyHostError::ProxyConnectionFailed)).unwrap();
+                    } else {
+                        responder
+                            .send(Ok(&IdentifyHostResponse {
+                                nodename: Some(NODENAME.into()),
+                                boot_timestamp_nanos: Some(state.mutable.borrow().boot_timestamp),
+                                boot_id: state.mutable.borrow().boot_id,
+                                ..Default::default()
+                            }))
+                            .unwrap();
+                    }
                 }
                 _ => panic!("unexpected request: {:?}", req),
             }

@@ -38,6 +38,8 @@ pub enum LogError {
     SymbolizerError(#[from] ReadError),
     #[error("Daemon connection was lost and retries are disabled.")]
     DaemonRetriesDisabled,
+    #[error("AI agent timed out waiting for device connection in dump mode")]
+    AIAgentTimedOut,
     #[error(transparent)]
     LogCommand(fho::Error),
     #[error(transparent)]
@@ -77,7 +79,8 @@ impl From<LogError> for fho::Error {
             | NoSymbolizerConfig
             | IdentifyHostError { .. }
             | SdkNotAvailable { .. }
-            | ConnectCapabilityError { .. } => fho::Error::User(value.into()),
+            | ConnectCapabilityError { .. }
+            | AIAgentTimedOut => fho::Error::User(value.into()),
             // these errors are probably an unexpected problem with no actionable error output.
             FidlError(err) => fho::Error::Unexpected(err.into()),
             IOError(err) => fho::Error::Unexpected(err.into()),

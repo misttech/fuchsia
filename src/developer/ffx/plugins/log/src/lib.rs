@@ -14,12 +14,14 @@ use ffx_log_args::LogCommand;
 use ffx_log_command_output::CommandOutputMachineWriter;
 use ffx_writer::ToolIO;
 use fho::{FfxMain, FfxTool};
+use futures::future::select;
 use futures::{FutureExt, select};
 use log_command_fdomain::{
     BootTimeAccessor, DefaultLogFormatter, LogData, LogEntry, LogProcessingResult, LogSubCommand,
     Symbolize, Timestamp, WriterContainer, dump_logs_from_socket,
 };
 use std::io::Write;
+use std::pin::pin;
 use target_connector::Connector;
 use target_holders::fdomain::RemoteControlProxyHolder;
 use tokio::signal::ctrl_c;
@@ -29,6 +31,28 @@ mod condition_variable;
 mod error;
 mod mutex;
 mod transactional_symbolizer;
+
+pub trait Env {
+    fn get_var(&self, key: &str) -> Option<String>;
+}
+
+pub struct RealEnv;
+impl Env for RealEnv {
+    fn get_var(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
+    }
+}
+
+trait Clock: Send + Sync {
+    async fn sleep(&self, duration: std::time::Duration);
+}
+
+struct RealClock;
+impl Clock for RealClock {
+    async fn sleep(&self, duration: std::time::Duration) {
+        fuchsia_async::Timer::new(duration).await
+    }
+}
 
 #[cfg(test)]
 mod testing_utils;
@@ -99,23 +123,29 @@ pub async fn log_impl(
         },
         rcs_connector,
         include_timestamp,
+        RealClock,
+        RealEnv,
     )
     .await
 }
 
 // Main logging event loop.
-async fn log_main<W>(
+async fn log_main<W, C, E>(
     writer: W,
     cmd: LogCommand,
     symbolizer: Option<impl Symbolize>,
     rcs_connector: Connector<RemoteControlProxyHolder>,
     include_timestamp: bool,
+    clock: C,
+    env: E,
 ) -> Result<(), LogError>
 where
     W: ToolIO<OutputItem = LogEntry> + Write + 'static,
+    C: Clock + 'static,
+    E: Env,
 {
     let formatter = DefaultLogFormatter::<W>::new_from_args(&cmd, writer);
-    let future = log_loop(cmd, formatter, symbolizer, rcs_connector, include_timestamp);
+    let future = log_loop(cmd, formatter, symbolizer, rcs_connector, include_timestamp, clock, env);
     select! {
         res = future.fuse() => res,
         _ = ctrl_c().fuse() => Ok(()),
@@ -207,15 +237,19 @@ async fn connect_to_target(
     })
 }
 
-async fn log_loop<W>(
+async fn log_loop<W, C, E>(
     mut cmd: LogCommand,
     mut formatter: DefaultLogFormatter<W>,
     symbolizer: Option<impl Symbolize>,
     rcs_connector: Connector<RemoteControlProxyHolder>,
     include_timestamp: bool,
+    clock: C,
+    env: E,
 ) -> Result<(), LogError>
 where
     W: ToolIO<OutputItem = LogEntry> + Write,
+    C: Clock,
+    E: Env,
 {
     let symbolizer_channel: Box<dyn Symbolize> = match symbolizer {
         Some(inner) => Box::new(inner),
@@ -229,42 +263,56 @@ where
     // Eventually we should have direct support for this in Overnet, but for now we have to
     // handle reconnects manually.
     let mut prev_boot_id = None;
+    let agents = ["ANTIGRAVITY_AGENT", "GEMINI_CLI", "ANTIGRAVITY_EDITOR_APP_ROOT"];
+    let is_ai = agents.iter().any(|&name| env.get_var(name).is_some());
     loop {
         let connection;
-        // Linear backoff up to 10 seconds.
         let mut backoff = 0;
         let mut last_error = None;
         if disable_reconnect && prev_boot_id.is_some() {
             return Ok(());
         }
         loop {
-            let maybe_connection =
-                connect_to_target(&mut stream_mode, prev_boot_id, &rcs_connector).await;
-            if let Ok(connected) = maybe_connection {
-                connection = connected;
-                break;
-            }
-            backoff += 1;
-            if backoff > 10 {
-                backoff = 10;
-            }
-            let err = maybe_connection.err().unwrap();
-            if matches!(err, LogError::FidlError(fidl::Error::ClientChannelClosed { .. })) {
-                continue;
-            }
-            let err = format!("{:?}", err);
-            if matches!(&last_error, Some(value) if *value == err) {
-                eprintln!("Error connecting to device, retrying in {backoff} seconds.");
-            } else {
-                if err.contains("FFX Daemon was told not to autostart and no existing Daemon instance was found") {
-                    return Err(LogError::DaemonRetriesDisabled);
+            if matches!(stream_mode, fdomain_fuchsia_diagnostics::StreamMode::Snapshot) && is_ai {
+                let connection_fut =
+                    pin!(connect_to_target(&mut stream_mode, prev_boot_id, &rcs_connector));
+                let timeout_fut = pin!(clock.sleep(std::time::Duration::from_secs(10)));
+                match select(connection_fut, timeout_fut).await {
+                    futures::future::Either::Left((Ok(a), _)) => {
+                        connection = a;
+                        break;
+                    }
+                    _ => return Err(LogError::AIAgentTimedOut),
                 }
-                eprintln!(
-                    "Error connecting to device, retrying in {backoff} seconds. Error: {err}",
-                );
-                last_error = Some(err);
+            } else {
+                let maybe_connection =
+                    connect_to_target(&mut stream_mode, prev_boot_id, &rcs_connector).await;
+                if let Ok(connected) = maybe_connection {
+                    connection = connected;
+                    break;
+                }
+                backoff += 1;
+                if backoff > 10 {
+                    backoff = 10;
+                }
+                let err = maybe_connection.err().unwrap();
+                if matches!(err, LogError::FidlError(fidl::Error::ClientChannelClosed { .. })) {
+                    continue;
+                }
+                let err = format!("{:?}", err);
+                if matches!(&last_error, Some(value) if *value == err) {
+                    eprintln!("Error connecting to device, retrying in {backoff} seconds.");
+                } else {
+                    if err.contains("FFX Daemon was told not to autostart and no existing Daemon instance was found") {
+                        return Err(LogError::DaemonRetriesDisabled);
+                    }
+                    eprintln!(
+                        "Error connecting to device, retrying in {backoff} seconds. Error: {err}",
+                    );
+                    last_error = Some(err);
+                }
+                clock.sleep(std::time::Duration::from_secs(backoff)).await;
             }
-            fuchsia_async::Timer::new(std::time::Duration::from_secs(backoff)).await;
         }
         let prev_boot_id_for_logging = prev_boot_id;
         prev_boot_id = connection.boot_id;
@@ -394,6 +442,44 @@ mod tests {
         }
     }
 
+    struct FakeEnv {
+        vars: std::collections::HashMap<String, String>,
+    }
+
+    impl Env for FakeEnv {
+        fn get_var(&self, key: &str) -> Option<String> {
+            self.vars.get(key).cloned()
+        }
+    }
+
+    struct FakeClock;
+
+    impl Clock for FakeClock {
+        async fn sleep(&self, _duration: std::time::Duration) {
+            fasync::Timer::new(std::time::Duration::from_millis(1)).await
+        }
+    }
+
+    async fn logger_dump_string_with_env_clock<C: Clock + 'static, E: Env>(
+        config: TestEnvironmentConfig,
+        cmd: LogCommand,
+        clock: C,
+        env: E,
+    ) -> Result<String, fho::Error> {
+        let environment = TestEnvironment::new(config).await;
+        let rcs_connector = environment.rcs_connector().await;
+        let buffers = TestBuffers::default();
+        let writer = CommandOutputMachineWriter::new_test(None, &buffers);
+
+        let result =
+            log_main(writer, cmd, None::<NoOpSymoblizer>, rcs_connector, false, clock, env).await;
+
+        match result {
+            Ok(()) => Ok(buffers.into_stdout_str()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     impl LogTool {
         async fn main_no_timestamp(
             self,
@@ -514,6 +600,77 @@ ffx log --force-set-severity.
         expected_output: &str,
     ) {
         assert_eq!(Box::pin(logger_dump_string(config, cmd)).await, expected_output);
+    }
+
+    #[fuchsia::test]
+    async fn logger_times_out_under_ai_agent_in_dump_mode() {
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("ANTIGRAVITY_AGENT".into(), "1".into());
+        let env = FakeEnv { vars };
+        let clock = FakeClock;
+
+        let config = TestEnvironmentConfig { hang_device_connection: true, ..Default::default() };
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Dump(DumpCommand {})),
+            symbolize: SymbolizeMode::Off,
+            ..LogCommand::default()
+        };
+
+        let result = logger_dump_string_with_env_clock(config, cmd, clock, env).await;
+
+        assert_matches!(result, Err(fho::Error::User(err)) => {
+            assert_matches!(err.downcast_ref::<LogError>(), Some(LogError::AIAgentTimedOut));
+        });
+    }
+
+    #[fuchsia::test]
+    async fn logger_retries_under_ai_agent_in_non_dump_mode() {
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("ANTIGRAVITY_AGENT".into(), "1".into());
+        let env = FakeEnv { vars };
+        let clock = FakeClock;
+
+        let config = TestEnvironmentConfig { fail_device_connection: true, ..Default::default() };
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Watch(WatchCommand {})),
+            symbolize: SymbolizeMode::Off,
+            ..LogCommand::default()
+        };
+
+        let mut environment = TestEnvironment::new(config).await;
+        let rcs_connector = environment.rcs_connector().await;
+        let buffers = TestBuffers::default();
+        let writer = CommandOutputMachineWriter::new_test(None, &buffers);
+
+        let handle = fasync::Task::local(log_main(
+            writer,
+            cmd,
+            None::<NoOpSymoblizer>,
+            rcs_connector,
+            false,
+            clock,
+            env,
+        ));
+
+        // Yield to allow the first connection attempt to execute and fail.
+        fasync::Timer::new(std::time::Duration::from_nanos(1)).await;
+
+        // Configure subsequent connection attempts to succeed.
+        environment.set_fail_device_connection(false);
+
+        // Use select with a short timer to verify the subscription hangs (stalls).
+        let timeout_fut = fasync::Timer::new(std::time::Duration::from_millis(1));
+        match futures::future::select(handle, timeout_fut).await {
+            futures::future::Either::Left((Ok(()), _)) => {
+                panic!("Successfully connected, but subscription should not end!");
+            }
+            futures::future::Either::Left((Err(e), _)) => {
+                panic!("Task failed with error: {:?}", e);
+            }
+            futures::future::Either::Right(((), _)) => {
+                // Task correctly stalled on log subscription.
+            }
+        }
     }
 
     #[fuchsia::test]
