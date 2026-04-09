@@ -321,7 +321,7 @@ zero, then there are no active readers.
     reordering the critical section outside the counter increments.
 
 2.  **Writer-Side**: `rcu_synchronize()` (specifically `has_active_readers`)
-    issues an RSEQ barrier.
+    issues a system barrier (`zx_system_barrier`).
 
 The pairing works as follows:
 
@@ -337,7 +337,7 @@ The pairing works as follows:
 
 -   `rcu_synchronize()` (checking for quiescence):
     1.  Sum all `end` counters (negated).
-    2.  RSEQ barrier.
+    2.  System barrier (`zx_system_barrier`).
     3.  Sum all `begin` counters (positive).
 
 If `Sum(begin) - Sum(end) == 0`, then all readers that started before the RSEQ
@@ -365,13 +365,38 @@ operations guarantees by the memory model. Specifically, the
 increment to `begin` is _sequenced-before_ the critical section, and the
 critical section is _sequenced-before_ the increment to `end`.
 
-The `zx_barrier()` in `has_active_readers` ensures that if the advancer
+The `zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY)` in `has_active_readers` ensures that if the advancer
 observes the increment to `end` (at step 1), it must also observe the
 increment to `begin` (at step 3). This is because the store to `begin`
 _happens-before_ the store to `end` in the reader thread (due to program order
-and the compiler fence). When `zx_barrier()` acts as a memory barrier, it
+and the compiler fence). When `zx_system_barrier` acts as a memory barrier, it
 ensures that all stores sequenced-before the barrier interruption point in the
 reader are visible to the advancer after the barrier. Since `begin` is
 sequenced-before `end`, if `end` is visible, `begin` must also be visible.
 Therefore, Case 4 is impossible: the advancer will never underestimate the
 number of active readers.
+
+### Update Visibility Barrier
+
+In addition to the barrier in `has_active_readers`, the RSEQ backend requires a
+barrier to ensure that pointer updates made by writers are visible to readers
+that start *after* the grace period begins.
+
+Without this barrier, a race could occur:
+1. A writer updates a pointer and queues a callback.
+2. The state machine advances the generation (e.g., from 0 to 1).
+3. A reader starts on another CPU, reads the new generation (1), and registers
+   in the new generation's counters. However, because it doesn't use memory
+   barriers, it might still see the *old* pointer value if the store hasn't
+   propagated.
+4. The state machine checks for active readers for generation 0. Since the
+   reader registered in generation 1, it is ignored.
+5. The grace period for generation 0 ends, and the callback runs, freeing the
+   old data while the reader is still accessing it.
+
+To prevent this race, `rcu_grace_period()` issues a
+`zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY)` before advancing the
+generation counter. This forces all prior stores (including the pointer
+updates) to be visible to all CPUs. Consequently, any reader that observes the
+new generation is guaranteed to see the new pointer value.
+

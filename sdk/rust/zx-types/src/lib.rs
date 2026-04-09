@@ -246,6 +246,10 @@ multiconst!(u32, [
     ZX_PROCESS_SHARED = 1 << 0;
 ]);
 
+multiconst!(u32, [
+    ZX_SYSTEM_BARRIER_DATA_MEMORY = 0;
+]);
+
 // LINT.IfChange(zx_status_t)
 // matches ///zircon/system/public/zircon/errors.h
 multiconst!(zx_status_t, [

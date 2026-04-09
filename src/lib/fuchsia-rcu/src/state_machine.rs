@@ -68,7 +68,6 @@ impl RcuControlBlock {
 /// The control block for the RCU state machine.
 static RCU_CONTROL_BLOCK: RcuControlBlock = RcuControlBlock::new();
 
-#[derive(Default)]
 struct RcuThreadBlock {
     /// The number of times the thread has nested into a read lock.
     nesting_level: Cell<usize>,
@@ -86,6 +85,26 @@ impl RcuThreadBlock {
     /// Returns true if the thread is holding a read lock.
     fn holding_read_lock(&self) -> bool {
         self.nesting_level.get() > 0
+    }
+}
+
+impl Default for RcuThreadBlock {
+    fn default() -> Self {
+        #[cfg(feature = "rseq_backend")]
+        fuchsia_rseq::rseq_register_thread().expect("failed to register thread");
+
+        Self {
+            nesting_level: Cell::new(0),
+            counter_index: Cell::new(0),
+            has_pending_callbacks: Cell::new(false),
+        }
+    }
+}
+
+impl Drop for RcuThreadBlock {
+    fn drop(&mut self) {
+        #[cfg(feature = "rseq_backend")]
+        fuchsia_rseq::rseq_unregister_thread().expect("failed to unregister thread");
     }
 }
 
@@ -230,8 +249,12 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
     // visible to threads that have called rcu_read_lock.  We must synchronize with both read
     // counters using a store operation.  We don't need to change the value.
     fence(Ordering::Release);
-    RCU_CONTROL_BLOCK.read_counters[0].fetch_add(0, Ordering::Relaxed);
-    RCU_CONTROL_BLOCK.read_counters[1].fetch_add(0, Ordering::Relaxed);
+
+    #[cfg(not(feature = "rseq_backend"))]
+    {
+        RCU_CONTROL_BLOCK.read_counters[0].fetch_add(0, Ordering::Relaxed);
+        RCU_CONTROL_BLOCK.read_counters[1].fetch_add(0, Ordering::Relaxed);
+    }
 
     // Even though we push the callback to the front of the stack, we reverse the order of the stack
     // when we pop the callbacks from the stack to ensure that the callbacks are run in the order in
@@ -322,6 +345,17 @@ fn rcu_grace_period() {
         // Synchronization point [H] (see design.md)
         let callbacks =
             std::mem::replace(&mut *waiting_callbacks, RCU_CONTROL_BLOCK.callback_chain.take());
+
+        // Issue an IPI to all CPUs to force them to serialize their execution.
+        // This ensures that all prior stores by all writers are visible to
+        // any thread that subsequently enters an RCU read-side critical section.
+        #[cfg(feature = "rseq_backend")]
+        {
+            let status =
+                unsafe { zx::sys::zx_system_barrier(zx::sys::ZX_SYSTEM_BARRIER_DATA_MEMORY) };
+            debug_assert_eq!(status, zx::sys::ZX_OK);
+        }
+
         let generation = RCU_CONTROL_BLOCK.generation.fetch_add(1, Ordering::Relaxed);
 
         // Enter the *Waiting* state.

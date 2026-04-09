@@ -7,13 +7,9 @@
 use fuchsia_rseq::{Rseq, RseqCriticalSection};
 use std::arch::global_asm;
 use std::cell::UnsafeCell;
-use zx::sys::{zx_rseq_t, zx_system_barrier, zx_system_get_num_cpus};
-
-// Options for zx_system_barrier
-// source: zircon/system/public/zircon/syscalls-next.h
-// TODO(https://fxbug.dev/297526152): When this API is stabilized, move the definitions for these
-// constants into the zx crate.
-const ZX_SYSTEM_BARRIER_DATA_MEMORY: u32 = 0;
+use zx::sys::{
+    ZX_SYSTEM_BARRIER_DATA_MEMORY, zx_rseq_t, zx_system_barrier, zx_system_get_num_cpus,
+};
 
 /// Counters for a single CPU.
 ///
@@ -63,7 +59,7 @@ impl PerCpuState {
 /// The maximum number of CPUs that the RCU implementation supports.
 ///
 /// This is a compile-time constant because the `per_cpu_counts` array is statically allocated.
-const MAX_CPUS: u32 = 16;
+const MAX_CPUS: usize = 32;
 
 /// Manages RCU read-side critical section counters across all CPUs.
 ///
@@ -79,6 +75,12 @@ pub(crate) struct RcuReadCounters {
 impl RcuReadCounters {
     /// Creates a new `RcuReadCounters`.
     pub(crate) const fn new() -> Self {
+        debug_assert!(
+            zx_system_get_num_cpus() <= MAX_CPUS as u32,
+            "Number of CPUs ({}) exceeds MAX_CPUS ({})",
+            num_cpus,
+            MAX_CPUS
+        );
         Self { per_cpu_counts: [const { PerCpuState::new() }; MAX_CPUS as usize] }
     }
 
