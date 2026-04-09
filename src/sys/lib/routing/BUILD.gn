@@ -83,7 +83,6 @@ rustc_library("routing") {
     "src/config.rs",
     "src/error.rs",
     "src/lib.rs",
-    "src/path.rs",
     "src/policy.rs",
     "src/resolving.rs",
     "src/rights.rs",

@@ -8,7 +8,6 @@ pub mod capability_source;
 pub mod component_instance;
 pub mod config;
 pub mod error;
-pub mod path;
 pub mod policy;
 pub mod resolving;
 pub mod rights;
