@@ -13,12 +13,25 @@ use bstr::{BString, ByteSlice};
 use devicetree::parser::parse_devicetree;
 use devicetree::types::Devicetree;
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_component_runner::{TaskProviderRequest, TaskProviderRequestStream};
+use fidl_fuchsia_element as felement;
 use fidl_fuchsia_feedback::CrashReporterMarker;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_starnix_binder as fbinder;
+use fidl_fuchsia_starnix_container as fstarcontainer;
 use fidl_fuchsia_time_external::AdjustMarker;
+use fuchsia_async as fasync;
 use fuchsia_async::DurationExt;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_sync};
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect as inspect;
+use fuchsia_runtime as fruntime;
+use fuchsia_zbi as zbi;
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
@@ -40,7 +53,7 @@ use starnix_logging::{
     trace_duration,
 };
 use starnix_modules::{init_common_devices, register_common_file_systems};
-use starnix_modules_layeredfs::LayeredFs;
+use starnix_modules_layeredfs::{LayeredFsBuilder, LayeredFsMounts};
 use starnix_modules_magma::get_magma_params;
 use starnix_modules_overlayfs::OverlayStack;
 use starnix_modules_rtc::rtc_device_init;
@@ -50,19 +63,10 @@ use starnix_uapi::errors::{ENOENT, SourceContext};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::{errno, tid_t};
-use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use zx::Task as _;
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_element as felement,
-    fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-    fidl_fuchsia_memory_attribution as fattribution, fidl_fuchsia_starnix_binder as fbinder,
-    fidl_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync,
-    fuchsia_inspect as inspect, fuchsia_runtime as fruntime, fuchsia_zbi as zbi,
-};
 
 use std::sync::Weak;
 
@@ -699,7 +703,7 @@ async fn create_container(
         device_tree,
     )
     .with_source_context(|| format!("creating Kernel: {}", &start_info.program.name))?;
-    let fs_context = create_fs_context(
+    let (fs_context, feature_mounts) = create_fs_context(
         kernel.kthreads.unlocked_for_async().deref_mut(),
         &kernel,
         &features,
@@ -720,6 +724,9 @@ async fn create_container(
     // The system task gives pid 2. This value is less critical than giving
     // pid 1 to init, but this value matches what is supposed to happen.
     debug_assert_eq!(system_task.tid, 2);
+
+    feature_mounts(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
+        .source_context("mounting feature filesystems")?;
 
     kernel.kthreads.init(system_task).source_context("initializing kthreads")?;
     let system_task = kernel.kthreads.system_task();
@@ -864,13 +871,13 @@ fn create_fs_context(
     features: &Features,
     start_info: &ContainerStartInfo,
     pkg_dir_proxy: &fio::DirectorySynchronousProxy,
-) -> Result<Arc<FsContext>, Error> {
+) -> Result<(Arc<FsContext>, LayeredFsMounts), Error> {
     // The mounts are applied in the order listed. Mounting will fail if the designated mount
     // point doesn't exist in a previous mount. The root must be first so other mounts can be
     // applied on top of it.
     let mut mounts_iter =
         start_info.program.mounts.iter().chain(start_info.config.additional_mounts.iter());
-    let mut root = MountAction::new_for_root(
+    let root = MountAction::new_for_root(
         locked,
         kernel,
         pkg_dir_proxy,
@@ -880,8 +887,7 @@ fn create_fs_context(
         anyhow::bail!("First mount in mounts list is not the root");
     }
 
-    // Create a layered fs to handle /container and /container/component
-    let mut mappings = vec![];
+    let mut builder = LayeredFsBuilder::new(root.fs);
     if features.container {
         // /container/component will be a tmpfs where component using the starnix kernel will have their
         // package mounted.
@@ -908,13 +914,8 @@ fn create_fs_context(
             fio::PERM_READABLE | fio::PERM_EXECUTABLE,
         )?;
 
-        let container_fs = LayeredFs::new_fs(
-            locked,
-            kernel,
-            container_remotefs,
-            BTreeMap::from([("component".into(), component_tmpfs)]),
-        );
-        mappings.push(("container".into(), container_fs));
+        builder.add("/container", container_remotefs);
+        builder.add("/container/component", component_tmpfs);
     }
     if features.custom_artifacts {
         let mount_options = FileSystemOptions {
@@ -924,29 +925,24 @@ fn create_fs_context(
                 .context("#custom_artifacts options")?,
             ..Default::default()
         };
-        mappings.push((
-            "custom_artifacts".into(),
-            TmpFs::new_fs_with_options(locked, kernel, mount_options)?,
-        ));
+        let fs = TmpFs::new_fs_with_options(locked, kernel, mount_options)?;
+        builder.add("/custom_artifacts", fs);
     }
     if features.test_data {
         let mount_options = FileSystemOptions {
             params: kernel.features.ns_mount_options("#test_data").context("#test_data options")?,
             ..Default::default()
         };
-        mappings
-            .push(("test_data".into(), TmpFs::new_fs_with_options(locked, kernel, mount_options)?));
+        let fs = TmpFs::new_fs_with_options(locked, kernel, mount_options)?;
+        builder.add("/test_data", fs);
     }
 
-    if !mappings.is_empty() {
-        // If this container has enabled any features that mount directories that might not exist
-        // in the root file system, we add a LayeredFs to hold these mappings.
-        root.fs = LayeredFs::new_fs(locked, kernel, root.fs, mappings.into_iter().collect());
-    }
+    let (mut root_fs, feature_mounts) = builder.build(locked, kernel);
     if features.rootfs_rw {
-        root.fs = OverlayStack::wrap_fs_in_writable_layer(locked, kernel, root.fs)?;
+        root_fs = OverlayStack::wrap_fs_in_writable_layer(locked, kernel, root_fs)?;
     }
-    Ok(FsContext::new(Namespace::new_with_flags(root.fs, root.flags)))
+
+    Ok((FsContext::new(Namespace::new_with_flags(root_fs, root.flags)), feature_mounts))
 }
 
 fn parse_rlimits(rlimits: &[String]) -> Result<Vec<(Resource, u64)>, Error> {

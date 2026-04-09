@@ -8,20 +8,140 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
     CacheMode, DirectoryEntryType, DirentSink, FileHandle, FileObject, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString, MountInfo,
-    SeekTarget, ValueOrSize, XattrOp, fileops_impl_directory, fileops_impl_noop_sync,
+    SeekTarget, ValueOrSize, WhatToMount, XattrOp, fileops_impl_directory, fileops_impl_noop_sync,
     fs_node_impl_dir_readonly, unbounded_seek,
 };
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::mount_flags::FileSystemFlags;
+use starnix_uapi::mount_flags::{FileSystemFlags, MountpointFlags};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, ino_t, off_t, statfs};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+struct LayeredMountAction {
+    path: FsString,
+    fs: FileSystemHandle,
+}
+
+/// A callback used to complete the initialization of a `LayeredFs`.
+///
+/// After the `FileSystem` has been created by [`LayeredFsBuilder::build`], this closure
+/// must be invoked to create the sub-mounts that layer the additional filesystems
+/// at their specified paths.
+pub type LayeredFsMounts =
+    Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> Result<(), Errno>>;
+
+/// `FileSystem` builder that allows a set of auxiliary `FileSystem`s to be mounted at specified
+/// paths relative to the base filesystem, regardless of whether the base filesystem has directories
+/// at those paths, that may be mounted-onto.
+///
+/// Auxiliary `FileSystem`s and their mount paths are provided via calls to `add()`, and the layered
+/// filesystem created using `build()`.
+pub struct LayeredFsBuilder {
+    fs: FileSystemHandle,
+    subdirs: BTreeMap<FsString, LayeredFsBuilder>,
+}
+
+fn split_path(path: &FsStr) -> Vec<&FsStr> {
+    path.split(|c| *c == b'/').map(<&FsStr>::from).collect()
+}
+
+impl LayeredFsBuilder {
+    /// Returns a `LayeredFsBuilder` with `root_fs` as the underlying base filesystem.
+    pub fn new(root_fs: FileSystemHandle) -> Self {
+        Self { fs: root_fs, subdirs: Default::default() }
+    }
+
+    /// Specifies that filesystem `fs` should be mounted at the specified `path` relative to the
+    /// base filesystem.
+    ///
+    /// `path` must specify an absolute path under the base filesystem (i.e. starting with "/").
+    /// If `path` has multiple components then intermediate components must already have been
+    /// added to the builder.
+    pub fn add(&mut self, path: &str, fs: FileSystemHandle) {
+        let path = FsStr::new(path);
+        assert_eq!(path[0], b'/');
+        let parts = split_path(&path[1..]);
+        assert!(!parts.is_empty());
+        let final_part = parts.len() - 1;
+
+        let mut parent = self;
+        for i in 0..final_part {
+            parent = parent.subdirs.get_mut(parts[i]).unwrap();
+        }
+
+        parent.subdirs.insert(parts[parts.len() - 1].into(), Self::new(fs));
+    }
+
+    /// Returns the new `FileSystem` handle, and a finalization callback that must be invoked to
+    /// set up the subordinate mount points.
+    ///
+    /// The underlying base `FileSystem` will be returned directly if no sub-mounts were specified
+    /// via `add()`. Otherwise a `LayeredFs` instance will be returned, to provide stub directory
+    /// entries for the sub-mounts to be mounted onto.
+    pub fn build<L>(
+        self,
+        locked: &mut Locked<L>,
+        kernel: &Kernel,
+    ) -> (FileSystemHandle, LayeredFsMounts)
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let (fs, actions) = self.build_internal(locked, kernel, b"/".into());
+        let cb = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+            for action in actions {
+                let mount_point = current_task
+                    .lookup_path_from_root(locked, action.path.as_ref())
+                    .map_err(|e| {
+                        Errno::with_context(
+                            e.code,
+                            format!("lookup path from root: {}", action.path),
+                        )
+                    })?;
+                mount_point.mount(WhatToMount::Fs(action.fs), MountpointFlags::empty()).map_err(
+                    |e| {
+                        Errno::with_context(e.code, format!("mount layered fs at: {}", action.path))
+                    },
+                )?;
+            }
+            Ok(())
+        });
+        (fs, cb)
+    }
+
+    fn build_internal<L>(
+        self,
+        locked: &mut Locked<L>,
+        kernel: &Kernel,
+        prefix: &FsStr,
+    ) -> (FileSystemHandle, Vec<LayeredMountAction>)
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        if self.subdirs.is_empty() {
+            return (self.fs, Vec::new());
+        }
+
+        let names =
+            self.subdirs.iter().map(|(name, entry)| (name.clone(), entry.fs.clone())).collect();
+        let fs = LayeredFs::new_fs(locked, kernel, self.fs, names);
+
+        let mut mount_actions = Vec::new();
+        for (subpath, builder) in self.subdirs {
+            let path = FsString::from(format!("{}/{}", prefix, subpath));
+            let (fs, subdir_actions) = builder.build_internal(locked, kernel, path.as_ref());
+            mount_actions.push(LayeredMountAction { path, fs });
+            mount_actions.extend(subdir_actions.into_iter());
+        }
+
+        (fs, mount_actions)
+    }
+}
+
 /// A filesystem that will delegate most operation to a base one, but have a number of top level
 /// directory that points to other filesystems.
-pub struct LayeredFs {
+struct LayeredFs {
     base_fs: FileSystemHandle,
     mappings: BTreeMap<FsString, FileSystemHandle>,
 }
@@ -32,7 +152,7 @@ impl LayeredFs {
     /// `base_fs`: The base file system that this file system will delegate to.
     /// `mappings`: The map of top level directory to filesystems that will be layered on top of
     /// `base_fs`.
-    pub fn new_fs<L>(
+    fn new_fs<L>(
         locked: &mut Locked<L>,
         kernel: &Kernel,
         base_fs: FileSystemHandle,
