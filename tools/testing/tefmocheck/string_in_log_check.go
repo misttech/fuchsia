@@ -564,6 +564,28 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			String: "Failed to reload the firmware",
 			Type:   syslogType,
 		},
+		// For https://fxbug.dev/500045713
+		// This is for driver manager removal and bootup hangs.
+		&stringInLogCheck{
+			String:      "Removal hanging, nodes remaining:",
+			Type:        serialLogType,
+			AlwaysFlake: true,
+		},
+		&stringInLogCheck{
+			String:      "waiting for driver's Stop() function and destructor finish running",
+			Type:        serialLogType,
+			AlwaysFlake: true,
+		},
+		&stringInLogCheck{
+			String:      "Deadline exceeded in the bootup tracker with:",
+			Type:        serialLogType,
+			AlwaysFlake: true,
+		},
+		&stringInLogCheck{
+			String:      "waiting for driver to finish binding",
+			Type:        serialLogType,
+			AlwaysFlake: true,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{

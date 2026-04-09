@@ -20,7 +20,10 @@ zx::duration kRemovalTimeoutDuration = zx::sec(15);
 const char* GetNodeStateDescription(NodeState state) {
   switch (state) {
     case NodeState::kWaitingOnDriverBind:
+      // This log message is used by tefmocheck to detect driver start/bind hangs.
+      // LINT.IfChange
       return "waiting for driver to finish binding";
+      // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go)
     case NodeState::kRunning:
       return "in normal running state";
     case NodeState::kPrestop:
@@ -29,8 +32,11 @@ const char* GetNodeStateDescription(NodeState state) {
       return "waiting for children to complete shutdown";
     case NodeState::kWaitingOnDriver:
       // This message is load-bearing server-side as it's used to identify the hanging driver.
+      // It is also used by tefmocheck to detect driver removal hangs.
       // Please notify //src/developer/forensics/OWNERS upon changing.
+      // LINT.IfChange
       return "waiting for driver's Stop() function and destructor finish running";
+      // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go)
     case NodeState::kWaitingOnDriverComponent:
       return "waiting for the driver component to stop";
     case NodeState::kStopped:
@@ -85,8 +91,11 @@ void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
 
 void NodeRemovalTracker::OnRemovalTimeout() {
   timeout_count_++;
+  // This log message is used by tefmocheck to detect driver removal hangs.
+  // LINT.IfChange
   fdf_log::info("Removal hanging, nodes remaining: {} pkg, {} pkg+boot", remaining_pkg_node_count(),
                 remaining_node_count());
+  // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go)
   for (auto& [id, node] : nodes_) {
     if (node.state == NodeState::kDestroyed || node.state == NodeState::kPrestop) {
       continue;
