@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Tests of platform Bazel rules, macros, and migrated targets.
+
+This file will always contain tests for rules and macros.
+
+During the migration, it also contains migrated targets that are not yet
+otherwise part of the build.
+"""
+
+load(":rules.bzl", "build_with_platform_api_level")
+
+# Runs all tests.
+filegroup(
+    name = "tests",
+    testonly = True,
+    srcs = [
+        ":build_only_tests",
+    ],
+    # Individual test groups can transition to host as needed.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+# Builds targets for which building successfully is the test.
+filegroup(
+    name = "build_only_tests",
+    testonly = True,
+    srcs = [
+        ":build_only_tests_requiring_api_level",
+        "//build/bazel/bazel_idk/tests:build_only_tests_for_combinations",
+    ],
+    # Individual test groups can transition to host as needed.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+# A subset of ":build_only_tests" that requires the API level to be defined.
+build_with_platform_api_level(
+    name = "build_only_tests_requiring_api_level",
+    testonly = True,
+    stamp = "build_only_tests_requiring_api_level.stamp",
+    # Individual test groups can transition to host as needed.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//build/bazel/bazel_idk/tests:build_only_tests",
+    ],
+)

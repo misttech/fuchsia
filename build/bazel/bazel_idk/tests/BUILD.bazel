@@ -952,8 +952,12 @@ filegroup(
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
         "//zircon/system/ulib/zircon-internal",
     ],
-    # TODO(https://fxbug.dev/496603528): Remove once a better target is used for "all_fidl_ir_json_files".
-    visibility = ["//build/fidl:__pkg__"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//build/bazel/rules/tests:__pkg__",
+        # TODO(https://fxbug.dev/496603528): Remove once a better target is used for "all_fidl_ir_json_files".
+        "//build/fidl:__pkg__",
+    ],
 )
 
 # Builds the targets listed in `tools` on the host toolchain.
@@ -962,6 +966,9 @@ genrule(
     testonly = True,
     outs = ["build_only_tests_on_host_toolchain.stamp"],
     cmd = "touch $@",
+    # This target builds the test targets in the host config ("exec") using the
+    # `tools` attribute.
+    target_compatible_with = ["@platforms//os:fuchsia"],
     tools = [
         # Verify that a target using `select()` statements for `hdrs`,
         # `hdrs_for_internal_use`, and `srcs` can be built on the host toolchain.
@@ -974,11 +981,13 @@ genrule(
 
         # These libraries have Fuchsia-only dependencies and thus cannot be
         # linked into the executable on the host toolchain.
-        ":test-shared-library",
-        ":test-source-library",
         ":test-static-library",
-        ":test_shared_library_zx",
         ":test_static_library_zx",
+        # These `cc_import()` targets do not actually build the underlying
+        # shared libraries. If they did, they would fail to link without symbols
+        # from their Fuchsia-only dependencies.
+        ":test-shared-library",
+        ":test_shared_library_zx",
 
         # Exercise FIDL bindings.
         # Bindings for a library with dependencies.
@@ -1001,6 +1010,8 @@ genrule(
 build_idk_combinations(
     name = "build_only_tests_for_combinations",
     testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
     deps = [
         ":test_atom_idk",
         "//sdk/lib/magma_common:magma_common_idk",
