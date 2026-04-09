@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use {
-    fidl_fuchsia_developer_remotecontrol as fremotecontrol,
-    fidl_fuchsia_test_manager as ftest_manager,
-};
+use flex_fuchsia_developer_remotecontrol as fremotecontrol;
+use flex_fuchsia_test_manager as ftest_manager;
+
+#[cfg(feature = "fdomain")]
+use rcs_fdomain as rcs;
 
 const SUITE_RUNNER_MONIKER: &str = "/core/test_manager";
 const TEST_CASE_ENUMERATOR_MONIKER: &str = "/core/test_manager";
