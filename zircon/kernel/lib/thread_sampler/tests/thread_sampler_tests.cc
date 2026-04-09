@@ -24,7 +24,7 @@ namespace thread_sampler_tests {
 
 // A test version of ThreadSampler which overrides functions
 // for testing purposes.
-class TestThreadSampler : public ThreadSamplerDispatcher {
+class TestThreadSampler : public sampler::ThreadSampler {
  public:
   TestThreadSampler() = default;
 
@@ -59,25 +59,45 @@ class TestThreadSampler : public ThreadSamplerDispatcher {
           .period = zx::msec(1).get(),
           .buffer_size = kPageSize,
       };
-      for (int i = 0; i < 10; i++) {
-        zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> dispatcher =
-            ThreadSamplerDispatcher::CreateImpl(config);
-        ASSERT_OK(dispatcher.status_value());
-        fbl::RefPtr<ThreadSamplerDispatcher> test_state = *ktl::move(dispatcher);
-        auto test_sampler = static_cast<TestThreadSampler*>(test_state.get());
-        ASSERT_OK(test_sampler->StartImpl().status_value());
-        ASSERT_OK(test_sampler->StopImpl().status_value());
+      {
+        TestThreadSampler test_state;
+        ASSERT_OK(test_state.SetUp(config).status_value());
+        for (int i = 0; i < 10; i++) {
+          ASSERT_OK(test_state.Start().status_value());
+          ASSERT_OK(test_state.Stop().status_value());
+        }
+        ASSERT_OK(test_state.Destroy().status_value());
       }
 
-      // We should also be able to drop the read handle without stopping first and the state should
-      // get cleaned up properly
-      for (int i = 0; i < 10; i++) {
-        zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> dispatcher =
-            ThreadSamplerDispatcher::CreateImpl(config);
-        ASSERT_OK(dispatcher.status_value());
-        KernelHandle<ThreadSamplerDispatcher> handle{ktl::move(*dispatcher)};
-        auto test_sampler = static_cast<TestThreadSampler*>(handle.dispatcher().get());
-        ASSERT_TRUE(test_sampler->StartImpl().is_ok());
+      {
+        TestThreadSampler test_state;
+        for (int i = 0; i < 10; i++) {
+          ASSERT_OK(test_state.SetUp(config).status_value());
+          ASSERT_OK(test_state.Start().status_value());
+          ASSERT_OK(test_state.Stop().status_value());
+          ASSERT_OK(test_state.Destroy().status_value());
+        }
+      }
+
+      {
+        // In the case of the user closing the handle while the session is started, we'll get a
+        // Start -> Destroy transition.
+        TestThreadSampler test_state;
+        for (int i = 0; i < 10; i++) {
+          ASSERT_OK(test_state.SetUp(config).status_value());
+          ASSERT_OK(test_state.Start().status_value());
+          ASSERT_OK(test_state.Destroy().status_value());
+        }
+      }
+
+      {
+        // In the case of the user closing the handle without actually starting a session, we'll get
+        // a Configured -> Destroy transition.
+        TestThreadSampler test_state;
+        for (int i = 0; i < 10; i++) {
+          ASSERT_OK(test_state.SetUp(config).status_value());
+          ASSERT_OK(test_state.Destroy().status_value());
+        }
       }
     }
 
@@ -91,13 +111,10 @@ class TestThreadSampler : public ThreadSamplerDispatcher {
           .period = zx::msec(1).get(),
           .buffer_size = kPageSize,
       };
-      zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> dispatcher =
-          ThreadSamplerDispatcher::CreateImpl(config);
-      ASSERT_OK(dispatcher.status_value());
-      fbl::RefPtr<ThreadSamplerDispatcher> test_state = *dispatcher;
-      auto test_sampler = static_cast<TestThreadSampler*>(test_state.get());
+      TestThreadSampler test_state{};
+      ASSERT_OK(test_state.SetUp(config).status_value());
 
-      ASSERT_OK(test_sampler->StartImpl().status_value());
+      ASSERT_OK(test_state.Start().status_value());
 
       zx_instant_mono_ticks_t before = current_mono_ticks();
       //  Write some fake samples to each buffer on each cpu
@@ -108,14 +125,14 @@ class TestThreadSampler : public ThreadSamplerDispatcher {
             test_thread_sampler->SampleThread(arch_curr_cpu_num(), 1, GeneralRegsSource::None,
                                               nullptr);
           },
-          test_state.get());
+          &test_state);
       zx_instant_mono_ticks_t after = current_mono_ticks();
-      ASSERT_OK(test_sampler->StopImpl().status_value());
+      ASSERT_OK(test_state.Stop().status_value());
 
       // We should now be able to read the records
       size_t num_cpus = arch_max_num_cpus();
       for (unsigned i = 0; i < num_cpus; ++i) {
-        sampler::internal::PerCpuState& s = test_sampler->GetPerCpuState(i);
+        sampler::internal::PerCpuState& s = test_state.GetPerCpuState(i);
 
         // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
         // tid + 1 blob size = 70

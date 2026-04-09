@@ -24,6 +24,45 @@
 
 class ThreadSamplerDispatcher;
 namespace sampler {
+class ThreadSampler;
+
+/**
+ * The current state of the sampler.
+ *
+ * Valid state transitions are:
+ *
+ * ```
+ *                             /---------------------------\     /----------\
+ *                             v                           |     v          |
+ * [ Unallocated ] -> [ Allocated ] -> [ Configured ] -> [ Running ] -> [ Reading ]
+ *                          ^  ^         |                                  |
+ *                          |  \---------/                                  |
+ *                          \----------------------------[ Destroying ] <---/
+ * ```
+ */
+enum class SamplingState : uint8_t {
+  // There are no buffers allocated for the sampler. This should only occur if the sampler has
+  // never been used. Once we allocate buffers once, we never dealloc them.
+  Unallocated = 0,
+
+  // The idle state for the sampler. We have buffers allocated, but we're not actively sampling
+  // nor is there a user handle associated with us.
+  Allocated,
+
+  // We have buffers allocated and the user has a handle to us and can start a session.
+  Configured,
+
+  // The session is in progress. We are taking samples and writing data.
+  Running,
+
+  // We have a read in flight. If we get a destruction request, we need to delay destruction of
+  // resources until the read as completed.
+  Reading,
+
+  // We requested a session teardown while were we reading. Once the read finishes, we'll clear the
+  // buffers and become allocated.
+  Destroying,
+};
 
 // A helper type to ensure we always call our Read functions in the order of PrepareRead,
 // ReadUserImpl, then FinishRead.
@@ -47,9 +86,76 @@ struct ReadToken {
   ReadToken() = default;
 
   bool disarmed = false;
-  friend class ::ThreadSamplerDispatcher;
+  friend class ::sampler::ThreadSampler;
 };
 
+class ThreadSampler {
+ public:
+  ThreadSampler() = default;
+  ~ThreadSampler() = default;
+
+  // Set a timer based on the configured duration. When the timer expires, the currently running
+  // thread will be marked to take a sample.
+  void SetCurrCpuTimer();
+
+  zx::result<size_t> ReadUser(user_out_ptr<void> ptr, uint32_t offset, size_t len);
+
+  zx::result<> SetUp(const zx_sampler_config_t& config) TA_EXCL(ThreadSamplerLock::Get());
+  zx::result<> Start() TA_EXCL(ThreadSamplerLock::Get());
+  zx::result<> Stop() TA_EXCL(ThreadSamplerLock::Get());
+  zx::result<> Destroy() TA_EXCL(ThreadSamplerLock::Get());
+
+  SamplingState State() const {
+    return static_cast<SamplingState>(state_.load(ktl::memory_order_acquire) & kStateMask);
+  }
+
+  zx::result<sampler::ReadToken> PrepareRead() TA_EXCL(ThreadSamplerLock::Get());
+  void FinishRead(sampler::ReadToken&& token) TA_EXCL(ThreadSamplerLock::Get());
+  // ReadUser calls into VmObject::ReadUser. As we could be copying to pager backed user memory, we
+  // must not hold any locks.
+  ktl::pair<zx_status_t, size_t> ReadUser(const sampler::ReadToken& token, user_out_ptr<void> ptr,
+                                          size_t len) TA_EXCL(ThreadSamplerLock::Get());
+
+  sampler::internal::PerCpuState& GetPerCpuState(cpu_num_t cpu_num) const {
+    DEBUG_ASSERT(cpu_num < per_cpu_state_.size());
+    return per_cpu_state_[cpu_num];
+  }
+
+  // Given information about a thread and its registers, walk its userstack and write out a sample
+  // if sampling is enabled.
+  zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
+                            const void* gregs) TA_EXCL(ThreadSamplerLock::Get());
+
+ private:
+  DECLARE_SINGLETON_MUTEX(ThreadSamplerLock);
+
+  void SetState(SamplingState new_state) TA_REQ(ThreadSamplerLock::Get()) {
+    // We require the ThreadSamplerLock to modify state. It's fine to use store rather than a
+    // cmpxchg as we can't be racing with another write.
+    state_.store(static_cast<uint64_t>(new_state), ktl::memory_order_release);
+  }
+
+  void StopLocked() TA_REQ(ThreadSamplerLock::Get());
+
+  // per_cpu_state_ and state_ may be READ without acquiring the ThreadSamplerLock.
+  // However, the lock must be acquired to WRITE them.
+  //
+  // per_cpu_state_ must not be modified while the session is in the states:
+  //  - Configured
+  //  - Running
+  //  - Reading
+  // state_ is eight bytes composed as:
+  //
+  // RR RR RR RR RR RR RR SS
+  //
+  // SS: 8 bytes, SamplingState
+  // RR: 56 bytes, Reserved
+  static constexpr uint64_t kStateMaskShift = 0;
+  static constexpr uint64_t kStateMask = 0xFF << kStateMaskShift;
+
+  ktl::atomic<uint64_t> state_ = 0;
+  fbl::Array<sampler::internal::PerCpuState> per_cpu_state_{nullptr};
+};
 }  // namespace sampler
 
 // A ThreadSampler manages sampling threads and writing the results out to per cpu buffers.
@@ -64,33 +170,11 @@ class ThreadSamplerDispatcher
 
   zx_obj_type_t get_type() const override { return ZX_OBJ_TYPE_SAMPLER; }
 
-  zx::result<> AddThread(const fbl::RefPtr<ThreadDispatcher>& thread);
-
-  // Set a timer based on the configured duration. When the timer expires, the currently running
-  // thread will be marked to take a sample.
-  void SetCurrCpuTimer();
-
-  enum class SamplingState : uint8_t {
-    Configured,
-    Running,
-    Reading,
-    Destroying,
-    Destroyed,
-  };
-
-  SamplingState State() const {
-    Guard<CriticalMutex> guard(get_lock());
-    return state_;
-  }
-
-  zx::result<size_t> ReadUser(user_out_ptr<void> ptr, uint32_t offset, size_t len);
-
   static zx::result<KernelHandle<ThreadSamplerDispatcher>> Create(
       const zx_sampler_config_t& config);
-  static zx::result<> Start(const fbl::RefPtr<ThreadSamplerDispatcher>& disp);
-  static zx::result<> Stop(const fbl::RefPtr<ThreadSamplerDispatcher>& disp);
-  static zx::result<> AddThread(const fbl::RefPtr<ThreadSamplerDispatcher>& disp,
-                                const fbl::RefPtr<ThreadDispatcher>& thread);
+  zx::result<> Start();
+  zx::result<> Stop();
+  zx::result<> AddThread(const fbl::RefPtr<ThreadDispatcher>& thread);
 
   // Given a thread's registers, pid, and tid, walk the thread's user stack and write each
   // pointer to the sampling buffers if sampling is enabled.
@@ -102,7 +186,7 @@ class ThreadSamplerDispatcher
   // It should only be called from Thread::Current::ProcessPendingSignals where we can be user that
   // the user copies are safe to do and where the current stack size should be relatively shallow.
   static zx::result<> SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                                   void* gregs);
+                                   const void* gregs);
 
   // Read out the data contained in the sampler buffers into `ptr` return the number of bytes
   // written. The Sampling state must be Stopped before calling this function.
@@ -110,46 +194,15 @@ class ThreadSamplerDispatcher
   // `len` _must_ be at least equal to the total size of the sampler buffers, which can be queried
   // by passing a nullptr `ptr`. In this case, no data will be written and the return value will be
   // the required minimum size of the buffer to write to.
-  static ktl::pair<zx_status_t, size_t> ReadUser(const fbl::RefPtr<ThreadSamplerDispatcher>& disp,
-                                                 user_out_ptr<void> ptr, size_t len);
+  ktl::pair<zx_status_t, size_t> ReadUser(user_out_ptr<void> ptr, size_t len);
 
  protected:
-  sampler::internal::PerCpuState& GetPerCpuState(size_t i) const { return per_cpu_state_[i]; }
-
   ThreadSamplerDispatcher() = default;
-
-  // Create a ThreadSamplerDispatcher. The ThreadSamplerDispatcher acts as a reference for userspace
-  // to safely access the global sampler state.
-  static zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> CreateImpl(
-      const zx_sampler_config_t& config);
 
   // Given information about a thread and its registers, walk its userstack and write out a sample
   // if sampling is enabled.
   zx::result<> SampleThreadImpl(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source,
-                                void* gregs);
-  zx::result<> StartImpl() TA_EXCL(get_lock());
-  zx::result<> StopImpl() TA_EXCL(get_lock());
-
- private:
-  void StopLocked() TA_REQ(get_lock());
-
-  zx::result<sampler::ReadToken> PrepareRead() TA_REQ(ThreadSamplerLock::Get());
-  void FinishRead(sampler::ReadToken&& token) TA_REQ(ThreadSamplerLock::Get());
-
-  // ReadUser calls into VmObject::ReadUser. As we could be copying to pager backed user memory, we
-  // must not hold any locks.
-  ktl::pair<zx_status_t, size_t> ReadUserImpl(const sampler::ReadToken& token,
-                                              user_out_ptr<void> ptr, size_t len)
-      TA_EXCL(ThreadSamplerLock::Get(), get_lock());
-
-  SamplingState state_ TA_GUARDED(get_lock()){SamplingState::Configured};
-  fbl::Array<sampler::internal::PerCpuState> per_cpu_state_;
-
-  DECLARE_SINGLETON_MUTEX(ThreadSamplerLock);
-
-  // We have only a single global thread sampler at a time. Another callers will get
-  // ZX_ERR_ALREADY_EXISTS until the existing sampler is released.
-  static fbl::RefPtr<ThreadSamplerDispatcher> gThreadSampler_ TA_GUARDED(ThreadSamplerLock::Get());
+                                const void* gregs);
 };
 
 #endif  // ZIRCON_KERNEL_LIB_THREAD_SAMPLER_INCLUDE_LIB_THREAD_SAMPLER_THREAD_SAMPLER_H_

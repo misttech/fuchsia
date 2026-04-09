@@ -6,7 +6,9 @@
 
 namespace sampler::internal {
 zx::result<> PerCpuState::SetUp(const zx_sampler_config_t& config, cpu_num_t cpu_number) {
-  zx_status_t init_res = writer.Init(static_cast<uint32_t>(config.buffer_size), "sampler",
+  // TODO(https://fxbug.dev/377907138) Allow configuration of the per cpu buffer size.
+  size_t buffer_size = size_t{4} * 1024 * 1024;
+  zx_status_t init_res = writer.Init(static_cast<uint32_t>(buffer_size), "sampler",
                                      fxt::ThreadRef{fxt::Koid{0}, fxt::Koid{cpu_number}});
   if (init_res != ZX_OK) {
     return zx::error(init_res);

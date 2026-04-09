@@ -20,39 +20,57 @@
 #include <object/io_buffer_dispatcher.h>
 #include <object/process_dispatcher.h>
 
-fbl::RefPtr<ThreadSamplerDispatcher> ThreadSamplerDispatcher::gThreadSampler_;
+namespace {
 
-zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> ThreadSamplerDispatcher::CreateImpl(
-    const zx_sampler_config_t& config) {
-  const size_t num_cpus = percpu::processor_count();
+// We have only a single global thread sampler at a time. Another callers will get
+// ZX_ERR_ALREADY_EXISTS until the existing sampler is released.
+sampler::ThreadSampler gThreadSampler{};
 
-  fbl::AllocChecker ac;
-  fbl::Array per_cpu_state = fbl::MakeArray<sampler::internal::PerCpuState>(&ac, num_cpus);
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
+}  // namespace
+
+zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  SamplingState state = State();
+  if (state != SamplingState::Unallocated && state != SamplingState::Allocated) {
+    return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
 
-  // Even though the buffer is per_cpu, we are fine to set up each cpu state here on a single cpu.
-  // When we start sampling, we call mp_sync_exec which will synchronize the written
-  // per_cpu_states.
-  for (unsigned i = 0; i < num_cpus; i++) {
-    if (zx::result<> setup_result = per_cpu_state[i].SetUp(config, i); setup_result.is_error()) {
-      return setup_result.take_error();
+  const size_t num_cpus = percpu::processor_count();
+
+  if (!per_cpu_state_) {
+    fbl::AllocChecker ac;
+    fbl::Array<sampler::internal::PerCpuState> per_cpu_state =
+        fbl::MakeArray<sampler::internal::PerCpuState>(&ac, num_cpus);
+    if (!ac.check()) {
+      return zx::error(ZX_ERR_NO_MEMORY);
+    }
+
+    // Even though the buffer is per_cpu, we are fine to set up each cpu state here on a single cpu.
+    // When we start sampling, we call mp_sync_exec which will synchronize the written
+    // per_cpu_states.
+    for (unsigned i = 0; i < num_cpus; i++) {
+      if (zx::result<> setup_result = per_cpu_state[i].SetUp(config, i); setup_result.is_error()) {
+        return setup_result.take_error();
+      }
+    }
+
+    per_cpu_state_ = ktl::move(per_cpu_state);
+  } else {
+    // We don't have a method of atomically tracking outstanding sample request, so it's possible
+    // that an outstanding sample has a reference to the per_cpu_states. Instead, we Clear the
+    // buffers which is safe as we use a lockless spsc buffer.
+    for (unsigned i = 0; i < num_cpus; i++) {
+      per_cpu_state_[i].Drain();
     }
   }
 
-  fbl::RefPtr dispatcher = fbl::AdoptRef(new (&ac) ThreadSamplerDispatcher());
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  dispatcher->per_cpu_state_ = ktl::move(per_cpu_state);
-  return zx::ok(ktl::move(dispatcher));
+  SetState(SamplingState::Configured);
+  return zx::ok();
 }
 
-zx::result<> ThreadSamplerDispatcher::StartImpl() TA_EXCL(get_lock()) {
-  Guard<CriticalMutex> guard(get_lock());
-  if (state_ != SamplingState::Configured) {
+zx::result<> sampler::ThreadSampler::Start() {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  if (State() != SamplingState::Configured) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -63,24 +81,23 @@ zx::result<> ThreadSamplerDispatcher::StartImpl() TA_EXCL(get_lock()) {
 
   mp_sync_exec(
       mp_ipi_target::ALL, 0,
-      [](void* dispatcher) {
-        static_cast<ThreadSamplerDispatcher*>(dispatcher)->SetCurrCpuTimer();
-      },
+      [](void* sampler) { static_cast<sampler::ThreadSampler*>(sampler)->SetCurrCpuTimer(); },
       this);
-  state_ = SamplingState::Running;
+
+  SetState(SamplingState::Running);
   return zx::ok();
 }
 
-zx::result<> ThreadSamplerDispatcher::StopImpl() TA_EXCL(get_lock()) {
-  Guard<CriticalMutex> guard(get_lock());
-  if (state_ != SamplingState::Running) {
+zx::result<> sampler::ThreadSampler::Stop() {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  if (State() != SamplingState::Running) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
   StopLocked();
   return zx::ok();
 }
 
-void ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
+void sampler::ThreadSampler::StopLocked() {
   for (sampler::internal::PerCpuState& state : per_cpu_state_) {
     state.DisableWrites();
     state.CancelTimer();
@@ -116,11 +133,11 @@ void ThreadSamplerDispatcher::StopLocked() TA_REQ(get_lock()) {
   // For 2): Threads will check the PerCpuState and see that writes are disabled and will skip
   // writing the sample. While taking a sample, threads have taken an fbl::RefPtr to the sampling
   // state so that the PerCpuStates are not at risk of being destroyed.
-  state_ = SamplingState::Configured;
+  SetState(SamplingState::Configured);
 }
 
-zx::result<> ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, zx_koid_t tid,
-                                                       GeneralRegsSource source, void* gregs) {
+zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
+                                                  GeneralRegsSource source, const void* gregs) {
   // We are going to attempt a usercopy below which might fault, so interrupts cannot be disabled.
   DEBUG_ASSERT(!arch_ints_disabled());
   // We need to be a little bit careful here because we could be racing with a Stop operation. The
@@ -162,23 +179,23 @@ zx::result<> ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, zx_koid_t 
       break;
     case GeneralRegsSource::Iframe:
 #ifdef __x86_64__
-      fp = reinterpret_cast<iframe_t*>(gregs)->rbp;
-      pc = reinterpret_cast<iframe_t*>(gregs)->ip;
+      fp = reinterpret_cast<const iframe_t*>(gregs)->rbp;
+      pc = reinterpret_cast<const iframe_t*>(gregs)->ip;
 #endif
 #ifdef __aarch64__
-      bt[frame_num++] = (reinterpret_cast<iframe_t*>(gregs)->elr) - 4;
-      fp = reinterpret_cast<iframe_t*>(gregs)->r[29];
-      pc = (reinterpret_cast<iframe_t*>(gregs)->lr) - 4;
+      bt[frame_num++] = (reinterpret_cast<const iframe_t*>(gregs)->elr) - 4;
+      fp = reinterpret_cast<const iframe_t*>(gregs)->r[29];
+      pc = (reinterpret_cast<const iframe_t*>(gregs)->lr) - 4;
 #endif
 #ifdef __riscv
-      fp = reinterpret_cast<iframe_t*>(gregs)->regs.s0;
-      pc = reinterpret_cast<iframe_t*>(gregs)->regs.pc;
+      fp = reinterpret_cast<const iframe_t*>(gregs)->regs.s0;
+      pc = reinterpret_cast<const iframe_t*>(gregs)->regs.pc;
 #endif
       break;
 #ifdef __x86_64__
     case GeneralRegsSource::Syscall:
-      fp = reinterpret_cast<syscall_regs_t*>(gregs)->rbp;
-      pc = reinterpret_cast<syscall_regs_t*>(gregs)->rip;
+      fp = reinterpret_cast<const syscall_regs_t*>(gregs)->rbp;
+      pc = reinterpret_cast<const syscall_regs_t*>(gregs)->rip;
       break;
 #endif
   }
@@ -256,15 +273,23 @@ zx::result<> ThreadSamplerDispatcher::SampleThreadImpl(zx_koid_t pid, zx_koid_t 
 }
 
 void ThreadSamplerDispatcher::on_zero_handles() {
-  Guard<CriticalMutex> guard(get_lock());
-  if (state_ == SamplingState::Reading) {
+  if (zx::result res = gThreadSampler.Destroy(); res.is_error()) {
+    dprintf(ALWAYS, "Failed to cleanly destroy sampler: %d\n", res.status_value());
+  }
+}
+
+zx::result<> sampler::ThreadSampler::Destroy() {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  SamplingState state = State();
+  if (state == SamplingState::Reading) {
     // There's a read in flight, we can't destroy our buffers yet. We set the state to Destroying,
     // and when the read finishes, it will also clean up the buffers.
-    state_ = SamplingState::Destroying;
+    SetState(SamplingState::Destroying);
+    return zx::ok();
   }
 
-  // The userspace handle of the sampler has closed. Time to clean up our state
-  if (state_ == SamplingState::Running) {
+  // The userspace end of the sampler has closed. Time to clean up our state
+  if (state == SamplingState::Running) {
     StopLocked();
   }
 
@@ -272,91 +297,41 @@ void ThreadSamplerDispatcher::on_zero_handles() {
   // waited for any threads that were accessing the states to finish.
   //
   // It's now safe to destroy our cpu states. This will destroy the mappings and pinnings that the
-  // kernel keeps to write to, but if userspace has their own mappings, those will remain continue
-  // to remain valid.
-  per_cpu_state_.reset();
-  state_ = SamplingState::Destroyed;
+  // kernel keeps to write to.
+  SetState(SamplingState::Allocated);
+  return zx::ok();
 }
 
-void ThreadSamplerDispatcher::SetCurrCpuTimer() { GetPerCpuState(arch_curr_cpu_num()).SetTimer(); }
+void sampler::ThreadSampler::SetCurrCpuTimer() { GetPerCpuState(arch_curr_cpu_num()).SetTimer(); }
 
 zx::result<KernelHandle<ThreadSamplerDispatcher>> ThreadSamplerDispatcher::Create(
     const zx_sampler_config_t& config) {
-  {
-    Guard<Mutex> guard(ThreadSamplerLock::Get());
-    if (gThreadSampler_ != nullptr &&
-        gThreadSampler_->State() != ThreadSamplerDispatcher::SamplingState::Destroyed) {
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
-    }
-  }
-
-  zx::result<fbl::RefPtr<ThreadSamplerDispatcher>> res =
-      ThreadSamplerDispatcher::CreateImpl(config);
+  // Set up the global sampler if it hasn't been set up yet.
+  zx::result res = gThreadSampler.SetUp(config);
   if (res.is_error()) {
     return res.take_error();
   }
 
-  {
-    Guard<Mutex> guard(ThreadSamplerLock::Get());
-    // Ensure that someone hasn't created a new sampler since we created ours
-    if ((gThreadSampler_ != nullptr &&
-         gThreadSampler_->State() != ThreadSamplerDispatcher::SamplingState::Destroyed)) {
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
-    }
-    gThreadSampler_ = *res;
+  fbl::AllocChecker ac;
+  KernelHandle sampler(fbl::AdoptRef(new (&ac) ThreadSamplerDispatcher));
+  if (!ac.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  return zx::ok(KernelHandle<ThreadSamplerDispatcher>{*ktl::move(res)});
+  return zx::ok(ktl::move(sampler));
 }
 
-zx::result<> ThreadSamplerDispatcher::Stop(const fbl::RefPtr<ThreadSamplerDispatcher>& disp) {
-  Guard<Mutex> guard(ThreadSamplerLock::Get());
-  if (gThreadSampler_ == nullptr) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  if (disp->get_koid() != gThreadSampler_->get_koid()) {
-    return zx::error(ZX_ERR_BAD_HANDLE);
-  }
-  return gThreadSampler_->StopImpl();
-}
+zx::result<> ThreadSamplerDispatcher::Stop() { return gThreadSampler.Stop(); }
 
-zx::result<> ThreadSamplerDispatcher::Start(const fbl::RefPtr<ThreadSamplerDispatcher>& disp) {
-  Guard<Mutex> guard(ThreadSamplerLock::Get());
-  if (gThreadSampler_ == nullptr) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
-  if (disp->get_koid() != gThreadSampler_->get_koid()) {
-    return zx::error(ZX_ERR_BAD_HANDLE);
-  }
-  return gThreadSampler_->StartImpl();
-}
+zx::result<> ThreadSamplerDispatcher::Start() { return gThreadSampler.Start(); }
 
 zx::result<> ThreadSamplerDispatcher::SampleThread(zx_koid_t pid, zx_koid_t tid,
-                                                   GeneralRegsSource source, void* gregs) {
-  fbl::RefPtr<ThreadSamplerDispatcher> sampler_ref;
-  {
-    // We hold the global ThreadSamplerLock only long enough to increase the reference count on
-    // the current sampler if it exists.
-    //
-    // The sampling is relatively slow and we don't want to prevent other threads on a different
-    // core from making progress.
-    //
-    // Once we release the ThreadSamplerLock, it may be that the global sampler is replaced with a
-    // new one, however the ThreadSamplerDispatcher maintains enough state that the SampleThread
-    // and SetCurrCpuTimers will simply short circuit and return early if that is the case.
-    Guard<Mutex> guard(ThreadSamplerLock::Get());
-    if (gThreadSampler_ == nullptr ||
-        gThreadSampler_->State() != ThreadSamplerDispatcher::SamplingState::Running) {
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-    sampler_ref = gThreadSampler_;
-  }
-
-  return sampler_ref->SampleThreadImpl(pid, tid, source, gregs);
+                                                   GeneralRegsSource source, const void* gregs) {
+  return gThreadSampler.SampleThread(pid, tid, source, gregs);
 }
 
-ktl::pair<zx_status_t, size_t> ThreadSamplerDispatcher::ReadUser(
-    const fbl::RefPtr<ThreadSamplerDispatcher>& disp, user_out_ptr<void> ptr, size_t len) {
+ktl::pair<zx_status_t, size_t> ThreadSamplerDispatcher::ReadUser(user_out_ptr<void> ptr,
+                                                                 size_t len) {
   // We unfortunately run into some complexity here: while the buffer our samples in is created by
   // the kernel and is safe to read from, the user memory we are writing to could be pager-backed.
   // This means that when we attempt to write to it as part of the VmObjectPaged::ReadUser call, we
@@ -371,71 +346,53 @@ ktl::pair<zx_status_t, size_t> ThreadSamplerDispatcher::ReadUser(
   // We do this by:
   //    1) Setting our state to SamplingState::Reading which disallows starting a new session (and
   //       thus destroying the old one).
-  //    2) If OnPeerZeroHandlesLocked is triggered while in `Reading` mode, we delay actually
+  //    2) If on_zero_handles is triggered while in `Reading` mode, we delay actually
   //       destroying the buffers and destroy them after the copy is completed instead.
 
-  fbl::RefPtr<ThreadSamplerDispatcher> sampler_ref;
-  ktl::optional<sampler::ReadToken> token;
-  {
-    Guard<Mutex> guard(ThreadSamplerLock::Get());
-    // For now, as we don't yet support concurrent reads and writes, we must not be in an
-    // active session when we are reading data.
-    if (gThreadSampler_ == nullptr ||
-        gThreadSampler_->State() != ThreadSamplerDispatcher::SamplingState::Configured) {
-      return {ZX_ERR_BAD_STATE, 0};
-    }
-
-    if (disp->get_koid() != gThreadSampler_->get_koid()) {
-      return {ZX_ERR_BAD_HANDLE, 0};
-    }
-    sampler_ref = gThreadSampler_;
-    zx::result<sampler::ReadToken> prepare_result = sampler_ref->PrepareRead();
-    if (prepare_result.is_error()) {
-      return {prepare_result.error_value(), 0};
-    }
-    token.emplace(ktl::move(prepare_result.value()));
+  zx::result<sampler::ReadToken> token = gThreadSampler.PrepareRead();
+  if (token.is_error()) {
+    return {token.error_value(), 0};
   }
 
-  auto [status, read] = sampler_ref->ReadUserImpl(token.value(), ptr, len);
-  {
-    // We now need to ensure that the user side handle hasn't been dropped. If it has been, then we
-    // need to clean it up.
-    Guard<Mutex> guard(ThreadSamplerLock::Get());
-    DEBUG_ASSERT(gThreadSampler_ != nullptr);
-    gThreadSampler_->FinishRead(ktl::move(token.value()));
-  }
+  auto [status, read] = gThreadSampler.ReadUser(*token, ptr, len);
 
+  // We now need to ensure that the user side handle hasn't been dropped. If it has been, then
+  // we need to clean it up.
+  gThreadSampler.FinishRead(ktl::move(*token));
   return {status, read};
 }
 
-zx::result<sampler::ReadToken> ThreadSamplerDispatcher::PrepareRead() {
-  Guard<CriticalMutex> guard(get_lock());
-  if (state_ != SamplingState::Configured) {
+zx::result<sampler::ReadToken> sampler::ThreadSampler::PrepareRead() {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  if (State() != sampler::SamplingState::Configured) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
-  state_ = SamplingState::Reading;
+  SetState(SamplingState::Reading);
   return zx::ok(sampler::ReadToken{});
 }
 
-void ThreadSamplerDispatcher::FinishRead(sampler::ReadToken&& token) {
-  Guard<CriticalMutex> guard(get_lock());
-  DEBUG_ASSERT(state_ == SamplingState::Reading || state_ == SamplingState::Destroying);
-  if (state_ == SamplingState::Destroying) {
-    // Our peer was destroyed while we dropped to the lock to do the read. We were reading, so we
-    // delayed destroying the buffers as to not corrupt the read. However, now we're responsible for
-    // the remaining buffer clean up.
-    per_cpu_state_.reset();
-    state_ = SamplingState::Destroyed;
+void sampler::ThreadSampler::FinishRead(sampler::ReadToken&& token) {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  SamplingState state = State();
+  DEBUG_ASSERT(state == SamplingState::Reading || state == SamplingState::Destroying);
+  if (state == SamplingState::Destroying) {
+    // The dispatcher was closed while we held a lock doing the read. We were reading, so we delayed
+    // cleaning the buffers as to not corrupt the read. However, now we're responsible for the
+    // remaining buffer clean up.
+    for (sampler::internal::PerCpuState& pcs : per_cpu_state_) {
+      pcs.Drain();
+    }
+    SetState(SamplingState::Allocated);
   } else {
     // No additional action is needed.
-    state_ = SamplingState::Configured;
+    SetState(SamplingState::Configured);
   }
   token.disarmed = true;
 }
 
-ktl::pair<zx_status_t, size_t> ThreadSamplerDispatcher::ReadUserImpl(const sampler::ReadToken&,
-                                                                     user_out_ptr<void> ptr,
-                                                                     size_t len) {
+ktl::pair<zx_status_t, size_t> sampler::ThreadSampler::ReadUser(const sampler::ReadToken&,
+                                                                user_out_ptr<void> ptr,
+                                                                size_t len) {
   // We're going to call into VmObject::ReadUser which could be copying to pager backed user memory.
   // We can't be holding any locks.
   lockdep::AssertNoLocksHeld();

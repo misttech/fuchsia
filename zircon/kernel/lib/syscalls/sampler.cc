@@ -89,7 +89,7 @@ zx_status_t sys_sampler_start(zx_handle_t sampler) {
     return status;
   }
 
-  return ThreadSamplerDispatcher::Start(thread_sampler).status_value();
+  return thread_sampler->Start().status_value();
 }
 
 // zx_status_t zx_sampler_stop
@@ -109,7 +109,7 @@ zx_status_t sys_sampler_stop(zx_handle_t sampler) {
     return status;
   }
 
-  return ThreadSamplerDispatcher::Stop(thread_sampler).status_value();
+  return thread_sampler->Stop().status_value();
 }
 
 // zx_status_t zx_sampler_read
@@ -130,7 +130,7 @@ zx_status_t sys_sampler_read(zx_handle_t sampler, user_out_ptr<void> data, size_
     return status;
   }
 
-  auto [status, bytes_copied] = ThreadSamplerDispatcher::ReadUser(thread_sampler, data, len);
+  auto [status, bytes_copied] = thread_sampler->ReadUser(data, len);
   // We may have a partial read: some bytes were copied, but we received an error later on.
   // We provide the caller with how many bytes we copied, but also the error we ran into.
   if (zx_status_t copy_status = actual.copy_to_user(bytes_copied); copy_status != ZX_OK) {

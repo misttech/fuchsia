@@ -88,6 +88,7 @@ class PerCpuState {
   }
 
   size_t BufferSize() const { return writer.Size(); }
+  void Drain() { writer.Drain(); }
 
  private:
   percpu_writer::Buffer writer;
