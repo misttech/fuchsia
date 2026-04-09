@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::InterfaceId;
+use crate::telemetry::{NetworkEventMetadata, TelemetryEvent, TelemetrySender};
 use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::DnsServers;
@@ -215,7 +216,6 @@ impl RegisteredNetworks {
             (false, Entry::Vacant(_), _, _) => Err("update a non-added network"),
             (_, _, NetworkId::Fuchsia(_), Some(_)) => Err("have a fuchsia network with marks"),
             (_, _, NetworkId::Delegated(_), None) => Err("have a delegated network without marks"),
-
             (_, _, NetworkId::Fuchsia(_), None) => Ok((NetworkProperties::default(), added)),
             (_, entry, NetworkId::Delegated(_), Some(socket_marks)) => {
                 let changed = if let Entry::Occupied(e) = entry {
@@ -467,9 +467,14 @@ pub struct NetpolNetworksService {
     property_responders: HashMap<ConnectionId, NetworkPropertyResponder>,
     // The networks known to the system
     network_registry: RegisteredNetworks,
+    telemetry: Option<TelemetrySender>,
 }
 
 impl NetpolNetworksService {
+    pub fn set_telemetry(&mut self, telemetry: TelemetrySender) {
+        self.telemetry = Some(telemetry);
+    }
+
     pub async fn handle_network_attributes_request(
         &mut self,
         id: ConnectionId,
@@ -842,6 +847,27 @@ impl NetpolNetworksService {
                 self.changed_default_network(previous_default, &mut property_responders).await;
                 match self.network_registry.default_network {
                     Some(default_network) => {
+                        if let Some(telemetry) = &self.telemetry {
+                            if let Some(props) =
+                                self.network_registry.networks.get(&default_network)
+                            {
+                                telemetry.send(TelemetryEvent::DefaultNetworkChanged(
+                                    NetworkEventMetadata {
+                                        id: default_network.get().get(),
+                                        name: props.name.clone(),
+                                        transport: props
+                                            .network_type
+                                            .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
+                                        is_fuchsia_provisioned: matches!(
+                                            default_network,
+                                            NetworkId::Fuchsia(_)
+                                        ),
+                                    },
+                                ));
+                            } else {
+                                warn!("Could not fetch network data for default network.");
+                            }
+                        }
                         self.current_generation.default_network += 1;
                         let mut responders = HashMap::new();
                         std::mem::swap(&mut self.default_network_responders, &mut responders);
@@ -871,6 +897,9 @@ impl NetpolNetworksService {
                         }
                     }
                     None => {
+                        if let Some(telemetry) = &self.telemetry {
+                            telemetry.send(TelemetryEvent::DefaultNetworkLost);
+                        }
                         // The default network has been lost.
                         self.current_generation.default_network += 1;
                         let mut responders = HashMap::new();

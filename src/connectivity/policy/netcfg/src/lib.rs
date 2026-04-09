@@ -1026,6 +1026,7 @@ impl<'a> NetCfg<'a> {
         };
         let interface_naming_config =
             interface::InterfaceNamingConfig::from_naming_rules(interface_naming_policy);
+        let netpol_networks_service = network::NetpolNetworksService::default();
 
         Ok(NetCfg {
             stack,
@@ -1053,7 +1054,7 @@ impl<'a> NetCfg<'a> {
             dhcpv6_prefixes_streams: dhcpv6::PrefixesStreamMap::empty(),
             allowed_upstream_device_classes,
             interface_provisioning_policy,
-            netpol_networks_service: Default::default(),
+            netpol_networks_service,
             enable_socket_proxy,
             inspector,
         })
@@ -1311,10 +1312,10 @@ impl<'a> NetCfg<'a> {
             DelegatedNetworksStream::Right(futures_util::stream::empty());
 
         let inspector = self.inspector.clone();
-        // TODO(https://fxbug.dev/423457677): Pass the telemetry sender to the time series modules.
-        let (_telemetry_sender, telemetry_fut) = crate::telemetry::serve_telemetry(&inspector);
+        let (telemetry_sender, telemetry_fut) = crate::telemetry::serve_telemetry(&inspector);
         let telemetry_fut = telemetry_fut.fuse();
         let mut telemetry_fut = pin!(telemetry_fut);
+        self.netpol_networks_service.set_telemetry(telemetry_sender);
 
         // Lifecycle handle takes no args, must be set to zero.
         // See zircon/processargs.h.

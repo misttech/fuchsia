@@ -2,16 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+pub mod processors;
+
+use crate::telemetry::processors::network_properties::NetworkPropertiesProcessor;
 use anyhow::Error;
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
-use futures::Future;
 use futures::channel::mpsc;
+use futures::{Future, StreamExt};
 use log::{info, warn};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub enum TelemetryEvent {}
+#[derive(Clone, Debug)]
+pub struct NetworkEventMetadata {
+    pub id: u64,
+    pub name: Option<String>,
+    pub transport: fidl_fuchsia_net_policy_socketproxy::NetworkType,
+    pub is_fuchsia_provisioned: bool,
+}
+
+#[derive(Debug)]
+pub enum TelemetryEvent {
+    DefaultNetworkChanged(NetworkEventMetadata),
+    DefaultNetworkLost,
+}
 
 #[derive(Clone, Debug)]
 pub struct TelemetrySender {
@@ -60,17 +75,29 @@ pub fn serve_telemetry(
 ) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
     let inspect_node = inspector.root();
     let telemetry_node = inspect_node.create_child("telemetry");
+    let time_series_node = telemetry_node.create_child("time_series");
+    let client =
+        windowed_stats::experimental::inspect::TimeMatrixClient::new(time_series_node.clone_weak());
 
+    let processor = NetworkPropertiesProcessor::new(&telemetry_node, "root/telemetry", &client);
+    inspect_node.record(time_series_node);
     inspect_node.record(telemetry_node);
 
-    let (sender, receiver) = mpsc::channel::<TelemetryEvent>(TELEMETRY_EVENT_BUFFER_SIZE);
+    let (sender, mut receiver) = mpsc::channel::<TelemetryEvent>(TELEMETRY_EVENT_BUFFER_SIZE);
     let sender = TelemetrySender::new(sender);
 
     let fut = async move {
-        let _receiver = receiver;
-        // TODO(https://fxbug.dev/486892417): Add telemetry events for the network registry
-        // and handle them here.
-        let () = futures::future::pending().await;
+        let mut processor = processor;
+        while let Some(event) = receiver.next().await {
+            match event {
+                TelemetryEvent::DefaultNetworkChanged(metadata) => {
+                    processor.log_default_network_changed(metadata);
+                }
+                TelemetryEvent::DefaultNetworkLost => {
+                    processor.log_default_network_lost();
+                }
+            }
+        }
         Ok(())
     };
     (sender, fut)
