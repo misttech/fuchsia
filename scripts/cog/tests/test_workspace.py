@@ -118,6 +118,47 @@ class TestCartfs(unittest.TestCase):
 class TestWorkspace(unittest.TestCase):
     """Tests for Workspace."""
 
+    def test_config_success(self) -> None:
+        """Test that config reads from file."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            workspace_dir = fs.cog_dir / "testuser" / "test-workspace"
+            repo_name = "fuchsia"
+            config_path = (
+                workspace_dir
+                / repo_name
+                / "scripts"
+                / "cog"
+                / "repo_config.json"
+            )
+            config_path.parent.mkdir(exist_ok=True, parents=True)
+            with open(config_path, "w") as f:
+                f.write('{"fuchsia": {"repo": "fuchsia"}}')
+
+            ws = workspace.Workspace(
+                workspace_dir=workspace_dir,
+                repo_name=repo_name,
+                workspace_name="test-workspace",
+                workspace_id="ws-id",
+                cartfs_directory=None,
+                cartfs_instance=MagicMock(),
+            )
+            self.assertEqual(ws.config, {"fuchsia": {"repo": "fuchsia"}})
+
+    def test_config_file_not_found(self) -> None:
+        """Test that FileNotFoundError is raised when config file is missing."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            workspace_dir = fs.cog_dir / "testuser" / "test-workspace"
+            ws = workspace.Workspace(
+                workspace_dir=workspace_dir,
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id="ws-id",
+                cartfs_directory=None,
+                cartfs_instance=MagicMock(),
+            )
+            with self.assertRaises(FileNotFoundError):
+                _ = ws.config
+
     def test_create_success(self) -> None:
         """Test that a Workspace instance can be created successfully."""
         with mock_fs.FileSystemTestHelper(
@@ -759,6 +800,10 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_directory=fs.cartfs_dir,
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["config"] = {
+                "fuchsia": {"repo": "fuchsia"},
+                "integration": {"repo": None},
+            }
 
             with (
                 patch.object(ws, "get_cog_commit", return_value="hash123"),
@@ -786,6 +831,15 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_directory=fs.cartfs_dir,
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["config"] = {
+                "fuchsia": {"repo": "fuchsia"},
+                "integration": {
+                    "repo": None,
+                    "remote": "https://fuchsia.googlesource.com/integration",
+                },
+                "jiriImports": [],
+                "symlinks": {},
+            }
 
             with (
                 patch.object(ws, "get_cog_commit", return_value="hash123"),

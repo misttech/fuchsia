@@ -11,6 +11,7 @@ import subprocess
 import sys
 import urllib.request
 from datetime import datetime, timedelta
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Callable
 
@@ -37,31 +38,6 @@ class CannotFindRepoNameError(WorkspaceError):
 
 CARTFS_SYMLINK_NAME: str = "cartfs-dir"
 COG_METADATA_FILE_NAME: str = ".cog.json"
-
-WORKSPACE_CONFIG: dict[str, Any] = {
-    "jiriImports": [
-        "manifests/prebuilts",
-        "manifests/third_party/all",
-        "../integration/cobalt",
-        "../integration/prebuilts",
-    ],
-    # Format: "src": "dest",
-    "symlinks": {
-        # Build support.
-        "@cartfs//integration": "@cartfs//fuchsia/integration",
-        "@cartfs//fuchsia/scripts/cog/resources/args.gn": "@cartfs//fuchsia/local/args.gn",
-        # Add fx/ffx tooling entrypoints.
-        "@cog//scripts/cog/resources/fx": "@cog//.jiri_root/bin/fx",
-        "@cog//scripts/cog/resources/ffx": "@cog//.jiri_root/bin/ffx",
-        # Emulate a standard Fuchsia checkout structure in the Cog workspace.
-        "@cartfs//fuchsia/.fx-build-dir": "@cog//.fx-build-dir",
-        "@cartfs//fuchsia/integration": "@cog//integration",
-        "@cartfs//fuchsia/prebuilt": "@cog//prebuilt",
-        "@cartfs//fuchsia/out": "@cog//out",
-    },
-    "fuchsia": {},
-    "integration": {},
-}
 
 
 class CogMetadata:
@@ -326,9 +302,20 @@ class Workspace:
 
         return self.cartfs_instance.mount_point / suggested_directory_name
 
-    @property
+    @cached_property
     def config(self) -> dict[str, Any]:
-        return WORKSPACE_CONFIG
+        repo_config_path = (
+            self.workspace_dir
+            / self.repo_name
+            / "scripts"
+            / "cog"
+            / "repo_config.json"
+        )
+        if not repo_config_path.exists():
+            raise FileNotFoundError(
+                f"Repo config not found at {repo_config_path}"
+            )
+        return json.loads(repo_config_path.read_text())
 
     def create_empty_cartfs_workspace_directory(self) -> Path:
         """Creates a new, empty directory in the cartfs mount for this workspace.
@@ -453,15 +440,13 @@ class Workspace:
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
-        cog_fuchsia_commit = self.get_cog_commit(
-            self.config.get("fuchsia", {}).get("repo", "fuchsia")
-        )
+        cog_fuchsia_commit = self.get_cog_commit(self.config["fuchsia"]["repo"])
         cartfs_fuchsia_commit = self.get_cartfs_fuchsia_commit()
         logger.log_info(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
         logger.log_info(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
 
         integration_commit = None
-        if self.config.get("integration", {}).get("repo", None):
+        if self.config["integration"]["repo"]:
             integration_commit = self.get_cog_commit(
                 self.config["integration"]["repo"]
             )
@@ -555,7 +540,7 @@ class Workspace:
 
     def _write_jiri_manifest(self) -> None:
         """Writes the jiri manifest."""
-        localimports = self.config.get("jiriImports", [])
+        localimports = self.config["jiriImports"]
         self._patch_file(
             filepath="fuchsia/.jiri_manifest",
             content=(
@@ -646,10 +631,7 @@ class Workspace:
         if integration_dir.is_dir():
             shutil.rmtree(integration_dir)
 
-        remote = self.config.get("integration", {}).get(
-            "remote",
-            "https://fuchsia.googlesource.com/integration",
-        )
+        remote = self.config["integration"]["remote"]
         git_clone_cmd = [
             "git",
             "clone",
@@ -813,7 +795,7 @@ class Workspace:
                 "@cog": self.workspace_dir / self.repo_name,
             }[root] / relative_path
 
-        for src, dest in self.config.get("symlinks", {}).items():
+        for src, dest in self.config["symlinks"].items():
             self._create_symlink(_get_path(src), _get_path(dest))
 
         # Manually execute jiri hooks. The hooks are defined in
