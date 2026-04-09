@@ -29,7 +29,7 @@ use wlan_legacy_metrics_registry as metrics;
 use zx;
 
 const INSPECT_CONNECT_EVENTS_LIMIT: usize = 10;
-const INSPECT_DISCONNECT_EVENTS_LIMIT: usize = 10;
+const INSPECT_DISCONNECT_EVENTS_LIMIT: usize = 20;
 const INSPECT_CONNECTED_NETWORKS_ID_LIMIT: usize = 16;
 const INSPECT_DISCONNECT_SOURCES_ID_LIMIT: usize = 32;
 const SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT: zx::BootDuration =
