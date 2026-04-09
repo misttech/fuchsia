@@ -9,7 +9,6 @@ python_library("core_testing") {
     "__init__.py",
     "base_test.py",
     "handlers.py",
-    "ies.py",
   ]
   library_deps = [
     "//src/testing/end_to_end/antlion",

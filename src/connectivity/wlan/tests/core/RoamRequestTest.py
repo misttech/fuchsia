@@ -20,9 +20,9 @@ from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from common.utils.ies import read_ssid
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
-from core_testing.ies import read_ssid
 from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from mobly import signals, test_runner
 from mobly.asserts import (

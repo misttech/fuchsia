@@ -25,9 +25,9 @@ from antlion.controllers.ap_lib.hostapd_constants import (
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
+from common.utils.ies import Ie, read_ssid
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
-from core_testing.ies import Ie, read_ssid
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 from mobly_controller.openwrt_access_point import OpenWrtAP

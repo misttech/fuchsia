@@ -21,7 +21,7 @@ from antlion.controllers.ap_lib.hostapd_constants import (
     AP_SSID_LENGTH_2G,
 )
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
-from core_testing.ies import read_ssid
+from common.utils.ies import read_ssid
 from fuchsia_controller_py import Channel
 from honeydew.utils.deadline import Deadline
 from mobly import test_runner
