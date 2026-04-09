@@ -816,4 +816,18 @@ TEST_F(ProcMountsTest, RemoteBundleAtRootIsReadOnly) {
               SyscallSucceeds());
 }
 
+TEST_F(MountTest, RecFlagIsNotStored) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  auto dir = TestPath("a");
+
+  ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", MS_REC, nullptr), SyscallSucceeds());
+
+  struct statfs64 fs_stat{};
+  ASSERT_THAT(statfs64(dir.c_str(), &fs_stat), SyscallSucceeds());
+  // There is no ST_* flag for this, since it should not be returned here, so use the MS_* version.
+  EXPECT_FALSE(fs_stat.f_flags & MS_REC);
+
+  ASSERT_THAT(umount(dir.c_str()), SyscallSucceeds());
+}
+
 }  // namespace
