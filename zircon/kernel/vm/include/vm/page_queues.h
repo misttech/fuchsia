@@ -670,7 +670,7 @@ class PageQueues {
   // of the oldest and newest reclaimable queues. The page queues themselves are treated as a fixed
   // size circular buffer that the generations map onto (see definition of |gen_to_queue|).This
   // means all pages in the system have an age somewhere in [lru_gen_, mru_gen_] and so the lru and
-  // mru generations cannot drift apart by more than kNumPagerBacked, otherwise there would not be
+  // mru generations cannot drift apart by more than kNumReclaim, otherwise there would not be
   // enough queues.
   // A pages age being between [lru_gen_, mru_gen_] is not an invariant as MarkAccessed can race and
   // mark pages as being in an invalid queue. This race will get noticed by ProcessLruQueues and
