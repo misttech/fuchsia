@@ -8,8 +8,8 @@ use crate::{PkgUrlMatch, match_absolute_component_urls};
 use anyhow::{Context, Result, anyhow};
 use cm_config::RuntimeConfig;
 use cm_rust::{
-    CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, OfferDeclCommon, OfferTarget,
-    ProgramDecl, SourceName, UseDecl, UseDeclCommon, UseRunnerDecl, UseSource,
+    Availability, CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, OfferDeclCommon,
+    OfferTarget, ProgramDecl, SourceName, UseDecl, UseDeclCommon, UseRunnerDecl, UseSource,
 };
 use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
@@ -912,9 +912,19 @@ impl ComponentModelForAnalyzer {
                 let cm_rust::UseDecl::Config(config) = use_ else {
                     continue;
                 };
-                let value = routing::config::route_config_value(config, instance)
+                let value = match debug_route_sandbox_path(&instance, use_)
                     .now_or_never()
-                    .expect("future was not ready immediately")?;
+                    .expect("future was not ready immediately")
+                {
+                    Ok(source) => source_to_value(&config.default, source)?,
+                    Err(e)
+                        if config.availability == Availability::Transitional
+                            && e.as_zx_status() == zx_status::Status::NOT_FOUND =>
+                    {
+                        config.default.clone()
+                    }
+                    Err(e) => return Err(e.into()),
+                };
                 let Some(value) = value else {
                     continue;
                 };
@@ -942,6 +952,35 @@ impl ComponentModelForAnalyzer {
         }
         Ok(configs)
     }
+}
+
+fn source_to_value(
+    default: &Option<cm_rust::ConfigValue>,
+    source: CapabilitySource,
+) -> Result<Option<cm_rust::ConfigValue>, RoutingError> {
+    let moniker = source.source_moniker();
+    let cap = match source {
+        CapabilitySource::Void(_) => {
+            return Ok(default.clone());
+        }
+        CapabilitySource::Capability(CapabilityToCapabilitySource {
+            source_capability, ..
+        }) => source_capability,
+        CapabilitySource::Component(ComponentSource { capability, .. }) => capability,
+        o => {
+            let type_name =
+                o.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
+            return Err(RoutingError::unsupported_route_source(moniker, type_name));
+        }
+    };
+
+    let cap = match cap {
+        ComponentCapability::Config(c) => c,
+        c => {
+            return Err(RoutingError::unsupported_capability_type(moniker, c.type_name()));
+        }
+    };
+    Ok(Some(cap.value))
 }
 
 #[derive(Clone, Debug)]

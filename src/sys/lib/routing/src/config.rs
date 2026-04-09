@@ -4,17 +4,15 @@
 
 use crate::bedrock::dict_ext::DictExt;
 use crate::bedrock::request_metadata;
-use crate::capability_source::{
-    CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
-};
 use crate::component_instance::ComponentInstanceInterface;
-use crate::{RouteRequest, RouterResponse, RoutingError};
-use cm_rust::FidlIntoNative;
+use crate::{RouterResponse, RoutingError};
+use cm_rust::{Availability, FidlIntoNative};
+use router_error::Explain;
 use sandbox::Data;
 use std::sync::Arc;
+use zx_status as zx;
 
-/// Get a specific configuration use declaration from the structured
-/// config key value.
+/// Get a specific configuration use declaration from the structured config key value.
 pub fn get_use_config_from_key<'a>(
     key: &str,
     decl: &'a cm_rust::ComponentDecl,
@@ -25,36 +23,10 @@ pub fn get_use_config_from_key<'a>(
     })
 }
 
-fn source_to_value(
-    default: &Option<cm_rust::ConfigValue>,
-    source: CapabilitySource,
-) -> Result<Option<cm_rust::ConfigValue>, RoutingError> {
-    let moniker = source.source_moniker();
-    let cap = match source {
-        CapabilitySource::Void(_) => {
-            return Ok(default.clone());
-        }
-        CapabilitySource::Capability(CapabilityToCapabilitySource {
-            source_capability, ..
-        }) => source_capability,
-        CapabilitySource::Component(ComponentSource { capability, .. }) => capability,
-        o => {
-            let type_name =
-                o.type_name().map(|t| t.to_string()).unwrap_or_else(|| "<unknown>".to_string());
-            return Err(RoutingError::unsupported_route_source(moniker, type_name));
-        }
-    };
-
-    let cap = match cap {
-        ComponentCapability::Config(c) => c,
-        c => {
-            return Err(RoutingError::unsupported_capability_type(moniker, c.type_name()));
-        }
-    };
-    Ok(Some(cap.value))
-}
-
-pub async fn route_config_value_with_bedrock<C>(
+/// Routes the config value referenced in `use_config` from `component`. Returns the default value
+/// if the capability is not available (i.e. routed from void), or if `use_config` has transitional
+/// availability and routing fails with an error that maps to `NOT_FOUND`.
+pub async fn route_config_value<C>(
     use_config: &cm_rust::UseConfigurationDecl,
     component: &Arc<C>,
 ) -> Result<Option<cm_rust::ConfigValue>, router_error::RouterError>
@@ -84,16 +56,23 @@ where
     };
     let request =
         sandbox::Request { metadata: request_metadata::config_metadata(use_config.availability) };
-    let data = match router.route(Some(request), false, component.as_weak().into()).await? {
-        RouterResponse::<Data>::Capability(d) => d,
-        RouterResponse::<Data>::Unavailable => return Ok(use_config.default.clone()),
-        RouterResponse::<Data>::Debug(_) => {
+    let data = match router.route(Some(request), false, component.as_weak().into()).await {
+        Ok(RouterResponse::<Data>::Capability(d)) => d,
+        Ok(RouterResponse::<Data>::Unavailable) => return Ok(use_config.default.clone()),
+        Ok(RouterResponse::<Data>::Debug(_)) => {
             return Err(RoutingError::RouteUnexpectedDebug {
                 type_name: cm_rust::CapabilityTypeName::Config,
                 moniker: component.moniker().clone().into(),
             }
             .into());
         }
+        Err(e)
+            if use_config.availability == Availability::Transitional
+                && e.as_zx_status() == zx::Status::NOT_FOUND =>
+        {
+            return Ok(use_config.default.clone());
+        }
+        Err(e) => return Err(e),
     };
     let sandbox::Data::Bytes(bytes) = data else {
         return Err(RoutingError::BedrockWrongCapabilityType {
@@ -116,75 +95,4 @@ where
     };
 
     Ok(Some(config_value.fidl_into_native()))
-}
-
-/// Route the given `use_config` from a specific `component`.
-/// This returns the configuration value as a result.
-/// This will return Ok(None) if it was routed successfully, but it
-/// was an optional capability.
-pub async fn route_config_value<C>(
-    use_config: &cm_rust::UseConfigurationDecl,
-    component: &Arc<C>,
-) -> Result<Option<cm_rust::ConfigValue>, router_error::RouterError>
-where
-    C: ComponentInstanceInterface + 'static,
-{
-    if let Ok(Some(value)) = route_config_value_with_bedrock(use_config, component).await {
-        return Ok(Some(value));
-    }
-    let source = crate::route_capability(
-        RouteRequest::UseConfig(use_config.clone()),
-        component,
-        &mut crate::mapper::NoopRouteMapper,
-    )
-    .await?;
-    Ok(source_to_value(&use_config.default, source.source)?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::capability_source::VoidSource;
-    use moniker::Moniker;
-
-    #[test]
-    fn config_from_void() {
-        let void_source = CapabilitySource::Void(VoidSource {
-            capability: crate::capability_source::InternalCapability::Config(
-                "test".parse().unwrap(),
-            ),
-            moniker: Moniker::root(),
-        });
-        assert_eq!(Ok(None), source_to_value(&None, void_source));
-    }
-
-    #[test]
-    fn config_from_capability() {
-        let test_value: cm_rust::ConfigValue = cm_rust::ConfigSingleValue::Uint8(5).into();
-        let void_source = CapabilitySource::Capability(CapabilityToCapabilitySource {
-            source_capability: crate::capability_source::ComponentCapability::Config(
-                cm_rust::ConfigurationDecl {
-                    name: "test".parse().unwrap(),
-                    value: test_value.clone(),
-                },
-            ),
-            moniker: Moniker::root(),
-        });
-        assert_eq!(Ok(Some(test_value)), source_to_value(&None, void_source));
-    }
-
-    #[test]
-    fn config_from_component() {
-        let test_value: cm_rust::ConfigValue = cm_rust::ConfigSingleValue::Uint8(5).into();
-        let void_source = CapabilitySource::Component(ComponentSource {
-            capability: crate::capability_source::ComponentCapability::Config(
-                cm_rust::ConfigurationDecl {
-                    name: "test".parse().unwrap(),
-                    value: test_value.clone(),
-                },
-            ),
-            moniker: Moniker::root(),
-        });
-        assert_eq!(Ok(Some(test_value)), source_to_value(&None, void_source));
-    }
 }
