@@ -36,6 +36,7 @@ fuchsia_rust_driver("driver") {
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust_next",
     "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_rust_next",
     "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_rust_next",
+    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/mmio/rust:mmio",

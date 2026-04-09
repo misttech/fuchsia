@@ -12,9 +12,12 @@ use block_server::{BlockServer, RequestId};
 use fdf_component::{Driver, DriverContext, Node, ServiceInstance, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
 use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_driver_framework::{NodeAddArgs, NodeControllerMarker, NodeError};
+use fidl_fuchsia_driver_framework::{
+    NodeAddArgs, NodeControllerMarker, NodeError, PowerElementArgs,
+};
 use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_inlineencryption as finlineencryption;
+use fidl_fuchsia_power_system as fpower;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::BlockInfo;
 use fidl_next_fuchsia_hardware_cqhci::{self as cqhci, EmmcPartitionId};
@@ -263,6 +266,17 @@ impl Driver for CqhciDriver {
             error!(status:?; "Failed to get host info");
         })?;
 
+        if let Some(PowerElementArgs { token: Some(token), .. }) =
+            &context.start_args.power_element_args
+        {
+            let token = token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+            if let Err(status) = configure_power_management(&context, token).await {
+                error!(status:?; "Failed to configure power management");
+                return Err(status);
+            }
+            info!("Configured power management successfully (cqhci)");
+        }
+
         let command_queue =
             CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info).await.map_err(|error| {
                 error!(error:?; "Failed to initialize command queueing");
@@ -417,6 +431,45 @@ impl SuspendableDriver for CqhciDriver {
     }
 
     fn suspend_enabled(&self) -> bool {
+        // For now, we say that we always support suspend/resume.  When we suspend/resume, all we're
+        // doing is disabling command queuing, we don't actually put the hardware in a low power
+        // state (the parent is responsible for that).  We can provide configuration knobs later if
+        // we need to.
         true
     }
+}
+
+/// Sets up the command queuing driver as the main dependency for the CPU element so that we
+/// properly record this driver as needing to be functioning in order to handle blob page requests
+/// (which most executable code relies on).  When command queuing is enabled, it is the top-level
+/// driver so it is responsible for setting up this relationship.  The command queuing driver is the
+/// root of a dependency tree (i.e. it is dependent on its parent driver and it might have further
+/// dependencies) which the power framework manages.
+async fn configure_power_management(
+    context: &DriverContext,
+    token: zx::Event,
+) -> Result<(), zx::Status> {
+    let cpu_element_manager =
+        context.incoming.connect_protocol::<fpower::CpuElementManagerProxy>()?;
+    cpu_element_manager
+        .add_execution_state_dependency(
+            fpower::CpuElementManagerAddExecutionStateDependencyRequest {
+                dependency_token: Some(token),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|error| {
+            error!(error:?; "CpuElementManager FIDL error");
+            zx::Status::INTERNAL
+        })?
+        .map_err(|error| {
+            error!(error:?; "CpuElementManager domain error");
+            match error {
+                fpower::AddExecutionStateDependencyError::InvalidArgs => zx::Status::INVALID_ARGS,
+                fpower::AddExecutionStateDependencyError::BadState => zx::Status::BAD_STATE,
+                _ => zx::Status::INTERNAL,
+            }
+        })
 }

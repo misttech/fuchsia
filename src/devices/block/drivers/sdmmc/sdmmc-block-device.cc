@@ -119,10 +119,12 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
 
   const bool cq_enabled = (sdmmc_->host_info().caps & SDMMC_HOST_CAP_COMMAND_QUEUEING &&
                            parent_->config().command_queueing_enabled());
-  suspend_supported_ =
-      !is_sd_ && parent_->config().storage_power_management_enabled() && !cq_enabled;
+  suspend_supported_ = !is_sd_ && parent_->config().storage_power_management_enabled();
 
-  if (suspend_supported_) {
+  // If command queuing is enabled, then the command queuing driver is responsible for setting the
+  // CPU element dependency.  The framework ensures that the command queuing driver has a dependency
+  // on this driver.
+  if (suspend_supported_ && !cq_enabled) {
     zx::result result = ConfigurePowerManagement();
 
     if (result.is_ok()) {

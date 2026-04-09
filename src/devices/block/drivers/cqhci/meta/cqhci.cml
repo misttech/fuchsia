@@ -13,13 +13,20 @@
         bind: "meta/bind/cqhci.bindbc",
         colocate: "true",
         allowed_scheduler_roles: [ "fuchsia.devices.sdhci.irq" ],
+        suspend_enabled: "true",
     },
     capabilities: [
         { service: "fuchsia.hardware.block.volume.Service" },
         { service: "fuchsia.hardware.rpmb.Service" },
     ],
     use: [
-        { protocol: "fuchsia.scheduler.RoleManager" },
+        {
+            protocol: [
+                "fuchsia.power.system.ActivityGovernor",
+                "fuchsia.power.system.CpuElementManager",
+                "fuchsia.scheduler.RoleManager",
+            ],
+        },
         { service: "fuchsia.hardware.cqhci.Service" },
     ],
     expose: [
