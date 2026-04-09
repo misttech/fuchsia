@@ -2289,13 +2289,9 @@ mod tests {
                 &kernel.weak_self.upgrade().unwrap(),
                 TaskCommand::new(b"second task"),
                 Credentials::with_ids(0, 0),
-                Some(&CString::new("#kernel").unwrap()),
+                None,
             )
             .expect("failed to create second task");
-            second_task
-                .mm()
-                .unwrap()
-                .initialize_mmap_layout_for_test(starnix_types::arch::ArchWidth::Arch64);
             let second_current = AutoReleasableTask::from(second_task);
 
             assert_eq!(

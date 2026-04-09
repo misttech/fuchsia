@@ -4,7 +4,7 @@
 
 use crate::arch::task::{decode_page_fault_exception_report, get_signal_for_general_exception};
 use crate::execution::{TaskInfo, create_zircon_process};
-use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, TaskMemoryAccessor};
+use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
 use crate::signals::{RunState, SignalDetail, SignalInfo, send_signal_first, send_standard_signal};
@@ -51,8 +51,8 @@ use starnix_uapi::{
     CLONE_NEWUTS, CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS, CLONE_SIGHAND,
     CLONE_SYSVSEM, CLONE_THREAD, CLONE_VFORK, CLONE_VM, FUTEX_OWNER_DIED, FUTEX_TID_MASK,
     ROBUST_LIST_LIMIT, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
-    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, clone_args, errno, error,
-    from_status_like_fdio, pid_t, sock_filter, ucred,
+    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, clone_args, errno, error, pid_t,
+    sock_filter, ucred,
 };
 use std::cell::{Ref, RefCell};
 use std::collections::VecDeque;
@@ -1058,13 +1058,15 @@ impl CurrentTask {
         // update after process image is replaced.  See get_robust_list(2).
         self.notify_robust_list();
 
-        // Passing arch32 information here ensures the replacement memory
-        // layout matches the elf being executed.
+        // If there is already a `MemoryManager` then `exec()` will tear down the underlying Zircon
+        // address-space, before creating an address-space configured ready to run `resolved_elf`.
         let mm = {
-            let mm = self.mm()?;
-            let new_mm = mm
-                .exec(resolved_elf.file.name.to_passive(), resolved_elf.arch_width)
-                .map_err(|status| from_status_like_fdio!(status))?;
+            let new_mm = MemoryManager::exec(
+                self.thread_group().root_vmar.unowned(),
+                self.mm().ok(),
+                resolved_elf.file.name.to_passive(),
+                resolved_elf.arch_width,
+            )?;
             self.live().mm.update(Some(new_mm.clone()));
             new_mm
         };
@@ -1640,7 +1642,6 @@ impl CurrentTask {
                     process_group,
                     signal_actions,
                     command.clone(),
-                    self.thread_state.arch_width(),
                 )?;
 
                 cgroup2_pid_table.inherit_cgroup(self.thread_group(), &task_info.thread_group);
@@ -1723,7 +1724,13 @@ impl CurrentTask {
                 // We do not support running threads in the same process with different
                 // MemoryManagers.
                 assert!(!clone_thread);
-                self.mm()?.snapshot_to(locked, &child.mm()?)?;
+                let child_mm = MemoryManager::snapshot_of(
+                    locked,
+                    &self.mm()?,
+                    child.thread_group.root_vmar.unowned(),
+                    self.thread_state.arch_width(),
+                )?;
+                child.live()?.mm.update(Some(child_mm));
             }
 
             if clone_parent_settid {
@@ -1755,7 +1762,13 @@ impl CurrentTask {
             // the same MemoryManager. Instead, we implement a rough approximation of that behavior
             // by making a copy-on-write clone of the memory from the original process.
             if clone_vm && !clone_thread {
-                self.mm()?.snapshot_to(locked, &child.mm()?)?;
+                let child_mm = MemoryManager::snapshot_of(
+                    locked,
+                    &self.mm()?,
+                    child.thread_group.root_vmar.unowned(),
+                    self.thread_state.arch_width(),
+                )?;
+                child.live()?.mm.update(Some(child_mm));
             }
 
             child.thread_state = self.thread_state.snapshot::<HeapRegs>();

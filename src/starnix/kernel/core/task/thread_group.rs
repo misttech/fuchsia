@@ -241,6 +241,9 @@ pub struct ThreadGroup {
     /// or teach zx::process to share address spaces.
     pub process: zx::Process,
 
+    /// A handle to the restricted address space for the Zircon process object.
+    pub root_vmar: zx::Vmar,
+
     /// The lead task of this thread group.
     ///
     /// The lead task is typically the initial thread created in the thread group.
@@ -591,6 +594,7 @@ impl ThreadGroup {
         locked: &mut Locked<L>,
         kernel: Arc<Kernel>,
         process: zx::Process,
+        root_vmar: zx::Vmar,
         parent: Option<ThreadGroupWriteGuard<'_>>,
         leader: pid_t,
         exit_signal: Option<Signal>,
@@ -605,6 +609,7 @@ impl ThreadGroup {
                 weak_self: weak_self.clone(),
                 kernel,
                 process,
+                root_vmar,
                 leader,
                 signal_actions,
                 timers: Default::default(),

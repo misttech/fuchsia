@@ -1162,6 +1162,7 @@ mod tests {
                                 locked,
                                 kernel.clone(),
                                 process,
+                                zx::Vmar::invalid(),
                                 None,
                                 pid,
                                 Some(SIGCHLD),

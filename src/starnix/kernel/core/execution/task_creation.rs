@@ -46,7 +46,6 @@ pub fn create_zircon_process<L>(
     process_group: Arc<ProcessGroup>,
     signal_actions: Arc<SignalActions>,
     name: TaskCommand,
-    arch_width: ArchWidth,
 ) -> Result<TaskInfo, Errno>
 where
     L: LockBefore<ProcessGroupState>,
@@ -64,15 +63,11 @@ where
         .set_critical(zx::JobCriticalOptions::RETCODE_NONZERO, &process)
         .map_err(|status| from_status_like_fdio!(status))?;
 
-    let memory_manager = Arc::new(
-        MemoryManager::new(root_vmar, arch_width)
-            .map_err(|status| from_status_like_fdio!(status))?,
-    );
-
     let thread_group = ThreadGroup::new(
         locked,
         kernel.clone(),
         process,
+        root_vmar,
         parent,
         pid,
         exit_signal,
@@ -80,7 +75,7 @@ where
         signal_actions,
     );
 
-    Ok(TaskInfo { thread: None, thread_group, memory_manager: Some(memory_manager) })
+    Ok(TaskInfo { thread: None, thread_group, memory_manager: None })
 }
 
 /// Creates a process that shares half its address space with this process.
@@ -187,7 +182,6 @@ where
                 process_group,
                 SignalActions::default(),
                 initial_name.clone(),
-                ArchWidth::Arch64,
             )
         },
         creds.into(),
@@ -250,7 +244,6 @@ pub fn create_init_process(
                 process_group,
                 SignalActions::default(),
                 initial_name.clone(),
-                ArchWidth::Arch64,
             )
         },
         Credentials::root(),
@@ -283,11 +276,11 @@ where
         TaskCommand::new(b"kthreadd"),
         fs,
         |locked, pid, process_group| {
-            let process = zx::Process::from(zx::NullableHandle::invalid());
             let thread_group = ThreadGroup::new(
                 locked.cast_locked::<TaskRelease>(),
                 kernel.clone(),
-                process,
+                zx::Process::invalid(),
+                zx::Vmar::invalid(),
                 None,
                 pid,
                 Some(SIGCHLD),

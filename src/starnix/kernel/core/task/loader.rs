@@ -746,7 +746,7 @@ fn get_arch_width(#[allow(unused_variables)] headers: &elf_parse::Elf64Headers) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{create_task, spawn_kernel_and_run_with_pkgfs};
+    use crate::testing::spawn_kernel_and_run_with_pkgfs;
     use assert_matches::assert_matches;
     use std::mem::MaybeUninit;
 
@@ -873,12 +873,7 @@ mod tests {
         spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             exec_hello_starnix(locked, current_task).expect("failed to load executable");
 
-            let current2 = create_task(locked, current_task.kernel(), "another-task");
-            current_task
-                .mm()
-                .unwrap()
-                .snapshot_to(locked, &current2.mm().unwrap())
-                .expect("failed to snapshot mm");
+            let current2 = current_task.clone_task_for_test(locked, 0, None);
 
             assert_eq!(
                 current_task.mm().unwrap().get_mapping_count(),

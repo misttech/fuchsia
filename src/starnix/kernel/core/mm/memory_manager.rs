@@ -58,6 +58,7 @@ use starnix_uapi::{
     MADV_MERGEABLE, MADV_NOHUGEPAGE, MADV_NORMAL, MADV_PAGEOUT, MADV_POPULATE_READ, MADV_RANDOM,
     MADV_REMOVE, MADV_SEQUENTIAL, MADV_SOFT_OFFLINE, MADV_UNMERGEABLE, MADV_WILLNEED,
     MADV_WIPEONFORK, MREMAP_DONTUNMAP, MREMAP_FIXED, MREMAP_MAYMOVE, SI_KERNEL, errno, error,
+    from_status_like_fdio,
 };
 use std::collections::HashMap;
 use std::mem::MaybeUninit;
@@ -65,7 +66,7 @@ use std::ops::{Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
 use syncio::zxio::zxio_default_maybe_faultable_copy;
 use zerocopy::IntoBytes;
-use zx::{HandleBased, Rights, VmarInfo, VmoChildOptions};
+use zx::{Rights, VmoChildOptions};
 
 pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());
@@ -2517,26 +2518,6 @@ impl MemoryManagerState {
 /// pinning.
 pub struct MlockShadowProcess(memory_pinning::ShadowProcess);
 
-fn create_user_vmar(root_vmar: &zx::Vmar, arch_width: ArchWidth) -> Result<zx::Vmar, zx::Status> {
-    let mut vmar_info = root_vmar.info()?;
-    if arch_width.is_arch32() {
-        vmar_info.len = (LOWER_4GB_LIMIT.ptr() - vmar_info.base) as usize;
-    } else {
-        assert_eq!(vmar_info.len, RESTRICTED_ASPACE_HIGHEST_ADDRESS - vmar_info.base);
-    }
-    let (vmar, ptr) = root_vmar.allocate(
-        0,
-        vmar_info.len,
-        zx::VmarFlags::SPECIFIC
-            | zx::VmarFlags::CAN_MAP_SPECIFIC
-            | zx::VmarFlags::CAN_MAP_READ
-            | zx::VmarFlags::CAN_MAP_WRITE
-            | zx::VmarFlags::CAN_MAP_EXECUTE,
-    )?;
-    assert_eq!(ptr, vmar_info.base);
-    Ok(vmar)
-}
-
 /// A memory manager for another thread.
 ///
 /// When accessing memory through this object, we use less efficient codepaths that work across
@@ -2613,7 +2594,7 @@ impl MemoryManager {
     }
 
     pub fn has_same_address_space(&self, other: &Self) -> bool {
-        self.root_vmar == other.root_vmar
+        std::ptr::eq(self, other)
     }
 
     pub fn unified_read_memory<'a>(
@@ -2825,12 +2806,6 @@ impl MemoryManager {
 }
 
 pub struct MemoryManager {
-    /// The root VMAR for the child process.
-    ///
-    /// Instead of mapping memory directly in this VMAR, we map the memory in
-    /// `state.user_vmar`.
-    root_vmar: zx::Vmar,
-
     /// The base address of the root_vmar.
     pub base_addr: UserAddress,
 
@@ -2861,20 +2836,48 @@ pub struct MemoryManager {
 }
 
 impl MemoryManager {
-    /// Returns a new
-    pub fn new(root_vmar: zx::Vmar, arch_width: ArchWidth) -> Result<Self, zx::Status> {
-        let user_vmar = create_user_vmar(&root_vmar, arch_width)?;
-        let user_vmar_info = user_vmar.info()?;
-        Ok(Self::from_vmar(root_vmar, user_vmar, user_vmar_info))
+    /// Returns a new `MemoryManager` suitable for use in tests.
+    pub fn new_for_test(root_vmar: zx::Unowned<'_, zx::Vmar>, arch_width: ArchWidth) -> Arc<Self> {
+        Self::new(root_vmar, arch_width, None).expect("can create MemoryManager")
     }
 
-    fn from_vmar(root_vmar: zx::Vmar, user_vmar: zx::Vmar, user_vmar_info: zx::VmarInfo) -> Self {
-        // Ensure that the `user_vmar_info` matches assumptions for 32- or 64-bit layout.
+    /// Returns a new `MemoryManager` initialized with a new userspace VMAR matching the specified
+    /// `arch_width`, under the specified restricted-mode `root_vmar`.  The `executable_node` that
+    /// the new address-space will execute may optionally be supplied.
+    fn new(
+        root_vmar: zx::Unowned<'_, zx::Vmar>,
+        arch_width: ArchWidth,
+        executable_node: Option<NamespaceNode>,
+    ) -> Result<Arc<Self>, Errno> {
+        debug_assert!(!root_vmar.is_invalid());
+
+        let mut vmar_info = root_vmar.info().map_err(|status| from_status_like_fdio!(status))?;
+        if arch_width.is_arch32() {
+            vmar_info.len = (LOWER_4GB_LIMIT.ptr() - vmar_info.base) as usize;
+        }
+
+        let (user_vmar, ptr) = root_vmar
+            .allocate(
+                0,
+                vmar_info.len,
+                zx::VmarFlags::SPECIFIC
+                    | zx::VmarFlags::CAN_MAP_SPECIFIC
+                    | zx::VmarFlags::CAN_MAP_READ
+                    | zx::VmarFlags::CAN_MAP_WRITE
+                    | zx::VmarFlags::CAN_MAP_EXECUTE,
+            )
+            .map_err(|status| from_status_like_fdio!(status))?;
+        assert_eq!(ptr, vmar_info.base);
+
+        let user_vmar_info = user_vmar.info().map_err(|status| from_status_like_fdio!(status))?;
+
+        // Ensure that the `user_vmar_info` matches assumptions for the requested layout.
         debug_assert_eq!(RESTRICTED_ASPACE_BASE, user_vmar_info.base);
-        debug_assert!(
-            user_vmar_info.len == RESTRICTED_ASPACE_SIZE
-                || user_vmar_info.len == LOWER_4GB_LIMIT.ptr() - user_vmar_info.base
-        );
+        if arch_width.is_arch32() {
+            debug_assert_eq!(LOWER_4GB_LIMIT.ptr() - user_vmar_info.base, user_vmar_info.len);
+        } else {
+            debug_assert_eq!(RESTRICTED_ASPACE_SIZE, user_vmar_info.len);
+        }
 
         // The private anonymous backing memory object extend from the user address 0 up to the
         // highest mappable address. The pages below `user_vmar_info.base` are never mapped, but
@@ -2882,8 +2885,21 @@ impl MemoryManager {
         // offsets simpler.
         let backing_size = (user_vmar_info.base + user_vmar_info.len) as u64;
 
-        MemoryManager {
-            root_vmar,
+        // Place the stack at the end of the address space, subject to ASLR adjustment.
+        let stack_origin = UserAddress::from_ptr(
+            user_vmar_info.base + user_vmar_info.len
+                - MAX_STACK_SIZE
+                - generate_random_offset_for_aslr(arch_width),
+        )
+        .round_up(*PAGE_SIZE)?;
+
+        // Set the highest address that `mmap` will assign to the allocations that don't ask for a
+        // specific address, subject to ASLR adjustment.
+        let mmap_top = stack_origin
+            .checked_sub(generate_random_offset_for_aslr(arch_width))
+            .ok_or_else(|| errno!(EINVAL))?;
+
+        Ok(Arc::new(MemoryManager {
             base_addr: UserAddress::from_ptr(user_vmar_info.base),
             futex: Arc::<FutexTable<PrivateFutexKey>>::default(),
             state: RwLock::new(MemoryManagerState {
@@ -2893,7 +2909,12 @@ impl MemoryManager {
                 private_anonymous: PrivateAnonymousMemoryManager::new(backing_size),
                 userfaultfds: Default::default(),
                 shadow_mappings_for_mlock: Default::default(),
-                forkable_state: Default::default(),
+                forkable_state: MemoryManagerForkableState {
+                    executable_node,
+                    stack_origin,
+                    mmap_top,
+                    ..Default::default()
+                },
             }),
             // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under
             // certain conditions as specified in the prctl(2) man page.
@@ -2903,7 +2924,7 @@ impl MemoryManager {
             ),
             inflight_vmspliced_payloads: Default::default(),
             drop_notifier: DropNotifier::default(),
-        }
+        }))
     }
 
     pub fn set_brk<L>(
@@ -3108,114 +3129,120 @@ impl MemoryManager {
         })
     }
 
-    /// Create a snapshot of the memory mapping from `self` into `target`. All
-    /// memory mappings are copied entry-for-entry, and the copies end up at
-    /// exactly the same addresses.
-    pub fn snapshot_to<L>(
-        &self,
+    /// Returns the new `MemoryManager` for a process, pre-populated with a snapshot of the layout
+    /// and mappings of `source_mm`.  This is used during `CurrentTask::clone()` operations to
+    /// create the initial address-space for the cloned child process.
+    pub fn snapshot_of<L>(
         locked: &mut Locked<L>,
-        target: &Arc<MemoryManager>,
-    ) -> Result<(), Errno>
+        source_mm: &Arc<MemoryManager>,
+        root_vmar: zx::Unowned<'_, zx::Vmar>,
+        arch_width: ArchWidth,
+    ) -> Result<Arc<Self>, Errno>
     where
         L: LockBefore<MmDumpable>,
     {
+        let target = MemoryManager::new(root_vmar, arch_width, source_mm.executable_node())?;
+
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
-        let state: &mut MemoryManagerState = &mut self.state.write();
-        let mut target_state = target.state.write();
-        debug_assert_eq!(state.user_vmar_info, target_state.user_vmar_info);
+        {
+            let state: &mut MemoryManagerState = &mut source_mm.state.write();
+            let mut target_state = target.state.write();
+            debug_assert_eq!(state.user_vmar_info, target_state.user_vmar_info);
 
-        let mut clone_cache = HashMap::<zx::Koid, Arc<MemoryObject>>::new();
+            let mut clone_cache = HashMap::<zx::Koid, Arc<MemoryObject>>::new();
 
-        let backing_size = (state.user_vmar_info.base + state.user_vmar_info.len) as u64;
-        target_state.private_anonymous = state.private_anonymous.snapshot(backing_size)?;
+            let backing_size =
+                (target_state.user_vmar_info.base + target_state.user_vmar_info.len) as u64;
+            target_state.private_anonymous = state.private_anonymous.snapshot(backing_size)?;
 
-        for (range, mapping) in state.mappings.iter() {
-            if mapping.flags().contains(MappingFlags::DONTFORK) {
-                continue;
-            }
-            // Locking is not inherited when forking.
-            let target_mapping_flags = mapping.flags().difference(MappingFlags::LOCKED);
-            match state.get_mapping_backing(mapping) {
-                MappingBacking::Memory(backing) => {
-                    let memory_offset = backing.address_to_offset(range.start);
-                    let length = range.end - range.start;
-
-                    let target_memory = if mapping.flags().contains(MappingFlags::SHARED)
-                        || mapping.name().is_vvar()
-                    {
-                        // Note that the Vvar is a special mapping that behaves like a shared mapping but
-                        // is private to each process.
-                        backing.memory().clone()
-                    } else if mapping.flags().contains(MappingFlags::WIPEONFORK) {
-                        create_anonymous_mapping_memory(length as u64)?
-                    } else {
-                        let basic_info = backing.memory().basic_info();
-                        let options = mapping.flags().options();
-                        let memory =
-                            clone_cache.entry(basic_info.koid).or_insert_with_fallible(|| {
-                                backing.memory().clone_memory(basic_info.rights, options)
-                            })?;
-                        memory.clone()
-                    };
-
-                    let mut released_mappings = ReleasedMappings::default();
-                    target_state.map_memory(
-                        target,
-                        DesiredAddress::Fixed(range.start),
-                        target_memory,
-                        memory_offset,
-                        length,
-                        target_mapping_flags,
-                        mapping.max_access(),
-                        false,
-                        mapping.name().to_owned(),
-                        &mut released_mappings,
-                    )?;
-                    assert!(
-                        released_mappings.is_empty(),
-                        "target mm must be empty when cloning, got {released_mappings:#?}"
-                    );
+            for (range, mapping) in state.mappings.iter() {
+                if mapping.flags().contains(MappingFlags::DONTFORK) {
+                    continue;
                 }
-                MappingBacking::PrivateAnonymous => {
-                    let length = range.end - range.start;
-                    if mapping.flags().contains(MappingFlags::WIPEONFORK) {
-                        target_state
-                            .private_anonymous
-                            .zero(range.start, length)
-                            .map_err(|_| errno!(ENOMEM))?;
-                    }
+                // Locking is not inherited when forking.
+                let target_mapping_flags = mapping.flags().difference(MappingFlags::LOCKED);
+                match state.get_mapping_backing(mapping) {
+                    MappingBacking::Memory(backing) => {
+                        let memory_offset = backing.address_to_offset(range.start);
+                        let length = range.end - range.start;
 
-                    let target_memory_offset = range.start.ptr() as u64;
-                    target_state.map_in_user_vmar(
-                        SelectedAddress::FixedOverwrite(range.start),
-                        &target_state.private_anonymous.backing,
-                        target_memory_offset,
-                        length,
-                        target_mapping_flags,
-                        false,
-                    )?;
-                    let removed_mappings = target_state.mappings.insert(
-                        range.clone(),
-                        Mapping::new_private_anonymous(
+                        let target_memory = if mapping.flags().contains(MappingFlags::SHARED)
+                            || mapping.name().is_vvar()
+                        {
+                            // Note that the Vvar is a special mapping that behaves like a shared mapping but
+                            // is private to each process.
+                            backing.memory().clone()
+                        } else if mapping.flags().contains(MappingFlags::WIPEONFORK) {
+                            create_anonymous_mapping_memory(length as u64)?
+                        } else {
+                            let basic_info = backing.memory().basic_info();
+                            let options = mapping.flags().options();
+                            let memory =
+                                clone_cache.entry(basic_info.koid).or_insert_with_fallible(
+                                    || backing.memory().clone_memory(basic_info.rights, options),
+                                )?;
+                            memory.clone()
+                        };
+
+                        let mut released_mappings = ReleasedMappings::default();
+                        target_state.map_memory(
+                            &target,
+                            DesiredAddress::Fixed(range.start),
+                            target_memory,
+                            memory_offset,
+                            length,
                             target_mapping_flags,
+                            mapping.max_access(),
+                            false,
                             mapping.name().to_owned(),
-                        ),
-                    );
-                    assert!(
-                        removed_mappings.is_empty(),
-                        "target mm must be empty when cloning, got {removed_mappings:#?}"
-                    );
-                }
-            };
+                            &mut released_mappings,
+                        )?;
+                        assert!(
+                            released_mappings.is_empty(),
+                            "target mm must be empty when cloning, got {released_mappings:#?}"
+                        );
+                    }
+                    MappingBacking::PrivateAnonymous => {
+                        let length = range.end - range.start;
+                        if mapping.flags().contains(MappingFlags::WIPEONFORK) {
+                            target_state
+                                .private_anonymous
+                                .zero(range.start, length)
+                                .map_err(|_| errno!(ENOMEM))?;
+                        }
+
+                        let target_memory_offset = range.start.ptr() as u64;
+                        target_state.map_in_user_vmar(
+                            SelectedAddress::FixedOverwrite(range.start),
+                            &target_state.private_anonymous.backing,
+                            target_memory_offset,
+                            length,
+                            target_mapping_flags,
+                            false,
+                        )?;
+                        let removed_mappings = target_state.mappings.insert(
+                            range.clone(),
+                            Mapping::new_private_anonymous(
+                                target_mapping_flags,
+                                mapping.name().to_owned(),
+                            ),
+                        );
+                        assert!(
+                            removed_mappings.is_empty(),
+                            "target mm must be empty when cloning, got {removed_mappings:#?}"
+                        );
+                    }
+                };
+            }
+
+            target_state.forkable_state = state.forkable_state.clone();
         }
 
-        target_state.forkable_state = state.forkable_state.clone();
-
-        let self_dumpable = *self.dumpable.lock(locked);
+        let self_dumpable = *source_mm.dumpable.lock(locked);
         *target.dumpable.lock(locked) = self_dumpable;
 
-        Ok(())
+        Ok(target)
     }
 
     /// Returns the replacement `MemoryManager` to be used by the `exec()`ing task.
@@ -3227,77 +3254,38 @@ impl MemoryManager {
     /// `ThreadGroup`, and thereby the `zx::process`, such that it is safe to tear-down the Zircon
     /// userspace VMAR for the current address-space.
     pub fn exec(
-        &self,
+        root_vmar: zx::Unowned<'_, zx::Vmar>,
+        old_mm: Option<Arc<Self>>,
         exe_node: NamespaceNode,
         arch_width: ArchWidth,
-    ) -> Result<Arc<Self>, zx::Status> {
+    ) -> Result<Arc<Self>, Errno> {
         // To safeguard against concurrent accesses by other tasks through this `MemoryManager`, the
-        // following steps are performed while holding the write lock on this instance:
+        // following steps are performed while holding the write lock on the old MM, if any:
         //
         // 1. All `mappings` are removed, so that remote `MemoryAccessor` calls will fail.
         // 2. The `user_vmar` is `destroy()`ed to free-up the user address-space.
-        // 3. The new `user_vmar` is created, to re-reserve the user address-space.
         //
-        // Once these steps are complete the lock must first be dropped, after which it is safe for
-        // the old mappings to be dropped.
-        let (_old_mappings, user_vmar) = {
-            let mut state = self.state.write();
+        // Once these steps are complete it is safe for the old mappings to be dropped.
+        if let Some(old_mm) = old_mm {
+            let _old_mappings = {
+                let mut state = old_mm.state.write();
 
-            // SAFETY: This operation is safe because this is the only `Task` active in the address-
-            // space, and accesses by remote tasks will use syscalls on the `root_vmar`.
-            unsafe { state.user_vmar.destroy()? }
-            state.user_vmar = zx::NullableHandle::invalid().into();
+                // SAFETY: This operation is safe because this is the only `Task` active in the address-
+                // space, and accesses by remote tasks will use syscalls on the `root_vmar`.
+                unsafe {
+                    state.user_vmar.destroy().map_err(|status| from_status_like_fdio!(status))?
+                }
+                state.user_vmar = zx::Vmar::invalid();
 
-            // Create the new userspace VMAR, to ensure that the address range is (re-)reserved.
-            let user_vmar = create_user_vmar(&self.root_vmar, arch_width)?;
+                std::mem::replace(&mut state.mappings, Default::default())
+            };
+        }
 
-            (std::mem::replace(&mut state.mappings, Default::default()), user_vmar)
-        };
-
-        // Wrap the new user address-space VMAR into a new `MemoryManager`.
-        let root_vmar = self.root_vmar.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-        let user_vmar_info = user_vmar.info()?;
-        let new_mm = Self::from_vmar(root_vmar, user_vmar, user_vmar_info);
-
-        // Initialize the new `MemoryManager` state.
-        new_mm.state.write().executable_node = Some(exe_node);
-
-        // Initialize the appropriate address-space layout for the `arch_width`.
-        new_mm.initialize_mmap_layout(arch_width)?;
-
-        Ok(Arc::new(new_mm))
-    }
-
-    pub fn initialize_mmap_layout(&self, arch_width: ArchWidth) -> Result<(), Errno> {
-        let mut state = self.state.write();
-
-        // Place the stack at the end of the address space, subject to ASLR adjustment.
-        state.stack_origin = UserAddress::from_ptr(
-            state.user_vmar_info.base + state.user_vmar_info.len
-                - MAX_STACK_SIZE
-                - generate_random_offset_for_aslr(arch_width),
-        )
-        .round_up(*PAGE_SIZE)?;
-
-        // Set the highest address that `mmap` will assign to the allocations that don't ask for a
-        // specific address, subject to ASLR adjustment.
-        state.mmap_top = state
-            .stack_origin
-            .checked_sub(generate_random_offset_for_aslr(arch_width))
-            .ok_or_else(|| errno!(EINVAL))?;
-        Ok(())
-    }
-
-    // Test tasks are not initialized by exec; simulate its behavior by initializing memory layout
-    // as if a zero-size executable was loaded.
-    pub fn initialize_mmap_layout_for_test(self: &Arc<Self>, arch_width: ArchWidth) {
-        self.initialize_mmap_layout(arch_width).unwrap();
-        let fake_executable_addr = self.get_random_base_for_executable(arch_width, 0).unwrap();
-        self.initialize_brk_origin(arch_width, fake_executable_addr).unwrap();
+        Self::new(root_vmar, arch_width, Some(exe_node))
     }
 
     pub fn initialize_brk_origin(
-        self: &Arc<Self>,
+        &self,
         arch_width: ArchWidth,
         executable_end: UserAddress,
     ) -> Result<(), Errno> {
@@ -3308,7 +3296,6 @@ impl MemoryManager {
     }
 
     // Get a randomised address for loading a position-independent executable.
-
     pub fn get_random_base_for_executable(
         &self,
         arch_width: ArchWidth,
@@ -4077,13 +4064,6 @@ impl MemoryManager {
             new,
         ))
     }
-
-    pub fn get_restricted_vmar_info(&self) -> Option<VmarInfo> {
-        if self.root_vmar.is_invalid() {
-            return None;
-        }
-        Some(VmarInfo { base: RESTRICTED_ASPACE_BASE, len: RESTRICTED_ASPACE_SIZE })
-    }
 }
 
 /// The result of an atomic compare/exchange operation on user memory.
@@ -4588,7 +4568,13 @@ mod tests {
             assert!(has(mapped_addr));
 
             let node = current_task.lookup_path_from_root(locked, "/".into()).unwrap();
-            let new_mm = mm.exec(node, ArchWidth::Arch64).expect("failed to exec memory manager");
+            let new_mm = MemoryManager::exec(
+                current_task.thread_group().root_vmar.unowned(),
+                current_task.live().mm.to_option_arc(),
+                node,
+                ArchWidth::Arch64,
+            )
+            .expect("failed to exec memory manager");
             current_task.live().mm.update(Some(new_mm));
 
             assert!(!has(brk_addr));
@@ -5527,7 +5513,6 @@ mod tests {
         use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 
         spawn_kernel_and_run(async |locked, current_task| {
-            let kernel = current_task.kernel();
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
 
@@ -5588,8 +5573,7 @@ mod tests {
                 )
                 .expect("map failed");
 
-            let target = create_task(locked, &kernel, "another-task");
-            mm.snapshot_to(locked, &target.mm().unwrap()).expect("snapshot_to failed");
+            let target = current_task.clone_task_for_test(locked, 0, None);
 
             // Make sure it has what we wrote.
             let buf = target.read_memory_to_vec(addr, 3).expect("read_memory failed");
@@ -5819,7 +5803,6 @@ mod tests {
     #[::fuchsia::test]
     async fn test_preserve_name_snapshot() {
         spawn_kernel_and_run(async |locked, mut current_task| {
-            let kernel = current_task.kernel().clone();
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task
                 .write_memory(name_addr, CString::new("foo").unwrap().as_bytes_with_nul())
@@ -5841,12 +5824,7 @@ mod tests {
                 Ok(starnix_syscalls::SUCCESS)
             );
 
-            let target = create_task(locked, &kernel, "another-task");
-            current_task
-                .mm()
-                .unwrap()
-                .snapshot_to(locked, &target.mm().unwrap())
-                .expect("snapshot_to failed");
+            let target = current_task.clone_task_for_test(locked, 0, None);
 
             {
                 let mm = target.mm().unwrap();

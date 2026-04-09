@@ -10,7 +10,7 @@ use crate::execution::{
 use crate::fs::fuchsia::RemoteFs;
 use crate::fs::tmpfs::TmpFs;
 use crate::mm::syscalls::{do_mmap, sys_mremap};
-use crate::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
+use crate::mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager, PAGE_SIZE};
 use crate::security;
 use crate::task::container_namespace::ContainerNamespace;
 use crate::task::{
@@ -24,6 +24,8 @@ use crate::vfs::{
     FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_async::LocalExecutor;
 use selinux::SecurityServer;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
@@ -43,7 +45,6 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::{Arc, mpsc};
 use zerocopy::{Immutable, IntoBytes};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Create a FileSystemHandle for use in testing.
 ///
@@ -243,6 +244,17 @@ fn create_test_fs_context(
     FsContext::new(Namespace::new(create_fs(locked, kernel)))
 }
 
+/// Initializes a 64-bit address-space for the specified `task`.
+fn create_test_mm(task: &Task) -> Result<Arc<MemoryManager>, Errno> {
+    let arch_width = ArchWidth::Arch64;
+    let mm =
+        MemoryManager::new_for_test(task.thread_group().root_vmar.unowned(), ArchWidth::Arch64);
+    let fake_executable_addr = mm.get_random_base_for_executable(arch_width, 0)?;
+    mm.initialize_brk_origin(arch_width, fake_executable_addr)?;
+    task.live()?.mm.update(Some(mm.clone()));
+    Ok(mm)
+}
+
 fn create_test_init_task(
     locked: &mut Locked<Unlocked>,
     kernel: &Kernel,
@@ -259,7 +271,7 @@ fn create_test_init_task(
         &[],
     )
     .expect("failed to create first task");
-    init_task.mm().unwrap().initialize_mmap_layout_for_test(ArchWidth::Arch64);
+    create_test_mm(&init_task).expect("failed to create MM");
 
     let system_task = create_system_task(locked, &kernel.weak_self.upgrade().unwrap(), fs)
         .expect("create system task");
@@ -326,7 +338,7 @@ pub fn create_task_with_security_context(
         Some(security_context),
     )
     .expect("failed to create second task");
-    task.mm().unwrap().initialize_mmap_layout_for_test(ArchWidth::Arch64);
+    create_test_mm(&task).expect("failed to create MM");
 
     // Take the lock on thread group and task in the correct order to ensure any wrong ordering
     // will trigger the tracing-mutex at the right call site.
