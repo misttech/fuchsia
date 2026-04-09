@@ -53,6 +53,11 @@ where
     pub fn new(handle: H, attempts: usize) -> Self {
         Self { handle, attempts }
     }
+
+    /// Returns a shared reference to the underlying handle.
+    pub fn handle(&self) -> &H {
+        &self.handle
+    }
 }
 
 impl<H> DnsHandle for RetryDnsHandle<H>

@@ -23,7 +23,9 @@ use tracing::debug;
 use crate::config::Protocol;
 use crate::config::{NameServerConfig, ResolverOpts};
 use crate::error::ResolveError;
-use crate::name_server::{ConnectionProvider, NameServerState, NameServerStats};
+use crate::name_server::{
+    ConnectionProvider, InternalNameServerStats, NameServerState, NameServerStats,
+};
 #[cfg(feature = "tokio-runtime")]
 use crate::name_server::{TokioConnection, TokioConnectionProvider, TokioHandle};
 
@@ -37,7 +39,7 @@ pub struct NameServer<
     options: ResolverOpts,
     client: Arc<Mutex<Option<C>>>,
     state: Arc<NameServerState>,
-    stats: Arc<NameServerStats>,
+    stats: Arc<std::sync::Mutex<InternalNameServerStats>>,
     conn_provider: P,
 }
 
@@ -65,12 +67,13 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> NameSe
         options: ResolverOpts,
         conn_provider: P,
     ) -> Self {
+        let retained_errors = config.num_retained_errors;
         Self {
             config,
             options,
             client: Arc::new(Mutex::new(None)),
             state: Arc::new(NameServerState::init(None)),
-            stats: Arc::new(NameServerStats::default()),
+            stats: Arc::new(std::sync::Mutex::new(InternalNameServerStats::new(retained_errors))),
             conn_provider,
         }
     }
@@ -82,12 +85,13 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> NameSe
         client: C,
         conn_provider: P,
     ) -> Self {
+        let retained_errors = config.num_retained_errors;
         Self {
             config,
             options,
             client: Arc::new(Mutex::new(Some(client))),
             state: Arc::new(NameServerState::init(None)),
-            stats: Arc::new(NameServerStats::default()),
+            stats: Arc::new(std::sync::Mutex::new(InternalNameServerStats::new(retained_errors))),
             conn_provider,
         }
     }
@@ -144,7 +148,13 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> NameSe
             Ok(response) => {
                 // First evaluate if the message succeeded.
                 let response =
-                    ResolveError::from_response(response, self.config.trust_nx_responses)?;
+                    match ResolveError::from_response(response, self.config.trust_nx_responses) {
+                        Ok(response) => response,
+                        Err(e) => {
+                            self.stats.lock().unwrap().next_failure(e.kind.clone());
+                            return Err(e);
+                        }
+                    };
 
                 // TODO: consider making message::take_edns...
                 let remote_edns = response.extensions().clone();
@@ -153,7 +163,7 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> NameSe
                 self.state.establish(remote_edns);
 
                 // record the success
-                self.stats.next_success();
+                self.stats.lock().unwrap().next_success();
                 Ok(response)
             }
             Err(error) => {
@@ -163,7 +173,7 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> NameSe
                 self.state.fail(Instant::now());
 
                 // record the failure
-                self.stats.next_failure();
+                self.stats.lock().unwrap().next_failure(error.kind.clone());
 
                 // These are connection failures, not lookup failures, that is handled in the resolver layer
                 Err(error)
@@ -174,6 +184,10 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> NameSe
     /// Specifies that thie NameServer will treat negative responses as permanent failures and will not retry
     pub fn trust_nx_responses(&self) -> bool {
         self.config.trust_nx_responses
+    }
+
+    pub fn stats(&self) -> NameServerStats {
+        self.stats.lock().unwrap().export(self.config.socket_addr, self.config.protocol)
     }
 }
 
@@ -216,7 +230,11 @@ impl<C: DnsHandle<Error = ResolveError>, P: ConnectionProvider<Conn = C>> Ord fo
             }
         }
 
-        self.stats.cmp(&other.stats)
+        // Avoid deadlock by cloning data out from under the locks.
+        let self_stats = self.stats.lock().unwrap().clone();
+        let other_stats = other.stats.lock().unwrap().clone();
+
+        self_stats.cmp(&other_stats)
     }
 }
 

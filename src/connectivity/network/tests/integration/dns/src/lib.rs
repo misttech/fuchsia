@@ -10,16 +10,19 @@ use std::num::NonZeroU16;
 use std::pin::pin;
 use std::str::FromStr as _;
 
+use diagnostics_assertions::assert_data_tree;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as net_dhcp;
+use fidl_fuchsia_net_dhcpv6 as net_dhcpv6;
+use fidl_fuchsia_net_ext as fnet_ext;
+use fidl_fuchsia_net_name as net_name;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_testing as ftesting;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as net_dhcp,
-    fidl_fuchsia_net_dhcpv6 as net_dhcpv6, fidl_fuchsia_net_ext as fnet_ext,
-    fidl_fuchsia_net_name as net_name, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_testing as ftesting,
-};
-
 use futures::future::{self, FusedFuture, Future, FutureExt as _};
 use futures::stream::{self, StreamExt as _};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -947,6 +950,41 @@ async fn mock_udp_name_server(
     }
 }
 
+async fn mock_tcp_name_server(
+    listener: fuchsia_async::net::TcpListener,
+    handle_query: impl Fn(&trust_dns_proto::op::Message) -> trust_dns_proto::op::Message,
+) {
+    use trust_dns_proto::op::{Message, MessageType, OpCode};
+
+    let mut incoming = listener.accept_stream();
+    while let Some(conn) = incoming.next().await {
+        let (mut stream, _src_addr) = conn.expect("accept incoming TCP connection");
+        let handle_query = &handle_query;
+        // Read the two-octet length field, which tells us the length of the following DNS
+        // message, in network (big-endian) order.
+        let mut len_buf = [0_u8; 2];
+        while let Ok(()) = stream.read_exact(&mut len_buf).await {
+            let len = usize::from(u16::from_be_bytes(len_buf));
+            let mut buf = vec![0_u8; len];
+            stream.read_exact(&mut buf).await.expect("receive DNS query");
+            let query = Message::from_vec(&buf).expect("deserialize DNS query");
+
+            let mut response = handle_query(&query);
+            let _: &mut Message = response
+                .set_message_type(MessageType::Response)
+                .set_op_code(OpCode::Update)
+                .set_id(query.id())
+                .add_queries(query.queries().to_vec());
+            let response = response.to_vec().expect("serialize DNS response");
+
+            // Write the two-octet length field.
+            let len = u16::try_from(response.len()).unwrap().to_be_bytes();
+            stream.write_all(&len).await.expect("send length field");
+            stream.write_all(&response).await.expect("send DNS response");
+        }
+    }
+}
+
 fn answer_for_hostname(
     hostname: &str,
     resolved_addr: fnet::IpAddress,
@@ -1409,7 +1447,7 @@ async fn no_fallback_to_tcp_on_failed_udp<N: Netstack>(name: &str) {
 #[netstack_test]
 #[variant(N, Netstack)]
 async fn fallback_to_tcp_on_truncated_response<N: Netstack>(name: &str) {
-    use trust_dns_proto::op::{Message, MessageType, OpCode, ResponseCode};
+    use trust_dns_proto::op::{Message, ResponseCode};
 
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox
@@ -1466,45 +1504,13 @@ async fn fallback_to_tcp_on_truncated_response<N: Netstack>(name: &str) {
     );
     // The name server responds to queries over TCP with the full response.
     let mut tcp_fut = pin!(
-        async {
-            let mut incoming = tcp_listener.accept_stream();
-            let (mut stream, _src_addr) = incoming
-                .next()
-                .await
-                .expect("DNS query over TCP")
-                .expect("accept incoming TCP connection");
-            loop {
-                // Read the two-octet length field, which tells us the length of the following DNS
-                // message, in network (big-endian) order.
-                let mut len_buf = [0_u8; 2];
-                stream.read_exact(&mut len_buf).await.expect("read length field");
-                let len = u16::from_be_bytes(len_buf);
-                let len = usize::from(len);
-
-                let mut buf = vec![0_u8; len];
-                stream.read_exact(&mut buf).await.expect("receive DNS query");
-                let query = Message::from_vec(&buf).expect("deserialize DNS query");
-                let answer = answer_for_hostname(EXAMPLE_HOSTNAME, EXAMPLE_IPV4_ADDR);
-                let mut response = Message::new();
-                let _: &mut Message = response
-                    .set_message_type(MessageType::Response)
-                    .set_op_code(OpCode::Update)
-                    .set_response_code(ResponseCode::NoError)
-                    .add_answer(answer)
-                    .set_id(query.id())
-                    .add_queries(query.queries().to_vec());
-                let response = response.to_vec().expect("serialize DNS response");
-
-                // Write the two-octet length field.
-                let len = u16::try_from(response.len())
-                    .expect("response is larger than maximum size")
-                    .to_be_bytes();
-                let written = stream.write(&len).await.expect("send length field");
-                assert_eq!(written, len.len());
-                let written = stream.write(&response).await.expect("send DNS response");
-                assert_eq!(written, response.len());
-            }
-        }
+        mock_tcp_name_server(tcp_listener, |_: &Message| {
+            let answer = answer_for_hostname(EXAMPLE_HOSTNAME, EXAMPLE_IPV4_ADDR);
+            let mut response = Message::new();
+            let _: &mut Message =
+                response.set_response_code(ResponseCode::NoError).add_answer(answer);
+            response
+        })
         .fuse()
     );
 
@@ -1709,4 +1715,302 @@ async fn query_preferred_name_servers_first<N: Netstack>(name: &str) {
     };
 
     futures::join!(name_servers_fut, lookup_fut);
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn dns_name_server_stats_inspect<N: Netstack>(name: &str) {
+    use trust_dns_proto::op::{Message, ResponseCode};
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox
+        .create_netstack_realm_with::<N, _, _>(
+            name,
+            &[KnownServiceProvider::DnsResolver, KnownServiceProvider::FakeClock],
+        )
+        .expect("create realm");
+
+    let dns_server_addr: std::net::SocketAddr = std_socket_addr!("127.0.0.1:1234");
+    let (udp_socket, _tcp_listener) = setup_dns_server(&realm, dns_server_addr).await;
+    pause_fake_clock(&realm).await.expect("failed to pause fake clock");
+
+    let name_lookup =
+        realm.connect_to_protocol::<net_name::LookupMarker>().expect("connect to protocol");
+
+    let mut lookup_udp_fut = pin!(
+        async {
+            let _ips = name_lookup
+                .lookup_ip(
+                    EXAMPLE_HOSTNAME,
+                    &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
+                )
+                .await
+                .expect("call lookup IP")
+                .expect("lookup IP");
+        }
+        .fuse()
+    );
+
+    let mut udp_server_fut = pin!(
+        mock_udp_name_server(&udp_socket, |_: &Message| {
+            let answer = answer_for_hostname(EXAMPLE_HOSTNAME, EXAMPLE_IPV4_ADDR);
+            let mut response = Message::new();
+            let _: &mut Message =
+                response.set_response_code(ResponseCode::NoError).add_answer(answer);
+            response
+        })
+        .fuse()
+    );
+
+    futures::select! {
+        () = lookup_udp_fut => {},
+        () = udp_server_fut => panic!("mock UDP name server future should never complete"),
+    };
+
+    let data = netstack_testing_common::get_inspect_data(
+        &realm,
+        constants::dns_resolver::COMPONENT_NAME,
+        "root/name_servers",
+    )
+    .await
+    .expect("get inspect data");
+
+    assert_data_tree!(data, root: {
+        name_servers: {
+            "0": {
+                address: "127.0.0.1:1234",
+                protocol: "Udp",
+                successful_queries: 1u64,
+                failed_queries: 0u64,
+                success_streak: 1u64,
+                errors: {
+                    Timeout: 0u64,
+                    Message: 0u64,
+                    NoConnections: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
+                    NoRecordsFoundResponseCodeCounts: {},
+                    UnhandledResolveErrorKindCounts: {},
+                }
+            },
+            "1": {
+                address: "127.0.0.1:1234",
+                protocol: "Tcp",
+                successful_queries: 0u64,
+                failed_queries: 0u64,
+                success_streak: 0u64,
+                errors: {
+                    Timeout: 0u64,
+                    Message: 0u64,
+                    NoConnections: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
+                    NoRecordsFoundResponseCodeCounts: {},
+                    UnhandledResolveErrorKindCounts: {},
+                }
+            }
+        }
+    });
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn dns_name_server_stats_tcp_inspect<N: Netstack>(name: &str) {
+    use trust_dns_proto::op::{Message, ResponseCode};
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox
+        .create_netstack_realm_with::<N, _, _>(
+            name,
+            &[KnownServiceProvider::DnsResolver, KnownServiceProvider::FakeClock],
+        )
+        .expect("create realm");
+    pause_fake_clock(&realm).await.expect("failed to pause fake clock");
+
+    let dns_server_addr: std::net::SocketAddr = std_socket_addr!("127.0.0.1:1234");
+    let (udp_socket, tcp_listener) = setup_dns_server(&realm, dns_server_addr).await;
+
+    let name_lookup =
+        realm.connect_to_protocol::<net_name::LookupMarker>().expect("connect to protocol");
+
+    let mut lookup_tcp_fut = pin!(
+        async {
+            let _ips = name_lookup
+                .lookup_ip(
+                    "tcp.example.com.",
+                    &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
+                )
+                .await
+                .expect("call lookup IP")
+                .expect("lookup IP");
+        }
+        .fuse()
+    );
+
+    let mut udp_truncated_server_fut = pin!(
+        mock_udp_name_server(&udp_socket, |_: &Message| {
+            let mut response = Message::new();
+            let _: &mut Message = response.set_truncated(true);
+            response
+        })
+        .fuse()
+    );
+
+    let mut tcp_server_fut = pin!(
+        mock_tcp_name_server(tcp_listener, |_: &Message| {
+            let answer = answer_for_hostname("tcp.example.com.", EXAMPLE_IPV4_ADDR);
+            let mut response = Message::new();
+            let _: &mut Message =
+                response.set_response_code(ResponseCode::NoError).add_answer(answer);
+            response
+        })
+        .fuse()
+    );
+
+    futures::select! {
+        () = lookup_tcp_fut => {},
+        () = udp_truncated_server_fut => panic!("mock UDP server future should never complete"),
+        () = tcp_server_fut => panic!("mock TCP server future should never complete"),
+    };
+
+    // Verify Inspect
+    let data = netstack_testing_common::get_inspect_data(
+        &realm,
+        constants::dns_resolver::COMPONENT_NAME,
+        "root/name_servers",
+    )
+    .await
+    .expect("get inspect data");
+
+    assert_data_tree!(data, root: {
+        name_servers: {
+            "0": {
+                address: "127.0.0.1:1234",
+                protocol: "Udp",
+                successful_queries: 1u64,
+                failed_queries: 0u64,
+                success_streak: 1u64,
+                errors: {
+                    Timeout: 0u64,
+                    Message: 0u64,
+                    NoConnections: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
+                    NoRecordsFoundResponseCodeCounts: {},
+                    UnhandledResolveErrorKindCounts: {},
+                }
+            },
+            "1": {
+                address: "127.0.0.1:1234",
+                protocol: "Tcp",
+                successful_queries: 1u64,
+                failed_queries: 0u64,
+                success_streak: 1u64,
+                errors: {
+                    Timeout: 0u64,
+                    Message: 0u64,
+                    NoConnections: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
+                    NoRecordsFoundResponseCodeCounts: {},
+                    UnhandledResolveErrorKindCounts: {},
+                }
+            }
+        }
+    });
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+async fn dns_name_server_stats_failure_inspect<N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox
+        .create_netstack_realm_with::<N, _, _>(
+            name,
+            &[KnownServiceProvider::DnsResolver, KnownServiceProvider::FakeClock],
+        )
+        .expect("create realm");
+
+    let dns_server_addr: std::net::SocketAddr = std_socket_addr!("127.0.0.1:1234");
+    let (udp_socket, _tcp_listener) = setup_dns_server(&realm, dns_server_addr).await;
+
+    let name_lookup =
+        realm.connect_to_protocol::<net_name::LookupMarker>().expect("connect to protocol");
+
+    // A mock server that returns SERVFAIL.
+    let mut lookup_fut = pin!(
+        async {
+            let result = name_lookup
+                .lookup_ip(
+                    EXAMPLE_HOSTNAME,
+                    &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
+                )
+                .await
+                .expect("call lookup IP");
+            assert_eq!(result, Err(net_name::LookupError::NotFound));
+        }
+        .fuse()
+    );
+
+    let mut udp_server_fut = pin!(
+        mock_udp_name_server(&udp_socket, |_: &trust_dns_proto::op::Message| {
+            let mut response = trust_dns_proto::op::Message::new();
+            let _: &mut trust_dns_proto::op::Message =
+                response.set_response_code(trust_dns_proto::op::ResponseCode::ServFail);
+            response
+        })
+        .fuse()
+    );
+
+    futures::select! {
+        () = lookup_fut => {},
+        () = udp_server_fut => panic!("mock UDP server future should never complete"),
+    };
+
+    let data = netstack_testing_common::get_inspect_data(
+        &realm,
+        constants::dns_resolver::COMPONENT_NAME,
+        "root/name_servers",
+    )
+    .await
+    .expect("get inspect data");
+
+    assert_data_tree!(data, root: {
+        name_servers: {
+            "0": {
+                address: "127.0.0.1:1234",
+                protocol: "Udp",
+                successful_queries: 0u64,
+                failed_queries: 1u64,
+                success_streak: 0u64,
+                errors: {
+                    Timeout: 0u64,
+                    Message: 0u64,
+                    NoConnections: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
+                    NoRecordsFoundResponseCodeCounts: {
+                        ServFail: 1u64,
+                    },
+                    UnhandledResolveErrorKindCounts: {},
+                }
+            },
+            "1": {
+                address: "127.0.0.1:1234",
+                protocol: "Tcp",
+                successful_queries: 0u64,
+                failed_queries: 0u64,
+                success_streak: 0u64,
+                errors: {
+                    Timeout: 0u64,
+                    Message: 0u64,
+                    NoConnections: 0u64,
+                    IoErrorCounts: {},
+                    ProtoErrorCounts: {},
+                    NoRecordsFoundResponseCodeCounts: {},
+                    UnhandledResolveErrorKindCounts: {},
+                }
+            }
+        }
+    });
 }

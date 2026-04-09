@@ -99,6 +99,11 @@ where
             minimum_algorithm: self.minimum_algorithm,
         }
     }
+
+    /// Returns a shared reference to the underlying handle.
+    pub fn handle(&self) -> &H {
+        &self.handle
+    }
 }
 
 impl<H> DnsHandle for DnssecDnsHandle<H>

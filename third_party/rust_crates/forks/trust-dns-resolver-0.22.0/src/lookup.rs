@@ -185,6 +185,20 @@ pub enum LookupEither<
     Secure(DnssecDnsHandle<RetryDnsHandle<NameServerPool<C, P>>>),
 }
 
+impl<C, P> LookupEither<C, P>
+where
+    C: DnsHandle<Error = ResolveError> + 'static,
+    P: ConnectionProvider<Conn = C> + 'static,
+{
+    pub fn pool(&self) -> &NameServerPool<C, P> {
+        match self {
+            Self::Retry(ref c) => c.handle(),
+            #[cfg(feature = "dnssec")]
+            Self::Secure(ref c) => c.handle().handle(),
+        }
+    }
+}
+
 impl<C: DnsHandle<Error = ResolveError> + Sync, P: ConnectionProvider<Conn = C>> DnsHandle
     for LookupEither<C, P>
 {

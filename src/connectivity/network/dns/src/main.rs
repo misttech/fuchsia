@@ -25,7 +25,6 @@ use std::convert::TryFrom as _;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
-use std::rc::Rc;
 use std::str::FromStr as _;
 use std::sync::Arc;
 use trust_dns_proto::error::ProtoErrorKind;
@@ -37,22 +36,40 @@ use trust_dns_resolver::config::{
     ResolverOpts, ServerOrderingStrategy,
 };
 use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
-use trust_dns_resolver::lookup;
+use trust_dns_resolver::{NameServerStats, lookup};
 use unicode_xid::UnicodeXID as _;
 
-struct SharedResolver<T>(RwLock<Rc<T>>);
+#[derive(Debug, Clone)]
+/// A type wrapping the underlying resolver.
+///
+/// The outer `Arc` lets the whole thing be shared between threads. Although
+/// lookup and updating the config happens in a single thread, Inspect may call
+/// from other threads to get resolver information.
+///
+/// The lock is required so the server can be updated when new nameservers are
+/// configured.
+///
+/// The inner `Arc` means users of the nameserver only hold the lock long enough
+/// to clone the `Arc`, or, in the case of updating, long enough to swap out the
+/// resolver. Otherwise, lookups would have to hold the lock the whole time a
+/// query is running, which can be on the order of seconds.
+///
+/// NOTE: The lock is unnecessary since on most architectures you can atomically
+/// swap a pointer, but the lock leads to a simpler implementation and there
+/// isn't much contention here.
+struct SharedResolver<T>(Arc<RwLock<Arc<T>>>);
 
 impl<T> SharedResolver<T> {
     fn new(resolver: T) -> Self {
-        SharedResolver(RwLock::new(Rc::new(resolver)))
+        SharedResolver(Arc::new(RwLock::new(Arc::new(resolver))))
     }
 
-    fn read(&self) -> Rc<T> {
+    fn read(&self) -> Arc<T> {
         let Self(inner) = self;
         inner.read().clone()
     }
 
-    fn write(&self, other: Rc<T>) {
+    fn write(&self, other: Arc<T>) {
         let Self(inner) = self;
         *inner.write() = other;
     }
@@ -60,6 +77,7 @@ impl<T> SharedResolver<T> {
 
 const STAT_WINDOW_DURATION: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(60);
 const STAT_WINDOW_COUNT: usize = 30;
+const RETAINED_ERRORS_PER_NAME_SERVER: usize = 32;
 
 /// Stats about queries during the last `STAT_WINDOW_COUNT` windows of
 /// `STAT_WINDOW_DURATION` time.
@@ -260,6 +278,46 @@ impl FailureStats {
             }
         }
     }
+
+    fn populate_inspect_node(&self, node: &fuchsia_inspect::Node) {
+        let FailureStats {
+            message,
+            no_connections,
+            no_records_found: NoRecordsFoundStats { response_code_counts },
+            io: IoErrorStats(io),
+            proto: GenericErrorKindStats(proto),
+            timeout,
+            unhandled_resolve_error_kind: GenericErrorKindStats(unhandled_resolve_error_kind),
+        } = self;
+
+        node.record_uint("Message", *message);
+        node.record_uint("NoConnections", *no_connections);
+        node.record_uint("Timeout", *timeout);
+
+        let io_error_codes = node.create_child("IoErrorCounts");
+        for (kind, count) in io {
+            io_error_codes.record_uint(format!("{kind:?}"), *count);
+        }
+        node.record(io_error_codes);
+
+        let proto_error_codes = node.create_child("ProtoErrorCounts");
+        for (kind, count) in proto {
+            proto_error_codes.record_uint(kind, *count);
+        }
+        node.record(proto_error_codes);
+
+        let no_records_found_response_codes = node.create_child("NoRecordsFoundResponseCodeCounts");
+        for (HashableResponseCode { response_code }, count) in response_code_counts {
+            no_records_found_response_codes.record_uint(format!("{:?}", response_code), *count);
+        }
+        node.record(no_records_found_response_codes);
+
+        let unhandled_resolve_error_kinds = node.create_child("UnhandledResolveErrorKindCounts");
+        for (error_kind, count) in unhandled_resolve_error_kind {
+            unhandled_resolve_error_kinds.record_uint(error_kind, *count);
+        }
+        node.record(unhandled_resolve_error_kinds);
+    }
 }
 
 struct QueryWindow {
@@ -351,6 +409,7 @@ fn update_resolver<T: ResolverLookup>(resolver: &SharedResolver<T>, servers: Ser
             tls_dns_name: None,
             trust_nx_responses: false,
             bind_addr: None,
+            num_retained_errors: RETAINED_ERRORS_PER_NAME_SERVER,
         })
         .chain(std::iter::once(NameServerConfig {
             socket_addr,
@@ -358,12 +417,13 @@ fn update_resolver<T: ResolverLookup>(resolver: &SharedResolver<T>, servers: Ser
             tls_dns_name: None,
             trust_nx_responses: false,
             bind_addr: None,
+            num_retained_errors: RETAINED_ERRORS_PER_NAME_SERVER,
         }))
     }));
 
     let new_resolver =
         T::new(ResolverConfig::from_parts(None, Vec::new(), name_servers), resolver_opts);
-    resolver.write(Rc::new(new_resolver));
+    resolver.write(Arc::new(new_resolver));
 }
 
 enum IncomingRequest {
@@ -398,6 +458,16 @@ impl ResolverLookup for Resolver {
 
     async fn reverse_lookup(&self, addr: IpAddr) -> Result<lookup::ReverseLookup, ResolveError> {
         self.reverse_lookup(addr).await
+    }
+}
+
+trait NameServerStatsProvider {
+    fn name_server_stats(&self) -> Vec<trust_dns_resolver::NameServerStats>;
+}
+
+impl NameServerStatsProvider for Resolver {
+    fn name_server_stats(&self) -> Vec<trust_dns_resolver::NameServerStats> {
+        self.name_server_stats()
     }
 }
 
@@ -1098,6 +1168,47 @@ fn add_config_state_inspect(
     })
 }
 
+/// Adds a nameserver stats child node to `parent`.
+fn add_name_server_stats_inspect<T>(
+    parent: &fuchsia_inspect::Node,
+    shared_resolver: SharedResolver<T>,
+) -> fuchsia_inspect::LazyNode
+where
+    T: NameServerStatsProvider + Send + Sync + 'static,
+{
+    parent.create_lazy_child("name_servers", move || {
+        let shared_resolver = shared_resolver.read();
+        async move {
+            let inspector = fuchsia_inspect::Inspector::default();
+            for (
+                i,
+                NameServerStats { addr, proto, failures, successes, recent_errors, success_streak },
+            ) in shared_resolver.name_server_stats().into_iter().enumerate()
+            {
+                let child = inspector.root().create_child(format!("{i}"));
+                child.record_string("address", format!("{addr}"));
+                child.record_string("protocol", format!("{proto:?}"));
+                child.record_uint("successful_queries", successes as u64);
+                child.record_uint("failed_queries", failures as u64);
+                child.record_uint("success_streak", success_streak as u64);
+
+                let failure_stats =
+                    recent_errors.iter().fold(FailureStats::default(), |mut stats, error| {
+                        stats.increment(error);
+                        stats
+                    });
+                let errors = child.create_child("errors");
+                failure_stats.populate_inspect_node(&errors);
+                child.record(errors);
+
+                inspector.root().record(child);
+            }
+            Ok(inspector)
+        }
+        .boxed()
+    })
+}
+
 /// Adds a [`QueryStats`] inspection child node to `parent`.
 fn add_query_stats_inspect(
     parent: &fuchsia_inspect::Node,
@@ -1157,51 +1268,9 @@ fn add_query_stats_inspect(
                     *failure_elapsed_time,
                     *failure_count,
                 );
-                let FailureStats {
-                    message,
-                    no_connections,
-                    no_records_found: NoRecordsFoundStats {
-                        response_code_counts,
-                    },
-                    io: IoErrorStats( io_error_counts ),
-                    proto: GenericErrorKindStats(proto),
-                    timeout,
-                    unhandled_resolve_error_kind: GenericErrorKindStats(unhandled_resolve_error_kind),
-                } = failure_stats;
+
                 let errors = child.create_child("errors");
-                errors.record_uint("Message", *message);
-                errors.record_uint("NoConnections", *no_connections);
-                errors.record_uint("Timeout", *timeout);
-
-                let io_error_codes = errors.create_child("IoErrorCounts");
-                for (kind, count) in io_error_counts {
-                    io_error_codes.record_uint(format!("{kind:?}"), *count);
-                }
-                errors.record(io_error_codes);
-
-                let proto_error_codes = errors.create_child("ProtoErrorCounts");
-                for (kind, count) in proto {
-                    proto_error_codes.record_uint(kind, *count);
-                }
-                errors.record(proto_error_codes);
-
-                let no_records_found_response_codes =
-                    errors.create_child("NoRecordsFoundResponseCodeCounts");
-                for (HashableResponseCode { response_code }, count) in response_code_counts {
-                    no_records_found_response_codes.record_uint(
-                        format!("{:?}", response_code),
-                        *count,
-                    );
-                }
-                errors.record(no_records_found_response_codes);
-
-                let unhandled_resolve_error_kinds =
-                    errors.create_child("UnhandledResolveErrorKindCounts");
-                for (error_kind, count) in unhandled_resolve_error_kind {
-                    unhandled_resolve_error_kinds.record_uint(error_kind, *count);
-                }
-                errors.record(unhandled_resolve_error_kinds);
-
+                failure_stats.populate_inspect_node(&errors);
                 child.record(errors);
 
                 let address_counts_node = child.create_child("address_counts");
@@ -1240,6 +1309,8 @@ pub async fn main() -> Result<(), Error> {
     let inspector = fuchsia_inspect::component::inspector();
     let _state_inspect_node = add_config_state_inspect(inspector.root(), config_state.clone());
     let _query_stats_inspect_node = add_query_stats_inspect(inspector.root(), stats.clone());
+    let _name_server_stats_inspect_node =
+        add_name_server_stats_inspect(inspector.root(), resolver.clone());
     let _inspect_server_task =
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
             .context("publish Inspect task")?;
@@ -1295,11 +1366,12 @@ mod tests {
     use dns::test_util::*;
     use futures::future::TryFutureExt as _;
     use itertools::Itertools as _;
-    use net_declare::{fidl_ip, std_ip, std_ip_v4, std_ip_v6};
+    use net_declare::{fidl_ip, std_ip, std_ip_v4, std_ip_v6, std_socket_addr};
     use net_types::ip::Ip as _;
     use test_case::test_case;
     use trust_dns_proto::op::Query;
     use trust_dns_proto::rr::{Name, Record};
+    use trust_dns_resolver::config::Protocol;
     use trust_dns_resolver::lookup::{Lookup, ReverseLookup};
 
     use super::*;
@@ -1429,14 +1501,16 @@ mod tests {
         .await;
     }
 
+    #[derive(Debug, Clone)]
     struct MockResolver {
         config: ResolverConfig,
         repeat: u16,
+        name_server_stats: Vec<NameServerStats>,
     }
 
     impl ResolverLookup for MockResolver {
         fn new(config: ResolverConfig, _options: ResolverOpts) -> Self {
-            Self { config, repeat: 1 }
+            Self { config, repeat: 1, name_server_stats: Vec::new() }
         }
 
         async fn lookup<N: IntoName + Send>(
@@ -1444,7 +1518,7 @@ mod tests {
             name: N,
             record_type: RecordType,
         ) -> Result<lookup::Lookup, ResolveError> {
-            let Self { config: _, repeat } = self;
+            let Self { config: _, repeat, name_server_stats: _ } = self;
 
             let name = name.into_name()?;
             let host_name = name.to_utf8();
@@ -1535,6 +1609,12 @@ mod tests {
         }
     }
 
+    impl NameServerStatsProvider for MockResolver {
+        fn name_server_stats(&self) -> Vec<NameServerStats> {
+            self.name_server_stats.clone()
+        }
+    }
+
     struct TestEnvironment {
         shared_resolver: SharedResolver<MockResolver>,
         config_state: Arc<dns::config::ServerConfigState>,
@@ -1559,6 +1639,7 @@ mod tests {
                         NameServerConfigGroup::with_capacity(0),
                     ),
                     repeat,
+                    name_server_stats: Vec::new(),
                 }),
                 config_state: Arc::new(dns::config::ServerConfigState::new()),
                 stats: Arc::new(QueryStats::new()),
@@ -1923,6 +2004,7 @@ mod tests {
                     tls_dns_name: None,
                     trust_nx_responses: false,
                     bind_addr: None,
+                    num_retained_errors: RETAINED_ERRORS_PER_NAME_SERVER,
                 },
                 NameServerConfig {
                     socket_addr,
@@ -1930,6 +2012,7 @@ mod tests {
                     tls_dns_name: None,
                     trust_nx_responses: false,
                     bind_addr: None,
+                    num_retained_errors: RETAINED_ERRORS_PER_NAME_SERVER,
                 },
             ]
         };
@@ -2047,6 +2130,53 @@ mod tests {
                 "3": {
                     address: "8.8.8.8:53",
                 },
+            }
+        });
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_name_server_stats_inspect() {
+        let env = TestEnvironment::default();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let _name_server_stats_node =
+            add_name_server_stats_inspect(inspector.root(), env.shared_resolver.clone());
+        assert_data_tree!(inspector, root:{
+            name_servers: {}
+        });
+
+        let addr = std_socket_addr!("1.2.3.4:53");
+        let stats = NameServerStats {
+            addr,
+            proto: Protocol::Udp,
+            failures: 1,
+            successes: 2,
+            success_streak: 0,
+            recent_errors: vec![ResolveErrorKind::Timeout.into()],
+        };
+        env.shared_resolver.write(Arc::new(MockResolver {
+            config: ResolverConfig::default(),
+            repeat: 1,
+            name_server_stats: vec![stats],
+        }));
+
+        assert_data_tree!(inspector, root:{
+            name_servers: {
+                "0": {
+                    address: "1.2.3.4:53",
+                    protocol: "Udp",
+                    successful_queries: 2u64,
+                    failed_queries: 1u64,
+                    success_streak: 0u64,
+                    errors: {
+                        Timeout: 1u64,
+                        Message: 0u64,
+                        NoConnections: 0u64,
+                        IoErrorCounts: {},
+                        ProtoErrorCounts: {},
+                        NoRecordsFoundResponseCodeCounts: {},
+                        UnhandledResolveErrorKindCounts: {},
+                    }
+                }
             }
         });
     }

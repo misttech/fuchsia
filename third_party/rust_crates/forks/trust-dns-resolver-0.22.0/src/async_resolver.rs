@@ -27,7 +27,7 @@ use crate::lookup::{self, Lookup, LookupEither, LookupFuture};
 use crate::lookup_ip::{LookupIp, LookupIpFuture};
 use crate::name_server::{
     ConnectionProvider, GenericConnection, GenericConnectionProvider, NameServerPool,
-    RuntimeProvider,
+    NameServerStats, RuntimeProvider,
 };
 #[cfg(feature = "tokio-runtime")]
 use crate::name_server::{TokioConnection, TokioConnectionProvider, TokioHandle};
@@ -66,6 +66,16 @@ pub struct AsyncResolver<C: DnsHandle<Error = ResolveError>, P: ConnectionProvid
     options: ResolverOpts,
     client_cache: CachingClient<LookupEither<C, P>, ResolveError>,
     hosts: Option<Arc<Hosts>>,
+}
+
+impl<C, P> AsyncResolver<C, P>
+where
+    C: DnsHandle<Error = ResolveError>,
+    P: ConnectionProvider<Conn = C>,
+{
+    pub fn name_server_stats(&self) -> Vec<NameServerStats> {
+        self.client_cache.client().pool().name_server_stats()
+    }
 }
 
 /// An AsyncResolver used with Tokio

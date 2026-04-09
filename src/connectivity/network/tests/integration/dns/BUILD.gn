@@ -26,6 +26,7 @@ rustc_test("dns") {
     "//src/connectivity/network/tests/integration/macros:netstack_testing_macros",
     "//src/connectivity/policy/tests/integration/common:policy_testing_common",
     "//src/lib/async-utils",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fake-clock/fidl:fidl_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",

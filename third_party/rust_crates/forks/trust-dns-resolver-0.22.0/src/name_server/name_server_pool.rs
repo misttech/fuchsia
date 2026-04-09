@@ -23,7 +23,7 @@ use crate::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts, ServerO
 use crate::error::{ResolveError, ResolveErrorKind};
 #[cfg(feature = "mdns")]
 use crate::name_server;
-use crate::name_server::{ConnectionProvider, NameServer};
+use crate::name_server::{ConnectionProvider, NameServer, NameServerStats};
 #[cfg(test)]
 #[cfg(feature = "tokio-runtime")]
 use crate::name_server::{TokioConnection, TokioConnectionProvider, TokioHandle};
@@ -217,6 +217,10 @@ where
         let request_loop = request.clone();
 
         parallel_conn_loop(conns, request_loop, opts).await
+    }
+
+    pub fn name_server_stats(&self) -> Vec<NameServerStats> {
+        self.datagram_conns.iter().chain(self.stream_conns.iter()).map(NameServer::stats).collect()
     }
 }
 

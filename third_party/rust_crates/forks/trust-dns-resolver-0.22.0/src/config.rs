@@ -417,6 +417,11 @@ pub struct NameServerConfig {
     pub tls_config: Option<TlsClientConfig>,
     /// The client address (IP and port) to use for connecting to the server.
     pub bind_addr: Option<SocketAddr>,
+    /// The number of errors kept by this server to save for debugging purposes.
+    ///
+    /// May be retrieved, along with other information, using
+    /// [`NameServer::stats`](crate::name_server::NameServer::stats).
+    pub num_retained_errors: usize,
 }
 
 impl NameServerConfig {
@@ -430,6 +435,7 @@ impl NameServerConfig {
             #[cfg(feature = "dns-over-rustls")]
             tls_config: None,
             bind_addr: None,
+            num_retained_errors: 0,
         }
     }
 }
@@ -514,6 +520,7 @@ impl NameServerConfigGroup {
                 #[cfg(feature = "dns-over-rustls")]
                 tls_config: None,
                 bind_addr: None,
+                num_retained_errors: 0,
             };
             let tcp = NameServerConfig {
                 socket_addr: SocketAddr::new(*ip, port),
@@ -523,6 +530,7 @@ impl NameServerConfigGroup {
                 #[cfg(feature = "dns-over-rustls")]
                 tls_config: None,
                 bind_addr: None,
+                num_retained_errors: 0,
             };
 
             name_servers.push(udp);

@@ -479,6 +479,11 @@ where
     pub fn clear_cache(&self) {
         self.lru.clear();
     }
+
+    /// Returns a shared reference to the underlying client.
+    pub fn client(&self) -> &C {
+        &self.client
+    }
 }
 
 enum Records {
