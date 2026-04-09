@@ -308,7 +308,9 @@ impl CommandQueueHost for TestCommandQueueHost {
     }
 
     async fn enable(&self) -> Result<(), zx::Status> {
-        self.0.task_handler.state.lock().enabled = true;
+        let mut state = self.0.task_handler.state.lock();
+        state.enabled = true;
+        state.active_partition = EmmcPartitionId::UserDataPartition as u32;
         Ok(())
     }
 

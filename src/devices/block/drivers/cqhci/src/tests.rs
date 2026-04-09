@@ -21,6 +21,7 @@ use futures::{FutureExt as _, StreamExt as _};
 use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, SdhciInterruptStatusRegister};
 use std::pin::pin;
 use std::sync::Arc;
+use test_case::test_case;
 use zx::HandleBased as _;
 
 use fake_cqhci::{Blocker, FakeCqhci};
@@ -48,6 +49,18 @@ async fn connect_block_client(
         .expect("failed to create block client")
 }
 
+fn connect_rpmb_client(
+    started_driver: &DriverUnderTest<'_, CqhciDriver>,
+    scope: &fasync::Scope,
+) -> fidl_next::Client<rpmb::Rpmb> {
+    let rpmb_service: fdf_component::ServiceInstance<rpmb::Service> =
+        started_driver.driver_outgoing().service().connect_next().unwrap();
+
+    let (client_end, server_end) = fidl_next::fuchsia::create_channel();
+    rpmb_service.device(server_end).unwrap();
+    client_end.spawn_on(scope)
+}
+
 fn connect_inline_encryption_proxy(
     started_driver: &DriverUnderTest<'_, CqhciDriver>,
     partition_name: &str,
@@ -61,6 +74,7 @@ fn connect_inline_encryption_proxy(
 
     service.connect_to_inline_encryption().expect("failed to connect to inline encryption")
 }
+
 #[fuchsia::test]
 async fn test_driver_lifecycle() {
     let (_fixture, mut harness) = FakeCqhci::new(None);
@@ -339,18 +353,6 @@ async fn test_shutdown_with_active_clients() {
 
 #[fuchsia::test]
 async fn test_rpmb() {
-    fn connect_rpmb_client(
-        started_driver: &DriverUnderTest<'_, CqhciDriver>,
-        scope: &fasync::Scope,
-    ) -> fidl_next::Client<rpmb::Rpmb> {
-        let rpmb_service: fdf_component::ServiceInstance<rpmb::Service> =
-            started_driver.driver_outgoing().service().connect_next().unwrap();
-
-        let (client_end, server_end) = fidl_next::fuchsia::create_channel();
-        rpmb_service.device(server_end).unwrap();
-        client_end.spawn_on(scope)
-    }
-
     let (mut fixture, mut harness) = FakeCqhci::new(None);
 
     let started_driver = harness.start_driver().await.expect("failed to start driver");
@@ -416,6 +418,64 @@ async fn test_rpmb() {
 
     let driver = started_driver.lock().take().unwrap();
     driver.stop_driver().await;
+}
+
+#[test_case("user", 0xaa ; "user")]
+#[test_case("boot1", 0x11 ; "boot1")]
+#[fuchsia::test]
+async fn test_rpmb_partition_interleave(partition_name: &str, pattern: u8) {
+    let (mut fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let client = connect_block_client(&started_driver, partition_name).await;
+    let boot1_client = connect_block_client(&started_driver, "boot1").await;
+    let rpmb_client = connect_rpmb_client(&started_driver, &fixture.scope);
+
+    let pattern_vec = vec![pattern; 512];
+    let boot1_pattern = vec![0x11; 512];
+
+    // Initialize partitions.
+    client.write_at(BufferSlice::from(&pattern_vec[..]), 0).await.expect("write failed");
+    boot1_client
+        .write_at(BufferSlice::from(&boot1_pattern[..]), 0)
+        .await
+        .expect("boot1 write failed");
+
+    // 1. Issue a request on the boot partition.
+    let mut buf = vec![0u8; 512];
+    boot1_client
+        .read_at(MutableBufferSlice::from(&mut buf[..]), 0)
+        .await
+        .expect("boot1 read failed");
+    assert_eq!(buf, boot1_pattern);
+
+    // 2. Issue an RPMB request.
+    let rpmb_svc_fut = async {
+        let responder = fixture.handles.rpmb_request_receiver.next().await.unwrap();
+        responder.send(()).unwrap();
+    };
+
+    let rpmb_request_fut = async {
+        let vmo = zx::Vmo::create(1024).expect("failed to create vmo");
+        let request = rpmb::Request {
+            tx_frames: fmem::Range {
+                vmo: vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                offset: 0,
+                size: 0,
+            },
+            rx_frames: None,
+        };
+        rpmb_client.request(request).await.expect("FIDL error").expect("rpmb request failed");
+    };
+
+    futures::join!(rpmb_svc_fut, rpmb_request_fut);
+
+    // 3. Issue a request on the target partition.
+    let mut buf = vec![0u8; 512];
+    client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await.expect("read failed");
+    assert_eq!(buf, pattern_vec);
+
+    started_driver.stop_driver().await;
 }
 
 #[fuchsia::test]

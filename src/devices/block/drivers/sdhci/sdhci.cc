@@ -503,7 +503,7 @@ void Sdhci::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sync& complet
     completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
     return;
   }
-  fdf::info("Disabling CQHCI");
+  fdf::debug("Disabling CQHCI");
 
   InterruptSignalEnable::Get()
       .ReadFrom(&*regs_mmio_buffer_)

@@ -19,6 +19,9 @@ enum EmmcPartition : uint8_t {
   BOOT_PARTITION_2 = 0x2,
   RPMB_PARTITION = 0x3,
   PARTITION_COUNT,
+
+  // Not a real partition, but is used to indicate the current partition is unknown.
+  UNKNOWN = 0xff,
 };
 
 struct PartitionInfo {

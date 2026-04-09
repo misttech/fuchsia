@@ -459,6 +459,14 @@ void SdmmcBlockDevice::EnableCqhci(fdf::Arena& arena, EnableCqhciCompleter::Sync
   {
     fbl::AutoLock worker_lock(&worker_lock_);
     if (!(raw_ext_csd_[MMC_EXT_CSD_CMDQ_MODE_EN] & MMC_EXT_CSD_CMDQ_MODE_ENABLED)) {
+      // Before yielding to the command queueing driver, make sure the user data partition is
+      // selected.  Enabling command queuing whilst the RPMB partition is selected can result in
+      // errors.
+      if (zx_status_t status = SetPartition(USER_DATA_PARTITION); status != ZX_OK) {
+        completer.buffer(arena).ReplyError(status);
+        return;
+      }
+
       zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_CMDQ_MODE_EN, MMC_EXT_CSD_CMDQ_MODE_ENABLED);
       if (status != ZX_OK) {
         completer.buffer(arena).ReplyError(status);
@@ -476,6 +484,11 @@ void SdmmcBlockDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sy
     return;
   }
   fbl::AutoLock worker_lock(&worker_lock_);
+
+  // Assume nothing regarding the current partition; the command queueing driver can change the
+  // partition.
+  current_partition_ = UNKNOWN;
+
   zx_status_t status = MmcDoSwitch(MMC_EXT_CSD_CMDQ_MODE_EN, 0);
   if (status != ZX_OK) {
     completer.buffer(arena).ReplyError(status);

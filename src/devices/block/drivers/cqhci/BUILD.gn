@@ -71,6 +71,7 @@ fuchsia_rust_driver("driver") {
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/storage/lib/block_client/rust",
+    "//third_party/rust_crates:test-case",
   ]
 }
 

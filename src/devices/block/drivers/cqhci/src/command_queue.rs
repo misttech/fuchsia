@@ -270,7 +270,7 @@ enum State {
     /// CQE is enabled.  This is a prerequisite for submitting any task to hardware.
     Enabled,
 
-    /// CQE is disabled, a.k.a. shut-down.  This is not the same as when the command queuing engine
+    /// CQE is disabled, a.k.a. shut-down.  This is not the same as when the command queueing engine
     /// is disabled whilst processing RPMB requests (in that case, the state will be `Enabled`).
     Disabled,
 
@@ -663,6 +663,10 @@ impl CommandQueueExcl {
         self.host.enable().await?;
         {
             let mut inner = self.inner.lock();
+
+            // After the `host.enable()` above, the active partition should always be the user data
+            // partition.
+            inner.active_partition = Some(EmmcPartitionId::UserDataPartition);
 
             // Disable CQ so we can configure it
             let mut cqcfg =
