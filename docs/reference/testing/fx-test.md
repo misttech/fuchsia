@@ -481,16 +481,6 @@ For convenience, you can add an alias for this command in your `.bashrc` file:
 alias testlog='cat `fx test -pr path` | gunzip | jq -C | less -R'
 ```
 
-### Opting out of the new fx test command
-
-The new `fx test` command is currently set to be the default.
-
-To opt out of this setting, set the following environment variable:
-
-```bash
-export FUCHSIA_DISABLED_legacy_fxtest=0
-```
-
 <!-- Reference links -->
 
 [fuchsia-source-checkout]: /docs/get-started/get_fuchsia_source.md
