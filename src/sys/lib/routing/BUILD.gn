@@ -88,7 +88,6 @@ rustc_library("routing") {
     "src/resolving.rs",
     "src/rights.rs",
     "src/subdir.rs",
-    "src/walk_state.rs",
   ]
 
   test_deps = [

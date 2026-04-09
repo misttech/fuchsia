@@ -5,9 +5,8 @@
 use crate::bedrock::request_metadata::{InheritRights, IntermediateRights, Metadata};
 use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
-use crate::rights::{Rights, RightsWalker};
+use crate::rights::Rights;
 use crate::subdir::SubDir;
-use crate::walk_state::WalkStateUnit;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
 use cm_types::Availability;
@@ -189,20 +188,17 @@ fn check_and_compute_rights(
         }
     };
     let intermediate_rights: Option<IntermediateRights> = request.metadata.get_metadata();
-    let request_rights = RightsWalker::new(request_rights, moniker.clone());
-    let router_rights = RightsWalker::new(*rights, moniker.clone());
     // The rights of the previous step (if any) of the route must be
     // compatible with this step of the route.
     if let Some(IntermediateRights(intermediate_rights)) = intermediate_rights {
-        let intermediate_rights_walker = RightsWalker::new(intermediate_rights, moniker.clone());
-        intermediate_rights_walker
-            .validate_next(&router_rights)
+        intermediate_rights
+            .validate_next(&rights, moniker.clone().into())
             .map_err(|e| router_error::RouterError::from(RoutingError::from(e)))?;
     };
     request.metadata.set_metadata(IntermediateRights(*rights));
     // The rights of the request must be compatible with the
     // rights of this step of the route.
-    request_rights.validate_next(&router_rights).map_err(RoutingError::from)?;
+    request_rights.validate_next(&rights, moniker.clone().into()).map_err(RoutingError::from)?;
     Ok(())
 }
 

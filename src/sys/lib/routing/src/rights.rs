@@ -3,27 +3,30 @@
 // found in the LICENSE file.
 
 use crate::error::RightsRoutingError;
-use crate::walk_state::WalkStateUnit;
 use fidl_fuchsia_io as fio;
 use moniker::ExtendedMoniker;
 #[cfg(feature = "serde")]
-use serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Deserializer, ser::Serializer};
 use std::fmt;
-
-/// Performs rights validation for a routing step
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub(super) struct RightsWalker {
-    rights: Rights,
-    moniker: ExtendedMoniker,
-}
 
 /// Opaque rights type to define new traits like PartialOrd on.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Rights(fio::Operations);
 
-impl RightsWalker {
-    pub fn new(rights: impl Into<Rights>, moniker: impl Into<ExtendedMoniker>) -> Self {
-        Self { rights: rights.into(), moniker: moniker.into() }
+impl Rights {
+    /// Ensures the next walk state of rights satisfies a monotonic increasing sequence. Used to
+    /// verify the expectation that no right requested from a use, offer, or expose is missing as
+    /// capability routing walks from the capability's consumer to its provider.
+    pub fn validate_next(
+        &self,
+        next_rights: &Self,
+        moniker: ExtendedMoniker,
+    ) -> Result<(), RightsRoutingError> {
+        if next_rights.0.contains(self.0) {
+            Ok(())
+        } else {
+            Err(RightsRoutingError::Invalid { moniker, requested: *self, provided: *next_rights })
+        }
     }
 }
 
@@ -91,29 +94,6 @@ impl<'de> Deserialize<'de> for Rights {
     }
 }
 
-impl WalkStateUnit for RightsWalker {
-    type Error = RightsRoutingError;
-
-    /// Ensures the next walk state of rights satisfies a monotonic increasing sequence. Used to
-    /// verify the expectation that no right requested from a use, offer, or expose is missing as
-    /// capability routing walks from the capability's consumer to its provider.
-    fn validate_next(&self, next_rights: &RightsWalker) -> Result<(), Self::Error> {
-        if next_rights.rights.0.contains(self.rights.0) {
-            Ok(())
-        } else {
-            Err(RightsRoutingError::Invalid {
-                moniker: self.moniker.clone(),
-                requested: self.rights,
-                provided: next_rights.rights,
-            })
-        }
-    }
-
-    fn finalize_error(&self) -> Self::Error {
-        RightsRoutingError::MissingRightsSource { moniker: self.moniker.clone() }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,25 +102,19 @@ mod tests {
     #[test]
     fn validate_next() {
         assert_matches!(
-            RightsWalker::new(fio::Operations::empty(), ExtendedMoniker::ComponentManager)
-                .validate_next(&RightsWalker::new(
-                    fio::R_STAR_DIR,
-                    ExtendedMoniker::ComponentManager
-                )),
+            Rights(fio::Operations::empty())
+                .validate_next(&Rights(fio::R_STAR_DIR,), ExtendedMoniker::ComponentManager),
             Ok(())
         );
         assert_matches!(
-            RightsWalker::new(
-                fio::Operations::READ_BYTES | fio::Operations::GET_ATTRIBUTES,
-                ExtendedMoniker::ComponentManager
-            )
-            .validate_next(&RightsWalker::new(fio::R_STAR_DIR, ExtendedMoniker::ComponentManager)),
+            Rights(fio::Operations::READ_BYTES | fio::Operations::GET_ATTRIBUTES,)
+                .validate_next(&Rights(fio::R_STAR_DIR), ExtendedMoniker::ComponentManager),
             Ok(())
         );
         let provided = fio::Operations::READ_BYTES | fio::Operations::GET_ATTRIBUTES;
         assert_eq!(
-            RightsWalker::new(fio::R_STAR_DIR, ExtendedMoniker::ComponentManager)
-                .validate_next(&RightsWalker::new(provided, ExtendedMoniker::ComponentManager)),
+            Rights(fio::R_STAR_DIR)
+                .validate_next(&Rights(provided), ExtendedMoniker::ComponentManager),
             Err(RightsRoutingError::Invalid {
                 moniker: ExtendedMoniker::ComponentManager,
                 requested: Rights::from(fio::R_STAR_DIR),
@@ -149,8 +123,8 @@ mod tests {
         );
         let provided = fio::Operations::READ_BYTES | fio::Operations::GET_ATTRIBUTES;
         assert_eq!(
-            RightsWalker::new(fio::Operations::WRITE_BYTES, ExtendedMoniker::ComponentManager)
-                .validate_next(&RightsWalker::new(provided, ExtendedMoniker::ComponentManager)),
+            Rights(fio::Operations::WRITE_BYTES)
+                .validate_next(&Rights(provided), ExtendedMoniker::ComponentManager),
             Err(RightsRoutingError::Invalid {
                 moniker: ExtendedMoniker::ComponentManager,
                 requested: Rights::from(fio::Operations::WRITE_BYTES),

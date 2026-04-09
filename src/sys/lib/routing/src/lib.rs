@@ -13,7 +13,6 @@ pub mod policy;
 pub mod resolving;
 pub mod rights;
 pub mod subdir;
-pub mod walk_state;
 
 use crate::bedrock::request_metadata::directory_metadata;
 use crate::capability_source::CapabilitySource;
