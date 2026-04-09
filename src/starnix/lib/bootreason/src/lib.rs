@@ -13,10 +13,34 @@ use zx_status::Status;
 
 /// Temp file for the Starnix lifecycle detection
 const STARTED_ONCE: &str = "component-started-once";
+/// Starnix session restart indicator.
+/// True if the current Starnix session was restarted without a full reboot.
+static HAS_STARNIX_SESSION_RESTARTED: OnceCell<bool> = OnceCell::new();
+/// The Android boot reason of the current session.
+static ANDROID_BOOTREASON: OnceCell<Result<String, Error>> = OnceCell::new();
 
 /// Timeout for FIDL calls to LastRebootInfoProvider
 const LRIP_FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::INFINITE;
-static ANDROID_BOOTREASON: OnceCell<Result<String, Error>> = OnceCell::new();
+
+/// Determines whether the current session was restarted without a reboot.
+/// Returns true if the session was restarted, false if it is the initial session.
+async fn has_session_restarted(dir: Option<fio::DirectoryProxy>) -> bool {
+    match dir {
+        Some(dir) => {
+            match fuchsia_fs::directory::open_file(&dir, STARTED_ONCE, fio::Flags::FLAG_MUST_CREATE)
+                .await
+            {
+                Ok(_file) => false,
+                Err(OpenError::OpenError(Status::ALREADY_EXISTS)) => true,
+                Err(err) => {
+                    info!("Failed to generate the file with err {err:#?}.");
+                    false
+                }
+            }
+        }
+        None => false,
+    }
+}
 
 /// Get an Android-compatible boot reason suitable to add to the cmdline or bootconfig.
 pub async fn get_or_init_android_bootreason(
@@ -29,28 +53,15 @@ pub async fn get_or_init_android_bootreason(
 }
 
 /// Update the Android bootreason.
-///
-/// Called only once when the Starnix kernel is initialized.
-/// If called more than once, it reports false Android crash cases to Pitot.
+/// Use get_or_init_android_bootreason to get the cached Android boot reason instead of this.
 pub async fn update_android_bootreason(
     dir: Option<fio::DirectoryProxy>,
     android_provided_bootreason: Option<String>,
 ) -> Result<String, Error> {
-    if let Some(dir) = dir {
-        match fuchsia_fs::directory::open_file(&dir, STARTED_ONCE, fio::Flags::FLAG_MUST_CREATE)
-            .await
-        {
-            Ok(_file) => (),
-            Err(OpenError::OpenError(Status::ALREADY_EXISTS)) => {
-                info!("Session restart observed, set android bootreason to kernel_panic.");
-                return Ok("kernel_panic".to_string());
-            }
-            Err(err) => {
-                info!(
-                    "Failed to generate the file with err {err:#?}. Continue with LastRebootInfo."
-                );
-            }
-        }
+    // Set the Android bootreason to kernel_panic if the current session was restarted.
+    if *HAS_STARNIX_SESSION_RESTARTED.get_or_init(async || has_session_restarted(dir).await).await {
+        info!("Session restart observed, set android bootreason to kernel_panic.");
+        return Ok("kernel_panic".to_string());
     }
 
     // There are certain values from the Android bootloader that are more specific than
@@ -126,15 +137,22 @@ fn get_reboot_reason() -> Option<RebootReason> {
 /// The ramoops won't be created after a normal reboot.
 pub fn get_console_ramoops() -> Option<Vec<u8>> {
     debug!("Getting console-ramoops contents");
-    match ANDROID_BOOTREASON.wait_blocking() {
-        Ok(reason) => match reason.as_str() {
+    if HAS_STARNIX_SESSION_RESTARTED.get().copied().unwrap_or(false) {
+        return Some(format!("Last Reboot Reason: Starnix Crash\n").as_bytes().to_vec());
+    }
+    match ANDROID_BOOTREASON.get() {
+        Some(Ok(reason)) => match reason.as_str() {
             "kernel_panic" | "watchdog" | "watchdog,sw" => Some(
                 format!("Last Reboot Reason: {:?}\n", get_reboot_reason()?).as_bytes().to_vec(),
             ),
             _ => None,
         },
-        Err(e) => {
+        Some(Err(e)) => {
             info!("Failed to get android bootreason for console_ramoops: {:?}", e);
+            None
+        }
+        None => {
+            info!("Android bootreason not initialized.");
             None
         }
     }
