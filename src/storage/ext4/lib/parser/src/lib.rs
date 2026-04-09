@@ -37,16 +37,7 @@ impl From<structs::ParsingError> for ConstructFsError {
     }
 }
 
-// Default is to create read-only fs
 pub fn construct_fs(
-    source: FsSourceType,
-    inspector: &fuchsia_inspect::Inspector,
-) -> Result<Arc<ExtDirectory>, ConstructFsError> {
-    // TODO(https://fxbug.dev/479943428): Enable creating writeable fs when this is fully supported.
-    construct_fs_internal(source, true, inspector)
-}
-
-pub fn construct_fs_internal(
     source: FsSourceType,
     read_only: bool,
     inspector: &fuchsia_inspect::Inspector,
@@ -119,7 +110,7 @@ fn build_fs_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::{FsSourceType, construct_fs, construct_fs_internal};
+    use super::{FsSourceType, construct_fs};
 
     use ext4_lib::structs::MIN_EXT4_SIZE;
     use fidl_fuchsia_io as fio;
@@ -139,7 +130,7 @@ mod tests {
         let buffer = FsSourceType::Vmo(vmo);
 
         assert!(
-            construct_fs(buffer, &fuchsia_inspect::Inspector::default()).is_err(),
+            construct_fs(buffer, true, &fuchsia_inspect::Inspector::default()).is_err(),
             "Expected failed parsing of VMO."
         );
     }
@@ -151,7 +142,7 @@ mod tests {
         let buffer = FsSourceType::Vmo(vmo);
 
         assert!(
-            construct_fs(buffer, &fuchsia_inspect::Inspector::default()).is_err(),
+            construct_fs(buffer, true, &fuchsia_inspect::Inspector::default()).is_err(),
             "Expected failed parsing of VMO."
         );
     }
@@ -163,7 +154,7 @@ mod tests {
         vmo.write(data.as_slice(), 0).expect("VMO write() succeeds");
         let buffer = FsSourceType::Vmo(vmo);
 
-        let tree = construct_fs(buffer, &fuchsia_inspect::Inspector::default())
+        let tree = construct_fs(buffer, true, &fuchsia_inspect::Inspector::default())
             .expect("construct_fs parses the vmo");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE);
 
@@ -187,7 +178,7 @@ mod tests {
         vmo.write(data.as_slice(), 0).expect("VMO write() succeeds");
         let buffer = FsSourceType::Vmo(vmo);
 
-        let tree = construct_fs(buffer, &fuchsia_inspect::Inspector::default())
+        let tree = construct_fs(buffer, true, &fuchsia_inspect::Inspector::default())
             .expect("construct_fs parses the VMO");
         let root = vfs::directory::serve(tree, fio::PERM_READABLE);
 
@@ -275,7 +266,7 @@ mod tests {
         });
 
         // Write to the allocated extent of this file.
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end1),
             /* read_only= */ false,
             &fuchsia_inspect::Inspector::default(),
@@ -315,7 +306,7 @@ mod tests {
             let _task =
                 executor.run_singlethreaded(server_clone.serve(block_server_end2.into_stream()));
         });
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end2),
             /* read_only= */ true,
             &fuchsia_inspect::Inspector::default(),
@@ -368,7 +359,7 @@ mod tests {
         });
 
         // Write to the allocated extent of this file.
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end1),
             /* read_only= */ false,
             &fuchsia_inspect::Inspector::default(),
@@ -415,7 +406,7 @@ mod tests {
             let _task =
                 executor.run_singlethreaded(server_clone.serve(block_server_end2.into_stream()));
         });
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end2),
             /* read_only= */ true,
             &fuchsia_inspect::Inspector::default(),
@@ -466,7 +457,7 @@ mod tests {
         });
 
         // Write to the allocated extent of this file.
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end),
             /* read_only= */ false,
             &fuchsia_inspect::Inspector::default(),
@@ -546,7 +537,7 @@ mod tests {
         });
 
         let inspector = fuchsia_inspect::Inspector::default();
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end),
             /* read_only= */ false,
             &inspector,
@@ -654,7 +645,7 @@ mod tests {
         });
 
         let inspector = fuchsia_inspect::Inspector::default();
-        let tree = construct_fs_internal(
+        let tree = construct_fs(
             FsSourceType::BlockDevice(block_client_end),
             /* read_only= */ false,
             &inspector,

@@ -1,4 +1,4 @@
-// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -9,12 +9,11 @@
     program: {
         runner: "elf",
         binary: "bin/ext4_server",
-        args: [ "--read-only" ],
     },
     capabilities: [
         {
             directory: "root",
-            rights: [ "r*" ],
+            rights: [ "rw*" ],
             path: "/root",
         },
     ],
@@ -31,7 +30,7 @@
         {
             directory: "root",
             from: "self",
-            rights: [ "r*" ],
+            rights: [ "rw*" ],
         },
     ],
 }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error, format_err};
-use ext4_parser::{FsSourceType, construct_fs_internal};
+use ext4_parser::{FsSourceType, construct_fs};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block as fblock;
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Error> {
         inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
     // Construct the ext4 FS in RW mode.
-    let tree = construct_fs_internal(
+    let tree = construct_fs(
         FsSourceType::BlockDevice(block_client_end),
         /* read_only= */ false,
         &inspector,

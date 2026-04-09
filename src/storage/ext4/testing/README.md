@@ -4,10 +4,9 @@
 Ext4 library.
 
 Note that this test server exposes an ext4 filesystem with full read
-functionality but limited write support which currently only includes
-overwriting existing allocated files. If a write operation attempts to write
-past EOF, the operation will fail with a "not supported" error. Truncate is also
-supported but not that metadata is not persisted.
+functionality but limited write support and any changes to metadata are not
+persisted. Only truncating files to zero and overwriting file contents are
+supported. Other operations will fail with a "not supported" error.
 
 
 An ext4 image must be provided to the server. On startup, the server reads an

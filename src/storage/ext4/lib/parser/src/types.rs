@@ -5,13 +5,6 @@
 use ext4_lib::structs::INode;
 use fidl_fuchsia_io as fio;
 
-/// Others may write.
-pub const IWOTH: u16 = 0x2;
-/// Group members may write.
-pub const IWGRP: u16 = 0x10;
-/// Owner may write.
-pub const IWUSR: u16 = 0x80;
-
 /// Representation of ext4 inode attributes.
 ///
 /// Unlike [`INode`], which contains the full set of attributes as they are read from the
@@ -32,9 +25,7 @@ pub struct ExtAttributes {
 impl ExtAttributes {
     /// Creates attributes from an [`INode`].
     pub fn from_inode(inode: INode) -> Self {
-        // Remove writable bits from the mode when converting them to node attributes. Even if a
-        // node is writable on the filesystem, this implementation does not support writes.
-        let mode = u16::from(inode.e2di_mode) & !IWOTH & !IWGRP & !IWUSR;
+        let mode = u16::from(inode.e2di_mode);
 
         Self { mode, uid: inode.e2di_uid.into(), gid: inode.e2di_gid.into() }
     }

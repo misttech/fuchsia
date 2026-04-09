@@ -7,9 +7,10 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_binary("bin") {
-  name = "ext4_readonly"
+  name = "ext4_server"
   edition = "2024"
   with_unit_tests = false
+  source_root = "src/main.rs"
 
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -56,6 +57,16 @@ rustc_test("ext4_server_integration_test") {
   sources = [ "tests/ext4_server_test.rs" ]
 }
 
+fuchsia_component("ext4_server_comp") {
+  component_name = "ext4_server"
+  manifest = "meta/ext4.cml"
+  deps = [ ":bin" ]
+}
+
+fuchsia_package("ext4_server") {
+  deps = [ ":ext4_server_comp" ]
+}
+
 fuchsia_component("ext4_readonly_comp") {
   component_name = "ext4_readonly"
   manifest = "meta/ext4_readonly.cml"
@@ -67,7 +78,7 @@ fuchsia_package("ext4_readonly") {
 }
 
 fuchsia_unittest_component("ext4_server_integration_test_component") {
-  component_name = "ext4_readonly_integration_test"
+  component_name = "ext4_server_integration_test"
   deps = [ ":ext4_server_integration_test" ]
 }
 
@@ -85,6 +96,7 @@ fuchsia_test_package("ext4_server_integration_tests") {
   test_components = [ ":ext4_server_integration_test_component" ]
   deps = [
     ":ext4_readonly_comp",
+    ":ext4_server_comp",
     ":ext4_server_integration_test_data",
   ]
 }
