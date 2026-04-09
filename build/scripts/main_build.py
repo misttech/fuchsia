@@ -64,6 +64,7 @@ class FuchsiaBuildConfig(object):
     profile: bool
     verbose: bool
     dry_run: bool
+    status: bool = True
 
     @staticmethod
     def from_args(args: argparse.Namespace) -> "FuchsiaBuildConfig":
@@ -73,6 +74,7 @@ class FuchsiaBuildConfig(object):
             profile=args.profile,
             verbose=args.verbose,
             dry_run=args.dry_run,
+            status=args.status,
         )
 
 
@@ -406,6 +408,14 @@ class BuildInvocation(object):
                 str(self.context.build_dir / "__pycache__"),
             ),
         }
+
+        if not self.context.config.status:
+            # Setting TERM=dumb is a standard convention to turn off interactive features.
+            # See https://en.wikipedia.org/wiki/Computer_terminal#Dumb_terminals
+            # and https://developers.google.com/style/inclusive-documentation#ableist-language
+            # regarding non-inclusive language.
+            build_env["TERM"] = "dumb"
+            build_env["NINJA_STATUS"] = "[%f/%t] "
 
         # Forwarded standard variables
         forward_vars = [
@@ -810,6 +820,7 @@ def _main_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-status", action="store_false", dest="status")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 

@@ -91,6 +91,12 @@
 ##
 ##   -q, --quiet              Tell Ninja and Bazel to be quiet.
 ##
+##   --no-status              Suppress dynamic terminal output. Use this for
+##                            non-interactive shells. Set automatically if an
+##                            agentic runtime is detected by ANTIGRAVITY_AGENT,
+##                            ANTIGRAVITY_EDITOR_APP_ROOT, or GEMINI_CLI.
+##                            Currently only affects the Ninja build system.
+##
 ##   --skip-auth-check        Bypass pre-flight build service authentication
 ##                            checks.
 ##
@@ -385,6 +391,10 @@ function main {
 
       --no-checks)
         no_checks=true
+        ;;
+
+      --no-status)
+        FX_BUILD_STATUS=0
         ;;
 
       --skip-auth-check)

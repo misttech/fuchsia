@@ -56,6 +56,7 @@ class MainBuildTestBase(unittest.TestCase):
             "profile": False,
             "verbose": False,
             "dry_run": False,
+            "status": True,
         }
         config_vals.update(config_kwargs)
         config = main_build.FuchsiaBuildConfig(**config_vals)
@@ -167,13 +168,23 @@ class BuildInvocationTest(MainBuildTestBase):
     def test_get_build_env(self) -> None:
         context = self.create_context()
         context.env = {"TERM": "xterm", "USER": "fuchsia-user", "EXTRA": "val"}
-        with self.mock_invocation_context("uuid-123", "ts-456"):
+        with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
             env = invocation.get_build_env()
             self.assertEqual(env["FX_BUILD_UUID"], "uuid-123")
             self.assertEqual(env["TERM"], "xterm")
             self.assertEqual(env["USER"], "fuchsia-user")
             self.assertNotIn("EXTRA", env)
+            self.assertEqual(env["NINJA_STATUS"], "[%f/%t][%p/%w](%r) ")
+
+    def test_get_build_env_no_status(self) -> None:
+        context = self.create_context(status=False)
+        context.env = {"TERM": "xterm"}
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["TERM"], "dumb")
+            self.assertEqual(env["NINJA_STATUS"], "[%f/%t] ")
 
     def test_get_build_env_missing_user_error(self) -> None:
         context = self.create_context()
@@ -533,6 +544,13 @@ class MainFunctionTest(MainBuildTestBase):
         self.assertIsNone(args.rbe)
         self.assertIsNone(args.resultstore)
         self.assertFalse(args.verbose)
+        self.assertTrue(args.status)
+
+    def test_arg_parser_no_status(self) -> None:
+        args = main_build._MAIN_ARG_PARSER.parse_args(
+            ["--build-dir", "out/default", "--no-status", "ninja"]
+        )
+        self.assertFalse(args.status)
 
     def test_main_catches_config_error(self) -> None:
         with mock.patch.object(

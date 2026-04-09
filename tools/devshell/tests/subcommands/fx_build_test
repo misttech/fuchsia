@@ -346,6 +346,27 @@ TEST_fx-build-with-gn-label-and-j32() {
     BT_EXPECT grep -q "obj/src/foo" stdout.txt
 }
 
+TEST_fx-build-with-no-status() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --no-status //src:foo ">" stdout.txt
+    # Verify that NINJA_STATUS is set to [%f/%t] in the environment.
+    BT_EXPECT "grep -q -F \"NINJA_STATUS='[%f/%t] '\" stdout.txt"
+    BT_EXPECT grep -q "obj/src/foo" stdout.txt
+}
+
+TEST_fx-build-auto-no-status() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    export FX_BUILD_DRY_RUN=1
+    export ANTIGRAVITY_AGENT=1
+    BT_EXPECT "${fx}" build //src:foo ">" stdout.txt
+    # Verify that NINJA_STATUS is set to [%f/%t] due to auto-detection.
+    BT_EXPECT "grep -q -F \"NINJA_STATUS='[%f/%t] '\" stdout.txt"
+    BT_EXPECT grep -q "obj/src/foo" stdout.txt
+}
+
 TEST_fx-build-with-gn-label-and-enable_jobserver() {
     setup_build_test
     # Verify that enable_jobserver=true in args.gn sets the Ninja --jobserver flag.
