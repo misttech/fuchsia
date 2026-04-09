@@ -12,7 +12,6 @@
 //! to kernel structures, but not the other way around.
 
 use selinux::{SecurityId, SecurityServer};
-use starnix_sync::Mutex;
 use std::sync::Arc;
 
 /// SELinux implementations called by the LSM hooks.
@@ -62,13 +61,7 @@ impl ResolvedElfState {
 
 /// The opaque type used by [`crate::vfs::FsNodeInfo`] to store security state.
 #[derive(Debug, Default)]
-pub struct FsNodeState(Mutex<selinux_hooks::FsNodeState>);
-
-impl FsNodeState {
-    pub fn lock(&self) -> starnix_sync::MutexGuard<'_, selinux_hooks::FsNodeState> {
-        self.0.lock()
-    }
-}
+pub struct FsNodeState(selinux_hooks::FsNodeState);
 
 /// Opaque structure holding security state for a [`binderfs::BinderConnection`].
 #[derive(Debug)]

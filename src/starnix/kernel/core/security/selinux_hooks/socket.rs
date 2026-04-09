@@ -205,13 +205,15 @@ pub(in crate::security) fn socket_socketpair(
 /// Computes and sets the security class for `socket`.
 pub(in crate::security) fn socket_post_create(security_server: &SecurityServer, socket: &Socket) {
     let socket_node = socket.fs_node().expect("socket_post_create without FsNode");
-    socket_node.security_state.lock().class = compute_socket_security_class(
-        security_server,
-        socket.domain,
-        socket.socket_type,
-        socket.protocol,
-    )
-    .into();
+    socket_node.security_state.0.update_class(
+        compute_socket_security_class(
+            security_server,
+            socket.domain,
+            socket.socket_type,
+            socket.protocol,
+        )
+        .into(),
+    );
 }
 
 /// Checks that `current_task` has the right permissions to perform a bind operation on
@@ -298,7 +300,8 @@ pub(in crate::security) fn socket_accept(
     accepted_socket: DowncastedFile<'_, SocketFile>,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
-    let listening_security_state = listening_socket.file().node().security_state.lock().clone();
+    let listening_security_state =
+        (*listening_socket.file().node().security_state.0.read()).clone();
     has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
@@ -307,7 +310,8 @@ pub(in crate::security) fn socket_accept(
         CommonSocketPermission::Accept,
         current_task.into(),
     )?;
-    *accepted_socket.file().node().security_state.lock() = listening_security_state;
+    let _lock = accepted_socket.file().node().security_state.0.update_lock.lock();
+    accepted_socket.file().node().security_state.0.label.update(listening_security_state);
     Ok(())
 }
 
@@ -602,10 +606,9 @@ mod tests {
                     /* kernel_private=*/ false,
                 )
                 .expect("failed to create socket");
-                assert_eq!(
-                    socket_node.node().security_state.lock().class,
-                    SocketClass::UnixStreamSocket.into()
-                );
+
+                let socket_label = socket_node.node().security_state.0.read();
+                assert_eq!(socket_label.class(), SocketClass::UnixStreamSocket.into());
                 assert_eq!(get_cached_sid(socket_node.node()), Some(task_sid));
             },
         )

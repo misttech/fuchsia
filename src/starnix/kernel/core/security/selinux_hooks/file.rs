@@ -68,7 +68,7 @@ pub(in crate::security) fn file_receive(
     file: &FileObject,
 ) -> Result<(), Errno> {
     let permission_check = security_server.as_permission_check();
-    let fs_node_class = file.node().security_state.lock().class;
+    let fs_node_class = fs_node_effective_sid_and_class(file.node()).class;
     let permission_flags = file.flags().into();
 
     // BPF resources are wrapped into file descriptors for interaction with userspace,
@@ -365,7 +365,7 @@ fn file_map_prot_check(
     }
 
     if let Some(fs_node) = fs_node {
-        let node_class = fs_node.security_state.lock().class;
+        let node_class = fs_node_effective_sid_and_class(fs_node).class;
         let flags = {
             let mut flags: PermissionFlags = prot.into();
             // After mapping a file into memory you can read its content, so

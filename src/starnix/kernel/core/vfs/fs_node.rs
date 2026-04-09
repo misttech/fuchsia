@@ -1313,8 +1313,6 @@ impl FsNode {
                 let _l2 = result.info.read();
                 let _l3 = result.write_guard_state.lock();
                 let _l4 = result.fsverity.lock();
-                // TODO(https://fxbug.dev/367585803): Add lock levels to SELinux implementation.
-                let _l5 = result.security_state.lock();
             }
             result
         }

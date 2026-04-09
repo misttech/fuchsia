@@ -90,7 +90,8 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // This hook is called every time an `FsNode` is linked to a `DirEntry`, so it is expected that
     // the `FsNode` may already have been labeled.
     let fs_node = &dir_entry.node;
-    if fs_node.security_state.lock().label.is_initialized() {
+    let label_class = fs_node.security_state.0.read();
+    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
         return Ok(());
     }
 
@@ -103,10 +104,9 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     let parent = dir_entry.parent();
     if let Some(ref parent) = parent {
         let parent_node = &parent.node;
-        if let FsNodeLabel::FromTask { task_state } =
-            parent_node.security_state.lock().label.clone()
-        {
-            fs_node_set_label_with_task(fs_node, &task_state);
+        let parent_label = (*parent_node.security_state.0.read()).clone();
+        if let FsNodeLabel::FromTask { task_state } = &parent_label.label {
+            fs_node_set_label_with_task(fs_node, task_state);
             return Ok(());
         }
     }
@@ -223,7 +223,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
         }
         FileSystemLabelingScheme::GenFsCon { .. } => {
             let fs_type = fs_node.fs().name();
-            let fs_node_class = fs_node.security_state.lock().class;
+            let fs_node_class = fs_node.security_state.0.read().class();
             let sub_path = get_fs_relative_path(dir_entry);
             security_server
                 .genfscon_label_for_fs_and_path(
@@ -426,7 +426,8 @@ pub(in crate::security) fn fs_node_init_on_create(
     // By definition this is a new `FsNode` so should not have already been labeled
     // (unless we're working in the context of overlayfs and affected by
     // https://fxbug.dev/369067922).
-    if new_node.security_state.lock().label.is_initialized() {
+    let label_class = new_node.security_state.0.read();
+    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
         track_stub!(TODO("https://fxbug.dev/369067922"), "new FsNode already labeled");
     }
 
@@ -548,16 +549,15 @@ pub(in crate::security) fn fs_node_init_anon(
         InitialSid::Unlabeled.into()
     };
 
-    let mut state = new_node.security_state.lock();
-    // TODO: https://fxbug.dev/364569157 - The class and label of kernel-private sockets are not
-    // used in access decisions since permissions are always allowed in this case. But we need to
-    // know the socket-like class before calling into `has_socket_permission()`, so don't overwrite
-    // the class for kernel-private sockets.
-    if !is_private_node {
-        assert!(matches!(state.class, FsNodeClass::File(_)));
-        state.class = node_class;
+    if is_private_node {
+        // TODO: https://fxbug.dev/364569157 - The class and label of kernel-private sockets are not
+        // used in access decisions since permissions are always allowed in this case. But we need
+        // to know the socket-like class before calling into `has_socket_permission()`, so don't
+        // overwrite the class for kernel-private sockets.
+        set_cached_sid(new_node, sid);
+    } else {
+        new_node.security_state.0.update(FsNodeLabel::SecurityId { sid }, node_class);
     }
-    state.label = FsNodeLabel::SecurityId { sid };
 
     Ok(())
 }
@@ -920,7 +920,7 @@ pub(in crate::security) fn check_fs_node_rename_access(
     // If a file already exists with the new name, then verify that the existing file can be
     // removed.
     if let Some(replaced_node) = replaced_node {
-        let replaced_node_class = replaced_node.security_state.lock().class;
+        let replaced_node_class = fs_node_effective_sid_and_class(replaced_node).class;
         may_unlink_or_rmdir(
             security_server,
             current_task,
@@ -1008,7 +1008,7 @@ pub(in crate::security) fn fs_node_permission(
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
-    let fs_node_class = fs_node.security_state.lock().class;
+    let fs_node_class = fs_node_effective_sid_and_class(fs_node).class;
     let audit_context = [current_task.into(), audit_context];
 
     if permission_flags.contains(PermissionFlags::ACCESS) {
@@ -1379,7 +1379,7 @@ mod tests {
 
     /// Clears the cached security id on `fs_node`.
     fn clear_cached_sid(fs_node: &FsNode) {
-        fs_node.security_state.lock().label = FsNodeLabel::Uninitialized;
+        fs_node.security_state.0.clear_label_for_test();
     }
 
     #[fuchsia::test]

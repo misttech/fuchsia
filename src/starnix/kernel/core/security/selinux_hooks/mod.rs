@@ -22,6 +22,7 @@ use super::PermissionFlags;
 use crate::task::{CurrentTask, TaskPersistentInfo};
 use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode};
 use audit::{Auditable, audit_decision, audit_todo_decision};
+use fuchsia_rcu::{RcuCell, RcuReadGuard};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
 use selinux::policy::{FsUseType, XpermsKind};
@@ -342,32 +343,25 @@ macro_rules! TODO_DENY {
     }};
 }
 
-/// Returns the `SecurityId` that should be used for SELinux access control checks against `fs_node`.
+/// Returns the `SecurityId` and `FsNodeClass` that should be used for SELinux access control checks
+/// against `fs_node`.
 fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
-    let state = fs_node.security_state.lock().clone();
-    let sid = match state.label {
-        FsNodeLabel::SecurityId { sid } => sid,
-        FsNodeLabel::FromTask { task_state } => task_state.real_creds().security_state.current_sid,
-        FsNodeLabel::Uninitialized => {
-            // We should never reach here, but for now enforce it in debug builds.
-            if cfg!(any(test, debug_assertions)) {
-                panic!(
-                    "Unlabeled FsNode@{} of class {:?} in {} (label {:?})",
-                    fs_node.ino,
-                    file_class_from_file_mode(fs_node.info().mode),
-                    fs_node.fs().name(),
-                    fs_node.fs().security_state.state.label(),
-                );
-            } else {
-                track_stub!(
-                    TODO("https://fxbug.dev/381210513"),
-                    "SID requested for unlabeled FsNode"
-                );
-                InitialSid::Unlabeled.into()
-            }
+    let label_class = fs_node.security_state.0.read();
+    if matches!(label_class.label, FsNodeLabel::Uninitialized) {
+        // We should never reach here, but for now enforce it in debug builds.
+        if cfg!(any(test, debug_assertions)) {
+            panic!(
+                "Unlabeled FsNode@{} of class {:?} in {} (label {:?})",
+                fs_node.ino,
+                file_class_from_file_mode(fs_node.info().mode),
+                fs_node.fs().name(),
+                fs_node.fs().security_state.state.label(),
+            );
+        } else {
+            track_stub!(TODO("https://fxbug.dev/381210513"), "SID requested for unlabeled FsNode");
         }
-    };
-    FsNodeSidAndClass { sid, class: state.class }
+    }
+    FsNodeSidAndClass { sid: label_class.sid(), class: label_class.class() }
 }
 
 /// Perform the specified check as would `check_permission()`, but report denials as "todo_deny" in
@@ -624,15 +618,56 @@ impl FileSystemState {
 }
 
 /// Holds security state associated with a [`crate::vfs::FsNode`].
-#[derive(Debug, Clone)]
-pub struct FsNodeState {
-    label: FsNodeLabel,
-    class: FsNodeClass,
+#[derive(Debug)]
+pub(super) struct FsNodeState {
+    label: RcuCell<FsNodeLabelAndClass>,
+    update_lock: Mutex<()>,
 }
 
 impl Default for FsNodeState {
     fn default() -> Self {
-        Self { label: FsNodeLabel::Uninitialized, class: FileClass::File.into() }
+        Self {
+            label: RcuCell::new(FsNodeLabelAndClass {
+                label: FsNodeLabel::Uninitialized,
+                class: None,
+            }),
+            update_lock: Mutex::new(()),
+        }
+    }
+}
+
+impl FsNodeState {
+    pub(super) fn read(&self) -> RcuReadGuard<FsNodeLabelAndClass> {
+        self.label.read()
+    }
+
+    pub(super) fn update(&self, new_label: FsNodeLabel, new_class: FsNodeClass) {
+        let _lock = self.update_lock.lock();
+        let mut new_label_class = (*self.label.read()).clone();
+        new_label_class.label = new_label;
+        new_label_class.class = Some(new_class);
+        self.label.update(new_label_class);
+    }
+
+    pub(super) fn update_label(&self, new_label: FsNodeLabel) {
+        let _lock = self.update_lock.lock();
+        let mut new_label_class = (*self.label.read()).clone();
+        new_label_class.label = new_label;
+        self.label.update(new_label_class);
+    }
+
+    pub(super) fn update_class(&self, new_class: FsNodeClass) {
+        let _lock = self.update_lock.lock();
+        let mut new_label_class = (*self.label.read()).clone();
+        new_label_class.class = Some(new_class);
+        self.label.update(new_label_class);
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_label_for_test(&self) {
+        let _lock = self.update_lock.lock();
+        let class = self.label.read().class;
+        self.label.update(FsNodeLabelAndClass { label: FsNodeLabel::Uninitialized, class });
     }
 }
 
@@ -646,16 +681,38 @@ pub(super) enum FsNodeLabel {
 }
 
 impl FsNodeLabel {
-    fn is_initialized(&self) -> bool {
-        !matches!(self, FsNodeLabel::Uninitialized)
+    pub fn sid(&self) -> SecurityId {
+        match self {
+            FsNodeLabel::Uninitialized => InitialSid::Unlabeled.into(),
+            FsNodeLabel::SecurityId { sid } => *sid,
+            FsNodeLabel::FromTask { task_state } => {
+                task_state.real_creds().security_state.current_sid
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct FsNodeLabelAndClass {
+    pub label: FsNodeLabel,
+    pub class: Option<FsNodeClass>,
+}
+
+impl FsNodeLabelAndClass {
+    pub fn class(&self) -> FsNodeClass {
+        self.class.unwrap_or(FsNodeClass::File(FileClass::File))
+    }
+
+    pub fn sid(&self) -> SecurityId {
+        self.label.sid()
     }
 }
 
 /// Holds the SID and class with which an `FsNode` is labeled, for use in permissions checks.
 #[derive(Debug, PartialEq)]
-struct FsNodeSidAndClass {
-    sid: SecurityId,
-    class: FsNodeClass,
+pub(super) struct FsNodeSidAndClass {
+    pub sid: SecurityId,
+    pub class: FsNodeClass,
 }
 
 /// Security state for a [`crate::binderfs::BinderConnection`] instance. This holds the
@@ -690,41 +747,49 @@ pub(super) struct BpfProgState {
 /// cause the security id to *not* be recomputed by the SELinux LSM when determining the effective
 /// security id of this [`FsNode`].
 pub(super) fn set_cached_sid(fs_node: &FsNode, sid: SecurityId) {
-    fs_node.security_state.lock().label = FsNodeLabel::SecurityId { sid };
+    fs_node.security_state.0.update_label(FsNodeLabel::SecurityId { sid });
 }
 
 /// Sets the Task associated with `fs_node` to `task`.
 /// The effective security id of the [`FsNode`] will be that of the task, even if the security id
 /// of the task changes.
 fn fs_node_set_label_with_task(fs_node: &FsNode, task_persistent_info: &TaskPersistentInfo) {
-    fs_node.security_state.lock().label =
-        FsNodeLabel::FromTask { task_state: task_persistent_info.clone() };
+    fs_node
+        .security_state
+        .0
+        .update_label(FsNodeLabel::FromTask { task_state: task_persistent_info.clone() });
 }
 
 /// Ensures that the `fs_node`'s security state has an appropriate security class set.
 /// As per the NSA report description, the security class is chosen based on the `FileMode`, unless
 /// a security class more specific than "file" has already been set on the node.
 fn fs_node_ensure_class(fs_node: &FsNode) -> Result<FsNodeClass, Errno> {
-    // TODO: Consider moving the class into a `OnceLock`.
-    let class = fs_node.security_state.lock().class;
-    if class != FileClass::File.into() {
+    let label_class = fs_node.security_state.0.read();
+    if let Some(class) = label_class.class {
         return Ok(class);
     }
 
     let file_mode = fs_node.info().mode;
+    let _lock = fs_node.security_state.0.update_lock.lock();
+    let label_class = fs_node.security_state.0.read();
+    if let Some(class) = label_class.class {
+        return Ok(class);
+    }
+    let mut new_label_class = (*label_class).clone();
     let class = file_class_from_file_mode(file_mode)?.into();
-    fs_node.security_state.lock().class = class;
+    new_label_class.class = Some(class);
+    fs_node.security_state.0.label.update(new_label_class);
     Ok(class)
 }
 
 #[cfg(test)]
 /// Returns the SID with which the node is labeled, if any, for use by `FsNode` labeling tests.
 pub(super) fn get_cached_sid(fs_node: &FsNode) -> Option<SecurityId> {
-    let state = fs_node.security_state.lock().clone();
-    if matches!(state.label, FsNodeLabel::Uninitialized) {
-        None
+    let label_class = fs_node.security_state.0.read();
+    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
+        Some(label_class.sid())
     } else {
-        Some(fs_node_effective_sid_and_class(fs_node).sid)
+        None
     }
 }
 
