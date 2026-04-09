@@ -25,7 +25,7 @@ use futures::StreamExt as _;
 use net_declare::{fidl_ip_v4, fidl_ip_v6, fidl_mac, fidl_socket_addr, fidl_subnet};
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::packets;
-use netstack_testing_common::realms::{KnownServiceProvider, Netstack2, TestSandboxExt as _};
+use netstack_testing_common::realms::{KnownServiceProvider, Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
 use std::convert::TryInto as _;
@@ -68,7 +68,7 @@ const SOLICITED_NODE_MULTICAST_ADDRESS_PREFIX: net_types::ip::Subnet<net_types::
 };
 const DEFAULT_INTERFACE_ID: u64 = 77;
 
-/// Creates a `netemul::TestRealm` with a Netstack2 instance and the Network
+/// Creates a `netemul::TestRealm` with a Netstack3 instance and the Network
 /// Test Realm.
 fn create_netstack_realm<'a>(
     name: impl Into<Cow<'a, str>>,
@@ -78,7 +78,7 @@ fn create_netstack_realm<'a>(
     // is intentionally omitted from the `KnownServiceProvider` list below.
     // Instead, it is expected that tests will manually register interfaces with
     // the system's Netstack as needed.
-    sandbox.create_netstack_realm_with::<Netstack2, _, _>(
+    sandbox.create_netstack_realm_with::<Netstack3, _, _>(
         name,
         &[KnownServiceProvider::NetworkTestRealm { require_outer_netstack: true }],
     )
@@ -1318,7 +1318,7 @@ async fn ping(
     // Create another Netstack realm that will be pinged by the hermetic
     // Netstack.
     let target_realm = sandbox
-        .create_netstack_realm::<Netstack2, _>(format!("{}_{}_target", name, case_name))
+        .create_netstack_realm::<Netstack3, _>(format!("{}_{}_target", name, case_name))
         .expect("failed to create target netstack realm");
 
     let target_ep = target_realm

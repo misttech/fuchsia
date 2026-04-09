@@ -65,8 +65,8 @@ package_deps = [
   # controller is used to interact with the Network Test Realm.
   "//src/connectivity/network/testing/network-test-realm/service:controller",
 
-  # component-debug corresponds to a Netstack2 instance configured by netemul.
-  "//src/connectivity/network/netstack:component-debug",
+  # component-debug corresponds to a Netstack3 instance configured by netemul.
+  "//src/connectivity/network/netstack3:component-debug",
 
   # expectations comparer
   "//src/lib/testing/expectation:expectation_comparer",
