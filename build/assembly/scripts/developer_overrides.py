@@ -9,7 +9,7 @@ import os
 import shutil
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import cast
 
 from assembly import FilePath, PackageCopier, PackageDetails, fast_copy_makedirs
 from assembly.assembly_input_bundle import (
@@ -18,10 +18,29 @@ from assembly.assembly_input_bundle import (
     DepSet,
 )
 from depfile import DepFile
-from serialization import instance_from_dict, json_dump, json_load
+from serialization import JSONValue, instance_from_dict, json_dump, json_load
 
 # See //src/lib/assembly/config_schema/src/developer_overrides.rs for documentation.
 # These must be kept in sync with that file.
+
+
+@dataclass
+class ForensicsOptions:
+    build_type_override: str | None = None
+
+
+@dataclass
+class DeveloperOnlyOptions:
+    all_packages_in_base: bool = False
+    netboot_mode: bool = False
+    forensics_options: ForensicsOptions = field(
+        default_factory=ForensicsOptions
+    )
+
+
+@dataclass
+class KernelOptions:
+    command_line_args: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -34,16 +53,18 @@ class ShellCommandEntryFromGN:
 class DeveloperOverridesFromGN:
     """This is the schema used to parse the developer overrides that are written by the GN template."""
 
-    target_name: Optional[str]
+    target_name: str | None
 
     # The following are opaque dictionaries to this script, and don't need to be specified in any
     # further detail, because they are written out just as they are read in.
-    developer_only_options: dict = field(default_factory=dict)  # type: ignore
-    kernel: dict = field(default_factory=dict)  # type: ignore
-    platform: dict = field(default_factory=dict)  # type: ignore
-    product: dict = field(default_factory=dict)  # type: ignore
-    board: dict = field(default_factory=dict)  # type: ignore
-    bootfs_files_package: Optional[str] = field(default=None)
+    developer_only_options: DeveloperOnlyOptions = field(
+        default_factory=DeveloperOnlyOptions
+    )
+    kernel: KernelOptions = field(default_factory=KernelOptions)
+    platform: JSONValue = field(default_factory=lambda: cast(JSONValue, {}))
+    product: JSONValue = field(default_factory=lambda: cast(JSONValue, {}))
+    board: JSONValue = field(default_factory=lambda: cast(JSONValue, {}))
+    bootfs_files_package: str | None = field(default=None)
 
     # Packages we need to copy, so we'll need real types for those
     packages: list[PackageDetails] = field(default_factory=list)
@@ -81,16 +102,18 @@ class DeveloperProvidedFilesNodeForAssembly:
 class DeveloperOverridesForAssembly:
     """This is the schema used to write out the overrides file for Assembly to use."""
 
-    target_name: Optional[str]
+    target_name: str | None
 
     # The following are opaque dictionaries to this script, and don't need to be specified in any
     # further detail, because they are written out just as they are read in.
-    developer_only_options: dict = field(default_factory=dict)  # type: ignore
-    kernel: dict = field(default_factory=dict)  # type: ignore
-    platform: dict = field(default_factory=dict)  # type: ignore
-    product: dict = field(default_factory=dict)  # type: ignore
-    board: dict = field(default_factory=dict)  # type: ignore
-    bootfs_files_package: Optional[str] = field(default=None)
+    developer_only_options: DeveloperOnlyOptions = field(
+        default_factory=DeveloperOnlyOptions
+    )
+    kernel: KernelOptions = field(default_factory=KernelOptions)
+    platform: JSONValue = field(default_factory=lambda: cast(JSONValue, {}))
+    product: JSONValue = field(default_factory=lambda: cast(JSONValue, {}))
+    board: JSONValue = field(default_factory=lambda: cast(JSONValue, {}))
+    bootfs_files_package: str | None = field(default=None)
 
     # Packages we need to copy, so we'll need real types for those
     packages: list[PackageDetails] = field(default_factory=list)
@@ -285,20 +308,30 @@ def main() -> int:
         # dict, but a struct, getaddr is used.
         path_elements = entry.node_path.split(".")
         starting_node_name = path_elements[0]
-        starting_node: dict[str, Any] = getattr(overrides_for_assembly, starting_node_name, None)  # type: ignore
-        if not starting_node:
+        starting_node = getattr(
+            overrides_for_assembly, starting_node_name, None
+        )
+        if starting_node is None:
             raise ValueError(f"Unknown field: {starting_node_name}")
 
         # Get the dict for this node, iterating through the path to get the child dicts.
         current_node = starting_node
         for node_name in path_elements[1:]:
+            if not isinstance(current_node, dict):
+                raise TypeError(
+                    f"Expected dict for node {node_name}, got {type(current_node)}"
+                )
             if not node_name in current_node:
                 raise ValueError(
                     f"Unable to locate node {node_name} from {path_elements} in {starting_node_name}={starting_node}"
                 )
-            current_node: dict[str, Any] = current_node[node_name]  # type: ignore
+            current_node = current_node[node_name]
 
         # Remove all the fields that have fields from the node.
+        if not isinstance(current_node, dict):
+            raise TypeError(
+                f"Expected dict at end of path {entry.node_path}, got {type(current_node)}"
+            )
         for field_entry in entry.fields:
             if field_entry.field not in current_node:
                 raise ValueError(

@@ -6,7 +6,6 @@ import("//build/python/python_library.gni")
 
 # A python library for serializing/deserializing classes to/from JSON.
 python_library("serialization") {
-  enable_mypy = true
   sources = [
     "__init__.py",
     "serialization.py",

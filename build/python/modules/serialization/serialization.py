@@ -108,7 +108,24 @@ __all__ = [
     "serialize_dict",
     "serialize_json",
     "serialize_fields_as",
+    "JSONValue",
 ]
+
+
+class JSONValue:
+    """Marker class representing an arbitrary JSON value.
+
+    This class has no runtime functionality and will raise an exception if instantiated.
+    It serves solely as a type hint to indicate that a field contains raw,
+    unvalidated JSON data (e.g., a dict, list, or primitive).
+
+    Consumers using static type checking (like Mypy) should use `isinstance`
+    checks or `typing.cast` to narrow the type when accessing the value.
+    """
+
+    def __init__(self) -> None:
+        raise RuntimeError("JSONValue cannot be instantiated.")
+
 
 # The placeholder for the Class of the object that's being serialized or
 # deserialized.
@@ -232,6 +249,13 @@ def _parse_value_into(
     """For a class, attempt to parse it from the value."""
     if value is None:
         return None
+
+    if cls is Any:
+        raise TypeError(
+            "Cannot deserialize to Any. Use JSONValue for arbitrary JSON instead."
+        )
+    if cls is JSONValue:
+        return value
 
     if typing.get_origin(cls) is dict:
         # dict values need to have a type
