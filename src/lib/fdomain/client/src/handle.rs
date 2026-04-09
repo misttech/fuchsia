@@ -197,7 +197,7 @@ pub trait Peered: HandleBased {
         &self,
         clear: fidl::Signals,
         set: fidl::Signals,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<Self> {
         let handle = self.as_handle_ref().proto();
         let client = self.as_handle_ref().client();
 
