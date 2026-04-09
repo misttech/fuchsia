@@ -23,7 +23,7 @@
   RAM: '2GB+ DDR4'
   storage: '16GB+ eMMC5.1'
   manufacturer_link: 'https://www.khadas.com/vim3'
-  board_driver_location: '/src/devices/board/drivers/vim3'
+  board_driver_location: '/src/devices/board/drivers/vim3-devicetree'
 - name: 'NUC7i5DNHE'
   description: 'Intel NUC based on 7th Gen i5'
   architecture: 'x64'

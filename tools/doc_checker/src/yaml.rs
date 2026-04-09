@@ -250,7 +250,7 @@ impl DocYamlCheck for YamlChecker {
                     check_supported_cpu_architecture(filename, yaml_value)
                 }
                 Some("_supported_sys_config.yaml") => {
-                    check_supported_sys_config(filename, yaml_value)
+                    check_supported_sys_config(&self.root_dir, filename, yaml_value)
                 }
                 Some("_toc.yaml") => toc_checker::check_toc(
                     &self.root_dir,
@@ -863,10 +863,78 @@ fn check_supported_cpu_architecture(
     }
 }
 
-fn check_supported_sys_config(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<SysConfigEntry>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064934): other checks for SysConfigEntry?
-    errors
+static VALID_CPU_ARCHS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    let s = include_str!("../../../docs/reference/hardware/_supported_cpu_architecture.yaml");
+    serde_yaml::from_str(s).expect("Failed to parse supported CPU architectures")
+});
+
+fn check_supported_sys_config(
+    root_dir: &Path,
+    filename: &Path,
+    yaml_value: &Value,
+) -> Option<Vec<DocCheckError>> {
+    let (items, errors) = parse_entries::<SysConfigEntry>(filename, yaml_value);
+    let mut errs = errors.unwrap_or_default();
+    if let Some(configs) = items {
+        let mut seen_names = std::collections::HashSet::new();
+        for config in configs {
+            if config.name.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "name field must not be empty",
+                ));
+            } else if !seen_names.insert(config.name.clone()) {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("duplicate system configuration name: {}", config.name),
+                ));
+            }
+            if config.description.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "description field must not be empty",
+                ));
+            }
+            // Check that board_driver_location exists in repo root.
+            let driver_path = root_dir.join(config.board_driver_location.trim_start_matches('/'));
+            if !path_helper::exists(&driver_path) {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!(
+                        "board_driver_location {} does not exist",
+                        config.board_driver_location
+                    ),
+                ));
+            }
+            // Check that manufacturer_link is a valid URL if present.
+            // TODO(https://fxbug.dev/500468244): Collect these HTTP URLs and route them to the link_checker module.
+            if let Some(link) = &config.manufacturer_link {
+                if !link.starts_with("http://") && !link.starts_with("https://") {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("manufacturer_link {} is not a valid URL", link),
+                    ));
+                }
+            }
+            // Validate architecture
+            if !VALID_CPU_ARCHS.contains(&config.architecture) {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!(
+                        "invalid architecture: {}. Must be one of the supported architectures: {:?}",
+                        config.architecture, *VALID_CPU_ARCHS
+                    ),
+                ));
+            }
+        }
+    }
+    if errs.is_empty() { None } else { Some(errs) }
 }
 
 fn check_tools(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
@@ -1104,6 +1172,50 @@ redirects:
         let errors = result.unwrap();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].message, "RFC file missing.txt does not exist");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_supported_sys_config() -> Result<()> {
+        let root_dir = PathBuf::from("/some/root");
+        let filename = PathBuf::from("docs/reference/hardware/_supported_sys_config.yaml");
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- name: 'Device1'
+  description: 'A device'
+  architecture: 'ARM'
+  board_driver_location: '/src/devices/board/drivers/vim3.md'
+- name: 'Device2'
+  description: 'A device with missing driver'
+  architecture: 'x64'
+  board_driver_location: '/src/devices/board/drivers/missing.txt'
+- name: 'Device3'
+  description: 'A device with invalid URL'
+  architecture: 'x64'
+  board_driver_location: '/src/devices/board/drivers/vim3.md'
+  manufacturer_link: 'invalid-url'
+- name: 'Device4'
+  description: 'A device with invalid arch'
+  architecture: 'bad_arch'
+  board_driver_location: '/src/devices/board/drivers/vim3.md'
+          "#,
+        )?;
+
+        let result = check_supported_sys_config(&root_dir, &filename, &yaml_value);
+
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 3);
+        assert_eq!(
+            errors[0].message,
+            "board_driver_location /src/devices/board/drivers/missing.txt does not exist"
+        );
+        assert_eq!(errors[1].message, "manufacturer_link invalid-url is not a valid URL");
+        assert_eq!(
+            errors[2].message,
+            "invalid architecture: bad_arch. Must be one of the supported architectures: [\"ARM\", \"x64\"]"
+        );
 
         Ok(())
     }
