@@ -57,6 +57,9 @@
                 "MountTest.RemountBindReadOnlyFlagInheritance",
                 "MountTest.RemountReadOnlyToReadWriteIgnored",
                 "ProcMountsTest.RemountBindReadonlyFlagInheritance",
+
+                // TODO(https://fxbug.dev/493895527): Hangs; Fix and re-enable.
+                "PerfEventOpenTest.SampleIdIsValid",
             ],
         },
         {
