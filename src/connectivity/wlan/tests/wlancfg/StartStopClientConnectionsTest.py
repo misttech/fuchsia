@@ -145,12 +145,8 @@ class StartStopClientConnectionsTest(
         verify first that we are in a client connections enabled state.
         """
         await self.dut.wlan_policy.start_client_connections()
-        await self.dut.wlan_policy.set_new_update_listener()
-        await self.dut.wlan_policy.wait_until_update(
-            ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
-                networks=[],
-            ),
+        await self.dut.wlan_policy.wait_for_client_state(
+            WlanClientState.CONNECTIONS_ENABLED
         )
 
         await self.dut.wlan_policy.stop_client_connections()
@@ -165,12 +161,8 @@ class StartStopClientConnectionsTest(
     async def test_start_client_connections_update(self) -> None:
         """Test that we can start client connections."""
         await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.set_new_update_listener()
-        await self.dut.wlan_policy.wait_until_update(
-            ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
-                networks=[],
-            ),
+        await self.dut.wlan_policy.wait_for_client_state(
+            WlanClientState.CONNECTIONS_DISABLED,
             timeout=30,
         )
 
@@ -186,12 +178,8 @@ class StartStopClientConnectionsTest(
     async def test_stop_client_connections_rejects_connections(self) -> None:
         """Test that if client connections are disabled connection attempts fail."""
         await self.dut.wlan_policy.start_client_connections()
-        await self.dut.wlan_policy.set_new_update_listener()
-        await self.dut.wlan_policy.wait_until_update(
-            ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_ENABLED,
-                networks=[],
-            ),
+        await self.dut.wlan_policy.wait_for_client_state(
+            WlanClientState.CONNECTIONS_ENABLED
         )
 
         await self.dut.wlan_policy.save_network(
@@ -246,12 +234,8 @@ class StartStopClientConnectionsTest(
         disconnect from the saved network.
         """
         await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.set_new_update_listener()
-        await self.dut.wlan_policy.wait_until_update(
-            ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
-                networks=[],
-            ),
+        await self.dut.wlan_policy.wait_for_client_state(
+            WlanClientState.CONNECTIONS_DISABLED
         )
 
         await self.dut.wlan_policy.save_network(

@@ -457,6 +457,28 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                     expected,
                 )
 
+    async def test_wait_for_client_state(self) -> None:
+        """Test if wait_for_client_state works."""
+        fidl_state = f_wlan_policy.ClientStateSummary(
+            state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+            networks=[],
+        )
+
+        async def push_updates() -> None:
+            await asyncio.sleep(0.1)
+            assert self.client_state_updates_proxy is not None
+            await self.client_state_updates_proxy.on_client_state_update(
+                summary=fidl_state
+            )
+
+        push_task = asyncio.create_task(push_updates())
+
+        await self.wlan_policy_obj.wait_for_client_state(
+            expected_state=WlanClientState.CONNECTIONS_ENABLED,
+            timeout=5,
+        )
+        await push_task
+
     async def test_remove_all_networks(self) -> None:
         """Test if remove_all_networks works."""
         client_controller = self.client_controller_proxy

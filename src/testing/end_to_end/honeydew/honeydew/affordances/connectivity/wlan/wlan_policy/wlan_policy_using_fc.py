@@ -29,6 +29,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkConfig,
     NetworkIdentifier,
     SecurityType,
+    WlanClientState,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.affordances.location.location import AsyncLocation, Location
@@ -575,7 +576,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         """Waits for update.
 
         Args:
-            f: boolian value.
+            f: Function that returns True when condition is met.
             timeout: timeout value.
 
         Raises:
@@ -604,27 +605,18 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 ) from e
 
     @ensure_ready
-    async def wait_until_update(
+    async def wait_for_client_state(
         self,
-        expected_update: ClientStateSummary,
-        *,
+        expected_state: WlanClientState,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        """Wait until the expected update.
+        await self.set_new_update_listener()
 
-        Raises:
-            HoneydewWlanError: If expected update does not arrive by end of timeout.
-        """
+        def check_client(update: ClientStateSummary) -> bool:
+            return update.state == expected_state
 
-        try:
-            await self._wait_on_update(
-                lambda update: update == expected_update, timeout=timeout
-            )
-        except TimeoutError as e:
-            raise wlan_errors.HoneydewWlanError(
-                f"Never received {expected_update}."
-            ) from e
+        await self._wait_on_update(check_client, timeout=timeout)
 
     @ensure_ready
     async def remove_all_networks(
@@ -1138,20 +1130,15 @@ class WlanPolicy(wlan_policy.WlanPolicy):
             self._inner.get_update(timeout=timeout)
         )
 
-    def wait_until_update(
+    def wait_for_client_state(
         self,
-        expected_update: ClientStateSummary,
-        *,
+        expected_state: WlanClientState,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        """Wait until the expected update.
-
-        Raises:
-            HoneydewWlanError: If expected update does not arrive by end of timeout.
-        """
+        """Waits until the client converges to expected state."""
         return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.wait_until_update(expected_update, timeout=timeout)
+            self._inner.wait_for_client_state(expected_state, timeout=timeout)
         )
 
     def remove_all_networks(

@@ -117,17 +117,12 @@ class AsyncWlanPolicy(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def wait_until_update(
+    async def wait_for_client_state(
         self,
-        expected_update: ClientStateSummary,
-        *,
+        expected_state: WlanClientState,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        """Wait until the expected update.
-
-        Raises:
-            HoneydewWlanError: If expected update does not arrive by end of timeout.
-        """
+        """Waits until the client converges to expected state."""
 
     @abc.abstractmethod
     async def remove_all_networks(
@@ -366,17 +361,12 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def wait_until_update(
+    def wait_for_client_state(
         self,
-        expected_update: ClientStateSummary,
-        *,
+        expected_state: WlanClientState,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        """Wait until the expected update.
-
-        Raises:
-            HoneydewWlanError: If expected update does not arrive by end of timeout.
-        """
+        """Waits until the client converges to expected state."""
 
     @abc.abstractmethod
     def remove_all_networks(

@@ -386,7 +386,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
             # Make sure client connections are enabled
             fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
-            fd.wlan_policy_controller.wait_for_client_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
                 WlanClientState.CONNECTIONS_ENABLED
             )
             # Save and verify we connect to network
@@ -432,7 +432,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             # Make sure client connections are enabled
             fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
 
-            fd.wlan_policy_controller.wait_for_client_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
                 WlanClientState.CONNECTIONS_ENABLED
             )
             # Save the network and make sure that we see the device auto connect to it.
@@ -469,7 +469,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
             # Make sure client connections are enabled
             fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
-            fd.wlan_policy_controller.wait_for_client_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
                 WlanClientState.CONNECTIONS_ENABLED
             )
             # Save the network and make sure that we see the device auto connect to it.

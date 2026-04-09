@@ -160,9 +160,9 @@ class WlanPolicyController:
 
         self.honeydew.wlan_policy_deprecated_sync.stop_client_connections()
         try:
-            self.wait_for_client_state(
+            self.honeydew.wlan_policy_deprecated_sync.wait_for_client_state(
                 expected_state=WlanClientState.CONNECTIONS_DISABLED,
-                timeout_sec=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
+                timeout=DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
             )
         except TimeoutError:
             self.log.warning(
@@ -289,43 +289,3 @@ class WlanPolicyController:
             f'Timed out waiting for "{ssid}" to reach state {expected_states} and '
             f"status {expected_status}"
         )
-
-    def wait_for_client_state(
-        self,
-        expected_state: WlanClientState,
-        timeout_sec: int = DEFAULT_GET_UPDATE_TIMEOUT,
-    ) -> None:
-        """Waits until the client converges to expected state.
-
-        Args:
-            expected_state: The client state we are waiting to see.
-            timeout_sec: Duration to wait for the desired_state.
-
-        Raises:
-            WlanPolicyControllerError: If client still has not converged to expected
-                state at end of timeout.
-        """
-        self.honeydew.wlan_policy_deprecated_sync.set_new_update_listener()
-
-        last_err: TimeoutError | None = None
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
-            time_left = max(1, int(end_time - time.time()))
-            try:
-                client = self.honeydew.wlan_policy_deprecated_sync.get_update(
-                    timeout=time_left
-                )
-            except TimeoutError as e:
-                last_err = e
-                continue
-            if client.state is not expected_state:
-                # Continue getting updates.
-                continue
-            else:
-                return
-        else:
-            self.log.error(
-                f"Client state did not converge to the expected state: {expected_state}"
-                f" Waited:{timeout_sec}s"
-            )
-            raise WlanPolicyControllerError from last_err

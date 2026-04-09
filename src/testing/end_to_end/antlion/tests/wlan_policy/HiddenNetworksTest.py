@@ -129,7 +129,7 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
         """
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections()
-            fd.wlan_policy_controller.wait_for_client_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
                 WlanClientState.CONNECTIONS_DISABLED
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
