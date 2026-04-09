@@ -30,8 +30,10 @@ use zx;
 
 const INSPECT_CONNECT_EVENTS_LIMIT: usize = 10;
 const INSPECT_DISCONNECT_EVENTS_LIMIT: usize = 20;
+const INSPECT_CONNECT_ATTEMPT_RESULTS_LIMIT: usize = 50;
 const INSPECT_CONNECTED_NETWORKS_ID_LIMIT: usize = 16;
 const INSPECT_DISCONNECT_SOURCES_ID_LIMIT: usize = 32;
+const INSPECT_CONNECT_ATTEMPT_RESULTS_ID_LIMIT: usize = 32;
 const SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT: zx::BootDuration =
     zx::BootDuration::from_minutes(2);
 
@@ -118,6 +120,12 @@ impl From<&wlan_common::ie::wsc::ProbeRespWsc> for InspectNetworkWsc {
 }
 
 #[derive(PartialEq, Eq, Unit, Hash)]
+struct InspectConnectAttemptResult {
+    status_code: u16,
+    result: String,
+}
+
+#[derive(PartialEq, Eq, Unit, Hash)]
 struct InspectDisconnectSource {
     source: String,
     reason: String,
@@ -163,6 +171,7 @@ pub struct ConnectDisconnectLogger {
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     connect_events_node: Mutex<BoundedListNode>,
     disconnect_events_node: Mutex<BoundedListNode>,
+    connect_attempt_results_node: Mutex<BoundedListNode>,
     inspect_metadata_node: Mutex<InspectMetadataNode>,
     time_series_stats: ConnectDisconnectTimeSeries,
     successive_connect_attempt_failures: AtomicUsize,
@@ -180,6 +189,7 @@ impl ConnectDisconnectLogger {
     ) -> Self {
         let connect_events = inspect_node.create_child("connect_events");
         let disconnect_events = inspect_node.create_child("disconnect_events");
+        let connect_attempt_results = inspect_node.create_child("connect_attempt_results");
         let this = Self {
             cobalt_proxy,
             connection_state: Arc::new(Mutex::new(ConnectionState::Idle(IdleState {}))),
@@ -190,6 +200,10 @@ impl ConnectDisconnectLogger {
             disconnect_events_node: Mutex::new(BoundedListNode::new(
                 disconnect_events,
                 INSPECT_DISCONNECT_EVENTS_LIMIT,
+            )),
+            connect_attempt_results_node: Mutex::new(BoundedListNode::new(
+                connect_attempt_results,
+                INSPECT_CONNECT_ATTEMPT_RESULTS_LIMIT,
             )),
             inspect_metadata_node: Mutex::new(InspectMetadataNode::new(inspect_metadata_node)),
             time_series_stats: ConnectDisconnectTimeSeries::new(
@@ -248,8 +262,22 @@ impl ConnectDisconnectLogger {
         result: fidl_ieee80211::StatusCode,
         bss: &BssDescription,
     ) {
+        let mut inspect_metadata_node = self.inspect_metadata_node.lock();
+        let connect_result_id =
+            inspect_metadata_node.connect_attempt_results.insert(InspectConnectAttemptResult {
+                status_code: result.into_primitive(),
+                result: format!("{:?}", result),
+            }) as u64;
+        self.time_series_stats.log_connect_attempt_results(1 << connect_result_id);
+
+        inspect_log!(self.connect_attempt_results_node.lock(), {
+            result: format!("{:?}", result),
+            ssid: bss.ssid.to_string(),
+            bssid: bss.bssid.to_string(),
+            protection: format!("{:?}", bss.protection()),
+        });
+
         if result == fidl_ieee80211::StatusCode::Success {
-            let mut inspect_metadata_node = self.inspect_metadata_node.lock();
             let connected_network = InspectConnectedNetwork::from(bss);
             let connected_network_id =
                 inspect_metadata_node.connected_networks.insert(connected_network) as u64;
@@ -415,15 +443,18 @@ impl ConnectDisconnectLogger {
 struct InspectMetadataNode {
     connected_networks: LruCacheNode<InspectConnectedNetwork>,
     disconnect_sources: LruCacheNode<InspectDisconnectSource>,
+    connect_attempt_results: LruCacheNode<InspectConnectAttemptResult>,
 }
 
 impl InspectMetadataNode {
     const CONNECTED_NETWORKS: &'static str = "connected_networks";
     const DISCONNECT_SOURCES: &'static str = "disconnect_sources";
+    const CONNECT_ATTEMPT_RESULTS: &'static str = "connect_attempt_results";
 
     fn new(inspect_node: &InspectNode) -> Self {
         let connected_networks = inspect_node.create_child(Self::CONNECTED_NETWORKS);
         let disconnect_sources = inspect_node.create_child(Self::DISCONNECT_SOURCES);
+        let connect_attempt_results = inspect_node.create_child(Self::CONNECT_ATTEMPT_RESULTS);
         Self {
             connected_networks: LruCacheNode::new(
                 connected_networks,
@@ -432,6 +463,10 @@ impl InspectMetadataNode {
             disconnect_sources: LruCacheNode::new(
                 disconnect_sources,
                 INSPECT_DISCONNECT_SOURCES_ID_LIMIT,
+            ),
+            connect_attempt_results: LruCacheNode::new(
+                connect_attempt_results,
+                INSPECT_CONNECT_ATTEMPT_RESULTS_ID_LIMIT,
             ),
         }
     }
@@ -443,6 +478,7 @@ struct ConnectDisconnectTimeSeries {
     connected_networks: InspectedTimeMatrix<u64>,
     disconnected_networks: InspectedTimeMatrix<u64>,
     disconnect_sources: InspectedTimeMatrix<u64>,
+    connect_attempt_results: InspectedTimeMatrix<u64>,
 }
 
 impl ConnectDisconnectTimeSeries {
@@ -493,11 +529,24 @@ impl ConnectDisconnectTimeSeries {
                 InspectMetadataNode::DISCONNECT_SOURCES,
             )),
         );
+        let connect_attempt_results = client.inspect_time_matrix_with_metadata(
+            "connect_attempt_results",
+            TimeMatrix::<Union<u64>, ConstantSample>::new(
+                SamplingProfile::granular(),
+                ConstantSample::default(),
+            ),
+            BitSetNode::from_path(format!(
+                "{}/{}",
+                inspect_metadata_path,
+                InspectMetadataNode::CONNECT_ATTEMPT_RESULTS,
+            )),
+        );
         Self {
             wlan_connectivity_states,
             connected_networks,
             disconnected_networks,
             disconnect_sources,
+            connect_attempt_results,
         }
     }
 
@@ -512,6 +561,9 @@ impl ConnectDisconnectTimeSeries {
     }
     fn log_disconnect_sources(&self, data: u64) {
         self.disconnect_sources.fold_or_log_error(data);
+    }
+    fn log_connect_attempt_results(&self, data: u64) {
+        self.connect_attempt_results.fold_or_log_error(data);
     }
 }
 
@@ -642,6 +694,13 @@ mod tests {
                                 "index_node_path": "root/test_stats/metadata/disconnect_sources",
                             },
                         },
+                        connect_attempt_results: {
+                            "type": "bitset",
+                            "data": AnyBytesProperty,
+                            metadata: {
+                                "index_node_path": "root/test_stats/metadata/connect_attempt_results",
+                            },
+                        },
                     },
                 },
             }
@@ -685,11 +744,29 @@ mod tests {
                             }
                         }
                     },
+                    connect_attempt_results: contains {
+                        "0": {
+                            "@time": AnyNumericProperty,
+                            "data": contains {
+                                status_code: 0u64,
+                                result: "Success",
+                            }
+                        }
+                    },
                 },
                 connect_events: {
                     "0": {
                         "@time": AnyNumericProperty,
                         network_id: 0u64,
+                    }
+                },
+                connect_attempt_results: {
+                    "0": {
+                        "@time": AnyNumericProperty,
+                        result: "Success",
+                        ssid: &*SSID_REGEX,
+                        bssid: &*BSSID_REGEX,
+                        protection: AnyStringProperty,
                     }
                 }
             }
@@ -702,6 +779,10 @@ mod tests {
         );
         assert_eq!(
             &time_matrix_calls.drain::<u64>("connected_networks")[..],
+            &[TimeMatrixCall::Fold(Timed::now(1 << 0))]
+        );
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("connect_attempt_results")[..],
             &[TimeMatrixCall::Fold(Timed::now(1 << 0))]
         );
     }
@@ -1010,7 +1091,7 @@ mod tests {
         let data = test_helper.get_inspect_data_tree();
         assert_data_tree!(@executor test_helper.exec, data, root: contains {
             test_stats: contains {
-                metadata: {
+                metadata: contains {
                     connected_networks: {
                         "0": {
                             "@time": AnyNumericProperty,
