@@ -2,15 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/legacy_image_metadata_overrides.gni")
-import("//build/assembly/product_bundle.gni")
-import("//build/assembly/update_package.gni")
-import("//build/board.gni")
-import("//build/product.gni")
+import("//build/images/paths.gni")
+
+assert(use_bazel_images_only, "Only bazel-assembled products are supported.")
 
 if (is_host) {
-  import("//build/images/paths.gni")
   import("//build/testing/host_test_data.gni")
 
   host_test_data("default_product_bundle_for_emulator.go") {
@@ -33,16 +29,6 @@ if (is_host) {
       "//src/tests/shutdown:*",
     ]
     sources = [ files.product_bundle_dir ]
-
-    # For non-bazel-built images, we need to list out the old zbi paths (which are still used),
-    # so that all the right files end up on the test-runners.
-    if (!use_bazel_images_only) {
-      sources += [
-        "$root_build_dir/fuchsia.zbi",
-        "$root_build_dir/zedboot.zbi",
-      ]
-      deps = [ "//build/images/zedboot($default_toolchain)" ]
-    }
   }
 
   host_test_data("fuchsia_zbi_for_host_tests") {
@@ -53,11 +39,7 @@ if (is_host) {
     visibility = [ "//src/devices/block/drivers/ufs/test/e2e:*" ]
     sources = [ "$root_build_dir/fuchsia.zbi" ]
 
-    if (use_bazel_images_only) {
-      deps = [ ":copy_zbi_to_root(${default_toolchain})" ]
-    } else {
-      deps = [ labels.images ]
-    }
+    deps = [ ":copy_zbi_to_root(${default_toolchain})" ]
   }
 }
 
@@ -67,143 +49,10 @@ if (is_fuchsia) {
   assert(current_toolchain == default_toolchain,
          "//build/images/* are only valid in the Fuchsia toolchain")
 
-  if (use_bazel_images_only) {
-    import("//build/images/paths.gni")
-    copy("copy_zbi_to_root") {
-      testonly = true
-      sources = [ files.zbi ]
-      outputs = [ "$root_build_dir/fuchsia.zbi" ]
-      deps = [ labels.images ]
-    }
-
-    group("fuchsia") {
-    }
-  } else {
-    # This catches inadvertent dependencies on the "fucshia" assembly implementation
-    # in bringup-only configurations.
-    assert(
-        !use_bringup_assembly,
-        "The bringup product config cannot rely on the fuchsia assembly.  Bringup has it's own in //build/images/bringup")
-
-    ##################################################
-    # Fuchsia
-    ##################################################
-
-    # The `:fuchsia` target assembles the main Fuchsia image, for the core product only.
-    #
-    # This group only provides GN metadata about the update package(s), none of
-    # packages that are included in the assembled image are present in GN metadata
-    # walks of this target.
-    #
-    # To get the list of packages in this assembly, use the
-    # `package_list_from_assembly()` GN template.
-    group("fuchsia") {
-      testonly = true
-
-      public_deps = [
-        ":fuchsia_assembly",
-        ":product_bundle",
-        ":update",
-      ]
-
-      metadata = {
-        package_barrier = []
-
-        # Only include the update package(s) manifest(s) in metadata collection.
-        # To get a file containing a list of the base & cache packages, use the
-        # `package_list_from_assembly()` GN template.
-        package_barrier = [ ":update" ]
-      }
-    }
-
-    # Bazel assembly builds a product bundle, so we don't need to build product
-    # bundle and update packages in GN.
-    assembled_system("fuchsia_assembly") {
-      testonly = true
-
-      generate_fvm = !fxfs_blob
-      generate_fxfs = fxfs_blob
-      generate_fvm_fastboot = !fxfs_blob && assembly_generate_fvm_fastboot
-      generate_fvm_nand = !fxfs_blob && assembly_generate_fvm_nand
-      generate_vbmeta = use_vbmeta
-
-      board_config_label = board_configuration_label
-
-      if (generate_fvm) {
-        assembly_include_account_in_fvm = include_account_in_fvm
-      }
-
-      # zbi arguments
-      if (custom_signing_script != "") {
-        inputs = custom_signing_script_inputs
-        deps = [ "//build/images/custom_signing:deps" ]
-        generate_signed_zbi = true
-      }
-
-      if (fuchsia_product_assembly_config_label != false) {
-        product_assembly_config_label = fuchsia_product_assembly_config_label
-      }
-
-      output_dir = root_build_dir
-      image_name = "fuchsia"
-
-      image_metadata_overrides = legacy_fuchsia_image_metadata_overrides
-    }
-
-    files = {
-      # Outputs of assembly.
-      outdir = target_out_dir + "/fuchsia"
-
-      # Outputs of recovery.
-      recovery_name = get_label_info(recovery_label, "name")
-      recovery_outdir =
-          get_label_info(recovery_label, "target_out_dir") + "/" + recovery_name
-    }
-
-    _partitions_config = "//boards/partitions:default"
-    if (has_board) {
-      assert(partitions_config_label != false,
-             "Need to define partitions_config_label")
-      _partitions_config = partitions_config_label
-    }
-
-    update_epoch = update_platform_epoch + update_product_epoch
-    update_package("update") {
-      testonly = true
-      deps = [
-        ":fuchsia_assembly",
-        "//build/info:build_info_files",
-        recovery_label,
-      ]
-      partitions = _partitions_config
-      system_a = files.outdir
-      system_r = files.recovery_outdir
-      board_name = board_name
-      version_file = build_info_files.version
-      epoch = "${update_epoch}"
-    }
-
-    product_bundle_label = "product_bundle"
-    product_bundle(product_bundle_label) {
-      testonly = true
-      name = main_product_bundle_name
-      deps = [
-        ":fuchsia_assembly",
-        "//build/info:build_info_files",
-        recovery_label,
-      ]
-
-      update = {
-        version_file = build_info_files.version
-        epoch = "${update_epoch}"
-      }
-
-      system_a = files.outdir
-      system_r = files.recovery_outdir
-
-      if (delivery_blob_type != false) {
-        delivery_blob_type = delivery_blob_type
-      }
-    }
+  copy("copy_zbi_to_root") {
+    testonly = true
+    sources = [ files.zbi ]
+    outputs = [ "$root_build_dir/fuchsia.zbi" ]
+    deps = [ labels.images ]
   }
 }
