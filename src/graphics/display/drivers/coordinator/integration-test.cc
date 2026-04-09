@@ -1151,24 +1151,24 @@ class IntegrationTest : public TestBase {
 TEST_F(IntegrationTest, DISABLED_ClientsCanBail) {
   for (size_t i = 0; i < 100; i++) {
     std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-        &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+        &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   }
 }
 
 TEST_F(IntegrationTest, RejectSecondPrimaryClient) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
 
   TestFidlClient second_client(&sysmem_client_);
   zx::result<> open_coordinator_result = second_client.OpenCoordinator(
-      DisplayProviderClient(), display::ClientPriority::kPrimary, dispatcher());
+      DisplayProviderClient(), display::ClientPriority::kCompositor, dispatcher());
   EXPECT_FALSE(open_coordinator_result.is_ok());
   EXPECT_EQ(open_coordinator_result.error_value(), ZX_ERR_ALREADY_BOUND);
 }
 
 TEST_F(IntegrationTest, MustUseUniqueEventIDs) {
   std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   zx::event event_a, event_b, event_c;
   ASSERT_OK(zx::event::create(0, &event_a));
   ASSERT_OK(zx::event::create(0, &event_b));
@@ -1184,7 +1184,7 @@ TEST_F(IntegrationTest, MustUseUniqueEventIDs) {
 
 TEST_F(IntegrationTest, MaxLayerCountPropagatedToClient) {
   std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
 
   // The integration test uses a fake display engine. In the test setup,
   // the fake engine reports its max_layer_count (currently 1 in
@@ -1200,7 +1200,7 @@ TEST_F(IntegrationTest, MaxLayerCountPropagatedToClient) {
 }
 TEST_F(IntegrationTest, VsyncEventForImageConfig) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kInitialConfigStamp(42);
@@ -1220,7 +1220,7 @@ TEST_F(IntegrationTest, VsyncEventForImageConfig) {
 
 TEST_F(IntegrationTest, VsyncEventForImagelessConfig) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
@@ -1244,7 +1244,7 @@ TEST_F(IntegrationTest, VsyncEventForImagelessConfig) {
 
 TEST_F(IntegrationTest, VsyncEventAfterImageLayerConvertsToColorLayer) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kInitialConfigStamp(1);
@@ -1288,7 +1288,7 @@ TEST_F(IntegrationTest, DisplayOwnershipChangeEventsWithTwoClients) {
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
   EXPECT_FALSE(virtcon_client->state().has_display_ownership());
 
@@ -1302,7 +1302,7 @@ TEST_F(IntegrationTest, DisplayOwnershipChangeEventsWithThreeClients) {
   WaitUntil([&]() { return virtcon_client->state().has_display_ownership(); });
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
   EXPECT_FALSE(virtcon_client->state().has_display_ownership());
 
@@ -1335,7 +1335,7 @@ TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithImageLayers) {
       DisplayEngineSubmittedConfigStamp();
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kPrimaryConfigStamp(2);
@@ -1365,7 +1365,7 @@ TEST_F(IntegrationTest, CommitConfigAfterOwnerChangeWithColorLayers) {
       DisplayEngineSubmittedConfigStamp();
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_primary_color_layer_result =
@@ -1401,7 +1401,7 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithImageLayers) {
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   static constexpr display::ConfigStamp kPrimaryConfigStamp(2);
@@ -1449,7 +1449,7 @@ TEST_F(IntegrationTest, VsyncEventAfterOwnerChangeWithColorLayers) {
   EXPECT_EQ(1u, virtcon_client->state().vsync_count());
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_primary_color_layer_result =
@@ -1485,7 +1485,7 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
   // eligible for VSync events.
 
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   // Display an image.
@@ -1528,7 +1528,7 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
 
   // A new primary client connects.
   primary_client = OpenCoordinatorTestFidlClient(&sysmem_client_, DisplayProviderClient(),
-                                                 display::ClientPriority::kPrimary);
+                                                 display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   // The VSync must be routed to the client that applied the configuration,
@@ -1555,7 +1555,7 @@ TEST_F(IntegrationTest, VsyncEventsAfterClientChange) {
 
 TEST_F(IntegrationTest, AcknowledgeVsyncAfterQueueFull) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
@@ -1602,21 +1602,21 @@ TEST_F(IntegrationTest, AcknowledgeVsyncAfterQueueFull) {
 
 TEST_F(IntegrationTest, CreateImageLayer) {
   std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
 
   EXPECT_OK(client->CreateFullscreenImageLayer());
 }
 
 TEST_F(IntegrationTest, CreateColorLayer) {
   std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
 
   EXPECT_OK(client->CreateFullscreenColorLayer(kFuchsiaBgra));
 }
 
 TEST_F(IntegrationTest, ImportImageWithInvalidImageIdFails) {
   std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
 
   constexpr display::ImageId image_id = display::kInvalidImageId;
   constexpr display::BufferCollectionId buffer_collection_id(0xffeeeedd);
@@ -1629,7 +1629,7 @@ TEST_F(IntegrationTest, ImportImageWithInvalidImageIdFails) {
 
 TEST_F(IntegrationTest, ImportImageWithNonExistentBufferCollectionId) {
   std::unique_ptr<TestFidlClient> client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
 
   constexpr display::BufferCollectionId kNonExistentCollectionId(0xffeeeedd);
   constexpr display::ImageId image_id(1);
@@ -1652,7 +1652,7 @@ TEST_F(IntegrationTest, ClampRgb) {
 
   // Create a primary client
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
   // Clamp RGB to a new value
   ASSERT_OK(primary_client->SetMinimumRgb(1));
@@ -1708,7 +1708,7 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
 
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   // The Virtcon client should receive VSync events while its config is applied.
@@ -1758,7 +1758,7 @@ TEST_F(IntegrationTest, VsyncGoesToClientWhoAppliedConfig) {
 TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
@@ -1854,7 +1854,7 @@ TEST_F(IntegrationTest, VsyncReflectsAppliedConfig) {
 TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
@@ -1962,7 +1962,7 @@ TEST_F(IntegrationTest, CommitConfigWithWaitingImage) {
 TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_color_layer_result =
@@ -2082,7 +2082,7 @@ TEST_F(IntegrationTest, CommitConfigRemovesLayerWithWaitingImage) {
 TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer1_result = primary_client->CreateFullscreenImageLayer();
@@ -2211,7 +2211,7 @@ TEST_F(IntegrationTest, CommitConfigSkipsConfigWithWaitingImage) {
 TEST_F(IntegrationTest, CheckConfigFullscreenImageLayer) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
@@ -2232,7 +2232,7 @@ TEST_F(IntegrationTest, CheckConfigFullscreenImageLayer) {
 
 TEST_F(IntegrationTest, CheckConfigLargeLayer) {
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
@@ -2263,7 +2263,7 @@ TEST_F(IntegrationTest, CheckConfigLargeLayer) {
 TEST_F(IntegrationTest, CheckConfigRepeatedLayer) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
@@ -2284,7 +2284,7 @@ TEST_F(IntegrationTest, CheckConfigRepeatedLayer) {
 TEST_F(IntegrationTest, SetDisplayLayersTooManyLayersDisconnects) {
   // Create and bind primary client.
   std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
-      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kPrimary);
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
   WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
 
   ASSERT_EQ(1u, primary_client->state().GetDisplayInfo().max_layer_count)

@@ -104,7 +104,7 @@ bool ImagePipeSurfaceDisplay::Init() {
           .coordinator(std::move(coordinator_server))
           .coordinator_listener(std::move(listener_client))
           .priority(fuchsia_hardware_display::wire::ClientPriority{
-              .value = fuchsia_hardware_display::wire::kPrimaryClientPriorityValue})
+              .value = fuchsia_hardware_display::wire::kTestUtilityClientPriorityValue})
           .Build();
   fidl::WireResult open_coordinator_result =
       fidl::WireCall(provider)->OpenCoordinator(open_coordinator_request);

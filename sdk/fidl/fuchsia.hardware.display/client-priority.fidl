@@ -21,11 +21,15 @@ alias ClientPriorityValue = uint32;
 
 const INVALID_CLIENT_PRIORITY_VALUE ClientPriorityValue = 0;
 
-/// Statically assigned priority level for the virtcon client.
+/// Statically assigned priority level for the virtual console.
 const VIRTCON_CLIENT_PRIORITY_VALUE ClientPriorityValue = 100;
 
-/// Statically assigned priority level for the primary client.
-const PRIMARY_CLIENT_PRIORITY_VALUE ClientPriorityValue = 200;
+/// Statically assigned priority level for the system compositor.
+///
+/// The currently supported system compositors are
+/// * Scenic for most cases
+/// * Carnelian for the recovery image
+const COMPOSITOR_CLIENT_PRIORITY_VALUE ClientPriorityValue = 200;
 
 /// Statically assigned priority level for test utilities.
 const TEST_UTILITY_CLIENT_PRIORITY_VALUE ClientPriorityValue = 300;

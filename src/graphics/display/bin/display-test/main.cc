@@ -185,7 +185,7 @@ bool BindDisplay(fidl::ClientEnd<fuchsia_hardware_display::Provider> provider,
           .coordinator(std::move(coordinator_server))
           .coordinator_listener(std::move(listener_client))
           .priority(fuchsia_hardware_display::wire::ClientPriority{
-              .value = fuchsia_hardware_display::wire::kPrimaryClientPriorityValue})
+              .value = fuchsia_hardware_display::wire::kTestUtilityClientPriorityValue})
           .Build();
   fidl::WireResult open_response =
       fidl::WireCall(provider)->OpenCoordinator(open_coordinator_request);

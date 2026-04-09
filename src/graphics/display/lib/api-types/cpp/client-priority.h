@@ -50,8 +50,11 @@ class ClientPriority {
   // See [`fuchsia.hardware.display/VIRTCON_CLIENT_PRIORITY_VALUE`].
   static const ClientPriority kVirtcon;
 
-  // See [`fuchsia.hardware.display/PRIMARY_CLIENT_PRIORITY_VALUE`].
-  static const ClientPriority kPrimary;
+  // See [`fuchsia.hardware.display/COMPOSITOR_CLIENT_PRIORITY_VALUE`].
+  static const ClientPriority kCompositor;
+
+  // See [`fuchsia.hardware.display/TEST_UTILITY_CLIENT_PRIORITY_VALUE`].
+  static const ClientPriority kTestUtility;
 
  private:
   fuchsia_hardware_display::wire::ClientPriorityValue value_;
@@ -61,8 +64,10 @@ constexpr inline ClientPriority ClientPriority::kInvalid(
     fuchsia_hardware_display::wire::kInvalidClientPriorityValue);
 constexpr inline ClientPriority ClientPriority::kVirtcon(
     fuchsia_hardware_display::wire::kVirtconClientPriorityValue);
-constexpr inline ClientPriority ClientPriority::kPrimary(
-    fuchsia_hardware_display::wire::kPrimaryClientPriorityValue);
+constexpr inline ClientPriority ClientPriority::kCompositor(
+    fuchsia_hardware_display::wire::kCompositorClientPriorityValue);
+constexpr inline ClientPriority ClientPriority::kTestUtility(
+    fuchsia_hardware_display::wire::kTestUtilityClientPriorityValue);
 
 }  // namespace display
 

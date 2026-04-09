@@ -122,7 +122,7 @@ impl DisplayCoordinator {
         let () = {
             let priority = fidl_fuchsia_hardware_display::ClientPriority {
                 value: client_priority
-                    .unwrap_or(fidl_fuchsia_hardware_display::PRIMARY_CLIENT_PRIORITY_VALUE),
+                    .unwrap_or(fidl_fuchsia_hardware_display::COMPOSITOR_CLIENT_PRIORITY_VALUE),
             };
             provider
                 .open_coordinator(fidl_fuchsia_hardware_display::ProviderOpenCoordinatorRequest {

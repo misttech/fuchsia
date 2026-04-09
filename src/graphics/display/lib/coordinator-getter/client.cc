@@ -33,32 +33,33 @@ fpromise::promise<CoordinatorClientChannels, zx_status_t> GetCoordinator(
 
   // fidl::Client requires that it must be bound on the dispatcher thread.
   // So this has to be dispatched as an async task running on `dispatcher`.
-  async::PostTask(dispatcher, [completer, dispatcher, provider = std::move(provider),
-                               coordinator_server = std::move(coordinator_server),
-                               coordinator_listener_client =
-                                   std::move(coordinator_listener_client)]() mutable {
-    fidl::Client<fuchsia_hardware_display::Provider> client(std::move(provider), dispatcher);
-    // The FIDL Client is retained in the `Then` handler, to keep the
-    // connection open until the response is received.
-    client
-        ->OpenCoordinator({{.coordinator = std::move(coordinator_server),
-                            .coordinator_listener = std::move(coordinator_listener_client),
-                            .priority = fuchsia_hardware_display::ClientPriority(
-                                {.value = fuchsia_hardware_display::kPrimaryClientPriorityValue})}})
-        .Then([completer, client = std::move(client)](
-                  fidl::Result<fuchsia_hardware_display::Provider::OpenCoordinator>& result) {
-          if (result.is_error()) {
-            auto& error_value = result.error_value();
-            FX_LOGS(ERROR) << "Failed to open coordinator: " << error_value.FormatDescription();
-            zx_status_t status = (error_value.is_domain_error())
-                                     ? error_value.domain_error()
-                                     : error_value.framework_error().status();
-            completer->complete_error(status);
-            return;
-          }
-          completer->complete_ok();
-        });
-  });
+  async::PostTask(
+      dispatcher, [completer, dispatcher, provider = std::move(provider),
+                   coordinator_server = std::move(coordinator_server),
+                   coordinator_listener_client = std::move(coordinator_listener_client)]() mutable {
+        fidl::Client<fuchsia_hardware_display::Provider> client(std::move(provider), dispatcher);
+        // The FIDL Client is retained in the `Then` handler, to keep the
+        // connection open until the response is received.
+        client
+            ->OpenCoordinator(
+                {{.coordinator = std::move(coordinator_server),
+                  .coordinator_listener = std::move(coordinator_listener_client),
+                  .priority = fuchsia_hardware_display::ClientPriority(
+                      {.value = fuchsia_hardware_display::kCompositorClientPriorityValue})}})
+            .Then([completer, client = std::move(client)](
+                      fidl::Result<fuchsia_hardware_display::Provider::OpenCoordinator>& result) {
+              if (result.is_error()) {
+                auto& error_value = result.error_value();
+                FX_LOGS(ERROR) << "Failed to open coordinator: " << error_value.FormatDescription();
+                zx_status_t status = (error_value.is_domain_error())
+                                         ? error_value.domain_error()
+                                         : error_value.framework_error().status();
+                completer->complete_error(status);
+                return;
+              }
+              completer->complete_ok();
+            });
+      });
 
   CoordinatorClientChannels coordinator_channels = {
       .coordinator_client_end = std::move(coordinator_client),

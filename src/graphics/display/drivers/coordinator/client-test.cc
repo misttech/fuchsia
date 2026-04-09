@@ -107,13 +107,13 @@ class ClientTest : public ::testing::Test {
 
     controller_.emplace(std::move(engine_driver_client), driver_dispatcher_->borrow());
 
-    zx::result<> create_result = controller_->CreateClient(display::ClientPriority::kPrimary,
+    zx::result<> create_result = controller_->CreateClient(display::ClientPriority::kCompositor,
                                                            std::move(coordinator_server_end),
                                                            std::move(listener_client_end));
     ASSERT_OK(create_result);
 
     client_ = controller_->ClientsForTesting().GetClientOwningDisplays();
-    ASSERT_EQ(display::ClientPriority::kPrimary, client_->priority());
+    ASSERT_EQ(display::ClientPriority::kCompositor, client_->priority());
     ASSERT_EQ(ClientId(1), client_->id());
   }
 

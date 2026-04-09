@@ -27,7 +27,7 @@ TEST(FakeDisplayStackHost, ConnectToServiceMemberWithListener) {
   fidl::Result open_coordinator_result = provider->OpenCoordinator({{
       .coordinator = std::move(coordinator_server),
       .coordinator_listener = std::move(listener_client),
-      .priority = fuchsia_hardware_display::kPrimaryClientPriorityValue,
+      .priority = fuchsia_hardware_display::kCompositorClientPriorityValue,
   }});
   EXPECT_TRUE(open_coordinator_result.is_ok())
       << "Failed to open coordinator: "

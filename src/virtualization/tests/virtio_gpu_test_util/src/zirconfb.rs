@@ -43,7 +43,7 @@ async fn read_info() -> Result<DetectResult, Error> {
             coordinator: Some(dc_server),
             coordinator_listener: Some(listener_client),
             priority: Some(fidl_fuchsia_hardware_display::ClientPriority {
-                value: fidl_fuchsia_hardware_display::PRIMARY_CLIENT_PRIORITY_VALUE,
+                value: fidl_fuchsia_hardware_display::TEST_UTILITY_CLIENT_PRIORITY_VALUE,
             }),
             __source_breaking: fidl::marker::SourceBreaking,
         };
