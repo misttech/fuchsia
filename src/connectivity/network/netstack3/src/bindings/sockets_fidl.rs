@@ -14,8 +14,8 @@ use fidl_fuchsia_net_tcp as fnet_tcp;
 use fidl_fuchsia_net_udp as fnet_udp;
 use fuchsia_async as fasync;
 use futures::TryStreamExt;
-use net_types::ip::{Ip, Ipv4, Ipv6};
-use netstack3_core::socket::IpSocketMatcher;
+use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
+use netstack3_core::socket::{IpSocketMatcher, SocketTransportProtocolMatcher};
 use netstack3_core::tcp::{TcpSocketDiagnostics, TcpSocketState};
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 use netstack3_core::{Instant as _, MatcherBindingsTypes};
@@ -75,14 +75,21 @@ fn iterate_ip(
 
     let tcp_info = extensions.contains(fnet_sockets::Extensions::TCP_INFO);
 
-    // TODO(https://fxbug.dev/452064956): Track which transport
-    // protocols and IP versions could be matched and scope the API
-    // calls to just those.
+    let matching = matching_families_and_protocols(&matchers);
+
     let mut results = IntoFidlExtender::new(Vec::new());
-    ctx.api().tcp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results, tcp_info);
-    ctx.api().udp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results);
-    ctx.api().tcp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results, tcp_info);
-    ctx.api().udp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results);
+    if matching.tcp && matching.ipv4 {
+        ctx.api().tcp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results, tcp_info);
+    }
+    if matching.udp && matching.ipv4 {
+        ctx.api().udp::<Ipv4>().bound_sockets_diagnostics(&matchers[..], &mut results);
+    }
+    if matching.tcp && matching.ipv6 {
+        ctx.api().tcp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results, tcp_info);
+    }
+    if matching.udp && matching.ipv6 {
+        ctx.api().udp::<Ipv6>().bound_sockets_diagnostics(&matchers[..], &mut results);
+    }
 
     Ok(results.into_inner())
 }
@@ -157,14 +164,21 @@ fn disconnect_ip(
         }
     };
 
-    // TODO(https://fxbug.dev/452064956): Track which transport
-    // protocols and IP versions could be matched and scope the API
-    // calls to just those.
+    let matching = matching_families_and_protocols(&matchers);
+
     let mut count: usize = 0;
-    count += ctx.api().tcp::<Ipv4>().disconnect_bound(&matchers[..]);
-    count += ctx.api().udp::<Ipv4>().disconnect_bound(&matchers[..]);
-    count += ctx.api().tcp::<Ipv6>().disconnect_bound(&matchers[..]);
-    count += ctx.api().udp::<Ipv6>().disconnect_bound(&matchers[..]);
+    if matching.tcp && matching.ipv4 {
+        count += ctx.api().tcp::<Ipv4>().disconnect_bound(&matchers[..]);
+    }
+    if matching.udp && matching.ipv4 {
+        count += ctx.api().udp::<Ipv4>().disconnect_bound(&matchers[..]);
+    }
+    if matching.tcp && matching.ipv6 {
+        count += ctx.api().tcp::<Ipv6>().disconnect_bound(&matchers[..]);
+    }
+    if matching.udp && matching.ipv6 {
+        count += ctx.api().udp::<Ipv6>().disconnect_bound(&matchers[..]);
+    }
 
     fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
         disconnected: count.try_into().unwrap_or(u32::MAX),
@@ -185,6 +199,43 @@ fn convert_matchers(
             Err(err) => Err((err, i)),
         })
         .collect()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct MatchingFamiliesAndProtocols {
+    tcp: bool,
+    udp: bool,
+    ipv4: bool,
+    ipv6: bool,
+}
+
+fn matching_families_and_protocols(
+    matchers: &[IpSocketMatcher<<BindingsCtx as MatcherBindingsTypes>::DeviceClass>],
+) -> MatchingFamiliesAndProtocols {
+    let mut tcp = true;
+    let mut udp = true;
+    let mut ipv4 = true;
+    let mut ipv6 = true;
+
+    for matcher in matchers {
+        match matcher {
+            IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(_)) => {
+                udp = false;
+            }
+            IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(_)) => {
+                tcp = false;
+            }
+            IpSocketMatcher::Family(IpVersion::V4) => {
+                ipv6 = false;
+            }
+            IpSocketMatcher::Family(IpVersion::V6) => {
+                ipv4 = false;
+            }
+            _ => {}
+        }
+    }
+
+    MatchingFamiliesAndProtocols { tcp, udp, ipv4, ipv6 }
 }
 
 impl TryFromFidl<fnet_sockets_ext::IpSocketMatcher>
@@ -358,5 +409,84 @@ impl<I: Ip> TryIntoFidl<fnet_sockets_ext::IpSocketState> for TcpSocketDiagnostic
             |state| fnet_sockets_ext::IpSocketState::V4(state),
             |state| fnet_sockets_ext::IpSocketState::V6(state),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use netstack3_core::socket::{
+        SocketTransportProtocolMatcher, TcpSocketMatcher, UdpSocketMatcher,
+    };
+
+    #[test]
+    fn test_matching_families_and_protocols() {
+        assert_eq!(
+            matching_families_and_protocols(&Vec::new()),
+            MatchingFamiliesAndProtocols { tcp: true, udp: true, ipv4: true, ipv6: true }
+        );
+
+        let tcp = vec![IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(
+            TcpSocketMatcher::Empty,
+        ))];
+        assert_eq!(
+            matching_families_and_protocols(&tcp),
+            MatchingFamiliesAndProtocols { tcp: true, udp: false, ipv4: true, ipv6: true }
+        );
+
+        let udp = vec![IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(
+            UdpSocketMatcher::Empty,
+        ))];
+        assert_eq!(
+            matching_families_and_protocols(&udp),
+            MatchingFamiliesAndProtocols { tcp: false, udp: true, ipv4: true, ipv6: true }
+        );
+
+        let v4 = vec![IpSocketMatcher::Family(IpVersion::V4)];
+        assert_eq!(
+            matching_families_and_protocols(&v4),
+            MatchingFamiliesAndProtocols { tcp: true, udp: true, ipv4: true, ipv6: false }
+        );
+
+        let v6 = vec![IpSocketMatcher::Family(IpVersion::V6)];
+        assert_eq!(
+            matching_families_and_protocols(&v6),
+            MatchingFamiliesAndProtocols { tcp: true, udp: true, ipv4: false, ipv6: true }
+        );
+
+        let tcp_v4 = vec![
+            IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
+            IpSocketMatcher::Family(IpVersion::V4),
+        ];
+        assert_eq!(
+            matching_families_and_protocols(&tcp_v4),
+            MatchingFamiliesAndProtocols { tcp: true, udp: false, ipv4: true, ipv6: false }
+        );
+
+        let udp_v6 = vec![
+            IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
+            IpSocketMatcher::Family(IpVersion::V6),
+        ];
+        assert_eq!(
+            matching_families_and_protocols(&udp_v6),
+            MatchingFamiliesAndProtocols { tcp: false, udp: true, ipv4: false, ipv6: true }
+        );
+
+        let both_proto = vec![
+            IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
+            IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
+        ];
+        assert_eq!(
+            matching_families_and_protocols(&both_proto),
+            MatchingFamiliesAndProtocols { tcp: false, udp: false, ipv4: true, ipv6: true }
+        );
+
+        let both_family =
+            vec![IpSocketMatcher::Family(IpVersion::V4), IpSocketMatcher::Family(IpVersion::V6)];
+        assert_eq!(
+            matching_families_and_protocols(&both_family),
+            MatchingFamiliesAndProtocols { tcp: true, udp: true, ipv4: false, ipv6: false }
+        );
     }
 }
