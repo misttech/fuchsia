@@ -898,6 +898,10 @@ filegroup(
         # Build all the migrated atoms for the main platform build.
         "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build_idk",
 
+        # Compile, generate the atom, and run compatibility tests for all FIDL
+        # libraries in all categories.
+        "//sdk/fidl:compatibility_tests",
+
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
         ":platform_dependent_source_library",

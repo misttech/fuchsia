@@ -120,12 +120,11 @@ _compat_test_fidl_libraries_targets_list = [
     # keep-sorted: end
 ]
 
+# GN note: Unlike the GN target, this does not depend on libraries in the
+# "prebuilt" or "host_tool" categories.
 idk_molecule(
     name = "fidl_idk",
-    visibility = [
-        "//build/fidl:__pkg__",
-        "//sdk:__pkg__",
-    ],
+    visibility = ["//sdk:__pkg__"],
     deps = [
         target + "_idk"
         for target in (_partner_idk_stable_fidl_libraries_targets_list +
@@ -133,15 +132,47 @@ idk_molecule(
     ],
 )
 
-# TODO(https://fxbug.dev/428285014): Ensure libraries in the following lists
-# are built and validated, possibly using something like the GN target
-# "compatibility_tests". The dependency must be on the "_idk" target because
-# that depends on the compatibility test targets.
-#   * `_prebuilt_fidl_libraries_targets_list`
-#   * `_host_tool_fidl_libraries_targets_list`
-#   * `_compat_test_fidl_libraries_targets_list`
+idk_molecule(
+    name = "all_fidl_libraries_with_categories_idk",
+    testonly = True,
+    visibility = ["//build/fidl:__pkg__"],
+    # The dependency must be on the "_idk" targets because they depend on the
+    # compatibility test targets.
+    deps = [":fidl_idk"] + [
+        target + "_idk"
+        for target in (_prebuilt_fidl_libraries_targets_list +
+                       _host_tool_fidl_libraries_targets_list +
+                       _compat_test_fidl_libraries_targets_list)
+    ],
+)
 
-# TODO(https://fxbug.dev/428285014): Figure out how to base the allowlists on
+# Runs the build-time FIDL compatibility tests and category compatibility checks
+# for all FIDL libraries that need them.
+# This includes all libraries in the Fuchsia IDK plus others that are not in the
+# IDK but have a category.
+# TODO(https://fxbug.dev/496974114): Ensure category compatibility checks are
+# performed. In GN, this involed building a collection.
+# TODO(https://fxbug.dev/496974114): Make building this target sufficient to
+# update golden API summary files, update `//sdk/updating_golden_files.md:fidl`,
+# and add IFTTT comments around this. The `//sdk:generate_compatibility_goldens`
+# GN target will also need to be replaced with a Bazel target - see
+# https://fxbug.dev/496981676.
+filegroup(
+    name = "compatibility_tests",
+    testonly = True,
+    srcs = [
+        # Runs FIDL compatibility tests by depending on molecules that depend on
+        # the "_idk" targets for all libraries in a category. The "_idk"
+        # targets depend on the compatibility test targets.
+        ":all_fidl_libraries_with_categories_idk",
+    ],
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__subpackages__",
+        "//build/fidl:__pkg__",
+    ],
+)
+
+# TODO(https://fxbug.dev/496597510): Figure out how to base the allowlists on
 # the same lists used for the molecule. This will help ensure that libraries
 # assigned an SDK category also appear in the appropriate artifacts. It will also
 # ensure that API compatibility tests actually run on all libraries in a

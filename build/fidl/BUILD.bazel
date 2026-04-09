@@ -25,9 +25,7 @@ collect_fidl_metadata(
         "partner",
         # LINT.ThenChange(//build/fidl/fidl_library.gni:sdk_fidl_json_data_categories)
     ],
-    # TODO(https://fxbug.dev/496603528): Use a target that includes all FIDL
-    # libraries in all categories as this one does in GN.
-    deps = ["//sdk/fidl"],
+    deps = ["//sdk/fidl:all_fidl_libraries_with_categories_idk"],
 )
 
 # This currently only includes FIDL libraries in the Bazel dependency tree.
