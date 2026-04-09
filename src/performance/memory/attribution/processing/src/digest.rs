@@ -5,8 +5,8 @@
 use crate::{ProcessedAttributionData, ZXName};
 use anyhow::Result;
 use bstr::ByteSlice;
-use fidl_fuchsia_kernel as fkernel;
-use fidl_fuchsia_memory_attribution_plugin as fplugin;
+use fidl_fuchsia_kernel__common as fkernel;
+use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
 use regex_lite::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -418,7 +418,7 @@ mod tests {
         Attribution, AttributionData, GlobalPrincipalIdentifier, Principal, PrincipalDescription,
         PrincipalType, ProcessedAttributionData, Resource, ResourceReference, attribute_vmos,
     };
-    use fidl_fuchsia_memory_attribution_plugin as fplugin;
+    use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
     use regex_lite::Regex;
 
     fn get_attribution_data() -> ProcessedAttributionData {

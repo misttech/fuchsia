@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use core::cell::RefCell;
 use core::convert::Into;
-use fidl_fuchsia_memory_attribution_plugin as fplugin;
+use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -442,12 +442,13 @@ pub enum ResourceReference {
 impl From<fplugin::ResourceReference> for ResourceReference {
     fn from(value: fplugin::ResourceReference) -> ResourceReference {
         match value {
-            fidl_fuchsia_memory_attribution_plugin::ResourceReference::KernelObject(ko) => {
-                ResourceReference::KernelObject(ko)
-            }
-            fidl_fuchsia_memory_attribution_plugin::ResourceReference::ProcessMapped(
-                fplugin::ProcessMapped { process, base, len, hint_skip_handle_table },
-            ) => ResourceReference::ProcessMapped { process, base, len, hint_skip_handle_table },
+            fplugin::ResourceReference::KernelObject(ko) => ResourceReference::KernelObject(ko),
+            fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
+                process,
+                base,
+                len,
+                hint_skip_handle_table,
+            }) => ResourceReference::ProcessMapped { process, base, len, hint_skip_handle_table },
             _ => unimplemented!(),
         }
     }
@@ -456,13 +457,14 @@ impl From<fplugin::ResourceReference> for ResourceReference {
 impl Into<fplugin::ResourceReference> for ResourceReference {
     fn into(self) -> fplugin::ResourceReference {
         match self {
-            ResourceReference::KernelObject(ko) => {
-                fidl_fuchsia_memory_attribution_plugin::ResourceReference::KernelObject(ko)
-            }
+            ResourceReference::KernelObject(ko) => fplugin::ResourceReference::KernelObject(ko),
             ResourceReference::ProcessMapped { process, base, len, hint_skip_handle_table } => {
-                fidl_fuchsia_memory_attribution_plugin::ResourceReference::ProcessMapped(
-                    fplugin::ProcessMapped { process, base, len, hint_skip_handle_table },
-                )
+                fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
+                    process,
+                    base,
+                    len,
+                    hint_skip_handle_table,
+                })
             }
         }
     }

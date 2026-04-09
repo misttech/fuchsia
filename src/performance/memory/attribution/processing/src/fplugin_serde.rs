@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use crate::fkernel_serde;
+use fidl_fuchsia_kernel__common as fkernel;
+use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
 use serde::{Deserialize, Serialize};
-use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memory_attribution_plugin as fplugin};
 
 #[derive(Serialize, Deserialize)]
-#[serde(remote = "fidl_fuchsia_memory_attribution_plugin::PerformanceImpactMetrics")]
+#[serde(remote = "fplugin::PerformanceImpactMetrics")]
 pub struct PerformanceImpactMetricsDef {
     pub some_memory_stalls_ns: Option<i64>,
     pub full_memory_stalls_ns: Option<i64>,
@@ -49,7 +50,7 @@ impl Into<fplugin::KernelStatistics> for KernelStatistics {
 // TODO(https://github.com/serde-rs/serde/issues/723): Use remote serialization
 // with fkernel::KernelStatistics when supported inside options.
 #[derive(PartialEq, Debug, Clone, Serialize)]
-#[serde(remote = "fidl_fuchsia_memory_attribution_plugin::ResourceType")]
+#[serde(remote = "fplugin::ResourceType")]
 pub enum ResourceTypeDef {
     #[serde(with = "JobDef")]
     Job(fplugin::Job),
@@ -63,7 +64,7 @@ pub enum ResourceTypeDef {
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize)]
-#[serde(remote = "fidl_fuchsia_memory_attribution_plugin::Job")]
+#[serde(remote = "fplugin::Job")]
 pub struct JobDef {
     pub child_jobs: Option<Vec<u64>>,
     pub processes: Option<Vec<u64>>,
@@ -72,7 +73,7 @@ pub struct JobDef {
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize)]
-#[serde(remote = "fidl_fuchsia_memory_attribution_plugin::Process")]
+#[serde(remote = "fplugin::Process")]
 pub struct ProcessDef {
     pub vmos: Option<Vec<u64>>,
     #[serde(with = "option_vec_mapping_def")]
@@ -112,7 +113,7 @@ mod option_vec_mapping_def {
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize)]
-#[serde(remote = "fidl_fuchsia_memory_attribution_plugin::Mapping")]
+#[serde(remote = "fplugin::Mapping")]
 pub struct MappingDef {
     pub vmo: Option<u64>,
     pub address_base: Option<u64>,
@@ -122,7 +123,7 @@ pub struct MappingDef {
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize)]
-#[serde(remote = "fidl_fuchsia_memory_attribution_plugin::Vmo")]
+#[serde(remote = "fplugin::Vmo")]
 pub struct VmoDef {
     pub parent: Option<u64>,
     pub private_committed_bytes: Option<u64>,
@@ -143,7 +144,7 @@ mod test {
     #[test]
     fn test_convert() {
         let fplugin_kernel_statistics = fplugin::KernelStatistics {
-            memory_stats: Some(fidl_fuchsia_kernel::MemoryStats {
+            memory_stats: Some(fkernel::MemoryStats {
                 total_bytes: Some(1),
                 free_bytes: Some(2),
                 free_loaned_bytes: Some(3),
@@ -165,7 +166,7 @@ mod test {
                 vmo_discardable_unlocked_bytes: Some(19),
                 ..Default::default()
             }),
-            compression_stats: Some(fidl_fuchsia_kernel::MemoryStatsCompression {
+            compression_stats: Some(fkernel::MemoryStatsCompression {
                 uncompressed_storage_bytes: Some(15),
                 compressed_storage_bytes: Some(16),
                 compressed_fragmentation_bytes: Some(17),

@@ -12,8 +12,8 @@ rustc_library("processing") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
-    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust_common",
+    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust_common",
     "//sdk/rust/zx-types",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
