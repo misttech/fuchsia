@@ -46,6 +46,10 @@
                 "OverlayFsTest.OpenReadDeniedIfMounterCannotRead",
                 "OverlayFsTest.CopyUpDeniedIfMounterLacksWrite",
 
+                // TODO: https://fxbug.dev/501038871 - Make (SE)Starnix match the (SE)Linux behavior
+                // regarding perf_event_open with invalid tracepoint ID.
+                "PerfEventTest.InvalidTracepointIdAndNoPermission",
+
                 // TODO: https://fxbug.dev/297440106 - Fix zombies to remain in "/proc/<pid>" with correct labels.
                 "ProcAttrTest.ZombieProcPid",
                 "ProcAttrTest.ZombieCurrentAttr",

@@ -523,4 +523,17 @@ TEST(PerfEventTest, MmapInvalidArgumentsCheckOrder) {
   }));
 }
 
+TEST(PerfEventTest, InvalidTracepointIdAndNoPermission) {
+  // This test checks that perf_event_open fails with EINVAL for non existent tracepoint IDs
+  // while lacking the `tracepoint` permission.
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_perf_event_no_tracepoint_t:s0", [&] {
+    // Use a bogus tracepoint ID.
+    auto pe = GetPerfEventAttr(PERF_TYPE_TRACEPOINT, 0x7FFFFFFF, /*exclude_kernel=*/false);
+    fbl::unique_fd fd(perf_event_open(pe.get(), kAllTasksPid, 0 /* this CPU */));
+    EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EINVAL));
+  }));
+}
+
 }  // namespace
