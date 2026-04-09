@@ -56,12 +56,13 @@ closed protocol Diagnostics {
             /// Populates the `tcp_info` field on returned TCP sockets.
             TCP_INFO = 0b1;
         };
-        /// Matchers to apply to all sockets on the system in Conjunctive Normal
-        /// Form. Only sockets matched by all matchers are returned through the
-        /// `IpIterator` protocol.
+        /// Matchers are ANDed together and applied to all sockets on the
+        /// system. Put another way, only sockets matched by all matchers are
+        /// returned through the `IpIterator` protocol.
         ///
         /// For example, if you want to match all IPv4 TCP sockets with a local
-        /// port of 22, but not on loopback, you could use the following query:
+        /// port of 22, but not on loopback, you could use the following
+        /// (pseudocode) query:
         ///
         /// [
         ///   {
