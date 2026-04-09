@@ -13,7 +13,7 @@
 // machine.  But they're all about the same:
 //  * The return value register is used as the argument register.  (On most
 //    machines, they're the same register in the normal convention anyway.)
-//  * The argument registers gets a pointer to two (read-only) GOT slots
+//  * That argument register gets a pointer to two (read-only) GOT slots
 //    (address-width on most machines, but not on x86-64 ILP32), the second
 //    of which encodes the true arguments for the function.
 //  * The SP follows normal ABI conventions and can be pushed onto.
@@ -23,12 +23,12 @@
 //    register (for branch-and-link machines).  Machines able to use an
 //    alternate return address register do so (RISC-V: t0 instead of ra).
 //
-// The two entry points here share most of their code for each machine.
-// The "split" version (most commonly used) extracts the two bit fields
-// from the GOT value; the "indirect" version (rarely used) uses the GOT
-// value as a pointer to two uintptr_t fields: index and offset.  Then it
-// does a TLS access in IE model to read _dl_tlsdesc_runtime_dynamic_blocks
-// and compute `blocks[index] + offset` into the return value register.
+// The two entry points here share most of their code for each machine.  The
+// "split" version (most commonly used) extracts the two bit fields from the
+// GOT value; the "indirect" version (rarely used) uses the GOT value as a
+// pointer to two uintptr_t fields: index and offset.  Then it does a TLS
+// access in IE model to read _dl_tlsdesc_runtime_dynamic_blocks and compute
+// `blocks[index] + offset - $tp` into the return value register.
 //
 // The implementation pairs for each machine are quite similar as well.  A
 // prologue common to both versions spills additional registers to be used
@@ -64,9 +64,9 @@
 
 // This is the shared beginning portion of both the split and indirect
 // versions.  It extracts the the GOT's value slot into x1 and the blocks
-// vector pointer into x2, with x0 then available for scratch.  Note that
-// some uses are literal x[012] and some instead use tlsdesc_r[012] macros,
-// depending on whether it's an base register (always 64 bits) or it's a
+// vector pointer into x2, with x0 then available for scratch.  Note that some
+// uses are literal x[012] and some instead use tlsdesc_r[012] macros,
+// depending on whether it's a base register (always 64 bits) or it's a
 // pointer-sized operand.
 .macro prologue
   .tlsdesc.cfi
@@ -268,7 +268,7 @@
   tlsdesc.load a1, 0(a1)
 
   // The tail is the same as for the split case, so share its code.
-  j .Lload_block
+  tail .Lload_block
 .end_function
 
 #elif defined(__x86_64__)
@@ -284,6 +284,7 @@
 
   // On entry %rax contains the argument: the address of the GOT slot pair.
   // The first word holds our own PC, the second is the value slot.
+  // Note: GOT slots are 64 bits even for ILP32!
   mov 8(%rax), %rax
   .cfi_undefined %rax
 
