@@ -189,7 +189,7 @@ def _idk_cc_source_library_impl(
     idk_root_path = "pkg/" + idk_name
     include_dest = idk_root_path + "/include"
 
-    idk_deps = get_idk_deps(deps + fuchsia_deps + implementation_deps)
+    atom_idk_deps = get_idk_deps(deps + fuchsia_deps + implementation_deps)
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
     # TODO(https://fxbug.dev/428229472): If we must support
@@ -257,7 +257,7 @@ def _idk_cc_source_library_impl(
         stable = stable,
         api_area = api_area,
         api_file_path = api_path,
-        idk_deps = idk_deps,
+        deps = atom_idk_deps,
         atom_build_deps = atom_build_deps,
         configurable_info = ":" + configurable_info_name,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),

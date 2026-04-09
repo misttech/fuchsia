@@ -5,7 +5,7 @@
 load(":providers.bzl", "FuchsiaIdkAtomInfo")
 
 def _print_deps_aspect_impl(_target, ctx):
-    print("\n", ctx.rule.attr.name, ":\n\ttype: ", ctx.rule.attr.type, "\n\tIDK deps: ", ctx.rule.attr.idk_deps, "\n\tnon-IDK build deps: ", ctx.rule.attr.atom_build_deps)
+    print("\n", ctx.rule.attr.name, ":\n\ttype: ", ctx.rule.attr.type, "\n\tIDK deps: ", ctx.rule.attr.deps, "\n\tnon-IDK build deps: ", ctx.rule.attr.atom_build_deps)
     return []
 
 print_deps_aspect = aspect(
@@ -15,6 +15,6 @@ Example use:
     fx bazel build build/bazel/bazel_idk/tests:test-source-set_idk "--aspects=build/bazel/bazel_idk/idk_atom_info.bzl%print_deps_aspect"
 """,
     implementation = _print_deps_aspect_impl,
-    attr_aspects = ["idk_deps"],
+    attr_aspects = ["deps"],
     required_providers = [FuchsiaIdkAtomInfo],
 )

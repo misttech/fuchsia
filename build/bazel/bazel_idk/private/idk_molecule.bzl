@@ -13,12 +13,11 @@ def _idk_molecule_impl(ctx):
         fail("IDK molecule `name`s must end with `_idk`.")
 
     all_deps_depset = depset(direct = ctx.files.deps)
-    idk_deps = ctx.attr.deps
 
     # Build the atoms depset, excluding molecules while including their atoms.
     direct_deps = []
     transitive_depsets = []
-    for dep in idk_deps:
+    for dep in ctx.attr.deps:
         if FuchsiaIdkAtomInfo in dep:
             direct_deps.append(dep)
             transitive_depsets.append(dep[FuchsiaIdkAtomInfo].atoms_depset)
@@ -33,7 +32,7 @@ def _idk_molecule_impl(ctx):
         DefaultInfo(files = all_deps_depset),
         FuchsiaIdkMoleculeInfo(
             label = ctx.label,
-            idk_deps = ctx.attr.deps,
+            deps = ctx.attr.deps,
             atoms_depset = atoms_depset,
         ),
     ]

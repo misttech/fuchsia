@@ -6,7 +6,7 @@
 
 # LINT.IfChange(idk_atom_info)
 # TOOD(https://fxbug.dev/417304469): `sdk_area`,  and some other
-# fields of this provider do not belong in prebuild info. `idk_deps` may
+# fields of this provider do not belong in prebuild info. `deps` may
 # also be unnecessary, but could be useful for category enforcement.
 FuchsiaIdkAtomInfo = provider(
     doc = "Defines an IDK atom",
@@ -22,7 +22,7 @@ FuchsiaIdkAtomInfo = provider(
         "api_file_path": "Path to the file representing the API canonically exposed by this atom.",
         "api_contents_map": "List of scopes for the files making up the atom's API.",
         "atom_files_map": "[dict[str,File]] a { dest -> source } map of files for this atom",
-        "idk_deps": "[list[label]] Other atoms the atom directly depends on",
+        "deps": "[list[label]] Other atoms the atom directly depends on",
         "atoms_depset": "[depset[FuchsiaIdkAtomInfo]] The full set of other atoms the atom depends on",
         "atom_build_deps": "[list[label]] List of dependencies related to building the atom that should not be reflected in IDKs",
         "additional_prebuild_info": "[dict[str,list[Any]]] A dictionary of type-specific prebuild info for the atom. All values are lists, even if there is only one value",
@@ -34,7 +34,7 @@ FuchsiaIdkMoleculeInfo = provider(
     doc = "Defines an IDK molecule, or group of atoms",
     fields = {
         "label": "The molecule's label",
-        "idk_deps": "Atoms and other molecules the molecule depends on.",
+        "deps": "Atoms and other molecules the molecule depends on.",
         "atoms_depset": "depset[FuchsiaIdkAtomInfo] The full set atoms that make up the molecule",
     },
 )

@@ -304,11 +304,11 @@ def _create_idk_atom_impl(ctx):
 
     all_deps_depset = depset(
         direct = atom_files_for_depset +
-                 ctx.files.idk_deps +
+                 ctx.files.deps +
                  ctx.files.underlying_library +
                  ctx.files.atom_build_deps,
     )
-    idk_deps = ctx.attr.idk_deps
+    deps = ctx.attr.deps
 
     # Though the `files_map` has been modified, there can be no new dependencies
     # so `all_deps_depset` is still correct.
@@ -329,10 +329,10 @@ def _create_idk_atom_impl(ctx):
             api_file_path = ctx.attr.api_file_path,
             api_contents_map = api_contents_map,
             atom_files_map = _replace_placeholders_in_map(files_map, ctx),
-            idk_deps = idk_deps,
+            deps = deps,
             atoms_depset = depset(
-                direct = idk_deps,
-                transitive = [dep[FuchsiaIdkAtomInfo].atoms_depset for dep in idk_deps],
+                direct = deps,
+                transitive = [dep[FuchsiaIdkAtomInfo].atoms_depset for dep in deps],
             ),
             atom_build_deps = ctx.attr.atom_build_deps,
             additional_prebuild_info = additional_prebuild_info,
@@ -430,7 +430,7 @@ Possible values, from most restrictive to least restrictive:
             default = {},
             allow_files = True,
         ),
-        "idk_deps": attr.label_list(
+        "deps": attr.label_list(
             providers = [FuchsiaIdkAtomInfo],
             doc = "Bazel labels for other IDK atoms this element publicly depends on at build time." +
                   "These labels must point to `_create_idk_atom` targets.",

@@ -54,12 +54,12 @@ create_test_atom_info(
     atom_files_map_source_files = {},
     category = "partner",
     id = "sdk://pkg/test",
-    idk_deps = [],
     idk_name = "test_atom",
     is_stable = True,
     label = ":test_atom_idk",
     meta_dest = "/pkg/test",
     type = "data",
+    deps = [],
 )
 
 verify_atom_info(
@@ -106,6 +106,8 @@ idk_cc_source_library(
     ],
 )
 
+# The order of items in `deps` in the actual output does not match buildifier's order.
+# buildifier: leave-alone
 create_test_atom_info(
     name = "test_source_library_golden_info",
     testonly = True,
@@ -141,17 +143,17 @@ create_test_atom_info(
     ]),
     category = "partner",
     id = "sdk://pkg/test_source_set",
-    idk_deps = [
-        "//build/bazel/bazel_idk/tests:test_noop_atom_idk",
-        "//build/bazel/bazel_idk/tests:tests_idk",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
-    ],
     idk_name = "test_source_set",
     is_stable = True,
     label = "//build/bazel/bazel_idk/tests:test-source-library_idk",
     meta_dest = "pkg/test_source_set/meta.json",
     type = "cc_source_library",
+    deps = [
+        "//build/bazel/bazel_idk/tests:test_noop_atom_idk",
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ],
 )
 
 verify_atom_info(
@@ -194,6 +196,8 @@ idk_cc_shared_library(
     ],
 )
 
+# The order of items in `deps` in the actual output does not match buildifier's order.
+# buildifier: leave-alone
 create_test_atom_info(
     name = "test_shared_library_golden_info",
     testonly = True,
@@ -240,16 +244,16 @@ create_test_atom_info(
     ]),
     category = "partner",
     id = "sdk://pkg/test_shared_library",
-    idk_deps = [
-        "//build/bazel/bazel_idk/tests:tests_idk",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
-    ],
     idk_name = "test_shared_library",
     is_stable = True,
     label = "//build/bazel/bazel_idk/tests:test-shared-library_idk",
     meta_dest = "pkg/test_shared_library/meta.json",
     type = "cc_prebuilt_library",
+    deps = [
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ],
 )
 
 verify_atom_info(
@@ -361,6 +365,8 @@ idk_cc_static_library(
     ],
 )
 
+# The order of items in `deps` in the actual output does not match buildifier's order.
+# buildifier: leave-alone
 create_test_atom_info(
     name = "test_static_library_golden_info",
     testonly = True,
@@ -399,16 +405,16 @@ create_test_atom_info(
     ]),
     category = "partner",
     id = "sdk://pkg/test_static_library",
-    idk_deps = [
-        "//build/bazel/bazel_idk/tests:tests_idk",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
-        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
-    ],
     idk_name = "test_static_library",
     is_stable = True,
     label = "//build/bazel/bazel_idk/tests:test-static-library_idk",
     meta_dest = "pkg/test_static_library/meta.json",
     type = "cc_prebuilt_library",
+    deps = [
+        "//build/bazel/bazel_idk/tests:tests_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
+    ],
 )
 
 verify_atom_info(
@@ -517,12 +523,12 @@ create_test_atom_info(
     atoms_depset = depset([]),
     category = "partner",
     id = "sdk://pkg/platform_dependent_source_library",
-    idk_deps = [],
     idk_name = "platform_dependent_source_library",
     is_stable = True,
     label = "//build/bazel/bazel_idk/tests:platform_dependent_source_library_idk",
     meta_dest = "pkg/platform_dependent_source_library/meta.json",
     type = "cc_source_library",
+    deps = [],
 )
 
 verify_atom_info(
@@ -596,7 +602,7 @@ idk_cc_source_library_zx(
     # Test appending "_ALL_SOURCE" to an existing list of defines.
     defines = ["SOME_DEFINE"],
     fuchsia_deps = [
-        # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
+        # Test conversion of `foo:foo.headers` to `foo:foo` for atom IDK deps in `fuchsia_deps`.
         ":test_source_set_dependency_zx.headers",
     ],
     idk_name = "test_source_set_zx",
@@ -606,13 +612,13 @@ idk_cc_source_library_zx(
         # This also tests handling of duplicate dependencies when the headers targets are converted.
         ":test_source_set_dependency_zx",
 
-        # Test conversion of `foo:foo.as-needed` to `foo:foo` for `idk_deps` in `implementation_deps`.
+        # Test conversion of `foo:foo.as-needed` to `foo:foo` for atom IDK deps in `implementation_deps`.
         ":test_source_set_dependency2_zx.as-needed",
     ],
     non_fuchsia_deps = [":test_source_set_dependency_zx"],
     stable = True,
     deps = [
-        # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
+        # Test conversion of `foo:headers` to `foo:foo` for atom IDK deps in `deps`.
         ":headers",
     ],
 )
@@ -630,7 +636,7 @@ idk_cc_shared_library_zx(
     category = "partner",
     # `defines` is intentionally not set to test adding "_ALL_SOURCE" to no list.
     fuchsia_deps = [
-        # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
+        # Test conversion of `foo:foo.headers` to `foo:foo` for atom IDK deps in `fuchsia_deps`.
         # The full target defines `RequiredFunction()`. This library would
         # fail to link if this dependency is not included in the `cc_library()`,
         # which is the case for the non-Fuchsia and Zircon toolchain cases.
@@ -642,7 +648,7 @@ idk_cc_shared_library_zx(
         ":test_source_set_dependency2_zx.as-needed",
     ],
     deps = [
-        # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
+        # Test conversion of `foo:headers` to `foo:foo` for atom IDK deps in `deps`.
         ":headers",
     ],
 )
@@ -659,7 +665,7 @@ idk_cc_static_library_zx(
     api_area = "Developer",
     category = "partner",
     fuchsia_deps = [
-        # Test conversion of `foo:foo.headers` to `foo:foo` for `idk_deps` in `fuchsia_deps`.
+        # Test conversion of `foo:foo.headers` to `foo:foo` for atom IDK deps in `fuchsia_deps`.
         # The full target defines `RequiredFunction()`. The test executable would
         # fail to link if this dependency is not included in the `cc_library()`,
         # which is the case for the non-Fuchsia and Zircon toolchain cases.
@@ -671,7 +677,7 @@ idk_cc_static_library_zx(
         ":test_source_set_dependency2_zx.as-needed",
     ],
     deps = [
-        # Test conversion of `foo:headers` to `foo:foo` for `idk_deps` in `deps`.
+        # Test conversion of `foo:headers` to `foo:foo` for atom IDK deps in `deps`.
         ":headers",
     ],
 )

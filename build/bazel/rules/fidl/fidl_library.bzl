@@ -438,7 +438,7 @@ def _fidl_library_impl(
             api_file_path = api_path,
             api_contents_map = api_contents_map,
             files_map = idk_files_map,
-            idk_deps = get_idk_deps(deps),
+            deps = get_idk_deps(deps),
             atom_build_deps = idk_atom_build_deps,
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
             allowlist = allowlist,

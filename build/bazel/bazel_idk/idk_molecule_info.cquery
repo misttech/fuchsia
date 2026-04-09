@@ -19,7 +19,7 @@ Example use:
     lines += [ molecule_info.label.name + " directly depends on:" ]
     element_lines = []
 
-    for dep in molecule_info.idk_deps:
+    for dep in molecule_info.deps:
         p = providers(dep)
 
         element_info =  p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo")

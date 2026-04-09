@@ -40,7 +40,7 @@ def _generate_prebuild_info_for_atom(target):
 
     return {
         "api_area": provider.api_area,
-        "atom_deps": [str(d.label) for d in provider.idk_deps],
+        "atom_deps": [str(d.label) for d in provider.deps],
         "atom_files": _files_map_to_json(provider.atom_files_map),
         "atom_id": provider.id,
         "atom_label": str(target.label),

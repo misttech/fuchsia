@@ -7,12 +7,6 @@
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo", "FuchsiaIdkMoleculeInfo")
 load("//build/bazel/rules/fidl:providers.bzl", "FidlLibraryInfo")
 
-# This aspect only traverses IDK molecules and IDK atoms. The former references
-# other such targets via `deps` and the latter via `idk_deps`.
-# TODO(https://fxbug.dev/496603528): Unify these and remove one. Then simplify
-# the for loop in the aspect implementation.
-_dependency_attrs_to_check_for_idk_info = ["deps", "idk_deps"]
-
 FidlMetadataAspectInfo = provider(
     doc = "Collects struct metadata for FIDL libraries.",
     fields = {
@@ -63,21 +57,20 @@ def _fidl_metadata_aspect_impl(target, ctx):
             # LINT.ThenChange(:sdk_fidl_json_data_fields, :sdk_fidl_json_data_json, //build/fidl/fidl_library.gni:sdk_fidl_json_data_contents)
 
     transitive = []
-    for attr_name in _dependency_attrs_to_check_for_idk_info:
-        if hasattr(ctx.rule.attr, attr_name):
-            dep_targets = getattr(ctx.rule.attr, attr_name)
-            for dep in dep_targets:
-                if FidlMetadataAspectInfo in dep:
-                    transitive.append(dep[FidlMetadataAspectInfo].metadata)
+    for dep in ctx.rule.attr.deps:
+        if FidlMetadataAspectInfo in dep:
+            transitive.append(dep[FidlMetadataAspectInfo].metadata)
 
     return [FidlMetadataAspectInfo(
         metadata = depset(direct = metadata, transitive = transitive),
     )]
 
 # Collects metadata for FIDL library IDK atoms.
+# This aspect only traverses IDK molecules and IDK atoms. Both reference
+# other such targets via `deps`.
 fidl_metadata_aspect = aspect(
     implementation = _fidl_metadata_aspect_impl,
-    attr_aspects = _dependency_attrs_to_check_for_idk_info,
+    attr_aspects = ["deps"],
 )
 
 def _collect_fidl_metadata_impl(ctx):
@@ -139,9 +132,6 @@ _dependency_attrs_to_check_for_fidl_library_info = [
     "deps",
     "implementation_deps",
     "data",
-
-    # IDK-specific attributes
-    "idk_deps",
 
     # The FIDL IR target is added to the FIDL atom's `atom_build_deps`.
     "atom_build_deps",

@@ -320,7 +320,7 @@ def _idk_cc_prebuilt_library_impl(
     # The binary files are added to `idk_files_map` by `_create_idk_atom()`.
     idk_files_map = dict(idk_header_files_map)
 
-    idk_deps = get_idk_deps(deps + fuchsia_deps + runtime_deps)
+    atom_idk_deps = get_idk_deps(deps + fuchsia_deps + runtime_deps)
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
     atom_build_deps = [
@@ -402,7 +402,7 @@ def _idk_cc_prebuilt_library_impl(
         api_file_path = api_path,
         api_contents_map = api_contents_map,
         files_map = idk_files_map,
-        idk_deps = idk_deps,
+        deps = atom_idk_deps,
         underlying_library = ":%s" % underlying_library_info_target_name,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
