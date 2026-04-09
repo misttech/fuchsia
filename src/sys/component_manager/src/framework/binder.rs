@@ -5,7 +5,7 @@
 use crate::model::component::{StartReason, WeakComponentInstance};
 use crate::model::routing::report_routing_failure;
 use crate::model::start::Start;
-use ::routing::RouteRequest;
+use cm_rust::Availability;
 use cm_types::Name;
 use errors::ModelError;
 use futures::FutureExt;
@@ -16,17 +16,6 @@ use std::sync::LazyLock;
 
 static BINDER_SERVICE: LazyLock<Name> =
     LazyLock::new(|| "fuchsia.component.Binder".parse().unwrap());
-static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
-    RouteRequest::UseProtocol(cm_rust::UseProtocolDecl {
-        source: cm_rust::UseSource::Framework,
-        source_name: BINDER_SERVICE.clone(),
-        source_dictionary: Default::default(),
-        target_path: Some(cm_types::Path::new("/null").unwrap()),
-        numbered_handle: None,
-        dependency_type: cm_rust::DependencyType::Strong,
-        availability: Default::default(),
-    })
-});
 
 pub fn serve(
     server_end: zx::Channel,
@@ -64,8 +53,13 @@ pub async fn serve_inner(
 async fn report_routing_failure_to_target(target: WeakComponentInstance, err: ModelError) {
     match target.upgrade().map_err(|e| ModelError::from(e)) {
         Ok(target) => {
-            report_routing_failure(&*DEBUG_REQUEST, DEBUG_REQUEST.availability(), &target, &err)
-                .await;
+            report_routing_failure(
+                "protocol `fuchsia.component.Binder`",
+                Some(Availability::Required),
+                &target,
+                &err,
+            )
+            .await;
         }
         Err(err) => {
             warn!(moniker:% = target.moniker, error:% = err; "failed to upgrade reference");

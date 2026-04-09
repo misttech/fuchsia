@@ -6,8 +6,8 @@ use std::sync::{Arc, LazyLock};
 
 use crate::model::component::ComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
-use ::routing::RouteRequest;
 use anyhow::Context;
+use cm_rust::Availability;
 use cm_types::Name;
 use fidl_fuchsia_component as fcomponent;
 use futures::future::BoxFuture;
@@ -23,17 +23,6 @@ use crate::model::token::InstanceToken;
 
 static INTROSPECTOR_SERVICE: LazyLock<Name> =
     LazyLock::new(|| "fuchsia.component.Introspector".parse().unwrap());
-static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
-    RouteRequest::UseProtocol(cm_rust::UseProtocolDecl {
-        source: cm_rust::UseSource::Framework,
-        source_name: INTROSPECTOR_SERVICE.clone(),
-        source_dictionary: Default::default(),
-        target_path: Some(cm_types::Path::new("/null").unwrap()),
-        numbered_handle: None,
-        dependency_type: cm_rust::DependencyType::Strong,
-        availability: Default::default(),
-    })
-});
 
 pub fn serve(
     server_end: zx::Channel,
@@ -44,8 +33,8 @@ pub fn serve(
         if let Err(err) = check_access_permissions(&target, &source) {
             if let Ok(target) = target.upgrade() {
                 report_routing_failure(
-                    &*DEBUG_REQUEST,
-                    DEBUG_REQUEST.availability(),
+                    "protocol `fuchsia.component.Introspector`",
+                    Some(Availability::Required),
                     &target,
                     &err,
                 )
