@@ -348,13 +348,13 @@ impl TransferManager {
         let mut paddrs = vec![0; aligned_length.div_ceil(contiguity) as usize];
         let options =
             zx::BtiOptions::PERM_READ | zx::BtiOptions::PERM_WRITE | zx::BtiOptions::COMPRESS;
-        let pmt = self.bti.pin(
-            options,
-            vmo.as_ref(),
-            aligned_vmo_offset,
-            aligned_length,
-            &mut paddrs[..],
-        )?;
+        let pmt = self
+            .bti
+            .pin(options, vmo.as_ref(), aligned_vmo_offset, aligned_length, &mut paddrs[..])
+            .map_err(|error| {
+                warn!(error:?; "Pin failed");
+                zx::Status::IO
+            })?;
         let unpin_guard = scopeguard::guard(pmt, move |pmt: zx::Pmt| {
             // SAFETY: We only call this branch upon failure, so the transfer won't be submitted to
             // hardware yet.
