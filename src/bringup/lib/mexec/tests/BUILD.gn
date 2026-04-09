@@ -30,7 +30,7 @@ template("mexec_no_op_success_test") {
 
     deps = [
       ":no-op-success",
-      "//zircon/kernel",
+      "//zircon/kernel/image/eng",
     ]
   }
 

@@ -39,7 +39,7 @@ zbi_test("cprng-draw-zbi") {
 
   deps = [
     ":cprng-draw",
-    "//zircon/kernel",
+    "//zircon/kernel/image/eng",
   ]
 }
 

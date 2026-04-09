@@ -107,7 +107,7 @@ template("turducken_zbi_test") {
   if (boot_next) {
     turducken_cuckoo_test("$target_name.cuckoo") {
       boot_zbi = ":$target_name"
-      next_zbi = "//zircon/kernel"
+      next_zbi = "//zircon/kernel/image/eng"
     }
   }
 }

@@ -367,7 +367,7 @@ zbi_test("zbi-static-pie-test") {
 
   deps = [
     ":fuchsia-static-pie-test.basic",
-    "//zircon/kernel",
+    "//zircon/kernel/image/eng",
   ]
   assert_no_deps = [
     "//zircon/system/core/*",

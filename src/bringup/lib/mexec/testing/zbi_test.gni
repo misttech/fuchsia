@@ -8,7 +8,7 @@ import("//build/testing/boot_tests/zbi_test.gni")
 # This is the default if no $deps parameter is passed to mexec_zbi_test().
 mexec_zbi_test_default_deps = [
   "//src/bringup/lib/mexec/testing:mexec-zbi-test-entry",
-  "//zircon/kernel",
+  "//zircon/kernel/image/eng",
 ]
 
 # Build a "chain-loading" ZBI test that boots a provided ZBI test via mexec.
