@@ -7,6 +7,10 @@ import("//build/testing/host_test_data.gni")
 
 assert(is_host, "python only supported in host toolchains")
 
+host_test_data("black") {
+  sources = [ "//prebuilt/third_party/black/${host_platform}/black" ]
+}
+
 host_test_data("interpreter") {
   sources = [
     "//prebuilt/third_party/python3/${host_platform}/lib",
