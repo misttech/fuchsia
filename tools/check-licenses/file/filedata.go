@@ -89,7 +89,6 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 
 	// File.LicenseFormat == MultiLicense*
 	// NOTICE files that contain text for multiple licenses.
-	// See the files in the /notice subdirectory for more info.
 	case MultiLicense:
 		ndata, err := ParseOneDelimiter(f.absPath, content)
 		if err != nil {
@@ -176,6 +175,8 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 }
 
 func (fd *FileData) Search() {
+	// First pass without a write lock. If the results are already populated,
+	// we immediately return to save time.
 	fd.mu.RLock()
 	if fd.searchResults != nil {
 		fd.mu.RUnlock()
@@ -183,8 +184,12 @@ func (fd *FileData) Search() {
 	}
 	fd.mu.RUnlock()
 
+	// If results weren't there, acquire a full lock.
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
+	// Double-check to ensure another goroutine didn't populate the results
+	// while we were waiting for the lock. classifier.Match is computationally
+	// expensive, so we only want to run it exactly once per FileData.
 	if fd.searchResults == nil {
 		results := classifier.Match(fd.data)
 		fd.searchResults = &results
@@ -212,7 +217,9 @@ func (fd *FileData) SearchResults() *classifierLib.Results {
 // For copyright data, we want "filedata" to only contain the copyright
 // text. Not the rest of the source code in the given file.
 // This method lets us set the filedata data after detecting the copyright
-// header info.
+// header info. It safely locks the state, updates the underlying data,
+// and regenerates the SPDX ID so downstream reporting tools have an
+// accurate hash of the new, truncated text.
 func (fd *FileData) SetData(data []byte) {
 	fd.mu.Lock()
 	fd.data = data
