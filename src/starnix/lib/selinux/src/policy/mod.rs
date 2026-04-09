@@ -2221,4 +2221,28 @@ pub(super) mod tests {
             )
         }
     }
+
+    #[test]
+    fn policy_genfscon_mixed_order() {
+        let policy_bytes =
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy.pp");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate selinux policy");
+
+        let path_label_expectations = [
+            ("/", "system_u:object_r:fs_mixed_order_t:s0"),
+            ("/a", "system_u:object_r:fs_mixed_order_a_t:s0"),
+            ("/a/a", "system_u:object_r:fs_mixed_order_a_a_t:s0"),
+            ("/a/b", "system_u:object_r:fs_mixed_order_a_b_t:s0"),
+            ("/a/b/c", "system_u:object_r:fs_mixed_order_a_b_t:s0"),
+        ];
+        for (path, expected_label) in path_label_expectations {
+            let context =
+                policy.genfscon_label_for_fs_and_path("fs_mixed_order".into(), path.into(), None);
+            assert_eq!(
+                policy.serialize_security_context(&context.unwrap()),
+                expected_label.as_bytes()
+            );
+        }
+    }
 }

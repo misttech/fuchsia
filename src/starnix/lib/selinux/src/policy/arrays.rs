@@ -1225,6 +1225,24 @@ impl GenericFsContext {
     }
 }
 
+impl Parse for GenericFsContext {
+    type Error = anyhow::Error;
+
+    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let tail = bytes;
+
+        let (fs_type, tail) = SimpleArray::<u8>::parse(tail)
+            .map_err(Into::<anyhow::Error>::into)
+            .context("parsing fs_type for generic fs context")?;
+
+        let (fs_context, tail) = SimpleArrayView::<FsContext>::parse(tail)
+            .map_err(Into::<anyhow::Error>::into)
+            .context("parsing fs_context for generic fs context")?;
+
+        Ok((Self { fs_type, fs_context }, tail))
+    }
+}
+
 impl Hashable for GenericFsContext {
     type Key = SimpleArray<u8>;
     type Value = FsContext;
@@ -1246,21 +1264,38 @@ impl Hash for SimpleArray<u8> {
     }
 }
 
-impl Parse for GenericFsContext {
+impl SimpleArrayView<FsContext> {
+    fn try_validate_alphabetic_order(&self, context: &PolicyValidationContext) -> bool {
+        self.data()
+            .iter(&context.data)
+            .map(|view| view.parse(&context.data).partial_path().to_vec())
+            .is_sorted_by(|a, b| a <= b)
+    }
+
+    fn try_validate_length_descending_order(&self, context: &PolicyValidationContext) -> bool {
+        self.data()
+            .iter(&context.data)
+            .map(|view| view.parse(&context.data).partial_path().len())
+            .is_sorted_by(|a, b| a >= b)
+    }
+}
+
+impl Validate for SimpleArrayView<FsContext> {
     type Error = anyhow::Error;
 
-    fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
-        let tail = bytes;
-
-        let (fs_type, tail) = SimpleArray::<u8>::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing fs_type for generic fs context")?;
-
-        let (fs_context, tail) = SimpleArrayView::<FsContext>::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .context("parsing fs_context for generic fs context")?;
-
-        Ok((Self { fs_type, fs_context }, tail))
+    /// Checks that the sequence of [`FsContext`] objects is valid.
+    /// To be valid, FsContexts must be sorted by either:
+    /// - the length of sub-paths (descending order).
+    /// - alphabetically by sub-paths (ascending order).
+    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
+        if !self.try_validate_alphabetic_order(context)
+            && !self.try_validate_length_descending_order(context)
+        {
+            return Err(anyhow::anyhow!(
+                "FsContexts must be sorted by partial path length (descending) or alphabetically.",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -1312,15 +1347,6 @@ where
             .context("parsing context for filesystem context")?;
 
         Ok((Self { partial_path, class, context }, tail))
-    }
-}
-
-impl Validate for FsContext {
-    type Error = anyhow::Error;
-
-    // TODO: validate [`FsContext`].
-    fn validate(&self, _context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        Ok(())
     }
 }
 

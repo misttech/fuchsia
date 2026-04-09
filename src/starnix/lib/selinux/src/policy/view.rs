@@ -331,7 +331,7 @@ impl<D: Hashable + Parse> Parse for CustomKeyHashedView<D> {
 
 impl<D: Hashable + Parse> Validate for CustomKeyHashedView<D>
 where
-    D::Value: Validate,
+    SimpleArrayView<D::Value>: Validate<Error = anyhow::Error>,
 {
     type Error = anyhow::Error;
 
@@ -340,9 +340,7 @@ where
             let cursor = PolicyCursor::new_at(&context.data, *key_offset);
             let (entry, _) = D::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
 
-            for v in entry.values().data().iter(&context.data) {
-                v.validate(context)?;
-            }
+            entry.values().validate(context)?;
         }
         Ok(())
     }

@@ -351,6 +351,12 @@ impl PolicyIndex {
             .parsed_policy
             .genfscon_find_all(std::str::from_utf8(fs_type.as_bytes()).expect("fs type is valid"));
 
+        #[derive(PartialEq)]
+        enum OrderType {
+            Alphabetic,
+            ByLength,
+            Unknown,
+        }
         // The correct match is the closest parent among the ones given in the policy file.
         // E.g. if in the policy we have
         //     genfscon foofs "/" label1
@@ -364,18 +370,47 @@ impl PolicyIndex {
         //
         // TODO(372212126): Optimize the algorithm.
         let mut result: Option<FsContext> = None;
+        let mut order_type = OrderType::Unknown;
+        let mut prev_path_bytes: Option<Vec<u8>> = None;
         for fs_context in fs_contexts {
+            // Determine the order type based on the first entries.
+            let path = fs_context.partial_path();
+            if order_type == OrderType::Unknown {
+                if let Some(prev) = &prev_path_bytes {
+                    if path.len() > prev.len() {
+                        order_type = OrderType::Alphabetic;
+                    } else if path < prev.as_slice() {
+                        order_type = OrderType::ByLength;
+                    }
+                }
+                prev_path_bytes = Some(path.to_vec());
+            }
+
+            // Check if the class matches.
             let class_matches = class_id.is_none()
                 || fs_context.class().map(|other| other == class_id.unwrap()).unwrap_or(true);
             if !class_matches {
                 continue;
             }
+
+            if order_type == OrderType::Alphabetic && fs_context.partial_path() > node_path.0 {
+                // We know that:
+                // - We have alphabetic order,
+                // - The current path is lexicographically greater than our target path.
+                // We can infer that we have passed any potential prefixes in alphabetical order.
+                break;
+            }
+
             if node_path.0.starts_with(fs_context.partial_path()) {
                 if result
                     .as_ref()
                     .map_or(true, |c| c.partial_path().len() < fs_context.partial_path().len())
                 {
+                    // The path matches, and it's the closest parent so far.
                     result = Some(fs_context);
+                    if order_type == OrderType::ByLength {
+                        break;
+                    }
                 }
             }
         }
