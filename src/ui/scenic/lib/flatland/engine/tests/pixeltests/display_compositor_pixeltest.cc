@@ -937,8 +937,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                 /*out_buffer_collection*/ nullptr);
+  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                          /*out_buffer_collection*/ nullptr));
+  RunLoopUntilIdle();
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1067,8 +1068,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                 /*out_buffer_collection*/ nullptr);
+  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                          /*out_buffer_collection*/ nullptr));
+  RunLoopUntilIdle();
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1177,8 +1179,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                 /*out_buffer_collection*/ nullptr);
+  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                          /*out_buffer_collection*/ nullptr));
+  RunLoopUntilIdle();
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1299,8 +1302,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                 /*out_buffer_collection*/ nullptr);
+  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                          /*out_buffer_collection*/ nullptr));
+  RunLoopUntilIdle();
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1471,7 +1475,9 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  executor_->schedule_task(
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
+  RunLoopUntilIdle();
 
   // Now we can finally render.
   RenderData render_data;
@@ -1641,7 +1647,9 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  executor_->schedule_task(
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
+  RunLoopUntilIdle();
 
   // Now we can finally render.
   const uint32_t kNumOverlappingColumns = 25;
@@ -1867,7 +1875,9 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  executor_->schedule_task(
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
+  RunLoopUntilIdle();
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -2123,7 +2133,9 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  executor_->schedule_task(
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
+  RunLoopUntilIdle();
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -2323,8 +2335,10 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
-                                 /*out_buffer_collection*/ &unused_render_target_info);
+  executor_->schedule_task(
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
+                                     /*out_buffer_collection*/ &unused_render_target_info));
+  RunLoopUntilIdle();
 
   // We shouldn't even need UberStructs at all.  We're going to render several blue and green frames
   // so generate one reusable display list for each of them.
@@ -2487,7 +2501,9 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
   // Create display VMOs for the boards where color layers are not supported.
-  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &unused_render_target_info);
+  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
+                                                          &unused_render_target_info));
+  RunLoopUntilIdle();
 
   // Render an empty frame.
   auto render_frame_result = display_compositor->RenderFrame(

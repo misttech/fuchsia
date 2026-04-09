@@ -131,13 +131,13 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // presented on the display when compositing on the GPU. If |num_render_targets| is 0, this
   // function will not create any render targets for GPU composition for that display. The buffer
   // collection info is also returned back to the caller via an output parameter
-  // |out_collection_info|. This out parameter is only allowed to be nullptr when
   // |num_render_targets| is 0. Otherwise, a valid handle to return the buffer collection data is
   // required.
   // TODO(https://fxbug.dev/42137737): We need to figure out exactly how we want the display to
   // anchor to the Flatland hierarchy. Only called from the main thread.
-  void AddDisplay(display::Display* display, DisplayInfo info, uint32_t num_render_targets,
-                  fuchsia::sysmem2::BufferCollectionInfo* out_collection_info)
+  fpromise::promise<> AddDisplay(
+      display::Display* display, DisplayInfo info, uint32_t num_render_targets,
+      fuchsia::sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
       FXL_LOCKS_EXCLUDED(lock_);
 
   // Values needed to adjust the color of the framebuffer as a postprocessing effect.
@@ -202,10 +202,11 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // corresponding to the frame identified by |frame_number|.
   void OnVsync(zx::time_monotonic timestamp, display::WireConfigStamp displayed_config_stamp);
 
-  std::vector<allocation::ImageMetadata> AllocateDisplayRenderTargets(
+  fpromise::promise<std::vector<allocation::ImageMetadata>> AllocateDisplayRenderTargets(
       bool use_protected_memory, uint32_t num_render_targets, const fuchsia::math::SizeU& size,
       fuchsia_images2::PixelFormat pixel_format,
-      fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) FXL_LOCKS_EXCLUDED(lock_);
+      fuchsia::sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
+      FXL_LOCKS_EXCLUDED(lock_);
 
   // Generates a new FrameEventData struct to be used with a render target on a display.
   FrameEventData NewFrameEventData() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);

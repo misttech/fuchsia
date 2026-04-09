@@ -12,8 +12,8 @@
 // TODO(https://fxbug.dev/42156567): delete when we delete hack_seen_display_id_values_.
 #include <lib/fit/function.h>
 
+#include <map>
 #include <optional>
-#include <set>
 #include <utility>
 
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
@@ -74,6 +74,8 @@ class Engine {
   // `rotate_scene_state == true` is probably what you want, unless you know you don't.
   void SkipRender(scheduling::FramePresentedCallback callback, bool rotate_scene_state = true);
 
+  void AddDisplay(display::Display& display);
+
  private:
   // Holds the per-frame scene state that is generated from the latest UberStructs from each
   // Flatland session, linked together by the LinkSystem.
@@ -115,9 +117,8 @@ class Engine {
 
   bool first_frame_with_image_is_rendered_ = false;
 
-  // TODO(https://fxbug.dev/42156567): hack so that we can call DisplayCompositor::AddDisplay() when
-  // we first encounter a new display.  Need a more straightforward way to call AddDisplay().
-  std::set<display::DisplayId> hack_seen_display_id_values_;
+  // Used to skip rendering until the display is added.
+  std::map<display::DisplayId, bool> seen_display_ids_;
 
   inspect::Node inspect_node_;
   inspect::LazyNode inspect_scene_dump_;
@@ -126,6 +127,8 @@ class Engine {
   inspect::UintProperty inspect_gpu_composition_frame_count_;
   inspect::UintProperty inspect_failed_frame_count_;
   GetRootTransformFunc get_root_transform_;
+
+  async::Executor executor_;
 };
 
 }  // namespace flatland

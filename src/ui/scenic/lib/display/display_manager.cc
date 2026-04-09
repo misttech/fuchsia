@@ -145,6 +145,9 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
         display_available_cb_();
         display_available_cb_ = nullptr;
       }
+      if (display_added_cb_) {
+        display_added_cb_(*default_display_);
+      }
     }
   }
 
@@ -154,6 +157,14 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
       FX_CHECK(false) << "Display disconnected";
       return;
     }
+  }
+}
+
+void DisplayManager::SetDisplayAddedCallback(
+    fit::function<void(display::Display&)> display_added_cb) {
+  display_added_cb_ = std::move(display_added_cb);
+  if (default_display_) {
+    display_added_cb_(*default_display_);
   }
 }
 

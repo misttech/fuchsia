@@ -47,6 +47,8 @@ class DisplayManager {
       fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
       fidl::ServerEnd<fuchsia_hardware_display::CoordinatorListener> coordinator_listener);
 
+  void SetDisplayAddedCallback(fit::function<void(display::Display&)> display_added_cb);
+
   // Gets information about the default display.
   // May return null if there isn't one.
   Display* default_display() const { return default_display_.get(); }
@@ -92,6 +94,8 @@ class DisplayManager {
   // A boolean indicating whether or not we have ownership of the display
   // coordinator (not just individual displays). The default is no.
   bool owns_display_coordinator_ = false;
+
+  fit::function<void(display::Display&)> display_added_cb_;
 
   zx::time_monotonic last_vsync_timestamp_;
 

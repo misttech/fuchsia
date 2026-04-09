@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "fidl/fuchsia.hardware.display.types/cpp/common_types.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/display/util.h"
@@ -1001,12 +1000,12 @@ DisplayCompositor::FrameEventData DisplayCompositor::NewFrameEventData() {
   return result;
 }
 
-void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo info,
-                                   const uint32_t num_render_targets,
-                                   fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
+fpromise::promise<> DisplayCompositor::AddDisplay(
+    display::Display* display, const DisplayInfo info, const uint32_t num_render_targets,
+    fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_CHECK(display);
-  TRACE_DURATION("gfx", "Flatland::DisplayCompositor::AddDisplay");
+  TRACE_DURATION_BEGIN("gfx", "Flatland::DisplayCompositor::AddDisplay");
 
   FLATLAND_VERBOSE_LOG << "DisplayCompositor::AddDisplay(): display_id="
                        << display->display_id().value() << "  size=" << info.dimensions.x << "x"
@@ -1065,31 +1064,57 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
 
   // Exit early if there are no vmos to create.
   if (num_render_targets == 0) {
-    return;
+    return fpromise::make_ok_promise();
   }
 
   // If we are creating vmos, we need a non-null buffer collection pointer to return back
   // to the caller.
-  FX_DCHECK(out_collection_info);
-  display_engine_data.render_targets = AllocateDisplayRenderTargets(
-      /*use_protected_memory=*/false, num_render_targets, size, pixel_format, out_collection_info);
+  fpromise::promise<> render_targets_promise =
+      AllocateDisplayRenderTargets(
+          /*use_protected_memory=*/false, num_render_targets, size, pixel_format,
+          out_collection_info)
+          .and_then([this, num_render_targets, &display_engine_data](
+                        std::vector<allocation::ImageMetadata>& render_targets) mutable {
+            display_engine_data.render_targets = std::move(render_targets);
 
-  {
-    std::scoped_lock lock(lock_);
-    for (uint32_t i = 0; i < num_render_targets; i++) {
-      display_engine_data.frame_event_datas.push_back(NewFrameEventData());
-    }
-  }
-  display_engine_data.vmo_count = num_render_targets;
-  display_engine_data.curr_vmo = 0;
+            {
+              std::scoped_lock lock(lock_);
+              for (uint32_t i = 0; i < num_render_targets; i++) {
+                display_engine_data.frame_event_datas.push_back(NewFrameEventData());
+              }
+            }
+            display_engine_data.vmo_count = num_render_targets;
+            display_engine_data.curr_vmo = 0;
+          });
 
   // Create another set of tokens and allocate a protected render target. Protected memory buffer
   // pool is usually limited, so it is better for Scenic to preallocate to avoid being blocked by
   // running out of protected memory.
   if (renderer_->SupportsRenderInProtected()) {
-    display_engine_data.protected_render_targets = AllocateDisplayRenderTargets(
-        /*use_protected_memory=*/true, num_render_targets, size, pixel_format, nullptr);
+    fpromise::promise<> protected_render_targets_promise =
+        AllocateDisplayRenderTargets(
+            /*use_protected_memory=*/true, num_render_targets, size, pixel_format)
+            .and_then([&display_engine_data](
+                          std::vector<allocation::ImageMetadata>& render_targets) mutable {
+              display_engine_data.protected_render_targets = std::move(render_targets);
+            });
+    fpromise::promise<> join_promise =
+        fpromise::join_promises(std::move(render_targets_promise),
+                                std::move(protected_render_targets_promise))
+            .and_then([](std::tuple<fpromise::result<>, fpromise::result<>>& results)
+                          -> fpromise::result<> {
+              if (auto& [result, protected_result] = results;
+                  result.is_error() || protected_result.is_error()) {
+                return fpromise::error();
+              }
+              return fpromise::ok();
+            });
+    render_targets_promise = std::move(join_promise);
   }
+
+  return render_targets_promise.then([](fpromise::result<>& result) {
+    TRACE_DURATION_END("gfx", "Flatland::DisplayCompositor::AddDisplay");
+  });
 }
 
 void DisplayCompositor::SetColorConversionValues(const fidl::Array<float, 9>& coefficients,
@@ -1121,7 +1146,8 @@ bool DisplayCompositor::SetMinimumRgb(const uint8_t minimum_rgb) {
   return true;
 }
 
-std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderTargets(
+fpromise::promise<std::vector<allocation::ImageMetadata>>
+DisplayCompositor::AllocateDisplayRenderTargets(
     const bool use_protected_memory, const uint32_t num_render_targets,
     const fuchsia::math::SizeU& size, const fuchsia_images2::PixelFormat pixel_format,
     fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
@@ -1138,17 +1164,18 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
   }
 
   // Duplicate the token for the display and for the renderer.
-  fidl::WireClient<fuchsia_sysmem2::BufferCollectionToken> compositor_token(
-      std::move(client_end), async_get_default_dispatcher());
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> compositor_token{std::move(client_end)};
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token;
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> display_token;
   {
     std::array<zx_rights_t, 2> rights_attenuation_masks{ZX_RIGHT_SAME_RIGHTS, ZX_RIGHT_SAME_RIGHTS};
-    const auto result = compositor_token.sync()->DuplicateSync(
-        fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
-            .rights_attenuation_masks(
-                fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
-            .Build());
+    const auto result =
+        fidl::WireCall(compositor_token)
+            ->DuplicateSync(
+                fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
+                    .rights_attenuation_masks(
+                        fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
+                    .Build());
     FX_DCHECK(result.ok()) << "status: " << result.status_string();
     FX_DCHECK(result->has_tokens());
     FX_DCHECK(result->tokens().size() == 2);
@@ -1186,112 +1213,114 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
 
   // Set renderer constraints.
   const auto collection_id = allocation::GenerateUniqueBufferCollectionId();
-  {
-    const auto result = renderer_->ImportBufferCollection(
-        collection_id, sysmem_allocator_, std::move(renderer_token),
-        BufferCollectionUsage::kRenderTarget, std::optional<fuchsia::math::SizeU>(size));
-    FX_DCHECK(result);
-  }
-
-  {  // Set display constraints.
-    std::scoped_lock lock(lock_);
-    const auto result = ImportBufferCollectionToDisplayCoordinator(
-        collection_id, std::move(display_token),
-        fuchsia_hardware_display_types::wire::ImageBufferUsage{
-            .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
-        });
-    FX_DCHECK(result);
-  }
+  return renderer_
+      ->ImportBufferCollection(collection_id, sysmem_allocator_, std::move(renderer_token),
+                               BufferCollectionUsage::kRenderTarget,
+                               std::optional<fuchsia::math::SizeU>(size))
+      .and_then([this, use_protected_memory, num_render_targets, size, pixel_format,
+                 compositor_token = std::move(compositor_token),
+                 display_token = std::move(display_token), collection_id,
+                 out_collection_info]() mutable {
+        {  // Set display constraints.
+          std::scoped_lock lock(lock_);
+          const bool result = ImportBufferCollectionToDisplayCoordinator(
+              collection_id, std::move(display_token),
+              fuchsia_hardware_display_types::wire::ImageBufferUsage{
+                  .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
+              });
+          FX_DCHECK(result);
+        }
 
 // Set local constraints.
 #ifdef CPU_ACCESSIBLE_VMO
-  const bool make_cpu_accessible = true;
+        const bool make_cpu_accessible = true;
 #else
-  const bool make_cpu_accessible = false;
+        const bool make_cpu_accessible = false;
 #endif
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
-  if (make_cpu_accessible && !use_protected_memory) {
-    auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
-    collection_ptr = CreateBufferCollectionSyncPtrAndSetConstraints(
-        sysmem_allocator_, *compositor_token.UnbindMaybeGetEndpoint(), num_render_targets,
-        size.width, size.height, std::move(buffer_usage), pixel_format,
-        std::move(memory_constraints));
-  } else {
-    fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-    auto& constraints = *set_constraints_request.mutable_constraints();
-    constraints.set_min_buffer_count_for_camping(num_render_targets);
-    constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
-    if (use_protected_memory) {
-      auto& bmc = *constraints.mutable_buffer_memory_constraints();
-      bmc.set_secure_required(true);
-      bmc.set_inaccessible_domain_supported(true);
-      bmc.set_cpu_domain_supported(false);
-      bmc.set_ram_domain_supported(false);
-    }
+        fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
+        if (make_cpu_accessible && !use_protected_memory) {
+          auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
+          collection_ptr = CreateBufferCollectionSyncPtrAndSetConstraints(
+              sysmem_allocator_, std::move(compositor_token), num_render_targets, size.width,
+              size.height, std::move(buffer_usage), pixel_format, std::move(memory_constraints));
+        } else {
+          fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+          auto& constraints = *set_constraints_request.mutable_constraints();
+          constraints.set_min_buffer_count_for_camping(num_render_targets);
+          constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
+          if (use_protected_memory) {
+            auto& bmc = *constraints.mutable_buffer_memory_constraints();
+            bmc.set_secure_required(true);
+            bmc.set_inaccessible_domain_supported(true);
+            bmc.set_cpu_domain_supported(false);
+            bmc.set_ram_domain_supported(false);
+          }
 
-    fidl::Arena arena;
-    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
-        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(*compositor_token.UnbindMaybeGetEndpoint())
-            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-                collection_ptr.NewRequest().TakeChannel()))
-            .Build());
-    FX_DCHECK(result.ok());
+          fidl::Arena arena;
+          fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+              fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+                  .token(std::move(compositor_token))
+                  .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
+                      collection_ptr.NewRequest().TakeChannel()))
+                  .Build());
+          FX_DCHECK(result.ok());
 
-    fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-    set_name_request.set_priority(10u);
-    set_name_request.set_name(use_protected_memory
-                                  ? "FlatlandDisplayCompositorProtectedRenderTarget"
-                                  : "FlatlandDisplayCompositorRenderTarget");
-    collection_ptr->SetName(std::move(set_name_request));
+          fuchsia::sysmem2::NodeSetNameRequest set_name_request;
+          set_name_request.set_priority(10u);
+          set_name_request.set_name(use_protected_memory
+                                        ? "FlatlandDisplayCompositorProtectedRenderTarget"
+                                        : "FlatlandDisplayCompositorRenderTarget");
+          collection_ptr->SetName(std::move(set_name_request));
 
-    const auto status = collection_ptr->SetConstraints(std::move(set_constraints_request));
-    FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
-  }
+          const auto status = collection_ptr->SetConstraints(std::move(set_constraints_request));
+          FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
+        }
 
-  // Wait for buffers allocated so it can populate its information struct with the vmo data.
-  fuchsia::sysmem2::BufferCollectionInfo collection_info;
-  {
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    const auto status = collection_ptr->WaitForAllBuffersAllocated(&wait_result);
-    FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
-    FX_DCHECK(!wait_result.is_framework_err())
-        << "framework_err: " << fidl::ToUnderlying(wait_result.framework_err());
-    FX_DCHECK(!wait_result.is_err()) << "err: " << static_cast<uint32_t>(wait_result.err());
-    collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
-  }
+        // Wait for buffers allocated so it can populate its information struct with the vmo data.
+        fuchsia::sysmem2::BufferCollectionInfo collection_info;
+        {
+          fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
+          const auto status = collection_ptr->WaitForAllBuffersAllocated(&wait_result);
+          FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
+          FX_DCHECK(!wait_result.is_framework_err())
+              << "framework_err: " << fidl::ToUnderlying(wait_result.framework_err());
+          FX_DCHECK(!wait_result.is_err()) << "err: " << static_cast<uint32_t>(wait_result.err());
+          collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
+        }
 
-  {
-    const auto status = collection_ptr->Release();
-    FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
-  }
+        {
+          const auto status = collection_ptr->Release();
+          FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
+        }
 
-  // We know that this collection is supported by display because we collected constraints from
-  // display in display::ImportBufferCollection() and waited for successful allocation.
-  {
-    std::scoped_lock lock(lock_);
-    buffer_collection_supports_display_[collection_id] = true;
-    buffer_collection_tiling_type_map_[collection_id] =
-        BufferCollectionPixelFormatToImageTilingType(
-            collection_info.settings().image_format_constraints().pixel_format_modifier());
-    if (out_collection_info) {
-      *out_collection_info = std::move(collection_info);
-    }
-  }
+        // We know that this collection is supported by display because we collected constraints
+        // from display in display::ImportBufferCollection() and waited for successful allocation.
+        {
+          std::scoped_lock lock(lock_);
+          buffer_collection_supports_display_[collection_id] = true;
+          buffer_collection_tiling_type_map_[collection_id] =
+              BufferCollectionPixelFormatToImageTilingType(
+                  collection_info.settings().image_format_constraints().pixel_format_modifier());
+        }
 
-  std::vector<allocation::ImageMetadata> render_targets;
-  for (uint32_t i = 0; i < num_render_targets; i++) {
-    const allocation::ImageMetadata target = {.collection_id = collection_id,
-                                              .identifier = allocation::GenerateUniqueImageId(),
-                                              .vmo_index = i,
-                                              .width = size.width,
-                                              .height = size.height};
-    render_targets.push_back(target);
-    const bool res = ImportBufferImage(target, BufferCollectionUsage::kRenderTarget);
-    FX_DCHECK(res);
-  }
-  return render_targets;
+        std::vector<allocation::ImageMetadata> render_targets;
+        for (uint32_t i = 0; i < num_render_targets; i++) {
+          const allocation::ImageMetadata target = {
+              .collection_id = collection_id,
+              .identifier = allocation::GenerateUniqueImageId(),
+              .vmo_index = i,
+              .width = size.width,
+              .height = size.height};
+          render_targets.push_back(target);
+          const bool res = ImportBufferImage(target, BufferCollectionUsage::kRenderTarget);
+          FX_DCHECK(res);
+        }
+        if (out_collection_info) {
+          *out_collection_info = std::move(collection_info);
+        }
+        return fpromise::ok(std::move(render_targets));
+      });
 }
 
 bool DisplayCompositor::ImportBufferCollectionToDisplayCoordinator(

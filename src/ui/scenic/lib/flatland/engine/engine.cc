@@ -38,7 +38,8 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
       link_system_(std::move(link_system)),
       cleared_scene_state_(std::make_unique<SceneState>()),
       inspect_node_(std::move(inspect_node)),
-      get_root_transform_(std::move(get_root_transform)) {
+      get_root_transform_(std::move(get_root_transform)),
+      executor_(async_get_default_dispatcher()) {
   FX_DCHECK(flatland_compositor_);
   FX_DCHECK(flatland_presenter_);
   FX_DCHECK(uber_struct_system_);
@@ -129,19 +130,12 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
                                    scene_state.global_matrices, scene_state.snapshot.map);
   link_system_->UpdateDevicePixelRatio(hw_display->device_pixel_ratio());
 
-  // TODO(https://fxbug.dev/42156567): hack!  need a better place to call AddDisplay().
-  if (!hack_seen_display_id_values_.contains(hw_display->display_id())) {
-    // This display hasn't been added to the DisplayCompositor yet.
-    hack_seen_display_id_values_.insert(hw_display->display_id());
-
-    DisplayInfo display_info{
-        .dimensions = glm::uvec2{hw_display->width_in_px(), hw_display->height_in_px()},
-        .formats = display.display()->pixel_formats(),
-        .max_layer_count = hw_display->max_layer_count()};
-
-    fuchsia::sysmem2::BufferCollectionInfo render_target_info;
-    flatland_compositor_->AddDisplay(hw_display, display_info,
-                                     /* num_vmos= */ kNumDisplayFramebuffers, &render_target_info);
+  if (auto it = seen_display_ids_.find(hw_display->display_id());
+      it == seen_display_ids_.end() || !it->second) {
+    // We already "rotated the scene state" above;
+    // doing it again would fail a CHECK.
+    SkipRender(std::move(callback), /*rotate_scene_state=*/false);
+    return;
   }
 
   CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
@@ -336,6 +330,24 @@ void Engine::SkipRender(scheduling::FramePresentedCallback callback, bool rotate
   utils::SignalReleaseFences(fences.release_fences);
   utils::SignalPresentFences(fences.present_fences, now);
   callback({.render_done_time = now, .actual_presentation_time = now});
+}
+
+void Engine::AddDisplay(display::Display& display) {
+  auto [it, inserted] = seen_display_ids_.emplace(display.display_id(), false);
+  if (!inserted) {
+    return;
+  }
+
+  // This display has _not_ been added to the DisplayCompositor yet.
+  DisplayInfo display_info{
+      .dimensions = glm::uvec2{display.width_in_px(), display.height_in_px()},
+      .formats = display.pixel_formats(),
+      .max_layer_count = display.max_layer_count(),
+  };
+  fpromise::promise<> promise =
+      flatland_compositor_->AddDisplay(&display, display_info, kNumDisplayFramebuffers)
+          .and_then([it] { it->second = true; });
+  executor_.schedule_task(std::move(promise));
 }
 
 }  // namespace flatland

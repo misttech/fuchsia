@@ -513,6 +513,12 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
           return display ? std::optional<flatland::TransformHandle>(display->root_transform())
                          : std::nullopt;
         });
+    display_manager_->SetDisplayAddedCallback(
+        [weak_engine = std::weak_ptr{flatland_engine_}](display::Display& display) {
+          if (auto engine = weak_engine.lock()) {
+            engine->AddDisplay(display);
+          }
+        });
   }
 
   // Make ScreenCaptureManager.
