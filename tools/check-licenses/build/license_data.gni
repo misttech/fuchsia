@@ -19,9 +19,6 @@ import("//build/info/info.gni")
 #   target (optional)
 #     [string] Target to analyze. Defaults to "//:default".
 #
-#   prune_targets (optional)
-#     [string list] Targets to explicitly filter out of the build graph. Defaults to empty list.
-#
 #   run_analysis (optional)
 #     [bool] Whether to analyze license texts and run tests. Default == true.
 #
@@ -152,13 +149,6 @@ template("license_data") {
       target,
     ]
 
-    if (defined(invoker.prune_targets)) {
-      args += [
-        "--targets_to_remove",
-        string_join(",", invoker.prune_targets),
-      ]
-    }
-
     # output JSON names the build output directory
     # TODO(https://fxbug.dev/42076225): fix tool to not leak the output directory
     check_for_output_dir_leaks = false
@@ -209,13 +199,6 @@ template("license_data") {
       "--gen_intermediate_file",
       rebase_path(generate_target_json_output, root_build_dir),
     ]
-
-    if (defined(invoker.prune_targets)) {
-      args += [
-        "--prune_targets",
-        string_join(",", invoker.prune_targets),
-      ]
-    }
 
     args += [ target ]
 

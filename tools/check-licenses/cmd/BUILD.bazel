@@ -10,8 +10,6 @@ go_library(
     srcs = [
         "config.go",
         "driver.go",
-        "include.go",
-        "log.go",
         "main.go",
         "metrics.go",
     ],
@@ -27,4 +25,11 @@ go_library(
         "//tools/check-licenses/util",
         "//tools/lib/logger",
     ],
+)
+
+go_test(
+    name = "cmd_test",
+    srcs = ["config_test.go"],
+    embed = [":main"],
+    target_compatible_with = HOST_CONSTRAINTS,
 )

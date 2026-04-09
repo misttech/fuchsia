@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/testutil"
 )
 
@@ -34,39 +33,6 @@ func TestFilterTargetsEmpty(t *testing.T) {
 
 	if len(gen.Targets) > 0 {
 		t.Errorf("%s: expected to find no targets, found %d: %v.", t.Name(), len(gen.Targets), gen.Targets)
-	}
-}
-
-func TestFilterTargets(t *testing.T) {
-	tempDir := t.TempDir()
-	testutil.DumpTestData(t, testDataFS, tempDir)
-	testDataDir := filepath.Join(tempDir, "testdata")
-	root := filepath.Join(testDataDir, "example")
-	zippedProjectJson := filepath.Join(root, "project.json.gz")
-	projectJson := unzipProjectJson(t, zippedProjectJson)
-	gen, err := LoadGen(projectJson)
-	if err != nil {
-		t.Fatalf("%s: expected no error, (project.json: %s) got %v.", t.Name(), projectJson, err)
-	}
-
-	pruneTargets := make(map[string]bool, 0)
-	pruneTargets["//tools/check-licenses/util/testdata/example/depD:depD"] = true
-
-	target := "//tools/check-licenses/util/testdata/example:example"
-	err = gen.FilterTargetsInDependencyTree(target, pruneTargets)
-	if err != nil {
-		t.Fatalf("%s: expected no error, (target: %s) got %v.", t.Name(), target, err)
-	}
-
-	want := loadWantJSON(filepath.Join(root, "want.json"), t)
-
-	// No need to verify target.Children fields.
-	for _, ft := range gen.Targets {
-		ft.Children = nil
-	}
-
-	if d := cmp.Diff(want, gen.Targets); d != "" {
-		t.Errorf("%s: compare Gens mismatch: (-want +got):\n%s", t.Name(), d)
 	}
 }
 

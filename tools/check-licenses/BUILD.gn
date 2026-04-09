@@ -47,6 +47,7 @@ if (is_host) {
 }
 group("tests") {
   deps = [
+    "//tools/check-licenses/cmd:cmd_test",
     "//tools/check-licenses/directory:directory_test",
     "//tools/check-licenses/file:file_test",
     "//tools/check-licenses/project:project_test",

@@ -41,9 +41,6 @@ func FilterProjects() error {
 		if err != nil {
 			return err
 		}
-		if err = gen.FilterTargetsInDependencyTree(Config.Target, Config.PruneTargets); err != nil {
-			return err
-		}
 	}
 
 	// Generate a map:

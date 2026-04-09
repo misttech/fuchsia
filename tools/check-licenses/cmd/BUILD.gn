@@ -38,8 +38,6 @@ if (is_host) {
     sources = [
       "config.go",
       "driver.go",
-      "include.go",
-      "log.go",
       "main.go",
       "metrics.go",
     ]
@@ -53,5 +51,11 @@ if (is_host) {
       "//tools/check-licenses/util",
       "//tools/lib/logger",
     ]
+  }
+}
+if (is_host) {
+  go_test("cmd_test") {
+    sources = [ "config_test.go" ]
+    embed = [ ":main" ]
   }
 }

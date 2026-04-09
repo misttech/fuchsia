@@ -6,8 +6,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -17,17 +20,23 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/result"
 )
 
-var (
-	// Map of string to string.
-	//
-	// Config files may contain unexpanded variables like {FUCHSIA_DIR}.
-	// This map is used to replace those variables with values set on the command-line.
-	// Map keys are variable names. Map values are what they will be replaced with.
-	ConfigVars map[string]string
-)
-
-func init() {
-	ConfigVars = make(map[string]string)
+// The Include struct contains information about paths and files
+// that should be included & merged into the active config file.
+type Include struct {
+	// Path to the config.json file or root directory.
+	Path []string `json:"paths"`
+	// When true, recursively find all *.json files starting at the path
+	// directory. Attempt to parse and include all found files
+	// as config files.
+	Recursive bool `json:"recursive"`
+	// A simple comment field, used to explain what the given config file
+	// should be used for / why it is being included.
+	Notes []string `json:"notes"`
+	// When true, check-licenses will fail if the path is unavailable.
+	// Defaults to false, and allows us to attempt to load in config files
+	// from other repositories, but continue with execution if those
+	// repos are not available on your local machine.
+	Required bool `json:"required"`
 }
 
 type CheckLicensesConfig struct {
@@ -70,13 +79,13 @@ type CheckLicensesConfig struct {
 }
 
 // Create a new CheckLicensesConfig object by reading in a config.json file.
-func NewCheckLicensesConfig(path string) (*CheckLicensesConfig, error) {
+func NewCheckLicensesConfig(path string, configVars map[string]string) (*CheckLicensesConfig, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read config file [%v]: %w\n", path, err)
 	}
 
-	c, err := NewCheckLicensesConfigJson(string(b))
+	c, err := NewCheckLicensesConfigJson(string(b), configVars)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to parse JSON config file [%v]: %v\n", path, err)
 	}
@@ -84,8 +93,8 @@ func NewCheckLicensesConfig(path string) (*CheckLicensesConfig, error) {
 }
 
 // Create a new CheckLicensesConfig object by consuming a json config string.
-func NewCheckLicensesConfigJson(configJson string) (*CheckLicensesConfig, error) {
-	for k, v := range ConfigVars {
+func NewCheckLicensesConfigJson(configJson string, configVars map[string]string) (*CheckLicensesConfig, error) {
+	for k, v := range configVars {
 		configJson = strings.ReplaceAll(configJson, k, v)
 	}
 
@@ -111,7 +120,7 @@ func NewCheckLicensesConfigJson(configJson string) (*CheckLicensesConfig, error)
 		return nil, err
 	}
 
-	if err := c.ProcessIncludes(); err != nil {
+	if err := c.ProcessIncludes(configVars); err != nil {
 		return nil, err
 	}
 
@@ -145,5 +154,71 @@ func (c *CheckLicensesConfig) Merge(other *CheckLicensesConfig) error {
 	c.Directory.Merge(other.Directory)
 	c.Result.Merge(other.Result)
 
+	return nil
+}
+
+// Process each "include" entry in this config file.
+func (c *CheckLicensesConfig) ProcessIncludes(configVars map[string]string) error {
+	// Loop over the Includes field and merge in all config files
+	// from that list, recursively.
+	if len(c.Includes) > 0 {
+		for _, include := range c.Includes {
+			if err := c.processInclude(&include, configVars); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *CheckLicensesConfig) processInclude(include *Include, configVars map[string]string) error {
+	// Process a single Config include file.
+	processPath := func(path string) error {
+		c2, err := NewCheckLicensesConfig(path, configVars)
+		// If we get an error loading the config file,
+		// it may be because a given submodule isn't
+		// available on your machine (e.g. //vendor/google).
+		//
+		// Only error out if this config section is marked
+		// as "required".
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && !include.Required {
+				if c.LogLevel > 0 {
+					log.Printf("Failed to create config file for %s: %v.\n",
+						path, err)
+				}
+				return nil
+			} else {
+				return err
+			}
+		}
+		c.Merge(c2)
+		return nil
+	}
+
+	// Process a Config include directory, recursively.
+	// Only attempt to parse explicit .json files to prevent crashes
+	// on READMEs, .gitignore, or other non-json files.
+	processRecursive := func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() && filepath.Ext(path) == ".json" {
+			if err := processPath(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, path := range include.Path {
+		if include.Recursive {
+			if err := filepath.Walk(path, processRecursive); err != nil {
+				return err
+			}
+		} else {
+			if err := processPath(path); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
