@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
 go_library(
@@ -18,4 +18,12 @@ go_library(
         "//tools/lib/clock",
         "//tools/lib/logger",
     ],
+)
+
+go_test(
+    name = "subprocess_tests",
+    srcs = ["subprocess_test.go"],
+    embed = [":subprocess"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/tools/lib/clock"
 )
 
@@ -285,4 +286,28 @@ func writeScript(t *testing.T, contents string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestProcessSet_Render(t *testing.T) {
+	procs := map[int]*procInfo{
+		1: {pid: 1, ppid: 0, comm: "init", cmdline: "/sbin/init"},
+		2: {pid: 2, ppid: 0, comm: "kthreadd", cmdline: ""},
+		3: {pid: 3, ppid: 1, comm: "systemd", cmdline: "/lib/systemd/systemd"},
+		4: {pid: 4, ppid: 3, comm: "bash", cmdline: "-bash"},
+		5: {pid: 5, ppid: 3, comm: "sshd", cmdline: "sshd: user@pts/0"},
+	}
+	set := &processSet{procs: procs}
+	lines := set.render()
+
+	expected := []string{
+		"PID: 1, comm: \"init\", cmdline: \"/sbin/init\"",
+		"└── PID: 3, comm: \"systemd\", cmdline: \"/lib/systemd/systemd\"",
+		"    ├── PID: 4, comm: \"bash\", cmdline: \"-bash\"",
+		"    └── PID: 5, comm: \"sshd\", cmdline: \"sshd: user@pts/0\"",
+		"PID: 2, comm: \"kthreadd\", cmdline: \"\"",
+	}
+
+	if diff := cmp.Diff(expected, lines); diff != "" {
+		t.Errorf("Unexpected output (-want +got):\n%s", diff)
+	}
 }

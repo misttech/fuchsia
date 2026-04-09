@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -138,48 +139,148 @@ func (r *Runner) RunCommand(ctx context.Context, cmd *exec.Cmd) error {
 	return WaitForCmd(ctx, cmd)
 }
 
-// This is an inhouse implementation of `ps` for Linux which isn't guaranteed to
-// be available on all the systems we run on.
-func logRunningProcesses(ctx context.Context) {
+// procInfo contains information about a process and its children.
+type procInfo struct {
+	// pid is the process ID.
+	pid int
+	// ppid is the parent process ID.
+	ppid int
+	// comm is the name of the executable.
+	comm string
+	// cmdline is the command line arguments of the process.
+	cmdline string
+	// children are the child processes.
+	children []*procInfo
+}
+
+// render generates an ASCII representation of the process tree.
+func (p *procInfo) render(prefix string, isLast bool, isRoot bool) []string {
+	var connector string
+	if !isRoot {
+		if isLast {
+			connector = "└── "
+		} else {
+			connector = "├── "
+		}
+	}
+
+	line := fmt.Sprintf("%s%sPID: %d, comm: %q, cmdline: %q", prefix, connector, p.pid, p.comm, p.cmdline)
+	lines := []string{line}
+
+	var childPrefix string
+	if !isRoot {
+		if isLast {
+			childPrefix = prefix + "    "
+		} else {
+			childPrefix = prefix + "│   "
+		}
+	}
+
+	sort.Slice(p.children, func(i, j int) bool {
+		return p.children[i].pid < p.children[j].pid
+	})
+	for i, child := range p.children {
+		lines = append(lines, child.render(childPrefix, i == len(p.children)-1, false)...)
+	}
+	return lines
+}
+
+// processSet represents a collection of processes.
+type processSet struct {
+	procs map[int]*procInfo
+}
+
+// roots returns the root processes in the set.
+func (s *processSet) roots() []*procInfo {
+	for _, p := range s.procs {
+		p.children = nil
+	}
+	var roots []*procInfo
+	for _, p := range s.procs {
+		if parent, ok := s.procs[p.ppid]; ok && p.ppid != p.pid {
+			parent.children = append(parent.children, p)
+		} else {
+			roots = append(roots, p)
+		}
+	}
+	sort.Slice(roots, func(i, j int) bool {
+		return roots[i].pid < roots[j].pid
+	})
+	return roots
+}
+
+// render generates the entire ASCII tree as a slice of strings.
+func (s *processSet) render() []string {
+	roots := s.roots()
+	var lines []string
+	for i, root := range roots {
+		lines = append(lines, root.render("", i == len(roots)-1, true)...)
+	}
+	return lines
+}
+
+// loadProcessSet reads the /proc filesystem to collect information about all running processes.
+func loadProcessSet(ctx context.Context) (*processSet, error) {
 	dir, err := os.Open("/proc")
 	if err != nil {
-		logger.Errorf(ctx, "failed to open /proc: %v", err)
-		return
+		return nil, err
 	}
 	defer dir.Close()
 
 	files, err := dir.Readdirnames(0)
 	if err != nil {
-		logger.Errorf(ctx, "failed to read /proc: %v", err)
-		return
+		return nil, err
 	}
 
+	procs := make(map[int]*procInfo)
 	for _, file := range files {
-		// Check if the directory name is a PID, ignore "self".
-		if _, err := strconv.Atoi(file); err == nil {
-			logFunc := func(target string) {
-				str, err := os.ReadFile(fmt.Sprintf("/proc/%s/%s", file, target))
-				if err == nil {
-					logger.Warningf(ctx, "PID: %s, %s: %s", file, target, strings.TrimSpace(strings.ReplaceAll(string(str), "\x00", " ")))
-				} else {
-					logger.Warningf(ctx, "failed to read %s for PID %s: %v", target, file, err)
-				}
-			}
-			logFunc("cmdline")
-			logFunc("comm")
-
-			status, err := os.ReadFile(fmt.Sprintf("/proc/%s/status", file))
-			if err == nil {
-				for _, line := range strings.Split(string(status), "\n") {
-					if strings.HasPrefix(line, "PPid:") {
-						logger.Warningf(ctx, "PID: %s, PPID: %s", file, strings.TrimSpace(strings.TrimPrefix(line, "PPid:")))
-						break
-					}
-				}
-			} else {
-				logger.Warningf(ctx, "failed to read status for PID %s: %v", file, err)
-			}
+		pid, err := strconv.Atoi(file)
+		if err != nil {
+			continue
 		}
+
+		p := &procInfo{pid: pid}
+
+		if comm, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
+			p.comm = strings.TrimSpace(string(comm))
+		} else if !errors.Is(err, os.ErrNotExist) {
+			logger.Debugf(ctx, "failed to read /proc/%d/comm: %v", pid, err)
+		}
+
+		if cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
+			p.cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " "))
+		} else if !errors.Is(err, os.ErrNotExist) {
+			logger.Debugf(ctx, "failed to read /proc/%d/cmdline: %v", pid, err)
+		}
+
+		if status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid)); err == nil {
+			for _, line := range strings.Split(string(status), "\n") {
+				if strings.HasPrefix(line, "PPid:") {
+					ppidStr := strings.TrimSpace(strings.TrimPrefix(line, "PPid:"))
+					if ppid, err := strconv.Atoi(ppidStr); err == nil {
+						p.ppid = ppid
+					}
+					break
+				}
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			logger.Debugf(ctx, "failed to read /proc/%d/status: %v", pid, err)
+		}
+		procs[pid] = p
+	}
+	return &processSet{procs: procs}, nil
+}
+
+// This is an inhouse implementation of `ps` for Linux which isn't guaranteed to
+// be available on all the systems we run on.
+func logRunningProcesses(ctx context.Context) {
+	set, err := loadProcessSet(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "failed to load processes: %v", err)
+		return
+	}
+	if lines := set.render(); len(lines) > 0 {
+		logger.Warningf(ctx, "Running processes:\n%s", strings.Join(lines, "\n"))
 	}
 }
 

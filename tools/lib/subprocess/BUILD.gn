@@ -5,12 +5,6 @@
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
-go_test("subprocess_tests") {
-  embed = [ ":subprocess" ]
-
-  sources = [ "subprocess_test.go" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -53,5 +47,12 @@ if (is_host) {
       "//tools/lib/clock",
       "//tools/lib/logger",
     ]
+  }
+}
+if (is_host) {
+  go_test("subprocess_tests") {
+    sources = [ "subprocess_test.go" ]
+    embed = [ ":subprocess" ]
+    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
   }
 }
