@@ -81,27 +81,41 @@ def _pyfmt(ctx):
     ]
 
     # Run autoflake on each file
-    autoflake_procs = [(f, os_exec(ctx, autoflake_cmd + [f])) for f in py_files]
+    autoflake_procs = [(f, os_exec(ctx, autoflake_cmd + [f], raise_on_failure = False)) for f in py_files]
 
-    # Run isort on the output of the autoflake.
+    # Wait for autoflake to finish and start isort on its output.
     isort_procs = []
+    errors = []
     for f, proc in autoflake_procs:
-        formatted = proc.wait().stdout
+        res = proc.wait()
+        if res.retcode != 0:
+            errors.append("autoflake failed on %s:\n%s" % (f, res.stderr))
+            continue
+        formatted = res.stdout
         isort_procs.append(
-            (f, os_exec(ctx, isort_cmd + [f, "-"], stdin = formatted)),
+            (f, os_exec(ctx, isort_cmd + [f, "-"], stdin = formatted, raise_on_failure = False)),
         )
 
-    # Run black on the output of the isort.
+    # Wait for isort to finish and start black on its output.
     black_procs = []
     for f, proc in isort_procs:
-        formatted = proc.wait().stdout
+        res = proc.wait()
+        if res.retcode != 0:
+            errors.append("isort failed on %s:\n%s" % (f, res.stderr))
+            continue
+        formatted = res.stdout
         black_procs.append(
-            (f, os_exec(ctx, black_cmd, stdin = formatted)),
+            (f, os_exec(ctx, black_cmd, stdin = formatted, raise_on_failure = False)),
         )
 
+    # Wait for black to finish and compare with the original file.
     for filepath, proc in black_procs:
         original = str(ctx.io.read_file(filepath))
-        formatted = proc.wait().stdout
+        res = proc.wait()
+        if res.retcode != 0:
+            errors.append("black failed on %s:\n%s" % (filepath, res.stderr))
+            continue
+        formatted = res.stdout
         if formatted != original:
             ctx.emit.finding(
                 level = "error",
@@ -109,6 +123,9 @@ def _pyfmt(ctx):
                 filepath = filepath,
                 replacements = [formatted],
             )
+
+    if errors:
+        fail("\n".join(errors))
 
 def _py_shebangs(ctx):
     """Validates that all Python script shebangs specify the vendored Python interpeter.
