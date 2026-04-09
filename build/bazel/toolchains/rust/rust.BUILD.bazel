@@ -87,6 +87,7 @@ rust_toolchain(
     clippy_driver = "//:bin/clippy-driver",
     rust_std = "//:rust_std_linux_x64",
     rust_doc = "//:bin/rustdoc",
+    rustfmt = "//:bin/rustfmt",
     binary_ext = "",
     staticlib_ext = ".a",
     dylib_ext = ".so",
