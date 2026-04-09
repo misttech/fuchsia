@@ -573,11 +573,6 @@ impl Daemon {
     /// provided, otherwise the default target from the target collection.
     async fn get_target(&self, matcher: Option<String>) -> Result<Rc<Target>, DaemonError> {
         // TODO(72818): make target match timeout configurable / paramterable
-        #[cfg(not(test))]
-        const GET_TARGET_TIMEOUT: Duration = Duration::from_secs(8);
-        #[cfg(test)]
-        const GET_TARGET_TIMEOUT: Duration = Duration::from_secs(1);
-
         let query = matcher.into();
         let target_collection = &self.target_collection;
 
@@ -590,9 +585,11 @@ impl Daemon {
                     // surface discovered targets by default.
                     .discover_target(&query)
                     .map_err(|_| DaemonError::TargetAmbiguous)
-                    .on_timeout(GET_TARGET_TIMEOUT, || match self.target_collection.is_empty() {
-                        true => Err(DaemonError::TargetCacheEmpty),
-                        false => Err(DaemonError::TargetNotFound),
+                    .on_timeout(ffx_daemon_target::get_target_timeout!(), || {
+                        match self.target_collection.is_empty() {
+                            true => Err(DaemonError::TargetCacheEmpty),
+                            false => Err(DaemonError::TargetNotFound),
+                        }
                     })
                     .await
                     .map(|t| target_collection.use_target(t, "OpenTarget request"))

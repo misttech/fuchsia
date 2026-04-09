@@ -23,7 +23,7 @@ use fidl_fuchsia_developer_remotecontrol::{self as fidl_rcs, RemoteControlMarker
 use fuchsia_async::{DurationExt, TimeoutExt};
 #[cfg(test)]
 use futures::channel::oneshot::Sender;
-use futures::{FutureExt, StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use manual_targets::Config;
 use protocols::prelude::*;
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -354,8 +354,12 @@ impl FidlProtocol for TargetCollectionProtocol {
                                         // OpenTarget is called on behalf of
                                         // the user.
                                         .discover_target(&query)
-                                        .await
                                         .map_err(|_| ffx::OpenTargetError::QueryAmbiguous)
+                                        .on_timeout(
+                                            ffx_daemon_target::get_target_timeout!(),
+                                            || Err(ffx::OpenTargetError::TargetNotFound),
+                                        )
+                                        .await
                                         .map(|t| {
                                             target_collection.use_target(t, "OpenTarget request")
                                         })
@@ -1143,7 +1147,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_handle_usb_target() {
         use tokio::io::AsyncWriteExt;
-        use {usb_driver_impl as usbd, usb_vsock_host as usbv};
+        use usb_driver_impl as usbd;
+        use usb_vsock_host as usbv;
 
         const NODE_NAME: &str = "Teletechternacon";
 
@@ -1450,5 +1455,67 @@ mod tests {
         let target_collection =
             Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
         assert_eq!(1, target_collection.targets(None).len());
+    }
+
+    #[fuchsia::test]
+    async fn test_open_target_timeout() {
+        let env = ffx_config::test_init().unwrap();
+
+        let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
+            .register_fidl_protocol::<FakeMdns>()
+            .register_fidl_protocol::<FakeFastboot>()
+            .inject_fidl_protocol(tc_impl.clone())
+            .build();
+        let (_client, server) = fidl::endpoints::create_endpoints::<ffx::TargetMarker>();
+        let target_query = TargetQuery {
+            string_matcher: Some("non-existent-target".to_string()),
+            ..TargetQuery::default()
+        };
+        let proxy = fake_daemon.open_proxy::<ffx::TargetCollectionMarker>().await;
+
+        // The timeout in the code is 1 second.
+        // We expect it to fail with TargetNotFound after timing out.
+        // We use a slightly larger timeout here to ensure we don't hang if the bug is present.
+        let result = timeout(Duration::from_secs(2), async {
+            proxy.open_target(&target_query, server).await.unwrap()
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(result, Err(ffx::OpenTargetError::TargetNotFound));
+    }
+
+    #[fuchsia::test]
+    async fn test_open_target_ambiguous() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        init_test_config(&env, temp.path()).await;
+
+        let fake_daemon = FakeDaemonBuilder::new(&env.context)
+            .register_fidl_protocol::<FakeMdns>()
+            .register_fidl_protocol::<FakeFastboot>()
+            .register_fidl_protocol::<TargetCollectionProtocol>()
+            .build();
+
+        let tc = fake_daemon.get_target_collection().await.unwrap();
+
+        // Add two distinct targets directly to the collection to trigger ambiguity
+        let t1 = Target::new_named(&env.context, "foo");
+        let t2 = Target::new_named(&env.context, "bar");
+        tc.merge_insert(t1);
+        tc.merge_insert(t2);
+
+        let proxy = fake_daemon.open_proxy::<ffx::TargetCollectionMarker>().await;
+        let (_client, server) = fidl::endpoints::create_endpoints::<ffx::TargetMarker>();
+        let target_query = TargetQuery {
+            string_matcher: None, // Maps to TargetInfoQuery::First
+            ..TargetQuery::default()
+        };
+
+        // Now try to open it. It should be ambiguous because query is First and there are multiple targets.
+        let result = proxy.open_target(&target_query, server).await.unwrap();
+
+        assert_eq!(result, Err(ffx::OpenTargetError::QueryAmbiguous));
     }
 }

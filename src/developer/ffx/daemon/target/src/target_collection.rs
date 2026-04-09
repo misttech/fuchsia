@@ -27,6 +27,19 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::sync::Arc;
 
+// This needs to be a macro because we need the cfg(test) to be checked in the crate
+// being compiled, not in this create.
+#[macro_export]
+macro_rules! get_target_timeout {
+    () => {
+        if cfg!(test) {
+            std::time::Duration::from_secs(1)
+        } else {
+            std::time::Duration::from_secs(5)
+        }
+    };
+}
+
 pub struct TargetCollection {
     targets: RefCell<HashMap<u64, Rc<Target>>>,
     // This list is always small so O(n) lookups do not matter.
