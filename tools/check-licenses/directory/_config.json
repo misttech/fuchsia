@@ -12,9 +12,10 @@
             },
             {
                 "notes": [
-                    "Skipping an OWNERS and a README file to better match the project layout"
+                    "Skipping top-level files to better match the project layout."
                 ],
                 "paths": [
+                    "third_party/pylibs/BUILD.gn",
                     "third_party/pylibs/OWNERS",
                     "third_party/pylibs/README.md"
                 ]
