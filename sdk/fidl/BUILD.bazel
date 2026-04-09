@@ -51,6 +51,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.images:fuchsia.images",
     "//sdk/fidl/fuchsia.images2:fuchsia.images2",
     "//sdk/fidl/fuchsia.input:fuchsia.input",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl",
     "//sdk/fidl/fuchsia.io:fuchsia.io",
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc",
@@ -65,11 +66,17 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.mediastreams:fuchsia.mediastreams",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem",
     "//sdk/fidl/fuchsia.net:fuchsia.net",
+    "//sdk/fidl/fuchsia.net.http:fuchsia.net.http",
     "//sdk/fidl/fuchsia.process:fuchsia.process",
+    "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings",
     "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition",
+    "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx",
+    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer",
     "//sdk/fidl/fuchsia.ui.types:fuchsia.ui.types",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown",
@@ -80,6 +87,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.url:fuchsia.url",
     "//sdk/fidl/fuchsia.version:fuchsia.version",
     "//sdk/fidl/fuchsia.weave:fuchsia.weave",
+    "//sdk/fidl/fuchsia.web:fuchsia.web",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211",
     "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl",
@@ -99,6 +107,7 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint",
     "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy",
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats",
@@ -107,6 +116,7 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
 
 _prebuilt_fidl_libraries_targets_list = [
     # keep-sorted: begin
+    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader",
     # keep-sorted: end
 ]
