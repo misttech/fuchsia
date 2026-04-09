@@ -4,7 +4,6 @@
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
 import("//build/fuzz.gni")
-import("//build/images/filesystem_limits.gni")
 import("//build/rust/rustc_fuzzer.gni")
 import("//build/rust/rustc_library.gni")
 import("//src/diagnostics/archivist/build/archivist.gni")

@@ -45,10 +45,6 @@ avb_key = "//src/firmware/avb_keys/vim3/vim3-dev-key/vim3_devkey_atx_psk.pem"
 avb_atx_metadata =
     "//src/firmware/avb_keys/vim3/vim3-dev-key/vim3_dev_atx_metadata.bin"
 
-blobfs_capacity = 10485760000  # 10000 MiB
-max_blob_contents_size =
-    5216665600  # 4975 MiB. Leaves 50 MiB for the update package.
-
 # partitions for fx flash to flash
 zircon_a_partition = "zircon_a"
 zircon_b_partition = "zircon_b"

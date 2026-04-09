@@ -31,7 +31,3 @@ add_qemu_to_build_archives = true
 board_is_emu = true
 
 partitions_config_label = "//boards/partitions:qemu-arm64"
-
-blobfs_capacity = 10485760000  # 10000 MiB
-max_blob_contents_size =
-    5216665600  # 4975 MiB. Leaves 50 MiB for the update package.

@@ -16,7 +16,6 @@
 # fit our needs. See the "Unstable features" section for more information.
 
 import("//build/board.gni")
-import("//build/images/filesystem_limits.gni")
 import("//build/rust/config.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/runtime/rust_runtime.gni")
