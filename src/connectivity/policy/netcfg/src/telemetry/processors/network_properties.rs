@@ -14,6 +14,7 @@ use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 
 pub struct NetworkPropertiesProcessor {
     default_network_detailed_matrix: InspectedTimeMatrix<u64>,
+    default_network_type_matrix: InspectedTimeMatrix<u64>,
     inspect_metadata_node: InspectMetadataNode,
 }
 
@@ -23,13 +24,13 @@ impl NetworkPropertiesProcessor {
     pub fn new<S: InspectSender>(parent: &InspectNode, parent_path: &str, client: &S) -> Self {
         let inspect_metadata_node = parent.create_child(METADATA_NODE_NAME);
         let inspect_metadata_path = format!("{}/{}", parent_path, METADATA_NODE_NAME);
-        let time_matrix = TimeMatrix::<Union<u64>, LastSample>::new(
+        let detailed_time_matrix = TimeMatrix::<Union<u64>, LastSample>::new(
             SamplingProfile::granular(),
             LastSample::or(0),
         );
         let default_network_detailed_matrix = client.inspect_time_matrix_with_metadata(
             "default_network_detailed",
-            time_matrix,
+            detailed_time_matrix,
             BitSetNode::from_path(format!(
                 "{}/{}",
                 inspect_metadata_path,
@@ -37,20 +38,40 @@ impl NetworkPropertiesProcessor {
             )),
         );
 
+        let types_time_matrix = TimeMatrix::<Union<u64>, LastSample>::new(
+            SamplingProfile::granular(),
+            LastSample::or(0),
+        );
+        let default_network_type_matrix = client.inspect_time_matrix_with_metadata(
+            "default_network_type",
+            types_time_matrix,
+            BitSetNode::from_path(format!(
+                "{}/{}",
+                inspect_metadata_path,
+                InspectMetadataNode::NETWORK_TYPES
+            )),
+        );
+
         Self {
             default_network_detailed_matrix,
+            default_network_type_matrix,
             inspect_metadata_node: InspectMetadataNode::new(inspect_metadata_node),
         }
     }
 
     pub fn log_default_network_lost(&mut self) {
         self.default_network_detailed_matrix.fold_or_log_error(0);
+        self.default_network_type_matrix.fold_or_log_error(0);
     }
 
     pub fn log_default_network_changed(&mut self, metadata: NetworkEventMetadata) {
         let data = NetworkData::from(metadata);
-        let mapped_id = self.inspect_metadata_node.network_registry.insert(data);
-        self.default_network_detailed_matrix.fold_or_log_error(1u64 << mapped_id);
+        let types_mapped_id =
+            self.inspect_metadata_node.network_types.insert(data.transport.clone());
+        self.default_network_type_matrix.fold_or_log_error(1u64 << types_mapped_id);
+
+        let detailed_mapped_id = self.inspect_metadata_node.network_registry.insert(data);
+        self.default_network_detailed_matrix.fold_or_log_error(1u64 << detailed_mapped_id);
     }
 }
 
@@ -75,16 +96,19 @@ impl From<NetworkEventMetadata> for NetworkData {
 }
 
 const NETWORKS_METADATA_CACHE_SIZE: usize = 16;
+const NETWORK_TYPES_CACHE_SIZE: usize = 8;
 
-// Holds the inspect node children for the static metadata that correlates to
-// bits in the default network bitset.
+// Holds the inspect node children for the metadata that correlates to
+// bits in the default network bitsets.
 struct InspectMetadataNode {
     _node: InspectNode,
     network_registry: LruCacheNode<NetworkData>,
+    network_types: LruCacheNode<String>,
 }
 
 impl InspectMetadataNode {
     const NETWORK_REGISTRY: &'static str = "network_registry";
+    const NETWORK_TYPES: &'static str = "network_types";
 
     fn new(inspect_node: InspectNode) -> Self {
         // Record the network registry, which is dynamically updated as networks
@@ -94,7 +118,13 @@ impl InspectMetadataNode {
             NETWORKS_METADATA_CACHE_SIZE,
         );
 
-        Self { _node: inspect_node, network_registry }
+        // Record the observed network types for the default network type time matrix.
+        let network_types = LruCacheNode::new(
+            inspect_node.create_child(Self::NETWORK_TYPES),
+            NETWORK_TYPES_CACHE_SIZE,
+        );
+
+        Self { _node: inspect_node, network_registry, network_types }
     }
 }
 
@@ -190,6 +220,14 @@ mod tests {
                 TimeMatrixCall::Fold(Timed::now(1 << 1)),
             ]
         );
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("default_network_type")[..],
+            &[
+                TimeMatrixCall::Fold(Timed::now(1 << 0)),
+                TimeMatrixCall::Fold(Timed::now(0)),
+                TimeMatrixCall::Fold(Timed::now(1 << 1)),
+            ]
+        );
     }
 
     #[fuchsia::test]
@@ -205,6 +243,7 @@ mod tests {
         log_network_events(&mut processor);
 
         let hierarchy = harness.get_inspect_data_tree();
+
         assert_data_tree!(
             @executor harness.exec,
             hierarchy,
@@ -228,6 +267,14 @@ mod tests {
                                     is_fuchsia_provisioned: false,
                                 }
                             }
+                        },
+                        network_types: contains {
+                            "0": contains {
+                                data: "Ethernet",
+                            },
+                            "1": contains {
+                                data: "Wifi",
+                            }
                         }
                     },
                     time_series: contains {
@@ -237,7 +284,14 @@ mod tests {
                             metadata: {
                                 index_node_path: "root/test_stats/metadata/network_registry",
                             }
-                        }
+                        },
+                        default_network_type: {
+                            "type": "bitset",
+                            "data": AnyBytesProperty,
+                            metadata: {
+                                index_node_path: "root/test_stats/metadata/network_types",
+                            }
+                        },
                     }
                 }
             }
