@@ -9,8 +9,6 @@ visibility = [ "//src/developer/forensics/*" ]
 ###############################################################################
 source_set("reboot_log") {
   sources = [
-    "annotations.cc",
-    "annotations.h",
     "final_shutdown_info.cc",
     "final_shutdown_info.h",
     "graceful_shutdown_info.cc",

@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_REBOOT_LOG_FINAL_SHUTDOWN_INFO_H_
 
 #include <fuchsia/feedback/cpp/fidl.h>
+#include <lib/zx/time.h>
 
 #include <optional>
 #include <string>
@@ -15,6 +16,7 @@
 #include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
+#include "src/developer/forensics/utils/errors.h"
 
 namespace forensics::feedback {
 
@@ -66,12 +68,29 @@ class FinalShutdownInfo {
   static FinalShutdownInfo MakeFinalShutdownInfo(
       const HwShutdownReason hw_reason, const ZirconShutdownReason zircon_reason,
       std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr,
-      bool supports_user_initiated_poweroffs);
+      bool supports_user_initiated_poweroffs, std::optional<zx::duration> uptime,
+      std::optional<zx::duration> runtime, const std::optional<std::string>& critical_process);
 
   // For testing purposes.
-  FinalShutdownInfo(FinalShutdownReason reason);
+  explicit FinalShutdownInfo(FinalShutdownReason reason);
+
+  // For testing purposes.
   FinalShutdownInfo(FinalShutdownReason reason,
                     std::optional<GracefulShutdownAction> graceful_shutdown_action);
+
+  // A graceful shutdown.
+  FinalShutdownInfo(FinalShutdownReason reason,
+                    std::optional<GracefulShutdownAction> graceful_shutdown_action,
+                    std::optional<zx::duration> uptime, std::optional<zx::duration> runtime);
+
+  // An ungraceful shutdown that shouldn't have a critical process.
+  FinalShutdownInfo(FinalShutdownReason reason, std::optional<zx::duration> uptime,
+                    std::optional<zx::duration> runtime);
+
+  // A root job termination shutdown that should have a critical process, barring parsing failures.
+  FinalShutdownInfo(FinalShutdownReason reason, std::optional<zx::duration> uptime,
+                    std::optional<zx::duration> runtime,
+                    std::optional<std::string> critical_process);
 
   // Whether the reason is "out of memory."
   bool IsOom() const;
@@ -103,14 +122,23 @@ class FinalShutdownInfo {
   std::string ToCrashProgramName() const;
 
   // Creates a crash signature for the underlying shutdown reason and action, if applicable.
-  //
-  // Note: |critical_process| is only supported for |FinalShutdownReason::kRootJobTermination|.
-  std::string ToCrashSignature(SpontaneousRebootReason spontaneous_reboot_reason,
-                               const std::optional<std::string>& critical_process) const;
+  std::string ToCrashSignature(SpontaneousRebootReason spontaneous_reboot_reason) const;
+
+  const std::optional<zx::duration>& Uptime() const { return uptime_; }
+  const std::optional<zx::duration>& Runtime() const { return runtime_; }
+
+  std::string ToSnapshotAnnotationReason(SpontaneousRebootReason spontaneous_reboot_reason) const;
+  ErrorOrString ToSnapshotAnnotationUptime() const;
+  ErrorOrString ToSnapshotAnnotationRuntime() const;
+  ErrorOrString ToSnapshotAnnotationTotalSuspendedTime() const;
+  ErrorOrString ToSnapshotAnnotationGracefulAction() const;
 
  private:
   FinalShutdownReason reason_;
   std::optional<GracefulShutdownAction> graceful_shutdown_action_;
+  std::optional<zx::duration> uptime_;
+  std::optional<zx::duration> runtime_;
+  std::optional<std::string> critical_process_;
 };
 
 }  // namespace forensics::feedback

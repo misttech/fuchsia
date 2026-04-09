@@ -138,20 +138,21 @@ using GenericReporterTest = ReporterTest<UngracefulShutdownTestParam /*does not 
 TEST_F(GenericReporterTest, Succeed_WellFormedRebootLog) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
-  const feedback::FinalShutdownInfo final_shutdown_info(
-      feedback::FinalShutdownReason::kKernelPanic);
+  const feedback::FinalShutdownInfo final_shutdown_info(feedback::FinalShutdownReason::kKernelPanic,
+                                                        uptime, runtime,
+                                                        /*critical_process=*/std::nullopt);
   const feedback::RebootLog reboot_log(
       final_shutdown_info,
       "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
-      /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature = "fuchsia-kernel-panic",
           .reboot_log = reboot_log.RebootLogStr(),
-          .uptime = reboot_log.Uptime(),
-          .runtime = reboot_log.Runtime(),
+          .uptime = final_shutdown_info.Uptime(),
+          .runtime = final_shutdown_info.Runtime(),
           .is_fatal = true,
       }));
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
@@ -169,20 +170,20 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
   const feedback::FinalShutdownInfo final_shutdown_info(
-      feedback::FinalShutdownReason::kRootJobTermination);
+      feedback::FinalShutdownReason::kRootJobTermination, uptime, runtime, "foo");
   const feedback::RebootLog reboot_log(
       final_shutdown_info,
       "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072\n"
       "ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: foo (1)",
-      /*dlog=*/std::nullopt, uptime, runtime, "foo");
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature = "fuchsia-reboot-foo-terminated",
           .reboot_log = reboot_log.RebootLogStr(),
-          .uptime = reboot_log.Uptime(),
-          .runtime = reboot_log.Runtime(),
+          .uptime = final_shutdown_info.Uptime(),
+          .runtime = final_shutdown_info.Runtime(),
           .is_fatal = true,
       }));
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
@@ -201,7 +202,7 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
       feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       final_shutdown_info, "HW REBOOT REASON (WARM BOOT)\n\nZIRCON REBOOT REASON (KERNEL PANIC)\n",
-      /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
@@ -223,12 +224,13 @@ TEST_F(GenericReporterTest, Succeed_NoUptime) {
 
 TEST_F(GenericReporterTest, Succeed_NoRuntime) {
   const zx::duration uptime = zx::msec(74715002);
-  const feedback::FinalShutdownInfo final_shutdown_info(
-      feedback::FinalShutdownReason::kKernelPanic);
+  const feedback::FinalShutdownInfo final_shutdown_info(feedback::FinalShutdownReason::kKernelPanic,
+                                                        uptime, std::nullopt,
+                                                        /*critical_process=*/std::nullopt);
   const feedback::RebootLog reboot_log(
       final_shutdown_info,
       "HW REBOOT REASON (WARM BOOT)\n\nZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002",
-      /*dlog=*/std::nullopt, uptime, std::nullopt, std::nullopt);
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
@@ -269,7 +271,7 @@ TEST_F(GenericReporterTest, Succeed_RedactsData) {
       feedback::FinalShutdownReason::kKernelPanic);
   const feedback::RebootLog reboot_log(
       final_shutdown_info, "HW REBOOT REASON (WARM BOOT)\n\nZIRCON REBOOT REASON (KERNEL PANIC)\n",
-      /*dlog=*/std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
@@ -294,12 +296,13 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
   const feedback::FinalShutdownInfo final_shutdown_info(
-      feedback::FinalShutdownReason::kGenericGraceful);
+      feedback::FinalShutdownReason::kGenericGraceful, uptime, runtime,
+      /*critical_process=*/std::nullopt);
   const feedback::RebootLog reboot_log(
       final_shutdown_info,
       "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
-      /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
@@ -322,8 +325,7 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledCleanReboot) {
 TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledColdReboot) {
   const feedback::FinalShutdownInfo final_shutdown_info(feedback::FinalShutdownReason::kCold);
   const feedback::RebootLog reboot_log(final_shutdown_info, "",
-                                       /*dlog=*/std::nullopt, std::nullopt, std::nullopt,
-                                       std::nullopt);
+                                       /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
@@ -339,13 +341,14 @@ TEST_F(GenericReporterTest, Succeed_NoCrashReportFiledColdReboot) {
 TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
   const zx::duration uptime = zx::msec(74715002);
   const zx::duration runtime = zx::msec(73415072);
-  const feedback::FinalShutdownInfo final_shutdown_info(
-      feedback::FinalShutdownReason::kKernelPanic);
+  const feedback::FinalShutdownInfo final_shutdown_info(feedback::FinalShutdownReason::kKernelPanic,
+                                                        uptime, runtime,
+                                                        /*critical_process=*/std::nullopt);
   const feedback::RebootLog reboot_log(
       final_shutdown_info,
       "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
-      /*dlog=*/std::nullopt, uptime, runtime, std::nullopt);
+      /*dlog=*/std::nullopt);
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterAlwaysReturnsError>());
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
 
@@ -360,13 +363,15 @@ TEST_F(GenericReporterTest, Fail_CrashReporterFailsToFile) {
 TEST_F(GenericReporterTest, Succeed_DoesNothingIfAlreadyReportedOn) {
   ASSERT_TRUE(files::WriteFile(kHasReportedOnPath, /*data=*/"", /*size=*/0));
 
-  const feedback::FinalShutdownInfo final_shutdown_info(
-      feedback::FinalShutdownReason::kKernelPanic);
+  const feedback::FinalShutdownInfo final_shutdown_info(feedback::FinalShutdownReason::kKernelPanic,
+                                                        /*uptime=*/zx::msec(74715002),
+                                                        /*runtime=*/zx::msec(73415072),
+                                                        /*critical_process=*/std::nullopt);
   const feedback::RebootLog reboot_log(
       final_shutdown_info,
       "HW REBOOT REASON (WARM BOOT)\n\n"
       "ZIRCON REBOOT REASON (KERNEL PANIC)\n\nUPTIME (ms)\n74715002\nRUNTIME (ms)\n73415072",
-      /*dlog=*/std::nullopt, zx::msec(74715002), zx::msec(73415072), std::nullopt);
+      /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());

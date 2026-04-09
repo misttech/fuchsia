@@ -15,7 +15,7 @@
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/constants.h"
-#include "src/developer/forensics/feedback/reboot_log/annotations.h"
+#include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/utils/time.h"
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/trim.h"
@@ -86,8 +86,8 @@ std::string NumCPUs() { return std::to_string(zx_system_get_num_cpus()); }
 
 }  // namespace
 
-Annotations GetStartupAnnotations(const RebootLog& reboot_log,
-                                  const SpontaneousRebootReason spontaneous_reboot_reason,
+Annotations GetStartupAnnotations(const FinalShutdownInfo& final_shutdown_info,
+                                  SpontaneousRebootReason spontaneous_reboot_reason,
                                   const std::string& compilation_mode_path) {
   return {
       {kBuildBoardKey, ReadAnnotation(kBuildBoardPath)},
@@ -108,13 +108,13 @@ Annotations GetStartupAnnotations(const RebootLog& reboot_log,
       {kSystemBootIdPreviousKey, ReadAnnotation(kPreviousBootIdPath)},
       {kSystemBootIdTimelineKey, ReadAnnotation(kBootIdTimelinePath)},
       {kSystemLastRebootReasonKey,
-       ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
-                                                spontaneous_reboot_reason))},
-      {kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)},
-      {kSystemLastRebootTotalSuspendedTimeKey, LastRebootTotalSuspendedTimeAnnotation(reboot_log)},
-      {kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)},
+       ErrorOrString(final_shutdown_info.ToSnapshotAnnotationReason(spontaneous_reboot_reason))},
+      {kSystemLastRebootRuntimeKey, final_shutdown_info.ToSnapshotAnnotationRuntime()},
+      {kSystemLastRebootTotalSuspendedTimeKey,
+       final_shutdown_info.ToSnapshotAnnotationTotalSuspendedTime()},
+      {kSystemLastRebootUptimeKey, final_shutdown_info.ToSnapshotAnnotationUptime()},
       {kSystemLastShutdownGracefulActionKey,
-       LastShutdownGracefulActionAnnotation(reboot_log.GetFinalShutdownInfo())},
+       final_shutdown_info.ToSnapshotAnnotationGracefulAction()},
   };
 }
 

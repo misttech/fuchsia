@@ -55,12 +55,6 @@ struct TimeTestParam {
   std::optional<zx::duration> output_runtime;
 };
 
-struct CriticalProcessTestParam {
-  std::string test_name;
-  std::optional<std::string> zircon_reboot_log;
-  std::optional<std::string> output_critical_process;
-};
-
 struct RebootLogStrTestParam {
   std::string test_name;
   std::optional<std::string> zircon_reboot_log;
@@ -474,11 +468,11 @@ TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulNotParseable) {
 
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "GENERIC GRACEFUL");
 
-  ASSERT_TRUE(reboot_log.Uptime().has_value());
-  EXPECT_EQ(*reboot_log.Uptime(), zx::msec(1234));
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Uptime(), zx::msec(1234));
 
-  ASSERT_TRUE(reboot_log.Runtime().has_value());
-  EXPECT_EQ(*reboot_log.Runtime(), zx::msec(1098));
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Runtime(), zx::msec(1098));
 }
 
 TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
@@ -675,17 +669,17 @@ TEST_P(RebootLogTimeTest, Succeed) {
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
   if (param.output_uptime.has_value()) {
-    ASSERT_TRUE(reboot_log.Uptime().has_value());
-    EXPECT_EQ(*reboot_log.Uptime(), param.output_uptime.value());
+    ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+    EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Uptime(), param.output_uptime.value());
   } else {
-    EXPECT_FALSE(reboot_log.Uptime().has_value());
+    EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
   }
 
   if (param.output_runtime.has_value()) {
-    ASSERT_TRUE(reboot_log.Runtime().has_value());
-    EXPECT_EQ(*reboot_log.Runtime(), param.output_runtime.value());
+    ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
+    EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Runtime(), param.output_runtime.value());
   } else {
-    EXPECT_FALSE(reboot_log.Runtime().has_value());
+    EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
   }
 }
 
@@ -697,10 +691,10 @@ TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NoZirconValues) {
                                 /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
-  ASSERT_TRUE(reboot_log.Uptime().has_value());
-  EXPECT_EQ(*reboot_log.Uptime(), zx::msec(9876));
-  ASSERT_TRUE(reboot_log.Runtime().has_value());
-  EXPECT_EQ(*reboot_log.Runtime(), zx::msec(8765));
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Uptime(), zx::msec(9876));
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Runtime(), zx::msec(8765));
 
   EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK UPTIME (ms)\n9876"));
   EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK RUNTIME (ms)\n8765"));
@@ -717,10 +711,10 @@ TEST_F(RebootLogTest, FallbackToSystemTimeTracker_NegativeZirconValues) {
                                 /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
-  ASSERT_TRUE(reboot_log.Uptime().has_value());
-  EXPECT_EQ(*reboot_log.Uptime(), zx::msec(9876));
-  ASSERT_TRUE(reboot_log.Runtime().has_value());
-  EXPECT_EQ(*reboot_log.Runtime(), zx::msec(8765));
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Uptime(), zx::msec(9876));
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Runtime(), zx::msec(8765));
 
   EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK UPTIME (ms)\n9876"));
   EXPECT_THAT(reboot_log.RebootLogStr(), HasSubstr("FALLBACK RUNTIME (ms)\n8765"));
@@ -732,8 +726,8 @@ TEST_F(RebootLogTest, NoPreviousSystemTimeFile) {
                                 /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
-  EXPECT_FALSE(reboot_log.Uptime().has_value());
-  EXPECT_FALSE(reboot_log.Runtime().has_value());
+  EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+  EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
 }
 
 TEST_F(RebootLogTest, NoFallbackToSystemTimeTracker_MissingRuntime) {
@@ -747,9 +741,9 @@ TEST_F(RebootLogTest, NoFallbackToSystemTimeTracker_MissingRuntime) {
                                 /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
-  ASSERT_TRUE(reboot_log.Uptime().has_value());
-  EXPECT_EQ(*reboot_log.Uptime(), zx::msec(1234));
-  ASSERT_FALSE(reboot_log.Runtime().has_value());
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Uptime(), zx::msec(1234));
+  ASSERT_FALSE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
 }
 
 TEST_F(RebootLogTest, NoFallbackToSystemTimeTracker_MissingUptime) {
@@ -763,70 +757,26 @@ TEST_F(RebootLogTest, NoFallbackToSystemTimeTracker_MissingUptime) {
                                 /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
-  ASSERT_FALSE(reboot_log.Uptime().has_value());
-  ASSERT_TRUE(reboot_log.Runtime().has_value());
-  EXPECT_EQ(*reboot_log.Runtime(), zx::msec(5678));
+  ASSERT_FALSE(reboot_log.GetFinalShutdownInfo().Uptime().has_value());
+  ASSERT_TRUE(reboot_log.GetFinalShutdownInfo().Runtime().has_value());
+  EXPECT_EQ(*reboot_log.GetFinalShutdownInfo().Runtime(), zx::msec(5678));
 }
 
-class RebootLogCriticalProcessTest : public RebootLogTest,
-                                     public testing::WithParamInterface<CriticalProcessTestParam> {
-};
-
-INSTANTIATE_TEST_SUITE_P(
-    WithVariousRebootLogs, RebootLogCriticalProcessTest,
-    ::testing::ValuesIn(std::vector<CriticalProcessTestParam>({
-        {
-            "WellFormedLog",
-            "HW REBOOT REASON (UNKNOWN)\n\n"
-            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
-            "ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: foo (1)",
-            "foo",
-        },
-        {
-            "NoZirconRebootLog",
-            std::nullopt,
-            std::nullopt,
-        },
-        {
-            "EmptyZirconRebootLog",
-            "",
-            std::nullopt,
-        },
-        {
-            "TooFewLines",
-            "HW REBOOT REASON (UNKNOWN)\n\n"
-            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n",
-            std::nullopt,
-        },
-        {
-            "BadCriticalProcessString",
-            "HW REBOOT REASON (UNKNOWN)\n\n"
-            "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
-            "ROOT JOB TERMINATED BY CRITICAL PROCESS ALIVE: foo (1)",
-            std::nullopt,
-        },
-    })),
-    [](const testing::TestParamInfo<CriticalProcessTestParam>& info) {
-      return info.param.test_name;
-    });
-
-TEST_P(RebootLogCriticalProcessTest, Succeed) {
-  const auto param = GetParam();
-  if (param.zircon_reboot_log.has_value()) {
-    WriteZirconRebootLogContents(param.zircon_reboot_log.value());
-  }
+TEST_F(RebootLogTest, ParsesCriticalProcess) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
+      "ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: foo (1)");
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
                                 /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
 
-  if (param.output_critical_process.has_value()) {
-    ASSERT_TRUE(reboot_log.CriticalProcess().has_value());
-    EXPECT_EQ(*reboot_log.CriticalProcess(), param.output_critical_process.value());
-  } else {
-    EXPECT_FALSE(reboot_log.CriticalProcess().has_value());
-  }
+  const FinalShutdownInfo& shutdown_info = reboot_log.GetFinalShutdownInfo();
+  ASSERT_TRUE(shutdown_info.IsCrash());
+  EXPECT_EQ(shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-reboot-foo-terminated");
 }
 
 class RebootLogStrTest : public RebootLogTest,

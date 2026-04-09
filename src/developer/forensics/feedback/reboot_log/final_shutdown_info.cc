@@ -7,11 +7,13 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <unordered_set>
+#include <utility>
 
 #include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
+#include "src/developer/forensics/utils/time.h"
 
 namespace forensics::feedback {
 namespace {
@@ -28,14 +30,64 @@ std::string GetSpontaneousRebootCrashSignature(
   }
 }
 
+std::string GetSpontaneousRebootReason(const SpontaneousRebootReason spontaneous_reboot_reason) {
+  switch (spontaneous_reboot_reason) {
+    case SpontaneousRebootReason::kSpontaneous:
+      return "spontaneous";
+    case SpontaneousRebootReason::kBriefPowerLoss:
+      return "brief loss of power";
+    case SpontaneousRebootReason::kHardReset:
+      return "hard reset";
+  }
+}
+
 }  // namespace
 
 FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason)
-    : reason_(reason), graceful_shutdown_action_(std::nullopt) {}
+    : reason_(reason),
+      graceful_shutdown_action_(std::nullopt),
+      uptime_(std::nullopt),
+      runtime_(std::nullopt),
+      critical_process_(std::nullopt) {}
 
 FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason,
                                      std::optional<GracefulShutdownAction> graceful_shutdown_action)
-    : reason_(reason), graceful_shutdown_action_(graceful_shutdown_action) {}
+    : reason_(reason),
+      graceful_shutdown_action_(graceful_shutdown_action),
+      uptime_(std::nullopt),
+      runtime_(std::nullopt),
+      critical_process_(std::nullopt) {}
+
+FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason,
+                                     std::optional<GracefulShutdownAction> graceful_shutdown_action,
+                                     std::optional<zx::duration> uptime,
+                                     std::optional<zx::duration> runtime)
+    : reason_(reason),
+      graceful_shutdown_action_(graceful_shutdown_action),
+      uptime_(uptime),
+      runtime_(runtime),
+      critical_process_(std::nullopt) {}
+
+FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason, std::optional<zx::duration> uptime,
+                                     std::optional<zx::duration> runtime)
+    : reason_(reason),
+      graceful_shutdown_action_(std::nullopt),
+      uptime_(uptime),
+      runtime_(runtime),
+      critical_process_(std::nullopt) {}
+
+FinalShutdownInfo::FinalShutdownInfo(FinalShutdownReason reason, std::optional<zx::duration> uptime,
+                                     std::optional<zx::duration> runtime,
+                                     std::optional<std::string> critical_process)
+    : reason_(reason),
+      graceful_shutdown_action_(std::nullopt),
+      uptime_(uptime),
+      runtime_(runtime),
+      critical_process_(std::move(critical_process)) {
+  if (critical_process_.has_value() && reason_ != FinalShutdownReason::kRootJobTermination) {
+    FX_LOGS(ERROR) << "Critical process provided for an invalid reason: " << ToRebootReasonString();
+  }
+}
 
 bool FinalShutdownInfo::IsOom() const { return reason_ == FinalShutdownReason::kOom; }
 
@@ -383,8 +435,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
 }
 
 std::string FinalShutdownInfo::ToCrashSignature(
-    const SpontaneousRebootReason spontaneous_reboot_reason,
-    const std::optional<std::string>& critical_process) const {
+    const SpontaneousRebootReason spontaneous_reboot_reason) const {
   switch (reason_) {
     case FinalShutdownReason::kNotParseable:
       return "fuchsia-reboot-log-not-parseable";
@@ -401,9 +452,9 @@ std::string FinalShutdownInfo::ToCrashSignature(
     case FinalShutdownReason::kBrownout:
       return "fuchsia-brownout";
     case FinalShutdownReason::kRootJobTermination:
-      return (!critical_process.has_value())
+      return (!critical_process_.has_value())
                  ? "fuchsia-root-job-termination"
-                 : std::string("fuchsia-reboot-").append(*critical_process).append("-terminated");
+                 : std::string("fuchsia-reboot-").append(*critical_process_).append("-terminated");
     case FinalShutdownReason::kUserHardReset:
       return "fuchsia-hard-reset-user-requested";
     case FinalShutdownReason::kRetrySystemUpdate:
@@ -517,16 +568,17 @@ FinalShutdownReason ConsolidateGracefulShutdownReasons(
 FinalShutdownInfo FinalShutdownInfo::MakeFinalShutdownInfo(
     const HwShutdownReason hw_reason, const ZirconShutdownReason zircon_reason,
     std::optional<GracefulShutdownInfo> graceful_shutdown_info, const bool not_a_fdr,
-    const bool supports_user_initiated_poweroffs) {
+    bool supports_user_initiated_poweroffs, std::optional<zx::duration> uptime,
+    std::optional<zx::duration> runtime, const std::optional<std::string>& critical_process) {
   switch (hw_reason) {
     case HwShutdownReason::kNotParseable:
-      return FinalShutdownInfo(FinalShutdownReason::kNotParseable);
+      return FinalShutdownInfo(FinalShutdownReason::kNotParseable, uptime, runtime);
     case HwShutdownReason::kWatchdog:
-      return FinalShutdownInfo(FinalShutdownReason::kHwWatchdog);
+      return FinalShutdownInfo(FinalShutdownReason::kHwWatchdog, uptime, runtime);
     case HwShutdownReason::kBrownout:
-      return FinalShutdownInfo(FinalShutdownReason::kBrownout);
+      return FinalShutdownInfo(FinalShutdownReason::kBrownout, uptime, runtime);
     case HwShutdownReason::kUserHardReset:
-      return FinalShutdownInfo(FinalShutdownReason::kUserHardReset);
+      return FinalShutdownInfo(FinalShutdownReason::kUserHardReset, uptime, runtime);
     case HwShutdownReason::kNotSet:
     case HwShutdownReason::kUndefined:
     case HwShutdownReason::kCold:
@@ -536,34 +588,35 @@ FinalShutdownInfo FinalShutdownInfo::MakeFinalShutdownInfo(
 
   switch (zircon_reason) {
     case ZirconShutdownReason::kKernelPanic:
-      return FinalShutdownInfo(FinalShutdownReason::kKernelPanic);
+      return FinalShutdownInfo(FinalShutdownReason::kKernelPanic, uptime, runtime);
     case ZirconShutdownReason::kOOM:
-      return FinalShutdownInfo(FinalShutdownReason::kOom);
+      return FinalShutdownInfo(FinalShutdownReason::kOom, uptime, runtime);
     case ZirconShutdownReason::kSwWatchdog:
-      return FinalShutdownInfo(FinalShutdownReason::kSwWatchdog);
+      return FinalShutdownInfo(FinalShutdownReason::kSwWatchdog, uptime, runtime);
     case ZirconShutdownReason::kUnknown:
-      return FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot);
+      return FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot, uptime, runtime);
     case ZirconShutdownReason::kNotParseable:
-      return FinalShutdownInfo(FinalShutdownReason::kNotParseable);
+      return FinalShutdownInfo(FinalShutdownReason::kNotParseable, uptime, runtime);
     case ZirconShutdownReason::kRootJobTermination:
-      return FinalShutdownInfo(FinalShutdownReason::kRootJobTermination);
+      return FinalShutdownInfo(FinalShutdownReason::kRootJobTermination, uptime, runtime,
+                               critical_process);
     case ZirconShutdownReason::kNoCrash: {
       if (!not_a_fdr) {
-        return FinalShutdownInfo(FinalShutdownReason::kFdr);
+        return FinalShutdownInfo(FinalShutdownReason::kFdr, uptime, runtime);
       }
       if (graceful_shutdown_info.has_value()) {
         return FinalShutdownInfo(
             ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
-            graceful_shutdown_info->action);
+            graceful_shutdown_info->action, uptime, runtime);
       }
-      return FinalShutdownInfo(FinalShutdownReason::kGenericGraceful);
+      return FinalShutdownInfo(FinalShutdownReason::kGenericGraceful, uptime, runtime);
     }
     case ZirconShutdownReason::kNotSet:
       break;
   }
 
   if (!not_a_fdr) {
-    return FinalShutdownInfo(FinalShutdownReason::kFdr);
+    return FinalShutdownInfo(FinalShutdownReason::kFdr, uptime, runtime);
   }
 
   // If there is no graceful shutdown info, it means the device was abruptly shut down.
@@ -572,9 +625,9 @@ FinalShutdownInfo FinalShutdownInfo::MakeFinalShutdownInfo(
     // can initiate a poweroff. E.g., if there no power button and they have to yank the cable
     // off a wall-powered device, it's likely more a cold boot.
     if (supports_user_initiated_poweroffs) {
-      return FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot);
+      return FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot, uptime, runtime);
     } else {
-      return FinalShutdownInfo(FinalShutdownReason::kCold);
+      return FinalShutdownInfo(FinalShutdownReason::kCold, uptime, runtime);
     }
   }
 
@@ -582,13 +635,130 @@ FinalShutdownInfo FinalShutdownInfo::MakeFinalShutdownInfo(
   // reasons more informative than just "cold."
   if (graceful_shutdown_info->action == GracefulShutdownAction::kPoweroff) {
     return FinalShutdownInfo(ConsolidateGracefulShutdownReasons(graceful_shutdown_info->reasons),
-                             graceful_shutdown_info->action);
+                             graceful_shutdown_info->action, uptime, runtime);
   }
 
   // While we now distinguish HwShutdownReason being cold, warm, undefined and not set,
   // for now we still report all of them as cold boots.
   return FinalShutdownInfo(FinalShutdownReason::kCold,
-                           std::make_optional(graceful_shutdown_info->action));
+                           std::make_optional(graceful_shutdown_info->action), uptime, runtime);
+}
+
+std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
+    const SpontaneousRebootReason spontaneous_reboot_reason) const {
+  switch (reason_) {
+    case FinalShutdownReason::kCold:
+      return "cold";
+    case FinalShutdownReason::kSpontaneousReboot:
+      return GetSpontaneousRebootReason(spontaneous_reboot_reason);
+    case FinalShutdownReason::kBrownout:
+      return "brownout";
+    case FinalShutdownReason::kKernelPanic:
+      return "kernel panic";
+    case FinalShutdownReason::kOom:
+      return "system out of memory";
+    case FinalShutdownReason::kHwWatchdog:
+      return "hardware watchdog timeout";
+    case FinalShutdownReason::kSwWatchdog:
+      return "software watchdog timeout";
+    case FinalShutdownReason::kUserRequest:
+      return "user request";
+    case FinalShutdownReason::kUserRequestDeviceStuck:
+      return "user request device stuck";
+    case FinalShutdownReason::kUserHardReset:
+      return "user request hard reset";
+    case FinalShutdownReason::kSystemUpdate:
+      return "system update";
+    case FinalShutdownReason::kRetrySystemUpdate:
+      return "retry system update";
+    case FinalShutdownReason::kZbiSwap:
+      return "ZBI swap";
+    case FinalShutdownReason::kHighTemperature:
+      return "device too hot";
+    case FinalShutdownReason::kSessionFailure:
+      return "fatal session failure";
+    case FinalShutdownReason::kSysmgrFailure:
+      return "fatal sysmgr failure";
+    case FinalShutdownReason::kCriticalComponentFailure:
+      return "fatal critical component failure";
+    case FinalShutdownReason::kFdr:
+      return "factory data reset";
+    case FinalShutdownReason::kRootJobTermination:
+      return "root job termination";
+    case FinalShutdownReason::kNetstackMigration:
+      return "netstack migration";
+    case FinalShutdownReason::kAndroidUnexpectedReason:
+      return "android unexpected reason";
+    case FinalShutdownReason::kAndroidNoReason:
+      return "android no reason";
+    case FinalShutdownReason::kAndroidRescueParty:
+      return "android rescue party";
+    case FinalShutdownReason::kAndroidCriticalProcessFailure:
+      return "android critical process failure";
+    case FinalShutdownReason::kDeveloperRequest:
+      return "developer request";
+    case FinalShutdownReason::kBatteryDrained:
+      return "battery drained";
+    case FinalShutdownReason::kNotParseable:
+      return "not parseable";
+    case FinalShutdownReason::kGenericGraceful:
+    case FinalShutdownReason::kUnexpectedReasonGraceful:
+      return "graceful";
+  }
+}
+
+ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationUptime() const {
+  if (Uptime().has_value()) {
+    const auto uptime = FormatDuration(*Uptime());
+    if (uptime.has_value()) {
+      return ErrorOrString(*uptime);
+    }
+  }
+
+  return ErrorOrString(Error::kMissingValue);
+}
+
+ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationRuntime() const {
+  if (Runtime().has_value()) {
+    const auto runtime = FormatDuration(*Runtime());
+    if (runtime.has_value()) {
+      return ErrorOrString(*runtime);
+    }
+  }
+
+  return ErrorOrString(Error::kMissingValue);
+}
+
+ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationTotalSuspendedTime() const {
+  if (Uptime().has_value() && Runtime().has_value()) {
+    const std::optional<std::string> suspended_time = FormatDuration(*Uptime() - *Runtime());
+    if (suspended_time.has_value()) {
+      return ErrorOrString(*suspended_time);
+    }
+  }
+
+  return ErrorOrString(Error::kMissingValue);
+}
+
+ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationGracefulAction() const {
+  const std::optional<GracefulShutdownAction> action = ToGracefulShutdownAction();
+  if (!action.has_value()) {
+    return ErrorOrString(Error::kMissingValue);
+  }
+
+  switch (*action) {
+    case GracefulShutdownAction::kPoweroff:
+      return ErrorOrString("poweroff");
+    case GracefulShutdownAction::kReboot:
+      return ErrorOrString("reboot");
+    case GracefulShutdownAction::kRebootToRecovery:
+      return ErrorOrString("reboot to recovery");
+    case GracefulShutdownAction::kRebootToBootloader:
+      return ErrorOrString("reboot to bootloader");
+    case GracefulShutdownAction::kNotSupported:
+    case GracefulShutdownAction::kNotParseable:
+      return ErrorOrString(Error::kBadValue);
+  }
 }
 
 }  // namespace forensics::feedback

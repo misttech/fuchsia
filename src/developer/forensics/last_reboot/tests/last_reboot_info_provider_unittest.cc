@@ -10,7 +10,6 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
-#include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 
 namespace forensics {
@@ -22,14 +21,12 @@ using feedback::FinalShutdownReason;
 fuchsia::feedback::LastReboot MakeLastReboot(
     const FinalShutdownReason reason, const std::optional<zx::duration> uptime = std::nullopt,
     const std::optional<zx::duration> runtime = std::nullopt) {
-  const feedback::FinalShutdownInfo final_shutdown_info(reason);
-  const feedback::RebootLog reboot_log(final_shutdown_info, "",
-                                       /*dlog=*/std::nullopt, uptime, runtime,
-                                       /*critical_process=*/std::nullopt);
+  const feedback::FinalShutdownInfo final_shutdown_info(reason, uptime, runtime,
+                                                        /*critical_process=*/std::nullopt);
 
   fuchsia::feedback::LastReboot out_last_reboot;
 
-  LastRebootInfoProvider last_reboot_info_provider(reboot_log);
+  LastRebootInfoProvider last_reboot_info_provider(final_shutdown_info);
   last_reboot_info_provider.Get(
       [&](fuchsia::feedback::LastReboot last_reboot) { out_last_reboot = std::move(last_reboot); });
 

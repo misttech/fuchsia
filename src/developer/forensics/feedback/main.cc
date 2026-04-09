@@ -7,10 +7,9 @@
 #include <lib/fidl/cpp/interface_request.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
-#include <zircon/processargs.h>
-
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>
+#include <zircon/processargs.h>
 
 #include <cstdlib>
 #include <memory>
@@ -21,7 +20,6 @@
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback/main_service.h"
 #include "src/developer/forensics/feedback/namespace_init.h"
-#include "src/developer/forensics/feedback/reboot_log/annotations.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/component/component.h"
@@ -107,8 +105,9 @@ int main() {
     delete_previous_boot_logs_time = zx::hour(24);
   }
 
-  const auto startup_annotations = GetStartupAnnotations(
-      reboot_log, feedback_config->spontaneous_reboot_reason, kBuildCompilationModePath);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log.GetFinalShutdownInfo(),
+                            feedback_config->spontaneous_reboot_reason, kBuildCompilationModePath);
   zx::channel lifecycle_channel(zx_take_startup_handle(PA_LIFECYCLE));
 
   // Create copy of dlog to prevent use-after-move.

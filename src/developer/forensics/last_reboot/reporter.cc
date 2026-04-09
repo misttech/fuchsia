@@ -48,8 +48,7 @@ void Reporter::ReportOn(const feedback::RebootLog& reboot_log, zx::duration cras
     FX_LOGS(ERROR) << "Failed to record reboot log as reported on";
   }
 
-  const zx::duration uptime =
-      (reboot_log.Uptime().has_value()) ? *reboot_log.Uptime() : zx::usec(0);
+  const zx::duration uptime = reboot_log.GetFinalShutdownInfo().Uptime().value_or(zx::usec(0));
   cobalt_->LogDuration(reboot_log.GetFinalShutdownInfo().ToCobaltLastRebootReason(), uptime);
 
   if (!reboot_log.GetFinalShutdownInfo().IsCrash()) {
@@ -70,11 +69,10 @@ fuchsia::feedback::CrashReport CreateCrashReport(
   const feedback::FinalShutdownInfo& final_shutdown_info = reboot_log.GetFinalShutdownInfo();
 
   report.set_program_name(final_shutdown_info.ToCrashProgramName())
-      .set_crash_signature(final_shutdown_info.ToCrashSignature(spontaneous_reboot_reason,
-                                                                reboot_log.CriticalProcess()))
+      .set_crash_signature(final_shutdown_info.ToCrashSignature(spontaneous_reboot_reason))
       .set_is_fatal(true);
-  if (reboot_log.Uptime().has_value()) {
-    report.set_program_uptime(reboot_log.Uptime()->get());
+  if (final_shutdown_info.Uptime().has_value()) {
+    report.set_program_uptime(final_shutdown_info.Uptime()->get());
   }
 
   std::string reboot_log_str = reboot_log.RebootLogStr();

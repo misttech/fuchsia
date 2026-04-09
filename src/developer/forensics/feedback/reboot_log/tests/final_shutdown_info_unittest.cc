@@ -23,10 +23,7 @@ TEST(FinalShutdownInfoTest, NotParseable) {
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kUnknown);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-reboot-log-not-parseable");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-reboot-log-not-parseable");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "reboot-log");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), std::nullopt);
@@ -49,10 +46,7 @@ TEST(FinalShutdownInfoTest, Spontaneous) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kBriefPowerLoss);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-spontaneous-reboot");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-spontaneous-reboot");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
@@ -66,12 +60,8 @@ TEST(FinalShutdownInfoTest, BriefPowerLoss) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kBriefPowerLoss);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kBriefPowerLoss, std::nullopt),
-      "fuchsia-brief-power-loss");
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kBriefPowerLoss, "unused"),
-      "fuchsia-brief-power-loss");
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kBriefPowerLoss),
+            "fuchsia-brief-power-loss");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
             fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
@@ -84,10 +74,7 @@ TEST(FinalShutdownInfoTest, HardReset) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kBriefPowerLoss);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kHardReset, std::nullopt),
-      "fuchsia-hard-reset");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kHardReset, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kHardReset),
             "fuchsia-hard-reset");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
@@ -101,10 +88,7 @@ TEST(FinalShutdownInfoTest, KernelPanic) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kKernelPanic);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-kernel-panic");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-kernel-panic");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "kernel");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
@@ -118,10 +102,7 @@ TEST(FinalShutdownInfoTest, OOM) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kSystemOutOfMemory);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-oom");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-oom");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
@@ -135,10 +116,7 @@ TEST(FinalShutdownInfoTest, HardwareWatchdogTimeout) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kHardwareWatchdogTimeout);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-hw-watchdog-timeout");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-hw-watchdog-timeout");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
@@ -150,9 +128,8 @@ TEST(FinalShutdownInfoTest, UserHardReset) {
       std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kUserHardReset);
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-hard-reset-user-requested");
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-hard-reset-user-requested");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kUserHardReset);
@@ -167,10 +144,7 @@ TEST(FinalShutdownInfoTest, SoftwareWatchdogTimeout) {
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kSoftwareWatchdogTimeout);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-sw-watchdog-timeout");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-sw-watchdog-timeout");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
@@ -183,30 +157,37 @@ TEST(FinalShutdownInfoTest, Brownout) {
 
   EXPECT_TRUE(final_shutdown_info->IsCrash());
   EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(), cobalt::LastRebootReason::kBrownout);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-brownout");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-brownout");
   EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "device");
   EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(), fuchsia::feedback::RebootReason::BROWNOUT);
 }
 
-TEST(FinalShutdownInfoTest, RootJobTermination) {
-  std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
-      std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kRootJobTermination);
+TEST(FinalShutdownInfoTest, RootJobTerminationNoCriticalProcess) {
+  FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kRootJobTermination);
 
-  EXPECT_TRUE(final_shutdown_info->IsCrash());
-  EXPECT_EQ(final_shutdown_info->ToCobaltLastRebootReason(),
+  EXPECT_TRUE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kRootJobTermination);
-  EXPECT_EQ(
-      final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      "fuchsia-root-job-termination");
-  EXPECT_EQ(final_shutdown_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous,
-                                                  "critical_process"),
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-root-job-termination");
+  EXPECT_EQ(final_shutdown_info.ToCrashProgramName(), "system");
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(),
+            fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION);
+}
+
+TEST(FinalShutdownInfoTest, RootJobTerminationWithCriticalProcess) {
+  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kRootJobTermination,
+                                              /*uptime=*/std::nullopt, /*runtime=*/std::nullopt,
+                                              "critical_process");
+
+  EXPECT_TRUE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
+            cobalt::LastRebootReason::kRootJobTermination);
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             "fuchsia-reboot-critical_process-terminated");
-  EXPECT_EQ(final_shutdown_info->ToCrashProgramName(), "system");
-  EXPECT_EQ(final_shutdown_info->ToFidlRebootReason(),
+  EXPECT_EQ(final_shutdown_info.ToCrashProgramName(), "system");
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(),
             fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION);
 }
 
@@ -283,7 +264,8 @@ TEST_P(FinalShutdownInfoGracefulNoReportTest, CheckProperties) {
   const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kNotParseable, params.reasons},
-      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false);
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
 
   EXPECT_FALSE(final_shutdown_info.IsCrash());
   EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(), params.expected_cobalt_reason);
@@ -411,16 +393,14 @@ TEST_P(FinalShutdownInfoGracefulTest, CheckProperties) {
   const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       GracefulShutdownInfo{GracefulShutdownAction::kReboot, params.reasons},
-      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false);
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
 
   EXPECT_TRUE(final_shutdown_info.IsCrash());
   EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(), params.expected_cobalt_reason);
   EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(), params.expected_fidl_reboot_reason);
 
-  EXPECT_EQ(
-      final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous, std::nullopt),
-      params.expected_crash_signature);
-  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous, "unused"),
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
             params.expected_crash_signature);
 
   EXPECT_EQ(final_shutdown_info.ToCrashProgramName(), params.expected_crash_program_name);
@@ -430,7 +410,8 @@ TEST(FinalShutdownInfoGracefulTest, InferredFdr) {
   const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kWarm, ZirconShutdownReason::kNoCrash,
       /*graceful_shutdown_info=*/std::nullopt,
-      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false);
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
 
   EXPECT_FALSE(final_shutdown_info.IsCrash());
   EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
@@ -443,13 +424,33 @@ TEST(FinalShutdownInfoTest, InferredFdr_Cold) {
   const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
       HwShutdownReason::kCold, ZirconShutdownReason::kNotSet,
       /*graceful_shutdown_info=*/std::nullopt,
-      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false);
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
 
   EXPECT_FALSE(final_shutdown_info.IsCrash());
   EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
             cobalt::LastRebootReason::kFactoryDataReset);
   EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(),
             fuchsia::feedback::RebootReason::FACTORY_DATA_RESET);
+}
+
+TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationSpontaneous) {
+  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
+  EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kSpontaneous),
+            "spontaneous");
+}
+
+TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationBriefPowerLoss) {
+  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
+  EXPECT_EQ(
+      final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kBriefPowerLoss),
+      "brief loss of power");
+}
+
+TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationHardReset) {
+  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
+  EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kHardReset),
+            "hard reset");
 }
 
 }  // namespace

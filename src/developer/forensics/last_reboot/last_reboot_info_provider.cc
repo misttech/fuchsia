@@ -11,26 +11,25 @@
 namespace forensics {
 namespace last_reboot {
 
-LastRebootInfoProvider::LastRebootInfoProvider(const feedback::RebootLog& reboot_log) {
-  if (reboot_log.Uptime().has_value()) {
-    last_reboot_.set_uptime(reboot_log.Uptime()->get());
+LastRebootInfoProvider::LastRebootInfoProvider(
+    const feedback::FinalShutdownInfo& final_shutdown_info) {
+  if (final_shutdown_info.Uptime().has_value()) {
+    last_reboot_.set_uptime(final_shutdown_info.Uptime()->get());
   }
 
-  if (reboot_log.Runtime().has_value()) {
-    last_reboot_.set_runtime(reboot_log.Runtime()->get());
+  if (final_shutdown_info.Runtime().has_value()) {
+    last_reboot_.set_runtime(final_shutdown_info.Runtime()->get());
   }
 
-  if (const auto graceful = reboot_log.GetFinalShutdownInfo().OptionallyGraceful();
-      graceful.has_value()) {
+  if (const auto graceful = final_shutdown_info.OptionallyGraceful(); graceful.has_value()) {
     last_reboot_.set_graceful(graceful.value());
   }
 
-  if (const auto planned = reboot_log.GetFinalShutdownInfo().OptionallyPlanned();
-      planned.has_value()) {
+  if (const auto planned = final_shutdown_info.OptionallyPlanned(); planned.has_value()) {
     last_reboot_.set_planned(planned.value());
   }
 
-  if (const auto fidl_reboot_reason = reboot_log.GetFinalShutdownInfo().ToFidlRebootReason();
+  if (const auto fidl_reboot_reason = final_shutdown_info.ToFidlRebootReason();
       fidl_reboot_reason.has_value()) {
     last_reboot_.set_reason(fidl_reboot_reason.value());
   }

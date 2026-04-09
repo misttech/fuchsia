@@ -57,20 +57,17 @@ class LastRebootTest : public UnitTestFixture {
 
 TEST_F(LastRebootTest, FirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
-                                              GracefulShutdownAction::kReboot);
+  const FinalShutdownInfo final_shutdown_info(
+      FinalShutdownReason::kOom, GracefulShutdownAction::kReboot, zx::sec(1), zx::msec(500));
   RebootLog reboot_log(final_shutdown_info, "reboot log",
-                       /*dlog=*/std::nullopt,
-                       /*last_boot_uptime=*/zx::sec(1),
-                       /*last_boot_runtime=*/zx::msec(500),
-                       /*critical_process=*/std::nullopt);
+                       /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
           .crash_signature = "fuchsia-oom",
           .reboot_log = reboot_log.RebootLogStr(),
-          .uptime = reboot_log.Uptime(),
-          .runtime = reboot_log.Runtime(),
+          .uptime = final_shutdown_info.Uptime(),
+          .runtime = final_shutdown_info.Runtime(),
           .is_fatal = true,
       }));
 
@@ -92,13 +89,10 @@ TEST_F(LastRebootTest, FirstInstance) {
 
 TEST_F(LastRebootTest, IsNotFirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
-  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
-                                              GracefulShutdownAction::kReboot);
+  const FinalShutdownInfo final_shutdown_info(
+      FinalShutdownReason::kOom, GracefulShutdownAction::kReboot, zx::sec(1), zx::msec(500));
   RebootLog reboot_log(final_shutdown_info, "reboot log",
-                       /*dlog=*/std::nullopt,
-                       /*last_boot_uptime=*/zx::sec(1),
-                       /*last_boot_runtime=*/zx::msec(500),
-                       /*critical_process=*/std::nullopt);
+                       /*dlog=*/std::nullopt);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
 

@@ -11,7 +11,7 @@
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/feedback/constants.h"
-#include "src/developer/forensics/feedback/reboot_log/annotations.h"
+#include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/testing/gmatchers.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/scoped_memfs_manager.h"
@@ -49,12 +49,8 @@ class StartupAnnotationsTest : public ::testing::Test {
 TEST_F(StartupAnnotationsTest, Keys) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const RebootLog reboot_log(final_shutdown_info, "",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/std::nullopt,
-                             /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+      GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(startup_annotations, UnorderedElementsAreArray({
@@ -110,13 +106,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
 
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const RebootLog reboot_log(final_shutdown_info, "",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/std::nullopt,
-                             /*last_boot_runtime=*/std::nullopt,
-                             /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+      GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(
@@ -138,25 +129,21 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
           Pair(kSystemBootIdPreviousKey, ErrorOrString("previous-boot-id")),
           Pair(kSystemBootIdTimelineKey, ErrorOrString("boot-id-timeline")),
           Pair(kSystemLastRebootReasonKey,
-               ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
-                                                        SpontaneousRebootReason::kSpontaneous))),
-          Pair(kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)),
+               ErrorOrString(final_shutdown_info.ToSnapshotAnnotationReason(
+                   SpontaneousRebootReason::kSpontaneous))),
+          Pair(kSystemLastRebootRuntimeKey, final_shutdown_info.ToSnapshotAnnotationRuntime()),
           Pair(kSystemLastRebootTotalSuspendedTimeKey,
-               LastRebootTotalSuspendedTimeAnnotation(reboot_log)),
-          Pair(kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)),
+               final_shutdown_info.ToSnapshotAnnotationTotalSuspendedTime()),
+          Pair(kSystemLastRebootUptimeKey, final_shutdown_info.ToSnapshotAnnotationUptime()),
           Pair(kSystemLastShutdownGracefulActionKey,
-               LastShutdownGracefulActionAnnotation(reboot_log.GetFinalShutdownInfo()))));
+               final_shutdown_info.ToSnapshotAnnotationGracefulAction())));
 }
 
 TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const RebootLog reboot_log(final_shutdown_info, "",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/std::nullopt,
-                             /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+      GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(
@@ -178,14 +165,14 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
           Pair(kSystemBootIdPreviousKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemBootIdTimelineKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemLastRebootReasonKey,
-               ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
-                                                        SpontaneousRebootReason::kSpontaneous))),
-          Pair(kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)),
+               ErrorOrString(final_shutdown_info.ToSnapshotAnnotationReason(
+                   SpontaneousRebootReason::kSpontaneous))),
+          Pair(kSystemLastRebootRuntimeKey, final_shutdown_info.ToSnapshotAnnotationRuntime()),
           Pair(kSystemLastRebootTotalSuspendedTimeKey,
-               LastRebootTotalSuspendedTimeAnnotation(reboot_log)),
-          Pair(kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)),
+               final_shutdown_info.ToSnapshotAnnotationTotalSuspendedTime()),
+          Pair(kSystemLastRebootUptimeKey, final_shutdown_info.ToSnapshotAnnotationUptime()),
           Pair(kSystemLastShutdownGracefulActionKey,
-               LastShutdownGracefulActionAnnotation(reboot_log.GetFinalShutdownInfo()))));
+               final_shutdown_info.ToSnapshotAnnotationGracefulAction())));
 }
 
 TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
@@ -199,12 +186,8 @@ TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
 
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const RebootLog reboot_log(final_shutdown_info, "",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/std::nullopt,
-                             /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+      GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(startup_annotations,
@@ -227,12 +210,8 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
 
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kOom,
                                               GracefulShutdownAction::kReboot);
-  const RebootLog reboot_log(final_shutdown_info, "",
-                             /*dlog=*/std::nullopt,
-                             /*last_boot_uptime=*/std::nullopt,
-                             /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
   const auto startup_annotations =
-      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous,
+      GetStartupAnnotations(final_shutdown_info, SpontaneousRebootReason::kSpontaneous,
                             /*compilation_mode_path=*/kTestCompilationModePath);
 
   EXPECT_THAT(

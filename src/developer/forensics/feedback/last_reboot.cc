@@ -10,7 +10,7 @@ LastReboot::LastReboot(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt,
                        RedactorBase* redactor, fuchsia::feedback::CrashReporter* crash_reporter,
                        const Options options)
     : reporter_(dispatcher, cobalt, redactor, crash_reporter),
-      last_reboot_info_provider_(options.reboot_log) {
+      last_reboot_info_provider_(options.reboot_log.GetFinalShutdownInfo()) {
   if (options.is_first_instance) {
     const zx::duration delay = (options.reboot_log.GetFinalShutdownInfo().IsOom())
                                    ? options.oom_crash_reporting_delay
