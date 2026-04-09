@@ -25,6 +25,7 @@ constexpr auto kRebootReasons = std::to_array<RebootReasonMap>({
     // persistent
     // content.
     {.reason = "warm", .value = ZBI_HW_REBOOT_REASON_WARM},
+    {.reason = "reboot,warm", .value = ZBI_HW_REBOOT_REASON_WARM},
 
     // Generally indicates the memory and the devices retain some state, and the ramoops/crashlog
     // backing
