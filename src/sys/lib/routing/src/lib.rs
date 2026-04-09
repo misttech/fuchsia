@@ -30,7 +30,7 @@ use cm_rust::{
     Availability, CapabilityTypeName, DebugProtocolRegistration, ExposeConfigurationDecl,
     ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl, ExposeDirectoryDecl, ExposeProtocolDecl,
     ExposeResolverDecl, ExposeRunnerDecl, ExposeServiceDecl, ExposeTarget, OfferConfigurationDecl,
-    OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl,
+    OfferDecl, OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl,
     OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferStorageDecl,
     OfferTarget, RegistrationDeclCommon, RegistrationSource, ResolverRegistration,
     RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource, UseConfigurationDecl,
@@ -59,24 +59,102 @@ pub use bedrock::with_porcelain::WithPorcelain;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone)]
+pub struct SandboxPath {
+    path: String,
+}
+
+impl SandboxPath {
+    pub fn resolver(scheme: &str) -> Self {
+        Self { path: format!("component_input/environment/resolvers/{}", &scheme) }
+    }
+
+    pub fn used_path(target_path: &impl IterablePath) -> Self {
+        let path: RelativePath = target_path.iter_segments().collect::<Vec<_>>().into();
+        Self { path: format!("program_input/namespace/{}", path) }
+    }
+}
+
+impl From<&UseDecl> for SandboxPath {
+    fn from(use_decl: &UseDecl) -> Self {
+        let path = match use_decl {
+            UseDecl::Config(u) => format!("program_input/config/{}", u.target_name),
+            UseDecl::Dictionary(u) => format!("program_input/namespace{}", u.target_path),
+            UseDecl::Directory(u) => format!("program_input/namespace{}", u.target_path),
+            UseDecl::EventStream(u) => format!("program_input/namespace{}", u.target_path),
+            UseDecl::Protocol(u) => match (&u.target_path, &u.numbered_handle) {
+                (Some(target_path), None) => format!("program_input/namespace{}", target_path),
+                (None, Some(numbered_handle)) => {
+                    format!("program_input/numbered_handles/{}", Name::from(*numbered_handle))
+                }
+                _ => panic!("invalid use decl"),
+            },
+            UseDecl::Runner(_u) => "program_input/runner".to_string(),
+            UseDecl::Service(u) => format!("program_input/namespace{}", u.target_path),
+            UseDecl::Storage(u) => format!("program_input/namespace{}", u.target_path),
+        };
+        Self { path }
+    }
+}
+
+impl From<&OfferDecl> for SandboxPath {
+    fn from(offer_decl: &OfferDecl) -> Self {
+        let path = match offer_decl.target() {
+            OfferTarget::Child(child_ref) if child_ref.collection.is_some() => {
+                panic!("dynamic offers not supported")
+            }
+            OfferTarget::Child(child_ref) => {
+                format!("child_inputs/{}/parent/{}", child_ref.name, offer_decl.target_name())
+            }
+            OfferTarget::Collection(name) => {
+                format!("collection_inputs/{}/parent/{}", name, offer_decl.target_name())
+            }
+            OfferTarget::Capability(name) => {
+                format!("declared_dictionaries/{}/{}", name, offer_decl.target_name())
+            }
+        };
+        Self { path }
+    }
+}
+
+impl From<&ExposeDecl> for SandboxPath {
+    fn from(expose_decl: &ExposeDecl) -> Self {
+        let path = match expose_decl.target() {
+            ExposeTarget::Parent => {
+                format!("component_output/parent/{}", expose_decl.target_name())
+            }
+            ExposeTarget::Framework => {
+                format!("component_output/framework/{}", expose_decl.target_name())
+            }
+        };
+        Self { path }
+    }
+}
+
+impl From<SandboxPath> for RelativePath {
+    fn from(path: SandboxPath) -> Self {
+        RelativePath::new(&path.path).expect("invalid path string")
+    }
+}
+
 /// Calls `route` on the router at the given path within the component sandbox. Panics if the
 /// sandbox does not hold a router at that path.
 pub async fn debug_route_sandbox_path<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    path: impl Into<String>,
+    sandbox_path: impl Into<SandboxPath>,
 ) -> Result<CapabilitySource, RoutingError> {
-    debug_route_sandbox_path_with_request(component, path, None).await
+    debug_route_sandbox_path_with_request(component, sandbox_path, None).await
 }
 
 /// Calls `route` on the router with the given request at the given path within the component
 /// sandbox. Panics if the sandbox does not hold a router at that path.
 pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
-    path: impl Into<String>,
+    sandbox_path: impl Into<SandboxPath>,
     request: Option<Request>,
 ) -> Result<CapabilitySource, RoutingError> {
-    let path_str = path.into();
-    let path = RelativePath::new(&path_str).expect("invalid path string");
+    let sandbox_path = sandbox_path.into();
+    let path: RelativePath = sandbox_path.clone().into();
     let sandbox = component.component_sandbox().await.map_err(RoutingError::from)?;
     let sandbox_dictionary: Dict = sandbox.into();
     let maybe_response = sandbox_dictionary
@@ -94,7 +172,7 @@ pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface
             Ok(data.try_into().expect("failed to deserialize capability source"))
         }
         None => Err(RoutingError::BedrockNotPresentInDictionary {
-            name: path_str,
+            name: sandbox_path.path,
             moniker: component.moniker().clone().into(),
         }),
         other_value => {

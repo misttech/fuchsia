@@ -33,9 +33,8 @@ use routing::capability_source::{
     InternalCapability,
 };
 use routing::component_instance::ComponentInstanceInterface;
+use routing::debug_route_sandbox_path;
 use routing::error::RoutingError;
-use routing::mapper::NoopRouteMapper;
-use routing::{RouteRequest, RouteSource, route_capability};
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -1657,18 +1656,15 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let CapabilityDecl::Protocol(expected_protocol_decl) = expected_protocol_decl else {
             unreachable!();
         };
-        let ExposeDecl::Protocol(expose_decl) = expose_decl else {
-            unreachable!();
-        };
         assert_matches!(
-        route_capability(RouteRequest::ExposeProtocol(expose_decl), &root_instance, &mut NoopRouteMapper).await,
-            Ok(RouteSource {
-                source: CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Protocol(capability_decl),
-                        moniker,
-                    }),
-                relative_path,
-            }) if capability_decl == expected_protocol_decl && moniker == expected_source_moniker && relative_path.is_dot()
+            debug_route_sandbox_path(
+                &root_instance,
+                &expose_decl,
+            ).await,
+            Ok(CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Protocol(capability_decl),
+                moniker,
+            })) if capability_decl == expected_protocol_decl && moniker == expected_source_moniker
         );
     }
 
@@ -1863,8 +1859,9 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let d_component =
             model.look_up_instance(&["d"].try_into().unwrap()).await.expect("b instance");
 
-        let source = route_capability(
-            RouteRequest::UseService(UseServiceDecl {
+        let source = debug_route_sandbox_path(
+            &d_component,
+            &UseDecl::Service(UseServiceDecl {
                 source: UseSource::Parent,
                 source_name: "foo".parse().unwrap(),
                 source_dictionary: Default::default(),
@@ -1872,22 +1869,14 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
-            &d_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route service");
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::FilteredAggregateProvider(FilteredAggregateProviderSource {
-                        capability: AggregateCapability::Service(name),
-                        ..
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
-                assert_eq!(name, "foo");
-            }
+            CapabilitySource::FilteredAggregateProvider(FilteredAggregateProviderSource {
+                capability: AggregateCapability::Service(name),
+                ..
+            }) => assert_eq!(name, "foo"),
             _ => panic!("bad capability source"),
         };
     }
@@ -1957,8 +1946,9 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let test = T::new("a", components).build().await;
 
         let d_component = test.look_up_instance(&"b/d".parse().unwrap()).await.expect("b instance");
-        let source = route_capability(
-            RouteRequest::UseService(UseServiceDecl {
+        let source = debug_route_sandbox_path(
+            &d_component,
+            &UseDecl::Service(UseServiceDecl {
                 source: UseSource::Parent,
                 source_name: "foo".parse().unwrap(),
                 source_dictionary: Default::default(),
@@ -1966,21 +1956,15 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
-            &d_component,
-            &mut NoopRouteMapper,
         )
         .await
         .unwrap();
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::AnonymizedAggregate(AnonymizedAggregateSource {
-                        capability: AggregateCapability::Service(name),
-                        members,
-                        ..
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::AnonymizedAggregate(AnonymizedAggregateSource {
+                capability: AggregateCapability::Service(name),
+                members,
+                ..
+            }) => {
                 assert_eq!(name, "foo");
                 assert_eq!(members.len(), 3);
                 for c in [
@@ -3191,22 +3175,14 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("root instance");
         let UseDecl::Service(use_decl) = use_decl else { unreachable!() };
-        let source = route_capability(
-            RouteRequest::UseService(use_decl),
-            &b_component,
-            &mut NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route service");
+        let source = debug_route_sandbox_path(&b_component, &UseDecl::Service(use_decl))
+            .await
+            .expect("failed to route service");
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Service(ServiceDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Service(ServiceDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "foo");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3241,22 +3217,14 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
         let UseDecl::Service(use_decl) = use_decl else { unreachable!() };
-        let source = route_capability(
-            RouteRequest::UseService(use_decl),
-            &a_component,
-            &mut NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route service");
+        let source = debug_route_sandbox_path(&a_component, &UseDecl::Service(use_decl))
+            .await
+            .expect("failed to route service");
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Service(ServiceDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Service(ServiceDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "foo");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3306,24 +3274,16 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let c_component =
             model.look_up_instance(&["c"].try_into().unwrap()).await.expect("c instance");
         let UseDecl::Service(use_decl) = use_decl else { unreachable!() };
-        let source = route_capability(
-            RouteRequest::UseService(use_decl),
-            &b_component,
-            &mut NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route service");
+        let source = debug_route_sandbox_path(&b_component, &UseDecl::Service(use_decl))
+            .await
+            .expect("failed to route service");
 
         // Verify this source comes from `c`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Service(ServiceDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Service(ServiceDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "foo");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3373,17 +3333,11 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
         let UseDecl::Service(use_decl) = use_decl else { unreachable!() };
-        let source = route_capability(
-            RouteRequest::UseService(use_decl),
-            &b_component,
-            &mut NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route service");
+        let source = debug_route_sandbox_path(&b_component, &UseDecl::Service(use_decl))
+            .await
+            .expect("failed to route service");
 
         // Verify this source comes from `c`.
-        let RouteSource { source, relative_path } = source;
-        assert!(relative_path.is_dot(), "unexpected capability path");
         assert_eq!(source.source_name(), Some(&"foo".parse().unwrap()));
         assert_eq!(
             source.source_moniker(),
@@ -3428,17 +3382,11 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
         let UseDecl::Service(use_decl) = use_decl else { unreachable!() };
-        let source = route_capability(
-            RouteRequest::UseService(use_decl),
-            &b_component,
-            &mut NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route service");
+        let source = debug_route_sandbox_path(&b_component, &UseDecl::Service(use_decl))
+            .await
+            .expect("failed to route service");
 
         // Verify this source comes from `c`.
-        let RouteSource { source, relative_path } = source;
-        assert!(relative_path.is_dot(), "unexpected capability path");
         assert_eq!(source.source_name(), Some(&"foo".parse().unwrap()));
         assert_eq!(
             source.source_moniker(),
@@ -3474,28 +3422,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &b_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &b_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `a`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3553,28 +3496,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
         let c_component =
             model.look_up_instance(&["b", "c"].try_into().unwrap()).await.expect("c instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &c_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &c_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `a`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3629,28 +3567,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
         let c_component =
             model.look_up_instance(&["c"].try_into().unwrap()).await.expect("c instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &c_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &c_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `b`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3702,28 +3635,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
         let c_component =
             model.look_up_instance(&["b", "c"].try_into().unwrap()).await.expect("c instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &c_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &c_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `a`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -3764,14 +3692,13 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = T::new("a", components).build().await;
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let route_result = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let route_result = debug_route_sandbox_path(
+            &b_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &b_component,
-            &mut NoopRouteMapper,
         )
         .await;
 
@@ -3821,28 +3748,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
 
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &b_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &b_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this is a built-in source.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Builtin(BuiltinSource {
-                        capability: InternalCapability::Runner(name),
-                        ..
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Builtin(BuiltinSource {
+                capability: InternalCapability::Runner(name),
+                ..
+            }) => {
                 assert_eq!(name, "elf");
             }
             _ => panic!("bad capability source"),
@@ -3869,27 +3791,16 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = builder.build().await;
 
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(match use_runner_decl {
-                UseDecl::Runner(u) => u,
-                _ => panic!("unexpected use type"),
-            }),
-            &a_component,
-            &mut NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route runner");
+        let source = debug_route_sandbox_path(&a_component, &use_runner_decl)
+            .await
+            .expect("failed to route runner");
 
         // Verify this is a built-in source.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Builtin(BuiltinSource {
-                        capability: InternalCapability::Runner(name),
-                        ..
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Builtin(BuiltinSource {
+                capability: InternalCapability::Runner(name),
+                ..
+            }) => {
                 assert_eq!(name, "elf");
             }
             _ => panic!("bad capability source"),
@@ -3925,14 +3836,13 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = builder.build().await;
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let route_result = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let route_result = debug_route_sandbox_path(
+            &b_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &b_component,
-            &mut NoopRouteMapper,
         )
         .await;
 
@@ -3966,12 +3876,8 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = builder.build().await;
 
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
-        let route_result = route_capability(
-            RouteRequest::UseRunner(use_runner_decl),
-            &a_component,
-            &mut NoopRouteMapper,
-        )
-        .await;
+        let route_result =
+            debug_route_sandbox_path(&a_component, &UseDecl::Runner(use_runner_decl)).await;
 
         assert_matches!(
             route_result,
@@ -4020,28 +3926,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &a_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Child("b".parse().unwrap()),
                 source_name: "dwarf".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &a_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `b`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -4089,28 +3990,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &b_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Parent,
                 source_name: "dwarf".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &b_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `a`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -4157,28 +4053,23 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");
         let b_component =
             model.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
-        let source = route_capability(
-            RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &b_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Environment,
                 source_name: "hobbit".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &b_component,
-            &mut NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         // Verify this source comes from `a`.
         match source {
-            RouteSource {
-                source:
-                    CapabilitySource::Component(ComponentSource {
-                        capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
-                        moniker,
-                    }),
-                relative_path,
-            } if relative_path.is_dot() => {
+            CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::Runner(RunnerDecl { name, source_path }),
+                moniker,
+            }) => {
                 assert_eq!(name, "elf");
                 assert_eq!(
                     source_path.expect("missing source path"),
@@ -4382,8 +4273,9 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = T::new("root", components).build().await;
         let root_component = model.look_up_instance(&Moniker::root()).await.expect("root instance");
 
-        let route_result = route_capability(
-            RouteRequest::UseProtocol(UseProtocolDecl {
+        let route_result = debug_route_sandbox_path(
+            &root_component,
+            &UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Self_,
                 source_name: "A".parse().unwrap(),
                 source_dictionary: "my_dict".parse().unwrap(),
@@ -4393,8 +4285,6 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
-            &root_component,
-            &mut NoopRouteMapper,
         )
         .await;
 
@@ -4454,8 +4344,9 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
             .await
             .expect("leaf instance");
 
-        let route_result = route_capability(
-            RouteRequest::UseProtocol(UseProtocolDecl {
+        let route_result = debug_route_sandbox_path(
+            &leaf_component,
+            &UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Parent,
                 source_name: "A".parse().unwrap(),
                 source_dictionary: Default::default(),
@@ -4465,15 +4356,13 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
-            &leaf_component,
-            &mut NoopRouteMapper,
         )
         .await;
 
         assert_matches!(
             route_result,
             Err(RoutingError::BedrockNotPresentInDictionary { name, .. })
-                if name == "svc/dict_protocol"
+                if name == "program_input/namespace/svc/dict_protocol"
         );
     }
 
@@ -4521,8 +4410,9 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
 
         let model = T::new("root", components).build().await;
         let root_component = model.look_up_instance(&Moniker::root()).await.expect("root instance");
-        let route_result = route_capability(
-            RouteRequest::UseProtocol(UseProtocolDecl {
+        let route_result = debug_route_sandbox_path(
+            &root_component,
+            &UseDecl::Protocol(UseProtocolDecl {
                 source: UseSource::Child("intermediate".parse().unwrap()),
                 source_name: "A".parse().unwrap(),
                 source_dictionary: Default::default(),
@@ -4532,15 +4422,13 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
             }),
-            &root_component,
-            &mut NoopRouteMapper,
         )
         .await;
 
         assert_matches!(
             route_result,
             Err(RoutingError::BedrockNotPresentInDictionary { name, .. })
-                if name == "svc/dict_protocol"
+                if name == "program_input/namespace/svc/dict_protocol"
         );
     }
 }

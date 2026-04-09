@@ -7,6 +7,7 @@ use cm_rust::*;
 use cm_rust_testing::*;
 use fidl_fuchsia_io as fio;
 use moniker::Moniker;
+use routing::debug_route_sandbox_path;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use zx_status::Status;
@@ -1967,33 +1968,27 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         let test = T::new("root", components).build().await;
         let mid_component =
             test.look_up_instance(&["mid"].try_into().unwrap()).await.expect("mid instance");
-        let source = routing::route_capability(
-            routing::RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &mid_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Parent,
                 source_name: "bar".parse().unwrap(),
                 source_dictionary: "dict".parse().unwrap(),
             }),
-            &mid_component,
-            &mut routing::mapper::NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         match source {
-            routing::RouteSource {
-                source:
-                    routing::capability_source::CapabilitySource::Component(
-                        routing::capability_source::ComponentSource {
-                            capability:
-                                routing::capability_source::ComponentCapability::Runner(RunnerDecl {
-                                    name,
-                                    ..
-                                }),
-                            moniker,
-                        },
-                    ),
-                relative_path,
-            } if relative_path.is_dot() => {
+            routing::capability_source::CapabilitySource::Component(
+                routing::capability_source::ComponentSource {
+                    capability:
+                        routing::capability_source::ComponentCapability::Runner(RunnerDecl {
+                            name, ..
+                        }),
+                    moniker,
+                },
+            ) => {
                 assert_eq!(name, "foo");
                 assert_eq!(moniker, Moniker::root());
             }
@@ -2051,33 +2046,27 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             .look_up_instance(&["mid", "leaf"].try_into().unwrap())
             .await
             .expect("leaf instance");
-        let source = routing::route_capability(
-            routing::RouteRequest::UseRunner(UseRunnerDecl {
+        let source = debug_route_sandbox_path(
+            &leaf_component,
+            &UseDecl::Runner(UseRunnerDecl {
                 source: UseSource::Parent,
                 source_name: "baz".parse().unwrap(),
                 source_dictionary: Default::default(),
             }),
-            &leaf_component,
-            &mut routing::mapper::NoopRouteMapper,
         )
         .await
         .expect("failed to route runner");
 
         match source {
-            routing::RouteSource {
-                source:
-                    routing::capability_source::CapabilitySource::Component(
-                        routing::capability_source::ComponentSource {
-                            capability:
-                                routing::capability_source::ComponentCapability::Runner(RunnerDecl {
-                                    name,
-                                    ..
-                                }),
-                            moniker,
-                        },
-                    ),
-                relative_path,
-            } if relative_path.is_dot() => {
+            routing::capability_source::CapabilitySource::Component(
+                routing::capability_source::ComponentSource {
+                    capability:
+                        routing::capability_source::ComponentCapability::Runner(RunnerDecl {
+                            name, ..
+                        }),
+                    moniker,
+                },
+            ) => {
                 assert_eq!(name, "foo");
                 assert_eq!(moniker, Moniker::root());
             }
@@ -2085,15 +2074,22 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         }
     }
 
-    pub async fn test_offer_resolver_from_dictionary(&self) {
+    pub async fn test_offer_directory_from_dictionary(&self) {
+        let use_decl =
+            UseBuilder::directory().name("baz").rights(fio::R_STAR_DIR).path("/foo").build();
         let components = vec![
             (
                 "root",
                 ComponentDeclBuilder::new()
-                    .resolver_default("foo")
+                    .capability(
+                        CapabilityBuilder::directory()
+                            .name("foo")
+                            .rights(fio::R_STAR_DIR)
+                            .path("/foo"),
+                    )
                     .dictionary_default("dict")
                     .offer(
-                        OfferBuilder::resolver()
+                        OfferBuilder::directory()
                             .name("foo")
                             .target_name("bar")
                             .source(OfferSource::Self_)
@@ -2112,7 +2108,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                 "mid",
                 ComponentDeclBuilder::new()
                     .offer(
-                        OfferBuilder::resolver()
+                        OfferBuilder::directory()
                             .name("bar")
                             .target_name("baz")
                             .from_dictionary("dict")
@@ -2122,18 +2118,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                     .child_default("leaf")
                     .build(),
             ),
-            (
-                "leaf",
-                ComponentDeclBuilder::new()
-                    .environment(EnvironmentBuilder::new().name("env").resolver(
-                        ResolverRegistration {
-                            resolver: "baz".parse().unwrap(),
-                            source: RegistrationSource::Parent,
-                            scheme: "test".to_string(),
-                        },
-                    ))
-                    .build(),
-            ),
+            ("leaf", ComponentDeclBuilder::new().use_(use_decl.clone()).build()),
         ];
 
         let test = T::new("root", components).build().await;
@@ -2142,32 +2127,22 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             .await
             .expect("leaf instance");
 
-        let source = routing::route_capability(
-            routing::RouteRequest::Resolver(ResolverRegistration {
-                resolver: "baz".parse().unwrap(),
-                source: RegistrationSource::Parent,
-                scheme: "test".to_string(),
-            }),
-            &leaf_component,
-            &mut routing::mapper::NoopRouteMapper,
-        )
-        .await
-        .expect("failed to route resolver");
+        let source = debug_route_sandbox_path(&leaf_component, &use_decl)
+            .await
+            .expect("failed to route resolver");
 
         match source {
-            routing::RouteSource {
-                source:
-                    routing::capability_source::CapabilitySource::Component(
-                        routing::capability_source::ComponentSource {
-                            capability:
-                                routing::capability_source::ComponentCapability::Resolver(
-                                    ResolverDecl { name, .. },
-                                ),
-                            moniker,
-                        },
-                    ),
-                relative_path,
-            } if relative_path.is_dot() => {
+            routing::capability_source::CapabilitySource::StorageBackingDirectory(
+                routing::capability_source::StorageBackingDirectorySource {
+                    capability:
+                        routing::capability_source::ComponentCapability::Directory(DirectoryDecl {
+                            name,
+                            ..
+                        }),
+                    moniker,
+                    ..
+                },
+            ) => {
                 assert_eq!(name, "foo");
                 assert_eq!(moniker, Moniker::root());
             }
@@ -2214,8 +2189,9 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         let test = T::new("root", components).build().await;
         let leaf_component =
             test.look_up_instance(&["leaf"].try_into().unwrap()).await.expect("leaf instance");
-        let source = routing::route_capability(
-            routing::RouteRequest::UseConfig(UseConfigurationDecl {
+        let source = debug_route_sandbox_path(
+            &leaf_component,
+            &UseDecl::Config(UseConfigurationDecl {
                 source: UseSource::Parent,
                 source_name: "bar".parse().unwrap(),
                 target_name: "bar".parse().unwrap(),
@@ -2224,23 +2200,17 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                 default: None,
                 source_dictionary: "dict".parse().unwrap(),
             }),
-            &leaf_component,
-            &mut routing::mapper::NoopRouteMapper,
         )
         .await
         .expect("failed to route config");
 
         match source {
-            routing::RouteSource {
-                source:
-                    routing::capability_source::CapabilitySource::Component(
-                        routing::capability_source::ComponentSource {
-                            capability: routing::capability_source::ComponentCapability::Config(_),
-                            moniker,
-                        },
-                    ),
-                relative_path,
-            } if relative_path.is_dot() => {
+            routing::capability_source::CapabilitySource::Component(
+                routing::capability_source::ComponentSource {
+                    capability: routing::capability_source::ComponentCapability::Config(_),
+                    moniker,
+                },
+            ) => {
                 assert_eq!(moniker, moniker::Moniker::root());
             }
             _ => panic!("unexpected source: {:?}", source),
@@ -2297,8 +2267,9 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             .look_up_instance(&["mid", "leaf"].try_into().unwrap())
             .await
             .expect("leaf instance");
-        let source = routing::route_capability(
-            routing::RouteRequest::UseConfig(UseConfigurationDecl {
+        let source = debug_route_sandbox_path(
+            &leaf_component,
+            &UseDecl::Config(UseConfigurationDecl {
                 source: UseSource::Parent,
                 source_name: "baz".parse().unwrap(),
                 target_name: "baz".parse().unwrap(),
@@ -2307,23 +2278,17 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                 default: None,
                 source_dictionary: Default::default(),
             }),
-            &leaf_component,
-            &mut routing::mapper::NoopRouteMapper,
         )
         .await
         .expect("failed to route config");
 
         match source {
-            routing::RouteSource {
-                source:
-                    routing::capability_source::CapabilitySource::Component(
-                        routing::capability_source::ComponentSource {
-                            capability: routing::capability_source::ComponentCapability::Config(_),
-                            moniker,
-                        },
-                    ),
-                relative_path,
-            } if relative_path.is_dot() => {
+            routing::capability_source::CapabilitySource::Component(
+                routing::capability_source::ComponentSource {
+                    capability: routing::capability_source::ComponentCapability::Config(_),
+                    moniker,
+                },
+            ) => {
                 assert_eq!(moniker, moniker::Moniker::root());
             }
             _ => panic!("unexpected source: {:?}", source),

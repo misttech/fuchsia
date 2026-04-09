@@ -59,7 +59,7 @@ use {
     moniker::{ChildName, ExtendedMoniker, Moniker},
     router_error::RouterError,
     routing::component_instance::ComponentInstanceInterface,
-    routing::debug_route_sandbox_path,
+    routing::{SandboxPath, debug_route_sandbox_path},
     routing_test_helpers::{
         RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
     },
@@ -1636,7 +1636,7 @@ async fn use_with_destroyed_parent() {
 
     // Now attempt to route the service from "c". Should fail because "b" does not exist so we
     // cannot follow it.
-    let err = debug_route_sandbox_path(&realm_c, "program_input/namespace/svc/hippo")
+    let err = debug_route_sandbox_path(&realm_c, &use_decl)
         .await
         .expect_err("routing unexpectedly succeeded");
     assert_matches!(
@@ -2146,9 +2146,6 @@ async fn verify_service_route(
     child_monikers: &[&str],
     route_type: RouteType,
 ) {
-    let UseDecl::Service(use_decl) = use_decl else {
-        unreachable!();
-    };
     let target_moniker: Moniker = target_moniker.try_into().unwrap();
     let agg_moniker: Moniker = agg_moniker.try_into().unwrap();
     let child_monikers: Vec<_> =
@@ -2158,8 +2155,7 @@ async fn verify_service_route(
     let root = test.model.root();
     let target_component = root.find_and_maybe_resolve(&target_moniker).await.unwrap();
     let agg_component = root.find_and_maybe_resolve(&agg_moniker).await.unwrap();
-    let path = format!("program_input/namespace{}", &use_decl.target_path);
-    let source = debug_route_sandbox_path(&target_component, path).await.unwrap();
+    let source = debug_route_sandbox_path(&target_component, &use_decl).await.unwrap();
     match source {
         CapabilitySource::AnonymizedAggregate(AnonymizedAggregateSource {
             members,
@@ -2770,9 +2766,7 @@ async fn list_service_instances_from_collections() {
         .find_and_maybe_resolve(&["client"].try_into().unwrap())
         .await
         .expect("client instance");
-    let source = debug_route_sandbox_path(&client_component, "program_input/namespace/svc/foo")
-        .await
-        .unwrap();
+    let source = debug_route_sandbox_path(&client_component, &use_decl).await.unwrap();
     let anonymized_aggregate_source = match source {
         CapabilitySource::AnonymizedAggregate(source) => source,
         _ => panic!("bad capability source"),
@@ -4000,9 +3994,11 @@ async fn injected_capability(test_shadowing: bool) {
         .build()
         .await;
 
+    let svc_foo = RelativePath::new("svc/foo").unwrap();
+
     // Verify that `b` can reach protocol `foo` routed from `a`.
     let b = test.model.root().find_and_maybe_resolve(&"b".parse().unwrap()).await.unwrap();
-    let source = debug_route_sandbox_path(&b, "program_input/namespace/svc/foo").await.unwrap();
+    let source = debug_route_sandbox_path(&b, SandboxPath::used_path(&svc_foo)).await.unwrap();
     assert_matches!(
         source,
         CapabilitySource::Component(ComponentSource {
@@ -4020,7 +4016,7 @@ async fn injected_capability(test_shadowing: bool) {
 
     // And verify that `c` cannot.
     let c = test.model.root().find_and_maybe_resolve(&"c".parse().unwrap()).await.unwrap();
-    let err = debug_route_sandbox_path(&c, "program_input/namespace/svc/foo").await.unwrap_err();
+    let err = debug_route_sandbox_path(&c, SandboxPath::used_path(&svc_foo)).await.unwrap_err();
     assert_matches!(
         err,
         RoutingError::BedrockNotPresentInDictionary { name, moniker }
@@ -4092,9 +4088,12 @@ async fn injected_capability_in_routed_dictionary() {
         .build()
         .await;
 
+    let svc_foo = RelativePath::new("svc/foo").unwrap();
+    let svc_bar = RelativePath::new("svc/bar").unwrap();
+
     // Verify that `a` cannot access protocol `foo`.
     let a = test.model.root().find_and_maybe_resolve(&"a".parse().unwrap()).await.unwrap();
-    let err = debug_route_sandbox_path(&a, "program_input/namespace/svc/foo").await.unwrap_err();
+    let err = debug_route_sandbox_path(&a, SandboxPath::used_path(&svc_foo)).await.unwrap_err();
     assert_matches!(
         err,
         RoutingError::BedrockNotPresentInDictionary { name, moniker }
@@ -4103,7 +4102,7 @@ async fn injected_capability_in_routed_dictionary() {
 
     // Verify that `b` can reach protocol `bar` routed from `a`.
     let b = test.model.root().find_and_maybe_resolve(&"b".parse().unwrap()).await.unwrap();
-    let source = debug_route_sandbox_path(&b, "program_input/namespace/svc/bar").await.unwrap();
+    let source = debug_route_sandbox_path(&b, SandboxPath::used_path(&svc_bar)).await.unwrap();
     assert_matches!(
         source,
         CapabilitySource::Component(ComponentSource {
@@ -4120,7 +4119,7 @@ async fn injected_capability_in_routed_dictionary() {
             && moniker == ["a"].try_into().unwrap());
 
     // Verify that `b` can reach injected protocol `foo` routed from `r`.
-    let source = debug_route_sandbox_path(&b, "program_input/namespace/svc/foo").await.unwrap();
+    let source = debug_route_sandbox_path(&b, SandboxPath::used_path(&svc_foo)).await.unwrap();
     assert_matches!(
         source,
         CapabilitySource::Component(ComponentSource {

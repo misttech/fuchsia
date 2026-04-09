@@ -176,7 +176,7 @@ async fn use_from_void_dictionary() {
     let test = RoutingTestBuilder::new("root", components).build().await;
     let leaf = test.model.root().find_and_maybe_resolve(&"leaf".parse().unwrap()).await.unwrap();
 
-    let res = debug_route_sandbox_path(&leaf, "program_input/namespace/svc/A").await;
+    let res = debug_route_sandbox_path(&leaf, &use_decl).await;
     assert_matches!(
         res,
         Ok(CapabilitySource::Void(VoidSource {
@@ -233,7 +233,7 @@ async fn use_from_void_nested_dictionary() {
     let test = RoutingTestBuilder::new("root", components).build().await;
     let leaf = test.model.root().find_and_maybe_resolve(&"leaf".parse().unwrap()).await.unwrap();
 
-    let res = debug_route_sandbox_path(&leaf, "program_input/namespace/svc/A").await;
+    let res = debug_route_sandbox_path(&leaf, &use_decl).await;
     assert_matches!(
         res,
         Ok(CapabilitySource::Void(VoidSource {
@@ -406,8 +406,8 @@ async fn offer_runner_from_dictionary() {
 }
 
 #[fuchsia::test]
-async fn offer_resolver_from_dictionary() {
-    CommonDictionaryTest::<RoutingTestBuilder>::new().test_offer_resolver_from_dictionary().await
+async fn offer_directory_from_dictionary() {
+    CommonDictionaryTest::<RoutingTestBuilder>::new().test_offer_directory_from_dictionary().await
 }
 
 #[fuchsia::test]

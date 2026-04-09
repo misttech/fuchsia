@@ -8,11 +8,10 @@ use crate::{PkgUrlMatch, match_absolute_component_urls};
 use anyhow::{Context, Result, anyhow};
 use cm_config::RuntimeConfig;
 use cm_rust::{
-    CapabilityTypeName, ComponentDecl, ExposeDecl, ExposeDeclCommon, ExposeTarget, OfferDecl,
-    OfferDeclCommon, OfferTarget, ProgramDecl, SourceName, UseDecl, UseDeclCommon, UseRunnerDecl,
-    UseSource,
+    CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, OfferDeclCommon, OfferTarget,
+    ProgramDecl, SourceName, UseDecl, UseDeclCommon, UseRunnerDecl, UseSource,
 };
-use cm_types::{IterablePath, Name, RelativePath, Url};
+use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
 use fidl::prelude::*;
 use fidl_fuchsia_sys2 as fsys;
@@ -27,7 +26,7 @@ use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceIn
 use routing::error::{ComponentInstanceError, RoutingError};
 use routing::policy::GlobalPolicyChecker;
 use routing::{
-    debug_route_sandbox_path, debug_route_sandbox_path_with_request,
+    SandboxPath, debug_route_sandbox_path, debug_route_sandbox_path_with_request,
     debug_route_storage_backing_directory,
 };
 use sandbox::{Capability, Data};
@@ -596,7 +595,7 @@ impl ComponentModelForAnalyzer {
     async fn route_sandbox_path(
         self: &Arc<Self>,
         target: &Arc<ComponentInstanceForAnalyzer>,
-        sandbox_path: String,
+        sandbox_path: impl Into<SandboxPath>,
         target_decl: TargetDecl,
         skip_policy_check: bool,
     ) -> Vec<VerifyRouteResult> {
@@ -660,22 +659,8 @@ impl ComponentModelForAnalyzer {
         offer_decl: &OfferDecl,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Vec<VerifyRouteResult> {
-        let sandbox_path = match offer_decl.target() {
-            OfferTarget::Child(child_ref) if child_ref.collection.is_some() => {
-                panic!("dynamic offers not supported")
-            }
-            OfferTarget::Child(child_ref) => {
-                format!("child_inputs/{}/parent/{}", child_ref.name, offer_decl.target_name())
-            }
-            OfferTarget::Collection(name) => {
-                format!("collection_inputs/{}/parent/{}", name, offer_decl.target_name())
-            }
-            OfferTarget::Capability(name) => {
-                format!("declared_dictionaries/{}/{}", name, offer_decl.target_name())
-            }
-        };
         let results = self
-            .route_sandbox_path(target, sandbox_path, TargetDecl::Offer(offer_decl.clone()), true)
+            .route_sandbox_path(target, offer_decl, TargetDecl::Offer(offer_decl.clone()), true)
             .await;
         // Ignore any valid routes to void.
         results
@@ -751,8 +736,7 @@ impl ComponentModelForAnalyzer {
         path: &impl IterablePath,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Result<CapabilitySource, RouterError> {
-        let path: RelativePath = path.iter_segments().collect::<Vec<_>>().into();
-        let sandbox_path = format!("program_input/namespace/{}", path);
+        let sandbox_path = SandboxPath::used_path(path);
         let res = debug_route_sandbox_path(target, sandbox_path)
             .now_or_never()
             .expect("future was not ready immediately");
@@ -770,24 +754,8 @@ impl ComponentModelForAnalyzer {
         use_decl: &UseDecl,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Vec<VerifyRouteResult> {
-        let sandbox_path = match use_decl {
-            UseDecl::Config(u) => format!("program_input/config/{}", u.target_name),
-            UseDecl::Dictionary(u) => format!("program_input/namespace{}", u.target_path),
-            UseDecl::Directory(u) => format!("program_input/namespace{}", u.target_path),
-            UseDecl::EventStream(u) => format!("program_input/namespace{}", u.target_path),
-            UseDecl::Protocol(u) => match (&u.target_path, &u.numbered_handle) {
-                (Some(target_path), None) => format!("program_input/namespace{}", target_path),
-                (None, Some(numbered_handle)) => {
-                    format!("program_input/numbered_handles/{}", Name::from(*numbered_handle))
-                }
-                _ => panic!("invalid use decl"),
-            },
-            UseDecl::Runner(_u) => "program_input/runner".to_string(),
-            UseDecl::Service(u) => format!("program_input/namespace{}", u.target_path),
-            UseDecl::Storage(u) => format!("program_input/namespace{}", u.target_path),
-        };
         let results = self
-            .route_sandbox_path(target, sandbox_path, TargetDecl::Use(use_decl.clone()), false)
+            .route_sandbox_path(target, use_decl, TargetDecl::Use(use_decl.clone()), false)
             .await;
         // Ignore any valid routes to void.
         results
@@ -804,21 +772,8 @@ impl ComponentModelForAnalyzer {
         expose_decl: &ExposeDecl,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Option<VerifyRouteResult> {
-        let sandbox_path = match expose_decl.target() {
-            ExposeTarget::Parent => {
-                format!("component_output/parent/{}", expose_decl.target_name())
-            }
-            ExposeTarget::Framework => {
-                format!("component_output/framework/{}", expose_decl.target_name())
-            }
-        };
         let mut res = self
-            .route_sandbox_path(
-                target,
-                sandbox_path,
-                TargetDecl::Expose(expose_decl.clone()),
-                false,
-            )
+            .route_sandbox_path(target, expose_decl, TargetDecl::Expose(expose_decl.clone()), false)
             .await;
         res.pop()
     }
@@ -839,7 +794,7 @@ impl ComponentModelForAnalyzer {
                 };
                 self.route_sandbox_path(
                     target,
-                    "program_input/runner".to_string(),
+                    &UseDecl::Runner(use_runner.clone()),
                     TargetDecl::Use(use_runner.into()),
                     false,
                 )
@@ -859,7 +814,7 @@ impl ComponentModelForAnalyzer {
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> VerifyRouteResult {
         let scheme = target.url().scheme().expect("all urls are absolute");
-        let sandbox_path = format!("component_input/environment/resolvers/{}", &scheme);
+        let sandbox_path = SandboxPath::resolver(&scheme);
         let mut res = self
             .route_sandbox_path(
                 target,
@@ -1006,7 +961,7 @@ mod tests {
     use cm_rust_testing::{
         CapabilityBuilder, ChildBuilder, ComponentDeclBuilder, EnvironmentBuilder, UseBuilder,
     };
-    use cm_types::{Name, Url};
+    use cm_types::{Name, RelativePath, Url};
     use config_encoder::ConfigFields;
     use fidl_fuchsia_component_decl as fdecl;
     use fidl_fuchsia_component_internal as component_internal;
@@ -1155,7 +1110,7 @@ mod tests {
         let _ = model
             .route_sandbox_path(
                 &root_instance,
-                "program_input/namespace/svc/hippo".to_string(),
+                SandboxPath::used_path(&RelativePath::new("svc/hippo").unwrap()),
                 TargetDecl::Use(
                     UseBuilder::protocol()
                         .name("bar_svc")

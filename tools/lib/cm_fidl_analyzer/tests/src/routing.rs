@@ -258,7 +258,7 @@ impl RoutingTestForAnalyzer {
         request: UseEventStreamDecl,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> Result<CapabilitySource, RoutingError> {
-        debug_route_sandbox_path(target, format!("program_input/namespace{}", &request.target_path))
+        debug_route_sandbox_path(target, &UseDecl::EventStream(request))
             .now_or_never()
             .expect("future was not ready immediately")
     }
