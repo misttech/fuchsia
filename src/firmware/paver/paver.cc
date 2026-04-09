@@ -297,7 +297,11 @@ zx::result<> WriteOpaque(PartitionClient& partition, const PartitionSpec& spec, 
     }
     payload_size += remaining_bytes;
   }
+
   if (zx::result status = partition.Write(payload_vmo, payload_size); status.is_error()) {
+    if (status.error_value() == ZX_ERR_OUT_OF_RANGE) {
+      ERROR("Write failed with ZX_ERR_OUT_OF_RANGE: image likely exceeds partition size.\n");
+    }
     ERROR("Error writing partition \"%s\" data: %s\n", spec.ToString().c_str(),
           status.status_string());
     return status.take_error();

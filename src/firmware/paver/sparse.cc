@@ -127,6 +127,9 @@ struct SparseIoContext {
       if (zx::result result =
               block.Write(vmoid->get(), size, device_offset / block_size, src_offset / block_size);
           result.is_error()) {
+        if (result.status_value() == ZX_ERR_OUT_OF_RANGE) {
+          ERROR("Write failed with ZX_ERR_OUT_OF_RANGE: image likely exceeds partition size.\n");
+        }
         ERROR("Failed to write %zu @ %lu from %lu: %s\n", size, device_offset / block_size,
               src_offset / block_size, result.status_string());
         return false;
@@ -145,6 +148,10 @@ struct SparseIoContext {
       if (zx::result result = block.Write(transfer_vmoid.get(), to_write,
                                           (device_offset + written) / block_size, 0);
           result.is_error()) {
+        if (result.status_value() == ZX_ERR_OUT_OF_RANGE) {
+          ERROR(
+              "Write failed with ZX_ERR_OUT_OF_RANGE. The image likely exceeds the partition size.\n");
+        }
         ERROR("Failed to write %zu @ %lu: %s\n", to_write, (device_offset + written) / block_size,
               result.status_string());
         return false;
@@ -199,6 +206,7 @@ zx::result<> WriteSparse(PartitionClient& partition, const PartitionSpec& spec, 
       .handle_ops = SparseIoBuffer::Interface(),
       .write = SparseIoContext::WriteTo,
   };
+
   auto payload = std::make_unique<SparseIoBuffer>(std::move(payload_vmo), payload_size);
   if (!sparse_unpack_image(&io, Log, payload.get())) {
     ERROR("Failed to pave sparse image\n");
