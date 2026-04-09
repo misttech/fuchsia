@@ -44,38 +44,6 @@ pub fn advance_with_expose(
     result
 }
 
-impl crate::legacy_router::OfferVisitor for Availability {
-    fn visit(
-        &mut self,
-        moniker: &ExtendedMoniker,
-        offer: &cm_rust::OfferDecl,
-    ) -> Result<(), crate::RoutingError> {
-        *self = advance_with_offer(moniker, *self, offer)?;
-        Ok(())
-    }
-}
-
-impl crate::legacy_router::ExposeVisitor for Availability {
-    fn visit(
-        &mut self,
-        moniker: &ExtendedMoniker,
-        expose: &cm_rust::ExposeDecl,
-    ) -> Result<(), crate::RoutingError> {
-        *self = advance_with_expose(moniker, *self, expose)?;
-        Ok(())
-    }
-}
-
-impl crate::legacy_router::CapabilityVisitor for Availability {
-    fn visit(
-        &mut self,
-        _: &ExtendedMoniker,
-        _: &cm_rust::CapabilityDecl,
-    ) -> Result<(), crate::RoutingError> {
-        Ok(())
-    }
-}
-
 pub fn advance(
     moniker: &ExtendedMoniker,
     current: Availability,

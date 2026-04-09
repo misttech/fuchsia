@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::error::RoutingError;
-use crate::legacy_router::Sources;
 use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ChildRef, ConfigurationDecl, DictionaryDecl, DirectoryDecl,
     EventStreamDecl, ExposeConfigurationDecl, ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl,
@@ -244,7 +243,6 @@ pub struct AnonymizedAggregateSource {
     pub capability: AggregateCapability,
     pub moniker: Moniker,
     pub members: Vec<AggregateMember>,
-    pub sources: Sources,
     pub instances: Vec<ServiceInstance>,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -271,7 +269,6 @@ pub struct FilteredAggregateProviderSource {
     pub capability: AggregateCapability,
     pub moniker: Moniker,
     pub offer_service_decls: Vec<OfferServiceDecl>,
-    pub sources: Sources,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(FidlDecl, Debug, PartialEq, Clone)]

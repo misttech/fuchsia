@@ -8,7 +8,6 @@ pub mod capability_source;
 pub mod component_instance;
 pub mod config;
 pub mod error;
-pub mod legacy_router;
 pub mod mapper;
 pub mod path;
 pub mod policy;
@@ -21,7 +20,6 @@ use crate::bedrock::request_metadata::directory_metadata;
 use crate::capability_source::CapabilitySource;
 use crate::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use crate::error::RoutingError;
-use crate::legacy_router::{ErrorNotFoundFromParent, ErrorNotFoundInChild, Sources};
 use cm_rust::{
     Availability, DebugProtocolRegistration, ExposeDecl, ExposeDeclCommon, ExposeTarget, OfferDecl,
     OfferDeclCommon, OfferTarget, RegistrationDeclCommon, RegistrationSource, ResolverRegistration,
@@ -31,7 +29,7 @@ use cm_types::{IterablePath, Name, RelativePath};
 use fidl_fuchsia_io::RW_STAR_DIR;
 use from_enum::FromEnum;
 use itertools::Itertools;
-use moniker::{ChildName, ExtendedMoniker, Moniker};
+use moniker::{ChildName, ExtendedMoniker};
 use sandbox::{
     Capability, CapabilityBound, Dict, DirConnector, Request, Routable, Router, RouterResponse,
 };
@@ -294,157 +292,6 @@ impl From<&RegistrationDecl> for cm_rust::CapabilityTypeName {
             RegistrationDecl::Resolver(_) => Self::Resolver,
             RegistrationDecl::Runner(_) => Self::Runner,
             RegistrationDecl::Debug(_) => Self::Protocol,
-        }
-    }
-}
-
-// Error trait impls
-
-impl ErrorNotFoundFromParent for cm_rust::UseDecl {
-    fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
-        RoutingError::UseFromParentNotFound { moniker, capability_id: capability_name.into() }
-    }
-}
-
-impl ErrorNotFoundFromParent for cm_rust::DebugProtocolRegistration {
-    fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
-        RoutingError::EnvironmentFromParentNotFound {
-            moniker,
-            capability_name,
-            capability_type: cm_rust::CapabilityTypeName::Protocol.to_string(),
-        }
-    }
-}
-
-impl ErrorNotFoundInChild for cm_rust::DebugProtocolRegistration {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::EnvironmentFromChildExposeNotFound {
-            moniker,
-            child_moniker,
-            capability_name,
-            capability_type: cm_rust::CapabilityTypeName::Protocol.to_string(),
-        }
-    }
-}
-
-impl ErrorNotFoundInChild for cm_rust::UseDecl {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::UseFromChildExposeNotFound {
-            child_moniker,
-            moniker,
-            capability_id: capability_name.into(),
-        }
-    }
-}
-
-impl ErrorNotFoundInChild for cm_rust::ExposeDecl {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::ExposeFromChildExposeNotFound {
-            moniker,
-            child_moniker,
-            capability_id: capability_name.into(),
-        }
-    }
-}
-
-impl ErrorNotFoundInChild for cm_rust::OfferDecl {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::OfferFromChildExposeNotFound {
-            moniker,
-            child_moniker,
-            capability_id: capability_name.into(),
-        }
-    }
-}
-
-impl ErrorNotFoundFromParent for cm_rust::OfferDecl {
-    fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
-        RoutingError::OfferFromParentNotFound { moniker, capability_id: capability_name.into() }
-    }
-}
-
-impl ErrorNotFoundInChild for StorageDeclAsRegistration {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::StorageFromChildExposeNotFound {
-            moniker,
-            child_moniker,
-            capability_id: capability_name.into(),
-        }
-    }
-}
-
-impl ErrorNotFoundFromParent for StorageDeclAsRegistration {
-    fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
-        RoutingError::StorageFromParentNotFound { moniker, capability_id: capability_name.into() }
-    }
-}
-
-impl ErrorNotFoundFromParent for RunnerRegistration {
-    fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
-        RoutingError::UseFromEnvironmentNotFound {
-            moniker,
-            capability_name,
-            capability_type: "runner".to_string(),
-        }
-    }
-}
-
-impl ErrorNotFoundInChild for RunnerRegistration {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::EnvironmentFromChildExposeNotFound {
-            moniker,
-            child_moniker,
-            capability_name,
-            capability_type: "runner".to_string(),
-        }
-    }
-}
-
-impl ErrorNotFoundFromParent for ResolverRegistration {
-    fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
-        RoutingError::EnvironmentFromParentNotFound {
-            moniker,
-            capability_name,
-            capability_type: "resolver".to_string(),
-        }
-    }
-}
-
-impl ErrorNotFoundInChild for ResolverRegistration {
-    fn error_not_found_in_child(
-        moniker: Moniker,
-        child_moniker: ChildName,
-        capability_name: Name,
-    ) -> RoutingError {
-        RoutingError::EnvironmentFromChildExposeNotFound {
-            moniker,
-            child_moniker,
-            capability_name,
-            capability_type: "resolver".to_string(),
         }
     }
 }

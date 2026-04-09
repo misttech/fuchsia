@@ -82,7 +82,6 @@ rustc_library("routing") {
     "src/component_instance.rs",
     "src/config.rs",
     "src/error.rs",
-    "src/legacy_router.rs",
     "src/lib.rs",
     "src/mapper.rs",
     "src/path.rs",

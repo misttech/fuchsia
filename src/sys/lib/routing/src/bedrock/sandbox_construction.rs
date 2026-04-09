@@ -16,7 +16,7 @@ use crate::capability_source::{
 };
 use crate::component_instance::{ComponentInstanceInterface, WeakComponentInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
-use crate::{DictExt, LazyGet, Sources, WithPorcelain};
+use crate::{DictExt, LazyGet, WithPorcelain};
 use async_trait::async_trait;
 use cm_rust::{
     CapabilityTypeName, DictionaryValue, ExposeDecl, ExposeDeclCommon, NativeIntoFidl, OfferDecl,
@@ -437,7 +437,6 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                         capability: AggregateCapability::Service(first_use.source_name().clone()),
                         moniker: component.moniker().clone(),
                         members: vec![AggregateMember::try_from(first_use).unwrap()],
-                        sources: Sources::new(cm_rust::CapabilityTypeName::Service),
                         instances: vec![],
                     }),
                 )
@@ -764,7 +763,6 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                             .iter()
                             .filter_map(|e| AggregateMember::try_from(*e).ok())
                             .collect(),
-                        sources: Sources::new(cm_rust::CapabilityTypeName::Service),
                         instances: vec![],
                     }),
                 );
@@ -944,7 +942,6 @@ fn new_aggregate_capability_source(
             capability,
             moniker,
             offer_service_decls: offer_service_decls.into_iter().cloned().collect(),
-            sources: Sources::new(cm_rust::CapabilityTypeName::Service).component().collection(),
         })
     } else {
         let members = offers.iter().filter_map(|o| AggregateMember::try_from(*o).ok()).collect();
@@ -952,7 +949,6 @@ fn new_aggregate_capability_source(
             capability,
             moniker,
             members,
-            sources: Sources::new(cm_rust::CapabilityTypeName::Service).component().collection(),
             instances: vec![],
         })
     }
