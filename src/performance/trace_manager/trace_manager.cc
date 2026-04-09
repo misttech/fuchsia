@@ -553,7 +553,6 @@ void TraceManager::RegisterV2Synchronously(RegisterV2SynchronouslyRequest& reque
   completer.Reply(fit::ok(already_started));
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 void TraceController::FlushBuffers(FlushBuffersCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "FlushBuffers";
   if (!session_) {
@@ -578,7 +577,6 @@ void TraceController::FlushBuffers(FlushBuffersCompleter::Sync& completer) {
   session_->FlushProviders();
   completer.Reply(fit::ok());
 }
-#endif
 
 // Deprecated, but we need to support the old apis until all supported api levels drop support for
 // the api.

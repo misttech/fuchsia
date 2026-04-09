@@ -52,9 +52,7 @@ class TraceController : public fidl::Server<fuchsia_tracing_controller::Session>
   void SendSessionStateEvent(fuchsia_tracing_controller::SessionState state);
   static fuchsia_tracing_controller::SessionState TranslateSessionState(TraceSession::State state);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   void FlushBuffers(FlushBuffersCompleter::Sync& completer) override;
-#endif
   TraceManager* const trace_manager_;
 
   // We only set this to false when aborting.
@@ -111,11 +109,9 @@ class TraceManager : public fidl::Server<fuchsia_tracing_controller::Provisioner
       RegisterProviderSynchronouslyRequest& request,
       RegisterProviderSynchronouslyCompleter::Sync& completer) override;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   void RegisterV2(RegisterV2Request& request, RegisterV2Completer::Sync& completer) override;
   void RegisterV2Synchronously(RegisterV2SynchronouslyRequest& request,
                                RegisterV2SynchronouslyCompleter::Sync& completer) override;
-#endif
 
   void RegisterProviderWorker(fidl::ClientEnd<fuchsia_tracing_provider::Provider> provider,
                               uint64_t pid, const std::string& name);

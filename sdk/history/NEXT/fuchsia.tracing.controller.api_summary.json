@@ -16,6 +16,27 @@
         "type": "string:14"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/FlushError.ABORTED",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/FlushError.NOT_INITIALIZED",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/FlushError.NOT_STARTED",
+        "value": "2"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.tracing.controller/FlushError",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.tracing.controller/FxtVersion.major",
         "ordinal": "1",
@@ -251,6 +272,15 @@
         "name": "fuchsia.tracing.controller/RecordingError",
         "strictness": "flexible",
         "type": "uint32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/Session.FlushBuffers",
+        "strictness": "flexible",
+        "ordinal": "2582816038158201090",
+        "direction": "two_way",
+        "response": "fuchsia.tracing.controller/Session_FlushBuffers_Response",
+        "error": "fuchsia.tracing.controller/FlushError"
     },
     {
         "kind": "protocol/member",

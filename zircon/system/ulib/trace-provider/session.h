@@ -23,7 +23,7 @@ namespace internal {
 
 class Session final : public trace::TraceHandler {
  public:
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   static std::unique_ptr<Session> InitializeEngine(
       async_dispatcher_t* dispatcher, trace_buffering_mode_t buffering_mode, zx::vmo buffer,
       std::vector<std::string> categories,
@@ -48,7 +48,7 @@ class Session final : public trace::TraceHandler {
   static zx_status_t MarkBufferSaved(uint32_t wrapped_count, uint64_t durable_data_end);
 
  private:
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   Session(void* buffer, size_t buffer_num_bytes, std::vector<std::string> categories,
           fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding);
 #else
@@ -66,7 +66,7 @@ class Session final : public trace::TraceHandler {
   void NotifyBufferFull(uint32_t wrapped_count, uint64_t durable_data_end) override;
   void SendAlert(const char* alert_name) override;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   void HandleFifo(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                   const zx_packet_signal_t* signal);
   bool ReadFifoMessage();
@@ -78,7 +78,7 @@ class Session final : public trace::TraceHandler {
   fit::callback<void()> terminate_cb_;
   void* buffer_;
   size_t buffer_num_bytes_;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding_;
 #else
   async_dispatcher_t* const dispatcher_;
