@@ -531,6 +531,11 @@ class AsyncMain:
             statusinfo.highlight("Welcome to fx test 🧪\n", style=flags.style)
         )
 
+        recorder.emit_instruction_message(
+            "Output too verbose? 🤔  Add `--quiet` to `~/.fxtestrc`!\n"
+            "See https://fuchsia.dev/fuchsia-src/reference/testing/fx-test for more tips!"
+        )
+
         # Initialize status printing at this point, if desired.
         if flags.status and not do_output_to_stdout:
             do_status_output_signal.set()
