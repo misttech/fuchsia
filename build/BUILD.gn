@@ -28,7 +28,7 @@ group("tests") {
     "go:tests",
     "licenses:tests",
     "profile:tests",
-    "python:tests",
+    "python:tests($host_toolchain)",
     "rbe:tests",
     "rust:tests",
     "scripts:tests",
