@@ -446,6 +446,30 @@ impl XpermsBitmap {
     }
 }
 
+/// The xperms cache uses a u64-based representation.
+impl From<[u64; 4]> for XpermsBitmap {
+    fn from(v: [u64; 4]) -> Self {
+        let mut elements = [le::U32::ZERO; 8];
+        for (i, &val) in v.iter().enumerate() {
+            elements[i * 2] = le::U32::new(val as u32);
+            elements[i * 2 + 1] = le::U32::new((val >> 32) as u32);
+        }
+        XpermsBitmap(elements)
+    }
+}
+
+impl From<XpermsBitmap> for [u64; 4] {
+    fn from(v: XpermsBitmap) -> Self {
+        let mut result = [0u64; 4];
+        for i in 0..4 {
+            let low = v.0[i * 2].get() as u64;
+            let high = v.0[i * 2 + 1].get() as u64;
+            result[i] = low | (high << 32);
+        }
+        result
+    }
+}
+
 impl std::ops::BitAnd for XpermsBitmap {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {

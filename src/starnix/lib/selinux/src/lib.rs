@@ -8,8 +8,10 @@ pub mod security_server;
 
 pub use security_server::SecurityServer;
 
-mod access_cache;
 mod access_vector_cache;
+mod cache_stats;
+mod concurrent_access_cache;
+mod concurrent_cache;
 mod exceptions_config;
 mod kernel_permissions;
 mod sid_table;

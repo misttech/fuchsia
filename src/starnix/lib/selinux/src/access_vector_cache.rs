@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_cache::AccessCache;
+use crate::concurrent_access_cache::{
+    ConcurrentAccessCache, ConcurrentSidCache, ConcurrentXpermsCache,
+};
 use crate::kernel_permissions::KernelPermission;
 use crate::policy::{KernelAccessDecision, XpermsBitmap, XpermsKind};
 use crate::security_server::SecurityServerBackend;
 use crate::{FsNodeClass, KernelClass, NullessByteStr, SecurityId};
+use std::hash::Hash;
 use std::sync::Arc;
 
-pub use crate::access_cache::CacheStats;
+pub use crate::cache_stats::CacheStats;
 
 /// An xperm access decision as seen from the kernel.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -79,55 +82,49 @@ pub(super) trait Query {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-struct AccessQueryArgs {
-    source_sid: SecurityId,
-    target_sid: SecurityId,
-    target_class: KernelClass,
+pub(super) struct AccessQueryArgs {
+    pub(super) source_sid: SecurityId,
+    pub(super) target_sid: SecurityId,
+    pub(super) target_class: KernelClass,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-struct XpermsAccessQueryArgs {
-    xperms_kind: XpermsKind,
-    source_sid: SecurityId,
-    target_sid: SecurityId,
-    permission: KernelPermission,
-    xperms_prefix: u8,
+pub(super) struct XpermsAccessQueryArgs {
+    pub(super) xperms_kind: XpermsKind,
+    pub(super) source_sid: SecurityId,
+    pub(super) target_sid: SecurityId,
+    pub(super) permission: KernelPermission,
+    pub(super) xperms_prefix: u8,
 }
 
-/// Thread-hostile associative cache with capacity defined at construction and FIFO eviction.
+/// Concurrent set-associative cache with capacity defined at construction and CLOCK eviction.
 pub(super) struct FifoQueryCache {
-    access_cache: AccessCache<AccessQueryArgs, KernelAccessDecision>,
-    sid_cache: AccessCache<AccessQueryArgs, SecurityId>,
-    xperms_access_cache: AccessCache<XpermsAccessQueryArgs, KernelXpermsAccessDecision>,
+    access_cache: ConcurrentAccessCache,
+    create_sid_cache: ConcurrentSidCache,
+    xperms_access_cache: ConcurrentXpermsCache,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(super) struct QueryCacheCapacity {
+    /// Capacities for the different caches. Due to limitations of the cache implementation,
+    /// these will be rounded up so the number of buckets is a power of two.
+    pub access_cache_capacity: usize,
+    pub sid_cache_capacity: usize,
+    pub xperms_cache_capacity: usize,
 }
 
 impl FifoQueryCache {
-    // The multiplier used to compute the xperms access cache capacity from the main cache capacity.
-    const XPERMS_CAPACITY_MULTIPLIER: f32 = 0.25;
-
     /// Constructs a fixed-size access vector cache.
-    ///
-    /// # Panics
-    ///
-    /// This will panic if called with a `capacity` of zero.
-    pub fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "cannot instantiate fixed access vector cache of size 0");
-        let xperms_access_cache_capacity =
-            (Self::XPERMS_CAPACITY_MULTIPLIER * (capacity as f32)) as usize;
-        assert!(
-            xperms_access_cache_capacity > 0,
-            "cannot instantiate xperms cache partition of size 0"
-        );
-
+    pub fn new(capacity: QueryCacheCapacity) -> Self {
         Self {
-            access_cache: AccessCache::with_capacity(capacity),
-            sid_cache: AccessCache::with_capacity(capacity),
-            xperms_access_cache: AccessCache::with_capacity(xperms_access_cache_capacity),
+            access_cache: ConcurrentAccessCache::new(capacity.access_cache_capacity),
+            create_sid_cache: ConcurrentSidCache::new(capacity.sid_cache_capacity),
+            xperms_access_cache: ConcurrentXpermsCache::new(capacity.xperms_cache_capacity),
         }
     }
 
     pub fn cache_stats(&self) -> CacheStats {
-        let stats = &self.access_cache.cache_stats() + &self.sid_cache.cache_stats();
+        let stats = &self.access_cache.cache_stats() + &self.create_sid_cache.cache_stats();
         &stats + &self.xperms_access_cache.cache_stats()
     }
 
@@ -138,9 +135,8 @@ impl FifoQueryCache {
         target_sid: SecurityId,
         target_class: KernelClass,
     ) -> KernelAccessDecision {
-        let query_args =
-            AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
-        self.access_cache.get_or_insert(query_args, || {
+        let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
+        self.access_cache.get_or_insert(&query_args, || {
             delegate.compute_access_decision(source_sid, target_sid, target_class)
         })
     }
@@ -152,9 +148,8 @@ impl FifoQueryCache {
         target_sid: SecurityId,
         target_class: KernelClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        let query_args =
-            AccessQueryArgs { source_sid, target_sid, target_class: target_class.clone() };
-        self.sid_cache.get_or_try_insert(query_args, || {
+        let query_args = AccessQueryArgs { source_sid, target_sid, target_class };
+        self.create_sid_cache.get_or_try_insert(&query_args, || {
             delegate.compute_create_sid(source_sid, target_sid, target_class)
         })
     }
@@ -191,7 +186,7 @@ impl FifoQueryCache {
             permission,
             xperms_prefix,
         };
-        self.xperms_access_cache.get_or_insert(query_args, || {
+        self.xperms_access_cache.get_or_insert(&query_args, || {
             delegate.compute_xperms_access_decision(
                 xperms_kind,
                 source_sid,
@@ -204,7 +199,7 @@ impl FifoQueryCache {
 
     pub fn reset(&self) {
         self.access_cache.reset();
-        self.sid_cache.reset();
+        self.create_sid_cache.reset();
         self.xperms_access_cache.reset();
     }
 
@@ -213,16 +208,16 @@ impl FifoQueryCache {
     fn access_cache_is_full(&self) -> bool {
         self.access_cache.is_full()
     }
-
-    /// Returns true if the xperms access decision cache has reached capacity.
-    #[cfg(test)]
-    fn xperms_access_cache_is_full(&self) -> bool {
-        self.xperms_access_cache.is_full()
-    }
 }
 
 /// Default size of an access vector cache shared by all threads in the system.
-const DEFAULT_SHARED_SIZE: usize = 2000;
+const DEFAULT_SHARED_SIZE: QueryCacheCapacity = QueryCacheCapacity {
+    // This was empirically determined to be a good default,
+    access_cache_capacity: 2048,
+    // The following were determined as a fraction of the access cache capacity.
+    sid_cache_capacity: 2048,
+    xperms_cache_capacity: 512,
+};
 
 /// An access vector cache.
 #[derive(Clone)]
@@ -308,6 +303,7 @@ impl Query for AccessVectorCache {
 /// Test constants and helpers shared by `tests` and `starnix_tests`.
 #[cfg(test)]
 mod testing {
+    use super::*;
     use crate::SecurityId;
 
     use std::num::NonZeroU32;
@@ -318,17 +314,16 @@ mod testing {
     pub(super) static A_TEST_SID: LazyLock<SecurityId> = LazyLock::new(unique_sid);
 
     /// Default fixed cache capacity to request in tests.
-    pub(super) const TEST_CAPACITY: usize = 10;
+    pub(super) const TEST_CAPACITY: QueryCacheCapacity = QueryCacheCapacity {
+        access_cache_capacity: 16,
+        sid_cache_capacity: 16,
+        xperms_cache_capacity: 4,
+    };
 
     /// Returns a new `SecurityId` with unique id.
     pub(super) fn unique_sid() -> SecurityId {
         static NEXT_ID: AtomicU32 = AtomicU32::new(1000);
         SecurityId(NonZeroU32::new(NEXT_ID.fetch_add(1, Ordering::AcqRel)).unwrap())
-    }
-
-    /// Returns a vector of `count` unique `SecurityIds`.
-    pub(super) fn unique_sids(count: usize) -> Vec<SecurityId> {
-        (0..count).map(|_| unique_sid()).collect()
     }
 }
 
@@ -463,103 +458,6 @@ mod tests {
     }
 
     #[test]
-    fn fixed_access_vector_cache_fill() {
-        let delegate = TestDelegate::default();
-        let avc = FifoQueryCache::new(TEST_CAPACITY);
-
-        for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_kernel_access_decision(
-                &delegate,
-                sid,
-                A_TEST_SID.clone(),
-                KernelClass::Process,
-            );
-        }
-        assert_eq!(true, avc.access_cache_is_full());
-
-        avc.reset();
-        assert_eq!(false, avc.access_cache_is_full());
-
-        for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_kernel_access_decision(
-                &delegate,
-                A_TEST_SID.clone(),
-                sid,
-                KernelClass::Process,
-            );
-        }
-        assert_eq!(true, avc.access_cache_is_full());
-
-        avc.reset();
-        assert_eq!(false, avc.access_cache_is_full());
-    }
-
-    #[test]
-    fn fixed_access_vector_cache_full_miss() {
-        let delegate = TestDelegate::default();
-        let avc = FifoQueryCache::new(TEST_CAPACITY);
-
-        // Make the test query, which will trivially miss.
-        avc.compute_kernel_access_decision(
-            &delegate,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            KernelClass::Process,
-        );
-        assert!(!avc.access_cache_is_full());
-
-        // Fill the cache with new queries, which should evict the test query.
-        for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_kernel_access_decision(
-                &delegate,
-                sid,
-                A_TEST_SID.clone(),
-                KernelClass::Process,
-            );
-        }
-        assert!(avc.access_cache_is_full());
-
-        // Making the test query should result in another miss.
-        let delegate_query_count = delegate.query_count();
-        avc.compute_kernel_access_decision(
-            &delegate,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            KernelClass::Process,
-        );
-        assert_eq!(delegate_query_count + 1, delegate.query_count());
-
-        // Because the cache is not LRU, making `capacity()` unique queries, each preceded by
-        // the test query, will still result in the test query result being evicted.
-        // Each test query will hit, and the interleaved queries will miss, with the final of the
-        // interleaved queries evicting the test query.
-        for sid in unique_sids(avc.access_cache.capacity()) {
-            avc.compute_kernel_access_decision(
-                &delegate,
-                A_TEST_SID.clone(),
-                A_TEST_SID.clone(),
-                KernelClass::Process,
-            );
-            avc.compute_kernel_access_decision(
-                &delegate,
-                sid,
-                A_TEST_SID.clone(),
-                KernelClass::Process,
-            );
-        }
-
-        // The test query should now miss.
-        let delegate_query_count = delegate.query_count();
-        avc.compute_kernel_access_decision(
-            &delegate,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            KernelClass::Process,
-        );
-        assert_eq!(delegate_query_count + 1, delegate.query_count());
-    }
-
-    #[test]
     fn access_vector_cache_ioctl_hit() {
         let delegate = TestDelegate::default();
         let avc = FifoQueryCache::new(TEST_CAPACITY);
@@ -594,53 +492,6 @@ mod tests {
     }
 
     #[test]
-    fn access_vector_cache_ioctl_miss() {
-        let delegate = TestDelegate::default();
-        let avc = FifoQueryCache::new(TEST_CAPACITY);
-
-        // Make the test query, which will trivially miss.
-        avc.compute_kernel_xperms_access_decision(
-            &delegate,
-            XpermsKind::Ioctl,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            ProcessPermission::Fork.into(),
-            0x0,
-        );
-
-        // Fill the xperms cache with new queries, which should evict the test query.
-        for ioctl_prefix in 0x1..(1 + avc.xperms_access_cache.capacity())
-            .try_into()
-            .expect("assumed that test xperms cache capacity was < 255")
-        {
-            avc.compute_kernel_xperms_access_decision(
-                &delegate,
-                XpermsKind::Ioctl,
-                A_TEST_SID.clone(),
-                A_TEST_SID.clone(),
-                ProcessPermission::Fork.into(),
-                ioctl_prefix,
-            );
-        }
-        // Make sure that we've fulfilled at least one new cache miss since the original test query,
-        // and that the cache is now full.
-        assert!(delegate.query_count() > 1);
-        assert!(avc.xperms_access_cache_is_full());
-        let delegate_query_count = delegate.query_count();
-
-        // Making the original test query again should result in another miss.
-        avc.compute_kernel_xperms_access_decision(
-            &delegate,
-            XpermsKind::Ioctl,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            ProcessPermission::Fork.into(),
-            0x0,
-        );
-        assert_eq!(delegate_query_count + 1, delegate.query_count());
-    }
-
-    #[test]
     fn access_vector_cache_nlmsg_hit() {
         let delegate = TestDelegate::default();
         let avc = FifoQueryCache::new(TEST_CAPACITY);
@@ -672,52 +523,6 @@ mod tests {
             .allow
         );
         assert_eq!(1, delegate.query_count());
-    }
-
-    #[test]
-    fn access_vector_cache_nlmsg_miss() {
-        let delegate = TestDelegate::default();
-        let avc = FifoQueryCache::new(TEST_CAPACITY);
-
-        // Make the test query, which will trivially miss.
-        avc.compute_kernel_xperms_access_decision(
-            &delegate,
-            XpermsKind::Nlmsg,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            ProcessPermission::Fork.into(),
-            0x0,
-        );
-
-        // Fill the xperms cache with new queries, which should evict the test query.
-        for nlmsg_prefix in 0x1..(1 + avc.xperms_access_cache.capacity())
-            .try_into()
-            .expect("assumed that test xperms cache capacity was < 255")
-        {
-            avc.compute_kernel_xperms_access_decision(
-                &delegate,
-                XpermsKind::Nlmsg,
-                A_TEST_SID.clone(),
-                A_TEST_SID.clone(),
-                ProcessPermission::Fork.into(),
-                nlmsg_prefix,
-            );
-        }
-        // Make sure that we've fulfilled at least one new cache miss since the original test query,
-        // and that the cache is now full.
-        assert!(delegate.query_count() > 1);
-        assert!(avc.xperms_access_cache_is_full());
-        let delegate_query_count = delegate.query_count();
-
-        avc.compute_kernel_xperms_access_decision(
-            &delegate,
-            XpermsKind::Nlmsg,
-            A_TEST_SID.clone(),
-            A_TEST_SID.clone(),
-            ProcessPermission::Fork.into(),
-            0x0,
-        );
-        assert_eq!(delegate_query_count + 1, delegate.query_count());
     }
 
     #[test]

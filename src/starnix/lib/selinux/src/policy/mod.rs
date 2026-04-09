@@ -144,6 +144,12 @@ impl From<u32> for AccessVector {
     }
 }
 
+impl Into<u32> for AccessVector {
+    fn into(self) -> u32 {
+        self.0
+    }
+}
+
 impl Debug for AccessVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "AccessVector({:0>8x})", self)
@@ -565,7 +571,7 @@ impl Unvalidated {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KernelAccessDecision {
     pub allow: AccessVector,
     pub audit: AccessVector,
