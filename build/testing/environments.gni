@@ -481,6 +481,24 @@ if (target_cpu == "x64") {
   guest_envs -= [ crosvm_env ]
 }
 
+# Cavium CPUs seem to have inherrent quirks which fail some arguably correct
+# tests.  See: https://fxbug.dev/500450483.
+#
+# These envs allow us to not run those tests only on Caviums, it's a roundabout
+# selection because we can not directly filter for the underlying CPU make and
+# model. This selection only creates an env that doesn't involve emulators, and
+# additional config is needed for the test to be actually skipped.
+cavium_skip_envs = []
+if (target_cpu == "arm64") {
+  cavium_skip_envs = [
+    aemu_env,
+    qemu_env,
+  ]
+}
+
+# Skips no envs if not arm64, skips cavium_skip_envs if arm64.
+all_fuchsia_except_cavium_skip_envs = all_fuchsia_envs - cavium_skip_envs
+
 # Set of environments where both virtualization and vulkan are available.
 guest_vulkan_envs = guest_envs - [
                       nuc11_env,
