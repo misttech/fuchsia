@@ -9,7 +9,11 @@ use anyhow::Result;
 use async_lock::OnceCell as AsyncOnceCell;
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_hardware_power_suspend as fhsuspend;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_suspend as fsuspend;
 use fidl_fuchsia_power_system::CpuLevel;
+use fuchsia_async as fasync;
 use fuchsia_inspect::Node as INode;
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::lock::Mutex;
@@ -17,10 +21,6 @@ use futures::{FutureExt, StreamExt};
 use power_broker_client::PowerElementContext;
 use std::cell::{Cell, OnceCell};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
-    fidl_fuchsia_power_suspend as fsuspend, fuchsia_async as fasync,
-};
 
 /// The result of a suspend request.
 #[derive(Debug, PartialEq)]
@@ -361,7 +361,12 @@ impl CpuManager {
                 ..
             }))) = response
             {
-                self.sag_event_logger.log(SagEvent::SuspendResumed { suspend_duration });
+                let new_cumulative =
+                    self.sag_event_logger.update_cumulative_suspend_duration(suspend_duration);
+                self.sag_event_logger.log(SagEvent::SuspendResumed {
+                    suspend_duration,
+                    cumulative_duration: new_cumulative,
+                });
                 let r = reason.as_ref();
                 self.report_wake_reason(r).await;
             } else {

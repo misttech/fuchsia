@@ -4,7 +4,6 @@
 
 use fidl_fuchsia_power_observability as fobs;
 use fuchsia_inspect::{ArrayProperty, LazyNode as ILazyNode, Node as INode};
-use fuchsia_inspect_contrib::nodes::BoundedListNode as IRingBuffer;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use state_recorder::{EnumStateRecorder, RecorderOptions};
@@ -22,12 +21,12 @@ static INSPECT_FIELD_HISTORY_DURATION: &str = "history_duration_seconds";
 static INSPECT_FIELD_HISTORY_DURATION_WHEN_FULL: &str = "at_capacity_history_duration_seconds";
 
 /// An event logged by system-activity-governor.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SagEvent {
     /// Suspend is being attempted.
     SuspendAttempted,
     /// Suspend was entered and exited successfully and the system is resuming.
-    SuspendResumed { suspend_duration: i64 },
+    SuspendResumed { suspend_duration: i64, cumulative_duration: i64 },
     /// Suspend attempt was requested but is not allowed due to an unmet
     /// precondition, e.g. active wake leases, CPU power element is active.
     SuspendAttemptBlocked,
@@ -76,51 +75,182 @@ impl From<SystemSuspendState> for u64 {
     }
 }
 
+#[derive(Clone, Debug)]
+struct SagWakeLeaseEvent {
+    event_number: u64,    // Event number
+    event_log_time: i64,  // Timestamp for the event
+    event_info: SagEvent, // The event itself
+}
+
 /// A logger for SagEvent objects that inserts the event into a circular buffer
 /// in inspect.
 #[derive(Clone, Debug)]
 pub struct SagEventLogger {
-    event_log: Rc<RefCell<IRingBuffer>>,
-    /// Vector of timestamps that mirror `event_log` contents.
-    /// Used to compute history durations in `_event_log_stats`.
-    /// Note: Inspect's lazy node requires Arc+Mutex.
-    event_log_times: Arc<Mutex<VecDeque<i64>>>,
+    /// Internal ring buffer for event logging
+    internal_event_log: Arc<Mutex<VecDeque<SagWakeLeaseEvent>>>,
+    internal_event_number: Arc<Mutex<u64>>,
+
     /// Inspect node that tracks wall-time history duration.
     /// Schema follows Power Broker's topology stats:
     ///   event_capacity: u64
     ///   history_duration_seconds: i64
     ///   at_capacity_history_duration_seconds: i64
     _event_log_stats: Rc<RefCell<ILazyNode>>,
+
+    /// Inspect node that reports internally-logged wake lease events
+    _internal_event_log_stats: Rc<RefCell<ILazyNode>>,
+
     /// Total time that the device has spent suspended since boot (or at least
     /// since this logger was created), in nanoseconds.
     cumulative_suspend_duration: Arc<AtomicI64>,
+
     /// State recorder for `SystemSuspendState`.
     system_suspend_state: Arc<Mutex<EnumStateRecorder<SystemSuspendState>>>,
 }
 
 impl SagEventLogger {
     pub fn new(node: &INode) -> Self {
-        let event_log = Rc::new(RefCell::new(IRingBuffer::new(
-            node.create_child(fobs::SUSPEND_EVENTS_NODE),
-            SUSPEND_EVENT_BUFFER_SIZE,
-        )));
-        let event_log_times =
-            Arc::new(Mutex::new(VecDeque::with_capacity(SUSPEND_EVENT_BUFFER_SIZE)));
-        let weak_arc_of_times = Arc::downgrade(&event_log_times);
+        let internal_event_log = Arc::new(Mutex::new(
+            VecDeque::<SagWakeLeaseEvent>::with_capacity(SUSPEND_EVENT_BUFFER_SIZE),
+        ));
+
+        let weak_arc_of_internal_event_log = Arc::downgrade(&internal_event_log);
+
+        // Create inspect node for logging suspend events. Events are stored in an internal ring
+        // buffer and lazily converted/logged to Inspect to reduce Inspect memory usage.
+        let value = weak_arc_of_internal_event_log.clone();
+        let internal_event_log_stats =
+            node.create_lazy_child(fobs::SUSPEND_EVENTS_NODE, move || {
+                let weak_internal_log = value.clone();
+
+                async move {
+                    let inspector = fuchsia_inspect::Inspector::default();
+                    let root = inspector.root();
+
+                    // Convert internally-logged events into Inspect nodes
+                    if let Some(internal_event_log) = weak_internal_log.upgrade() {
+                        let events = internal_event_log.lock();
+
+                        for internal_event in events.iter() {
+                            let time = internal_event.event_log_time;
+                            let event = internal_event.event_info.clone();
+
+                            root.record_child(internal_event.event_number.to_string(), |root| {
+                                match event {
+                                    SagEvent::SuspendAttempted => {
+                                        root.record_int(fobs::SUSPEND_ATTEMPTED_AT, time);
+                                    }
+                                    SagEvent::SuspendResumed {
+                                        suspend_duration,
+                                        cumulative_duration,
+                                    } => {
+                                        root.record_int(fobs::SUSPEND_RESUMED_AT, time);
+                                        root.record_int(
+                                            fobs::SUSPEND_LAST_TIMESTAMP,
+                                            suspend_duration,
+                                        );
+                                        root.record_int(
+                                            fobs::SUSPEND_CUMULATIVE_DURATION,
+                                            cumulative_duration,
+                                        );
+                                    }
+                                    SagEvent::SuspendFailed => {
+                                        root.record_int(fobs::SUSPEND_FAILED_AT, time);
+                                    }
+                                    SagEvent::SuspendAttemptBlocked => {
+                                        root.record_int(fobs::SUSPEND_ATTEMPT_BLOCKED_AT, time);
+                                    }
+                                    SagEvent::SuspendBlockerAcquired => {
+                                        root.record_int(fobs::SUSPEND_BLOCKER_ACQUIRED_AT, time);
+                                    }
+                                    SagEvent::SuspendBlockerDropped => {
+                                        root.record_int(fobs::SUSPEND_BLOCKER_DROPPED_AT, time);
+                                    }
+                                    SagEvent::SuspendLockAcquired => {
+                                        root.record_int(fobs::SUSPEND_LOCK_ACQUIRED_AT, time);
+                                    }
+                                    SagEvent::SuspendLockDropped => {
+                                        root.record_int(fobs::SUSPEND_LOCK_DROPPED_AT, time);
+                                    }
+                                    SagEvent::WakeLeaseCreated { name, id } => {
+                                        root.record_int(fobs::WAKE_LEASE_CREATED_AT, time);
+                                        root.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
+                                        root.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
+                                    }
+                                    SagEvent::WakeLeaseSatisfactionFailed { name, id, error } => {
+                                        root.record_int(
+                                            fobs::WAKE_LEASE_SATISFACTION_FAILED_AT,
+                                            time,
+                                        );
+                                        root.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
+                                        root.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
+                                        root.record_string(fobs::WAKE_LEASE_ITEM_ERROR, error);
+                                    }
+                                    SagEvent::WakeLeaseSatisfied { name, id } => {
+                                        root.record_int(fobs::WAKE_LEASE_SATISFIED_AT, time);
+                                        root.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
+                                        root.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
+                                    }
+                                    SagEvent::WakeLeaseDropped { name, id } => {
+                                        root.record_int(fobs::WAKE_LEASE_DROPPED_AT, time);
+                                        root.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
+                                        root.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
+                                    }
+                                    SagEvent::SuspendCallbackPhaseStarted => {
+                                        root.record_int(
+                                            fobs::SUSPEND_CALLBACK_PHASE_START_AT,
+                                            time,
+                                        );
+                                    }
+                                    SagEvent::SuspendCallbackPhaseEnded => {
+                                        root.record_int(fobs::SUSPEND_CALLBACK_PHASE_END_AT, time);
+                                    }
+                                    SagEvent::ResumeCallbackPhaseStarted => {
+                                        root.record_int(fobs::RESUME_CALLBACK_PHASE_START_AT, time);
+                                    }
+                                    SagEvent::ResumeCallbackPhaseEnded => {
+                                        root.record_int(fobs::RESUME_CALLBACK_PHASE_END_AT, time);
+                                    }
+                                    SagEvent::WakeReasons { reasons } => {
+                                        root.record_int(fobs::WAKE_REASONS_REPORTED_AT, time);
+                                        let reason_array = root.create_string_array(
+                                            fobs::WAKE_REASONS_WAKE_VECTOR_PREFIX,
+                                            reasons.len(),
+                                        );
+                                        reasons.iter().enumerate().for_each(|(i, reason)| {
+                                            reason_array.set(i, reason);
+                                        });
+                                        root.record(reason_array);
+                                    }
+                                };
+                            });
+                        }
+                    }
+                    Ok(inspector)
+                }
+                .boxed()
+            });
+
+        // Create Inspect node for suspend event stats
         let event_log_stats = node.create_lazy_child("suspend_events_stats", move || {
-            let weak_times = weak_arc_of_times.clone();
+            let weak_internal_log = weak_arc_of_internal_event_log.clone();
+
             async move {
                 let inspector = fuchsia_inspect::Inspector::default();
                 let root = inspector.root();
+
                 root.record_uint(INSPECT_FIELD_EVENT_CAPACITY, SUSPEND_EVENT_BUFFER_SIZE as u64);
-                if let Some(event_log_times) = weak_times.upgrade() {
-                    let timestamps = event_log_times.lock();
+
+                if let Some(internal_event_log) = weak_internal_log.upgrade() {
+                    let timestamps = internal_event_log.lock();
+
                     if !timestamps.is_empty() {
-                        let head_ns = timestamps.front().unwrap();
-                        let tail_ns = timestamps.back().unwrap();
+                        let head_ns = timestamps.front().unwrap().event_log_time;
+                        let tail_ns = timestamps.back().unwrap().event_log_time;
                         let duration =
                             zx::BootDuration::from_nanos(tail_ns - head_ns).into_seconds();
                         root.record_int(INSPECT_FIELD_HISTORY_DURATION, duration);
+
                         if timestamps.len() == SUSPEND_EVENT_BUFFER_SIZE {
                             root.record_int(INSPECT_FIELD_HISTORY_DURATION_WHEN_FULL, duration);
                         }
@@ -133,6 +263,7 @@ impl SagEventLogger {
             .boxed()
         });
 
+        // Create the system_suspend_state recorder
         let system_suspend_state = Arc::new(Mutex::new(
             EnumStateRecorder::new(
                 "system_suspend_state".to_string(),
@@ -146,103 +277,53 @@ impl SagEventLogger {
         system_suspend_state.lock().record(SystemSuspendState::Active);
 
         Self {
-            event_log,
-            event_log_times,
+            internal_event_log,
+            internal_event_number: Arc::new(Mutex::new(0u64)),
+            _internal_event_log_stats: Rc::new(RefCell::new(internal_event_log_stats)),
             _event_log_stats: Rc::new(RefCell::new(event_log_stats)),
             cumulative_suspend_duration: Arc::new(AtomicI64::new(0)),
             system_suspend_state,
         }
     }
 
-    pub fn log(&self, event: SagEvent) {
-        let time = zx::BootInstant::get().into_nanos();
+    pub fn update_cumulative_suspend_duration(&self, suspend_duration: i64) -> i64 {
+        let new_cumulative =
+            self.cumulative_suspend_duration.fetch_add(suspend_duration, Ordering::SeqCst)
+                + suspend_duration;
+        new_cumulative
+    }
 
-        self.event_log.borrow_mut().add_entry(|node| {
-            match event {
-                SagEvent::SuspendAttempted => {
-                    node.record_int(fobs::SUSPEND_ATTEMPTED_AT, time);
-                    self.system_suspend_state.lock().record(SystemSuspendState::Suspended);
-                }
-                SagEvent::SuspendResumed { suspend_duration } => {
-                    node.record_int(fobs::SUSPEND_RESUMED_AT, time);
-                    node.record_int(fobs::SUSPEND_LAST_TIMESTAMP, suspend_duration);
-                    let cumulative = self
-                        .cumulative_suspend_duration
-                        .fetch_add(suspend_duration, Ordering::SeqCst)
-                        + suspend_duration;
-                    node.record_int(fobs::SUSPEND_CUMULATIVE_DURATION, cumulative);
-                    self.system_suspend_state.lock().record(SystemSuspendState::Active);
-                }
-                SagEvent::SuspendFailed => {
-                    node.record_int(fobs::SUSPEND_FAILED_AT, time);
-                    self.system_suspend_state.lock().record(SystemSuspendState::Active);
-                }
-                SagEvent::SuspendAttemptBlocked => {
-                    node.record_int(fobs::SUSPEND_ATTEMPT_BLOCKED_AT, time);
-                }
-                SagEvent::SuspendBlockerAcquired => {
-                    node.record_int(fobs::SUSPEND_BLOCKER_ACQUIRED_AT, time);
-                }
-                SagEvent::SuspendBlockerDropped => {
-                    node.record_int(fobs::SUSPEND_BLOCKER_DROPPED_AT, time);
-                }
-                SagEvent::SuspendLockAcquired => {
-                    node.record_int(fobs::SUSPEND_LOCK_ACQUIRED_AT, time);
-                }
-                SagEvent::SuspendLockDropped => {
-                    node.record_int(fobs::SUSPEND_LOCK_DROPPED_AT, time);
-                }
-                SagEvent::WakeLeaseCreated { name, id } => {
-                    node.record_int(fobs::WAKE_LEASE_CREATED_AT, time);
-                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
-                    node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
-                }
-                SagEvent::WakeLeaseSatisfactionFailed { name, id, error } => {
-                    node.record_int(fobs::WAKE_LEASE_SATISFACTION_FAILED_AT, time);
-                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
-                    node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
-                    node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, error);
-                }
-                SagEvent::WakeLeaseSatisfied { name, id } => {
-                    node.record_int(fobs::WAKE_LEASE_SATISFIED_AT, time);
-                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
-                    node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
-                }
-                SagEvent::WakeLeaseDropped { name, id } => {
-                    node.record_int(fobs::WAKE_LEASE_DROPPED_AT, time);
-                    node.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
-                    node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
-                }
-                SagEvent::SuspendCallbackPhaseStarted => {
-                    node.record_int(fobs::SUSPEND_CALLBACK_PHASE_START_AT, time);
-                }
-                SagEvent::SuspendCallbackPhaseEnded => {
-                    node.record_int(fobs::SUSPEND_CALLBACK_PHASE_END_AT, time);
-                }
-                SagEvent::ResumeCallbackPhaseStarted => {
-                    node.record_int(fobs::RESUME_CALLBACK_PHASE_START_AT, time);
-                }
-                SagEvent::ResumeCallbackPhaseEnded => {
-                    node.record_int(fobs::RESUME_CALLBACK_PHASE_END_AT, time);
-                }
-                SagEvent::WakeReasons { reasons } => {
-                    node.record_int(fobs::WAKE_REASONS_REPORTED_AT, time);
-                    let reason_array = node
-                        .create_string_array(fobs::WAKE_REASONS_WAKE_VECTOR_PREFIX, reasons.len());
-                    reasons.iter().enumerate().for_each(|(i, reason)| {
-                        reason_array.set(i, reason);
-                    });
-                    node.record(reason_array);
-                }
-            };
-        });
-        // Record timestamps that are tracked within IRingBuffer.
+    pub fn log(&self, event: SagEvent) {
+        // Log event to internal ring buffer
         {
-            let mut times = self.event_log_times.lock();
-            if times.len() == SUSPEND_EVENT_BUFFER_SIZE {
-                times.pop_front();
+            let time = zx::BootInstant::get().into_nanos();
+            let mut internal_events = self.internal_event_log.lock();
+            let mut event_number = self.internal_event_number.lock();
+
+            if internal_events.len() == SUSPEND_EVENT_BUFFER_SIZE {
+                internal_events.pop_front();
             }
-            times.push_back(time);
+            internal_events.push_back(SagWakeLeaseEvent {
+                event_number: *event_number,
+                event_log_time: time,
+                event_info: event.clone(),
+            });
+
+            *event_number += 1;
         }
+
+        // For Suspend events, additionally update the logged suspend state
+        match event {
+            SagEvent::SuspendAttempted => {
+                self.system_suspend_state.lock().record(SystemSuspendState::Suspended);
+            }
+            SagEvent::SuspendResumed { suspend_duration: _, cumulative_duration: _ } => {
+                self.system_suspend_state.lock().record(SystemSuspendState::Active);
+            }
+            SagEvent::SuspendFailed => {
+                self.system_suspend_state.lock().record(SystemSuspendState::Active);
+            }
+            _ => {} // Ignore other events
+        };
     }
 }
