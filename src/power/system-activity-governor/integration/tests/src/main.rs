@@ -3677,3 +3677,99 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
 
     Ok(())
 }
+
+#[fuchsia::test]
+async fn test_acquire_and_drop_wake_lease_during_before_suspend() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let (suspend_blocker_client_end, mut suspend_blocker_stream) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+
+    let (before_suspend_received_tx, mut before_suspend_received_rx) =
+        futures::channel::mpsc::unbounded();
+    let (respond_before_suspend_tx, mut respond_before_suspend_rx) =
+        futures::channel::mpsc::unbounded();
+    let (after_resume_received_tx, mut after_resume_received_rx) =
+        futures::channel::mpsc::unbounded();
+
+    fasync::Task::local(async move {
+        while let Some(req) = suspend_blocker_stream.next().await {
+            match req {
+                Ok(fsystem::SuspendBlockerRequest::BeforeSuspend { responder }) => {
+                    before_suspend_received_tx.unbounded_send(()).unwrap();
+                    respond_before_suspend_rx.next().await.unwrap();
+                    responder.send().unwrap();
+                }
+                Ok(fsystem::SuspendBlockerRequest::AfterResume { responder }) => {
+                    let _ = after_resume_received_tx.unbounded_send(());
+                    responder.send().unwrap();
+                }
+                _ => panic!("Unexpected request"),
+            }
+        }
+    })
+    .detach();
+
+    // Call SetBootComplete to allow SAG to start suspending.
+    {
+        activity_governor
+            .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+                suspend_blocker: Some(suspend_blocker_client_end),
+                name: Some("test_acquire_and_drop_wake_lease_during_before_suspend".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        let () =
+            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    // Wait for BeforeSuspend to be received.
+    before_suspend_received_rx.next().await.unwrap();
+
+    // Acquire a wake lease while BeforeSuspend is running.
+    let wake_lease_name = "test_wake_lease";
+    let wake_lease = activity_governor.acquire_wake_lease(wake_lease_name).await.unwrap().unwrap();
+    let server_token_koid = &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    // Verify that the wake lease is registered with SAG.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var server_token_koid: contains {
+                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
+                }
+            },
+        }
+    );
+
+    // Drop the lease BEFORE responding to BeforeSuspend.
+    drop(wake_lease);
+
+    // Verify that the wake lease is no longer registered with SAG.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {},
+        }
+    );
+
+    // Now respond to BeforeSuspend.
+    respond_before_suspend_tx.unbounded_send(()).unwrap();
+
+    // Verify that SAG proceeds to suspend because the lease was dropped before BeforeSuspend completed.
+    assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
+
+    // Verify AfterResume is not called.
+    assert!(after_resume_received_rx.next().now_or_never().is_none());
+
+    Ok(())
+}

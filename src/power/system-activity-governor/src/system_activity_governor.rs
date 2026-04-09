@@ -22,6 +22,7 @@ use fuchsia_inspect::{
     Property, UintProperty as IUint,
 };
 use fuchsia_inspect_contrib::nodes::NodeTimeExt;
+use futures::channel::oneshot;
 use futures::future::FutureExt;
 use futures::lock::Mutex;
 use futures::prelude::*;
@@ -198,6 +199,8 @@ struct LeaseManager {
     suspend_block_manager: Rc<SuspendBlockManager>,
     /// The maximum lease ID that has been assigned.
     max_lease_id: AtomicU64,
+    /// A shared receiver that is set when the system is about to suspend.
+    before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
 }
 
 impl LeaseManager {
@@ -208,6 +211,9 @@ impl LeaseManager {
         execution_state_lessor: fbroker::LessorProxy,
         application_activity_assertive_dependency_token: fbroker::DependencyToken,
         suspend_blocker: Rc<SuspendBlockManager>,
+        before_suspend_notifier: Rc<
+            RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>,
+        >,
     ) -> Self {
         Self {
             inspect_node,
@@ -218,6 +224,7 @@ impl LeaseManager {
             application_activity_assertive_dependency_token,
             suspend_block_manager: suspend_blocker,
             max_lease_id: AtomicU64::new(0),
+            before_suspend_notifier,
         }
     }
 
@@ -308,6 +315,7 @@ impl LeaseManager {
 
         let execution_state_suspending_lease = self.execution_state_suspending_lease.clone();
         let inspect_node = self.inspect_node.clone_weak();
+        let before_suspend_notifier = self.before_suspend_notifier.clone();
         let execution_state_lessor = self.execution_state_lessor.clone();
 
         log::debug!("Acquiring wake lease for '{}'", name);
@@ -337,6 +345,39 @@ impl LeaseManager {
                 fobs::WAKE_LEASE_ITEM_STATUS,
                 fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
             );
+
+            // If a suspend transition is currently in progress, race the wake lease token's
+            // close signal with the BeforeSuspend callbacks. If the wake lease token is dropped
+            // by the client before the callbacks complete, then the power broker lease which
+            // backs the wake lease should NOT be requested. Without this logic, SAG's power
+            // broker lease request would preempt the race to suspension by preventing SAG's
+            // power elements and their dependents from fully powering down.
+            let rx_opt = before_suspend_notifier.borrow().clone();
+            if let Some(rx) = rx_opt {
+                let dup_token = server_token
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("duplicate handle failed");
+                let token_closed = fasync::OnSignals::new(
+                    dup_token, zx::Signals::EVENTPAIR_PEER_CLOSED).fuse();
+                let before_suspend_done = rx.fuse();
+
+                futures::pin_mut!(token_closed);
+                futures::pin_mut!(before_suspend_done);
+
+                // Race the two futures. If the token is dropped by the client, skip the power
+                // broker lease request.
+                let dropped_before_complete = futures::select! {
+                    _ = before_suspend_done => false,
+                    _ = token_closed => true,
+                };
+
+                if dropped_before_complete {
+                    log::debug!(
+                        "Wake lease '{}' dropped before BeforeSuspend completed, skipping power broker lease request",
+                        &name);
+                    return;
+                }
+            }
 
             let lease = {
                 let mut lease_guard = execution_state_suspending_lease.lock().await;
@@ -523,6 +564,7 @@ pub struct SystemActivityGovernor {
     application_activity_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
     suspend_blocker_id_generator: Rc<SuspendBlockerIdGenerator>,
     _suspend_blockers_node: LazyNode,
+    before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
 }
 
 impl SystemActivityGovernor {
@@ -592,6 +634,7 @@ impl SystemActivityGovernor {
         .await
         .expect("PowerElementContext encountered error while building application_activity");
 
+        let before_suspend_notifier = Rc::new(RefCell::new(None));
         let lease_manager = LeaseManager::new(
             inspect_root.create_child(fobs::WAKE_LEASES_NODE),
             sag_event_logger.clone(),
@@ -599,6 +642,7 @@ impl SystemActivityGovernor {
             execution_state.lessor.clone(),
             application_activity.assertive_dependency_token().expect("token not registered"),
             cpu_manager.suspend_block_manager().await,
+            before_suspend_notifier.clone(),
         );
 
         element_power_level_names.push(generate_element_power_level_names(
@@ -700,6 +744,7 @@ impl SystemActivityGovernor {
             application_activity_runner: Rc::new(RefCell::new(Some(application_activity_runner))),
             suspend_blocker_id_generator: Rc::new(SuspendBlockerIdGenerator::default()),
             _suspend_blockers_node: suspend_blockers_node,
+            before_suspend_notifier,
         }))
     }
 
@@ -1303,11 +1348,17 @@ impl SuspendResumeListener for SystemActivityGovernor {
     }
 
     async fn notify_on_suspend(&self) {
+        let (tx, rx) = oneshot::channel();
+        *self.before_suspend_notifier.borrow_mut() = Some(rx.shared());
+
         fuchsia_trace::duration!("power", "system-activity-governor:suspend_callbacks");
         log::debug!("notify_on_suspend");
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseStarted);
         self.update_suspend_blockers(true).await;
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseEnded);
+
+        drop(tx);
+        *self.before_suspend_notifier.borrow_mut() = None;
         log::debug!("update_suspend_blockers(true) done");
     }
 
