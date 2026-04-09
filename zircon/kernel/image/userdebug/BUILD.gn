@@ -1,0 +1,13 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+# TODO(https://fxbug.dev/371568912): Define a proper userdebug image and
+# relocate the userdebug cmdline settings here. Since the legacy image always
+# picks the right kernel and Assembly currently picks the right cmdline
+# settings, this is remains valid userdebug image.
+group("userdebug") {
+  public_deps = [ "//zircon/kernel/image/legacy" ]
+}

@@ -7,7 +7,9 @@ use assembly_cli_args::{AssemblyMode, ValidationMode};
 
 use anyhow::{Context, Result, bail};
 use assembly_config_schema::developer_overrides::{DeveloperOnlyOptions, DeveloperOverrides};
-use assembly_config_schema::{BoardConfig, BoardInputBundle, FeatureSetLevel, ProductConfig};
+use assembly_config_schema::{
+    BoardConfig, BoardInputBundle, BuildType, FeatureSetLevel, ProductConfig,
+};
 use assembly_platform_artifacts::PlatformArtifacts;
 use assembly_release_info::SystemReleaseInfo;
 
@@ -106,7 +108,12 @@ impl ProductAssembly {
                 .context("Setting developer overrides")?;
         }
 
-        let kernel_aib = platform_artifacts.get_bundle("zircon");
+        let kernel_name = match product_config.platform.build_type {
+            BuildType::Eng => "zircon_eng",
+            BuildType::User => "zircon_user",
+            BuildType::UserDebug => "zircon_userdebug",
+        };
+        let kernel_aib = platform_artifacts.get_bundle(&kernel_name);
         // The emulator support bundle is always added, even to an empty build.
         // The emulator support bundle contains only a QEMU boot shim.
         // Kernel tests can customize this bundle to provide an alternate boot shim.

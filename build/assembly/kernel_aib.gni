@@ -20,7 +20,7 @@ import("//build/python/python_action.gni")
 #
 # Parameters:
 #
-#   kernel_zbi (optional; default: "//zircon/kernel")
+#   kernel_zbi (required)
 #     [label] Label of the zircon kernel to use.  This needs to use the
 #     `kernel_aib_input` metadata key to provide the `zbi` path from the root
 #     build directory. The default value is most likely the correct one.  This
@@ -42,6 +42,9 @@ import("//build/python/python_action.gni")
 #   $target_out_dir/$target_name/assembly_config.json
 #
 template("kernel_assembly_input_bundle") {
+  assert(defined(invoker.kernel_zbi),
+         "kernel_assembly_input_bundle(${target_name}) must set kernel_zbi")
+
   forward_variables_from(invoker,
                          [
                            "bundles_dir",
@@ -49,11 +52,6 @@ template("kernel_assembly_input_bundle") {
                            "kernel_zbi",
                            "kernel_image_name",
                          ])
-
-  if (!defined(kernel_zbi)) {
-    # Default to the canonical kernel target.
-    kernel_zbi = "//zircon/kernel"
-  }
 
   if (!defined(bundles_dir)) {
     bundles_dir = target_out_dir

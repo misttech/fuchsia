@@ -882,7 +882,7 @@ mod tests {
             })
             .unwrap();
 
-        builder.add_bundle(artifacts_dir.join("zircon/assembly_config.json")).unwrap();
+        builder.add_bundle(artifacts_dir.join("zircon_eng/assembly_config.json")).unwrap();
         builder.add_bundle(artifacts_dir.join("emulator_support/assembly_config.json")).unwrap();
         let (mut image_assembly_config, _) = builder
             .build_and_validate(&image_assembly_config_dir_utf8, &tools, ValidationMode::Off)

@@ -103,10 +103,20 @@ platform_artifacts("user") {
 
 ########
 #
-# The Zircon kernel itself
+# The Zircon kernel images by build type
 #
 # This uses a specialized template to create the AIB.
-kernel_assembly_input_bundle("zircon") {
+kernel_assembly_input_bundle("zircon_eng") {
+  testonly = true
+  kernel_zbi = "//zircon/kernel/image/eng"
+}
+
+kernel_assembly_input_bundle("zircon_user") {
+  kernel_zbi = "//zircon/kernel/image/user"
+}
+
+kernel_assembly_input_bundle("zircon_userdebug") {
+  kernel_zbi = "//zircon/kernel/image/userdebug"
 }
 
 ########

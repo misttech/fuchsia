@@ -72,7 +72,7 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #     [boolean] If true, allow the use of the example / testing AIB by this
 #     assembly.  This is only for use by tests of assembly.
 #
-#   kernel_zbi (optional; default: "//zircon/kernel")
+#   kernel_zbi (optional)
 #     [label] Label of the zircon kernel to use. This label complies with
 #     `kernel_aib_input` metadata protocol, see `Metadata Protocol` below.
 #     The default value is most likely the correct one.  This should only be

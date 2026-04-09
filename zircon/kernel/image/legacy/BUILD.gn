@@ -8,6 +8,7 @@ import("//zircon/kernel/kernel_image.gni")
 import("//zircon/kernel/kernel_package.gni")
 
 kernel_package("zircon") {
+  visibility = [ "//zircon/kernel/image/*" ]
   deps = [
     "..:common-package-items",
     "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
