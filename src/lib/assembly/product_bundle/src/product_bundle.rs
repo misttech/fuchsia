@@ -258,6 +258,23 @@ impl ProductBundle {
         }
     }
 
+    /// Returns true if the product bundle uses FVM as its image system in the given slot.
+    fn is_fvm(&self, slot: assembly_partitions_config::Slot) -> bool {
+        let ProductBundle::V2(pb) = self;
+        let system = match slot {
+            assembly_partitions_config::Slot::A => &pb.system_a,
+            assembly_partitions_config::Slot::B => &pb.system_b,
+            assembly_partitions_config::Slot::R => &pb.system_r,
+        };
+        if let Some(system) = system {
+            system.iter().any(|image| {
+                matches!(image, Image::FVM(_) | Image::FVMSparse(_) | Image::FVMFastboot(_))
+            })
+        } else {
+            false
+        }
+    }
+
     /// Attempts to load a `VirtualDeviceV1` from the product bundle with the
     /// given `device` name.
     /// If `device` is empty, loads the default recommended device instead.
@@ -297,6 +314,20 @@ impl ProductBundle {
             Some(VirtualDevice::V1(virtual_device)) => Ok(virtual_device),
             None => bail!("No default virtual device is available, please specify one by name."),
         }
+    }
+
+    /// This is true if the product bundle is not FVM and has fxfs_pbtool.
+    pub fn supports_extract_blobs(&self, slot: assembly_partitions_config::Slot) -> bool {
+        let ProductBundle::V2(pb) = self;
+        if self.is_fvm(slot) {
+            return false;
+        }
+        let tools = match slot {
+            assembly_partitions_config::Slot::A => &pb.platform_tools_a,
+            assembly_partitions_config::Slot::B => &pb.platform_tools_b,
+            assembly_partitions_config::Slot::R => &pb.platform_tools_r,
+        };
+        tools.iter().any(|p| p.file_name() == Some("fxfs_pbtool"))
     }
 
     /// Extract blobs from a system's fxfs image targeting the specified slot.
@@ -384,6 +415,7 @@ mod tests {
     use assembled_system::AssembledSystem;
     use assembly_cli_args::{AssemblyMode, ValidationMode};
     use assembly_container::AssemblyContainer;
+    use assembly_partitions_config::Slot;
     use assembly_tool::PlatformToolProvider;
     use image_assembly_config_builder::ImageAssemblyConfigBuilder;
     use serde_json::json;
@@ -816,6 +848,28 @@ mod tests {
         let pb_json = include_str!("../test_data/31.20260301.0.1/product_bundle.json");
         let pb = try_load_product_bundle(pb_json.as_bytes()).unwrap();
         assert!(matches!(pb, ProductBundle::V2 { .. }));
+    }
+
+    #[test]
+    fn test_supports_extract_blobs() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new().expect("creating temp dir");
+        let pb_dir = make_pb_v2_in!(temp_dir, "generic-x64");
+
+        let pb = LoadedProductBundle::try_load_from(pb_dir).unwrap();
+        // Default should be false as we don't have tools.
+        assert!(!pb.supports_extract_blobs(Slot::A));
+
+        // Now add a tool.
+        let pb_file = File::create(pb_dir.join("product_bundle.json")).unwrap();
+        let mut pb_json = make_sample_pbv2("generic-x64", None);
+        pb_json["platform_tools_a"] = serde_json::json!(["path/to/fxfs_pbtool"]);
+        serde_json::to_writer(&pb_file, &pb_json).unwrap();
+
+        let pb = LoadedProductBundle::try_load_from(pb_dir).unwrap();
+        assert!(pb.supports_extract_blobs(Slot::A));
+        assert!(!pb.supports_extract_blobs(Slot::B));
+
+        Ok(())
     }
 
     #[fuchsia::test]

@@ -26,7 +26,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sparse::unsparse;
 use std::fs;
-use std::io::{BufWriter, Cursor, Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::PathBuf;
 use storage_device::DeviceHolder;
 use storage_device::file_backed_device::FileBackedDevice;
@@ -470,12 +470,9 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
     // TODO (https://fxbug.dev/483735826):
     // Update the fxfs crate so that you can hand it a sparse image and
     // it will be able to parse that and iterate over the contents
-    let image_bytes = fs::read(&image)?;
-    let mut source = Cursor::new(image_bytes);
-    let mut unsparsed = Cursor::new(Vec::<u8>::new());
+    let mut source = fs::File::open(&image)?;
     let mut non_sparse_image = tempfile::NamedTempFile::new_in(&out_dir)?;
-    unsparse(&mut source, &mut unsparsed)?;
-    non_sparse_image.write_all(&unsparsed.into_inner())?;
+    unsparse(&mut source, non_sparse_image.as_file_mut())?;
 
     let device = DeviceHolder::new(FileBackedDevice::new(non_sparse_image.reopen()?, BLOCK_SIZE));
     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;

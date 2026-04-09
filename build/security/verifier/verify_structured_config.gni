@@ -36,7 +36,7 @@ template("extract_assembled_structured_config") {
                            ])
     depfile = "$target_gen_dir/$target_name.d"
     pb_manifest = "${invoker.product_bundle_path}/product_bundle.json"
-
+    hermetic_action_ignored_prefixes = [ "${invoker.product_bundle_path}" ]
     inputs = [ pb_manifest ]
     outputs = [ invoker.output ]
 
@@ -112,7 +112,10 @@ template("verify_assembled_structured_config") {
     tmp_dir = "$target_out_dir/$target_name/tmp"
     pb_manifest = "${invoker.product_bundle_path}/product_bundle.json"
 
-    hermetic_action_ignored_prefixes = [ tmp_dir ]
+    hermetic_action_ignored_prefixes = [
+      tmp_dir,
+      "${invoker.product_bundle_path}",
+    ]
 
     inputs = [
       pb_manifest,

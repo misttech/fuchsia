@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow};
-use camino::Utf8PathBuf;
-use delivery_blob::DeliveryBlobType;
+use anyhow::{Context, Result, anyhow, bail};
+use assembly_partitions_config::Slot;
+use assembly_util::fast_copy;
+use camino::{Utf8Path, Utf8PathBuf};
+use delivery_blob::{DeliveryBlobHeader, DeliveryBlobType};
 use product_bundle::ProductBundle;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -53,24 +55,40 @@ impl ModelConfig {
         let product_bundle_path =
             Utf8PathBuf::try_from(product_bundle_path).context("Converting Path to Utf8Path")?;
         let product_bundle = ProductBundle::try_load_from(&product_bundle_path)?;
-        let product_bundle = match product_bundle {
+        let product_bundle_v2 = match &product_bundle {
             ProductBundle::V2(pb) => pb,
         };
 
-        let repository = product_bundle
+        let repository = product_bundle_v2
             .repositories
             .get(0)
             .ok_or_else(|| anyhow!("The product bundle must have at least one repository"))?;
 
-        let delivery_blob_type = DeliveryBlobType::try_from(repository.delivery_blob_type)?;
-
-        let blobs_directory = repository
+        let blobs_directory_original = repository
             .blobs_path
             .clone()
             .into_std_path_buf()
             .join(repository.delivery_blob_type.to_string());
 
-        let update_package_hash = product_bundle
+        let blobs_directory = tempfile::Builder::new()
+            .prefix("scrutiny_blobs_uncompressed_")
+            .tempdir()
+            .context("Creating temp dir for uncompressed blobs")?
+            .into_path();
+
+        if product_bundle.supports_extract_blobs(Slot::A) {
+            product_bundle
+                .extract_blobs(
+                    Slot::A,
+                    Utf8Path::from_path(blobs_directory.as_path())
+                        .ok_or_else(|| anyhow!("blobs_directory not utf8"))?,
+                )
+                .context("Extracting blobs from product bundle")?;
+        }
+
+        Self::merge_blob_directories(&blobs_directory_original, &blobs_directory)?;
+
+        let update_package_hash = product_bundle_v2
             .update_package_hash
             .ok_or_else(|| anyhow!("An update package must exist inside the product bundle"))?;
         let update_package_path = blobs_directory.join(update_package_hash.to_string());
@@ -78,10 +96,44 @@ impl ModelConfig {
         Ok(ModelConfig {
             update_package_path,
             blobs_directory,
-            delivery_blob_type,
+            delivery_blob_type: DeliveryBlobType::Reserved,
             component_tree_config_paths: Vec::new(),
             is_recovery,
         })
+    }
+
+    fn merge_blob_directories(
+        blobs_directory_original: &Path,
+        blobs_directory: &Path,
+    ) -> Result<()> {
+        if !blobs_directory_original.exists() {
+            bail!("Original package blobs directory does not exist");
+        }
+        for entry in
+            std::fs::read_dir(blobs_directory_original).context("Reading original package blobs")?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                let file_name = path.file_name().unwrap();
+                let output_path = blobs_directory.join(file_name);
+                if !output_path.exists() {
+                    let file_bytes = std::fs::read(&path)
+                        .context("Reading blob to check for delivery header")?;
+                    if let Ok(Some(header)) = DeliveryBlobHeader::parse(&file_bytes) {
+                        if header.delivery_type == DeliveryBlobType::Type1 {
+                            let mut dest_file = std::fs::File::create(&output_path)
+                                .context("Creating file for decompressed blob")?;
+                            delivery_blob::decompress_to(&file_bytes, &mut dest_file)
+                                .map_err(|e| anyhow!("Decompress failed: {:?}", e))?;
+                            continue;
+                        }
+                    }
+                    fast_copy(&path, output_path).context("Copying original package blob")?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Path to the Fuchsia update package.
