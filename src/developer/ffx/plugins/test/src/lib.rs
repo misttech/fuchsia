@@ -14,13 +14,15 @@ use crate::suite_definition::{
 use anyhow::{Context, Result, format_err};
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code};
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
+use fdomain_fuchsia_test_manager as ftest_manager;
 use ffx_config::EnvironmentContext;
 use ffx_test_args::{
     EarlyBootProfileCommand, ListCommand, RunCommand, TestCommand, TestSubCommand,
 };
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool, return_user_error};
-use fidl::endpoints::create_proxy;
 use futures::FutureExt;
 use itertools::Itertools;
 use run_test_suite_lib::output::Reporter;
@@ -33,11 +35,7 @@ use std::io::{Write, stdout};
 use std::ops::Deref as _;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
-use target_holders::RemoteControlProxyHolder;
-use {
-    fidl_fuchsia_developer_remotecontrol as fremotecontrol,
-    fidl_fuchsia_test_manager as ftest_manager,
-};
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 /// Error code returned if connecting to Test Manager fails.
 pub static SETUP_FAILED_CODE: LazyLock<i32> =
@@ -191,7 +189,8 @@ async fn early_boot_profile(
         .await
         .map_err(|e| ffx_error_with_code!(*SETUP_FAILED_CODE, "{:?}", e))?;
 
-    let (client, iterator) = fidl::endpoints::create_endpoints();
+    let (client, iterator) =
+        remote_control.domain().create_endpoints::<ftest_manager::DebugDataIteratorMarker>();
     early_boot_profile_proxy
         .register_watcher(iterator)
         .map_err(|e| ffx_error_with_code!(*SETUP_FAILED_CODE, "{:?}", e))?;
@@ -369,10 +368,11 @@ async fn params_from_pilot(
         Into::<fho::Error>::into(ffx_error!("Failed to open file {}: {:?}", &filename, e))
     })?;
 
-    let lifecycle_controller = ffx_component::rcs::connect_to_lifecycle_controller(&remote_control)
-        .await
-        .map_err(|e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e))?;
-    let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
+    let lifecycle_controller =
+        ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await.map_err(
+            |e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e),
+        )?;
+    let realm_query = ffx_component::rcs::connect_to_realm_query_f(&remote_control)
         .await
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 
@@ -421,10 +421,11 @@ async fn params_from_args(
         show_full_moniker: cmd.show_full_moniker_in_logs,
     };
 
-    let lifecycle_controller = ffx_component::rcs::connect_to_lifecycle_controller(&remote_control)
-        .await
-        .map_err(|e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e))?;
-    let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
+    let lifecycle_controller =
+        ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await.map_err(
+            |e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e),
+        )?;
+    let realm_query = ffx_component::rcs::connect_to_realm_query_f(&remote_control)
         .await
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 
@@ -511,18 +512,19 @@ async fn get_tests(
     let test_case_enumerator_proxy = testing_lib::connect_to_test_case_enumerator(&remote_control)
         .await
         .map_err(|e| ffx_error_with_code!(*SETUP_FAILED_CODE, "{:?}", e))?;
-    let (iterator_proxy, iterator) = create_proxy();
+    let (iterator_proxy, iterator) =
+        remote_control.domain().create_proxy::<ftest_manager::TestCaseIteratorMarker>();
 
     log::info!("launching test suite {}", cmd.test_url);
 
     let mut provided_realm = None;
     if let Some(realm_str) = &cmd.realm {
         let lifecycle_controller =
-            ffx_component::rcs::connect_to_lifecycle_controller(&remote_control).await.map_err(
+            ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await.map_err(
                 |e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e),
             )?;
 
-        let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
+        let realm_query = ffx_component::rcs::connect_to_realm_query_f(&remote_control)
             .await
             .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 
@@ -592,12 +594,11 @@ async fn get_tests(
 #[cfg(test)]
 mod test {
     use super::*;
+    use fdomain_client::Client;
+    use fdomain_client::fidl::{ProtocolMarker, ServerEnd};
+    use fdomain_fuchsia_sys2 as fsys;
     use ffx_writer::{Format, TestBuffers};
-    use fidl::endpoints::{ProtocolMarker, RequestStream, ServerEnd, create_proxy_and_stream};
-    use fidl_fuchsia_sys2 as fsys;
-    use ftest_manager::{
-        DebugData, DebugDataIteratorMarker, EarlyBootProfileMarker, EarlyBootProfileRequestStream,
-    };
+    use ftest_manager::{DebugData, DebugDataIteratorMarker, EarlyBootProfileMarker};
     use futures::prelude::*;
     use serde_json::{json, to_string};
     use std::io::Read;
@@ -629,15 +630,16 @@ mod test {
 
     struct FakeRemoteControllerProvider {
         controller: Arc<fremotecontrol::RemoteControlProxy>,
+        _client: Arc<Client>,
         _task: fuchsia_async::Task<()>,
     }
 
     impl FakeRemoteControllerProvider {
-        fn new() -> FakeRemoteControllerProvider {
+        fn new(client: Arc<Client>) -> FakeRemoteControllerProvider {
             let (remote_control, mut stream) =
-                create_proxy_and_stream::<fremotecontrol::RemoteControlMarker>();
-            let _task = fuchsia_async::Task::spawn(async move {
-                while let Some(request) = stream.try_next().await.unwrap() {
+                client.create_proxy_and_stream::<fremotecontrol::RemoteControlMarker>();
+            let _task = fuchsia_async::Task::local(async move {
+                while let Ok(Some(request)) = stream.try_next().await {
                     // store channels so that they do not die.
                     let mut server_channels = vec![];
                     match request {
@@ -664,7 +666,11 @@ mod test {
                     }
                 }
             });
-            FakeRemoteControllerProvider { controller: remote_control.into(), _task }
+            FakeRemoteControllerProvider {
+                controller: remote_control.into(),
+                _client: client,
+                _task,
+            }
         }
 
         fn remote_controller(&self) -> &fremotecontrol::RemoteControlProxy {
@@ -942,7 +948,7 @@ mod test {
             ),
         ];
         let test_env = ffx_config::test_init().expect("ffx_config::test_init() succeeds");
-        let fake_contoller = FakeRemoteControllerProvider::new();
+        let fake_contoller = FakeRemoteControllerProvider::new(fdomain_local::local_client_empty());
         for (run_command, expected_test_params) in cases.into_iter() {
             let result = params_from_args(
                 &test_env.context,
@@ -1053,7 +1059,7 @@ mod test {
                 },
             ),
         ];
-        let fake_contoller = FakeRemoteControllerProvider::new();
+        let fake_contoller = FakeRemoteControllerProvider::new(fdomain_local::local_client_empty());
         for (case_name, invalid_run_command) in cases.into_iter() {
             let result = params_from_args(
                 &test_env.context,
@@ -1222,7 +1228,7 @@ mod test {
             ),
         ];
         let test_env = ffx_config::test_init().expect("ffx_config::test_init() succeeds");
-        let fake_contoller = FakeRemoteControllerProvider::new();
+        let fake_contoller = FakeRemoteControllerProvider::new(fdomain_local::local_client_empty());
         let dir = tempfile::tempdir().expect("Create temp dir");
 
         for (pilot_json, expected_test_params) in cases.into_iter() {
@@ -1252,11 +1258,13 @@ mod test {
         }
     }
 
-    async fn fake_debug_data_iterator(iterator: ServerEnd<DebugDataIteratorMarker>) {
+    async fn fake_debug_data_iterator(
+        iterator: ServerEnd<DebugDataIteratorMarker>,
+        client: Arc<Client>,
+    ) {
         let mut stream = iterator.into_stream();
 
-        // we just need to send once sample file and not test full logic as that is tested inside the library.
-        let (s1, s2) = fidl::Socket::create_stream();
+        let (s1, s2) = client.create_stream_socket();
         let mut debug_data = vec![DebugData {
             name: "test_file".to_string().into(),
             socket: s1.into(),
@@ -1264,8 +1272,10 @@ mod test {
         }];
         let mut compressor = zstd::bulk::Compressor::new(0).unwrap();
         let bytes = compressor.compress(&[1, 2, 3, 4, 5]).unwrap();
-        s2.write(bytes.as_slice()).unwrap();
-        while let Some(request) = stream.try_next().await.unwrap() {
+        let (_read, write) = s2.stream().unwrap();
+        write.write_all(bytes.as_slice()).await.unwrap();
+        std::mem::drop(write);
+        while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 ftest_manager::DebugDataIteratorRequest::GetNext { .. } => {
                     panic!("Not Implemented");
@@ -1279,11 +1289,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_early_boot_profile() {
+        let client = fdomain_local::local_client_empty();
         let (remote_control, mut stream) =
-            create_proxy_and_stream::<fremotecontrol::RemoteControlMarker>();
-        let task = fuchsia_async::Task::spawn(async move {
+            client.create_proxy_and_stream::<fremotecontrol::RemoteControlMarker>();
+        let task = fuchsia_async::Task::local(async move {
             let mut once = false;
-            while let Some(request) = stream.try_next().await.unwrap() {
+            while let Ok(Some(request)) = stream.try_next().await {
                 match request {
                     fremotecontrol::RemoteControlRequest::ConnectCapability {
                         moniker,
@@ -1299,16 +1310,15 @@ mod test {
                         assert!(capability_name == EarlyBootProfileMarker::DEBUG_NAME);
                         responder.send(Ok(())).expect("error sending EchoString response");
 
-                        let mut stream = EarlyBootProfileRequestStream::from_channel(
-                            fidl::AsyncChannel::from_channel(server_channel),
-                        );
-                        while let Some(request) = stream.try_next().await.unwrap() {
+                        let mut stream =
+                            ServerEnd::<EarlyBootProfileMarker>::new(server_channel).into_stream();
+                        while let Ok(Some(request)) = stream.try_next().await {
                             match request {
                                 ftest_manager::EarlyBootProfileRequest::RegisterWatcher {
                                     iterator,
                                     control_handle: _,
                                 } => {
-                                    fake_debug_data_iterator(iterator).await;
+                                    fake_debug_data_iterator(iterator, Arc::clone(&client)).await;
                                 }
                                 other => {
                                     unreachable!("Got unexpected request: {other:?}");

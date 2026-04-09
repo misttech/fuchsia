@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
+use fdomain_fuchsia_test_manager as ftest_manager;
 use run_test_suite_lib::{ConnectionError, SuiteRunnerConnector};
-use {
-    fidl_fuchsia_developer_remotecontrol as fremotecontrol,
-    fidl_fuchsia_test_manager as ftest_manager,
-};
 
 /// Connector implementation that connects to SuiteRunner using the RemoteControl
 /// protocol.

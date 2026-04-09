@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use fidl_fuchsia_diagnostics::{ComponentSelector, LogInterestSelector, StringSelector};
-use fidl_fuchsia_diagnostics_types::Interest;
-use fidl_fuchsia_sys2 as fsys;
+use fdomain_fuchsia_diagnostics::{ComponentSelector, LogInterestSelector, StringSelector};
+use fdomain_fuchsia_diagnostics_types::Interest;
+use fdomain_fuchsia_sys2 as fsys;
 use run_test_suite_lib::TestParams;
 use serde::Deserialize;
 use serde_json::Value;
@@ -262,7 +262,6 @@ fn min_severity_param_value_to_selectors(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::endpoints::create_proxy;
 
     const TEST_LIST_VALID: &'static str = r#"
     {
@@ -305,10 +304,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_params_from_reader_valid() {
+        let client = fdomain_local::local_client_empty();
         let reader = TEST_LIST_VALID.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         let test_params = test_params_from_reader(reader, &lifecycle_controller, &realm_query)
             .await
             .expect("read file");
@@ -334,10 +334,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_params_from_reader_invalid() {
+        let client = fdomain_local::local_client_empty();
         let reader = TEST_LIST_INVALID.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         let test_params =
             test_params_from_reader(reader, &lifecycle_controller, &realm_query).await;
         assert!(test_params.is_err());
@@ -383,10 +384,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_combined_params_from_pilot_reader() {
+        let client = fdomain_local::local_client_empty();
         let reader = PILOT_CONFIG_VALID.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         let combined_params =
             combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
                 .await
@@ -455,10 +457,11 @@ mod test {
 
     #[fuchsia::test]
     async fn test_combined_params_from_pilot_reader_invalid() {
+        let client = fdomain_local::local_client_empty();
         let reader = PILOT_CONFIG_INVALID.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         let combined_params_result =
             combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
                 .await;
@@ -502,10 +505,11 @@ mod test {
     // may be required.
     #[fuchsia::test]
     async fn test_pilot_reader_severity_cases() {
+        let client = fdomain_local::local_client_empty();
         let reader = PILOT_CONFIG_SEVERITY_UPPER.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         assert!(
             combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
                 .await
@@ -514,8 +518,8 @@ mod test {
 
         let reader = PILOT_CONFIG_SEVERITY_LOWER.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         assert!(
             combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
                 .await
@@ -524,8 +528,8 @@ mod test {
 
         let reader = PILOT_CONFIG_SEVERITY_PASCAL.as_bytes();
         let (lifecycle_controller, _server_end1) =
-            create_proxy::<fsys::LifecycleControllerMarker>();
-        let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
+            client.create_proxy::<fsys::LifecycleControllerMarker>();
+        let (realm_query, _server_end2) = client.create_proxy::<fsys::RealmQueryMarker>();
         assert!(
             combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
                 .await
