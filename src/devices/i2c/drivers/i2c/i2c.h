@@ -9,6 +9,10 @@
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 
+#include <deque>
+#include <optional>
+
+#include "request.h"
 #include "src/devices/i2c/drivers/i2c/i2c-child-server.h"
 
 namespace i2c {
@@ -27,11 +31,27 @@ class I2cDriver : public fdf::DriverBase {
   }
 
   zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop() override;
 
   void Transact(uint16_t address, TransferRequestView request, TransferCompleter::Sync& completer);
 
  private:
   static constexpr size_t kInitialOpCount = 16;
+  // An arbitrary limit on the size of the request queue.
+  static constexpr size_t kMaxTransactionsPerChild = 8;
+
+  RequestStorage::Deleter GetCurrentRequestDeleter() {
+    return [pending_requests = &pending_requests_](Request* request) {
+      // We can't call erase() because `RequestStorage` isn't movable.
+      ZX_DEBUG_ASSERT(request == &pending_requests->front());
+      pending_requests->pop_front();
+    };
+  }
+
+  void StartCurrentRequest();
+
+  void CompleteRequest(fdf::WireUnownedResult<fuchsia_hardware_i2cimpl::Device::Transact>& result);
 
   zx::result<> AddI2cChildren(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata);
 
@@ -42,11 +62,15 @@ class I2cDriver : public fdf::DriverBase {
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> impl_ops_;
   std::vector<fidl::VectorView<uint8_t>> read_vectors_;
 
-  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c_;
+  fdf::WireClient<fuchsia_hardware_i2cimpl::Device> i2c_;
 
   std::vector<std::unique_ptr<I2cChildServer>> child_servers_;
 
   fidl::ClientEnd<fuchsia_driver_framework::Node> i2c_node_;
+
+  std::deque<Request> pending_requests_;
+  std::optional<RequestStorage> current_request_;
+  bool shutdown_ = false;
 };
 
 }  // namespace i2c

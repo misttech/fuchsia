@@ -30,6 +30,8 @@ source_set("common") {
     "i2c-child-server.h",
     "i2c.cc",
     "i2c.h",
+    "request.cc",
+    "request.h",
   ]
   deps = [
     ":i2c_bind",

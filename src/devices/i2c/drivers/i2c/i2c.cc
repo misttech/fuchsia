@@ -20,7 +20,7 @@ zx::result<> I2cDriver::Start() {
     fdf::error("Failed to connect to fuchsia.hardware.i2cimpl service: {}", i2cimpl_result);
     return i2cimpl_result.take_error();
   }
-  i2c_.Bind(std::move(*i2cimpl_result));
+  i2c_.Bind(std::move(*i2cimpl_result), fdf::Dispatcher::GetCurrent()->get());
 
   fidl::Arena arena;
   zx::result i2c_bus_metadata =
@@ -36,7 +36,7 @@ zx::result<> I2cDriver::Start() {
   }
 
   fdf::Arena i2c_arena('I2CI');
-  fdf::WireUnownedResult max_transfer_size = i2c_.buffer(i2c_arena)->GetMaxTransferSize();
+  fdf::WireUnownedResult max_transfer_size = i2c_.sync().buffer(i2c_arena)->GetMaxTransferSize();
   if (!max_transfer_size.ok()) {
     fdf::error("Failed to send GetMaxTransferSize request: {}", max_transfer_size.status_string());
     return zx::error(max_transfer_size.status());
@@ -56,7 +56,30 @@ zx::result<> I2cDriver::Start() {
   }
 
   i2c_node_ = std::move(child->node_);
-  return AddI2cChildren(i2c_bus_metadata.value());
+
+  if (zx::result<> result = AddI2cChildren(i2c_bus_metadata.value()); result.is_error()) {
+    return result;
+  }
+
+  zx_status_t status =
+      fdf_dispatcher_seal(driver_dispatcher()->get(), FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS);
+  if (status != ZX_OK) {
+    fdf::error("Failed to sync seal dispatcher: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  return zx::ok();
+}
+
+void I2cDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+  shutdown_ = true;
+  completer(zx::ok());
+}
+
+void I2cDriver::Stop() {
+  // The dispatcher has been stopped, meaning the current request must have already been completed.
+  ZX_DEBUG_ASSERT(!current_request_.has_value());
+  std::ranges::for_each(pending_requests_.begin(), pending_requests_.end(),
+                        [](Request& request) { request.Complete(ZX_ERR_CANCELED); });
 }
 
 zx::result<> I2cDriver::AddI2cChildren(
@@ -91,6 +114,11 @@ void I2cDriver::Transact(uint16_t address, TransferRequestView request,
                          TransferCompleter::Sync& completer) {
   TRACE_DURATION("i2c", "I2cDevice Process Queued Transacts");
 
+  if (shutdown_) {
+    completer.ReplyError(ZX_ERR_CANCELED);
+    return;
+  }
+
   if (request->transactions.size() < 1) {
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
@@ -100,78 +128,85 @@ void I2cDriver::Transact(uint16_t address, TransferRequestView request,
     return;
   }
 
-  impl_ops_.clear();
-  size_t total_transfer_size = 0;
-  for (const auto& transaction : request->transactions) {
-    if (!transaction.has_data_transfer()) {
-      completer.ReplyError(ZX_ERR_INVALID_ARGS);
+  RequestConverter converter(request, address, max_transfer_);
+
+  if (current_request_.has_value()) {
+    if (pending_requests_.size() >= kMaxTransactionsPerChild * child_servers_.size()) {
+      fdf::error("Queue is full, dropping request");
+      completer.ReplyError(ZX_ERR_SHOULD_WAIT);
       return;
     }
 
-    fuchsia_hardware_i2cimpl::wire::I2cImplOp impl_op{
-        // Same address for all ops, since there is one address per channel.
-        .address = address,
-        .stop = transaction.has_stop() && transaction.stop(),
-    };
-
-    auto& data_transfer = transaction.data_transfer();
-    if (data_transfer.is_read_size()) {
-      if (data_transfer.read_size() > max_transfer_) {
-        completer.ReplyError(ZX_ERR_INVALID_ARGS);
-        return;
-      }
-
-      impl_op.type =
-          fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(data_transfer.read_size());
-      total_transfer_size += data_transfer.read_size();
-    } else if (data_transfer.is_write_data()) {
-      if (data_transfer.write_data().empty()) {
-        completer.ReplyError(ZX_ERR_INVALID_ARGS);
-        return;
-      }
-
-      impl_op.type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-          fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&data_transfer.write_data()));
-      total_transfer_size += data_transfer.write_data().size();
-    } else {
-      completer.ReplyError(ZX_ERR_INVALID_ARGS);
-      return;
+    // An I2C request is already pending. Save this request and push it to the queue to be completed
+    // later.
+    zx_status_t status = pending_requests_.emplace_back(completer.ToAsync()).SaveRequest(converter);
+    if (status != ZX_OK) {
+      pending_requests_.back().Complete(status);
+      pending_requests_.pop_back();
     }
-
-    if (total_transfer_size > fuchsia_hardware_i2c::kMaxTransferSize) {
-      completer.ReplyError(ZX_ERR_OUT_OF_RANGE);
-      return;
-    }
-
-    impl_ops_.push_back(impl_op);
-  }
-  impl_ops_.back().stop = true;
-
-  fdf::Arena arena('I2CI');
-  fdf::WireUnownedResult result = i2c_.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(impl_ops_));
-  impl_ops_.clear();
-
-  if (!result.ok()) {
-    fdf::error("Failed to send Transfer request: {}", result.status_string());
-    completer.ReplyError(result.status());
     return;
   }
-  if (result->is_error()) {
+
+  // If no request is pending, we can immediately call to the i2cimpl driver without persisting the
+  // request data.
+
+  impl_ops_.clear();
+  impl_ops_.insert(impl_ops_.cend(), request->transactions.size(), {});
+  zx_status_t status = converter.Convert(
+      [](fidl::VectorView<uint8_t>& write_vector) {
+        return fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_vector);
+      },
+      impl_ops_);
+  if (status == ZX_OK) {
+    current_request_.emplace(
+        fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(impl_ops_),
+        completer.ToAsync());
+    StartCurrentRequest();
+  } else {
+    completer.ReplyError(status);
+  }
+  impl_ops_.clear();
+}
+
+void I2cDriver::StartCurrentRequest() {
+  ZX_DEBUG_ASSERT(current_request_.has_value());
+  RequestStorage& request = *current_request_;
+  i2c_.buffer(request.arena())
+      ->Transact(request->ops())
+      .ThenExactlyOnce(fit::bind_member<&I2cDriver::CompleteRequest>(this));
+}
+
+void I2cDriver::CompleteRequest(
+    fdf::WireUnownedResult<fuchsia_hardware_i2cimpl::Device::Transact>& result) {
+  TRACE_DURATION("i2c", "I2cDevice Complete Transacts");
+
+  ZX_DEBUG_ASSERT(current_request_.has_value());
+
+  if (RequestStorage& request = current_request_.value(); !result.ok()) {
+    if (!shutdown_ || !result.error().is_dispatcher_shutdown()) {
+      fdf::error("Failed to send Transfer request: {}", result.status_string());
+    }
+    request->Complete(result.status());
+  } else if (result->is_error()) {
     // Don't log at ERROR severity here, as some I2C devices intentionally NACK to indicate that
     // they are busy.
     fdf::debug("Failed to perform transfer: {}", zx_status_get_string(result->error_value()));
-    completer.ReplyError(result->error_value());
-    return;
+    request->Complete(result->error_value());
+  } else {
+    read_vectors_.clear();
+    for (const auto& read : result.value()->read) {
+      read_vectors_.emplace_back(read.data);
+    }
+    request->Complete(fidl::VectorView<fidl::VectorView<uint8_t>>::FromExternal(read_vectors_));
+    read_vectors_.clear();
   }
 
-  read_vectors_.clear();
-  for (const auto& read : result.value()->read) {
-    read_vectors_.emplace_back(read.data);
+  current_request_.reset();
+  // Break on shutdown to prevent recursive calls to cancel every request in the queue.
+  if (!pending_requests_.empty() && !shutdown_) {
+    current_request_.emplace(&pending_requests_.front(), GetCurrentRequestDeleter());
+    StartCurrentRequest();
   }
-
-  completer.ReplySuccess(fidl::VectorView<fidl::VectorView<uint8_t>>::FromExternal(read_vectors_));
-  read_vectors_.clear();
 }
 
 }  // namespace i2c
