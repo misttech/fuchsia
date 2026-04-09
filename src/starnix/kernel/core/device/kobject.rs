@@ -11,12 +11,12 @@ use crate::vfs::{
     fileops_impl_seekable, fs_node_impl_not_dir,
 };
 use starnix_logging::track_stub;
+use starnix_rcu::{RcuHashMap, RcuReadScope};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
-use std::borrow::Cow;
 use std::sync::Arc;
 
 /// A Class is a higher-level view of a device.
@@ -72,6 +72,8 @@ impl std::fmt::Debug for Bus {
     }
 }
 
+pub type UEventProperties = Vec<(FsString, FsString)>;
+
 #[derive(Clone, Debug)]
 pub struct Device {
     pub name: FsString,
@@ -97,37 +99,52 @@ impl Device {
         builder.build_relative()
     }
 
-    pub fn uevent_properties(&self, separator: char) -> String {
-        let Some(metadata) = &self.metadata else {
-            return String::new();
-        };
+    pub fn uevent_properties(&self, separator: char) -> FsString {
+        let props = self.get_uevent_properties_list();
+        flatten_uevent_properties(props, separator)
+    }
+
+    pub fn get_uevent_properties_list(&self) -> UEventProperties {
+        let mut props = vec![];
+
         // TODO(https://fxbug.dev/42078277): Pass the synthetic UUID when available.
         // Otherwise, default as "0".
         let path = self.path_from_depth(0);
 
-        let devtype_uevent = if let Some(devtype) = &metadata.devtype {
-            format!("DEVTYPE={}{separator}", devtype)
-        } else {
-            String::new()
-        };
+        let mut devpath = vec![b'/'];
+        devpath.extend_from_slice(path.as_ref());
 
-        format!(
-            "DEVPATH=/{path}{separator}\
-                            DEVNAME={name}{separator}\
-                            SUBSYSTEM={subsystem}{separator}\
-                            {devtype_uevent}\
-                            SYNTH_UUID=0{separator}\
-                            MAJOR={major}{separator}\
-                            MINOR={minor}{separator}",
-            name = metadata.devname,
-            subsystem = self.class.name,
-            major = metadata.devt.major(),
-            minor = metadata.devt.minor(),
-        )
+        props.push((b"DEVPATH".into(), devpath.into()));
+        props.push((b"SUBSYSTEM".into(), self.class.name.clone()));
+
+        if let Some(metadata) = &self.metadata {
+            props.push((b"DEVNAME".into(), metadata.devname.clone()));
+            props.push((b"SYNTH_UUID".into(), b"0".into()));
+            props.push((b"MAJOR".into(), metadata.devt.major().to_string().into()));
+            props.push((b"MINOR".into(), metadata.devt.minor().to_string().into()));
+            let scope = RcuReadScope::new();
+            for (key, value) in metadata.properties.iter(&scope) {
+                props.push((key.clone(), value.clone()));
+            }
+        }
+
+        props
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+pub fn flatten_uevent_properties(props: UEventProperties, separator: char) -> FsString {
+    let mut result = vec![];
+    let sep = separator as u8;
+    for (key, value) in props {
+        result.extend_from_slice(key.as_ref());
+        result.push(b'=');
+        result.extend_from_slice(value.as_ref());
+        result.push(sep);
+    }
+    result.into()
+}
+
+#[derive(Clone, Debug)]
 pub struct DeviceMetadata {
     /// Name of the device in /dev.
     ///
@@ -135,16 +152,16 @@ pub struct DeviceMetadata {
     pub devname: FsString,
     pub devt: DeviceId,
     pub mode: DeviceMode,
-    pub devtype: Option<Cow<'static, str>>,
+    pub properties: Arc<RcuHashMap<FsString, FsString>>,
 }
 
 impl DeviceMetadata {
     pub fn new(devname: FsString, devt: DeviceId, mode: DeviceMode) -> Self {
-        Self { devname, devt, mode, devtype: None }
+        Self { devname, devt, mode, properties: Arc::new(RcuHashMap::default()) }
     }
 
-    pub fn with_devtype(mut self, devtype: impl Into<Cow<'static, str>>) -> Self {
-        self.devtype = Some(devtype.into());
+    pub fn with_devtype(self, devtype: impl Into<FsString>) -> Self {
+        self.properties.insert(b"DEVTYPE".into(), devtype.into());
         self
     }
 }
@@ -200,7 +217,8 @@ impl FileOps for UEventFile {
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         let content = self.device.uevent_properties('\n');
-        data.write(content.get(offset..).ok_or_else(|| errno!(EINVAL))?.as_bytes())
+        let content_bytes: &[u8] = content.as_ref();
+        data.write(content_bytes.get(offset..).ok_or_else(|| errno!(EINVAL))?)
     }
 
     fn write(
@@ -310,13 +328,13 @@ mod tests {
 
         assert_eq!(
             device.uevent_properties('\n'),
-            "DEVPATH=/devices/bus/class/device\n\
-             DEVNAME=devname\n\
+            b"DEVPATH=/devices/bus/class/device\n\
              SUBSYSTEM=class\n\
-             DEVTYPE=disk\n\
+             DEVNAME=devname\n\
              SYNTH_UUID=0\n\
              MAJOR=1\n\
-             MINOR=2\n"
+             MINOR=2\n\
+             DEVTYPE=disk\n"
         );
     }
 
@@ -334,12 +352,43 @@ mod tests {
 
         assert_eq!(
             device.uevent_properties('\n'),
-            "DEVPATH=/devices/bus/class/device\n\
-             DEVNAME=devname\n\
+            b"DEVPATH=/devices/bus/class/device\n\
              SUBSYSTEM=class\n\
+             DEVNAME=devname\n\
              SYNTH_UUID=0\n\
              MAJOR=1\n\
              MINOR=2\n"
         );
+    }
+
+    #[::fuchsia::test]
+    fn test_get_uevent_properties_list() {
+        let bus = Bus::new("virtual".into(), SimpleDirectory::new(), None);
+        let class =
+            Class::new("android_usb".into(), SimpleDirectory::new(), bus, SimpleDirectory::new());
+        let metadata =
+            DeviceMetadata::new("android0".into(), DeviceId::new(1, 2), DeviceMode::Char);
+        let device = Device::new("android0".into(), class, Some(metadata));
+
+        let props = device.get_uevent_properties_list();
+
+        // Now we have metadata, so we expect more properties (DEVNAME, SYNTH_UUID, MAJOR, MINOR).
+        // Original count was 2 (DEVPATH, SUBSYSTEM).
+        // Now we add: DEVNAME, SYNTH_UUID, MAJOR, MINOR. Total 6.
+        assert_eq!(props.len(), 6);
+        assert_eq!(props[0], ("DEVPATH".into(), "/devices/virtual/android_usb/android0".into()));
+        assert_eq!(props[1], ("SUBSYSTEM".into(), "android_usb".into()));
+
+        let properties = &device.metadata.as_ref().unwrap().properties;
+        properties.insert("USB_STATE".into(), "CONNECTED".into());
+        properties.insert("ABC".into(), "XYZ".into());
+        properties.insert("FOO".into(), "BAR".into());
+
+        let props = device.get_uevent_properties_list();
+
+        assert_eq!(props.len(), 9);
+        assert_eq!(props[6], ("USB_STATE".into(), "CONNECTED".into()));
+        assert_eq!(props[7], ("ABC".into(), "XYZ".into()));
+        assert_eq!(props[8], ("FOO".into(), "BAR".into()));
     }
 }

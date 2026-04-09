@@ -30,12 +30,13 @@ use netlink_packet_sock_diag::SockDiagRequest;
 use netlink_packet_sock_diag::message::EmptyDeserializeOptions as EmptyDeserializeSockDiagOptions;
 use netlink_packet_utils::{DecodeError, Emitable as _};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use std::io::Write;
 use std::marker::PhantomData;
 use std::num::{NonZeroI32, NonZeroU32};
 use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::device::kobject::{Device, UEventAction, UEventContext};
+use crate::device::kobject::{Device, UEventAction, UEventContext, flatten_uevent_properties};
 use crate::device::{DeviceListener, DeviceListenerKey};
 use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{
@@ -841,19 +842,24 @@ impl SocketOps for UEventNetlinkSocket {
 impl DeviceListener for Arc<Mutex<NetlinkSocketInner>> {
     fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext) {
         let path = device.path_from_depth(0);
-        let message = format!(
-            "{action}@/{path}\0\
-                            ACTION={action}\0\
-                            SEQNUM={seqnum}\0\
-                            {other_props}",
-            seqnum = context.seqnum,
-            other_props = device.uevent_properties('\0'),
-        );
+
+        let mut props = device.get_uevent_properties_list();
+
+        // Prepend ACTION and SEQNUM to maintain existing order
+        props.insert(0, (b"ACTION".into(), action.to_string().into()));
+        props.insert(1, (b"SEQNUM".into(), context.seqnum.to_string().into()));
+
+        let flattened = flatten_uevent_properties(props, '\0');
+
+        let mut message = vec![];
+        write!(&mut message, "{action}@/{path}\0", action = action, path = path).unwrap();
+        message.extend_from_slice(flattened.as_ref());
+
         let ancillary_data = AncillaryData::Unix(UnixControlData::Credentials(Default::default()));
         let mut ancillary_data = vec![ancillary_data];
         // Ignore write errors
         let _ = self.lock().write_to_queue(
-            &mut VecInputBuffer::new(message.as_bytes()),
+            &mut VecInputBuffer::new(&message),
             Some(NetlinkAddress { pid: 0, groups: 1 }),
             &mut ancillary_data,
         );
