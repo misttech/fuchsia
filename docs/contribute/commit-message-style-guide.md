@@ -5,7 +5,6 @@ which include how to compose commit messages. When writing a commit message,
 follow these guidelines:
 
 * [General guidelines](#general-guidelines)
-* [Add a required tag and optional subtag(s)](#add-required-tag)
 * [Add a paragraph](#add-paragraph)
 * [Add an associated bug](#add-bug)
 * [Optionally indicate multiple steps](#indicate-multiple-steps)
@@ -23,9 +22,7 @@ follow these guidelines:
 
   * The detailed description is recommended but can be omitted if the change
     is well explained by the first line.
-  * The 50 characters limit is not a hard limit. Especially when using
-    multiple [tags](#add-required-tag) it can be hard to formulate a
-    meaningful summary in 50 characters.
+  * The 50 characters limit is not a hard limit.
 
 * Make use of [issue tracker integration](#add-bug), but not the in first line.
 * Use the [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) to
@@ -35,35 +32,6 @@ follow these guidelines:
 * Do not reference relative points in time, private URLs, individuals, private
   API keys, passwords, user names, etc.
 
-## Add required tag {#add-required-tag}
-
-The required `[tag]` in the first line helps readers of the commit tell what
-subject your change is about. The format is simply a keyword between brackets,
-for example, `[docs]`. The keyword has no specific meaning, but should help
-readers identify the subject easily. More specific tags or multiple tags can
-also be used to specify more fine-grained subjects, for example,`[docs][fidl]`.
-The following example shows required tags in the commit message subject:
-
-```none {:.devsite-disable-click-to-copy}
-[parent][component] Update component in Fuchsia
-
-Write the details of a commit message here.
-
-Bug: <issue-tracker-ID>
-
-Test: Added test X.
-```
-
-You can view the commit history of the files you've edited to check for the tags
-used previously. See these examples:
-
-* [https://fuchsia-review.googlesource.com/c/fuchsia/+/441776](https://fuchsia-review.googlesource.com/c/fuchsia/+/441776){:.external}
-* [https://fuchsia-review.googlesource.com/c/topaz/+/114013](https://fuchsia-review.googlesource.com/c/topaz/+/114013){:.external}
-
-Commit message tags are required. If the subject of a commit message doesn't
-include tags, Gerrit flags your change with `Needs Label:
-Commit-Message-has-tags`.
-
 ## Add paragraph {#add-paragraph}
 
 The paragraph underneath the header line describes the change in better detail.
@@ -71,7 +39,7 @@ Ensure the *reason and intention* of the change are clear:
 [for example](https://fuchsia-review.googlesource.com/c/fuchsia/+/569681):
 
 ```none {:.devsite-disable-click-to-copy}
-[docs] Adding Fuchsia Commit message style guide
+Adding Fuchsia Commit message style guide
 
 This change centralizes all commit message style guide into one style
 guide. It also removes duplicate content from existing pages and points
@@ -120,7 +88,7 @@ Here's an example of a
 with multiple steps:
 
 ```none {:.devsite-disable-click-to-copy}
-[fidl][go] Support for flexible enums (1/3)
+Support for flexible enums (1/3)
 
 Step 1 of 3. Adds support for flexible enums to fidlgen_go:
 
@@ -156,7 +124,7 @@ The following example shows `Test:` and `Multiply:` in the
 [commit message](https://fuchsia-review.googlesource.com/c/fuchsia/+/537303):
 
 ```none {:.devsite-disable-click-to-copy}
-[SetUI] Correct internal items' visibility Part II
+Correct internal items' visibility Part II
 
 This CL marks some internal items with pub(crate), pub(super) or leaves
 as private. Related CL: fxr/535942

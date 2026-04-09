@@ -377,14 +377,6 @@ These guidelines are a summary of the full [commit message style
 guide](docs/contribute/commit-message-style-guide.md).
 
 *   **Subject Line:**
-    *   **Tag:** The subject **must** begin with a `[tag]` to categorize
-        the change.
-        *   The tag should be a short keyword relevant to the change's
-            scope (e.g., `[docs]`, `[test]`, `[fidl]`).
-        *   Multiple tags can be used for more specificity (e.g.,
-            `[net][dhcp]`).
-        *   To choose a good tag, check the commit history for the files
-            you are editing.
     *   **Summary:** Use the imperative mood (e.g., "Add feature," not
         "Added feature").
     *   **Length:** Keep the entire subject line under 50 characters if
@@ -409,7 +401,7 @@ guide](docs/contribute/commit-message-style-guide.md).
 
 **Example:**
 ```
-[docs] Add commit message guidelines to GEMINI.md
+Add commit message guidelines to GEMINI.md
 
 This provides a summary of the commit message style
 guide for quick reference within the agent's primary
