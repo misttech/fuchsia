@@ -94,7 +94,7 @@ func TestSplitOutMultipliers(t *testing.T) {
 			Tests:       tests,
 			Env:         populateEnvDefaults(env, "x64", false),
 			ExpectsSSH:  true,
-			TimeoutSecs: int(computeShardTimeout(subshard{time.Duration(timeoutSecs) * time.Second, tests}).Seconds()),
+			TimeoutSecs: int(computeShardTimeout(subshard{time.Duration(timeoutSecs) * time.Second, tests, getTargetStartupDuration(env)}).Seconds()),
 			HostCPU:     GetHostCPU(env, false),
 			EnvName:     makeEnvName(env.Dimensions.DeviceType(), env.Dimensions.OS(), "x64"),
 		}
@@ -111,7 +111,7 @@ func TestSplitOutMultipliers(t *testing.T) {
 		shard.Tests[0].Runs = 1
 		shard.Tests[0].RunAlgorithm = StopOnFailure
 		shard.Name = fmt.Sprintf("%s-(%d)", shard.Name, shardIndex)
-		shard.TimeoutSecs = int(computeShardTimeout(subshard{time.Duration(timeoutSecs) * time.Second, shard.Tests}).Seconds())
+		shard.TimeoutSecs = int(computeShardTimeout(subshard{time.Duration(timeoutSecs) * time.Second, shard.Tests, getTargetStartupDuration(env)}).Seconds())
 		return shard
 	}
 
@@ -1531,8 +1531,8 @@ func TestWithTargetDuration(t *testing.T) {
 		// shards should have roughly similar timeouts because they have the
 		// same expected duration (one runs 1 5-minute test, the other runs 5
 		// 1-minute tests).
-		minTimeout := 15 * time.Minute
-		maxTimeout := 25 * time.Minute
+		minTimeout := 35 * time.Minute
+		maxTimeout := 45 * time.Minute
 		for _, shard := range actual {
 			timeout := time.Duration(shard.TimeoutSecs) * time.Second
 			if timeout < minTimeout {

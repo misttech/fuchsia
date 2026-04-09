@@ -293,7 +293,13 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 		t.ffx.SetTarget(target)
 		for attempt := 1; attempt <= maxAllowedAttempts; attempt++ {
 			logger.Debugf(ctx, "Starting flash attempt %d/%d", attempt, maxAllowedAttempts)
-			bootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			bootTimeout := 10 * time.Minute
+			// TODO(https://fxbug.dev/493277370): Sorrels can take longer to flash
+			// when USB hubs are busy.
+			if os.Getenv("FUCHSIA_DEVICE_TYPE") == "Sorrel" {
+				bootTimeout = 20 * time.Minute
+			}
+			bootCtx, cancel := context.WithTimeout(ctx, bootTimeout)
 			defer cancel()
 			// ffx target bootloader boot doesn't work for Sorrel.
 			if t.opts.Netboot && os.Getenv("FUCHSIA_DEVICE_TYPE") != "Sorrel" {

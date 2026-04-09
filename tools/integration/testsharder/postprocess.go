@@ -212,7 +212,7 @@ func SplitOutMultipliers(
 					multShard := *shard
 					multShard.Name = fmt.Sprintf("%s-(%d)", shard.Name, i)
 					multShard.Tests = []Test{test}
-					multShard.TimeoutSecs = int(computeShardTimeout(subshard{targetDuration, multShard.Tests}).Seconds())
+					multShard.TimeoutSecs = int(computeShardTimeout(subshard{targetDuration, multShard.Tests, getTargetStartupDuration(shard.Env)}).Seconds())
 					shards = append(shards, &multShard)
 				}
 			}
@@ -292,7 +292,7 @@ func SplitOutMultipliers(
 					newShard.Tests[idx] = test
 					fillUpTestIdxs = fillUpTestIdxs[:i]
 				}
-				newShard.TimeoutSecs = max(newShard.TimeoutSecs, int(computeShardTimeout(subshard{targetDuration, newShard.Tests}).Seconds()))
+				newShard.TimeoutSecs = max(newShard.TimeoutSecs, int(computeShardTimeout(subshard{targetDuration, newShard.Tests, getTargetStartupDuration(newShard.Env)}).Seconds()))
 			}
 			shards = append(shards, newShards...)
 		}
@@ -612,8 +612,9 @@ func WithTargetDuration(
 }
 
 type subshard struct {
-	duration time.Duration
-	tests    []Test
+	duration              time.Duration
+	tests                 []Test
+	targetStartupDuration time.Duration
 }
 
 // A subshardHeap is a min heap of subshards, using subshard duration as the key
@@ -652,6 +653,17 @@ func (h *subshardHeap) Pop() any {
 	return s
 }
 
+func getTargetStartupDuration(shardEnv build.Environment) time.Duration {
+	if shardEnv.Dimensions.DeviceType() == "" || shardEnv.TargetsEmulator() {
+		return 0
+	} else if shardEnv.Dimensions.DeviceType() == "Sorrel" {
+		// TODO(https://fxbug.dev/493277370): Sorrels can take longer to flash
+		// when USB hubs are busy.
+		return 20 * time.Minute
+	}
+	return 10 * time.Minute
+}
+
 // shardByTime breaks a single original shard into numNewShards subshards such
 // that each subshard has approximately the same expected total duration.
 //
@@ -681,7 +693,7 @@ func shardByTime(shard *Shard, testDurations TestDurationsMap, numNewShards int)
 		// Initialize each subshard to have an empty list of tests so that it will
 		// be properly outputted in the json output file as a list instead of a nil
 		// value if the shard ends up with zero tests.
-		s := subshard{tests: []Test{}}
+		s := subshard{tests: []Test{}, targetStartupDuration: getTargetStartupDuration(shard.Env)}
 		h = append(h, s)
 	}
 
@@ -803,7 +815,9 @@ func computeShardTimeout(s subshard) time.Duration {
 	if testTimeoutOverhead > 0 {
 		timeout += testTimeoutOverhead
 	}
-	timeout += shardOverhead
+	// Include the estimated target startup duration in the timeout,
+	// multiplied by 2 attempts.
+	timeout += shardOverhead + 2*s.targetStartupDuration
 	return timeout
 }
 
