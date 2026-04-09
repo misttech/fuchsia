@@ -4,11 +4,16 @@
 
 use core::future::Future;
 use fdf_component::{Driver, DriverContext};
+use fidl_fuchsia_hardware_power as fhw_power;
+use fidl_fuchsia_power_broker as fpower_broker;
+use fidl_fuchsia_power_system as fpower;
+use fuchsia_async as fasync;
 use futures::TryStreamExt;
 use log::{error, warn};
 use std::sync::{Arc, Weak};
 use zx::Status;
-use {fidl_fuchsia_power_system as fpower, fuchsia_async as fasync};
+
+use fidl_next as _;
 
 /// Implement this trait if you'd like to get notifications when the system is about to go into
 /// suspend and come out of resume.
@@ -28,8 +33,8 @@ pub trait SuspendableDriver: Driver {
 
 /// Wrapper trait to indicate the driver supports power operations.
 pub struct Suspendable<T: Driver> {
-    #[allow(unused)]
-    scope: fasync::Scope,
+    #[expect(unused)]
+    scope: Option<fasync::Scope>,
     driver: Arc<T>,
 }
 
@@ -46,7 +51,7 @@ async fn run_suspend_blocker<T: SuspendableDriver>(
                 } else {
                     return;
                 }
-                responder.send()
+                let _ = responder.send();
             }
             AfterResume { responder, .. } => {
                 if let Some(driver) = driver.upgrade() {
@@ -54,59 +59,193 @@ async fn run_suspend_blocker<T: SuspendableDriver>(
                 } else {
                     return;
                 }
-                responder.send()
+                let _ = responder.send();
             }
             // Ignore unknown requests.
             _ => {
                 warn!("Received unknown sag listener request");
-                Ok(())
             }
         }
-        .unwrap()
+    }
+}
+
+async fn run_element_runner<T: SuspendableDriver>(
+    driver: Weak<T>,
+    mut service: fpower_broker::ElementRunnerRequestStream,
+) {
+    let mut first_activation_occurred = false;
+    while let Some(req) = service.try_next().await.unwrap_or_default() {
+        if let fpower_broker::ElementRunnerRequest::SetLevel { level, responder } = req {
+            if level != fhw_power::FrameworkElementLevels::Off.into_primitive() as u8 {
+                first_activation_occurred = true;
+                if let Some(driver) = driver.upgrade() {
+                    driver.resume().await;
+                } else {
+                    return;
+                }
+            } else if first_activation_occurred {
+                if let Some(driver) = driver.upgrade() {
+                    driver.suspend().await;
+                } else {
+                    return;
+                }
+            }
+            let _ = responder.send();
+        }
     }
 }
 
 impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
     const NAME: &str = T::NAME;
 
-    async fn start(context: DriverContext) -> Result<Self, Status> {
-        let sag: fpower::ActivityGovernorProxy =
-            context.incoming.connect_protocol().map_err(|err| {
-                error!("Error connecting to sag: {err}");
-                Status::INTERNAL
-            })?;
+    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+        let mut runner = context
+            .start_args
+            .power_element_args
+            .as_mut()
+            .and_then(|args| args.runner_server.take());
+
+        let mut sag = None;
+        if runner.is_none() {
+            sag = Some(
+                context.incoming.connect_protocol::<fpower::ActivityGovernorProxy>().map_err(
+                    |err| {
+                        error!("Error connecting to sag: {err}");
+                        Status::INTERNAL
+                    },
+                )?,
+            );
+        }
 
         let driver = Arc::new(T::start(context).await?);
 
-        let scope = fasync::Scope::new_with_name("suspend");
-        if driver.suspend_enabled() {
-            let (client, server) = fidl::endpoints::create_endpoints();
+        let scope = if driver.suspend_enabled() {
+            let scope = fasync::Scope::new_with_name("suspend");
+            if let Some(runner) = runner.take() {
+                let weak_driver = Arc::downgrade(&driver);
+                scope.spawn(
+                    async move { run_element_runner(weak_driver, runner.into_stream()).await },
+                );
+            } else if let Some(sag) = sag.take() {
+                let (client, server) = fidl::endpoints::create_endpoints();
 
-            let _ = sag
-                .register_suspend_blocker(fpower::ActivityGovernorRegisterSuspendBlockerRequest {
-                    suspend_blocker: Some(client),
-                    name: Some(Self::NAME.into()),
-                    ..Default::default()
-                })
-                .await
-                .map_err(|err| {
-                    error!("Error connecting to sag: {err}");
-                    Status::INTERNAL
-                })?
-                .map_err(|err| {
-                    error!("Error connecting to sag: {err:?}");
-                    Status::INTERNAL
-                })?;
+                let _ = sag
+                    .register_suspend_blocker(
+                        fpower::ActivityGovernorRegisterSuspendBlockerRequest {
+                            suspend_blocker: Some(client),
+                            name: Some(Self::NAME.into()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(|err| {
+                        error!("Error connecting to sag: {err}");
+                        Status::INTERNAL
+                    })?
+                    .map_err(|err| {
+                        error!("Error connecting to sag: {err:?}");
+                        Status::INTERNAL
+                    })?;
 
-            let weak_driver = Arc::downgrade(&driver);
-            scope
-                .spawn(async move { run_suspend_blocker(weak_driver, server.into_stream()).await });
-        }
+                let weak_driver = Arc::downgrade(&driver);
+                scope.spawn(
+                    async move { run_suspend_blocker(weak_driver, server.into_stream()).await },
+                );
+            }
+            Some(scope)
+        } else {
+            None
+        };
 
         Ok(Self { driver, scope })
     }
 
     async fn stop(&self) {
         self.driver.stop().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf_component::testing::harness::TestHarness;
+    use fidl_fuchsia_driver_framework as fdf;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct TestDriver {
+        suspend_called: Arc<AtomicBool>,
+        resume_called: Arc<AtomicBool>,
+        suspend_enabled: bool,
+        stop_called: Arc<AtomicBool>,
+    }
+
+    impl Driver for TestDriver {
+        const NAME: &str = "test_driver";
+
+        async fn start(_context: DriverContext) -> Result<Self, Status> {
+            Ok(Self {
+                suspend_called: Arc::new(AtomicBool::new(false)),
+                resume_called: Arc::new(AtomicBool::new(false)),
+                suspend_enabled: true,
+                stop_called: Arc::new(AtomicBool::new(false)),
+            })
+        }
+
+        async fn stop(&self) {
+            self.stop_called.store(true, Ordering::SeqCst);
+        }
+    }
+
+    impl SuspendableDriver for TestDriver {
+        async fn suspend(&self) {
+            self.suspend_called.store(true, Ordering::SeqCst);
+        }
+
+        async fn resume(&self) {
+            self.resume_called.store(true, Ordering::SeqCst);
+        }
+
+        fn suspend_enabled(&self) -> bool {
+            self.suspend_enabled
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_suspend_resume_with_runner() {
+        let (runner_client, runner_server) =
+            fidl::endpoints::create_endpoints::<fpower_broker::ElementRunnerMarker>();
+
+        let mut harness = TestHarness::<Suspendable<TestDriver>>::new().set_power_element_args(
+            fdf::PowerElementArgs { runner_server: Some(runner_server), ..Default::default() },
+        );
+
+        let driver_under_test = harness.start_driver().await.expect("Failed to start driver");
+        let (test_driver_stop_called, test_driver_resume_called, test_driver_suspend_called) = {
+            let suspendable = driver_under_test.get_driver().expect("Failed to get driver");
+            (
+                suspendable.driver.stop_called.clone(),
+                suspendable.driver.resume_called.clone(),
+                suspendable.driver.suspend_called.clone(),
+            )
+        };
+
+        let runner_proxy = runner_client.into_proxy();
+
+        // Level 1 should trigger resume
+        runner_proxy.set_level(1).await.expect("Failed to set level");
+        assert!(test_driver_resume_called.load(Ordering::SeqCst));
+        test_driver_resume_called.store(false, Ordering::SeqCst);
+
+        // Level 0 should trigger suspend
+        runner_proxy.set_level(0).await.expect("Failed to set level");
+        assert!(test_driver_suspend_called.load(Ordering::SeqCst));
+        test_driver_suspend_called.store(false, Ordering::SeqCst);
+
+        // Level 1 again should trigger resume
+        runner_proxy.set_level(1).await.expect("Failed to set level");
+        assert!(test_driver_resume_called.load(Ordering::SeqCst));
+
+        driver_under_test.stop_driver().await;
+        assert!(test_driver_stop_called.load(Ordering::SeqCst));
     }
 }

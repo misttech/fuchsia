@@ -14,13 +14,21 @@ rustc_library("rust") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust",
+    "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+  ]
+
+  test_deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//src/lib/fuchsia",
   ]
 
   sources = [ "src/lib.rs" ]

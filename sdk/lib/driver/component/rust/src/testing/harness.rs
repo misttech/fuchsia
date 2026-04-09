@@ -13,17 +13,18 @@ use fdf::{AutoReleaseDispatcher, DispatcherBuilder, WeakDispatcher};
 use fdf_env::Environment;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_driver_framework::Offer;
+use fidl_fuchsia_io as fio;
 use fidl_next::{ClientEnd as NextClientEnd, ServerEnd as NextServerEnd};
 use fidl_next_fuchsia_component_runner::natural::ComponentNamespaceEntry;
 use fidl_next_fuchsia_driver_framework::DriverStartArgs;
 use fidl_next_fuchsia_driver_framework::natural::Offer as NextOffer;
+use fuchsia_async as fasync;
 use fuchsia_component::directory::open_directory_async;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use futures::StreamExt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Weak, mpsc};
 use zx::{HandleBased, Status};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// The main test harness for running a driver unit test.
 pub struct TestHarness<D> {
@@ -36,6 +37,7 @@ pub struct TestHarness<D> {
     url: Option<String>,
     offers: Option<Vec<NextOffer>>,
     scope: fasync::Scope,
+    power_element_args: Option<fidl_fuchsia_driver_framework::PowerElementArgs>,
     _d: PhantomData<D>,
 }
 
@@ -86,6 +88,7 @@ impl<D: Driver> TestHarness<D> {
             url: None,
             offers: None,
             scope,
+            power_element_args: None,
             _d: PhantomData,
         }
     }
@@ -123,6 +126,15 @@ impl<D: Driver> TestHarness<D> {
     /// Adds an offer to the driver's start args. Consumes and returns self to allow chaining.
     pub fn add_offer(mut self, offer: Offer) -> Self {
         self.offers.get_or_insert_default().push(convert::convert_df_offer(offer));
+        self
+    }
+
+    /// Sets the power element args for the driver. Consumes and returns self to allow chaining.
+    pub fn set_power_element_args(
+        mut self,
+        args: fidl_fuchsia_driver_framework::PowerElementArgs,
+    ) -> Self {
+        self.power_element_args = Some(args);
         self
     }
 
@@ -164,6 +176,20 @@ impl<D: Driver> TestHarness<D> {
                 .and_then(|v| v.duplicate_handle(fidl::Rights::SAME_RIGHTS).ok()),
             url: self.url.clone(),
             node_offers: self.offers.clone(),
+            power_element_args: self.power_element_args.take().map(|args| {
+                fidl_next_fuchsia_driver_framework::natural::PowerElementArgs {
+                    control_client: args
+                        .control_client
+                        .map(|c| NextClientEnd::from_untyped(c.into_channel())),
+                    runner_server: args
+                        .runner_server
+                        .map(|s| NextServerEnd::from_untyped(s.into_channel())),
+                    lessor_client: args
+                        .lessor_client
+                        .map(|c| NextClientEnd::from_untyped(c.into_channel())),
+                    token: args.token,
+                }
+            }),
             ..DriverStartArgs::default()
         };
 
@@ -194,11 +220,10 @@ impl<D> Drop for TestHarness<D> {
 }
 
 mod convert {
-    use {
-        fidl_fuchsia_component_decl as decl, fidl_fuchsia_driver_framework as df,
-        fidl_next_fuchsia_component_decl as decl_next,
-        fidl_next_fuchsia_driver_framework as df_next,
-    };
+    use fidl_fuchsia_component_decl as decl;
+    use fidl_fuchsia_driver_framework as df;
+    use fidl_next_fuchsia_component_decl as decl_next;
+    use fidl_next_fuchsia_driver_framework as df_next;
 
     pub fn convert_df_offer(offer: df::Offer) -> df_next::Offer {
         match offer {
@@ -359,11 +384,12 @@ mod tests {
     use super::*;
     use crate::{Node, NodeBuilder, ServiceInstance, ServiceOffer};
     use fidl_next::{Request, Responder};
+    use fidl_next_fuchsia_examples as fexample;
     use fidl_next_fuchsia_examples::echo::{EchoString, SendString};
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use futures::lock::Mutex;
     use log::info;
-    use {fidl_next_fuchsia_examples as fexample, fuchsia_async as fasync};
 
     struct EchoServer;
 
