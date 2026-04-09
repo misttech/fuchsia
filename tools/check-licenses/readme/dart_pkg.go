@@ -18,13 +18,17 @@ const (
 // Create an in-memory representation of a new README.fuchsia file
 // by inferring info about a Dart package given it's location in the repo.
 func NewDartPkgReadme(path string) (*Readme, error) {
-	var b builder
+	name := filepath.Base(path)
+	url := fmt.Sprintf("https://pub.dev/packages/%s", name)
 
-	b.setPath(path)
-	b.setName(filepath.Base(path))
-
-	url := fmt.Sprintf("https://pub.dev/packages/%s", b.name)
-	b.setURL(url)
+	r := &Readme{
+		Name:           name,
+		URL:            url,
+		ProjectRoot:    path,
+		ReadmePath:     filepath.Join(dartPkgCustomReadme, path, "README.fuchsia"),
+		Licenses:       make([]*ReadmeLicense, 0),
+		MalformedLines: make([]string, 0),
+	}
 
 	// Find all license files for this project.
 	// They should all live in the root directory of this project.
@@ -49,8 +53,14 @@ func NewDartPkgReadme(path string) (*Readme, error) {
 		}
 
 		licenseUrl := fmt.Sprintf("%s/license", url)
-		b.addLicense(item.Name(), licenseUrl, singleLicenseFile)
+		r.Licenses = append(r.Licenses, &ReadmeLicense{
+			LicenseFile:       item.Name(),
+			LicenseFileURL:    licenseUrl,
+			LicenseFileFormat: string(singleLicenseFile),
+		})
 	}
-	customReadmePath := filepath.Join(dartPkgCustomReadme, path, "README.fuchsia")
-	return NewReadme(strings.NewReader(b.build()), path, customReadmePath)
+
+	r.loadLicenseFiles()
+	AddReadme(r)
+	return r, nil
 }

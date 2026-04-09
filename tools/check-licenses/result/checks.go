@@ -370,7 +370,7 @@ func AllReadmeFuchsiaFilesMustBeFormattedCorrectly() error {
 	b.WriteString("The following README files are malformed:\n\n")
 
 	count := 0
-	for _, r := range readme.AllReadmes {
+	for _, r := range readme.GetAllReadmes() {
 		if len(r.MalformedLines) > 0 {
 			b.WriteString(fmt.Sprintf(" -> %s [%s]\n",
 				r.ReadmePath, r.MalformedLines[0]))

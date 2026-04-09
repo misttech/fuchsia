@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
 )
@@ -23,7 +24,8 @@ const (
 )
 
 var (
-	AllReadmes = map[string]*Readme{}
+	allReadmesMu sync.RWMutex
+	allReadmes   = map[string]*Readme{}
 
 	knownDirectives = map[string]bool{
 		"Name":                        true,
@@ -123,6 +125,30 @@ type Other struct {
 	Value     string `json:"value"`
 }
 
+func AddReadme(r *Readme) {
+	allReadmesMu.Lock()
+	defer allReadmesMu.Unlock()
+	allReadmes[r.ProjectRoot] = r
+}
+
+func GetReadme(projectRoot string) (*Readme, bool) {
+	allReadmesMu.RLock()
+	defer allReadmesMu.RUnlock()
+	r, ok := allReadmes[projectRoot]
+	return r, ok
+}
+
+func GetAllReadmes() map[string]*Readme {
+	allReadmesMu.RLock()
+	defer allReadmesMu.RUnlock()
+
+	m := make(map[string]*Readme, len(allReadmes))
+	for k, v := range allReadmes {
+		m[k] = v
+	}
+	return m
+}
+
 // Create a Readme object from a path on the filesystem.
 //
 // Certain projects in the repo do not currently (and never will) provide
@@ -173,7 +199,7 @@ func NewReadmeFromFileCustomLocation(projectRoot, readmePath string) (*Readme, e
 
 // NewReadme creates a new Readme object from an io.Reader.
 func NewReadme(r io.Reader, projectRoot string, readmePath string) (*Readme, error) {
-	if r, ok := AllReadmes[projectRoot]; ok {
+	if r, ok := GetReadme(projectRoot); ok {
 		return r, nil
 	}
 
@@ -278,10 +304,17 @@ func NewReadme(r io.Reader, projectRoot string, readmePath string) (*Readme, err
 	}
 
 	// Loop through all license files that are listed in this Readme.
-	for _, l := range readme.Licenses {
+	readme.loadLicenseFiles()
+
+	AddReadme(readme)
+	return readme, nil
+}
+
+func (r *Readme) loadLicenseFiles() {
+	for _, l := range r.Licenses {
 		// If this license file does not already have a URL, generate one now.
 		if l.LicenseFileURL == "" {
-			if url, err := readme.getLicenseURLForPath(l.LicenseFile); err != nil {
+			if url, err := r.getLicenseURLForPath(l.LicenseFile); err != nil {
 				l.LicenseFileURL = url
 			}
 		}
@@ -291,17 +324,14 @@ func NewReadme(r io.Reader, projectRoot string, readmePath string) (*Readme, err
 
 		// Also attempt to load the license file into memory.
 		if l.LicenseFileRef == nil && l.LicenseFile != "" {
-			path := filepath.Join(projectRoot, l.LicenseFile)
+			path := filepath.Join(r.ProjectRoot, l.LicenseFile)
 			fileFormat := file.FileTypes[l.LicenseFileFormat]
-			f, err := file.LoadFile(path, fileFormat, readme.Name)
+			f, err := file.LoadFile(path, fileFormat, r.Name)
 			if err == nil {
 				l.LicenseFileRef = f
 			}
 		}
 	}
-
-	AllReadmes[projectRoot] = readme
-	return readme, nil
 }
 
 // License file directives can be listed in any order.

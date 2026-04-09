@@ -31,17 +31,28 @@ type golibReadmeBuilder struct {
 // Create an in-memory representation of a new README.fuchsia file
 // by inferring info about the given go library from it's location in the repo.
 func NewGolibReadme(path string) (*Readme, error) {
-	var b builder
+	name := filepath.Base(path)
+
 	var remainder string
-
-	b.setPath(path)
-	b.setName(filepath.Base(path))
-
 	cut := "third_party/golibs/vendor/"
 	if _, after, found := strings.Cut(path, cut); found {
 		remainder = after
 	}
-	b.setURL(fmt.Sprintf("https://%s", remainder))
+	url := fmt.Sprintf("https://%s", remainder)
+
+	r := &Readme{
+		Name:           name,
+		URL:            url,
+		ProjectRoot:    path,
+		ReadmePath:     filepath.Join(golibCustomReadme, path, "README.fuchsia"),
+		Licenses:       make([]*ReadmeLicense, 0),
+		MalformedLines: make([]string, 0),
+	}
+
+	// We need parent and grandparent to generate accurate license URLs
+	dir := filepath.Base(path)
+	parent := filepath.Base(filepath.Dir(path))
+	grandparent := filepath.Base(filepath.Dir(filepath.Dir(path)))
 
 	// Find all license files for this project.
 	// They should all live in the root directory of this project.
@@ -65,42 +76,51 @@ func NewGolibReadme(path string) (*Readme, error) {
 			continue
 		}
 
-		licenseUrl, err := getGolibLicenseURL(&b, remainder, item.Name())
+		licenseUrl, err := getGolibLicenseURL(url, remainder, item.Name(), dir, parent, grandparent)
 		if err != nil {
 			return nil, err
 		}
 
-		b.addLicense(item.Name(), licenseUrl, singleLicenseFile)
+		r.Licenses = append(r.Licenses, &ReadmeLicense{
+			LicenseFile:       item.Name(),
+			LicenseFileURL:    licenseUrl,
+			LicenseFileFormat: string(singleLicenseFile),
+		})
 	}
 
 	if path == golibCloudInternalRoot {
-		b.addLicense(golibCloudInternalLicenseFile, golibCloudInternalLicenseURL, singleLicenseFile)
+		r.Licenses = append(r.Licenses, &ReadmeLicense{
+			LicenseFile:       golibCloudInternalLicenseFile,
+			LicenseFileURL:    golibCloudInternalLicenseURL,
+			LicenseFileFormat: string(singleLicenseFile),
+		})
 	}
 
-	customReadmePath := filepath.Join(golibCustomReadme, path, "README.fuchsia")
-	return NewReadme(strings.NewReader(b.build()), path, customReadmePath)
+	r.loadLicenseFiles()
+	AddReadme(r)
+	return r, nil
 }
 
-func getGolibLicenseURL(b *builder, remainder, path string) (string, error) {
+func getGolibLicenseURL(url, remainder, path, dir, parent, grandparent string) (string, error) {
 	switch {
 	// pkg.go.dev/*
-	case b.parent == "google.golang.org",
-		b.grandparent == "golang.org",
-		b.grandparent == "gonum.org",
-		b.grandparent == "gopkg.in",
-		b.parent == "go.uber.org",
-		b.parent == "gvisor.dev",
-		b.dir == "go.opencensus.io",
-		b.parent == "cloud.google.com",
-		b.parent == "gopkg.in",
-		b.grandparent == "cloud.google.com",
-		b.grandparent == "honnef.co":
+	case parent == "google.golang.org",
+		grandparent == "golang.org",
+		grandparent == "gonum.org",
+		grandparent == "gopkg.in",
+		parent == "go.uber.org",
+		parent == "gvisor.dev",
+		dir == "go.opencensus.io",
+		parent == "cloud.google.com",
+		parent == "gopkg.in",
+		grandparent == "cloud.google.com",
+		grandparent == "honnef.co":
 		return fmt.Sprintf("https://pkg.go.dev/%s?tab=licenses", remainder), nil
 
 	// github.com/*
 	case remainder == "github.com/googleapis/gax-go/v2",
-		b.grandparent == "github.com":
-		return fmt.Sprintf("%s/blob/master/%s", b.url, path), nil
+		grandparent == "github.com":
+		return fmt.Sprintf("%s/blob/master/%s", url, path), nil
 
 	// Unknown
 	default:

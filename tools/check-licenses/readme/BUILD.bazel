@@ -8,7 +8,6 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 go_library(
     name = "readme",
     srcs = [
-        "builder.go",
         "dart_pkg.go",
         "golib.go",
         "init.go",
@@ -31,7 +30,6 @@ go_library(
 go_test(
     name = "readme_test",
     srcs = [
-        "builder_test.go",
         "dart_pkg_test.go",
         "golib_test.go",
         "readme_test.go",

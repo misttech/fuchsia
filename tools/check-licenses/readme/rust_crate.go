@@ -40,16 +40,27 @@ type (
 // Create an in-memory representation of a new README.fuchsia file
 // using data pulled from the Cargo.toml file of the given Rust crate.
 func NewRustCrateReadme(path string) (*Readme, error) {
-	var b builder
-	var err error
-
 	name := filepath.Base(path)
 	parentName := filepath.Base(filepath.Dir(path))
 	url := fmt.Sprintf("%s/+/%s/third_party/rust_crates/%s/%s", rustCrateURLPrefix, GitRevision, parentName, name)
 
-	b.setPath(path)
-	b.setName(name)
-	b.setURL(url)
+	var cargo CargoTomlFile
+	_, err := toml.DecodeFile(filepath.Join(path, "Cargo.toml"), &cargo)
+	if err != nil {
+		// If decoding fails, we fall back to the path-based name and URL
+		cargo.Package.Name = name
+		cargo.Package.Repository = url
+	}
+
+	r := &Readme{
+		Name:           cargo.Package.Name,
+		URL:            cargo.Package.Repository,
+		Version:        cargo.Package.Version,
+		ProjectRoot:    path,
+		ReadmePath:     filepath.Join(rustCrateCustomReadme, path, "README.fuchsia"),
+		Licenses:       make([]*ReadmeLicense, 0),
+		MalformedLines: make([]string, 0),
+	}
 
 	// Find all license files for this project.
 	// They should all live in the root directory of this project.
@@ -70,7 +81,11 @@ func NewRustCrateReadme(path string) (*Readme, error) {
 				}
 				licenseRelPath := filepath.Join("LICENSES", licenseItem.Name())
 				licenseUrl := fmt.Sprintf("%s/LICENSES/%s", url, licenseItem.Name())
-				b.addLicense(licenseRelPath, licenseUrl, singleLicenseFile)
+				r.Licenses = append(r.Licenses, &ReadmeLicense{
+					LicenseFile:       licenseRelPath,
+					LicenseFileURL:    licenseUrl,
+					LicenseFileFormat: string(singleLicenseFile),
+				})
 			}
 			continue
 		}
@@ -95,28 +110,23 @@ func NewRustCrateReadme(path string) (*Readme, error) {
 		}
 
 		licenseUrl := fmt.Sprintf("%s/%s", url, item.Name())
-		b.addLicense(item.Name(), licenseUrl, singleLicenseFile)
+		r.Licenses = append(r.Licenses, &ReadmeLicense{
+			LicenseFile:       item.Name(),
+			LicenseFileURL:    licenseUrl,
+			LicenseFileFormat: string(singleLicenseFile),
+		})
 	}
 
 	parentPath := filepath.Dir(path)
 	if strings.HasSuffix(parentPath, rustCrateEmptyRootDir) {
-		b.addLicense(rustCrateEmptyLicenseFile, rustCrateEmptyLicenseURL, singleLicenseFile)
-	}
-	customReadmePath := filepath.Join(rustCrateCustomReadme, path, "README.fuchsia")
-	return NewReadme(strings.NewReader(b.build()), path, customReadmePath)
-}
-
-func loadRustCrateTomlFields(b builder, path string) error {
-	var cargo CargoTomlFile
-
-	_, err := toml.DecodeFile(filepath.Join(path, "Cargo.toml"), &cargo)
-	if err != nil {
-		return fmt.Errorf("Failed to decode Cargo.toml file for project %s: %w", path, err)
+		r.Licenses = append(r.Licenses, &ReadmeLicense{
+			LicenseFile:       rustCrateEmptyLicenseFile,
+			LicenseFileURL:    rustCrateEmptyLicenseURL,
+			LicenseFileFormat: string(singleLicenseFile),
+		})
 	}
 
-	b.setName(cargo.Package.Name)
-	b.setURL(cargo.Package.Repository)
-	b.setVersion(cargo.Package.Version)
-
-	return nil
+	r.loadLicenseFiles()
+	AddReadme(r)
+	return r, nil
 }

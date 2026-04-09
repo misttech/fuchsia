@@ -36,7 +36,6 @@ if (is_host) {
 if (is_host) {
   go_library("readme") {
     sources = [
-      "builder.go",
       "dart_pkg.go",
       "golib.go",
       "init.go",
@@ -57,7 +56,6 @@ if (is_host) {
 if (is_host) {
   go_test("readme_test") {
     sources = [
-      "builder_test.go",
       "dart_pkg_test.go",
       "golib_test.go",
       "readme_test.go",

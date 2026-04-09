@@ -23,6 +23,9 @@ func Initialize() error {
 }
 
 func InitializeForTest() {
+	allReadmesMu.Lock()
+	allReadmes = make(map[string]*Readme)
+	allReadmesMu.Unlock()
 	git = gitForTest{}
 }
 
