@@ -29,28 +29,6 @@ def _pyfmt(ctx):
         platform,
     )
 
-    # Filter out .py files that are symlinks to .bzl files.
-    # We have some .bzl files that are symlinked as .py files. While they are valid
-    # Python files, we do not want to format them using the Python formatter as
-    # they should follow Starlark/.bzl formatting rules instead.
-    filter_script = (
-        "import sys, os\n" +
-        "for f in sys.stdin.read().splitlines():\n" +
-        "    if f and not (os.path.islink(f) and os.path.realpath(f).endswith('.bzl')):\n" +
-        "        print(f)\n"
-    )
-    res = os_exec(
-        ctx,
-        [python_bin, "-c", filter_script],
-        stdin = "\n".join(py_files),
-    ).wait()
-    if res.retcode != 0:
-        fail("failed to filter python files:\n" + res.stderr)
-    py_files = [f for f in res.stdout.split("\n") if f]
-
-    if not py_files:
-        return
-
     autoflake_cmd = [
         python_bin,
         "%s/third_party/pylibs/autoflake/main.py" % fuchsia_dir,
