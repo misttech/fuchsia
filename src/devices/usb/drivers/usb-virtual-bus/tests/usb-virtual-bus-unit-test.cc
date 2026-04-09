@@ -13,6 +13,7 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/usb-virtual-bus.h"
 
 namespace usb_virtual_bus {
+namespace {
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fhci = fuchsia_hardware_usb_hci;
@@ -28,12 +29,38 @@ class FakeUsbBus : public fidl::testing::TestBase<fhci::UsbHciInterface> {
                          this, fidl::kIgnoreBindingClosure);
   }
 
- private:
+  void set_remove_device_status(zx_status_t status) { remove_device_status_ = status; }
+  void set_add_device_status(zx_status_t status) { add_device_status_ = status; }
+
+  void set_stall_add_device(bool stall) { stall_add_device_ = stall; }
+  void signal_add_device() {
+    if (saved_add_device_completer_) {
+      saved_add_device_completer_->Reply(zx::make_result(add_device_status_));
+      saved_add_device_completer_.reset();
+    }
+  }
+
+  void set_stall_remove_device(bool stall) { stall_remove_device_ = stall; }
+  void signal_remove_device() {
+    if (saved_remove_device_completer_) {
+      saved_remove_device_completer_->Reply(zx::make_result(remove_device_status_));
+      saved_remove_device_completer_.reset();
+    }
+  }
+
   void AddDevice(AddDeviceRequest& request, AddDeviceCompleter::Sync& completer) override {
-    completer.Reply(zx::ok());
+    if (stall_add_device_) {
+      saved_add_device_completer_ = completer.ToAsync();
+      return;
+    }
+    completer.Reply(zx::make_result(add_device_status_));
   }
   void RemoveDevice(RemoveDeviceRequest& request, RemoveDeviceCompleter::Sync& completer) override {
-    completer.Reply(zx::ok());
+    if (stall_remove_device_) {
+      saved_remove_device_completer_ = completer.ToAsync();
+      return;
+    }
+    completer.Reply(zx::make_result(remove_device_status_));
   }
   void ResetPort(ResetPortRequest& request, ResetPortCompleter::Sync& completer) override {
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
@@ -43,9 +70,21 @@ class FakeUsbBus : public fidl::testing::TestBase<fhci::UsbHciInterface> {
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 
+  bool has_saved_add_device_completer() const { return saved_add_device_completer_.has_value(); }
+  bool has_saved_remove_device_completer() const {
+    return saved_remove_device_completer_.has_value();
+  }
+
   void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {}
 
+ private:
   fidl::ServerBindingGroup<fhci::UsbHciInterface> bindings_;
+  zx_status_t remove_device_status_ = ZX_OK;
+  zx_status_t add_device_status_ = ZX_OK;
+  bool stall_add_device_ = false;
+  std::optional<AddDeviceCompleter::Async> saved_add_device_completer_;
+  bool stall_remove_device_ = false;
+  std::optional<RemoveDeviceCompleter::Async> saved_remove_device_completer_;
 };
 
 class EndpointHandler : public fidl::SyncEventHandler<fendpoint::Endpoint> {
@@ -122,7 +161,8 @@ class FakeDci : public fidl::testing::TestBase<fdci::UsbDciInterface> {
   void ExpectControl() { expected_control_++; }
   libsync::Completion& wait_for_control() { return wait_for_control_; }
 
- private:
+  void set_set_connected_status(zx_status_t status) { set_connected_status_ = status; }
+
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override {
     if (!expected_control_) {
       // Used for Disconnect and unbind tests. Store the completer.
@@ -140,7 +180,7 @@ class FakeDci : public fidl::testing::TestBase<fdci::UsbDciInterface> {
   }
   void SetConnected(SetConnectedRequest& request, SetConnectedCompleter::Sync& completer) override {
     store_completer_.reset();
-    completer.Reply(zx::ok());
+    completer.Reply(zx::make_result(set_connected_status_));
   }
   void handle_unknown_method(fidl::UnknownMethodMetadata<fdci::UsbDciInterface> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
@@ -148,10 +188,12 @@ class FakeDci : public fidl::testing::TestBase<fdci::UsbDciInterface> {
   }
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {}
 
+ private:
   fidl::ServerBindingGroup<fdci::UsbDciInterface> bindings_;
   std::atomic_uint32_t expected_control_ = 0;
   std::optional<ControlCompleter::Async> store_completer_;
   libsync::Completion wait_for_control_;
+  zx_status_t set_connected_status_ = ZX_OK;
 };
 
 class TestEnvironment : public fdf_testing::Environment {
@@ -177,10 +219,44 @@ class UsbVirtualBusTest : public testing::Test {
         driver_test().ConnectThroughDevfs<fuchsia_hardware_usb_virtual_bus::Bus>("usb-virtual-bus");
     EXPECT_TRUE(connect_result.is_ok());
     ASSERT_TRUE(connect_result->is_valid());
-    virtual_bus_.Bind(std::move(*connect_result));
+    virtual_bus_async_.Bind(std::move(*connect_result),
+                            fdf::Dispatcher::GetCurrent()->async_dispatcher());
   }
 
   void TearDown() override { ASSERT_TRUE(driver_test_.StopDriver().is_ok()); }
+
+  zx_status_t ManualOnStartDci() {
+    libsync::Completion done;
+    zx_status_t out_status;
+    driver_test().RunInDriverContext([&](UsbVirtualBus& driver) {
+      driver.OnStartDci([&](zx_status_t status) {
+        out_status = status;
+        done.Signal();
+      });
+    });
+    done.Wait();
+    return out_status;
+  }
+
+  zx_status_t ManualOnStopDci() {
+    libsync::Completion done;
+    zx_status_t out_status;
+    driver_test().RunInDriverContext([&](UsbVirtualBus& driver) {
+      driver.OnStopDci([&](zx_status_t status) {
+        out_status = status;
+        done.Signal();
+      });
+    });
+    done.Wait();
+    return out_status;
+  }
+
+  UsbVirtualBus::ConnectedState GetState() {
+    UsbVirtualBus::ConnectedState state;
+    driver_test().RunInDriverContext(
+        [&](UsbVirtualBus& driver) { state = driver.GetConnectedState(); });
+    return state;
+  }
 
   void EnableAndConnect() {
     Enable();
@@ -188,7 +264,7 @@ class UsbVirtualBusTest : public testing::Test {
   }
 
   void Enable() {
-    auto enable_result = virtual_bus()->Enable();
+    auto enable_result = virtual_bus().sync()->Enable();
     ASSERT_TRUE(enable_result.ok());
     ASSERT_EQ(enable_result->status, ZX_OK);
 
@@ -207,12 +283,16 @@ class UsbVirtualBusTest : public testing::Test {
     });
   }
 
+  // Helper to simulate a full connection sequence.
   void Connect() {
-    auto connect_result_fidl = virtual_bus()->Connect();
+    // Manually trigger OnStartDci in the driver context. This simulates
+    // the completion of the device-side (DCI) initialization which normally
+    // happens when the peripheral driver calls StartController.
+    EXPECT_EQ(ManualOnStartDci(), ZX_OK);
+
+    auto connect_result_fidl = virtual_bus().sync()->Connect();
     ASSERT_TRUE(connect_result_fidl.ok());
     ASSERT_EQ(connect_result_fidl->status, ZX_OK);
-
-    driver_test().RunInDriverContext([&](UsbVirtualBus& driver) { driver.FinishConnect(); });
   }
 
   template <typename Service>
@@ -261,14 +341,13 @@ class UsbVirtualBusTest : public testing::Test {
   }
 
   fdf_testing::BackgroundDriverTest<UsbVirtualBusTestConfig>& driver_test() { return driver_test_; }
-  fidl::WireSyncClient<fuchsia_hardware_usb_virtual_bus::Bus>& virtual_bus() {
-    return virtual_bus_;
+  fidl::WireSharedClient<fuchsia_hardware_usb_virtual_bus::Bus>& virtual_bus() {
+    return virtual_bus_async_;
   }
 
  private:
   fdf_testing::BackgroundDriverTest<UsbVirtualBusTestConfig> driver_test_;
-
-  fidl::WireSyncClient<fuchsia_hardware_usb_virtual_bus::Bus> virtual_bus_;
+  fidl::WireSharedClient<fuchsia_hardware_usb_virtual_bus::Bus> virtual_bus_async_;
 };
 
 TEST_F(UsbVirtualBusTest, LifecycleTest) {
@@ -278,7 +357,7 @@ TEST_F(UsbVirtualBusTest, LifecycleTest) {
 }
 
 TEST_F(UsbVirtualBusTest, EnableDisableTest) {
-  auto enable_result = virtual_bus()->Enable();
+  auto enable_result = virtual_bus().sync()->Enable();
   ASSERT_TRUE(enable_result.ok());
   ASSERT_EQ(enable_result->status, ZX_OK);
 
@@ -287,7 +366,7 @@ TEST_F(UsbVirtualBusTest, EnableDisableTest) {
   driver_test().RunInNodeContext(
       [](fdf_testing::TestNode& node) { ASSERT_EQ(3UL, node.children().size()); });
 
-  auto disable_result = virtual_bus()->Disable();
+  auto disable_result = virtual_bus().sync()->Disable();
   ASSERT_TRUE(disable_result.ok());
   ASSERT_EQ(disable_result->status, ZX_OK);
 
@@ -300,16 +379,266 @@ TEST_F(UsbVirtualBusTest, EnableDisableTest) {
 
 TEST_F(UsbVirtualBusTest, ReconnectTest) {
   EnableAndConnect();
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
 
-  auto disconnect_result = virtual_bus()->Disconnect();
+  auto disconnect_result = virtual_bus().sync()->Disconnect();
+  ASSERT_TRUE(disconnect_result.ok());
+  ASSERT_EQ(disconnect_result->status, ZX_OK);
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+
+  // ManualOnStartDci is a DCI-side event (peripheral driver starting).
+  // In the current model, this triggers the initial connection sequence (ConnectInternal).
+  EXPECT_EQ(ManualOnStartDci(), ZX_OK);
+
+  auto connect_result_fidl = virtual_bus().sync()->Connect();
+  ASSERT_TRUE(connect_result_fidl.ok());
+  ASSERT_EQ(connect_result_fidl->status, ZX_OK);
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
+}
+
+TEST_F(UsbVirtualBusTest, ConcurrentConnectOverlapTest) {
+  Enable();
+
+  // 1. Stall AddDevice in the fake bus.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_stall_add_device(true); });
+
+  // 2. Start connection asynchronously. It will stall in AddDevice.
+  bool connect_done = false;
+  virtual_bus()->Connect().Then(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_usb_virtual_bus::Bus::Connect>& result) {
+        ASSERT_TRUE(result.ok());
+        connect_done = true;
+      });
+
+  // Busy wait until the driver context has processed the ConnectInternal call.
+  // We use RunUntil with a simple check to advance the dispatcher.
+  driver_test().runtime().RunUntil(
+      [&]() { return GetState() == UsbVirtualBus::ConnectedState::kConnecting; });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnecting);
+
+  // 3. Trigger disconnect while connecting - should still return BAD_STATE
+  // for now as cross-operation overlap (Connect vs Disconnect) is rejected.
+  {
+    ASSERT_FALSE(connect_done);
+    auto result = virtual_bus().sync()->Disconnect();
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(result->status, ZX_ERR_BAD_STATE);
+  }
+
+  // 4. Trigger another connect while connecting - should now be queued and return ZX_OK.
+  bool connect_2_done = false;
+  virtual_bus()->Connect().Then(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_usb_virtual_bus::Bus::Connect>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_EQ(result->status, ZX_OK);
+        connect_2_done = true;
+      });
+
+  // Wait for the staged ConnectInternal to reach the fake bus.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](TestEnvironment& env) { return env.usb_bus_.has_saved_add_device_completer(); });
+  });
+
+  // 5. Unstall AddDevice and wait for both connections to complete.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.signal_add_device(); });
+
+  driver_test().runtime().RunUntil([&]() { return connect_done && connect_2_done; });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
+}
+
+TEST_F(UsbVirtualBusTest, ConcurrentDisconnectOverlapTest) {
+  EnableAndConnect();
+
+  // 1. Stall RemoveDevice in the fake bus.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_stall_remove_device(true); });
+
+  // 2. Start disconnect asynchronously. It will stall in RemoveDevice.
+  bool disconnect_done = false;
+  virtual_bus()->Disconnect().Then(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_usb_virtual_bus::Bus::Disconnect>& result) {
+        ASSERT_TRUE(result.ok());
+        disconnect_done = true;
+      });
+
+  driver_test().runtime().RunUntil(
+      [&]() { return GetState() == UsbVirtualBus::ConnectedState::kDisconnecting; });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnecting);
+
+  // 3. Trigger connect while disconnecting - should return BAD_STATE.
+  {
+    ASSERT_FALSE(disconnect_done);
+    auto result = virtual_bus().sync()->Connect();
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(result->status, ZX_ERR_BAD_STATE);
+  }
+
+  // 4. Trigger another disconnect while disconnecting - should now be queued and return ZX_OK.
+  bool disconnect_2_done = false;
+  virtual_bus()->Disconnect().Then(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_usb_virtual_bus::Bus::Disconnect>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_EQ(result->status, ZX_OK);
+        disconnect_2_done = true;
+      });
+
+  // Wait for the staged DisconnectInternal to reach the fake bus.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](TestEnvironment& env) { return env.usb_bus_.has_saved_remove_device_completer(); });
+  });
+
+  // 5. Unstall RemoveDevice and wait for both to complete.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.signal_remove_device(); });
+
+  driver_test().runtime().RunUntil([&]() { return disconnect_done && disconnect_2_done; });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+}
+
+TEST_F(UsbVirtualBusTest, DciInitiatedConnectOverlapTest) {
+  Enable();
+
+  // 1. Stall AddDevice in the fake bus.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_stall_add_device(true); });
+
+  // 2. Peripheral driver starts dci.
+  ASSERT_EQ(ManualOnStartDci(), ZX_OK);
+  driver_test().runtime().RunUntil(
+      [&]() { return GetState() == UsbVirtualBus::ConnectedState::kConnecting; });
+
+  // 3. User also calls Connect via FIDL.
+  bool fidl_connect_done = false;
+  virtual_bus()->Connect().Then(
+      [&](fidl::WireUnownedResult<fuchsia_hardware_usb_virtual_bus::Bus::Connect>& result) {
+        ASSERT_TRUE(result.ok());
+        ASSERT_EQ(result->status, ZX_OK);
+        fidl_connect_done = true;
+      });
+
+  // 4. Verify both are pending.
+  driver_test().runtime().RunUntil(
+      [&]() { return GetState() == UsbVirtualBus::ConnectedState::kConnecting; });
+  ASSERT_FALSE(fidl_connect_done);
+
+  // 5. Unstall and verify both finish successfully.
+  // Wait for the staged ConnectInternal to reach the fake bus.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInEnvironmentTypeContext<bool>(
+        [](TestEnvironment& env) { return env.usb_bus_.has_saved_add_device_completer(); });
+  });
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.signal_add_device(); });
+
+  driver_test().runtime().RunUntil([&]() { return fidl_connect_done; });
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kConnected);
+}
+
+TEST_F(UsbVirtualBusTest, ConnectHciErrorTeardownTest) {
+  Enable();
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+
+  // 1. Simulate an error in HCI AddDevice.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_add_device_status(ZX_ERR_INTERNAL); });
+
+  // 2. Trigger connect.
+  auto connect_result_fidl = virtual_bus().sync()->Connect();
+  // Connect should fail with the error status.
+  ASSERT_TRUE(connect_result_fidl.ok());
+  ASSERT_EQ(connect_result_fidl->status, ZX_ERR_INTERNAL);
+
+  // Verify rollback.
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+
+  // 3. Mark DCI as ready.
+  // ManualOnStartDci (OnStartDci) returns OK immediately because it starts the sequence in
+  // background.
+  EXPECT_EQ(ManualOnStartDci(), ZX_OK);
+
+  // We wait for the background connection to fail by calling Connect().
+  auto third_connect = virtual_bus().sync()->Connect();
+  ASSERT_TRUE(third_connect.ok());
+  ASSERT_EQ(third_connect->status, ZX_ERR_INTERNAL);
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+
+  // Subsequent connect should work if we fix the environment status.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_add_device_status(ZX_OK); });
+
+  auto second_connect = virtual_bus().sync()->Connect();
+  ASSERT_TRUE(second_connect.ok());
+  ASSERT_EQ(second_connect->status, ZX_OK);
+}
+
+TEST_F(UsbVirtualBusTest, UninitializedErrorTest) {
+  // Bus is NOT enabled, so host_ and device_ are null.
+  auto connect_result = virtual_bus().sync()->Connect();
+  ASSERT_TRUE(connect_result.ok());
+  ASSERT_EQ(connect_result->status, ZX_ERR_BAD_STATE);
+
+  auto disconnect_result = virtual_bus().sync()->Disconnect();
+  ASSERT_TRUE(disconnect_result.ok());
+  ASSERT_EQ(disconnect_result->status, ZX_ERR_BAD_STATE);
+}
+
+TEST_F(UsbVirtualBusTest, IdempotentSimulationTest) {
+  EnableAndConnect();
+
+  // Connect while already connected should return OK.
+  auto connect_result = virtual_bus().sync()->Connect();
+  ASSERT_TRUE(connect_result.ok());
+  ASSERT_EQ(connect_result->status, ZX_OK);
+
+  auto disconnect_result = virtual_bus().sync()->Disconnect();
   ASSERT_TRUE(disconnect_result.ok());
   ASSERT_EQ(disconnect_result->status, ZX_OK);
 
-  auto connect_result_fidl = virtual_bus()->Connect();
-  ASSERT_TRUE(connect_result_fidl.ok());
-  ASSERT_EQ(connect_result_fidl->status, ZX_OK);
+  // Disconnect while already disconnected should return OK.
+  auto second_disconnect = virtual_bus().sync()->Disconnect();
+  ASSERT_TRUE(second_disconnect.ok());
+  ASSERT_EQ(second_disconnect->status, ZX_OK);
+}
 
-  driver_test().RunInDriverContext([&](UsbVirtualBus& driver) { driver.FinishConnect(); });
+TEST_F(UsbVirtualBusTest, DciSetConnectedErrorTest) {
+  Enable();
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+
+  // 1. Simulate an error in DCI SetConnected.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.dci_.set_set_connected_status(ZX_ERR_NOT_SUPPORTED); });
+
+  // 2. Trigger OnStartDci. It returns OK immediately.
+  EXPECT_EQ(ManualOnStartDci(), ZX_OK);
+
+  // Use Connect() to wait for the background sequence to fail.
+  auto connect_result = virtual_bus().sync()->Connect();
+  ASSERT_TRUE(connect_result.ok());
+  ASSERT_EQ(connect_result->status, ZX_ERR_INTERNAL);
+  ASSERT_EQ(GetState(), UsbVirtualBus::ConnectedState::kDisconnected);
+
+  // 3. Subsequent OnStartDci should work if we fix the status.
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.dci_.set_set_connected_status(ZX_OK); });
+
+  EXPECT_EQ(ManualOnStartDci(), ZX_OK);
+}
+
+TEST_F(UsbVirtualBusTest, DisconnectErrorPropagationTest) {
+  EnableAndConnect();
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](TestEnvironment& env) { env.usb_bus_.set_remove_device_status(ZX_ERR_INTERNAL); });
+
+  auto disconnect_result = virtual_bus().sync()->Disconnect();
+  ASSERT_TRUE(disconnect_result.ok());
+  // The error should be propagated from RemoveDevice.
+  ASSERT_EQ(disconnect_result->status, ZX_ERR_INTERNAL);
 }
 
 TEST_F(UsbVirtualBusTest, BanjoControlRequestTest) {
@@ -939,7 +1268,7 @@ TEST_F(UsbVirtualBusTest, FidlInRequestMultipleDeviceRequestsTest) {
 }
 
 TEST_F(UsbVirtualBusTest, QueueControlRequestBeforeConnectTest) {
-  auto enable_result = virtual_bus()->Enable();
+  auto enable_result = virtual_bus().sync()->Enable();
   ASSERT_TRUE(enable_result.ok());
   ASSERT_EQ(enable_result->status, ZX_OK);
 
@@ -970,7 +1299,7 @@ TEST_F(UsbVirtualBusTest, QueueControlRequestBeforeConnectTest) {
 }
 
 TEST_F(UsbVirtualBusTest, QueueNormalRequestBeforeConnectedTest) {
-  auto enable_result = virtual_bus()->Enable();
+  auto enable_result = virtual_bus().sync()->Enable();
   ASSERT_TRUE(enable_result.ok());
   ASSERT_EQ(enable_result->status, ZX_OK);
 
@@ -1028,7 +1357,7 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringControlTest) {
       [&wait](TestEnvironment& env) { wait = &env.dci_.wait_for_control(); });
   wait->Wait();
 
-  auto result = virtual_bus()->Disconnect();
+  auto result = virtual_bus().sync()->Disconnect();
   ASSERT_TRUE(result.ok());
   ASSERT_EQ(result->status, ZX_OK);
 
@@ -1065,7 +1394,7 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringHostNormalTest) {
   // Ensure that QueueRequests has finished.
   ep_client->GetInfo();
 
-  auto result = virtual_bus()->Disconnect();
+  auto result = virtual_bus().sync()->Disconnect();
   ASSERT_TRUE(result.ok());
   ASSERT_EQ(result->status, ZX_OK);
 
@@ -1102,7 +1431,7 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringDeviceNormalTest) {
   // Ensure that QueueRequests has finished.
   ep_client->GetInfo();
 
-  auto result = virtual_bus()->Disconnect();
+  auto result = virtual_bus().sync()->Disconnect();
   ASSERT_TRUE(result.ok());
   ASSERT_EQ(result->status, ZX_OK);
 
@@ -1114,4 +1443,5 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringDeviceNormalTest) {
   ASSERT_TRUE(ep_client.HandleOneEvent(event_handler).ok());
 }
 
+}  // namespace
 }  // namespace usb_virtual_bus

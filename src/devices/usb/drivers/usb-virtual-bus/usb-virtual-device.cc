@@ -91,12 +91,25 @@ void UsbVirtualDevice::SetInterface(SetInterfaceRequest& request,
 }
 
 void UsbVirtualDevice::StartController(StartControllerCompleter::Sync& completer) {
-  bus_->FinishConnect();
+  // CRITICAL: We MUST acknowledge the StartController request immediately.
+  // Waiting for the full connection sequence (kConnected) to finish will cause a deadlock,
+  // because the peripheral driver (the caller) often needs to be unblocked and running
+  // to process the SetConnected call and the host's subsequent enumeration requests (Endpoint 0).
+  bus_->OnStartDci([](zx_status_t status) {
+    if (status != ZX_OK) {
+      fdf::error("StartController connection sequence failed: {}", zx_status_get_string(status));
+    }
+  });
   completer.Reply(zx::ok());
 }
 
 void UsbVirtualDevice::StopController(StopControllerCompleter::Sync& completer) {
-  bus_->SetConnected(false);
+  // Similarly, we acknowledge disconnection immediately to avoid holding up the driver teardown.
+  bus_->OnStopDci([](zx_status_t status) {
+    if (status != ZX_OK) {
+      fdf::error("StopController disconnection sequence failed: {}", zx_status_get_string(status));
+    }
+  });
   completer.Reply(zx::ok());
 }
 

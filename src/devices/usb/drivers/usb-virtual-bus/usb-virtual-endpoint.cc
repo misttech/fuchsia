@@ -211,7 +211,8 @@ void UsbVirtualEp::ProcessRequests() {
 
   // Device can queue up requests when not connected to host. Host must return ZX_ERR_IO_NOT_PRESENT
   // immediately.
-  if (!bus_->connected_) {
+  if (bus_->connected_ != UsbVirtualBus::ConnectedState::kConnected &&
+      bus_->connected_ != UsbVirtualBus::ConnectedState::kConnecting) {
     // Do not process any requests if not connected. Cancel all host requests.
     host_.CommonCancelAll();
     return;
@@ -311,7 +312,8 @@ void UsbVirtualEp::ProcessRequests() {
 void UsbVirtualEp::HandleControl(RequestVariant req) {
   ZX_DEBUG_ASSERT(is_control());
 
-  if (!bus_->connected_) {
+  if (bus_->connected_ != UsbVirtualBus::ConnectedState::kConnected &&
+      bus_->connected_ != UsbVirtualBus::ConnectedState::kConnecting) {
     // Do not process any requests if not connected.
     host_.RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, req);
     return;
@@ -386,8 +388,10 @@ zx::result<> UsbVirtualEp::SetStall(bool stall) {
   stalled_ = stall;
 
   if (stall) {
-    host_.RequestComplete(ZX_ERR_IO_REFUSED, 0, host_.pending_reqs_.front());
-    host_.pending_reqs_.pop();
+    while (!host_.pending_reqs_.empty()) {
+      host_.RequestComplete(ZX_ERR_IO_REFUSED, 0, host_.pending_reqs_.front());
+      host_.pending_reqs_.pop();
+    }
   }
 
   return zx::ok();
