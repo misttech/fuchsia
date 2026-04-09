@@ -86,7 +86,7 @@ def opt_out() -> Callable[[F], F]:
     """Decorator that will opt out a test case from "revive" """
 
     def opt_out_decorator(func: F) -> F:
-        func._opt_out = True  # type: ignore[attr-defined]
+        setattr(func, "_opt_out", True)
         return func
 
     return opt_out_decorator
@@ -107,21 +107,33 @@ def tag_test(
     """Decorator that can be used to tag a test with a label"""
 
     def tags_decorator(func: F) -> F:
-        func._revive = True  # type: ignore[attr-defined]
+        setattr(func, "_revive", True)
         if fuchsia_device_operation is not None:
-            func._fuchsia_device_operation = FuchsiaDeviceOperation(  # type: ignore[attr-defined]
-                fuchsia_device_operation
+            setattr(
+                func,
+                "_fuchsia_device_operation",
+                FuchsiaDeviceOperation(fuchsia_device_operation),
             )
         if test_method_execution_frequency is not None:
-            func._test_method_execution_frequency = (  # type: ignore[attr-defined]
-                TestMethodExecutionFrequency(test_method_execution_frequency)
+            setattr(
+                func,
+                "_test_method_execution_frequency",
+                TestMethodExecutionFrequency(test_method_execution_frequency),
             )
         if pre_test_execution_fn is not None:
-            func._pre_test_execution_fn = pre_test_execution_fn  # type: ignore[attr-defined]
-            func._pre_test_execution_fn_kwargs = pre_test_execution_fn_kwargs  # type: ignore[attr-defined]
+            setattr(func, "_pre_test_execution_fn", pre_test_execution_fn)
+            setattr(
+                func,
+                "_pre_test_execution_fn_kwargs",
+                pre_test_execution_fn_kwargs,
+            )
         if post_test_execution_fn is not None:
-            func._post_test_execution_fn = post_test_execution_fn  # type: ignore[attr-defined]
-            func._post_test_execution_fn_kwargs = post_test_execution_fn_kwargs  # type: ignore[attr-defined]
+            setattr(func, "_post_test_execution_fn", post_test_execution_fn)
+            setattr(
+                func,
+                "_post_test_execution_fn_kwargs",
+                post_test_execution_fn_kwargs,
+            )
         return func
 
     return tags_decorator
