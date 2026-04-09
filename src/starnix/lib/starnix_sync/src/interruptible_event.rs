@@ -62,6 +62,11 @@ impl<'a> EventWaitGuard<'a> {
         self.event
     }
 
+    /// Returns the owner of the underlying futex, if any.
+    pub fn get_owner(&self) -> Option<zx::Koid> {
+        self.event.get_owner()
+    }
+
     /// Block the thread until either `deadline` expires, the event is notified, or the event is
     /// interrupted.
     pub fn block_until(
@@ -86,6 +91,11 @@ pub enum WakeReason {
 impl InterruptibleEvent {
     pub fn new() -> Arc<Self> {
         Arc::new(InterruptibleEvent { futex: zx::Futex::new(0) })
+    }
+
+    /// Returns the owner of the underlying futex, if any.
+    pub fn get_owner(&self) -> Option<zx::Koid> {
+        self.futex.get_owner()
     }
 
     /// Called to initiate a wait.

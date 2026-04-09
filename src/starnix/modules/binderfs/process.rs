@@ -748,13 +748,20 @@ impl BinderProcess {
 
 impl<'a> BinderProcessGuard<'a> {
     /// Return the `BinderThread` with the given `tid`, creating it if it doesn't exist.
-    pub fn find_or_register_thread(&mut self, tid: pid_t) -> OwnedRef<BinderThread> {
+    pub fn find_or_register_thread(
+        &mut self,
+        task: &Task,
+    ) -> Result<OwnedRef<BinderThread>, Errno> {
+        let tid = task.get_tid();
         if let Some(thread) = self.thread_pool.threads.get(&tid) {
-            return OwnedRef::share(thread);
+            return Ok(OwnedRef::share(thread));
         }
-        let thread = BinderThread::new(self, tid);
+        let live_state = task.live()?;
+        let handle =
+            live_state.thread.read().clone().unwrap_or_else(|| Arc::new(zx::Thread::invalid()));
+        let thread = BinderThread::new(self, tid, handle);
         self.thread_pool.threads.insert(tid, OwnedRef::share(&thread));
-        thread
+        Ok(thread)
     }
 
     /// Unregister the `BinderThread` with the given `tid`.

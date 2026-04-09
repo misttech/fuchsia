@@ -36,13 +36,13 @@ pub mod tests {
         ProtectionFlags,
     };
     use starnix_core::security;
-    use starnix_core::task::{CurrentTask, ExitStatus, Kernel, Waiter};
+    use starnix_core::task::{CurrentTask, ExitStatus, Kernel, SimpleWaiter, Waiter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{
         Anon, FdFlags, FdNumber, FileHandle, FileObject, NamespaceNode, anon_fs,
     };
     use starnix_logging::log_warn;
-    use starnix_sync::{FileOpsCore, Locked, ResourceAccessorLevel, Unlocked};
+    use starnix_sync::{FileOpsCore, InterruptibleEvent, Locked, ResourceAccessorLevel, Unlocked};
     use starnix_types::convert::IntoFidl;
     use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
@@ -65,6 +65,7 @@ pub mod tests {
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::ops::Deref;
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
     use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
@@ -113,7 +114,8 @@ pub mod tests {
             device: &BinderDevice,
         ) -> Self {
             let task = create_task(locked, current_task.kernel(), "task");
-            let (proc, thread) = device.create_process_and_thread(task.thread_group_key.clone());
+            let (proc, thread) =
+                device.create_process_and_thread(task.thread_group_key.clone(), &task.task);
 
             mmap_shared_memory(locked, &device, &task, &proc);
             Self {
@@ -131,8 +133,10 @@ pub mod tests {
             current_task: &CurrentTask,
             device: &BinderDevice,
         ) -> Self {
-            let (proc, thread) =
-                device.create_process_and_thread(current_task.thread_group_key.clone());
+            let (proc, thread) = device.create_process_and_thread(
+                current_task.thread_group_key.clone(),
+                &current_task.task,
+            );
 
             mmap_shared_memory(locked, &device, current_task, &proc);
             Self {
@@ -2639,7 +2643,8 @@ pub mod tests {
             let binder_connection =
                 binder_fd.downcast_file::<BinderConnection>().expect("must be a BinderConnection");
             let binder_proc = binder_connection.proc(current_task).unwrap();
-            let binder_thread = binder_proc.lock().find_or_register_thread(binder_proc.key.pid());
+            let binder_thread =
+                binder_proc.lock().find_or_register_thread(&current_task.task).unwrap();
 
             let thread = std::thread::spawn({
                 let task = current_task.weak_task();
@@ -4483,6 +4488,118 @@ pub mod tests {
             assert!(client.thread.lock().command_queue.is_empty());
             // The client process should have no notification.
             assert!(client.proc.lock().command_queue.is_empty());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_transaction_priority_inheritance_response_propagation() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let device = BinderDevice::default();
+            let proc_a = BinderProcessFixture::new_current(locked, current_task, &device);
+
+            // We need an available thread to send to
+            let proc_b = BinderProcessFixture::new(locked, current_task, &device);
+            proc_b.thread.available.store(true, Ordering::Release);
+            let event = InterruptibleEvent::new();
+            let event_clone = event.clone();
+
+            let proc_a_thread_handle =
+                proc_a.thread.thread.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            let blocked_thread = std::thread::spawn(move || {
+                let (fake_waiter, guard) = SimpleWaiter::new(&event_clone);
+                tx.send(fake_waiter).unwrap();
+                guard
+                    .block_until(Some(&proc_a_thread_handle), zx::MonotonicInstant::INFINITE)
+                    .unwrap();
+            });
+
+            let mut fake_waiter = rx.recv().unwrap();
+            {
+                let mut thread_state = proc_b.thread.lock();
+                thread_state.registration = RegistrationState::Main;
+                thread_state.command_queue.waiters.wait_async_simple(&mut fake_waiter);
+            }
+
+            let transaction = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    target: binder_transaction_data__bindgen_ty_1 { handle: 0 },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+
+            // Set proc_b as context manager so we can send a transaction to it.
+            let context_manager =
+                BinderObject::new_context_manager_marker(&proc_b.proc, BinderObjectFlags::empty());
+            *device.context_manager.lock() = Some(context_manager);
+
+            device
+                .handle_transaction(
+                    locked,
+                    &proc_a.context(current_task),
+                    &mut Vec::new(),
+                    transaction,
+                )
+                .expect("A sends to B");
+
+            // Assert that Zircon sees the correct owner for the priority-inheriting wait.
+            assert_eq!(event.get_owner(), Some(proc_a.thread.thread.koid().unwrap()));
+
+            let read_buffer_addr =
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            device
+                .handle_thread_read(
+                    &proc_b.context(current_task),
+                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                )
+                .expect("B reads transaction");
+
+            let transaction_b_to_a = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    target: binder_transaction_data__bindgen_ty_1 { handle: 0 },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+
+            // Set proc_a as context manager so we can send a transaction to it.
+            let context_manager_a =
+                BinderObject::new_context_manager_marker(&proc_a.proc, BinderObjectFlags::empty());
+            *device.context_manager.lock() = Some(context_manager_a);
+
+            device
+                .handle_transaction(
+                    locked,
+                    &proc_b.context(current_task),
+                    &mut Vec::new(),
+                    transaction_b_to_a,
+                )
+                .expect("B sends to A");
+
+            // proc_b should see that it's replying to proc_a and include this in the Sender
+            // information.
+            let thread_state = proc_b.thread.lock();
+            let role = thread_state.transactions.last().unwrap();
+            if let TransactionRole::Sender(sender_info) = role {
+                assert_eq!(sender_info.target_thread, Some(proc_a.thread.tid));
+                assert!(sender_info.target_thread_handle.is_some());
+
+                let a_thread_handle = &proc_a.thread.thread;
+                let target_handle = sender_info
+                    .target_thread_handle
+                    .as_ref()
+                    .expect("We should have a target thread set");
+                assert_eq!(a_thread_handle.koid().unwrap(), target_handle.koid().unwrap());
+            } else {
+                panic!("Expected Sender role");
+            }
+
+            // Clean up the blocked thread.
+            event.notify();
+            blocked_thread.join().unwrap();
         })
         .await;
     }

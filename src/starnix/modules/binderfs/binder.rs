@@ -186,7 +186,7 @@ impl FileOps for BinderConnection {
             Ok(match &binder_process {
                 Ok(binder_process) => {
                     let binder_thread =
-                        binder_process.lock().find_or_register_thread(current_task.get_tid());
+                        binder_process.lock().find_or_register_thread(&current_task.task)?;
                     release_after!(binder_thread, current_task.kernel(), {
                         let thread_state = binder_thread.lock();
                         if !thread_state.command_queue.is_empty() {
@@ -221,11 +221,11 @@ impl FileOps for BinderConnection {
         log_trace!("binder wait_async");
         let binder_process = self.proc(current_task);
         release_after!(binder_process, current_task.kernel(), {
-            match &binder_process {
-                Ok(binder_process) => {
-                    let binder_thread =
-                        binder_process.lock().find_or_register_thread(current_task.get_tid());
-                    release_after!(binder_thread, current_task.kernel(), {
+            if let Ok(binder_process) = &binder_process {
+                if let Ok(binder_thread) =
+                    binder_process.lock().find_or_register_thread(&current_task.task)
+                {
+                    return release_after!(binder_thread, current_task.kernel(), {
                         Some(self.device.wait_async(
                             &binder_process,
                             &binder_thread,
@@ -233,13 +233,11 @@ impl FileOps for BinderConnection {
                             events,
                             handler,
                         ))
-                    })
-                }
-                Err(_) => {
-                    handler.handle(FdEvents::POLLERR);
-                    Some(waiter.fake_wait())
+                    });
                 }
             }
+            handler.handle(FdEvents::POLLERR);
+            Some(waiter.fake_wait())
         })
     }
 
@@ -507,10 +505,12 @@ impl BinderDriver {
     pub fn create_process_and_thread(
         &self,
         key: ThreadGroupKey,
+        task: &Task,
     ) -> (OwnedRef<BinderProcess>, OwnedRef<BinderThread>) {
         let identifier = self.create_local_process(key.clone());
         let binder_process = self.find_process(identifier).expect("find_process");
-        let binder_thread = binder_process.lock().find_or_register_thread(key.pid());
+        let binder_thread =
+            binder_process.lock().find_or_register_thread(task).expect("find_or_register_thread");
         (binder_process, binder_thread)
     }
 
@@ -588,7 +588,7 @@ impl BinderDriver {
                 }
                 _ => None,
             };
-        let binder_thread = binder_proc.lock().find_or_register_thread(current_task.get_tid());
+        let binder_thread = binder_proc.lock().find_or_register_thread(&current_task.task)?;
         release_after!(binder_thread, current_task.kernel(), {
             match request {
                 uapi::BINDER_VERSION => {
@@ -1122,6 +1122,7 @@ impl BinderDriver {
                         target_proc: target_proc.identifier,
                         target_thread: target_thread.as_ref().map(|t| t.tid),
                         is_alive: true,
+                        target_thread_handle: target_thread.as_ref().map(|t| t.thread.clone()),
                     };
 
                     // Make the sender thread part of the transaction so it doesn't get scheduled to handle
@@ -1315,6 +1316,21 @@ impl BinderDriver {
                     }
                 });
 
+            // If we have sent a request and are about to wait for a response, the thread we've
+            // sent to should inherit our priority while we wait.
+            let target_thread = thread_state
+                .transactions
+                .iter()
+                .rev()
+                .find_map(|t| match t {
+                    // Only look for the most recently sent transaction, even if it doesn't have a
+                    // target_thread set. Earlier transactions (if any) won't unblock this thread
+                    // any sooner by inheriting increased priority.
+                    TransactionRole::Sender(sender) => Some(sender),
+                    _ => None,
+                })
+                .and_then(|s| s.target_thread_handle.clone());
+
             if let Some(command) = command {
                 // Attempt to write the command to the thread's buffer.
                 let bytes_written =
@@ -1327,7 +1343,11 @@ impl BinderDriver {
                         // If the transaction must inherit the sender scheduler state, let update the
                         // scheduler state, and keep track of the previous one.
                         let scheduler_state = (|| {
-                            if let Some(scheduler_state) = scheduler_state {
+                            // If we know the target thread, we can inherit via futex PI rather
+                            // than making a call to the scheduler api.
+                            if let Some(scheduler_state) = scheduler_state
+                                && target_thread.is_none()
+                            {
                                 let old_scheduler_state =
                                     context.current_task.read().scheduler_state;
                                 if old_scheduler_state.is_less_than_for_binder(scheduler_state) {
@@ -1411,9 +1431,17 @@ impl BinderDriver {
             drop(thread_state);
             drop(proc_state);
 
-            // Put this thread to sleep.
-            // TODO(https://fxbug.dev/401258133) pass a thread handle for priority inheritance
-            context.current_task.block_until(guard, zx::MonotonicInstant::INFINITE)?;
+            // Put this thread to sleep. If we know the thread we are sending to, use that to
+            // inherit priority.
+            if let Some(thread) = target_thread {
+                context.current_task.block_with_owner_until(
+                    guard,
+                    &*thread,
+                    zx::MonotonicInstant::INFINITE,
+                )?;
+            } else {
+                context.current_task.block_until(guard, zx::MonotonicInstant::INFINITE)?;
+            }
         }
     }
 

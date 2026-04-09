@@ -152,6 +152,9 @@ pub struct BinderThread {
 
     pub tid: pid_t,
 
+    // The underlying Zircon thread which backs this binder thread.
+    pub thread: Arc<zx::Thread>,
+
     /// The mutable state of the binder thread, protected by a single lock.
     pub state: Mutex<BinderThreadState>,
 
@@ -172,7 +175,11 @@ pub struct BinderThread {
 }
 
 impl BinderThread {
-    pub fn new(binder_proc: &BinderProcessGuard<'_>, tid: pid_t) -> OwnedRef<Self> {
+    pub fn new(
+        binder_proc: &BinderProcessGuard<'_>,
+        tid: pid_t,
+        thread: Arc<zx::Thread>,
+    ) -> OwnedRef<Self> {
         let inner_state = BinderThreadState::new(tid, binder_proc.base.identifier);
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
         let available_threads = binder_proc.base.available_threads.clone();
@@ -181,6 +188,7 @@ impl BinderThread {
         OwnedRef::new_cyclic(|weak_self| Self {
             weak_self,
             tid,
+            thread,
             state,
             available: AtomicBool::new(false),
             registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
@@ -766,6 +774,10 @@ pub struct TransactionSender {
     /// not a `DeadReply` should be inserted into the command queue when a thread is waiting for
     /// this transaction to complete.
     pub is_alive: bool,
+
+    // The underlying zircon thread for the target. Used to arrange futex priority inheritance if
+    // available.
+    pub target_thread_handle: Option<Arc<zx::Thread>>,
 }
 
 impl TransactionRole {
