@@ -849,9 +849,20 @@ fn check_supported_cpu_architecture(
     yaml_value: &Value,
 ) -> Option<Vec<DocCheckError>> {
     let result = serde_yaml::from_value::<Vec<String>>(yaml_value.clone());
-    //TODO(https://fxbug.dev/42064933): Add validation
     match result {
-        Ok(_redirects) => None,
+        Ok(architectures) => {
+            let mut errors = Vec::new();
+            for arch in architectures {
+                if !VALID_CPU_ARCHS.contains(&arch) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("invalid CPU architecture: {}", arch),
+                    ));
+                }
+            }
+            if errors.is_empty() { None } else { Some(errors) }
+        }
         Err(e) => Some(vec![DocCheckError::new_error(
             1,
             filename.to_path_buf(),
@@ -1216,6 +1227,27 @@ redirects:
             errors[2].message,
             "invalid architecture: bad_arch. Must be one of the supported architectures: [\"ARM\", \"x64\"]"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_supported_cpu_architecture() -> Result<()> {
+        let filename = PathBuf::from("docs/reference/hardware/_supported_cpu_architecture.yaml");
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- ARM
+- x64
+- invalid_arch
+          "#,
+        )?;
+
+        let result = check_supported_cpu_architecture(&filename, &yaml_value);
+
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "invalid CPU architecture: invalid_arch");
 
         Ok(())
     }
