@@ -93,7 +93,16 @@ pub struct ConditionGuard<'a, T>(MutexGuard<'a, Inner<T>>);
 
 impl<'a, T> ConditionGuard<'a, T> {
     /// Adds the waker entry to the condition's list of wakers.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the waker entry is associated with a different Condition.
     pub fn add_waker(&mut self, waker_entry: Pin<&mut WakerEntry<T>>, waker: Waker) {
+        // The waker must be associated with right list.
+        assert!(
+            waker_entry.list.data_ptr() == &mut *self.0,
+            "Cannot add waker to different Condition"
+        );
         // SAFETY: We never move the data out.
         let waker_entry = unsafe { waker_entry.get_unchecked_mut() };
         // SAFETY: We set list correctly above.
@@ -187,6 +196,7 @@ impl Node {
             // SAFETY: Safe because we have exclusive access to `Inner` and `head` is set correctly.
             unsafe { prev.as_mut().next = self.next };
         } else {
+            debug_assert_eq!(inner.head, Some(self.into()));
             inner.head = self.next;
         }
         self.prev = None;
@@ -326,5 +336,18 @@ mod tests {
             assert_eq!(guard.drain_wakers().count(), 2);
         }
         assert_eq!(condition.waker_count(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_adding_waker_to_different_condition() {
+        let condition1 = Condition::new(());
+        let condition2 = Condition::new(());
+
+        let entry2 = pin!(condition2.waker_entry());
+
+        let mut guard = condition1.lock();
+        // The entry is for `condition2` not `condition1` so this should panic.
+        guard.add_waker(entry2, std::task::Waker::noop().clone());
     }
 }
