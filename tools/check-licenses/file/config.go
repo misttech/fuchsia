@@ -7,7 +7,6 @@ package file
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"sync"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
@@ -21,7 +20,6 @@ var (
 	allFilesMu      sync.RWMutex
 	AllFiles        map[string]*File
 	AllLicenseFiles map[string]*File
-	urlRegex        *regexp.Regexp
 
 	spdxFileIndex     int
 	spdxFileDataIndex int
@@ -46,12 +44,6 @@ func Initialize(c *FileConfig) error {
 		if err != nil {
 			return fmt.Errorf("Failed to load license texts from path %s: %w", path, err)
 		}
-	}
-
-	var err error
-	urlRegex, err = regexp.Compile(`.*googlesource\.com\/([^\+]+\/)\+.*`)
-	if err != nil {
-		return err
 	}
 
 	// Save the config file to the out directory (if defined).

@@ -6,7 +6,6 @@ package file
 
 import (
 	"bytes"
-	"fmt"
 )
 
 type Data struct {
@@ -16,13 +15,18 @@ type Data struct {
 }
 
 func mergeDuplicates(licenses []*Data) []*Data {
-	set := make(map[string]bool, 0)
-	dedupedLicenses := make([]*Data, 0)
+	set := make(map[string]map[string]bool)
+	dedupedLicenses := make([]*Data, 0, len(licenses))
 
 	for _, l := range licenses {
-		key := fmt.Sprintf("%s ||| %s", l.LibraryName, string(l.LicenseText))
-		if _, ok := set[key]; !ok {
-			set[key] = true
+		if _, ok := set[l.LibraryName]; !ok {
+			set[l.LibraryName] = make(map[string]bool)
+		}
+
+		// Map string keys naturally perform allocation-free lookups for byte slices
+		// under the hood in Go via a compiler optimization, saving memory.
+		if !set[l.LibraryName][string(l.LicenseText)] {
+			set[l.LibraryName][string(l.LicenseText)] = true
 			dedupedLicenses = append(dedupedLicenses, l)
 		}
 	}
