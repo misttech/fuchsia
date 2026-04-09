@@ -102,10 +102,6 @@ class RxQueue {
   int WatchThread(
       std::unique_ptr<fuchsia_hardware_network_driver::wire::RxSpaceBuffer[]> space_buffers);
 
-  // Reclaims the buffer with `id` from the device. If the buffer's session is still valid, gives it
-  // to the session, otherwise drops it.
-  void ReclaimBuffer(uint32_t id) __TA_REQUIRES(parent_->rx_lock());
-
   // pointer to parent device, not owned.
   DeviceInterface* const parent_;
   std::unique_ptr<IndexedSlab<InFlightBuffer>> in_flight_ __TA_GUARDED(parent_->rx_lock());
