@@ -21,7 +21,6 @@ group("tests") {
 }
 
 fuchsia_cc_driver("ums-function-driver") {
-  legacy = true
   output_name = "ums-function"
   configs += [
     "//build/config:all_source",
@@ -33,16 +32,18 @@ fuchsia_cc_driver("ums-function-driver") {
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_banjo_cpp",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/fit",
     "//src/devices/block/lib/scsi",
-    "//src/devices/lib/driver",
-    "//src/devices/usb/lib/usb",
     "//src/devices/usb/lib/usb:peripheral",
     "//src/devices/usb/lib/usb:ums",
-    "//src/lib/ddk",
+    "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/zx",
   ]
 }
 

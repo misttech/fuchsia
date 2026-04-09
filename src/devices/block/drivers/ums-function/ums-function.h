@@ -6,8 +6,11 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_
 
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/zx/result.h>
 
-#include <ddktl/device.h>
+#include <format>
+
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
 #include <usb/request-cpp.h>
@@ -16,9 +19,7 @@
 
 namespace ums {
 
-class UmsFunction;
-using DeviceType = ddk::Device<UmsFunction, ddk::Initializable, ddk::Unbindable>;
-class UmsFunction : public DeviceType, public ddk::UsbFunctionInterfaceProtocol<UmsFunction> {
+class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProtocol<UmsFunction> {
  public:
   static constexpr char kDriverName[] = "usb-ums-function";
   static constexpr uint32_t kBlockSize = 512;
@@ -27,16 +28,12 @@ class UmsFunction : public DeviceType, public ddk::UsbFunctionInterfaceProtocol<
   static constexpr size_t kDataReqSize = 16384;
   static constexpr uint16_t kBulkMaxPacket = 512;
 
-  UmsFunction(zx_device_t* parent, ddk::UsbFunctionProtocolClient function)
-      : DeviceType(parent), function_(function) {}
+  UmsFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
   ~UmsFunction() = default;
 
-  static zx_status_t Bind(void* ctx, zx_device_t* parent);
-  zx_status_t AddDevice(zx_device_t* parent);
-
-  void DdkInit(ddk::InitTxn txn);
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
+  zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
   // ddk::UsbFunctionInterfaceProtocol implementations.
   size_t UsbFunctionInterfaceGetDescriptorsSize();
@@ -56,6 +53,7 @@ class UmsFunction : public DeviceType, public ddk::UsbFunctionInterfaceProtocol<
     DATA_STATE_UNMAP,
     DATA_STATE_FAILED
   };
+  friend struct std::formatter<DataState>;
 
   void RequestQueue(usb::Request<>* req, const usb_request_complete_callback_t* completion);
   static void CompletionCallback(void* ctx, usb_request_t* req);
@@ -123,5 +121,33 @@ class UmsFunction : public DeviceType, public ddk::UsbFunctionInterfaceProtocol<
 };
 
 }  // namespace ums
+
+template <>
+struct std::formatter<ums::UmsFunction::DataState> : std::formatter<std::string> {
+  auto format(const ums::UmsFunction::DataState state, format_context& ctx) const {
+    std::string fmt;
+    switch (state) {
+      case ums::UmsFunction::DataState::DATA_STATE_NONE:
+        fmt = "None";
+        break;
+      case ums::UmsFunction::DataState::DATA_STATE_READ:
+        fmt = "Read";
+        break;
+      case ums::UmsFunction::DataState::DATA_STATE_WRITE:
+        fmt = "Write";
+        break;
+      case ums::UmsFunction::DataState::DATA_STATE_UNMAP:
+        fmt = "Unmap";
+        break;
+      case ums::UmsFunction::DataState::DATA_STATE_FAILED:
+        fmt = "Failed";
+        break;
+      default:
+        fmt = "<unknown>";
+        break;
+    };
+    return std::formatter<std::string>::format(fmt, ctx);
+  }
+};
 
 #endif  // SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_

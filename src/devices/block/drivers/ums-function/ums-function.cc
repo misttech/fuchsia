@@ -6,11 +6,10 @@
 #include "src/devices/block/drivers/ums-function/ums-function.h"
 
 #include <assert.h>
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/driver.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/controller.h>
 #include <lib/zx/vmar.h>
@@ -21,6 +20,8 @@
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
 
+#include <vector>
+
 #include <fbl/alloc_checker.h>
 #include <usb/peripheral.h>
 #include <usb/request-cpp.h>
@@ -28,6 +29,8 @@
 #include <usb/usb-request.h>
 
 namespace ums {
+
+namespace ffdf = fuchsia_driver_framework;
 
 static struct {
   usb_interface_descriptor_t intf;
@@ -140,15 +143,15 @@ void UmsFunction::ContinueTransfer() {
   } else if (data_state_ == DATA_STATE_WRITE || data_state_ == DATA_STATE_UNMAP) {
     QueueData(req);
   } else {
-    fdf::error("ContinueTransfer: bad data state {}", static_cast<uint32_t>(data_state_));
+    fdf::error("ContinueTransfer: bad data state {}", data_state_);
   }
 }
 
 void UmsFunction::StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba) {
   zx_off_t offset = lba * kBlockSize;
   if (offset + transfer_bytes > kStorageSize) {
-    fdf::error("StartTransfer: transfer out of range state: {}, lba: {} transfer_bytes: {}",
-               static_cast<uint32_t>(state), lba, transfer_bytes);
+    fdf::error("StartTransfer: transfer out of range state: {}, lba: {} transfer_bytes: {}", state,
+               lba, transfer_bytes);
     // TODO(voydanoff) report error to host
     return;
   }
@@ -533,9 +536,7 @@ zx_status_t UmsFunction::UsbFunctionInterfaceSetInterface(uint8_t interface, uin
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-void UmsFunction::DdkUnbind(ddk::UnbindTxn txn) {
-  fdf::debug("UmsFunction::DdkUnbind");
-
+void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
   function_.CancelAll(bulk_out_addr_);
   function_.CancelAll(bulk_in_addr_);
   function_.CancelAll(descriptors.intf.b_interface_number);
@@ -546,11 +547,6 @@ void UmsFunction::DdkUnbind(ddk::UnbindTxn txn) {
   mtx_.Release();
   int retval;
   thrd_join(thread_, &retval);
-  txn.Reply();
-}
-
-void UmsFunction::DdkRelease() {
-  fdf::debug("UmsFunction::DdkRelease");
 
   if (storage_) {
     zx_vmar_unmap(zx_vmar_root_self(), (uintptr_t)storage_, kStorageSize);
@@ -564,7 +560,8 @@ void UmsFunction::DdkRelease() {
   if (cbw_req_) {
     csw_req_->Release();
   }
-  delete this;
+
+  completer(zx::ok());
 }
 
 zx::vmo UmsFunction::vmo_ = zx::vmo();
@@ -599,40 +596,29 @@ int UmsFunction::WorkerLoop() {
   return 0;
 }
 
-zx_status_t UmsFunction::Bind(void* ctx, zx_device_t* parent) {
-  fdf::info("UmsFunction::Bind");
-
-  ddk::UsbFunctionProtocolClient function;
-  zx_status_t status = device_get_protocol(parent, ZX_PROTOCOL_USB_FUNCTION, &function);
-  if (status != ZX_OK) {
-    return status;
+zx::result<> UmsFunction::Start() {
+  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
+  if (function.is_error()) {
+    return function.take_error();
   }
+  function_ = *function;
 
-  fbl::AllocChecker ac;
-  auto driver = fbl::make_unique_checked<UmsFunction>(&ac, parent, function);
-  if (!ac.check()) {
-    fdf::error("Failed to allocate memory.");
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  status = driver->DdkAdd(kDriverName);
-  if (status != ZX_OK) {
-    fdf::error("Failed DdkAdd: {}", zx_status_get_string(status));
-  }
-
-  // The DriverFramework now owns driver.
-  driver.release();
-  return status;
-}
-
-void UmsFunction::DdkInit(ddk::InitTxn txn) {
-  // The drive initialization has numerous error conditions. Wrap the initialization here to ensure
-  // we always call txn.Reply() in any outcome.
   zx_status_t status = Init();
   if (status != ZX_OK) {
-    fdf::error("Driver initialization failed: {}", zx_status_get_string(status));
+    return zx::error(status);
   }
-  txn.Reply(status);
+
+  ffdf::DevfsAddArgs devfs_args{};
+  std::vector<ffdf::NodeProperty> props{};
+  std::vector<ffdf::Offer> offers{};
+
+  zx::result start = AddChild(name(), devfs_args, props, offers);
+  if (start.is_error()) {
+    fdf::error("AddChild(): {}", start);
+    return start.take_error();
+  }
+
+  return zx::ok();
 }
 
 zx_status_t UmsFunction::Init() {
@@ -698,12 +684,7 @@ zx_status_t UmsFunction::Init() {
   return ZX_OK;
 }
 
-static zx_driver_ops_t usb_ums_ops = {
-    .version = DRIVER_OPS_VERSION,
-    .bind = UmsFunction::Bind,
-};
-
 }  // namespace ums
 
 // clang-format off
-ZIRCON_DRIVER(usb_ums, ums::usb_ums_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(ums::UmsFunction);
