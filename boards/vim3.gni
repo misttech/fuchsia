@@ -31,8 +31,6 @@ recovery_board_configuration_label = "//boards/vim3:vim3_recovery"
 board_name = "vim3"
 board_description = "A generic vim3 device"
 
-partitions_config_label = "//boards/partitions/vim3:vim3"
-
 bazel_product_bundle_board = "vim3"
 
 #####

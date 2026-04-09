@@ -35,10 +35,6 @@ declare_args() {
   # This is used to determine if product bundle metadata should generate a
   # virtual device spec or both.
   board_is_emu = false
-
-  # The partitions config information used to create an update package and
-  # product bundle.
-  partitions_config_label = false
 }
 
 declare_args() {
@@ -48,17 +44,4 @@ declare_args() {
   # This is a separate declare_args() block so that it can default to the
   # provided value for 'board_configuration_label'
   recovery_board_configuration_label = board_configuration_label
-}
-
-# Ensure that partitions_config_label is default_toolchain-qualified.
-if (partitions_config_label != false) {
-  if (partitions_config_label ==
-      get_label_info(partitions_config_label, "label_no_toolchain")) {
-    partitions_config_label = "$partitions_config_label($default_toolchain)"
-  } else {
-    assert(
-        get_label_info(partitions_config_label, "toolchain") ==
-            default_toolchain,
-        "partitions_config_label (\"$partitions_config_label\") should be a target in the default_toolchain")
-  }
 }
