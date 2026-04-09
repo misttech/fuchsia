@@ -20,6 +20,7 @@ pub struct LocalNameCommand {
 #[argh(subcommand)]
 pub enum LocalNameSubCommand {
     Set(SetCommand),
+    Get(GetCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -33,3 +34,12 @@ pub struct SetCommand {
     #[argh(positional)]
     pub name: String,
 }
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "get",
+    description = "Get the active Bluetooth controller's local name.",
+    example = "ffx bluetooth controller local-name get <name>"
+)]
+pub struct GetCommand {}

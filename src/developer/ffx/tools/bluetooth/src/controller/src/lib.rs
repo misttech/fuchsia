@@ -34,7 +34,7 @@ impl FfxMain for ControllerTool {
         match self.cmd.subcommand {
             // ffx bluetooth controller show
             ControllerSubCommand::Show(ref _cmd) => {
-                if let Some(host) = hosts.first() {
+                if let Some(host) = hosts.iter().find(|h| h.active) {
                     writer.line(host.to_string())?;
                 } else {
                     writer.line("No controller found.")?;
@@ -46,7 +46,7 @@ impl FfxMain for ControllerTool {
             }
             // ffx bluetooth controller local-name
             ControllerSubCommand::LocalName(ref cmd) => {
-                local_name::handle_local_name(&self, cmd, &mut writer).await?;
+                local_name::handle_local_name(&self, cmd, &mut writer, &hosts).await?;
             }
         }
         Ok(())

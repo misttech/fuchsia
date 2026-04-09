@@ -6,16 +6,31 @@ use crate::ControllerTool;
 use ffx_bluetooth_controller_args::local_name::{LocalNameCommand, LocalNameSubCommand};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fho::Result;
+use fuchsia_bluetooth::types::HostInfo;
 
 pub async fn handle_local_name(
     tool: &ControllerTool,
     cmd: &LocalNameCommand,
     writer: &mut SimpleWriter,
+    hosts: &Vec<HostInfo>,
 ) -> Result<()> {
     match &cmd.subcommand {
+        // ffx bluetooth controller local-name set
         LocalNameSubCommand::Set(cmd) => {
             tool.set_local_name(cmd.name.clone()).await?;
             writer.line(format!("Setting local name to: {}", cmd.name))?;
+        }
+        // ffx bluetooth controller local-name get
+        LocalNameSubCommand::Get(_cmd) => {
+            if let Some(host) = hosts.iter().find(|h| h.active) {
+                if let Some(name) = host.local_name.as_ref() {
+                    writer.line(format!("Local name: {}", name))?;
+                } else {
+                    writer.line("Controller has no local name.")?;
+                }
+            } else {
+                writer.line("No controller found.")?;
+            }
         }
     }
     Ok(())
