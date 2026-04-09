@@ -161,19 +161,7 @@ func LoadFileData(f *File, content []byte) ([]*FileData, error) {
 		return nil, fmt.Errorf("File type %v is unknown for filedata processing.", f.fileType)
 	}
 
-	replacements := make([][2][]byte, len(Config.Replacements))
-	for i, r := range Config.Replacements {
-		replacements[i] = [2][]byte{[]byte(r.Replace), []byte(r.With)}
-	}
-
 	for _, d := range data {
-		// Some characters in license texts are not interpreted properly
-		// (mismatched encodings?) and end up as garbled characters in output files.
-		// We replace those characters with properly encoded ones here.
-		for _, r := range replacements {
-			d.data = bytes.ReplaceAll(d.data, r[0], r[1])
-		}
-
 		if d.libraryName == "" {
 			d.libraryName = f.projectName
 		}

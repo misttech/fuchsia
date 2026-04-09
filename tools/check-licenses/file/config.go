@@ -79,11 +79,6 @@ type FileConfig struct {
 	// in regular source files.
 	CopyrightSize int
 
-	// Some characters in LICENSE texts are being parsed incorrectly.
-	// Replace them with their utf8 equivalents so the resulting
-	// NOTICE file renders it properly.
-	Replacements []*Replacement
-
 	// Extensions map is the list of filetypes that we can expect
 	// may have license information included in it.
 	Extensions map[string]bool
@@ -105,20 +100,9 @@ type FileDataURL struct {
 	Replacements map[string]string `json:"replacements"`
 }
 
-// Support replacing individual characters with other ones.
-// For example, sometimes golang processes ` incorrectly, so we can replace
-// instances of that character with ' using Replacement fields in the
-// config file.
-type Replacement struct {
-	Replace string   `json:"replace"`
-	With    string   `json:"with"`
-	Notes   []string `json:"notes"`
-}
-
 func NewConfig() *FileConfig {
 	return &FileConfig{
 		CopyrightSize: 0,
-		Replacements:  make([]*Replacement, 0),
 		Extensions:    make(map[string]bool, 0),
 		FileDataURLs:  make([]*FileDataURL, 0),
 	}
@@ -137,8 +121,6 @@ func (c *FileConfig) Merge(other *FileConfig) {
 	if c.CopyrightSize == 0 {
 		c.CopyrightSize = other.CopyrightSize
 	}
-
-	c.Replacements = append(c.Replacements, other.Replacements...)
 
 	if c.Extensions == nil {
 		c.Extensions = make(map[string]bool)

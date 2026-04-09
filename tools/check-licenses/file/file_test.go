@@ -5,7 +5,6 @@
 package file
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
@@ -446,45 +445,5 @@ func TestSortOrder(t *testing.T) {
 
 	if files[0].absPath != "/a/file.txt" || files[1].absPath != "/m/file.txt" || files[2].absPath != "/z/file.txt" {
 		t.Errorf("Files were not sorted correctly by absPath: %v", files)
-	}
-}
-
-// =========================================================================
-// Replacements Tests
-// =========================================================================
-
-// TestReplacements verifies that character replacements defined in config are applied correctly.
-func TestReplacements(t *testing.T) {
-	setup(t)
-	r := []*Replacement{
-		{
-			Replace: "“",
-			With:    "\"",
-		}, {
-			Replace: "”",
-			With:    "\"",
-		},
-	}
-	Config.Replacements = r
-	expected := []byte("left quote: \" right quote: \"")
-
-	filename := filepath.Join(t.TempDir(), "replacement.txt")
-	if err := os.WriteFile(filename, []byte("left quote: “ right quote: ”"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := LoadFile(filename, SingleLicense, "Example Project")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := f.Data()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(data) != 1 {
-		t.Fatalf("Expected 1 data element, got %v\n", len(data))
-	}
-	if !bytes.Equal(data[0].Data(), expected) {
-		t.Fatalf("Expected %v, got %v\n", string(expected), string(data[0].Data()))
 	}
 }

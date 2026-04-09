@@ -96,29 +96,6 @@ func TestLoadFileData_MultiLicense(t *testing.T) {
 }
 
 // =========================================================================
-// Replacements Engine Tests
-// =========================================================================
-
-// TestReplacementsEngine verifies that characters specified in Config.Replacements
-// are correctly substituted during LoadFileData execution.
-func TestReplacementsEngine(t *testing.T) {
-	setup(t)
-	Config.Replacements = []*Replacement{
-		{Replace: "badchar", With: "goodchar"},
-	}
-
-	f := &File{fileType: SingleLicense, projectName: "Proj", relPath: "path"}
-	data, err := LoadFileData(f, []byte("text with badchar here"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(data[0].Data()) != "text with goodchar here" {
-		t.Errorf("Replacement failed, got %q", string(data[0].Data()))
-	}
-}
-
-// =========================================================================
 // SPDX ID Generation & Updating Tests
 // =========================================================================
 

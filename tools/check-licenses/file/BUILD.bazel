@@ -9,6 +9,7 @@ go_library(
     name = "file",
     srcs = [
         "config.go",
+        "encoding.go",
         "file.go",
         "filedata.go",
         "metrics.go",
@@ -26,6 +27,7 @@ go_library(
 go_test(
     name = "file_test",
     srcs = [
+        "encoding_test.go",
         "file_test.go",
         "filedata_test.go",
         "notice_test.go",

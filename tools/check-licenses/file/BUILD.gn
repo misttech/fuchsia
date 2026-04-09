@@ -37,6 +37,7 @@ if (is_host) {
   go_library("file") {
     sources = [
       "config.go",
+      "encoding.go",
       "file.go",
       "filedata.go",
       "metrics.go",
@@ -52,6 +53,7 @@ if (is_host) {
 if (is_host) {
   go_test("file_test") {
     sources = [
+      "encoding_test.go",
       "file_test.go",
       "filedata_test.go",
       "notice_test.go",

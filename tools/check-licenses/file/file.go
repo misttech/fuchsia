@@ -260,6 +260,11 @@ func (f *File) LoadContent() error {
 		content = content[:min(Config.CopyrightSize, len(content))]
 	}
 
+	// Some legacy third-party source files use Windows-1252 or other non-UTF8 encodings.
+	// We force the content to pure UTF-8 so that downstream text templates and
+	// the license classifier don't encounter invalid bytes or output garbled text.
+	content = forceUTF8(content)
+
 	data, err := LoadFileData(f, content)
 	if err != nil {
 		return err
