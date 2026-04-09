@@ -35,7 +35,7 @@ func setup(t *testing.T) string {
 	project.Config.Barriers = []*project.Barrier{
 		{Paths: []string{"third_party"}},
 	}
-	project.AllProjects = make(map[string]*project.Project)
+	project.InitializeForTest()
 	project.UnknownProject = &project.Project{
 		Name:       "unknown",
 		ReadmeFile: &readme.Readme{},
@@ -149,8 +149,8 @@ func TestReadme_PreExistingProject(t *testing.T) {
 
 	// project.AllProjects is keyed by paths relative to FuchsiaDir
 	relRoot, _ := filepath.Rel(tempDir, root)
-	project.AllProjects[relRoot] = mockProject
-
+	mockProject.Root = relRoot
+	project.AddProject(mockProject)
 	d, err := newDirectoryWithConfig(root, nil, Config)
 	if err != nil {
 		t.Fatal(err)

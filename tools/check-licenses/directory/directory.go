@@ -88,7 +88,7 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 	// If this project was already created during initialization, set it here.
 	// project.AllProjects is strictly keyed by relative paths.
 	var ok bool
-	if p, ok = project.AllProjects[relRoot]; ok {
+	if p, ok = project.GetProject(relRoot); ok {
 		d.Project = p
 		r = d.Project.ReadmeFile
 	} else if r != nil {

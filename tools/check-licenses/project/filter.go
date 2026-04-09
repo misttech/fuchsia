@@ -62,14 +62,14 @@ func FilterProjects() error {
 	}
 
 	dedupedLicenseDataMap := make(map[string][]*file.FileData)
-	for _, p := range FilteredProjects {
+	for _, p := range GetAllFilteredProjects() {
 		for _, lf := range p.LicenseFiles {
 			data, err := lf.Data()
 			if err != nil {
 				return err
 			}
 			for _, ld := range data {
-				key := string(ld.Data())
+				key := ld.Hash()
 				if _, ok := dedupedLicenseDataMap[key]; !ok {
 					dedupedLicenseDataMap[key] = make([]*file.FileData, 0)
 				}
@@ -78,16 +78,18 @@ func FilterProjects() error {
 		}
 	}
 
+	dedupedLicenseDataList := make([][]*file.FileData, 0, len(dedupedLicenseDataMap))
 	for _, v := range dedupedLicenseDataMap {
 		sort.SliceStable(v, func(i, j int) bool {
 			return v[i].LibraryName() > string(v[j].LibraryName())
 		})
-		DedupedLicenseData = append(DedupedLicenseData, v)
+		dedupedLicenseDataList = append(dedupedLicenseDataList, v)
 	}
 
-	sort.SliceStable(DedupedLicenseData, func(i, j int) bool {
-		return string(DedupedLicenseData[i][0].Data()) > string(DedupedLicenseData[j][0].Data())
+	sort.SliceStable(dedupedLicenseDataList, func(i, j int) bool {
+		return string(dedupedLicenseDataList[i][0].Data()) > string(dedupedLicenseDataList[j][0].Data())
 	})
+	SetDedupedLicenseData(dedupedLicenseDataList)
 
 	return nil
 }
@@ -98,7 +100,7 @@ func processGenOutput(gen *util.Gen, fileMap map[string]*Project) (*Project, err
 		var ok bool
 		for _, possibleProjectName := range t.CleanNames {
 			if project, ok = fileMap[possibleProjectName]; ok {
-				if _, ok := FilteredProjects[project.Root]; !ok {
+				if _, ok := GetFilteredProject(project.Root); !ok {
 					plusVal(FilteredProjectReasons, fmt.Sprintf("Adding %s because of %s\n", project.Root, possibleProjectName))
 				}
 
@@ -121,23 +123,23 @@ func processGenOutput(gen *util.Gen, fileMap map[string]*Project) (*Project, err
 		for _, d := range t.CleanDeps {
 			if child, ok := fileMap[d]; ok && child.Root != project.Root {
 				project.Children[child.Root] = child
-				if _, ok := FilteredProjects[child.Root]; !ok {
+				if _, ok := GetFilteredProject(child.Root); !ok {
 					plusVal(
 						FilteredProjectReasons,
 						fmt.Sprintf("Adding %s because of %s\n", child.Root, d))
 				}
-				FilteredProjects[child.Root] = child
+				AddFilteredProject(child)
 			}
 		}
 
-		FilteredProjects[project.Root] = project
+		AddFilteredProject(project)
 	}
 
 	rootProject := fileMap[Config.Target]
 	if rootProject == nil {
 		// TODO(https://fxbug.dev/42066952): Understand why sometimes //:default is not found in the fileMap
 		//return nil, fmt.Errorf("failed to find root project using target [%s]", Config.Target)
-		rootProject = AllProjects["."]
+		rootProject, _ = GetProject(".")
 	}
 
 	return rootProject, nil
@@ -148,11 +150,8 @@ func getFileMap() (map[string]*Project, error) {
 	// so we can retrieve the projects that match dependencies in the
 	// gn gen file.
 	fileMap := make(map[string]*Project, 0)
-	for _, p := range AllProjects {
-		allFiles := make([]*file.File, 0)
-		allFiles = append(allFiles, p.RegularFiles...)
-		allFiles = append(allFiles, p.LicenseFiles...)
-		for _, f := range allFiles {
+	for _, p := range GetAllProjects() {
+		for _, f := range p.GetFiles() {
 			filePath := "//" + f.RelPath()
 			folderPath := "//" + filepath.Dir(f.RelPath())
 

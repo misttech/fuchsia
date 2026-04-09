@@ -88,7 +88,7 @@ func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
 	}
 
 	projectList := make([]*project.Project, 0)
-	for _, p := range project.FilteredProjects {
+	for _, p := range project.GetAllFilteredProjects() {
 		projectList = append(projectList, p)
 	}
 	sort.Sort(project.Order(projectList))
@@ -167,7 +167,10 @@ func saveReadmeFuchsiaFiles() (string, error) {
 	var b strings.Builder
 
 	if Config.OverwriteReadmeFiles {
-		for _, p := range project.FilteredProjects {
+		for _, p := range project.GetAllFilteredProjects() {
+			if p.ReadmeFile == nil {
+				continue
+			}
 
 			// Create project directory if it doesn't exist.
 			dir := filepath.Dir(p.ReadmeFile.ReadmePath)

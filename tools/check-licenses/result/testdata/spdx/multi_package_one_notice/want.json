@@ -2,21 +2,25 @@
     "spdxVersion": "SPDX-2.2",
     "dataLicense": "CC0-1.0",
     "SPDXID": "SPDXRef-DOCUMENT",
+    "name": "",
     "documentNamespace": "fuchsia--{da39a3ee5e6b4b0d3255bfef95601890afd80709 []}",
-    "DocumentComment": "",
     "creationInfo": {
+        "licenseListVersion": "",
         "creators": [
             "Tool: fuchsia.googlesource.com/fuchsia/+/refs/head/main/tools/check-licenses"
         ],
-        "created": "SKIP ME"
+        "created": "",
+        "comment": ""
     },
     "packages": [
         {
+            "IsUnpackaged": false,
             "name": "ProjectA",
             "SPDXID": "SPDXRef-Package-995b475f30603407812c0fd855a467f2",
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": true,
-            "PackageVerificationCode": {
+            "IsFilesAnalyzedTagPresent": false,
+            "packageVerificationCode": {
                 "packageVerificationCodeValue": "0"
             },
             "checksums": [],
@@ -28,11 +32,13 @@
             "annotations": []
         },
         {
+            "IsUnpackaged": false,
             "name": "ProjectB",
             "SPDXID": "SPDXRef-Package-9765cfc69bd09ffc72c760df334220ed",
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": true,
-            "PackageVerificationCode": {
+            "IsFilesAnalyzedTagPresent": false,
+            "packageVerificationCode": {
                 "packageVerificationCodeValue": "0"
             },
             "checksums": [],
@@ -44,15 +50,17 @@
             "annotations": []
         },
         {
+            "IsUnpackaged": false,
             "name": "PackageC",
             "SPDXID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc",
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": true,
-            "PackageVerificationCode": {
+            "IsFilesAnalyzedTagPresent": false,
+            "packageVerificationCode": {
                 "packageVerificationCodeValue": "0"
             },
             "checksums": [],
-            "licenseConcluded": "",
+            "licenseConcluded": "NOASSERTION",
             "licenseInfoFromFiles": [],
             "licenseDeclared": "NOASSERTION",
             "copyrightText": "NOASSERTION",
@@ -63,36 +71,36 @@
     "files": [],
     "hasExtractedLicensingInfos": [
         {
-            "name": "ProjectA",
             "licenseId": "LicenseRef-filedata-30a8b5c58c7448aae89dbfd72f29869c",
             "extractedText": "Testing 123 1",
+            "name": "ProjectA",
             "seeAlsos": [
                 "",
                 "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package/path"
             ]
         },
         {
-            "name": "ProjectA",
             "licenseId": "LicenseRef-filedata-30a8b5c58f7448aae89dbfd72f298a4d",
             "extractedText": "Testing 123 2",
+            "name": "ProjectA",
             "seeAlsos": [
                 "",
                 "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package/path"
             ]
         },
         {
-            "name": "ProjectA",
             "licenseId": "LicenseRef-filedata-30a8b5c58e7448aae89dbfd72f298912",
             "extractedText": "Testing 123 3",
+            "name": "ProjectA",
             "seeAlsos": [
                 "",
                 "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package/path"
             ]
         },
         {
-            "name": "ProjectB",
             "licenseId": "LicenseRef-filedata-8b090b5d7643b49368e4b0ef4918fe14",
             "extractedText": "Testing 123 4",
+            "name": "ProjectB",
             "seeAlsos": [
                 "",
                 "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package/path2"
@@ -101,33 +109,22 @@
     ],
     "relationships": [
         {
-            "spdxElementId": {
-                "ElementRefID": "SPDXRef-DOCUMENT"
-            },
-            "relatedSpdxElement": {
-                "ElementRefID": "SPDXRef-Package-995b475f30603407812c0fd855a467f2"
-            },
+            "spdxElementId": "SPDXRef-DOCUMENT",
+            "relatedSpdxElement": "SPDXRef-Package-995b475f30603407812c0fd855a467f2",
             "relationshipType": "DESCRIBES"
         },
         {
-            "spdxElementId": {
-                "ElementRefID": "SPDXRef-Package-995b475f30603407812c0fd855a467f2"
-            },
-            "relatedSpdxElement": {
-                "ElementRefID": "SPDXRef-Package-9765cfc69bd09ffc72c760df334220ed"
-            },
+            "spdxElementId": "SPDXRef-Package-995b475f30603407812c0fd855a467f2",
+            "relatedSpdxElement": "SPDXRef-Package-9765cfc69bd09ffc72c760df334220ed",
             "relationshipType": "CONTAINS"
         },
         {
-            "spdxElementId": {
-                "ElementRefID": "SPDXRef-Package-995b475f30603407812c0fd855a467f2"
-            },
-            "relatedSpdxElement": {
-                "ElementRefID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc"
-            },
+            "spdxElementId": "SPDXRef-Package-995b475f30603407812c0fd855a467f2",
+            "relatedSpdxElement": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc",
             "relationshipType": "CONTAINS"
         }
     ],
     "annotations": [],
-    "snippets": []
+    "snippets": [],
+    "Reviews": null
 }

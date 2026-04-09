@@ -17,8 +17,9 @@ import (
 // in each project.
 func AnalyzeLicenses() error {
 	// Convert the projects map into a list and sort it, to make this function consistent.
-	filteredProjectsList := make([]*Project, 0, len(FilteredProjects))
-	for _, p := range FilteredProjects {
+	filteredProjectsMap := GetAllFilteredProjects()
+	filteredProjectsList := make([]*Project, 0, len(filteredProjectsMap))
+	for _, p := range filteredProjectsMap {
 		filteredProjectsList = append(filteredProjectsList, p)
 	}
 	sort.Sort(Order(filteredProjectsList))

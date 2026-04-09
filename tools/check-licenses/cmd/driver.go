@@ -62,8 +62,10 @@ func Execute(ctx context.Context) error {
 		log.Printf("Done. [%v]\n", time.Since(startFilter))
 		r.End()
 	} else {
-		project.FilteredProjects = project.AllProjects
-		project.RootProject = project.AllProjects["."]
+		for _, p := range project.GetAllProjects() {
+			project.AddFilteredProject(p)
+		}
+		project.RootProject, _ = project.GetProject(".")
 	}
 
 	// License analysis happens in CQ.
@@ -72,7 +74,7 @@ func Execute(ctx context.Context) error {
 		// Analyze the remaining projects, and keep track of all found license texts.
 		r = trace.StartRegion(ctx, "project.AnalyzeLicenses")
 		startAnalyze := time.Now()
-		log.Printf("Searching for license texts [%v projects]... ", len(project.FilteredProjects))
+		log.Printf("Searching for license texts [%v projects]... ", len(project.GetAllFilteredProjects()))
 		err = project.AnalyzeLicenses()
 		if err != nil {
 			log.Println("Error!")

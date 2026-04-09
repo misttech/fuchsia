@@ -38,7 +38,6 @@ func (p *Project) GenerateSPDXPackage() (*spdx.Package, error) {
 		IsUnpackaged:              false,
 		Annotations:               make([]spdx.Annotation, 0),
 	}
-	spdxIndex = spdxIndex + 1
 
 	// Some projects in the Fuchsia tree provide multiple license files.
 	// Others have a single large notice file with multiple license texts.
@@ -52,37 +51,33 @@ func (p *Project) GenerateSPDXPackage() (*spdx.Package, error) {
 	// This section generates that statement by simply concatenating all
 	// entries together with AND statements. License texts in the same file
 	// will appear within the same parenthesis group.
-	pkg.PackageLicenseConcluded = ""
 
-	// Multiple files for a given project.
-	for i, l := range p.LicenseFiles {
-		statement := "("
-
+	var fileStatements []string
+	for _, l := range p.LicenseFiles {
 		// Note: We cannot easily find upstream URL links for a single NOTICE file.
 		if strings.Contains(p.Root, "prebuilt") {
-			statement = fmt.Sprintf("%s%s", statement, l.SPDXID())
+			fileStatements = append(fileStatements, fmt.Sprintf("(%s)", l.SPDXID()))
 		} else {
 			ldata, err := l.Data()
 			if err != nil {
 				return nil, err
 			}
-			// Multiple license texts in a given license file.
-			for j, data := range ldata {
-				statement = fmt.Sprintf("%s%s", statement, data.SPDXID())
-				if j < len(ldata)-1 {
-					statement = fmt.Sprintf("%s AND ", statement)
-				}
+			if len(ldata) == 0 {
+				continue
 			}
-		}
 
-		statement = fmt.Sprintf("%s)", statement)
-		pkg.PackageLicenseConcluded = fmt.Sprintf("%s%s",
-			pkg.PackageLicenseConcluded, statement)
-
-		if i < len(p.LicenseFiles)-1 {
-			pkg.PackageLicenseConcluded = fmt.Sprintf("%s AND ", pkg.PackageLicenseConcluded)
+			var dataStatements []string
+			for _, data := range ldata {
+				dataStatements = append(dataStatements, data.SPDXID())
+			}
+			fileStatements = append(fileStatements, fmt.Sprintf("(%s)", strings.Join(dataStatements, " AND ")))
 		}
 	}
+
+	if len(fileStatements) > 0 {
+		pkg.PackageLicenseConcluded = strings.Join(fileStatements, " AND ")
+	}
+
 	p.Package = pkg
 	return pkg, nil
 }

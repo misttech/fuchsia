@@ -47,8 +47,8 @@ func getWorldStruct() *world {
 	dedupedLicenseDataList := make([]*DedupedLicense, 0)
 
 	// Dedup all license texts by putting them in a hashmap.
-	for _, p := range project.FilteredProjects {
-		for _, l := range p.LicenseFiles {
+	for _, p := range project.GetAllFilteredProjects() {
+		for _, l := range p.GetLicenseFiles() {
 			data, err := l.Data()
 			if err != nil {
 				fmt.Printf("Failed to get data for %s\n", l.RelPath())
@@ -92,8 +92,8 @@ func getWorldStruct() *world {
 		AllDirectories: directory.GetAllDirectories(),
 
 		RootProject:        project.RootProject,
-		AllProjects:        project.AllProjects,
-		FilteredProjects:   project.FilteredProjects,
+		AllProjects:        project.GetAllProjects(),
+		FilteredProjects:   project.GetAllFilteredProjects(),
 		LicenseData:        licenseDataList,
 		DedupedLicenseData: dedupedLicenseDataList,
 	}

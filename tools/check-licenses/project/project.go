@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	spdx "github.com/spdx/tools-golang/spdx/v2_2"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
@@ -26,6 +27,9 @@ type Project struct {
 	RegularFiles           []*file.File
 	SearchableRegularFiles []*file.File
 	ReadmeFile             *readme.Readme
+
+	// Lock to protect concurrent writes to the file slices below.
+	mu sync.Mutex
 
 	// Projects that this project depends on.
 	// Constructed from the GN dependency tree.
@@ -61,9 +65,9 @@ func NewProject(r *readme.Readme, projectRootPath string) (*Project, error) {
 
 	// See if we've already processed this project.
 	// If so, return the previously created instance.
-	if _, ok := AllProjects[projectRootPath]; ok {
+	if p, ok := GetProject(projectRootPath); ok {
 		plusVal(NumPreviousProjectRetrieved, projectRootPath)
-		return AllProjects[projectRootPath], nil
+		return p, nil
 	}
 
 	p := &Project{
@@ -82,10 +86,10 @@ func NewProject(r *readme.Readme, projectRootPath string) (*Project, error) {
 			continue
 		}
 		if l.LicenseFileFormat == "" {
-			l.LicenseFileFormat = "Single License File"
+			l.LicenseFileFormat = string(file.SingleLicense)
 		}
 
-		path := filepath.Join(p.Root, l.LicenseFile)
+		path := filepath.Join(Config.FuchsiaDir, p.Root, l.LicenseFile)
 		f, err := file.LoadFile(path, file.FileType(l.LicenseFileFormat), r.Name)
 		if err != nil {
 			// Readmes in asset dirs may occasionally go out of sync with
@@ -101,13 +105,16 @@ func NewProject(r *readme.Readme, projectRootPath string) (*Project, error) {
 		l.LicenseFileRef = f
 	}
 
-	AllProjects[p.Root] = p
+	AddProject(p)
 	plusVal(NumProjects, p.Root)
 
 	return p, nil
 }
 
 func (p *Project) AddFile(f *file.File) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if f.FileType() != file.RegularFile {
 		// This could be a license file.
 		// Make sure this file isn't already in the list.
@@ -135,21 +142,30 @@ func (p *Project) AddFile(f *file.File) error {
 	return nil
 }
 
-func getGitInfo(path string) (string, string, error) {
-	url, err := git.GetURL(ctx, path)
-	if err != nil {
-		return "", "", fmt.Errorf("Failed to get git URL for path %s: %w", path, err)
-	}
+// GetFiles safely returns a combined list of all regular files and license files.
+func (p *Project) GetFiles() []*file.File {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	files := make([]*file.File, 0, len(p.RegularFiles)+len(p.LicenseFiles))
+	files = append(files, p.RegularFiles...)
+	files = append(files, p.LicenseFiles...)
+	return files
+}
 
-	// Turquoise repos return "sso" urls, so convert them to
-	// http links that a user can view in a browser.
-	url = strings.ReplaceAll(url, "sso://turquoise-internal", "https://turquoise-internal.googlesource.com")
+// GetLicenseFiles safely returns a list of all license files.
+func (p *Project) GetLicenseFiles() []*file.File {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	files := make([]*file.File, len(p.LicenseFiles))
+	copy(files, p.LicenseFiles)
+	return files
+}
 
-	// Retrieve the hash URL for the current commit.
-	hash, err := git.GetCommitHash(ctx, path)
-	if err != nil {
-		return "", "", fmt.Errorf("Failed to get git commit hash for path %s: %w", path, err)
-	}
-
-	return url, hash, nil
+// GetSearchableRegularFiles safely returns a list of all searchable regular files.
+func (p *Project) GetSearchableRegularFiles() []*file.File {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	files := make([]*file.File, len(p.SearchableRegularFiles))
+	copy(files, p.SearchableRegularFiles)
+	return files
 }

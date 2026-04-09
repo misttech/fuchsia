@@ -11,7 +11,6 @@ go_library(
         "analyze.go",
         "config.go",
         "filter.go",
-        "init.go",
         "metrics.go",
         "project.go",
         "spdx.go",
@@ -32,16 +31,14 @@ go_library(
 
 go_test(
     name = "project_test",
-    srcs = ["project_test.go"],
-    embed = [":project"],
-    embedsrcs = [
-        "testdata/happy/README.fuchsia",
-        "testdata/multiline/README.fuchsia",
+    srcs = [
+        "project_test.go",
+        "spdx_test.go",
     ],
+    embed = [":project"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         "//tools/check-licenses/file",
         "//tools/check-licenses/readme",
-        "//tools/check-licenses/testutil",
     ],
 )

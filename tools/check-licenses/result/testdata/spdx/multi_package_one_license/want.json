@@ -2,21 +2,25 @@
     "spdxVersion": "SPDX-2.2",
     "dataLicense": "CC0-1.0",
     "SPDXID": "SPDXRef-DOCUMENT",
+    "name": "",
     "documentNamespace": "fuchsia--{da39a3ee5e6b4b0d3255bfef95601890afd80709 []}",
-    "DocumentComment": "",
     "creationInfo": {
+        "licenseListVersion": "",
         "creators": [
             "Tool: fuchsia.googlesource.com/fuchsia/+/refs/head/main/tools/check-licenses"
         ],
-        "created": "SKIP ME"
+        "created": "",
+        "comment": ""
     },
     "packages": [
         {
+            "IsUnpackaged": false,
             "name": "PackageA",
             "SPDXID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25",
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": true,
-            "PackageVerificationCode": {
+            "IsFilesAnalyzedTagPresent": false,
+            "packageVerificationCode": {
                 "packageVerificationCodeValue": "0"
             },
             "checksums": [],
@@ -28,15 +32,17 @@
             "annotations": []
         },
         {
+            "IsUnpackaged": false,
             "name": "PackageB",
             "SPDXID": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e",
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": true,
-            "PackageVerificationCode": {
+            "IsFilesAnalyzedTagPresent": false,
+            "packageVerificationCode": {
                 "packageVerificationCodeValue": "0"
             },
             "checksums": [],
-            "licenseConcluded": "",
+            "licenseConcluded": "NOASSERTION",
             "licenseInfoFromFiles": [],
             "licenseDeclared": "NOASSERTION",
             "copyrightText": "NOASSERTION",
@@ -44,15 +50,17 @@
             "annotations": []
         },
         {
+            "IsUnpackaged": false,
             "name": "PackageC",
             "SPDXID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc",
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": true,
-            "PackageVerificationCode": {
+            "IsFilesAnalyzedTagPresent": false,
+            "packageVerificationCode": {
                 "packageVerificationCodeValue": "0"
             },
             "checksums": [],
-            "licenseConcluded": "",
+            "licenseConcluded": "NOASSERTION",
             "licenseInfoFromFiles": [],
             "licenseDeclared": "NOASSERTION",
             "copyrightText": "NOASSERTION",
@@ -63,9 +71,9 @@
     "files": [],
     "hasExtractedLicensingInfos": [
         {
-            "name": "PackageA",
             "licenseId": "LicenseRef-filedata-c4a752f58d301c3a26a85c4cd27c4e55",
             "extractedText": "Testing Testing 123",
+            "name": "PackageA",
             "seeAlsos": [
                 "www.example.com",
                 "https://cs.opensource.google/fuchsia/fuchsia/+/main:fake/multi_package_one_license/path"
@@ -74,33 +82,22 @@
     ],
     "relationships": [
         {
-            "spdxElementId": {
-                "ElementRefID": "SPDXRef-DOCUMENT"
-            },
-            "relatedSpdxElement": {
-                "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
-            },
+            "spdxElementId": "SPDXRef-DOCUMENT",
+            "relatedSpdxElement": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25",
             "relationshipType": "DESCRIBES"
         },
         {
-            "spdxElementId": {
-                "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
-            },
-            "relatedSpdxElement": {
-                "ElementRefID": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e"
-            },
+            "spdxElementId": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25",
+            "relatedSpdxElement": "SPDXRef-Package-95cd5fd83bd09ffc2a188f60bd1bec7e",
             "relationshipType": "CONTAINS"
         },
         {
-            "spdxElementId": {
-                "ElementRefID": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25"
-            },
-            "relatedSpdxElement": {
-                "ElementRefID": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc"
-            },
+            "spdxElementId": "SPDXRef-Package-e648bebe6e6034074976b5f02ee07c25",
+            "relatedSpdxElement": "SPDXRef-Package-86796a50f6d892cc59e75bc7e66cbebc",
             "relationshipType": "CONTAINS"
         }
     ],
     "annotations": [],
-    "snippets": []
+    "snippets": [],
+    "Reviews": null
 }

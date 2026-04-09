@@ -162,6 +162,7 @@ func loadWantGot(wantPath, gotPath string, t *testing.T) (*spdx.Document, *spdx.
 	}
 
 	// Unable to accurately set the creation timestamp, so skip this field.
+	want.CreationInfo.Created = "SKIP ME"
 	got.CreationInfo.Created = "SKIP ME"
 
 	// JSON unmarshalling of the SPDX DocElementID is broken.

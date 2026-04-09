@@ -70,7 +70,7 @@ func AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders() error {
 	b.WriteString("The following files have missing or incorrectly worded copyright header information:\n\n")
 
 	var fuchsia *project.Project
-	for _, p := range project.FilteredProjects {
+	for _, p := range project.GetAllFilteredProjects() {
 		if p.Root == "." || p.Root == Config.FuchsiaDir {
 			fuchsia = p
 			break
@@ -82,7 +82,7 @@ func AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders() error {
 	}
 	count := 0
 OUTER:
-	for _, f := range fuchsia.SearchableRegularFiles {
+	for _, f := range fuchsia.GetSearchableRegularFiles() {
 		if _, ok := allowlist[f.RelPath()]; ok {
 			continue
 		}
@@ -131,8 +131,8 @@ func AllLicenseTextsMustBeRecognized() error {
 
 	b.WriteString("Found unrecognized license texts - please add the relevant license pattern(s) to //tools/check-licenses/assets/patterns/* and have it(them) reviewed by the OSRB team:\n\n")
 
-	for _, p := range project.FilteredProjects {
-		for _, l := range p.LicenseFiles {
+	for _, p := range project.GetAllFilteredProjects() {
+		for _, l := range p.GetLicenseFiles() {
 			data, err := l.Data()
 			if err != nil {
 				return err
@@ -171,8 +171,8 @@ func AllLicensePatternUsagesMustBeApproved() error {
 		}
 	}
 
-	for _, p := range project.FilteredProjects {
-		for _, l := range p.LicenseFiles {
+	for _, p := range project.GetAllFilteredProjects() {
+		for _, l := range p.GetLicenseFiles() {
 			if _, ok := allowlist[l.RelPath()]; ok {
 				continue
 			}
@@ -243,8 +243,8 @@ func AllComplianceWorksheetLinksAreGood() error {
 
 	numBadLinks := 0
 	checkedURLs := make(map[string]bool, 0)
-	for _, p := range project.FilteredProjects {
-		for _, l := range p.LicenseFiles {
+	for _, p := range project.GetAllFilteredProjects() {
+		for _, l := range p.GetLicenseFiles() {
 			data, _ := l.Data()
 			for _, fd := range data {
 				url := fd.URL()
@@ -296,13 +296,17 @@ func AllProjectsMustHaveALicense() error {
 	}
 
 	badReadmes := make([]string, 0)
-	for _, p := range project.FilteredProjects {
+	for _, p := range project.GetAllFilteredProjects() {
 		if _, ok := allowlist[p.Root]; ok {
 			continue
 		}
 
-		if len(p.LicenseFiles) == 0 {
-			badReadmes = append(badReadmes, fmt.Sprintf("-> %v (README.fuchsia file: %v)\n", p.Root, p.ReadmeFile.ReadmePath))
+		if len(p.GetLicenseFiles()) == 0 {
+			readmePath := "unknown"
+			if p.ReadmeFile != nil {
+				readmePath = p.ReadmeFile.ReadmePath
+			}
+			badReadmes = append(badReadmes, fmt.Sprintf("-> %v (README.fuchsia file: %v)\n", p.Root, readmePath))
 		}
 	}
 	sort.Strings(badReadmes)
