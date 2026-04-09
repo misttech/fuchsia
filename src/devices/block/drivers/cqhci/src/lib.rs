@@ -10,6 +10,7 @@ use crate::partition::EmmcPartition;
 use block_server::callback_interface::SessionManager;
 use block_server::{BlockServer, RequestId};
 use fdf_component::{Driver, DriverContext, Node, ServiceInstance, driver_register};
+use fdf_power::{Suspendable, SuspendableDriver};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_driver_framework::{NodeAddArgs, NodeControllerMarker, NodeError};
 use fidl_fuchsia_hardware_block_volume as fvolume;
@@ -23,6 +24,7 @@ use fuchsia_async::Scope;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
+use futures::channel::oneshot;
 use log::{debug, error, info, warn};
 use zx::{HandleBased as _, Status};
 
@@ -143,9 +145,10 @@ struct CqhciDriver {
     scope: Mutex<Option<Scope>>,
     partitions: Arc<Mutex<BTreeMap<String, Arc<PartitionServer>>>>,
     command_queue: Mutex<Option<Arc<CommandQueue>>>,
+    resume_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 
-driver_register!(CqhciDriver);
+driver_register!(Suspendable<CqhciDriver>);
 
 struct RpmbService {
     scope: Scope,
@@ -307,6 +310,7 @@ impl Driver for CqhciDriver {
             scope: Mutex::new(Some(scope)),
             partitions,
             command_queue: Mutex::new(Some(command_queue)),
+            resume_tx: Mutex::default(),
         };
         if let Some(scope) = driver.scope.lock().as_ref() {
             scope.spawn(async move {
@@ -373,6 +377,8 @@ impl Driver for CqhciDriver {
     async fn stop(&self) {
         info!("cqhci driver stopping");
         let Some(command_queue) = self.command_queue.lock().take() else { unreachable!() };
+        // This will resume if currently suspended.
+        *self.resume_tx.lock() = None;
         command_queue.shutdown().await;
         debug!("cqhci shut down");
 
@@ -391,5 +397,26 @@ impl Driver for CqhciDriver {
         debug_assert!(Arc::strong_count(&command_queue) == 1);
         command_queue.unpin_buffers();
         info!("cqhci driver stopped");
+    }
+}
+
+impl SuspendableDriver for CqhciDriver {
+    async fn suspend(&self) {
+        let Some(cq) = self.command_queue.lock().as_ref().cloned() else { return };
+        if let Ok(resume_tx) = cq.suspend().await {
+            assert!(self.resume_tx.lock().replace(resume_tx).is_none());
+        }
+    }
+
+    async fn resume(&self) {
+        if let Some(resume_tx) = self.resume_tx.lock().take() {
+            let _ = resume_tx.send(());
+        } else {
+            warn!("Nothing to resume because not suspended");
+        }
+    }
+
+    fn suspend_enabled(&self) -> bool {
+        true
     }
 }

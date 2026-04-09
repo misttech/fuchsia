@@ -18,6 +18,7 @@ use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc as sdmmc;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
+use futures::channel::oneshot;
 use log::{debug, error, info, trace, warn};
 use mmio::Mmio;
 use sdmmc_spec::{
@@ -272,6 +273,9 @@ enum State {
     /// CQE is disabled, a.k.a. shut-down.  This is not the same as when the command queuing engine
     /// is disabled whilst processing RPMB requests (in that case, the state will be `Enabled`).
     Disabled,
+
+    /// CQE is suspended (for power).
+    Suspended,
 }
 
 /// AsyncTask encapsulates asynchronous tasks that need to run with exclusive access
@@ -1550,6 +1554,45 @@ impl CommandQueue {
                 .detach()
             },
         ));
+    }
+
+    /// Suspends the CQ engine.  The caller should use the returned sender to resume.
+    pub async fn suspend(&self) -> Result<oneshot::Sender<()>, zx::Status> {
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut inner = self.inner.lock();
+            assert!(inner.state == State::Enabled);
+            inner.submit_async_task(into_async_task(
+                async |mut cq| {
+                    cq.disable().await;
+                    assert_eq!(
+                        std::mem::replace(&mut cq.inner.lock().state, State::Suspended),
+                        State::Enabled
+                    );
+                    let (resume_tx, resume_rx) = oneshot::channel();
+                    let _ = tx.send(resume_tx);
+
+                    info!("Suspended");
+
+                    // Wait till resumed.
+                    let _ = resume_rx.await;
+                    let result = cq.enable().await;
+                    cq.inner.lock().state = match result {
+                        Ok(()) => {
+                            info!("Resumed");
+                            State::Enabled
+                        }
+                        Err(error) => {
+                            warn!(error:?; "Failed to resume");
+                            State::Disabled
+                        }
+                    };
+                    result
+                },
+                |_| {},
+            ));
+        }
+        rx.await.map_err(|_| zx::Status::CANCELED)
     }
 
     /// Pops the next task, returning it and an [`CommandQueueExcl`] representing unique access to

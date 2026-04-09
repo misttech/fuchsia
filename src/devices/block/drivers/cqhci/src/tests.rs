@@ -9,12 +9,14 @@ pub use fake_cqhci::TestCommandQueueHost;
 use crate::CqhciDriver;
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fdf_component::testing::harness::DriverUnderTest;
+use fdf_power::SuspendableDriver;
 use fidl_fuchsia_hardware_block_volume::{self as fvolume};
 use fidl_fuchsia_storage_block as fblock;
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
+use futures::channel::oneshot;
 use futures::{FutureExt as _, StreamExt as _};
 use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, SdhciInterruptStatusRegister};
 use std::pin::pin;
@@ -495,7 +497,7 @@ async fn test_flush_while_queue_not_empty() {
 
     let block_client = connect_block_client(&started_driver, "user").await;
 
-    // Perform a dummy read to ensure the partition is switched and avoid DCMDs during the test.
+    // Perform a read to ensure the partition is switched and avoid DCMDs during the test.
     {
         let mut buf = vec![0u8; 512];
         block_client
@@ -563,6 +565,110 @@ async fn test_inline_crypto() {
         .expect("FIDL error")
         .expect("derive_raw_secret failed");
     assert_eq!(response, vec![1, 2, 3, 4]);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_suspend_resume() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+
+    // Verify initial I/O.
+    let buf = vec![0x12u8; 512];
+    block_client.write_at(BufferSlice::from(&buf[..]), 0).await.expect("write failed");
+
+    let driver = started_driver.get_driver().expect("failed to get driver");
+
+    // Suspend.
+    driver.suspend().await;
+
+    // Submit a read request.  This should be blocked.
+    let mut read_buf = vec![0u8; 512];
+    let mut read_fut = block_client.read_at(MutableBufferSlice::from(&mut read_buf[..]), 0).boxed();
+
+    // Give it a bit of time and make sure it hasn't completed.
+    fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+    assert!(read_fut.as_mut().now_or_never().is_none());
+
+    // Resume.
+    driver.resume().await;
+
+    // Now it should complete.
+    read_fut.await.expect("read failed");
+    assert_eq!(read_buf, buf);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_suspend_with_active_io() {
+    let mut blocker = Blocker::default();
+    let (fixture, mut harness) = FakeCqhci::new(Some(blocker.hook()));
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+
+    // Perform a read to ensure the partition is switched and avoid DCMDs during the test.
+    {
+        let mut buf = vec![0u8; 512];
+        block_client
+            .read_at(MutableBufferSlice::from(&mut buf[..]), 0)
+            .await
+            .expect("placeholder read failed");
+    }
+
+    // Block all requests.
+    blocker.block(!(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT));
+
+    // Submit a read request.
+    let (tx, rx) = oneshot::channel();
+    fixture.scope.spawn(async move {
+        let mut read_buf = vec![0u8; 512];
+        block_client
+            .read_at(MutableBufferSlice::from(&mut read_buf[..]), 0)
+            .await
+            .expect("read failed");
+        let _ = tx.send(read_buf);
+    });
+
+    // Wait for the transfer to be submitted to hardware and blocked.
+    let unblock = blocker.next().await;
+
+    let driver = started_driver.get_driver().expect("failed to get driver");
+
+    // Suspend. This should wait for the active task to finish, but since we're blocking it in the
+    // hardware, suspend will block too.
+    let mut suspend_fut = driver.suspend().boxed();
+
+    // Verify suspend is blocked.
+    fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+    assert!(suspend_fut.as_mut().now_or_never().is_none());
+
+    // Unblock the read request.
+    drop(unblock);
+
+    // Now suspend should finish.
+    suspend_fut.await;
+
+    // Verify read finished.
+    let read_buf = rx.await.expect("failed to receive read buf");
+    assert_eq!(read_buf, vec![0u8; 512]);
+
+    // Resume.
+    driver.resume().await;
+
+    // And make sure another read request completes.
+    blocker.block(0);
+    let mut buf = vec![0u8; 512];
+    let block_client = connect_block_client(&started_driver, "user").await;
+    block_client
+        .read_at(MutableBufferSlice::from(&mut buf[..]), 0)
+        .await
+        .expect("placeholder read failed");
+    assert_eq!(read_buf, vec![0u8; 512]);
 
     started_driver.stop_driver().await;
 }
