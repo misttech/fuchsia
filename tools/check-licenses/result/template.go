@@ -40,7 +40,9 @@ func expandTemplates() (string, error) {
 				b.WriteString(fmt.Sprintf("Failed to create template file %v: %v\n", name, err))
 				continue
 			}
-			if err := t.Execute(f, w); err != nil {
+			err = t.Execute(f, w)
+			f.Close() // Explicitly close the file to avoid FD leaks and allow Zip to read it
+			if err != nil {
 				b.WriteString(fmt.Sprintf("Failed to expand template %v: %v\n", name, err))
 				continue
 			}

@@ -214,6 +214,13 @@ func (fd *FileData) SearchResults() *classifierLib.Results {
 	return fd.searchResults
 }
 
+// SetSearchResultsForTest allows unit tests to inject mock classification results.
+func (fd *FileData) SetSearchResultsForTest(results *classifierLib.Results) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	fd.searchResults = results
+}
+
 // For copyright data, we want "filedata" to only contain the copyright
 // text. Not the rest of the source code in the given file.
 // This method lets us set the filedata data after detecting the copyright

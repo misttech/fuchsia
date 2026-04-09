@@ -211,6 +211,7 @@
       {
         "name": "AllLicenseTextsMustBeRecognized",
         "allowlist": {
+          "third_party/perfetto/MODULE_LICENSE_APACHE2": true,
           "third_party/zlib/contrib/iostream3/LICENSE": true,
           "third_party/rust_crates/vendor/siphasher-0.3.10/COPYING": true,
           "third_party/rust_crates/vendor/siphasher-0.2.3/COPYING": true,

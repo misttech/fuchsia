@@ -131,6 +131,14 @@ func InitializeForTest() {
 	allProjectsMu.Lock()
 	allProjects = make(map[string]*Project, 0)
 	allProjectsMu.Unlock()
+
+	filteredProjectsMu.Lock()
+	filteredProjects = make(map[string]*Project, 0)
+	filteredProjectsMu.Unlock()
+
+	dedupedLicenseDataMu.Lock()
+	dedupedLicenseData = make([][]*file.FileData, 0)
+	dedupedLicenseDataMu.Unlock()
 }
 
 // Projects are created using README.fuchsia files.

@@ -84,7 +84,7 @@ func generateSPDXDoc(name string, projects []*project.Project, root *project.Pro
 			doc.Relationships = append(doc.Relationships, r)
 		}
 
-		for _, l := range p.LicenseFiles {
+		for _, l := range p.GetLicenseFiles() {
 			// Prebuilts often come with a NOTICE file with several license texts.
 			// For now, let's keep those license texts together in one single
 			// OtherLicense SPDX object.

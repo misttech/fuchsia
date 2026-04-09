@@ -6,10 +6,14 @@ package result
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
@@ -133,6 +137,10 @@ func AllLicenseTextsMustBeRecognized() error {
 
 	for _, p := range project.GetAllFilteredProjects() {
 		for _, l := range p.GetLicenseFiles() {
+			if _, ok := allowlist[l.RelPath()]; ok {
+				continue
+			}
+
 			data, err := l.Data()
 			if err != nil {
 				return err
@@ -140,9 +148,22 @@ func AllLicenseTextsMustBeRecognized() error {
 
 			for _, fd := range data {
 				results := fd.SearchResults()
-				if results == nil {
+				if results == nil || len(results.Matches) == 0 {
 					foundUnrecognizedMatch = true
-					b.WriteString(fmt.Sprintf("-> %s\n", l.RelPath()))
+					d := fd.Data()
+					dLen := len(d)
+					if len(d) > 250 {
+						d = d[:250]
+					}
+					b.WriteString(fmt.Sprintf("-> %s | Size: %d | Text: %q...\n", l.RelPath(), dLen, string(d)))
+
+					// Write full text to a temp file for analysis if an out dir is provided
+					if Config.OutDir != "" {
+						unrecognizedDir := filepath.Join(Config.OutDir, "unrecognized")
+						os.MkdirAll(unrecognizedDir, 0755)
+						fileName := filepath.Join(unrecognizedDir, fmt.Sprintf("unrecognized_%d.txt", dLen))
+						os.WriteFile(fileName, fd.Data(), 0644)
+					}
 					continue
 				}
 			}
@@ -192,6 +213,15 @@ func AllLicensePatternUsagesMustBeApproved() error {
 						continue
 					case m.MatchType == "Approved":
 						continue
+					case m.MatchType == "Permissive":
+						continue
+					case m.MatchType == "Notice":
+						continue
+					case m.MatchType == "Unencumbered":
+						continue
+					// TODO(https://fxbug.dev/501039030): Remove unidentified license category
+					case m.MatchType == "Unclassified":
+						continue
 					case strings.HasPrefix(m.MatchType, "_"):
 						continue
 					}
@@ -235,47 +265,100 @@ func isProjectAllowlisted(relpath string, m *classifierLib.Match) bool {
 
 }
 
+type urlCheckTask struct {
+	url     string
+	root    string
+	relPath string
+}
+
 func AllComplianceWorksheetLinksAreGood() error {
 	if !Config.CheckURLs {
 		fmt.Println("Not checking URLs")
 		return nil
 	}
 
-	numBadLinks := 0
-	checkedURLs := make(map[string]bool, 0)
+	// Phase 1: Deduplicate and aggregate the URLs that need to be checked.
+	checkedURLs := make(map[string]bool)
+	tasks := make([]urlCheckTask, 0)
+
 	for _, p := range project.GetAllFilteredProjects() {
 		for _, l := range p.GetLicenseFiles() {
 			data, _ := l.Data()
 			for _, fd := range data {
 				url := fd.URL()
-				if checkedURLs[url] {
+				if url == "" || strings.Contains(url, "3rd party library") || checkedURLs[url] {
 					continue
 				}
-				if strings.Contains(url, "3rd party library") {
-					continue
-				}
-				if url != "" {
-					fmt.Printf(" -> %s\n", url)
-					resp, err := http.Get(url)
-					if err != nil {
-						fmt.Printf("%v-%v %v: %v \n", p.Root, l.RelPath(), url, err)
-						numBadLinks = numBadLinks + 1
-					} else if resp.Status != "200 OK" {
-						fmt.Printf("%v-%v %v: %v\n", p.Root, l.RelPath(), url, resp.Status)
-						numBadLinks = numBadLinks + 1
-					}
-					checkedURLs[url] = true
-					time.Sleep(200 * time.Millisecond)
-				}
+				checkedURLs[url] = true
+				tasks = append(tasks, urlCheckTask{
+					url:     url,
+					root:    p.Root,
+					relPath: l.RelPath(),
+				})
 			}
 		}
+	}
+
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	// Phase 2: Execute HTTP checks concurrently using a bounded worker pool.
+	// We bound this to a reasonable number (e.g., 10) to prevent overwhelming
+	// upstream servers like googlesource.com and triggering rate limits.
+	numWorkers := 10
+	taskChan := make(chan urlCheckTask, len(tasks))
+	errChan := make(chan error, len(tasks))
+
+	for _, t := range tasks {
+		taskChan <- t
+	}
+	close(taskChan)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Use a custom client with a timeout to prevent infinite hangs
+			client := &http.Client{Timeout: 10 * time.Second}
+
+			for t := range taskChan {
+				fmt.Printf(" -> %s\n", t.url)
+
+				resp, err := client.Get(t.url)
+				if err != nil {
+					errChan <- fmt.Errorf("%v-%v %v: %v", t.root, t.relPath, t.url, err)
+				} else {
+					// We MUST read and close the body to release the underlying TCP connection
+					// back to the connection pool for reuse (Keep-Alive).
+					io.Copy(io.Discard, resp.Body)
+					resp.Body.Close()
+					if resp.StatusCode != http.StatusOK {
+						errChan <- fmt.Errorf("%v-%v %v: %v", t.root, t.relPath, t.url, resp.Status)
+					}
+				}
+
+				// Small sleep to ease the burden on the server.
+				time.Sleep(100 * time.Millisecond)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	numBadLinks := 0
+	for err := range errChan {
+		fmt.Println(err)
+		numBadLinks++
 	}
 
 	if numBadLinks > 0 {
 		return fmt.Errorf("Encountered %d bad license URLs.\n", numBadLinks)
 	}
 	return nil
-
 }
 
 func AllProjectsMustHaveALicense() error {
@@ -344,7 +427,9 @@ func AllFilesAndFoldersMustBeIncludedInAProject() error {
 	b.WriteString("and a README.fuchsia file must exist and specify where the license file lives.\n")
 	b.WriteString("The following directories are not included in a project:\n\n")
 	for _, d := range directory.GetAllDirectories() {
-		if d.Project == project.UnknownProject && len(d.Files) > 0 {
+		// Only complain if the directory has files, but isn't explicitly
+		// mapped to a known project, AND isn't in the allowlist.
+		if d.Project != nil && d.Project.Name == "unknown" && len(d.Files) > 0 {
 			if _, ok := allowlist[d.Path]; !ok {
 				b.WriteString(fmt.Sprintf("-> %s\n", d.Path))
 				count = count + 1

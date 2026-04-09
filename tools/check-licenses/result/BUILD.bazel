@@ -10,7 +10,6 @@ go_library(
     srcs = [
         "checks.go",
         "config.go",
-        "init.go",
         "metrics.go",
         "result.go",
         "spdx.go",
@@ -34,7 +33,13 @@ go_library(
 
 go_test(
     name = "result_test",
-    srcs = ["spdx_test.go"],
+    srcs = [
+        "checks_test.go",
+        "config_test.go",
+        "spdx_test.go",
+        "template_test.go",
+        "world_test.go",
+    ],
     embed = [":result"],
     embedsrcs = [
         "testdata/spdx/multi_package/want.json",

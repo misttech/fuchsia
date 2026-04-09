@@ -38,7 +38,6 @@ if (is_host) {
     sources = [
       "checks.go",
       "config.go",
-      "init.go",
       "metrics.go",
       "result.go",
       "spdx.go",
@@ -60,7 +59,13 @@ if (is_host) {
 }
 if (is_host) {
   go_test("result_test") {
-    sources = [ "spdx_test.go" ]
+    sources = [
+      "checks_test.go",
+      "config_test.go",
+      "spdx_test.go",
+      "template_test.go",
+      "world_test.go",
+    ]
     embed = [ ":result" ]
     embedsrcs = [
       "testdata/spdx/multi_package/want.json",

@@ -47,6 +47,12 @@ func getWorldStruct() *world {
 	dedupedLicenseDataList := make([]*DedupedLicense, 0)
 
 	// Dedup all license texts by putting them in a hashmap.
+	// We use the pre-computed base64 SHA-1 hash of the FileData (d.Hash())
+	// as the map key. This is a massive performance optimization because it
+	// avoids allocating a new string on the heap for the entire license text
+	// every single time we encounter it. If multiple projects share the exact
+	// same license text (e.g. standard MIT license), they will all map to the
+	// same DedupedLicense struct, and their LibraryName will be appended to the list.
 	for _, p := range project.GetAllFilteredProjects() {
 		for _, l := range p.GetLicenseFiles() {
 			data, err := l.Data()

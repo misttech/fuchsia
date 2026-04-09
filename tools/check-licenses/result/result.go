@@ -118,12 +118,11 @@ func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
 	b.WriteString("\n")
 	if Config.OutDir != "" {
 		b.WriteString(fmt.Sprintf("Full summary and output files -> %s\n", Config.OutDir))
+		if err := compressTarGZ(Config.OutDir, path.Join(Config.RootOutDir, "runFiles")); err != nil {
+			return "", err
+		}
 	} else {
 		b.WriteString("Set the 'outputdir' arg in the config file to save detailed information to disk.\n")
-	}
-
-	if err := compressTarGZ(Config.OutDir, path.Join(Config.RootOutDir, "runFiles")); err != nil {
-		return "", err
 	}
 
 	return b.String(), nil
@@ -184,10 +183,10 @@ func saveReadmeFuchsiaFiles() (string, error) {
 				// the README.fuchsia file.
 				continue
 			}
-			defer f.Close()
 
 			// Write the contents of the string to the file
 			fmt.Fprintln(f, p.ReadmeFile.String())
+			f.Close()
 		}
 	}
 
@@ -274,12 +273,26 @@ func compressGZ(path string) error {
 }
 
 func compressTarGZ(root string, out string) error {
-	buf := bytes.Buffer{}
-	zw := gzip.NewWriter(&buf)
+	outPath := out + ".tar.gz"
+	f, err := os.Create(outPath)
+	if err != nil {
+		return fmt.Errorf("failed to create metrics tarball %s: %w", outPath, err)
+	}
+	defer f.Close()
+
+	zw := gzip.NewWriter(f)
 	tw := tar.NewWriter(zw)
 
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		var header *tar.Header
+
+		if err != nil {
+			return err
+		}
+
+		if filepath.Clean(path) == filepath.Clean(outPath) {
+			return nil
+		}
 
 		if header, err = tar.FileInfoHeader(info, path); err != nil {
 			return err
@@ -295,6 +308,7 @@ func compressTarGZ(root string, out string) error {
 			if err != nil {
 				return err
 			}
+			defer content.Close()
 
 			if _, err := io.Copy(tw, content); err != nil {
 				return err
@@ -304,11 +318,15 @@ func compressTarGZ(root string, out string) error {
 		return nil
 	})
 
+	if err != nil {
+		return fmt.Errorf("failed to walk and tar.gz directory %s: %w", root, err)
+	}
+
 	if err := tw.Close(); err != nil {
 		return err
 	}
 	if err := zw.Close(); err != nil {
 		return err
 	}
-	return writeFileRoot(out+".tar.gz", buf.Bytes(), "")
+	return nil
 }

@@ -697,6 +697,14 @@
                 "paths": [
                     "third_party/protobuf"
                 ]
+            },
+            {
+                "notes": [
+                    "Test stub"
+                ],
+                "paths": [
+                    "tools/cargo-gnaw/tests/simple_deps/vendor/anyhow/src/LICENSE-FOR-TESTING"
+                ]
             }
         ]
     }

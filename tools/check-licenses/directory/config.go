@@ -55,6 +55,13 @@ func Initialize(c *DirectoryConfig) error {
 	return nil
 }
 
+func InitializeForTest() {
+	allDirectoriesMu.Lock()
+	allDirectories = make(map[string]*Directory)
+	allDirectoriesMu.Unlock()
+	RootDirectory = nil
+}
+
 // AddDirectory safely adds a directory to the global tracking map.
 func AddDirectory(d *Directory) {
 	allDirectoriesMu.Lock()
