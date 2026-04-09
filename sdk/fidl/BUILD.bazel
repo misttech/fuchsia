@@ -94,6 +94,10 @@ _partner_idk_stable_fidl_libraries_targets_list = [
 _partner_idk_unstable_fidl_libraries_targets_list = [
     # keep-sorted: begin
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo",
+    "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
+    "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint",
+    "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy",
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac",
