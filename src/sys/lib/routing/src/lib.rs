@@ -8,7 +8,6 @@ pub mod capability_source;
 pub mod component_instance;
 pub mod config;
 pub mod error;
-pub mod mapper;
 pub mod path;
 pub mod policy;
 pub mod resolving;
@@ -21,13 +20,11 @@ use crate::capability_source::CapabilitySource;
 use crate::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use crate::error::RoutingError;
 use cm_rust::{
-    Availability, DebugProtocolRegistration, ExposeDecl, ExposeDeclCommon, ExposeTarget, OfferDecl,
-    OfferDeclCommon, OfferTarget, RegistrationDeclCommon, RegistrationSource, ResolverRegistration,
-    RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource, UseDecl,
+    Availability, ExposeDecl, ExposeDeclCommon, ExposeTarget, OfferDecl, OfferDeclCommon,
+    OfferTarget, StorageDecl, StorageDirectorySource, UseDecl,
 };
 use cm_types::{IterablePath, Name, RelativePath};
 use fidl_fuchsia_io::RW_STAR_DIR;
-use from_enum::FromEnum;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker};
 use sandbox::{
@@ -40,8 +37,6 @@ pub use bedrock::dict_ext::{DictExt, GenericRouterResponse};
 pub use bedrock::lazy_get::LazyGet;
 pub use bedrock::weak_instance_token_ext::{WeakInstanceTokenExt, test_invalid_instance_token};
 pub use bedrock::with_porcelain::WithPorcelain;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct SandboxPath {
@@ -236,62 +231,4 @@ where
         d => panic!("Debug route did not return a debug response: {d:?}"),
     };
     Ok(data.try_into().unwrap())
-}
-
-/// Intermediate type to masquerade as Registration-style routing start point for the storage
-/// backing directory capability.
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StorageDeclAsRegistration {
-    source: RegistrationSource,
-    name: Name,
-}
-
-impl From<StorageDecl> for StorageDeclAsRegistration {
-    fn from(decl: StorageDecl) -> Self {
-        Self {
-            name: decl.backing_dir,
-            source: match decl.source {
-                StorageDirectorySource::Parent => RegistrationSource::Parent,
-                StorageDirectorySource::Self_ => RegistrationSource::Self_,
-                StorageDirectorySource::Child(child) => RegistrationSource::Child(child),
-            },
-        }
-    }
-}
-
-impl SourceName for StorageDeclAsRegistration {
-    fn source_name(&self) -> &Name {
-        &self.name
-    }
-}
-
-impl RegistrationDeclCommon for StorageDeclAsRegistration {
-    const TYPE: &'static str = "storage";
-
-    fn source(&self) -> &RegistrationSource {
-        &self.source
-    }
-}
-
-/// An umbrella type for registration decls, making it more convenient to record route
-/// maps for debug use.
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
-#[derive(FromEnum, Debug, Clone, PartialEq, Eq)]
-pub enum RegistrationDecl {
-    Resolver(ResolverRegistration),
-    Runner(RunnerRegistration),
-    Debug(DebugProtocolRegistration),
-    Directory(StorageDeclAsRegistration),
-}
-
-impl From<&RegistrationDecl> for cm_rust::CapabilityTypeName {
-    fn from(registration: &RegistrationDecl) -> Self {
-        match registration {
-            RegistrationDecl::Directory(_) => Self::Directory,
-            RegistrationDecl::Resolver(_) => Self::Resolver,
-            RegistrationDecl::Runner(_) => Self::Runner,
-            RegistrationDecl::Debug(_) => Self::Protocol,
-        }
-    }
 }

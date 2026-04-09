@@ -13,7 +13,6 @@ use routing::bedrock::request_metadata::{
     protocol_metadata, resolver_metadata, runner_metadata, service_metadata, storage_metadata,
 };
 use routing::capability_source::CapabilitySource;
-use routing::mapper::RouteSegment;
 use sandbox::Request;
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +72,5 @@ pub struct VerifyRouteResult {
     pub target_decl: TargetDecl,
     pub capability: Option<Name>,
     pub error: Option<AnalyzerModelError>,
-    pub route: Vec<RouteSegment>,
     pub source: Option<CapabilitySource>,
 }

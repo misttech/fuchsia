@@ -613,7 +613,6 @@ impl ComponentModelForAnalyzer {
                     capability: target_decl.source_name(),
                     target_decl,
                     error: source_check.err(),
-                    route: vec![],
                     source: res.clone().ok(),
                 }
             }

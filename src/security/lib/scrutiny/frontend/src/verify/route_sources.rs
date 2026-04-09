@@ -5,16 +5,12 @@
 use anyhow::{Context, Error, Result, anyhow};
 use cm_fidl_analyzer::component_model::{AnalyzerModelError, ComponentModelForAnalyzer};
 use cm_fidl_analyzer::route::VerifyRouteResult;
-use cm_rust::{
-    CapabilityDecl, CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, SourceName as _,
-    UseDecl,
-};
-use cm_types::{HandleType, Name, Path, RelativePath};
+use cm_rust::{CapabilityDecl, CapabilityTypeName, ComponentDecl, SourceName as _, UseDecl};
+use cm_types::{HandleType, Name, Path};
 use futures::FutureExt;
 use moniker::Moniker;
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
-use routing::mapper::RouteSegment;
 use scrutiny_collection::core::{Component, ComponentSource, Components};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
@@ -23,7 +19,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs::read_to_string;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 
@@ -163,112 +158,6 @@ impl Matches<CapabilityDecl> for SourceDeclSpec {
             None => true,
         })
     }
-}
-
-/// Match a complete route against to a `SourceDeclSpec` by following `subdir`
-/// designations along route and delegating to `Matches<CapabilityDecl>`
-/// implementation.
-impl Matches<Vec<RouteSegment>> for SourceDeclSpec {
-    const NAME: &'static str = "source declaration spec";
-    const OTHER_NAME: &'static str = "route";
-
-    fn matches(&self, other: &Vec<RouteSegment>) -> Result<bool> {
-        // Spec cannot match empty route.
-        let decl = other.last();
-        if decl.is_none() {
-            return Ok(false);
-        }
-        let decl = decl.unwrap();
-
-        // Accumulate `subdir` onto `decl.capability.source_path`, where applicable, and delegate
-        // to `self.matches(&CapabilityDecl)`.
-        match decl {
-            RouteSegment::DeclareBy { capability, .. } => match &capability {
-                CapabilityDecl::Directory(decl) => {
-                    if self.path_prefix.is_none() || decl.source_path.is_none() {
-                        return Ok(false);
-                    }
-                    let path_prefix = self.path_prefix.as_ref().unwrap();
-                    let source_path = &decl.source_path.as_ref().unwrap();
-                    let subdirs = get_subdirs(other);
-                    let source_path_str = subdirs.iter().fold(source_path.to_path_buf(), |path_buf, next| {
-                            let mut next_buf = path_buf;
-                            next_buf.push(next.to_path_buf());
-                            next_buf
-                        }).to_str().ok_or_else(|| anyhow!("Failed to format PathBuf as string; components; {:?} appended with {:?}", decl.source_path, subdirs))?.to_string();
-                    let source_path = Path::from_str(&source_path_str).with_context(|| {
-                        anyhow!("Failed to parse string into Path: {}", source_path_str)
-                    })?;
-
-                    Ok(match_path_prefix(path_prefix, &source_path))
-                }
-                _ => Ok(false),
-            },
-            _ => Ok(false),
-        }
-    }
-}
-
-fn get_subdirs(route: &Vec<RouteSegment>) -> Vec<RelativePath> {
-    let mut subdir = vec![];
-    for segment in route.iter() {
-        match segment {
-            RouteSegment::UseBy { capability, .. } => match capability {
-                UseDecl::Directory(decl) => {
-                    if !decl.subdir.is_dot() {
-                        subdir.push(decl.subdir.clone());
-                    }
-                }
-                _ => {}
-            },
-            RouteSegment::OfferBy { capability, .. } => match capability {
-                OfferDecl::Directory(decl) => {
-                    if !decl.subdir.is_dot() {
-                        subdir.push(decl.subdir.clone());
-                    }
-                }
-                _ => {}
-            },
-            RouteSegment::ExposeBy { capability, .. } => match capability {
-                ExposeDecl::Directory(decl) => {
-                    if !decl.subdir.is_dot() {
-                        subdir.push(decl.subdir.clone());
-                    }
-                }
-                _ => {}
-            },
-            RouteSegment::DeclareBy { capability, .. } => match capability {
-                CapabilityDecl::Storage(decl) => {
-                    if !decl.subdir.is_dot() {
-                        subdir.push(decl.subdir.clone());
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
-    // Subdirs collected target->source, but are applied source->target.
-    subdir.reverse();
-
-    subdir
-}
-
-fn match_path_prefix(prefix: &Path, path: &Path) -> bool {
-    let prefix = prefix.split();
-    let path = path.split();
-    if prefix.len() > path.len() {
-        return false;
-    }
-    for (i, expected_segment) in prefix.iter().enumerate() {
-        let actual_segment = &path[i];
-        if expected_segment != actual_segment {
-            return false;
-        }
-    }
-
-    true
 }
 
 /// Output type: Wrapper for full set of results and dependencies.
@@ -496,20 +385,14 @@ fn process_verify_result<'a>(
             {
                 let capability: CapabilityDecl =
                     capability.try_into().map_err(|_| RouteSourceError::MissingSourceCapability)?;
-                let matches_result: Result<Vec<bool>> = vec![
-                    route.route_match.source.capability.matches(&capability),
-                    if let Some(_segment) = verify_result.route.last() {
-                        route.route_match.source.capability.matches(&verify_result.route)
-                    } else {
-                        Ok(true)
-                    },
-                ]
-                .into_iter()
-                .collect();
+                let matches_result: Result<Vec<bool>> =
+                    vec![route.route_match.source.capability.matches(&capability)]
+                        .into_iter()
+                        .collect();
                 let source = Source { moniker, capability };
                 match matches_result {
                     Ok(source_and_cap_res) => {
-                        if source_and_cap_res[0] && source_and_cap_res[1] {
+                        if source_and_cap_res[0] {
                             Ok(source)
                         } else {
                             Err(RouteSourceError::RouteMismatch(source))

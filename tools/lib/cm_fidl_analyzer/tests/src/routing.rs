@@ -1983,7 +1983,6 @@ mod tests {
                 target_decl: TargetDecl::Use(use_directory_decl.clone()),
                 capability: Some("bar_data".parse().unwrap()),
                 error: None,
-                route: vec![],
                 source: Some(CapabilitySource::Component(ComponentSource {
                     capability: ComponentCapability::Directory(match directory_decl {
                         CapabilityDecl::Directory(decl) => decl,
@@ -2006,7 +2005,6 @@ mod tests {
                 })),
                 capability: Some("dwarf".parse().unwrap()),
                 error: None,
-                route: vec![],
                 source: Some(CapabilitySource::Component(ComponentSource {
                     capability: ComponentCapability::Runner(match runner_decl {
                         CapabilityDecl::Runner(decl) => decl,
@@ -2026,7 +2024,6 @@ mod tests {
                 target_decl: TargetDecl::ResolverFromEnvironment("base".to_string()),
                 capability: Some("base".parse().unwrap()),
                 error: None,
-                route: vec![],
                 source: Some(CapabilitySource::Component(ComponentSource {
                     capability: ComponentCapability::Resolver(match resolver_decl {
                         CapabilityDecl::Resolver(decl) => decl,
@@ -2052,7 +2049,6 @@ mod tests {
                         moniker: b_component.moniker().clone(),
                     },
                 )),
-                route: vec![],
                 source: None,
             }],
         );
@@ -2174,7 +2170,6 @@ mod tests {
                     target_decl: TargetDecl::Offer(offer_protocol_decl2.clone()),
                     capability: Some("protocol_exists".parse().unwrap()),
                     error: None,
-                    route: vec![],
                     source: Some(CapabilitySource::Component(ComponentSource {
                         capability: ComponentCapability::Protocol(match protocol_decl {
                             CapabilityDecl::Protocol(decl) => decl,
@@ -2193,7 +2188,6 @@ mod tests {
                             capability_id: "protocol_not_exists".to_string(),
                         }
                     )),
-                    route: vec![],
                     source: None,
                 },
             ]
@@ -2260,7 +2254,6 @@ mod tests {
                     target_decl: TargetDecl::Offer(offer_dictionary_decl2.clone()),
                     capability: Some("dict_exists".parse().unwrap()),
                     error: None,
-                    route: vec![],
                     source: Some(CapabilitySource::Component(ComponentSource {
                         capability: ComponentCapability::Dictionary(match dictionary_decl {
                             CapabilityDecl::Dictionary(decl) => decl,
@@ -2279,7 +2272,6 @@ mod tests {
                             capability_id: "dict_not_exists".to_string(),
                         }
                     )),
-                    route: vec![],
                     source: None,
                 },
             ]

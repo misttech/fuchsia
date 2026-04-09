@@ -325,7 +325,6 @@ mod tests {
             assert_eq!(result.target_decl, TargetDecl::Offer(offer_storage_decl.clone()));
             assert_eq!(result.capability, Some("cache".parse().unwrap()));
             assert!(result.error.is_none());
-            assert!(result.route.is_empty());
             assert_eq!(
                 result.source,
                 Some(CapabilitySource::Component(ComponentSource {
