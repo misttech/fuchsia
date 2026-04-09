@@ -5,11 +5,11 @@
 use ::async_trait::async_trait;
 use ::ffx_bluetooth_discoverable_args::{DiscoverableCommand, DiscoverableSubCommand};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
-use ffx_writer::{SimpleWriter, ToolIO as _};
-use fidl_fuchsia_bluetooth_affordances::{
+use fdomain_fuchsia_bluetooth_affordances::{
     HostControllerProxy, HostControllerSetDiscoverabilityRequest,
 };
-use target_holders::toolbox;
+use ffx_writer::{SimpleWriter, ToolIO as _};
+use target_holders::fdomain::toolbox;
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("bluetooth.enabled"))]

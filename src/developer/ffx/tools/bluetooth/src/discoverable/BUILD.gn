@@ -9,7 +9,7 @@ ffx_plugin("ffx_bluetooth_discoverable") {
   edition = "2024"
 
   deps = [
-    "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust",
+    "//sdk/fidl/fuchsia.bluetooth.affordances:fuchsia.bluetooth.affordances_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
