@@ -613,10 +613,86 @@ fn check_drivers_areas(filename: &Path, yaml_value: &Value) -> Option<Vec<DocChe
     }
 }
 
+static VALID_DRIVER_AREAS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+    let s = include_str!("../../../docs/reference/hardware/_drivers_areas.yaml");
+    serde_yaml::from_str(s).expect("Failed to parse driver areas")
+});
+
 fn check_drivers_epitaphs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<DriverEpitaph>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064924): other checks for DriverEpitaph?
-    errors
+    let (items, errors) = parse_entries::<DriverEpitaph>(filename, yaml_value);
+    let mut errs = errors.unwrap_or_default();
+    if let Some(epitaphs) = items {
+        for epitaph in epitaphs {
+            // Validate gerrit_change_id
+            if epitaph.gerrit_change_id != "TBD"
+                && !epitaph.gerrit_change_id.chars().all(|c| c.is_ascii_digit())
+            {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!(
+                        "invalid gerrit_change_id: {}. Must be a number or 'TBD'",
+                        epitaph.gerrit_change_id
+                    ),
+                ));
+            }
+            // Validate available_in_git (git hash)
+            let len = epitaph.available_in_git.len();
+            if (len != 40 && len != 41)
+                || !epitaph.available_in_git.chars().all(|c| c.is_ascii_hexdigit())
+            {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!(
+                        "invalid available_in_git hash: {}. Must be a 40 or 41-character hex string",
+                        epitaph.available_in_git
+                    ),
+                ));
+            }
+            // Validate areas
+            if let Some(areas) = &epitaph.areas {
+                for area in areas {
+                    if !VALID_DRIVER_AREAS.contains(area) {
+                        errs.push(DocCheckError::new_error(
+                            1,
+                            filename.to_path_buf(),
+                            &format!(
+                                "invalid driver area: {}. Must be one of {:?}",
+                                area, *VALID_DRIVER_AREAS
+                            ),
+                        ));
+                    }
+                }
+            }
+            // Validate path flexibly across legacy formats
+            let clean_path = epitaph.path.trim_start_matches('/');
+            if !clean_path.starts_with("src/")
+                && !clean_path.starts_with("zircon/")
+                && !clean_path.starts_with("examples/")
+            {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!(
+                        "path {} must start with '/src/', '/zircon/', or '/examples/'",
+                        epitaph.path
+                    ),
+                ));
+            }
+            // Validate areas
+            if let Some(areas) = &epitaph.areas {
+                if areas.is_empty() {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        "areas list cannot be empty if provided",
+                    ));
+                }
+            }
+        }
+    }
+    if errs.is_empty() { None } else { Some(errs) }
 }
 
 fn check_eng_council(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
@@ -1248,6 +1324,57 @@ redirects:
         let errors = result.unwrap();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].message, "invalid CPU architecture: invalid_arch");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_drivers_epitaphs() -> Result<()> {
+        let filename = PathBuf::from("docs/reference/hardware/_drivers_epitaphs.yaml");
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- short_description: 'Test Driver'
+  deletion_reason: 'Testing'
+  gerrit_change_id: '12345'
+  available_in_git: '4c6f2330ffdd30a6b1a188ed466eaa1b1bafe7fe'
+  path: '/src/devices/test'
+- short_description: 'Bad Driver'
+  deletion_reason: 'Testing'
+  gerrit_change_id: 'bad_id'
+  available_in_git: 'short_hash'
+  path: '/src/devices/bad'
+- short_description: 'Bad Path Driver'
+  deletion_reason: 'Testing'
+  gerrit_change_id: '12345'
+  available_in_git: '4c6f2330ffdd30a6b1a188ed466eaa1b1bafe7fe'
+  path: '/bad/path'
+- short_description: 'Empty Areas Driver'
+  deletion_reason: 'Testing'
+  gerrit_change_id: '12345'
+  available_in_git: '4c6f2330ffdd30a6b1a188ed466eaa1b1bafe7fe'
+  areas: []
+  path: '/src/devices/test2'
+          "#,
+        )?;
+
+        let result = check_drivers_epitaphs(&filename, &yaml_value);
+
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 4);
+        assert_eq!(
+            errors[0].message,
+            "invalid gerrit_change_id: bad_id. Must be a number or 'TBD'"
+        );
+        assert_eq!(
+            errors[1].message,
+            "invalid available_in_git hash: short_hash. Must be a 40 or 41-character hex string"
+        );
+        assert_eq!(
+            errors[2].message,
+            "path /bad/path must start with '/src/', '/zircon/', or '/examples/'"
+        );
+        assert_eq!(errors[3].message, "areas list cannot be empty if provided");
 
         Ok(())
     }

@@ -52,7 +52,10 @@ if (is_host) {
       "//third_party/rust_crates:url",
     ]
     test_deps = [ "//src/lib/fuchsia-async" ]
-    inputs = [ "//docs/reference/hardware/_supported_cpu_architecture.yaml" ]
+    inputs = [
+      "//docs/reference/hardware/_supported_cpu_architecture.yaml",
+      "//docs/reference/hardware/_drivers_areas.yaml",
+    ]
 
     data_deps = [ ":doc_checker_test_data($host_toolchain)" ]
   }
