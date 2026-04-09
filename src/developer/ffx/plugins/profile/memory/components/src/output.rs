@@ -8,7 +8,7 @@ use attribution_processing::fplugin_serde::KernelStatistics;
 use attribution_processing::summary::{
     ComponentSummaryProfileResult, PrincipalSummary, VmoSummary,
 };
-use fidl_fuchsia_memory_attribution_plugin as fplugin;
+use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 use prettytable::{Table, row, table};
 use std::cmp::Reverse;
 
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn kernel_stats_output_string() {
         let kernel_statistics: KernelStatistics = KernelStatistics {
-            memory_statistics: fidl_fuchsia_kernel::MemoryStats {
+            memory_statistics: fdomain_fuchsia_kernel::MemoryStats {
                 total_bytes: Some(42 * 1024 * 1024),
                 free_bytes: Some(1024),
                 wired_bytes: Some(2 * 1024),
@@ -456,7 +456,7 @@ mod tests {
                 vmo_discardable_unlocked_bytes: Some(18 * 1024),
                 ..Default::default()
             },
-            compression_statistics: fidl_fuchsia_kernel::MemoryStatsCompression::default(),
+            compression_statistics: fdomain_fuchsia_kernel::MemoryStatsCompression::default(),
             ..Default::default()
         };
         let performance_metrics = fplugin::PerformanceImpactMetrics {

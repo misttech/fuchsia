@@ -17,10 +17,11 @@ use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
 use attribution_processing::{AttributionData, Principal, Resource, ZXName, digest};
 use errors::ffx_error;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_memory_attribution_plugin::{self as fplugin};
 use ffx_profile_memory_components_args::ComponentsCommand;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
 use futures::AsyncReadExt;
 use json::JsonConvertible;
 use regex_lite::Regex;
@@ -28,7 +29,7 @@ use serde::Serialize;
 use std::io::Write;
 use std::thread::sleep;
 use std::time::Duration;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 
 use crate::detailed::process_snapshot_detailed;
 use crate::statistics::CommandMemoryStatistics;
@@ -195,10 +196,10 @@ impl MemoryComponentsTool {
     async fn load_snapshot_from_device(
         monitor_proxy: Deferred<fplugin::MemoryMonitorProxy>,
     ) -> fho::Result<fplugin::Snapshot> {
-        let (client_end, server_end) = fidl::Socket::create_stream();
-        let mut client_socket = fidl::AsyncSocket::from_socket(client_end);
-
         let proxy = monitor_proxy.await?;
+
+        let (mut client_socket, server_end) = proxy.domain().create_stream_socket();
+
         proxy.get_snapshot(server_end).map_err(|err| {
             ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err:?} : {err}")
         })?;
@@ -285,7 +286,7 @@ mod tests {
     use super::*;
     use attribution_processing::digest::NamedVmo;
     use attribution_processing::summary::{PrincipalSummary, VmoSummary};
-    use fidl_fuchsia_memory_attribution_plugin as fplugin;
+    use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 
     #[test]
     fn test_gather_resources() {
@@ -594,7 +595,7 @@ mod tests {
                 *ZXName::from_string_lossy("component_vmo_mapped2").buffer(),
             ]),
             kernel_statistics: Some(fplugin::KernelStatistics {
-                memory_stats: Some(fidl_fuchsia_kernel::MemoryStats {
+                memory_stats: Some(fdomain_fuchsia_kernel::MemoryStats {
                     total_bytes: Some(1),
                     free_bytes: Some(2),
                     free_loaned_bytes: Some(3),
@@ -616,7 +617,7 @@ mod tests {
                     vmo_discardable_unlocked_bytes: Some(19),
                     ..Default::default()
                 }),
-                compression_stats: Some(fidl_fuchsia_kernel::MemoryStatsCompression {
+                compression_stats: Some(fdomain_fuchsia_kernel::MemoryStatsCompression {
                     uncompressed_storage_bytes: Some(15),
                     compressed_storage_bytes: Some(16),
                     compressed_fragmentation_bytes: Some(17),
@@ -1106,7 +1107,7 @@ mod tests {
                 *ZXName::from_string_lossy("component_vmo").buffer(),
             ]),
             kernel_statistics: Some(fplugin::KernelStatistics {
-                memory_stats: Some(fidl_fuchsia_kernel::MemoryStats {
+                memory_stats: Some(fdomain_fuchsia_kernel::MemoryStats {
                     total_bytes: Some(1),
                     free_bytes: Some(2),
                     free_loaned_bytes: Some(3),
@@ -1128,7 +1129,7 @@ mod tests {
                     vmo_discardable_unlocked_bytes: Some(19),
                     ..Default::default()
                 }),
-                compression_stats: Some(fidl_fuchsia_kernel::MemoryStatsCompression {
+                compression_stats: Some(fdomain_fuchsia_kernel::MemoryStatsCompression {
                     uncompressed_storage_bytes: Some(15),
                     compressed_storage_bytes: Some(16),
                     compressed_fragmentation_bytes: Some(17),

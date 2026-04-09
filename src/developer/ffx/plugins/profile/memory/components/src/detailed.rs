@@ -8,7 +8,7 @@ use attribution_processing::{
     AttributionData, InflatedPrincipal, InflatedResource, Principal, ProcessedAttributionData,
     Resource, ZXName, digest, fplugin_serde,
 };
-use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
+use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 use regex_lite::Regex;
 use serde::Serialize;
 

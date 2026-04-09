@@ -96,7 +96,7 @@ fn get_blob_hash(vmo_name: &ZXName) -> Option<&[u8]> {
 mod tests {
     use super::*;
     use attribution_processing::{InflatedResource, ProcessedAttributionData, Resource};
-    use fidl_fuchsia_memory_attribution_plugin as fplugin;
+    use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 
     #[test]
     fn test_get_blob_hash() {

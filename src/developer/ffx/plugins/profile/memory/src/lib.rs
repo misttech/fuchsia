@@ -17,14 +17,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use digest::{processed, raw};
 use errors::ffx_bail;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_memory_attribution_plugin as attribution_plugin;
+use fdomain_fuchsia_memory_inspection::CollectorProxy;
 use ffx_optional_moniker::optional_moniker;
 use ffx_profile_memory_args::{Backend, MemoryCommand};
 use ffx_profile_memory_components::{ComponentProfileResult, MemoryComponentsTool, PluginOutput};
 use ffx_profile_memory_components_args::ComponentsCommand;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
-use fidl_fuchsia_memory_attribution_plugin as attribution_plugin;
-use fidl_fuchsia_memory_inspection::CollectorProxy;
 use futures::AsyncReadExt;
 use plugin_output::ProfileMemoryOutput;
 use std::io::Write;
@@ -189,13 +190,12 @@ pub async fn print_output(
 /// Returns a buffer containing the data that `CollectorProxy` wrote.
 async fn get_raw_data(collector: &CollectorProxy) -> Result<Vec<u8>> {
     // Create a socket.
-    let (rx, tx) = fidl::Socket::create_stream();
+    let (mut rx_async, tx) = collector.domain().create_stream_socket();
 
     // Ask the collector to fill the socket with the data.
     collector.collect_json_stats(tx)?;
 
     // Read all the bytes sent from the other end of the socket.
-    let mut rx_async = fidl::AsyncSocket::from_socket(rx);
     let mut buffer = Vec::new();
     rx_async.read_to_end(&mut buffer).await?;
 
@@ -212,7 +212,7 @@ async fn get_output(collector: &CollectorProxy) -> anyhow::Result<raw::MemoryMon
 mod tests {
     use super::*;
     use futures::AsyncWriteExt;
-    use target_holders::fake_proxy;
+    use target_holders::fdomain::fake_proxy;
 
     use std::sync::LazyLock;
     static EXPECTED_CAPTURE: LazyLock<raw::Capture> = LazyLock::new(|| raw::Capture {
@@ -259,12 +259,15 @@ mod tests {
     static DATA_WRITTEN_BY_MEMORY_MONITOR: LazyLock<Vec<u8>> =
         LazyLock::new(|| serde_json::to_vec(&*EXPECTED_OUTPUT).unwrap());
 
-    fn create_fake_collector_proxy() -> CollectorProxy {
-        fake_proxy(move |req| match req {
-            fidl_fuchsia_memory_inspection::CollectorRequest::CollectJsonStats {
-                socket, ..
+    fn create_fake_collector_proxy(
+        client: std::sync::Arc<fdomain_client::Client>,
+    ) -> CollectorProxy {
+        fake_proxy(client, move |req| match req {
+            fdomain_fuchsia_memory_inspection::CollectorRequest::CollectJsonStats {
+                socket,
+                ..
             } => {
-                let mut s = fidl::AsyncSocket::from_socket(socket);
+                let mut s = socket;
                 fuchsia_async::Task::local(async move {
                     s.write_all(&DATA_WRITTEN_BY_MEMORY_MONITOR).await.unwrap();
                 })
@@ -277,7 +280,8 @@ mod tests {
     /// Tests that `get_raw_data` properly reads data from the memory monitor service.
     #[fuchsia::test]
     async fn get_raw_data_test() {
-        let collector = create_fake_collector_proxy();
+        let client = fdomain_local::local_client_empty();
+        let collector = create_fake_collector_proxy(client);
         let raw_data = get_raw_data(&collector).await.expect("failed to get raw data");
         assert_eq!(raw_data, *DATA_WRITTEN_BY_MEMORY_MONITOR);
     }
@@ -285,7 +289,8 @@ mod tests {
     /// Tests that `get_output` properly reads and parses data from the memory monitor service.
     #[fuchsia::test]
     async fn get_output_test() {
-        let collector = create_fake_collector_proxy();
+        let client = fdomain_local::local_client_empty();
+        let collector = create_fake_collector_proxy(client);
         let output = get_output(&collector).await.expect("failed to get output");
         assert_eq!(output, *EXPECTED_OUTPUT);
     }

@@ -188,7 +188,7 @@ pub mod raw {
             default,
             with = "attribution_processing::fkernel_serde::MemoryStatsCompressionDef"
         )]
-        pub kmem_stats_compression: fidl_fuchsia_kernel::MemoryStatsCompression,
+        pub kmem_stats_compression: fdomain_fuchsia_kernel::MemoryStatsCompression,
         pub processes: Vec<Process>,
         /// Names of the VMOs mentioned in the `Capture`.
         pub vmo_names: Vec<String>,
@@ -342,7 +342,7 @@ pub mod processed {
         /// Kernel data.
         pub kernel: Kernel,
         #[serde(with = "attribution_processing::fkernel_serde::MemoryStatsCompressionDef")]
-        pub kmem_stats_compression: fidl_fuchsia_kernel::MemoryStatsCompression,
+        pub kmem_stats_compression: fdomain_fuchsia_kernel::MemoryStatsCompression,
         /// Process data.
         pub processes: Vec<Process>,
         /// Details about VMOs.
@@ -560,7 +560,7 @@ mod tests {
 
     #[test]
     fn raw_to_processed_test() {
-        let kmem_stats_compression = fidl_fuchsia_kernel::MemoryStatsCompression {
+        let kmem_stats_compression = fdomain_fuchsia_kernel::MemoryStatsCompression {
             uncompressed_storage_bytes: Some(1),
             compressed_storage_bytes: Some(2),
             compressed_fragmentation_bytes: Some(3),

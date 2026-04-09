@@ -4,10 +4,11 @@
 
 use attribution_processing::ZXName;
 use attribution_processing::fkernel_serde::{MemoryStatsCompressionDef, MemoryStatsDef};
+use fdomain_fuchsia_kernel as fkernel;
+use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use zx_types::ZX_MAX_NAME_LEN;
-use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memory_attribution_plugin as fplugin};
 
 /// An object with this trait can be converted to, and from, JSON.
 // TODO: https://fxbug.dev/369609539 - This trait is necessary as FIDL bindings don't derive serde's
@@ -517,7 +518,7 @@ impl JsonConvertible for fplugin::PerformanceImpactMetrics {
 mod tests {
     use super::*;
     use anyhow::Context;
-    use fidl_fuchsia_memory_attribution_plugin as fplugin;
+    use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 
     #[test]
     fn test_serialize_deserialize() {
@@ -729,7 +730,7 @@ mod tests {
                 *ZXName::from_string_lossy("2_vmo").buffer(),
             ]),
             kernel_statistics: Some(fplugin::KernelStatistics {
-                memory_stats: Some(fidl_fuchsia_kernel::MemoryStats {
+                memory_stats: Some(fdomain_fuchsia_kernel::MemoryStats {
                     total_bytes: Some(1),
                     free_bytes: Some(2),
                     free_loaned_bytes: Some(3),
@@ -751,7 +752,7 @@ mod tests {
                     vmo_discardable_unlocked_bytes: Some(19),
                     ..Default::default()
                 }),
-                compression_stats: Some(fidl_fuchsia_kernel::MemoryStatsCompression {
+                compression_stats: Some(fdomain_fuchsia_kernel::MemoryStatsCompression {
                     uncompressed_storage_bytes: Some(101),
                     compressed_storage_bytes: Some(102),
                     compressed_fragmentation_bytes: Some(103),

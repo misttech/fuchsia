@@ -18,8 +18,8 @@ ffx_plugin("ffx_profile_memory_components") {
     "src/statistics.rs",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
-    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust_fdomain",
+    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust_fdomain",
     "//sdk/rust/zx-types",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
@@ -27,6 +27,7 @@ ffx_plugin("ffx_profile_memory_components") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/assembly/assembled_system",
     "//src/lib/assembly/container",
+    "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/performance/memory/attribution/processing",
     "//src/storage/fxfs/platform",

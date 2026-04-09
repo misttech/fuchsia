@@ -15,16 +15,16 @@ ffx_plugin("ffx_profile_memory") {
   edition = "2024"
 
   deps = [
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
-    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
-    "//sdk/fidl/fuchsia.memory.inspection:fuchsia.memory.inspection_rust",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust_fdomain",
+    "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust_fdomain",
+    "//sdk/fidl/fuchsia.memory.inspection:fuchsia.memory.inspection_rust_fdomain",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/developer/ffx/plugins/audio/ffx_optional_moniker",
+    "//src/developer/ffx/plugins/audio/ffx_optional_moniker:ffx_optional_moniker_fdomain",
     "//src/developer/ffx/plugins/profile/memory/components:ffx_profile_memory_components",
     "//src/developer/ffx/plugins/profile/memory/components:ffx_profile_memory_components_args",
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fdomain/client",
     "//src/lib/fuchsia-async",
     "//src/performance/memory/attribution/processing",
     "//third_party/rust_crates:anyhow",
@@ -61,6 +61,7 @@ ffx_plugin("ffx_profile_memory") {
 
   test_deps = [
     "//src/developer/ffx/lib/target/holders:lib",
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:pretty_assertions",

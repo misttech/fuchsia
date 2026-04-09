@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl_fuchsia_memory_attribution_plugin as fplugin;
+use fdomain_fuchsia_memory_attribution_plugin as fplugin;
 use serde::Serialize;
 
 #[derive(Serialize)]
