@@ -7,7 +7,7 @@
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import cartfs
 import mock_fs
@@ -761,10 +761,10 @@ class TestWorkspace(unittest.TestCase):
             )
 
             with (
+                patch.object(ws, "get_cog_commit", return_value="hash123"),
                 patch.object(
-                    ws, "get_fuchsia_repo_commit_hash", return_value="hash123"
+                    ws, "get_cartfs_fuchsia_commit", return_value="hash123"
                 ),
-                patch.object(ws, "is_up_to_date", return_value=True),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
             ):
@@ -788,17 +788,182 @@ class TestWorkspace(unittest.TestCase):
             )
 
             with (
+                patch.object(ws, "get_cog_commit", return_value="hash123"),
                 patch.object(
-                    ws, "get_fuchsia_repo_commit_hash", return_value="hash123"
+                    ws,
+                    "get_cartfs_fuchsia_commit",
+                    return_value="different-hash",
                 ),
-                patch.object(ws, "is_up_to_date", return_value=False),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
+                patch.object(ws, "_fetch_prebuilts") as mock_fetch,
+                patch.object(ws, "_reinit_integration_repo") as mock_reinit,
+                patch.object(
+                    ws,
+                    "_checkout_integration_roll",
+                    return_value="integration_hash_abc",
+                ) as mock_checkout,
             ):
                 ws.initialize_cartfs_directory()
 
+                mock_reinit.assert_called_once()
+                mock_checkout.assert_called_once_with("hash123")
                 mock_sync.assert_called_once_with("hash123")
                 mock_symlinks.assert_called_once()
+                mock_fetch.assert_called_once()
+
+    def test_create_symlinks_resolves_paths(self) -> None:
+        """Test that _create_symlinks correctly resolves @cog// and @cartfs// paths."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+
+            assert ws.cartfs_directory is not None
+            ws.cartfs_fuchsia_dir = ws.cartfs_directory / "fuchsia"
+
+            mock_config_patcher = patch.object(
+                workspace.Workspace, "config", new_callable=PropertyMock
+            )
+            mock_config = mock_config_patcher.start()
+            mock_config.return_value = {
+                "symlinks": {
+                    "@cartfs//src_path": "@cog//dest_path",
+                }
+            }
+            self.addCleanup(mock_config_patcher.stop)
+
+            with (
+                patch.object(ws, "_create_symlink") as mock_create_symlink,
+                patch.object(ws, "_run") as mock_run,
+                patch("subprocess.Popen") as mock_popen,
+            ):
+                # Mock directory creation to avoid side effects
+                with patch.object(Path, "mkdir"):
+                    ws._create_symlinks()
+
+                mock_create_symlink.assert_called_once_with(
+                    fs.cartfs_dir / "src_path",
+                    fs.full_path("test-workspace", mock_fs.FSType.COG)
+                    / "fuchsia"
+                    / "dest_path",
+                )
+
+            # Test invalid root raises KeyError
+            mock_config.return_value = {
+                "symlinks": {
+                    "@invalid//src_path": "@cog//dest_path",
+                }
+            }
+            with self.assertRaises(KeyError):
+                ws._create_symlinks()
+
+    def test_write_jiri_manifest_uses_imports(self) -> None:
+        """Test that _write_jiri_manifest uses jiriImports from config."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+
+            mock_config_patcher = patch.object(
+                workspace.Workspace, "config", new_callable=PropertyMock
+            )
+            mock_config = mock_config_patcher.start()
+            mock_config.return_value = {
+                "jiriImports": [
+                    "manifest/path1",
+                    "manifest/path2",
+                ]
+            }
+            self.addCleanup(mock_config_patcher.stop)
+
+            ws._write_jiri_manifest()
+
+            manifest_path = fs.cartfs_dir / "fuchsia" / ".jiri_manifest"
+            self.assertTrue(manifest_path.exists())
+
+            content = manifest_path.read_text()
+            self.assertIn('<localimport file="manifest/path1"/>', content)
+            self.assertIn('<localimport file="manifest/path2"/>', content)
+
+    def test_initialize_cartfs_directory_with_integration_config(self) -> None:
+        """Test that specifying integration.repo and integration.remote changes behavior."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+
+            mock_config_patcher = patch.object(
+                workspace.Workspace, "config", new_callable=PropertyMock
+            )
+            mock_config = mock_config_patcher.start()
+            mock_config.return_value = {
+                "fuchsia": {
+                    "repo": "custom-fuchsia",
+                },
+                "integration": {
+                    "repo": "custom-integration",
+                    "remote": "https://custom.git/integration",
+                },
+            }
+            self.addCleanup(mock_config_patcher.stop)
+
+            with (
+                patch.object(ws, "get_cog_commit") as mock_get_cog_commit,
+                patch.object(
+                    ws, "get_cartfs_fuchsia_commit", return_value="hash123"
+                ),
+                patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
+                patch.object(ws, "_create_symlinks") as mock_symlinks,
+                patch.object(ws, "_fetch_prebuilts") as mock_fetch,
+                patch.object(
+                    ws, "_checkout_integration_roll"
+                ) as mock_checkout_roll,
+                patch("subprocess.run") as mock_subprocess_run,
+            ):
+                mock_get_cog_commit.side_effect = lambda repo: {
+                    "custom-fuchsia": "fuchsia_hash",
+                    "custom-integration": "integration_hash",
+                }[repo]
+
+                ws.initialize_cartfs_directory()
+
+                # Should bypass checkout_integration_roll
+                mock_checkout_roll.assert_not_called()
+
+                # Should call sync_fuchsia_repo
+                mock_sync.assert_called_once_with("fuchsia_hash")
+
+                # Should call subprocess.run (for git clone) in _reinit_integration_repo
+                mock_subprocess_run.assert_called_once()
+                args, kwargs = mock_subprocess_run.call_args
+                cmd = args[0]
+                self.assertIn("https://custom.git/integration", cmd)
+                self.assertIn("--revision=integration_hash", cmd)
+
+                # Should call _fetch_prebuilts
+                mock_fetch.assert_called_once_with("integration_hash")
 
 
 if __name__ == "__main__":

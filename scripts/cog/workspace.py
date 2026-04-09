@@ -12,7 +12,7 @@ import sys
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import cartfs
 import logger
@@ -37,16 +37,31 @@ class CannotFindRepoNameError(WorkspaceError):
 
 CARTFS_SYMLINK_NAME: str = "cartfs-dir"
 COG_METADATA_FILE_NAME: str = ".cog.json"
-LOCAL_JIRI_MANIFEST_CONTENT: str = """
-<manifest>
-  <imports>
-    <localimport file="manifests/prebuilts"/>
-    <localimport file="manifests/third_party/all"/>
-    <localimport file="../integration/cobalt"/>
-    <localimport file="../integration/prebuilts"/>
-  </imports>
-</manifest>
-"""
+
+WORKSPACE_CONFIG: dict[str, Any] = {
+    "jiriImports": [
+        "manifests/prebuilts",
+        "manifests/third_party/all",
+        "../integration/cobalt",
+        "../integration/prebuilts",
+    ],
+    # Format: "src": "dest",
+    "symlinks": {
+        # Build support.
+        "@cartfs//integration": "@cartfs//fuchsia/integration",
+        "@cartfs//fuchsia/scripts/cog/resources/args.gn": "@cartfs//fuchsia/local/args.gn",
+        # Add fx/ffx tooling entrypoints.
+        "@cog//scripts/cog/resources/fx": "@cog//.jiri_root/bin/fx",
+        "@cog//scripts/cog/resources/ffx": "@cog//.jiri_root/bin/ffx",
+        # Emulate a standard Fuchsia checkout structure in the Cog workspace.
+        "@cartfs//fuchsia/.fx-build-dir": "@cog//.fx-build-dir",
+        "@cartfs//fuchsia/integration": "@cog//integration",
+        "@cartfs//fuchsia/prebuilt": "@cog//prebuilt",
+        "@cartfs//fuchsia/out": "@cog//out",
+    },
+    "fuchsia": {},
+    "integration": {},
+}
 
 
 class CogMetadata:
@@ -136,9 +151,7 @@ class Workspace:
         self.cartfs_mount_point = cartfs_instance.mount_point
 
     @staticmethod
-    def _find_cog_workspace_directory(
-        start_dir: Path,
-    ) -> Path | None:
+    def _find_cog_workspace_directory(start_dir: Path) -> Path | None:
         """Finds the root cog workspace directory by traversing up from a start path.
 
         This function looks for a directory which contains a .citc directory.
@@ -313,6 +326,10 @@ class Workspace:
 
         return self.cartfs_instance.mount_point / suggested_directory_name
 
+    @property
+    def config(self) -> dict[str, Any]:
+        return WORKSPACE_CONFIG
+
     def create_empty_cartfs_workspace_directory(self) -> Path:
         """Creates a new, empty directory in the cartfs mount for this workspace.
 
@@ -427,82 +444,74 @@ class Workspace:
             else None
         )
 
-    def get_fuchsia_repo_commit_hash(self) -> str:
-        """Determines the fuchsia repo commit hash from CitC."""
-        fuchsia_repo_states = (
-            self._run(
-                ["git", "citc", "api.get-repo-states", "fuchsia"],
-                cwd=self.workspace_dir / self.repo_name,
-                capture_output=True,
-            )
-            .strip()
-            .split("\n")
-        )
-        for state in fuchsia_repo_states:
-            parts = state.split(":", 1)
-            if len(parts) == 2:
-                key = parts[0].strip().strip("'\"")
-                if key == "base_commit_hash":
-                    return parts[1].strip().strip("'\"")
-
-        logger.log_error("Failed to get fuchsia repo commit hash.")
-        raise RepoSetupError("Failed to get fuchsia repo commit hash.")
-
-    def is_up_to_date(self, current_fuchsia_commit_hash: str) -> bool:
-        """Checks if the workspace is up-to-date with the fuchsia commit hash."""
-        if not self.cartfs_directory:
-            return False
-
-        fuchsia_hash_file = self.cartfs_directory / ".fuchsia_commit_hash"
-        if not fuchsia_hash_file.exists():
-            return False
-
-        try:
-            former_fuchsia_hash = fuchsia_hash_file.read_text().strip()
-            return former_fuchsia_hash == current_fuchsia_commit_hash
-        except Exception:
-            return False
-
     def initialize_cartfs_directory(self) -> None:
         """Initializes the cartfs directory for this workspace."""
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
         self.cartfs_fuchsia_dir = self.cartfs_directory / "fuchsia"
-
-        logger.log_info("Getting fuchsia repo commit hash...")
-        current_fuchsia_hash = self.get_fuchsia_repo_commit_hash()
-        logger.log_info(
-            f"Current fuchsia repo commit hash: {current_fuchsia_hash}"
-        )
-
-        if self.is_up_to_date(current_fuchsia_hash):
-            logger.log_info(
-                "Workspace is already up-to-date. Skipping clone/fetch steps."
-            )
-        else:
-            self._sync_fuchsia_repo(current_fuchsia_hash)
-
-        self._create_symlinks()
-
-    def _sync_fuchsia_repo(self, current_fuchsia_hash: str) -> None:
-        """Synchronizes the fuchsia repository and prebuilts.
-
-        This involves bootstrapping jiri, creating the integration repository,
-        fetching prebuilts, and saving the fuchsia hash.
-        """
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
-        integration_hash = self._create_integration_repository(
-            current_fuchsia_hash
+        cog_fuchsia_commit = self.get_cog_commit(
+            self.config.get("fuchsia", {}).get("repo", "fuchsia")
         )
-        self._fetch_prebuilts(integration_hash)
+        cartfs_fuchsia_commit = self.get_cartfs_fuchsia_commit()
+        logger.log_info(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
+        logger.log_info(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
 
-        # Save the fuchsia hash so we can short-circuit next time
-        if self.cartfs_directory:
-            fuchsia_hash_file = self.cartfs_directory / ".fuchsia_commit_hash"
-            fuchsia_hash_file.write_text(current_fuchsia_hash)
+        integration_commit = None
+        if self.config.get("integration", {}).get("repo", None):
+            integration_commit = self.get_cog_commit(
+                self.config["integration"]["repo"]
+            )
+            self._reinit_integration_repo(integration_commit)
+            self._sync_fuchsia_repo(cog_fuchsia_commit)
+        elif cog_fuchsia_commit != cartfs_fuchsia_commit:
+            self._reinit_integration_repo()
+            integration_commit = self._checkout_integration_roll(
+                cog_fuchsia_commit
+            )
+            self._sync_fuchsia_repo(cog_fuchsia_commit)
+
+        if integration_commit:
+            self._fetch_prebuilts(integration_commit)
+        self._create_symlinks()
+
+    def get_cog_commit(self, repository: str) -> str:
+        """Determines the `repository` commit hash from CitC."""
+        repo_states = (
+            self._run(
+                ["git", "citc", "api.get-repo-states", repository],
+                cwd=self.workspace_dir / self.repo_name,
+                capture_output=True,
+            )
+            .strip()
+            .split("\n")
+        )
+        for state in repo_states:
+            parts = state.split(":", 1)
+            if len(parts) == 2:
+                key = parts[0].strip().strip("'\"")
+                if key == "base_commit_hash":
+                    return parts[1].strip().strip("'\"")
+
+        logger.log_error(f"Failed to get {repository} repo commit hash.")
+        raise RepoSetupError(f"Failed to get {repository} repo commit hash.")
+
+    def get_cartfs_fuchsia_commit(self) -> str | None:
+        """Determines the fuchsia repo commit hash from CartFS."""
+        if not self.cartfs_directory:
+            return None
+
+        fuchsia_hash_file = self.cartfs_directory / ".fuchsia_commit_hash"
+        if not fuchsia_hash_file.is_file():
+            return None
+
+        try:
+            return fuchsia_hash_file.read_text().strip()
+        except Exception:
+            return None
 
     def _create_symlink(self, target: Path, link_name: Path) -> None:
         """Creates a symlink from link_name to target.
@@ -546,9 +555,16 @@ class Workspace:
 
     def _write_jiri_manifest(self) -> None:
         """Writes the jiri manifest."""
+        localimports = self.config.get("jiriImports", [])
         self._patch_file(
             filepath="fuchsia/.jiri_manifest",
-            content=LOCAL_JIRI_MANIFEST_CONTENT,
+            content=(
+                "<manifest><imports>"
+                + "\n".join(
+                    f'<localimport file="{file}"/>' for file in localimports
+                )
+                + "</imports></manifest>"
+            ),
         )
 
     def _write_jiri_config(self) -> None:
@@ -619,36 +635,51 @@ class Workspace:
         # Record integration repo commit hash in the fuchsia repo.
         integration_hash_file.write_text(current_integration_hash)
 
-    def _create_integration_repository(
-        self, fuchsia_repo_commit_hash: str
-    ) -> str:
-        """Creates the integration repository."""
-        logger.log_info("Setup the integration repository.")
+    def _reinit_integration_repo(self, revision: str | None = None) -> None:
+        """Destroys and re-clones the `integration` checkout in CartFS, with a depth of 100 cls."""
+        logger.log_info("Reinitializing the integration repository.")
         logger.emit_status("Creating integration repo...")
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
         integration_dir = self.cartfs_directory / "integration"
-        if integration_dir.exists():
-            shutil.rmtree(integration_dir, ignore_errors=True)
+        if integration_dir.is_dir():
+            shutil.rmtree(integration_dir)
+
+        remote = self.config.get("integration", {}).get(
+            "remote",
+            "https://fuchsia.googlesource.com/integration",
+        )
+        git_clone_cmd = [
+            "git",
+            "clone",
+            remote,
+            "integration",
+            "--depth=100",
+        ]
+        if revision:
+            git_clone_cmd.append(f"--revision={revision}")
 
         logger.emit_status("Cloning integration repo...")
-        if not integration_dir.exists():
-            self._run(
-                [
-                    "git",
-                    "clone",
-                    "https://fuchsia.googlesource.com/integration",
-                    "--depth=100",
-                ],
-                cwd=self.cartfs_directory,
-            )
+        self._run(git_clone_cmd, self.cartfs_directory)
 
-        logger.log_info(f"fuchsia_repo_commit_hash: {fuchsia_repo_commit_hash}")
+    def _checkout_integration_roll(self, fuchsia_commit: str) -> str:
+        """Checks out the CartFS integration repo to the commit rolling `fuchsia_commit`.
+
+        This is no-op if a roll cl containing `fuchsia_commit` isn't found.
+
+        Returns the commit that was checked out.
+        """
+        if not self.cartfs_directory:
+            raise RepoSetupError("No cartfs directory found.")
+
+        integration_dir = self.cartfs_directory / "integration"
+        if not integration_dir.is_dir():
+            raise RepoSetupError("No integration directory found.")
 
         # We use the first 7 characters of the fuchsia repo to look up in
         # integration repo's commit message
-        commit_hash_prefix = fuchsia_repo_commit_hash[:7]
+        commit_hash_prefix = fuchsia_commit[:7]
         logger.log_info(f"commit_hash_prefix: {commit_hash_prefix}")
 
         integration_base_commit_hash = (
@@ -665,42 +696,75 @@ class Workspace:
         )
 
         if not integration_base_commit_hash:
+            # TODO(https://fxbug.dev/500722390): This isn't completely correct.
             logger.log_info(
                 "Fuchsia commit is not rolled to integration repo yet. We will "
                 "use the latest integration repo commit hash."
             )
+            return self._run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=integration_dir,
+                capture_output=True,
+            ).strip()
         else:
             # checkout the integration repo based on the fuchsia repo commit hash
             self._run(
                 ["git", "reset", "--hard", integration_base_commit_hash],
                 cwd=integration_dir,
             )
+            return integration_base_commit_hash
+
+    def _sync_fuchsia_repo(self, commit: str) -> None:
+        """Syncs the fuchsia repository to the specified commit hash."""
+        if not self.cartfs_directory:
+            raise RepoSetupError("No cartfs directory found.")
+
+        integration_dir = self.cartfs_directory / "integration"
+        if not integration_dir.is_dir():
+            raise RepoSetupError("No integration directory found.")
 
         # clone fuchsia repository and reset it to the commit hash
-        logger.log_info("Setup the fuchsia repository.")
+        logger.log_info(
+            "Syncing the CartFS fuchsia checkout from "
+            f"{self.get_cartfs_fuchsia_commit()} to {commit}"
+        )
 
-        # We fetch fuchsia repository from the last 2 days because git hook will
-        # refer to commit from yesterday to generate integration_daily_commit_hash.
-        integration_commit_timestamp = int(
+        if self.cartfs_fuchsia_dir.exists():
+            self._run(["git", "reset", "--hard"], self.cartfs_fuchsia_dir)
             self._run(
-                ["git", "show", "-s", "--format=%ct"],
-                cwd=integration_dir,
-                capture_output=True,
-            ).strip()
-        )
-        integration_commit_time = datetime.fromtimestamp(
-            integration_commit_timestamp
-        )
-        four_days_ago = (integration_commit_time - timedelta(days=4)).strftime(
-            "%Y-%m-%d"
-        )
-        if not self.cartfs_fuchsia_dir.exists():
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    commit,
+                ],
+                self.cartfs_fuchsia_dir,
+            )
+            self._run(
+                ["git", "reset", "--hard", commit], self.cartfs_fuchsia_dir
+            )
+        else:
+            # We fetch fuchsia repository from the last 4 days because git hook will
+            # refer to commit from yesterday to generate integration_daily_commit_hash.
+            integration_commit_timestamp = int(
+                self._run(
+                    ["git", "show", "-s", "--format=%ct"],
+                    cwd=integration_dir,
+                    capture_output=True,
+                ).strip()
+            )
+            integration_commit_time = datetime.fromtimestamp(
+                integration_commit_timestamp
+            )
+            four_days_ago = (
+                integration_commit_time - timedelta(days=4)
+            ).strftime("%Y-%m-%d")
             self._run(
                 [
                     "git",
                     "clone",
                     "https://fuchsia.googlesource.com/fuchsia",
-                    f"--revision={fuchsia_repo_commit_hash}",
+                    f"--revision={commit}",
                     f"--shallow-since={four_days_ago}",
                 ],
                 cwd=self.cartfs_directory,
@@ -713,24 +777,6 @@ class Workspace:
                     "main:refs/remotes/origin/main",
                 ],
                 cwd=self.cartfs_fuchsia_dir,
-            )
-        else:
-            self._run(["git", "reset", "--hard"], self.cartfs_fuchsia_dir)
-            self._run(
-                [
-                    "git",
-                    "fetch",
-                    "origin",
-                    "main:refs/remotes/origin/main",
-                ],
-                self.cartfs_fuchsia_dir,
-            )
-            logger.log_info(
-                f"Resetting fuchsia repository to {fuchsia_repo_commit_hash}."
-            )
-            self._run(
-                ["git", "reset", "--hard", fuchsia_repo_commit_hash],
-                self.cartfs_fuchsia_dir,
             )
 
         # Couple of places in the build expect to find JIRI_HEAD for fuchsia
@@ -746,55 +792,29 @@ class Workspace:
         self._write_jiri_manifest()
         self._write_jiri_config()
 
-        return integration_base_commit_hash
+        (self.cartfs_directory / ".fuchsia_commit_hash").write_text(commit)
 
     def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
+        if not self.cartfs_directory:
+            raise RepoSetupError("No cartfs directory found.")
+
         logger.emit_status("Creating symlinks...")
         # Link the paths in the repo to cartfs
         (self.cartfs_fuchsia_dir / ".fx" / "config").mkdir(
             exist_ok=True, parents=True
         )
-        for path in [
-            "prebuilt",
-            "build/cipd.gni",
-            ".jiri_manifest",
-            ".jiri_root/bin/fuchsia-vendored-python",
-            ".jiri_root/bin/hermetic-env",
-            ".git",
-            ".fx",
-            ".fx-build-dir",
-            "integration",
-            "out",
-        ]:
-            repo_path = self.workspace_dir / self.repo_name / path
-            cartfs_path = self.cartfs_fuchsia_dir / path
-            self._create_symlink(cartfs_path, repo_path)
 
-        # Symlink in the fx and ffx script.
-        for script in ["fx", "ffx"]:
-            self._create_symlink(
-                self.workspace_dir
-                / self.repo_name
-                / "scripts/cog/resources"
-                / script,
-                self.workspace_dir / self.repo_name / ".jiri_root/bin" / script,
-            )
+        def _get_path(path: str) -> Path:
+            root, relative_path = path.split("//", 1)
+            assert self.cartfs_directory is not None
+            return {
+                "@cartfs": self.cartfs_directory,
+                "@cog": self.workspace_dir / self.repo_name,
+            }[root] / relative_path
 
-        # Symlink in CartFS specific GN arg overrides.
-        self._create_symlink(
-            self.cartfs_fuchsia_dir / "scripts/cog/resources/args.gn",
-            self.cartfs_fuchsia_dir / "local/args.gn",
-        )
-
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
-        # Symlink in CartFS specific integration directory.
-        self._create_symlink(
-            self.cartfs_directory / "integration",
-            self.cartfs_fuchsia_dir / "integration",
-        )
+        for src, dest in self.config.get("symlinks", {}).items():
+            self._create_symlink(_get_path(src), _get_path(dest))
 
         # Manually execute jiri hooks. The hooks are defined in
         # https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/manifests/platform#14
