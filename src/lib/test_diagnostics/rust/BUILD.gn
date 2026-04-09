@@ -12,11 +12,7 @@ lib_sources = [
 ]
 
 lib_deps = [
-  "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
-  "//src/diagnostics/lib/log-command",
   "//src/lib/diagnostics/data/rust",
-  "//src/lib/fdomain/client:flex_fidl",
-  "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia-async",
   "//src/lib/fuchsia-sync",
   "//third_party/rust_crates:anyhow",
@@ -36,32 +32,65 @@ shared_test_deps = [
   "//third_party/rust_crates:test-case",
 ]
 
-rustc_library("test_diagnostics") {
-  with_unit_tests = true
-  edition = "2024"
+template("test_diagnostics_tmpl") {
+  rustc_library(target_name) {
+    forward_variables_from(invoker, "*")
+    with_unit_tests = true
+    edition = "2024"
 
-  deps = lib_deps
+    deps += lib_deps
+
+    if (is_fuchsia) {
+      deps += [
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+        "//src/lib/diagnostics/reader/rust",
+      ]
+    }
+
+    test_deps = shared_test_deps + [
+                  "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+                  "//sdk/rust/zx",
+                ]
+
+    sources = lib_sources
+  }
+}
+
+test_diagnostics_tmpl("test_diagnostics") {
+  deps = [
+    "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_flex",
+    "//src/diagnostics/lib/log-command",
+    "//src/lib/fdomain/client:flex_fidl",
+  ]
 
   if (is_fuchsia) {
-    deps += [
-      "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
-      "//src/lib/diagnostics/reader/rust",
-    ]
+    deps += [ "//src/lib/fidl/rust/fidl" ]
   }
+}
 
-  test_deps = shared_test_deps + [
-                "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
-                "//sdk/rust/zx",
-              ]
-
-  sources = lib_sources
+if (is_host) {
+  test_diagnostics_tmpl("test_diagnostics_fdomain") {
+    deps = [
+      "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_fdomain_flex",
+      "//src/diagnostics/lib/log-command:log-command_fdomain",
+      "//src/lib/fdomain/client:flex_fdomain",
+    ]
+    features = [ "fdomain" ]
+  }
 }
 
 if (!is_fuchsia) {
   rustc_test("test_diagnostics_host_unittests") {
     edition = "2024"
     sources = lib_sources
-    deps = shared_test_deps + lib_deps
+    deps = shared_test_deps + lib_deps + [
+             "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_fdomain_flex",
+             "//src/diagnostics/lib/log-command:log-command_fdomain",
+             "//src/lib/fdomain/client:flex_fdomain",
+             "//src/lib/fdomain/local",
+             "//src/lib/fidl/rust/fidl",
+           ]
+    features = [ "fdomain" ]
   }
 }
 

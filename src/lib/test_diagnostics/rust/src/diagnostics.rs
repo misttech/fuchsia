@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
+use anyhow::{Error, Result};
 use diagnostics_data::LogsData;
-use fidl_fuchsia_test_manager as ftest_manager;
+use flex_fuchsia_test_manager as ftest_manager;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
+#[cfg(not(feature = "fdomain"))]
 use log_command::LogsDataStream;
+#[cfg(feature = "fdomain")]
+use log_command_fdomain::LogsDataStream;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -29,7 +32,7 @@ impl LogStream {
         Self { stream: stream.boxed() }
     }
 
-    pub fn from_syslog(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Error> {
+    pub fn from_syslog(syslog: ftest_manager::Syslog) -> Result<LogStream> {
         get_log_stream(syslog)
     }
 }
@@ -43,7 +46,7 @@ impl Stream for LogStream {
 }
 
 #[cfg(target_os = "fuchsia")]
-fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Error> {
+fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream> {
     match syslog {
         ftest_manager::Syslog::Batch(client_end) => {
             Ok(LogStream::new(BatchLogStream::from_client_end(client_end)?))
@@ -59,7 +62,7 @@ fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Erro
 }
 
 #[cfg(not(target_os = "fuchsia"))]
-fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream, fidl::Error> {
+fn get_log_stream(syslog: ftest_manager::Syslog) -> Result<LogStream> {
     match syslog {
         ftest_manager::Syslog::Stream(client_end) => Ok(LogStream::new(
             LogsDataStream::new(flex_client::socket_to_async(client_end))
@@ -217,8 +220,10 @@ mod tests {
         use assert_matches::assert_matches;
         use futures::AsyncWriteExt;
 
-        fn create_log_stream() -> Result<(LogStream, ftest_manager::LogsIterator), fidl::Error> {
-            let (client_end, server_end) = fidl::Socket::create_stream();
+        fn create_log_stream(
+            client: flex_client::ClientArg,
+        ) -> Result<(LogStream, ftest_manager::LogsIterator), fidl::Error> {
+            let (client_end, server_end) = client.create_stream_socket();
             let (stream, iterator) = (
                 LogStream::new(
                     LogsDataStream::new(flex_client::socket_to_async(client_end))
@@ -229,8 +234,8 @@ mod tests {
             Ok((LogStream::new(stream), iterator))
         }
 
-        async fn spawn_archive_iterator_server(socket: fidl::Socket, with_error: bool) {
-            let mut socket = fuchsia_async::Socket::from_socket(socket);
+        async fn spawn_archive_iterator_server(socket: flex_client::Socket, with_error: bool) {
+            let mut socket = flex_client::socket_to_async(socket);
             let mut values = vec![1, 2, 3].into_iter();
             loop {
                 match values.next() {
@@ -251,8 +256,8 @@ mod tests {
             }
         }
 
-        async fn archive_stream_returns_logs() {
-            let (mut log_stream, iterator) = create_log_stream().expect("got log stream");
+        async fn archive_stream_returns_logs(client: flex_client::ClientArg) {
+            let (mut log_stream, iterator) = create_log_stream(client).expect("got log stream");
             let server_end = match iterator {
                 ftest_manager::LogsIterator::Stream(server_end) => server_end,
                 _ => panic!("unexpected logs iterator server end"),
@@ -266,11 +271,12 @@ mod tests {
 
         #[fasync::run_singlethreaded(test)]
         async fn archive_stream_returns_logs_inline() {
-            archive_stream_returns_logs().await;
+            let client = fdomain_local::local_client_empty();
+            archive_stream_returns_logs(client.clone()).await;
         }
 
-        async fn archive_stream_can_return_errors() {
-            let (mut log_stream, iterator) = create_log_stream().expect("got log stream");
+        async fn archive_stream_can_return_errors(client: flex_client::ClientArg) {
+            let (mut log_stream, iterator) = create_log_stream(client).expect("got log stream");
             let server_end = match iterator {
                 ftest_manager::LogsIterator::Stream(server_end) => server_end,
                 _ => panic!("unexpected logs iterator server end"),
@@ -281,7 +287,8 @@ mod tests {
 
         #[fasync::run_singlethreaded(test)]
         async fn archive_stream_can_return_errors_inline() {
-            archive_stream_can_return_errors().await;
+            let client = fdomain_local::local_client_empty();
+            archive_stream_can_return_errors(client.clone()).await;
         }
     }
 

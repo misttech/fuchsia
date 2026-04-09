@@ -29,7 +29,7 @@ pub struct SocketReadFut<'a, T, F>
 where
     F: FnMut(Option<&[u8]>) -> Result<T, std::io::Error> + Unpin,
 {
-    socket: &'a mut fidl::AsyncSocket,
+    socket: &'a mut flex_client::AsyncSocket,
     on_read_fn: F,
 }
 
@@ -37,7 +37,7 @@ impl<'a, T, F> SocketReadFut<'a, T, F>
 where
     F: FnMut(Option<&[u8]>) -> Result<T, std::io::Error> + Unpin,
 {
-    pub fn new(socket: &'a mut fidl::AsyncSocket, on_read_fn: F) -> Self {
+    pub fn new(socket: &'a mut flex_client::AsyncSocket, on_read_fn: F) -> Self {
         Self { socket, on_read_fn }
     }
 }
@@ -60,7 +60,9 @@ where
     }
 }
 
-pub async fn collect_string_from_socket(socket: fidl::Socket) -> Result<String, anyhow::Error> {
+pub async fn collect_string_from_socket(
+    socket: flex_client::Socket,
+) -> Result<String, anyhow::Error> {
     let (s, mut r) = mpsc::channel(1024);
     let task = fasync::Task::spawn(collect_and_send_string_output(socket, s));
     let mut ret = String::new();
@@ -72,10 +74,10 @@ pub async fn collect_string_from_socket(socket: fidl::Socket) -> Result<String, 
 }
 
 pub async fn collect_and_send_string_output(
-    socket: fidl::Socket,
+    socket: flex_client::Socket,
     mut sender: mpsc::Sender<String>,
 ) -> Result<(), anyhow::Error> {
-    let mut async_socket = fidl::AsyncSocket::from_socket(socket);
+    let mut async_socket = flex_client::socket_to_async(socket);
     loop {
         let maybe_string = SocketReadFut::new(&mut async_socket, |maybe_buf| {
             Ok(maybe_buf.map(|buf| String::from_utf8_lossy(buf).into()))
@@ -197,7 +199,6 @@ impl<W: Write + Send + 'static> Drop for StdoutBufferInner<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::HandleBased;
     use futures::StreamExt;
     use pretty_assertions::assert_eq;
 
@@ -217,26 +218,31 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn collect_test_stdout() {
-        let (sock_server, sock_client) = fidl::Socket::create_stream();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
+        let (sock_server, sock_client) = client.create_stream_socket();
+        let mut sock_server = flex_client::socket_to_async(sock_server);
 
         let (sender, mut recv) = mpsc::channel(1);
 
         let fut =
             fuchsia_async::Task::spawn(collect_and_send_string_output(sock_client, sender.into()));
 
-        sock_server.write(b"test message 1").expect("Can't write msg to socket");
-        sock_server.write(b"test message 2").expect("Can't write msg to socket");
-        sock_server.write(b"test message 3").expect("Can't write msg to socket");
+        sock_server.write_all(b"test message 1").await.expect("Can't write msg to socket");
+        sock_server.write_all(b"test message 2").await.expect("Can't write msg to socket");
+        sock_server.write_all(b"test message 3").await.expect("Can't write msg to socket");
 
         collect_until_eq(&mut recv, "test message 1test message 2test message 3").await;
 
         // can receive messages multiple times
-        sock_server.write(b"test message 4").expect("Can't write msg to socket");
+        sock_server.write_all(b"test message 4").await.expect("Can't write msg to socket");
         collect_until_eq(&mut recv, "test message 4").await;
 
         // messages can be read after socket server is closed.
-        sock_server.write(b"test message 5").expect("Can't write msg to socket");
-        sock_server.into_handle(); // this will drop this handle and close it.
+        sock_server.write_all(b"test message 5").await.expect("Can't write msg to socket");
+        std::mem::drop(sock_server); // this will drop this handle and close it.
         fut.await.expect("log collection should not fail");
         collect_until_eq(&mut recv, "test message 5").await;
 
