@@ -3141,6 +3141,7 @@ impl MemoryManager {
     where
         L: LockBefore<MmDumpable>,
     {
+        trace_duration!(CATEGORY_STARNIX_MM, "snapshot_of");
         let target = MemoryManager::new(root_vmar, arch_width, source_mm.executable_node())?;
 
         // Hold the lock throughout the operation to uphold memory manager's invariants.
@@ -3164,6 +3165,7 @@ impl MemoryManager {
                 let target_mapping_flags = mapping.flags().difference(MappingFlags::LOCKED);
                 match state.get_mapping_backing(mapping) {
                     MappingBacking::Memory(backing) => {
+                        trace_duration!(CATEGORY_STARNIX_MM, "memory_backing_clone");
                         let memory_offset = backing.address_to_offset(range.start);
                         let length = range.end - range.start;
 
@@ -3204,6 +3206,7 @@ impl MemoryManager {
                         );
                     }
                     MappingBacking::PrivateAnonymous => {
+                        trace_duration!(CATEGORY_STARNIX_MM, "private_anonymous_backing_clone");
                         let length = range.end - range.start;
                         if mapping.flags().contains(MappingFlags::WIPEONFORK) {
                             target_state
