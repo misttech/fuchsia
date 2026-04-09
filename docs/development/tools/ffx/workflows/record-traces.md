@@ -80,9 +80,21 @@ To analyze the results collected from this run, see
 
 A background trace runs indefinitely, as long as a duration is not
 specified. To stop a trace running in the background, you need to run
-[`ffx trace stop`](#stop-a-trace). (For more information on how results
-are stored in the buffer while the tracing is running, see
-[Buffering mode options](#buffering-mode-options) in Appendices.)
+[`ffx trace stop`](#stop-a-trace).
+
+In background mode, traces can easily grow very large over time. Depending on
+the chosen [buffering mode](#buffering-mode-options), this has different
+implications:
+
+* **`oneshot` (default):** Once the buffer fills up, subsequent events are
+  dropped. Only the earliest events are recorded.
+* **`circular`:** When the buffer fills up and rotates, the string table may
+  be lost, causing the trace to become corrupted and unreadable (see
+  [b/484012306]).
+* **`streaming`:** Events are continuously forwarded to the trace manager.
+  This mode is generally recommended for background tracing to avoid dropping
+  data or corrupting the trace.
+
 
 To start a background trace, run the following command:
 
@@ -453,3 +465,4 @@ to trigger the event.
 [record-a-boot-trace]: /docs/development/tracing/advanced/recording-a-boot-trace.md
 [trace-providers]: /docs/concepts/kernel/tracing-system.md#trace-providers
 [view-device-information]: /docs/development/tools/ffx/workflows/view-device-information.md
+[b/484012306]: https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=484012306
