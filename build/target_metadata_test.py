@@ -3,6 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import collections
 import dataclasses
 import json
 import os
@@ -29,7 +30,7 @@ metadata_path: str | None = None
 @dataclasses.dataclass
 class TargetStatsFreeformInfo:
     target_count: int = 0
-    dep_counts: list[int] = dataclasses.field(default_factory=list)
+    dep_counts: dict[int, int] = dataclasses.field(default_factory=dict)
     unique_input_file_count: int = 0
     unique_source_file_count: int = 0
 
@@ -61,9 +62,9 @@ class TargetMetadataTest(unittest.TestCase):
 
         output.target_count = len(targets)
 
-        output.dep_counts = [
+        output.dep_counts = collections.Counter(
             len(target.get("deps", [])) for target in targets.values()
-        ]
+        )
 
         unique_input_files: set[str] = set()
         unique_sources: set[str] = set()
@@ -77,10 +78,18 @@ class TargetMetadataTest(unittest.TestCase):
         print("")
         print("Target Stats:")
         print("  Total Targets: %d" % (output.target_count))
-        print("  Max deps: %d" % (max(output.dep_counts)))
+        print(
+            "  Max deps: %d"
+            % (max(output.dep_counts) if output.dep_counts else 0)
+        )
+        total_deps = sum(k * v for k, v in output.dep_counts.items())
         print(
             "  Mean deps: %.2f"
-            % (sum(output.dep_counts) / len(output.dep_counts))
+            % (
+                total_deps / output.target_count
+                if output.target_count > 0
+                else 0
+            )
         )
         print("  Unique Input Files: %d" % (output.unique_input_file_count))
         print("  Unique Source Files: %d" % (output.unique_source_file_count))
