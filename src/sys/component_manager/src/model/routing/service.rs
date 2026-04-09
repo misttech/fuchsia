@@ -901,6 +901,7 @@ mod tests {
     use ::routing::capability_source::ComponentCapability;
     use ::routing::component_instance::ComponentInstanceInterface;
     use ::routing::error::RoutingError;
+    use cm_rust::offer::*;
     use cm_rust::*;
     use cm_rust_testing::*;
     use futures::FutureExt;

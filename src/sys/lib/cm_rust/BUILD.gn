@@ -26,7 +26,10 @@ rustc_library("cm_rust") {
     "//third_party/rust_crates:strum_macros",
     "//third_party/rust_crates:thiserror",
   ]
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/offer.rs",
+  ]
 
   features = []
 

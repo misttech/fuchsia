@@ -11,6 +11,7 @@ use ::routing_test_helpers::component_id_index::make_index_file;
 use ::routing_test_helpers::storage::CommonStorageTest;
 use assert_matches::assert_matches;
 use async_utils::PollExt;
+use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
 use component_id_index::InstanceId;

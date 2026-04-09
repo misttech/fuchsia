@@ -7,6 +7,7 @@ use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::testing::routing_test_helpers::*;
 use ::routing_test_helpers::RoutingTestModel;
 use ::routing_test_helpers::rights::CommonRightsTest;
+use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
 use fidl_fuchsia_io as fio;

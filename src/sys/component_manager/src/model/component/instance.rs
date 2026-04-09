@@ -49,9 +49,10 @@ use async_utils::async_once::Once;
 use clonable_error::ClonableError;
 use cm_fidl_validator::error::{DeclType, Error as ValidatorError};
 use cm_graph::DependencyNode;
+use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl,
-    DeliveryType, FidlIntoNative, NativeIntoFidl, OfferDeclCommon, UseDecl,
+    DeliveryType, FidlIntoNative, NativeIntoFidl, UseDecl,
 };
 use cm_types::{Name, Path, RelativePath};
 use config_encoder::ConfigFields;
@@ -1054,7 +1055,7 @@ impl ResolvedInstanceState {
 
         // Manifest validation is not informed of the contents of collections, and is thus unable
         // to confirm the source exists if it's in a collection. Let's check that here.
-        let dynamic_offers: Vec<cm_rust::OfferDecl> =
+        let dynamic_offers: Vec<OfferDecl> =
             new_dynamic_offers.into_iter().map(FidlIntoNative::fidl_into_native).collect();
         for offer in &dynamic_offers {
             if !self.offer_source_exists(offer.source()) {
@@ -1070,7 +1071,7 @@ impl ResolvedInstanceState {
         dynamic_offers: Option<Vec<fdecl::Offer>>,
         child: &ChildDecl,
         collection: Option<&CollectionDecl>,
-    ) -> Result<Vec<cm_rust::OfferDecl>, AddChildError> {
+    ) -> Result<Vec<OfferDecl>, AddChildError> {
         if collection.is_none() {
             return Ok(vec![]);
         }
@@ -1162,7 +1163,7 @@ impl ResolvedInstanceInterface for ResolvedInstanceState {
         self.resolved_component.decl.exposes.clone()
     }
 
-    fn offers(&self) -> Box<[cm_rust::OfferDecl]> {
+    fn offers(&self) -> Box<[OfferDecl]> {
         self.resolved_component.decl.offers.clone()
     }
 

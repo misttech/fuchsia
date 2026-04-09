@@ -4,7 +4,8 @@
 
 use crate::capability_source::{AggregateCapability, CapabilitySource, FilteredProviderSource};
 use async_trait::async_trait;
-use cm_rust::{NameMapping, OfferDecl, OfferServiceDecl};
+use cm_rust::NameMapping;
+use cm_rust::offer::{OfferDecl, OfferServiceDecl};
 use router_error::RouterError;
 #[cfg(target_os = "fuchsia")]
 use sandbox::RemotableCapability;

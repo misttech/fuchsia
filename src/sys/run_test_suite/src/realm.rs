@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use cm_rust::{ExposeDeclCommon, NativeIntoFidl, OfferDeclCommon};
+use cm_rust::offer::OfferDeclCommon;
+use cm_rust::{ExposeDeclCommon, NativeIntoFidl};
 use flex_client::ProxyHasDomain;
 use flex_client::fidl::{ClientEnd, DiscoverableProtocolMarker};
 use flex_fuchsia_component as fcomponent;
@@ -111,12 +112,12 @@ fn validate_and_get_offers(
     let mut capability_requested = false;
     let mut offers = vec![];
     for offer in manifest.offers {
-        if let cm_rust::OfferTarget::Collection(collection) = &offer.target() {
+        if let cm_rust::offer::OfferTarget::Collection(collection) = &offer.target() {
             if collection.as_str() != test_collection {
                 continue;
             }
 
-            if let cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
+            if let cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
                 target_name,
                 source,
                 scope,
@@ -124,7 +125,7 @@ fn validate_and_get_offers(
             }) = &offer
             {
                 if *target_name == CAPABILITY_REQUESTED_EVENT
-                    && source == &cm_rust::OfferSource::Parent
+                    && source == &cm_rust::offer::OfferSource::Parent
                     && scope
                         .as_ref()
                         .map(|s| {
@@ -227,7 +228,7 @@ mod test {
         offers.iter().for_each(|o| {
             assert_eq!(
                 o.target(),
-                &cm_rust::OfferTarget::Collection("echo_test_coll".parse().unwrap())
+                &cm_rust::offer::OfferTarget::Collection("echo_test_coll".parse().unwrap())
             )
         });
         assert!(offers.iter().any(|o| *o.target_name() == CAPABILITY_REQUESTED_EVENT));
@@ -249,7 +250,7 @@ mod test {
         offers.iter().for_each(|o| {
             assert_eq!(
                 o.target(),
-                &cm_rust::OfferTarget::Collection("hermetic_test_coll".parse().unwrap())
+                &cm_rust::offer::OfferTarget::Collection("hermetic_test_coll".parse().unwrap())
             )
         });
         assert!(offers.iter().any(|o| *o.target_name() == CAPABILITY_REQUESTED_EVENT));

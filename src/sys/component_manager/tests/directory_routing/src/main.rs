@@ -31,7 +31,7 @@ use futures::{FutureExt, StreamExt};
 async fn set_up_realm_builder_and_get_proxy(
     capability_decl: cm_rust::DirectoryDecl,
     expose_decl: cm_rust::ExposeDirectoryDecl,
-    offer_decl: cm_rust::OfferDirectoryDecl,
+    offer_decl: cm_rust::offer::OfferDirectoryDecl,
     use_decl: cm_rust::UseDirectoryDecl,
 ) -> (RealmInstance, fio::DirectoryProxy) {
     let (proxy_sender, mut proxy_receiver) = mpsc::unbounded();
@@ -111,7 +111,7 @@ async fn set_up_realm_builder_and_get_proxy(
     builder.replace_component_decl(&provider, provider_manifest).await.unwrap();
 
     let mut realm_decl = builder.get_realm_decl().await.unwrap();
-    push_box(&mut realm_decl.offers, cm_rust::OfferDecl::Directory(offer_decl));
+    push_box(&mut realm_decl.offers, cm_rust::offer::OfferDecl::Directory(offer_decl));
     builder.replace_realm_decl(realm_decl).await.unwrap();
 
     let mut consumer_manifest = builder.get_component_decl(&consumer).await.unwrap();
@@ -143,14 +143,14 @@ async fn read_only_test() {
             subdir: RelativePath::dot(),
             availability: cm_rust::Availability::Required,
         },
-        cm_rust::OfferDirectoryDecl {
-            source: cm_rust::OfferSource::Child(cm_rust::ChildRef {
+        cm_rust::offer::OfferDirectoryDecl {
+            source: cm_rust::offer::OfferSource::Child(cm_rust::ChildRef {
                 name: LongName::new("provider").unwrap(),
                 collection: None,
             }),
             source_name: capability_name.clone(),
             source_dictionary: RelativePath::dot(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("consumer").unwrap(),
                 collection: None,
             }),
@@ -204,14 +204,14 @@ async fn read_write_test() {
             subdir: RelativePath::dot(),
             availability: cm_rust::Availability::Required,
         },
-        cm_rust::OfferDirectoryDecl {
-            source: cm_rust::OfferSource::Child(cm_rust::ChildRef {
+        cm_rust::offer::OfferDirectoryDecl {
+            source: cm_rust::offer::OfferSource::Child(cm_rust::ChildRef {
                 name: LongName::new("provider").unwrap(),
                 collection: None,
             }),
             source_name: capability_name.clone(),
             source_dictionary: RelativePath::dot(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("consumer").unwrap(),
                 collection: None,
             }),
@@ -283,14 +283,14 @@ async fn read_write_to_read_only_test() {
             subdir: RelativePath::dot(),
             availability: cm_rust::Availability::Required,
         },
-        cm_rust::OfferDirectoryDecl {
-            source: cm_rust::OfferSource::Child(cm_rust::ChildRef {
+        cm_rust::offer::OfferDirectoryDecl {
+            source: cm_rust::offer::OfferSource::Child(cm_rust::ChildRef {
                 name: LongName::new("provider").unwrap(),
                 collection: None,
             }),
             source_name: capability_name.clone(),
             source_dictionary: RelativePath::dot(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("consumer").unwrap(),
                 collection: None,
             }),
@@ -344,14 +344,14 @@ async fn read_only_subdir_test() {
             subdir: RelativePath::dot(),
             availability: cm_rust::Availability::Required,
         },
-        cm_rust::OfferDirectoryDecl {
-            source: cm_rust::OfferSource::Child(cm_rust::ChildRef {
+        cm_rust::offer::OfferDirectoryDecl {
+            source: cm_rust::offer::OfferSource::Child(cm_rust::ChildRef {
                 name: LongName::new("provider").unwrap(),
                 collection: None,
             }),
             source_name: capability_name.clone(),
             source_dictionary: RelativePath::dot(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("consumer").unwrap(),
                 collection: None,
             }),

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::error::AvailabilityRoutingError;
-use cm_rust::{Availability, ExposeDeclCommon, ExposeSource, OfferDeclCommon, OfferSource};
+use cm_rust::offer::{OfferDeclCommon, OfferSource};
+use cm_rust::{Availability, ExposeDeclCommon, ExposeSource};
 use moniker::ExtendedMoniker;
 
 pub fn advance_with_offer(
@@ -56,9 +57,8 @@ pub fn advance(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cm_rust::{
-        DependencyType, ExposeDecl, ExposeProtocolDecl, ExposeTarget, OfferDecl, OfferProtocolDecl,
-    };
+    use cm_rust::offer::{OfferDecl, OfferProtocolDecl};
+    use cm_rust::{DependencyType, ExposeDecl, ExposeProtocolDecl, ExposeTarget};
     use cm_rust_testing::*;
     use test_case::test_case;
 

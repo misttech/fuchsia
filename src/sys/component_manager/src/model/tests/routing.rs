@@ -36,6 +36,7 @@ use {
     assert_matches::assert_matches,
     async_trait::async_trait,
     async_utils::PollExt,
+    cm_rust::offer::*,
     cm_rust::*,
     cm_rust_testing::*,
     cm_types::RelativePath,

@@ -6,11 +6,13 @@ use cm_types::{LongName, Name, Path};
 use component_events::events::*;
 use component_events::matcher::*;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::BTreeMap;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // TODO(https://fxbug.dev/42172627): Deduplicate this function. It is used in other CM integration tests
 async fn start_nested_cm_and_wait_for_clean_stop(root_url: &str, moniker_to_wait_on: &str) {
@@ -124,7 +126,7 @@ enum EventOrDirRequest {
 /// its outgoing directory over the returned mpsc receiver.
 async fn set_up_capability_requested_realm(
     builder: &RealmBuilder,
-    offer: cm_rust::OfferDecl,
+    offer: cm_rust::offer::OfferDecl,
     use_: cm_rust::UseDecl,
 ) -> mpsc::UnboundedReceiver<EventOrDirRequest> {
     let (events_sender, events_receiver) = mpsc::unbounded();
@@ -183,11 +185,11 @@ async fn receive_protocol_through_capability_requested() {
     let builder = RealmBuilder::new().await.unwrap();
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
-            source: cm_rust::OfferSource::Parent,
+        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+            source: cm_rust::offer::OfferSource::Parent,
             scope: None,
             source_name: Name::new("capability_requested").unwrap(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("event_receiver").unwrap(),
                 collection: None,
             }),
@@ -258,11 +260,11 @@ async fn receive_protocol_through_outgoing_dir_when_outside_filter() {
     let builder = RealmBuilder::new().await.unwrap();
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
-            source: cm_rust::OfferSource::Parent,
+        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+            source: cm_rust::offer::OfferSource::Parent,
             scope: None,
             source_name: Name::new("capability_requested").unwrap(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("event_receiver").unwrap(),
                 collection: None,
             }),
@@ -334,14 +336,14 @@ async fn smaller_scope_impacts_moniker() {
 
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
-            source: cm_rust::OfferSource::Parent,
+        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+            source: cm_rust::offer::OfferSource::Parent,
             scope: Some(Box::new([cm_rust::EventScope::Child(cm_rust::ChildRef {
                 name: LongName::new("protocol_consumer_parent").unwrap(),
                 collection: None,
             })])),
             source_name: Name::new("capability_requested").unwrap(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("event_receiver").unwrap(),
                 collection: None,
             }),
@@ -430,14 +432,14 @@ async fn out_of_scope_is_not_delivered() {
 
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
-            source: cm_rust::OfferSource::Parent,
+        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+            source: cm_rust::offer::OfferSource::Parent,
             scope: Some(Box::new([cm_rust::EventScope::Child(cm_rust::ChildRef {
                 name: LongName::new("event_receiver").unwrap(),
                 collection: None,
             })])),
             source_name: Name::new("capability_requested").unwrap(),
-            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                 name: LongName::new("event_receiver").unwrap(),
                 collection: None,
             }),

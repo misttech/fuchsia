@@ -8,11 +8,13 @@ use anyhow::Error;
 use clonable_error::ClonableError;
 use cm_graph::DependencyNode;
 use directed_graph::DirectedGraph;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_io as fio;
 use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use url::Url;
 use version_history::AbiRevision;
-use {fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_io as fio, zx_status as zx};
+use zx_status as zx;
 
 #[cfg(target_os = "fuchsia")]
 use cm_rust::{FidlIntoNative, NativeIntoFidl};
@@ -827,13 +829,15 @@ mod tests {
     use crate::policy::GlobalPolicyChecker;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
-    use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, OfferDecl, UseDecl};
+    use cm_rust::offer::OfferDecl;
+    use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, UseDecl};
     use cm_rust_testing::new_decl_from_json;
     use cm_types::Name;
     use fidl::endpoints::create_endpoints;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_mem as fmem;
     use moniker::{BorrowedChildName, ChildName, Moniker};
     use serde_json::json;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_mem as fmem};
 
     fn from_absolute_url(url: &str) -> ComponentAddress {
         ComponentAddress::from_absolute_url(&url.parse().unwrap()).unwrap()

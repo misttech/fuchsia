@@ -1628,10 +1628,8 @@ pub mod tests {
     };
     use ::routing::bedrock::structured_dict::ComponentInput;
     use assert_matches::assert_matches;
-    use cm_rust::{
-        Availability, ChildRef, DependencyType, ExposeSource, OfferDecl, OfferProtocolDecl,
-        OfferSource, OfferTarget,
-    };
+    use cm_rust::offer::{OfferDecl, OfferProtocolDecl, OfferSource, OfferTarget};
+    use cm_rust::{Availability, ChildRef, DependencyType, ExposeSource};
     use cm_rust_testing::*;
     use errors::{AddChildError, DynamicCapabilityError};
     use fasync::TestExecutor;

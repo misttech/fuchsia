@@ -7,10 +7,12 @@ use assert_matches::assert_matches;
 use cm_rust::{CapabilityTypeName, ComponentDecl, FidlIntoNative, push_box};
 use cm_types::{LongName, Name, Path, RelativePath, Url};
 use derivative::Derivative;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio};
 
 /// Name of the test runner.
 ///
@@ -87,7 +89,7 @@ impl ComponentDeclBuilder {
     }
 
     /// Add an offer decl.
-    pub fn offer(mut self, offer: impl Into<cm_rust::OfferDecl>) -> Self {
+    pub fn offer(mut self, offer: impl Into<cm_rust::offer::OfferDecl>) -> Self {
         push_box(&mut self.result.offers, offer.into());
         self
     }
@@ -1098,12 +1100,18 @@ impl From<ExposeBuilder> for cm_rust::ExposeDecl {
     }
 }
 
-pub fn offer_source_static_child(name: &str) -> cm_rust::OfferSource {
-    cm_rust::OfferSource::Child(cm_rust::ChildRef { name: name.parse().unwrap(), collection: None })
+pub fn offer_source_static_child(name: &str) -> cm_rust::offer::OfferSource {
+    cm_rust::offer::OfferSource::Child(cm_rust::ChildRef {
+        name: name.parse().unwrap(),
+        collection: None,
+    })
 }
 
-pub fn offer_target_static_child(name: &str) -> cm_rust::OfferTarget {
-    cm_rust::OfferTarget::Child(cm_rust::ChildRef { name: name.parse().unwrap(), collection: None })
+pub fn offer_target_static_child(name: &str) -> cm_rust::offer::OfferTarget {
+    cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
+        name: name.parse().unwrap(),
+        collection: None,
+    })
 }
 
 /// A convenience builder for constructing [OfferDecl]s.
@@ -1116,8 +1124,8 @@ pub struct OfferBuilder {
     source_name: Option<Name>,
     type_: CapabilityTypeName,
     source_dictionary: RelativePath,
-    source: Option<cm_rust::OfferSource>,
-    target: Option<cm_rust::OfferTarget>,
+    source: Option<cm_rust::offer::OfferSource>,
+    target: Option<cm_rust::offer::OfferTarget>,
     target_name: Option<Name>,
     source_instance_filter: Option<Vec<Name>>,
     renamed_instances: Option<Vec<cm_rust::NameMapping>>,
@@ -1212,7 +1220,7 @@ impl OfferBuilder {
         self
     }
 
-    pub fn source(mut self, source: cm_rust::OfferSource) -> Self {
+    pub fn source(mut self, source: cm_rust::offer::OfferSource) -> Self {
         self.source = Some(source);
         self
     }
@@ -1221,7 +1229,7 @@ impl OfferBuilder {
         self.source(offer_source_static_child(source))
     }
 
-    pub fn target(mut self, target: cm_rust::OfferTarget) -> Self {
+    pub fn target(mut self, target: cm_rust::offer::OfferTarget) -> Self {
         self.target = Some(target);
         self
     }
@@ -1231,7 +1239,7 @@ impl OfferBuilder {
     }
 
     pub fn target_capability(self, target: &str) -> Self {
-        self.target(cm_rust::OfferTarget::Capability(target.parse().unwrap()))
+        self.target(cm_rust::offer::OfferTarget::Capability(target.parse().unwrap()))
     }
 
     pub fn availability(mut self, availability: cm_rust::Availability) -> Self {
@@ -1302,10 +1310,10 @@ impl OfferBuilder {
         self
     }
 
-    pub fn build(self) -> cm_rust::OfferDecl {
+    pub fn build(self) -> cm_rust::offer::OfferDecl {
         match self.type_ {
             CapabilityTypeName::Protocol => {
-                cm_rust::OfferDecl::Protocol(cm_rust::OfferProtocolDecl {
+                cm_rust::offer::OfferDecl::Protocol(cm_rust::offer::OfferProtocolDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
@@ -1315,19 +1323,21 @@ impl OfferBuilder {
                     availability: self.availability,
                 })
             }
-            CapabilityTypeName::Service => cm_rust::OfferDecl::Service(cm_rust::OfferServiceDecl {
-                source: self.source.expect("source not set"),
-                source_name: self.source_name.expect("name not set"),
-                source_dictionary: self.source_dictionary,
-                target: self.target.expect("target is not set"),
-                target_name: self.target_name.expect("name not set"),
-                source_instance_filter: self.source_instance_filter.map(Into::into),
-                renamed_instances: self.renamed_instances.map(Into::into),
-                availability: self.availability,
-                dependency_type: Default::default(),
-            }),
+            CapabilityTypeName::Service => {
+                cm_rust::offer::OfferDecl::Service(cm_rust::offer::OfferServiceDecl {
+                    source: self.source.expect("source not set"),
+                    source_name: self.source_name.expect("name not set"),
+                    source_dictionary: self.source_dictionary,
+                    target: self.target.expect("target is not set"),
+                    target_name: self.target_name.expect("name not set"),
+                    source_instance_filter: self.source_instance_filter.map(Into::into),
+                    renamed_instances: self.renamed_instances.map(Into::into),
+                    availability: self.availability,
+                    dependency_type: Default::default(),
+                })
+            }
             CapabilityTypeName::Directory => {
-                cm_rust::OfferDecl::Directory(cm_rust::OfferDirectoryDecl {
+                cm_rust::offer::OfferDecl::Directory(cm_rust::offer::OfferDirectoryDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
@@ -1339,15 +1349,17 @@ impl OfferBuilder {
                     availability: self.availability,
                 })
             }
-            CapabilityTypeName::Storage => cm_rust::OfferDecl::Storage(cm_rust::OfferStorageDecl {
-                source: self.source.expect("source not set"),
-                source_name: self.source_name.expect("name not set"),
-                target: self.target.expect("target is not set"),
-                target_name: self.target_name.expect("name not set"),
-                availability: self.availability,
-            }),
+            CapabilityTypeName::Storage => {
+                cm_rust::offer::OfferDecl::Storage(cm_rust::offer::OfferStorageDecl {
+                    source: self.source.expect("source not set"),
+                    source_name: self.source_name.expect("name not set"),
+                    target: self.target.expect("target is not set"),
+                    target_name: self.target_name.expect("name not set"),
+                    availability: self.availability,
+                })
+            }
             CapabilityTypeName::EventStream => {
-                cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
+                cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     target: self.target.expect("target is not set"),
@@ -1356,15 +1368,17 @@ impl OfferBuilder {
                     scope: self.scope,
                 })
             }
-            CapabilityTypeName::Runner => cm_rust::OfferDecl::Runner(cm_rust::OfferRunnerDecl {
-                source: self.source.expect("source not set"),
-                source_name: self.source_name.expect("name not set"),
-                source_dictionary: self.source_dictionary,
-                target: self.target.expect("target is not set"),
-                target_name: self.target_name.expect("name not set"),
-            }),
+            CapabilityTypeName::Runner => {
+                cm_rust::offer::OfferDecl::Runner(cm_rust::offer::OfferRunnerDecl {
+                    source: self.source.expect("source not set"),
+                    source_name: self.source_name.expect("name not set"),
+                    source_dictionary: self.source_dictionary,
+                    target: self.target.expect("target is not set"),
+                    target_name: self.target_name.expect("name not set"),
+                })
+            }
             CapabilityTypeName::Resolver => {
-                cm_rust::OfferDecl::Resolver(cm_rust::OfferResolverDecl {
+                cm_rust::offer::OfferDecl::Resolver(cm_rust::offer::OfferResolverDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
@@ -1373,7 +1387,7 @@ impl OfferBuilder {
                 })
             }
             CapabilityTypeName::Config => {
-                cm_rust::OfferDecl::Config(cm_rust::OfferConfigurationDecl {
+                cm_rust::offer::OfferDecl::Config(cm_rust::offer::OfferConfigurationDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     target: self.target.expect("target not set"),
@@ -1383,7 +1397,7 @@ impl OfferBuilder {
                 })
             }
             CapabilityTypeName::Dictionary => {
-                cm_rust::OfferDecl::Dictionary(cm_rust::OfferDictionaryDecl {
+                cm_rust::offer::OfferDecl::Dictionary(cm_rust::offer::OfferDictionaryDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
@@ -1397,7 +1411,7 @@ impl OfferBuilder {
     }
 }
 
-impl From<OfferBuilder> for cm_rust::OfferDecl {
+impl From<OfferBuilder> for cm_rust::offer::OfferDecl {
     fn from(builder: OfferBuilder) -> Self {
         builder.build()
     }

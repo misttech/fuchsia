@@ -905,8 +905,8 @@ mod tests {
                     .offer(
                         cm_rust_testing::OfferBuilder::config()
                             .name("fuchsia.MyConfig")
-                            .source(cm_rust::OfferSource::Self_)
-                            .target(cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+                            .source(cm_rust::offer::OfferSource::Self_)
+                            .target(cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                                 name: TEST_CHILD_NAME.parse().unwrap(),
                                 collection: None,
                             })),

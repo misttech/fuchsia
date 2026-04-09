@@ -3,17 +3,25 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
+use cm_rust::offer::{OfferDecl, OfferDeclCommon, OfferSource};
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, DependencyType, DirectoryDecl, ExposeDecl,
     ExposeDeclCommon, ExposeDirectoryDecl, ExposeProtocolDecl, ExposeSource, ExposeTarget,
-    FidlIntoNative, NativeIntoFidl, OfferDecl, OfferDeclCommon, OfferSource, ProtocolDecl,
-    SourceName, UseDecl, UseProtocolDecl, UseSource, append_box, push_box,
+    FidlIntoNative, NativeIntoFidl, ProtocolDecl, SourceName, UseDecl, UseProtocolDecl, UseSource,
+    append_box, push_box,
 };
 use cm_types::{LongName, Path, RelativePath};
 use directed_graph::DirectedGraph;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy, ServerEnd};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fcdecl;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_inspect::InspectSinkMarker;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_logger::LogSinkMarker;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
@@ -28,11 +36,7 @@ use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use url::Url;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fcdecl,
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_component_test as ftest,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fuchsia_async as fasync, zx_status,
-};
+use zx_status;
 
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
 use {fuchsia_sync as _, rand as _};
@@ -1293,18 +1297,20 @@ impl RealmNodeState {
                 if self.decl.offers.iter().any(|offer| {
                     offer.target_name() == capability_name
                         && match offer.target() {
-                            cm_rust::OfferTarget::Child(child_ref) => child_ref.name == child.name,
-                            cm_rust::OfferTarget::Collection(_) => true,
-                            cm_rust::OfferTarget::Capability(_) => false,
+                            cm_rust::offer::OfferTarget::Child(child_ref) => {
+                                child_ref.name == child.name
+                            }
+                            cm_rust::offer::OfferTarget::Collection(_) => true,
+                            cm_rust::offer::OfferTarget::Capability(_) => false,
                         }
                 }) {
                     continue;
                 }
                 let decl = match type_name {
                     CapabilityTypeName::Protocol => {
-                        cm_rust::OfferDecl::Protocol(cm_rust::OfferProtocolDecl {
-                            source: cm_rust::OfferSource::Parent,
-                            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+                        cm_rust::offer::OfferDecl::Protocol(cm_rust::offer::OfferProtocolDecl {
+                            source: cm_rust::offer::OfferSource::Parent,
+                            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                                 name: child.name.clone(),
                                 collection: None,
                             }),
@@ -1316,9 +1322,9 @@ impl RealmNodeState {
                         })
                     }
                     CapabilityTypeName::Dictionary => {
-                        cm_rust::OfferDecl::Dictionary(cm_rust::OfferDictionaryDecl {
-                            source: cm_rust::OfferSource::Parent,
-                            target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+                        cm_rust::offer::OfferDecl::Dictionary(cm_rust::offer::OfferDictionaryDecl {
+                            source: cm_rust::offer::OfferSource::Parent,
+                            target: cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                                 name: child.name.clone(),
                                 collection: None,
                             }),
@@ -2223,11 +2229,11 @@ fn create_offer_decl(
     source: fcdecl::Ref,
     #[allow(unused)] source_dictionary: Option<String>,
     target: fcdecl::Ref,
-) -> Result<cm_rust::OfferDecl, RealmBuilderError> {
-    let source: cm_rust::OfferSource = source.fidl_into_native();
+) -> Result<cm_rust::offer::OfferDecl, RealmBuilderError> {
+    let source: cm_rust::offer::OfferSource = source.fidl_into_native();
     #[cfg(fuchsia_api_level_at_least = "25")]
     let source_dictionary = parse_relative_path(source_dictionary)?;
-    let target: cm_rust::OfferTarget = target.fidl_into_native();
+    let target: cm_rust::offer::OfferTarget = target.fidl_into_native();
 
     Ok(match capability {
         ftest::Capability::Protocol(protocol) => {
@@ -2235,7 +2241,7 @@ fn create_offer_decl(
             let target_name = try_into_target_name(&protocol.name, &protocol.as_)?;
             let dependency_type = into_dependency_type(&protocol.type_);
             let availability = get_offer_availability(&protocol.availability);
-            cm_rust::OfferDecl::Protocol(cm_rust::OfferProtocolDecl {
+            cm_rust::offer::OfferDecl::Protocol(cm_rust::offer::OfferProtocolDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2250,7 +2256,7 @@ fn create_offer_decl(
             let target_name = try_into_target_name(&directory.name, &directory.as_)?;
             let dependency_type = into_dependency_type(&directory.type_);
             let availability = get_offer_availability(&directory.availability);
-            cm_rust::OfferDecl::Directory(cm_rust::OfferDirectoryDecl {
+            cm_rust::offer::OfferDecl::Directory(cm_rust::offer::OfferDirectoryDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2266,7 +2272,7 @@ fn create_offer_decl(
             let source_name = try_into_source_name(&storage.name)?;
             let target_name = try_into_target_name(&storage.name, &storage.as_)?;
             let availability = get_offer_availability(&storage.availability);
-            cm_rust::OfferDecl::Storage(cm_rust::OfferStorageDecl {
+            cm_rust::offer::OfferDecl::Storage(cm_rust::offer::OfferStorageDecl {
                 source,
                 source_name,
                 target,
@@ -2278,7 +2284,7 @@ fn create_offer_decl(
             let source_name = try_into_source_name(&service.name)?;
             let target_name = try_into_target_name(&service.name, &service.as_)?;
             let availability = get_offer_availability(&service.availability);
-            cm_rust::OfferDecl::Service(cm_rust::OfferServiceDecl {
+            cm_rust::offer::OfferDecl::Service(cm_rust::offer::OfferServiceDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2294,7 +2300,7 @@ fn create_offer_decl(
         ftest::Capability::EventStream(event_stream) => {
             let source_name = try_into_source_name(&event_stream.name)?;
             let target_name = try_into_target_name(&event_stream.name, &event_stream.as_)?;
-            cm_rust::OfferDecl::EventStream(cm_rust::OfferEventStreamDecl {
+            cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
                 source,
                 source_name,
                 target,
@@ -2305,10 +2311,10 @@ fn create_offer_decl(
         }
         ftest::Capability::Config(config) => {
             let availability = match source {
-                cm_rust::OfferSource::Void => cm_rust::Availability::Optional,
+                cm_rust::offer::OfferSource::Void => cm_rust::Availability::Optional,
                 _ => get_offer_availability(&config.availability),
             };
-            cm_rust::OfferDecl::Config(cm_rust::OfferConfigurationDecl {
+            cm_rust::offer::OfferDecl::Config(cm_rust::offer::OfferConfigurationDecl {
                 source,
                 source_name: try_into_source_name(&config.name)?,
                 target,
@@ -2320,7 +2326,7 @@ fn create_offer_decl(
         ftest::Capability::Dictionary(dictionary) => {
             let dependency_type = into_dependency_type(&dictionary.type_);
             let availability = get_offer_availability(&dictionary.availability);
-            cm_rust::OfferDecl::Dictionary(cm_rust::OfferDictionaryDecl {
+            cm_rust::offer::OfferDecl::Dictionary(cm_rust::offer::OfferDictionaryDecl {
                 source,
                 source_name: try_into_source_name(&dictionary.name)?,
                 source_dictionary,
@@ -2333,7 +2339,7 @@ fn create_offer_decl(
         ftest::Capability::Resolver(resolver) => {
             let source_name = try_into_source_name(&resolver.name)?;
             let target_name = try_into_target_name(&resolver.name, &resolver.as_)?;
-            cm_rust::OfferDecl::Resolver(cm_rust::OfferResolverDecl {
+            cm_rust::offer::OfferDecl::Resolver(cm_rust::offer::OfferResolverDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2344,7 +2350,7 @@ fn create_offer_decl(
         ftest::Capability::Runner(runner) => {
             let source_name = try_into_source_name(&runner.name)?;
             let target_name = try_into_target_name(&runner.name, &runner.as_)?;
-            cm_rust::OfferDecl::Runner(cm_rust::OfferRunnerDecl {
+            cm_rust::offer::OfferDecl::Runner(cm_rust::offer::OfferRunnerDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2932,9 +2938,11 @@ mod tests {
     use fidl::endpoints::{
         ClientEnd, create_endpoints, create_proxy, create_proxy_and_stream, create_request_stream,
     };
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_mem as fmem;
+    use fuchsia_async as fasync;
     use std::time::Duration;
     use test_case::test_case;
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem, fuchsia_async as fasync};
 
     /// Assert that two ComponentTrees are equivalent.
     ///
@@ -3019,12 +3027,12 @@ mod tests {
                 |kind: CapabilityTypeName, child_name: &str, name: cm_types::Name| match kind {
                     CapabilityTypeName::Protocol => OfferBuilder::protocol()
                         .name(name.as_str())
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child(child_name)
                         .build(),
                     CapabilityTypeName::Dictionary => OfferBuilder::dictionary()
                         .name(name.as_str())
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child(child_name)
                         .build(),
                     _ => unreachable!("we only call this with protocols and dictionaries"),
@@ -3310,7 +3318,7 @@ mod tests {
                 .offer(
                     OfferBuilder::protocol()
                         .name(LogSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         // This doesn't exist
                         .target_static_child("a"),
                 )
@@ -3328,37 +3336,37 @@ mod tests {
                 .offer(
                     OfferBuilder::dictionary()
                         .name(DIAGNOSTICS_DICT_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a"),
                 )
                 .offer(
                     OfferBuilder::protocol()
                         .name(LogSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a"),
                 )
                 .offer(
                     OfferBuilder::protocol()
                         .name(InspectSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a"),
                 )
                 .offer(
                     OfferBuilder::dictionary()
                         .name(DIAGNOSTICS_DICT_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b"),
                 )
                 .offer(
                     OfferBuilder::protocol()
                         .name(LogSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b"),
                 )
                 .offer(
                     OfferBuilder::protocol()
                         .name(InspectSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b"),
                 )
                 .child_default("a")
@@ -3371,37 +3379,37 @@ mod tests {
                         .offer(
                             OfferBuilder::dictionary()
                                 .name(DIAGNOSTICS_DICT_NAME)
-                                .source(cm_rust::OfferSource::Parent)
+                                .source(cm_rust::offer::OfferSource::Parent)
                                 .target_static_child("b_child_static"),
                         )
                         .offer(
                             OfferBuilder::protocol()
                                 .name(LogSinkMarker::PROTOCOL_NAME)
-                                .source(cm_rust::OfferSource::Parent)
+                                .source(cm_rust::offer::OfferSource::Parent)
                                 .target_static_child("b_child_static"),
                         )
                         .offer(
                             OfferBuilder::protocol()
                                 .name(InspectSinkMarker::PROTOCOL_NAME)
-                                .source(cm_rust::OfferSource::Parent)
+                                .source(cm_rust::offer::OfferSource::Parent)
                                 .target_static_child("b_child_static"),
                         )
                         .offer(
                             OfferBuilder::dictionary()
                                 .name(DIAGNOSTICS_DICT_NAME)
-                                .source(cm_rust::OfferSource::Parent)
+                                .source(cm_rust::offer::OfferSource::Parent)
                                 .target_static_child("b_child_dynamic"),
                         )
                         .offer(
                             OfferBuilder::protocol()
                                 .name(LogSinkMarker::PROTOCOL_NAME)
-                                .source(cm_rust::OfferSource::Parent)
+                                .source(cm_rust::offer::OfferSource::Parent)
                                 .target_static_child("b_child_dynamic"),
                         )
                         .offer(
                             OfferBuilder::protocol()
                                 .name(InspectSinkMarker::PROTOCOL_NAME)
-                                .source(cm_rust::OfferSource::Parent)
+                                .source(cm_rust::offer::OfferSource::Parent)
                                 .target_static_child("b_child_dynamic"),
                         )
                         .child_default("b_child_static")
@@ -3856,19 +3864,19 @@ mod tests {
                 .offer(
                     OfferBuilder::dictionary()
                         .name(DIAGNOSTICS_DICT_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("realm_with_child"),
                 )
                 .offer(
                     OfferBuilder::protocol()
                         .name(LogSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("realm_with_child"),
                 )
                 .offer(
                     OfferBuilder::protocol()
                         .name(InspectSinkMarker::PROTOCOL_NAME)
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("realm_with_child"),
                 )
                 .build(),
@@ -4226,14 +4234,14 @@ mod tests {
                     OfferBuilder::protocol()
                         .name("fuchsia.examples.Hippo")
                         .target_name("fuchsia.examples.Elephant")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .from_dictionary("source/dict")
                         .target_static_child("a"),
                 )
                 .offer(
                     OfferBuilder::directory()
                         .name("config-data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .rights(fio::RW_STAR_DIR)
                         .subdir("component")
@@ -4243,14 +4251,14 @@ mod tests {
                     OfferBuilder::storage()
                         .name("temp")
                         .target_name("data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a"),
                 )
                 .offer(
                     OfferBuilder::service()
                         .name("fuchsia.examples.Whale")
                         .target_name("fuchsia.examples.Orca")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .from_dictionary("source/dict")
                         .target_static_child("a"),
                 )
@@ -4258,14 +4266,14 @@ mod tests {
                     OfferBuilder::event_stream()
                         .name("started")
                         .target_name("started_event")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a"),
                 )
                 .offer(
                     OfferBuilder::dictionary()
                         .name("dict")
                         .target_name("dict2")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .from_dictionary("source/dict")
                         .target_static_child("a")
                         .dependency(cm_rust::DependencyType::Weak),
@@ -4282,7 +4290,9 @@ mod tests {
                         .name("fuchsia.examples.Echo")
                         .source_static_child("a")
                         .from_dictionary("source/dict")
-                        .target(cm_rust::OfferTarget::Capability("my_dict".parse().unwrap())),
+                        .target(cm_rust::offer::OfferTarget::Capability(
+                            "my_dict".parse().unwrap(),
+                        )),
                 )
                 .expose(
                     ExposeBuilder::protocol()
@@ -4414,7 +4424,7 @@ mod tests {
                     OfferBuilder::protocol()
                         .name("fuchsia.examples.Hippo")
                         .target_name("fuchsia.examples.Elephant")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .availability(cm_rust::Availability::Optional),
                 )
@@ -4422,14 +4432,14 @@ mod tests {
                     OfferBuilder::protocol()
                         .name("fuchsia.examples.Hippo")
                         .target_name("fuchsia.examples.Elephant")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b")
                         .availability(cm_rust::Availability::Optional),
                 )
                 .offer(
                     OfferBuilder::directory()
                         .name("config-data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .rights(fio::RW_STAR_DIR)
                         .subdir("component")
@@ -4438,7 +4448,7 @@ mod tests {
                 .offer(
                     OfferBuilder::directory()
                         .name("config-data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b")
                         .rights(fio::RW_STAR_DIR)
                         .subdir("component")
@@ -4448,7 +4458,7 @@ mod tests {
                     OfferBuilder::storage()
                         .name("temp")
                         .target_name("data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .availability(cm_rust::Availability::Optional),
                 )
@@ -4456,7 +4466,7 @@ mod tests {
                     OfferBuilder::storage()
                         .name("temp")
                         .target_name("data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b")
                         .availability(cm_rust::Availability::Optional),
                 )
@@ -4464,7 +4474,7 @@ mod tests {
                     OfferBuilder::service()
                         .name("fuchsia.examples.Whale")
                         .target_name("fuchsia.examples.Orca")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .availability(cm_rust::Availability::Optional),
                 )
@@ -4472,7 +4482,7 @@ mod tests {
                     OfferBuilder::service()
                         .name("fuchsia.examples.Whale")
                         .target_name("fuchsia.examples.Orca")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("b")
                         .availability(cm_rust::Availability::Optional),
                 )
@@ -4543,14 +4553,14 @@ mod tests {
                     OfferBuilder::protocol()
                         .name("fuchsia.examples.Hippo")
                         .target_name("fuchsia.examples.Elephant")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .availability(cm_rust::Availability::SameAsTarget),
                 )
                 .offer(
                     OfferBuilder::directory()
                         .name("config-data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .rights(fio::RW_STAR_DIR)
                         .subdir("component")
@@ -4560,7 +4570,7 @@ mod tests {
                     OfferBuilder::storage()
                         .name("temp")
                         .target_name("data")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .availability(cm_rust::Availability::SameAsTarget),
                 )
@@ -4568,7 +4578,7 @@ mod tests {
                     OfferBuilder::service()
                         .name("fuchsia.examples.Whale")
                         .target_name("fuchsia.examples.Orca")
-                        .source(cm_rust::OfferSource::Parent)
+                        .source(cm_rust::offer::OfferSource::Parent)
                         .target_static_child("a")
                         .availability(cm_rust::Availability::SameAsTarget),
                 )

@@ -10,7 +10,8 @@ use crate::component_sandbox::{
 };
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
-use cm_rust::{CapabilityDecl, CollectionDecl, ComponentDecl, ExposeDecl, OfferDecl, UseDecl};
+use cm_rust::offer::OfferDecl;
+use cm_rust::{CapabilityDecl, CollectionDecl, ComponentDecl, ExposeDecl, UseDecl};
 use cm_types::{Name, Url};
 use config_encoder::ConfigFields;
 use fuchsia_sync::RwLock;

@@ -4090,12 +4090,12 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
     /// b: declares "fuchsia.MyConfig" capability
     /// b: uses "fuchsia.MyConfig" from self
     pub async fn test_use_config_from_self(&self) {
-        let good_value = cm_rust::ConfigSingleValue::Int8(12);
+        let good_value = ConfigSingleValue::Int8(12);
         let use_config = UseBuilder::config()
-            .source(cm_rust::UseSource::Self_)
+            .source(UseSource::Self_)
             .name("fuchsia.MyConfig")
             .target_name("my_config")
-            .config_type(cm_rust::ConfigValueType::Int8)
+            .config_type(ConfigValueType::Int8)
             .build();
         let components = vec![
             ("a", ComponentDeclBuilder::new().child_default("b").build()),
@@ -4108,14 +4108,14 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                             .value(good_value.clone().into()),
                     )
                     .use_(use_config.clone())
-                    .config(cm_rust::ConfigDecl {
-                        fields: Box::from([cm_rust::ConfigField {
+                    .config(ConfigDecl {
+                        fields: Box::from([ConfigField {
                             key: "my_config".into(),
-                            type_: cm_rust::ConfigValueType::Int8,
+                            type_: ConfigValueType::Int8,
                             mutability: Default::default(),
                         }]),
-                        checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-                        value_source: cm_rust::ConfigValueSource::Capabilities(Default::default()),
+                        checksum: ConfigChecksum::Sha256([0; 32]),
+                        value_source: ConfigValueSource::Capabilities(Default::default()),
                     })
                     .build(),
             ),
@@ -4124,10 +4124,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = T::new("a", components).build().await;
         let child_component = model.look_up_instance(&["b"].try_into().unwrap()).await.unwrap();
 
-        let cm_rust::UseDecl::Config(use_config) = use_config else { panic!() };
+        let UseDecl::Config(use_config) = use_config else { panic!() };
         let value =
             routing::config::route_config_value(&use_config, &child_component).await.unwrap();
-        assert_eq!(value, Some(cm_rust::ConfigValue::Single(good_value)));
+        assert_eq!(value, Some(ConfigValue::Single(good_value)));
     }
 
     ///  a
@@ -4137,12 +4137,12 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
     /// a: declares "fuchsia.MyConfig" capability
     /// b: uses "fuchsia.MyConfig" from parent
     pub async fn test_use_config_from_parent(&self) {
-        let good_value = cm_rust::ConfigSingleValue::Int8(12);
+        let good_value = ConfigSingleValue::Int8(12);
         let use_config = UseBuilder::config()
-            .source(cm_rust::UseSource::Parent)
+            .source(UseSource::Parent)
             .name("fuchsia.MyConfig")
             .target_name("my_config")
-            .config_type(cm_rust::ConfigValueType::Int8)
+            .config_type(ConfigValueType::Int8)
             .build();
         let components = vec![
             (
@@ -4156,8 +4156,8 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                     .offer(
                         OfferBuilder::config()
                             .name("fuchsia.MyConfig")
-                            .source(cm_rust::OfferSource::Self_)
-                            .target(cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+                            .source(OfferSource::Self_)
+                            .target(OfferTarget::Child(ChildRef {
                                 name: "b".parse().unwrap(),
                                 collection: None,
                             })),
@@ -4169,14 +4169,14 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 "b",
                 ComponentDeclBuilder::new()
                     .use_(use_config.clone())
-                    .config(cm_rust::ConfigDecl {
-                        fields: Box::from([cm_rust::ConfigField {
+                    .config(ConfigDecl {
+                        fields: Box::from([ConfigField {
                             key: "my_config".into(),
-                            type_: cm_rust::ConfigValueType::Int8,
+                            type_: ConfigValueType::Int8,
                             mutability: Default::default(),
                         }]),
-                        checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-                        value_source: cm_rust::ConfigValueSource::Capabilities(Default::default()),
+                        checksum: ConfigChecksum::Sha256([0; 32]),
+                        value_source: ConfigValueSource::Capabilities(Default::default()),
                     })
                     .build(),
             ),
@@ -4185,10 +4185,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = T::new("a", components).build().await;
         let child_component = model.look_up_instance(&["b"].try_into().unwrap()).await.unwrap();
 
-        let cm_rust::UseDecl::Config(use_config) = use_config else { panic!() };
+        let UseDecl::Config(use_config) = use_config else { panic!() };
         let value =
             routing::config::route_config_value(&use_config, &child_component).await.unwrap();
-        assert_eq!(value, Some(cm_rust::ConfigValue::Single(good_value)));
+        assert_eq!(value, Some(ConfigValue::Single(good_value)));
     }
 
     ///  a
@@ -4199,16 +4199,15 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
     /// b: uses "fuchsia.MyConfig" from parent
     pub async fn test_use_config_from_void(&self) {
         let mut use_config = UseBuilder::config()
-            .source(cm_rust::UseSource::Parent)
+            .source(UseSource::Parent)
             .name("fuchsia.MyConfig")
             .target_name("my_config")
-            .availability(cm_rust::Availability::Optional)
-            .config_type(cm_rust::ConfigValueType::Int8)
+            .availability(Availability::Optional)
+            .config_type(ConfigValueType::Int8)
             .build();
         match &mut use_config {
-            cm_rust::UseDecl::Config(use_config_decl) => {
-                use_config_decl.default =
-                    Some(cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(0)))
+            UseDecl::Config(use_config_decl) => {
+                use_config_decl.default = Some(ConfigValue::Single(ConfigSingleValue::Int8(0)))
             }
             _ => panic!("unexpected use declaration variant"),
         }
@@ -4219,9 +4218,9 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                     .offer(
                         OfferBuilder::config()
                             .name("fuchsia.MyConfig")
-                            .source(cm_rust::OfferSource::Void)
-                            .availability(cm_rust::Availability::Optional)
-                            .target(cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+                            .source(OfferSource::Void)
+                            .availability(Availability::Optional)
+                            .target(OfferTarget::Child(ChildRef {
                                 name: "b".parse().unwrap(),
                                 collection: None,
                             })),
@@ -4233,14 +4232,14 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 "b",
                 ComponentDeclBuilder::new()
                     .use_(use_config.clone())
-                    .config(cm_rust::ConfigDecl {
-                        fields: Box::from([cm_rust::ConfigField {
+                    .config(ConfigDecl {
+                        fields: Box::from([ConfigField {
                             key: "my_config".into(),
-                            type_: cm_rust::ConfigValueType::Int8,
+                            type_: ConfigValueType::Int8,
                             mutability: Default::default(),
                         }]),
-                        checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-                        value_source: cm_rust::ConfigValueSource::Capabilities(Default::default()),
+                        checksum: ConfigChecksum::Sha256([0; 32]),
+                        value_source: ConfigValueSource::Capabilities(Default::default()),
                     })
                     .build(),
             ),
@@ -4249,10 +4248,10 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
         let model = T::new("a", components).build().await;
         let child_component = model.look_up_instance(&["b"].try_into().unwrap()).await.unwrap();
 
-        let cm_rust::UseDecl::Config(use_config) = use_config else { panic!() };
+        let UseDecl::Config(use_config) = use_config else { panic!() };
         let value =
             routing::config::route_config_value(&use_config, &child_component).await.unwrap();
-        assert_eq!(value, Some(cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(0))));
+        assert_eq!(value, Some(ConfigValue::Single(ConfigSingleValue::Int8(0))));
     }
 
     pub async fn test_use_dictionary_protocol_from_self(&self) {

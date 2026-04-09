@@ -11,6 +11,8 @@ use cm_config::CompatibilityCheckError;
 use cm_rust::UseDecl;
 use cm_types::{Name, Url};
 use component_id_index::InstanceId;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_fs::directory::WatcherCreateError;
 use moniker::{ChildName, ExtendedMoniker, Moniker, MonikerError};
 use router_error::{Explain, RouterError};
@@ -18,7 +20,6 @@ use sandbox::ConversionError;
 use serve_processargs::BuildNamespaceError;
 use std::sync::Arc;
 use thiserror::Error;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_sys2 as fsys};
 
 /// Errors produced by `Model`.
 #[derive(Debug, Error, Clone)]
@@ -386,7 +387,7 @@ pub enum DynamicCapabilityError {
         err: cm_fidl_validator::error::ErrorList,
     },
     #[error("source for dynamic offer not found:\n\t{:?}", offer)]
-    SourceNotFound { offer: cm_rust::OfferDecl },
+    SourceNotFound { offer: cm_rust::offer::OfferDecl },
     #[error("unknown offer type in dynamic offers")]
     UnknownOfferType,
 }

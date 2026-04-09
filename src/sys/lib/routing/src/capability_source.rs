@@ -48,19 +48,19 @@ pub enum AggregateMember {
     Self_,
 }
 
-impl TryFrom<&cm_rust::OfferDecl> for AggregateMember {
+impl TryFrom<&OfferDecl> for AggregateMember {
     type Error = ();
 
-    fn try_from(offer: &cm_rust::OfferDecl) -> Result<AggregateMember, ()> {
+    fn try_from(offer: &OfferDecl) -> Result<AggregateMember, ()> {
         match offer.source() {
             // TODO: should we panic instead of filtering when we find something we don't expect?
-            cm_rust::OfferSource::Framework => Err(()),
-            cm_rust::OfferSource::Parent => Ok(AggregateMember::Parent),
-            cm_rust::OfferSource::Child(child) => Ok(AggregateMember::Child(child.clone())),
-            cm_rust::OfferSource::Collection(name) => Ok(AggregateMember::Collection(name.clone())),
-            cm_rust::OfferSource::Self_ => Ok(AggregateMember::Self_),
-            cm_rust::OfferSource::Capability(_name) => Err(()),
-            cm_rust::OfferSource::Void => Err(()),
+            OfferSource::Framework => Err(()),
+            OfferSource::Parent => Ok(AggregateMember::Parent),
+            OfferSource::Child(child) => Ok(AggregateMember::Child(child.clone())),
+            OfferSource::Collection(name) => Ok(AggregateMember::Collection(name.clone())),
+            OfferSource::Self_ => Ok(AggregateMember::Self_),
+            OfferSource::Capability(_name) => Err(()),
+            OfferSource::Void => Err(()),
         }
     }
 }

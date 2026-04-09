@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use crate::component_model::AnalyzerModelError;
-use cm_rust::{
-    Availability, CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, UseDeclCommon,
-};
+use cm_rust::offer::OfferDeclCommon;
+use cm_rust::{Availability, CapabilityTypeName, ExposeDeclCommon, SourceName, UseDeclCommon};
 use cm_types::Name;
 use moniker::Moniker;
 use routing::bedrock::request_metadata::{
@@ -20,7 +19,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum TargetDecl {
     Use(cm_rust::UseDecl),
-    Offer(cm_rust::OfferDecl),
+    Offer(cm_rust::offer::OfferDecl),
     Expose(cm_rust::ExposeDecl),
     ResolverFromEnvironment(String),
 }

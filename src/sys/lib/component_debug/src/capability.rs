@@ -5,9 +5,9 @@
 use crate::realm::{
     GetAllInstancesError, GetDeclarationError, get_all_instances, get_resolved_declaration,
 };
+use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
-    CapabilityDecl, ComponentDecl, ExposeDecl, ExposeDeclCommon, OfferDecl, OfferDeclCommon,
-    SourceName, UseDecl, UseDeclCommon,
+    CapabilityDecl, ComponentDecl, ExposeDecl, ExposeDeclCommon, SourceName, UseDecl, UseDeclCommon,
 };
 use flex_fuchsia_sys2 as fsys;
 use futures::StreamExt;
@@ -158,6 +158,7 @@ fn get_segments(moniker: &Moniker, manifest: ComponentDecl, query: &str) -> Vec<
 mod tests {
     use super::*;
     use crate::test_utils::*;
+    use cm_rust::offer::{OfferProtocolDecl, OfferSource, OfferTarget};
     use cm_rust::*;
     use cm_rust_testing::*;
     use std::collections::HashMap;

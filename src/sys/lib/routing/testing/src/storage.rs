@@ -7,6 +7,7 @@ use crate::{
     CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder, generate_storage_path,
 };
 use cm_config::{CapabilityAllowlistKey, CapabilityAllowlistSource};
+use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
 use component_id_index::InstanceId;

@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use crate::{CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder};
+use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
+use fidl_fuchsia_io as fio;
 use std::marker::PhantomData;
-use {fidl_fuchsia_io as fio, zx_status};
+use zx_status;
 
 pub struct CommonRightsTest<T: RoutingTestModelBuilder> {
     builder: PhantomData<T>,
@@ -344,11 +346,13 @@ impl<T: RoutingTestModelBuilder> CommonRightsTest<T> {
                     .build(),
             ),
         ];
-        let namespace_capabilities = vec![CapabilityBuilder::directory()
-            .name("foo_data")
-            .path("/offer_from_cm_namespace/data/foo")
-            .rights(fio::W_STAR_DIR)
-            .build()];
+        let namespace_capabilities = vec![
+            CapabilityBuilder::directory()
+                .name("foo_data")
+                .path("/offer_from_cm_namespace/data/foo")
+                .rights(fio::W_STAR_DIR)
+                .build(),
+        ];
         let mut builder = T::new("a", components);
         builder.set_namespace_capabilities(namespace_capabilities);
         let model = builder.build().await;

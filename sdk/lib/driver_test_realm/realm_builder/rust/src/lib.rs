@@ -4,10 +4,10 @@
 
 use anyhow::{Context as _, Result};
 use cm_rust::push_box;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_io as fio;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
-use {
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio,
-};
 
 pub const COMPONENT_NAME: &str = "driver_test_realm";
 pub const DRIVER_TEST_REALM_URL: &str = "#meta/driver_test_realm.cm";
@@ -226,12 +226,12 @@ impl DriverTestRealmBuilder for RealmBuilder {
 
             push_box(
                 &mut decl.offers,
-                cm_rust::OfferDecl::Protocol(cm_rust::OfferProtocolDecl {
-                    source: cm_rust::OfferSource::Parent,
+                cm_rust::offer::OfferDecl::Protocol(cm_rust::offer::OfferProtocolDecl {
+                    source: cm_rust::offer::OfferSource::Parent,
                     source_name: offer_parsed.clone(),
                     source_dictionary: Default::default(),
                     target_name: offer_parsed.clone(),
-                    target: cm_rust::OfferTarget::Collection(
+                    target: cm_rust::offer::OfferTarget::Collection(
                         "realm_builder".parse::<cm_types::Name>().unwrap(),
                     ),
                     dependency_type: cm_rust::DependencyType::Strong,

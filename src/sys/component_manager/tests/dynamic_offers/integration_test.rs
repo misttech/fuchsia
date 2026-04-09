@@ -4,18 +4,20 @@
 
 use anyhow::Error;
 use assert_matches::assert_matches;
-use cm_rust::{push_box, OfferDeclCommon};
+use cm_rust::offer::OfferDeclCommon;
+use cm_rust::push_box;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::new::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
 #[fuchsia::test]
 async fn routing_succeeds_with_dynamic_offer() {
@@ -151,7 +153,8 @@ async fn new_realm(
     );
     realm_decl.offers = IntoIterator::into_iter(realm_decl.offers)
         .filter(|o| {
-            o.target() != &cm_rust::OfferTarget::Collection("dynamic_children".parse().unwrap())
+            o.target()
+                != &cm_rust::offer::OfferTarget::Collection("dynamic_children".parse().unwrap())
         })
         .collect();
     builder.replace_realm_decl(realm_decl).await.unwrap();

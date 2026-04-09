@@ -8,7 +8,8 @@ use crate::error::ComponentInstanceError;
 use crate::policy::GlobalPolicyChecker;
 use crate::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
 use async_trait::async_trait;
-use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, OfferDecl, OfferSource, UseDecl};
+use cm_rust::offer::{OfferDecl, OfferSource};
+use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, UseDecl};
 use cm_types::{Name, Url};
 use derivative::Derivative;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
@@ -224,7 +225,7 @@ where
         T::Target::exposes(&*self)
     }
 
-    fn offers(&self) -> Box<[cm_rust::OfferDecl]> {
+    fn offers(&self) -> Box<[cm_rust::offer::OfferDecl]> {
         T::Target::offers(&*self)
     }
 

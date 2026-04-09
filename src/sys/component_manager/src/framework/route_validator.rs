@@ -351,6 +351,7 @@ mod tests {
     use crate::model::testing::test_helpers::{TestEnvironmentBuilder, TestModelResult};
     use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
+    use cm_rust::offer::*;
     use cm_rust::*;
     use cm_rust_testing::*;
     use fidl::endpoints;

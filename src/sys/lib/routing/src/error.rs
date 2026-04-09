@@ -6,7 +6,8 @@ use crate::policy::PolicyError;
 use crate::rights::Rights;
 use async_trait::async_trait;
 use clonable_error::ClonableError;
-use cm_rust::{CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, UseDeclCommon};
+use cm_rust::offer::OfferDeclCommon;
+use cm_rust::{CapabilityTypeName, ExposeDeclCommon, SourceName, UseDeclCommon};
 use cm_types::{Availability, Name};
 use fidl_fuchsia_component as fcomponent;
 use itertools::Itertools;
@@ -919,8 +920,8 @@ impl From<&cm_rust::ExposeDecl> for RouteRequestErrorInfo {
     }
 }
 
-impl From<&cm_rust::OfferDecl> for RouteRequestErrorInfo {
-    fn from(value: &cm_rust::OfferDecl) -> Self {
+impl From<&cm_rust::offer::OfferDecl> for RouteRequestErrorInfo {
+    fn from(value: &cm_rust::offer::OfferDecl) -> Self {
         RouteRequestErrorInfo {
             capability_type: value.into(),
             name: value.target_name().clone(),

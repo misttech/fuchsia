@@ -293,9 +293,10 @@ mod tests {
     };
     use crate::model::testing::test_hook::Lifecycle;
     use async_utils::PollExt;
+    use cm_rust::offer::{OfferSource, OfferTarget};
     use cm_rust::{
-        ChildRef, DependencyType, ExposeSource, ExposeTarget, OfferSource, OfferTarget,
-        RegistrationSource, StorageDirectorySource, UseSource,
+        ChildRef, DependencyType, ExposeSource, ExposeTarget, RegistrationSource,
+        StorageDirectorySource, UseSource,
     };
     use cm_rust_testing::*;
     use cm_types::AllowedOffers;

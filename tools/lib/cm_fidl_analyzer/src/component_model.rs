@@ -534,7 +534,7 @@ impl ComponentModelForAnalyzer {
         for next_offer in &instance.decl.offers {
             if next_offer.source_name() == offer.target_name() {
                 match next_offer.source() {
-                    cm_rust::OfferSource::Parent => return true,
+                    cm_rust::offer::OfferSource::Parent => return true,
                     _ => {}
                 }
             }
@@ -1279,9 +1279,9 @@ mod tests {
             )
             .offer(
                 cm_rust_testing::OfferBuilder::config()
-                    .source(cm_rust::OfferSource::Void)
+                    .source(cm_rust::offer::OfferSource::Void)
                     .name("my_config")
-                    .target(cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+                    .target(cm_rust::offer::OfferTarget::Child(cm_rust::ChildRef {
                         name: "child".parse().unwrap(),
                         collection: None,
                     }))

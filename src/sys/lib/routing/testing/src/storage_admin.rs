@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{CheckUse, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder};
+use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
 use fidl_fuchsia_io as fio;
