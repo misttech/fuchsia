@@ -89,7 +89,7 @@ func getWorldStruct() *world {
 		AllFiles: file.AllFiles,
 
 		RootDirectory:  directory.RootDirectory,
-		AllDirectories: directory.AllDirectories,
+		AllDirectories: directory.GetAllDirectories(),
 
 		RootProject:        project.RootProject,
 		AllProjects:        project.AllProjects,

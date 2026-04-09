@@ -5,10 +5,74 @@
 package directory
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"sync"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 )
 
 var Config *DirectoryConfig
+
+var (
+	allDirectoriesMu sync.RWMutex
+	allDirectories   map[string]*Directory
+)
+
+var RootDirectory *Directory
+
+func init() {
+	allDirectories = make(map[string]*Directory, 0)
+}
+
+func Initialize(c *DirectoryConfig) error {
+	// Project readme directories should always be skipped.
+	// They are processed during the project Initialize() call.
+	readmeSkips := &Skip{
+		Paths: []string{},
+		Notes: []string{"Always skip project.Readmes paths."},
+	}
+	for _, r := range project.Config.Readmes {
+		readmeSkips.Paths = append(readmeSkips.Paths, r.Paths...)
+	}
+	c.Skips = append(c.Skips, readmeSkips)
+
+	// check-licenses License pattern directories should also be skipped.
+	patternSkips := &Skip{
+		Paths: []string{},
+		Notes: []string{"Always skip license.PatternRoot paths."},
+	}
+	c.Skips = append(c.Skips, patternSkips)
+
+	// Save the config file to the out directory (if defined).
+	if b, err := json.MarshalIndent(c, "", "  "); err != nil {
+		return err
+	} else {
+		plusFile("_config.json", b)
+	}
+
+	Config = c
+	return nil
+}
+
+// AddDirectory safely adds a directory to the global tracking map.
+func AddDirectory(d *Directory) {
+	allDirectoriesMu.Lock()
+	defer allDirectoriesMu.Unlock()
+	allDirectories[d.Path] = d
+}
+
+// GetAllDirectories returns a shallow copy of the global directories map.
+func GetAllDirectories() map[string]*Directory {
+	allDirectoriesMu.RLock()
+	defer allDirectoriesMu.RUnlock()
+
+	m := make(map[string]*Directory, len(allDirectories))
+	for k, v := range allDirectories {
+		m[k] = v
+	}
+	return m
+}
 
 type DirectoryConfig struct {
 	// FuchsiaDir is the path to the root of your fuchsia workspace.

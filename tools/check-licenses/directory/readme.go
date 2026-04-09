@@ -10,30 +10,28 @@ import (
 )
 
 func readmeFileExists(root string) (string, bool) {
-	var path string
-
-	directoryContents, err := os.ReadDir(root)
-	if err != nil {
-		return "", false
-	}
-
 	// If multiple README.* files exist in a given directory,
 	// README.fuchsia files will take precedence.
-	for _, item := range directoryContents {
-		switch item.Name() {
-		case "README.fuchsia":
-			path = item.Name()
+	// Using os.Stat is an O(1) file system operation, whereas os.ReadDir
+	// is an O(N log N) operation since it reads and sorts all entries.
+	// This makes it the most mathematically efficient way to check for
+	// file existence when looking for known names.
+	if path := filepath.Join(root, "README.fuchsia"); fileExists(path) {
+		return path, true
+	}
+	if path := filepath.Join(root, "README.chromium"); fileExists(path) {
+		return path, true
+	}
+	if path := filepath.Join(root, "README.crashpad"); fileExists(path) {
+		return path, true
+	}
 
-		case "README.chromium", "README.crashpad":
-			if path == "" {
-				path = item.Name()
-			}
-		}
-	}
-	if path != "" {
-		return filepath.Join(root, path), true
-	}
 	return "", false
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func readmeFileWillNeverExist(root string) bool {

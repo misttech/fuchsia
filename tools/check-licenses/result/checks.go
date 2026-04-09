@@ -339,7 +339,7 @@ func AllFilesAndFoldersMustBeIncludedInAProject() error {
 	b.WriteString("This means a license file needs to accompany all first and third party projects,\n")
 	b.WriteString("and a README.fuchsia file must exist and specify where the license file lives.\n")
 	b.WriteString("The following directories are not included in a project:\n\n")
-	for _, d := range directory.AllDirectories {
+	for _, d := range directory.GetAllDirectories() {
 		if d.Project == project.UnknownProject && len(d.Files) > 0 {
 			if _, ok := allowlist[d.Path]; !ok {
 				b.WriteString(fmt.Sprintf("-> %s\n", d.Path))

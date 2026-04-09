@@ -40,9 +40,9 @@ func NewDirectory(root string, parent *Directory) (*Directory, error) {
 // Call NewDirectory with a passed-in config variable (instead of using
 // the static Config variable). This allows for easier testing.
 func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryConfig) (*Directory, error) {
-	d := Directory{}
+	d := &Directory{}
 	if RootDirectory == nil {
-		RootDirectory = &d
+		RootDirectory = d
 	}
 
 	d.Name = filepath.Base(root)
@@ -57,13 +57,6 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 		d.Project = parent.Project
 	}
 
-	if !project.IsBarrier(root) && parent != nil {
-		// If we are not at a "barrier" directory (e.g. prebuilt, third_party),
-		// then the license info of the parent directory also applies to this directory.
-		// Propagate that information down here.
-		d.Project = parent.Project
-	}
-
 	var r *readme.Readme
 	var p *project.Project
 	var err error
@@ -71,7 +64,7 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 	// If a README.fuchsia file exists in the current directory, load it.
 	if readmePath, exists := readmeFileExists(root); exists {
 		if r, err = readme.NewReadmeFromFile(readmePath); err != nil {
-			return nil, fmt.Errorf("error loading readme file [%s]: %w\n",
+			return nil, fmt.Errorf("error loading readme file [%s]: %w",
 				readmePath, err)
 		}
 	} else if readmeFileWillNeverExist(root) {
@@ -79,14 +72,23 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 		// In those cases, generate an in-memory README file that describes
 		// the project.
 		if r, err = readme.NewReadmeCustom(root); err != nil {
-			return nil, fmt.Errorf("error creating custom readme [%s]: %w\n",
+			return nil, fmt.Errorf("error creating custom readme [%s]: %w",
 				root, err)
 		}
 	}
 
+	relRoot := root
+	if filepath.IsAbs(root) {
+		relRoot, err = filepath.Rel(config.FuchsiaDir, root)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make root relative: %w", err)
+		}
+	}
+
 	// If this project was already created during initialization, set it here.
+	// project.AllProjects is strictly keyed by relative paths.
 	var ok bool
-	if p, ok = project.AllProjects[root]; ok {
+	if p, ok = project.AllProjects[relRoot]; ok {
 		d.Project = p
 		r = d.Project.ReadmeFile
 	} else if r != nil {
@@ -112,10 +114,24 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 			continue
 		}
 
+		isDir := item.IsDir()
+
+		// Edge case: item.IsDir() returns false for symlinks.
+		// If the symlink points to a directory, we must catch it here to
+		// prevent treating it as a file (which breaks later parsers) or
+		// traversing it (which could cause infinite loops).
+		if !isDir && item.Type()&os.ModeSymlink != 0 {
+			info, err := os.Stat(path)
+			if err == nil && info.IsDir() {
+				// It's a directory symlink. Skip it entirely.
+				continue
+			}
+		}
+
 		// Directories
-		if item.IsDir() {
+		if isDir {
 			plus1(NumFolders)
-			child, err := newDirectoryWithConfig(path, &d, config)
+			child, err := newDirectoryWithConfig(path, d, config)
 			if err != nil {
 				return nil, err
 			}
@@ -130,7 +146,8 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 		}
 		f, err := file.LoadFile(path, fileType, d.Project.Name)
 		if err != nil {
-			// Likely a symlink issue
+			// Likely a symlink issue, or an empty file error from file.LoadFile.
+			// We swallow the error to continue traversing the rest of the tree.
 			continue
 		} else {
 			plus1(NumFiles)
@@ -140,6 +157,6 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 	}
 
 	sort.Sort(Order(d.Children))
-	AllDirectories[d.Path] = &d
-	return &d, nil
+	AddDirectory(d)
+	return d, nil
 }
