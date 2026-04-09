@@ -268,14 +268,6 @@ and it will print the symbolized text to stdout.
 Fuchsia tracks bugs and feature requests using Buganizer. If the user has
 `bugged` installed you can run `bugged help` to learn how to read bug state.
 
-### Fetching Change List (CL) diffs
-
-Use `fx fetch-cl-diff --help` to see how to read the diff for a CL.
-
-### Fetching Change List (CL) comments
-
-Use `fx fetch-cl-comments --help` to see how to read the comments for a CL.
-
 ### Fetching CQ failures
 
 Use `fx fetch-cq-failures --help` to see how to fetch CQ/Tryjob failures for a CL.
