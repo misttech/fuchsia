@@ -13,6 +13,7 @@ rustc_library("netlink_packet_sock_diag") {
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_core",
     "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:arbitrary",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:byteorder",
     "//third_party/rust_crates:libc",

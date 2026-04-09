@@ -36,6 +36,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::NonZeroUsize;
 
+use arbitrary::Arbitrary;
 use netlink_packet_utils::{DecodeError, buffer};
 
 use crate::constants::{
@@ -150,35 +151,28 @@ const AF_INET_ADDR_LEN: usize = 4;
 const AF_INET6_ADDR_LEN: usize = 16;
 
 /// A bytecode program used by Linux to match AF_INET sockets.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Arbitrary)]
 pub struct Bytecode(pub Vec<Instruction>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SerializationError {
+    /// The target buffer provided was too small.
     BufferTooSmall,
-    /// An index in in the instruction with index `at` was too large to fit into
-    /// the serialized representation (u8 or u16 depending on the field).
-    IndexTooLargeForSerializedType {
-        at: usize,
-    },
-    IndexOverflow {
-        at: usize,
-    },
+    /// An error occurred during serialization of the instruction at index `at`.
+    InvalidInstruction { at: usize, error: InvalidInstructionError },
 }
 
-enum SerializationErrorCode {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum InvalidInstructionError {
     IndexTooLargeForSerializedType,
     IndexOverflow,
+    IndexPastEnd,
+    PrefixLengthLongerThanAddress,
 }
 
-impl SerializationErrorCode {
+impl InvalidInstructionError {
     fn at_index(self, index: InstructionIndex) -> SerializationError {
-        match self {
-            Self::IndexTooLargeForSerializedType => {
-                SerializationError::IndexTooLargeForSerializedType { at: index.get() }
-            }
-            Self::IndexOverflow => SerializationError::IndexOverflow { at: index.get() },
-        }
+        SerializationError::InvalidInstruction { at: index.get(), error: self }
     }
 }
 
@@ -328,7 +322,7 @@ impl Bytecode {
                             total_len = new_len;
                             Ok(res)
                         }
-                        None => Err(SerializationErrorCode::IndexOverflow
+                        None => Err(InvalidInstructionError::IndexOverflow
                             .at_index(InstructionIndex::new(i))),
                     }
                 })
@@ -354,7 +348,7 @@ impl Bytecode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Arbitrary)]
 pub enum Instruction {
     Nop(Action),
     Jmp(Action),
@@ -376,7 +370,7 @@ impl Instruction {
         instruction_index: InstructionIndex,
         byte_index: ByteIndex,
         total_len: ByteIndex,
-    ) -> Result<RawInstruction, SerializationErrorCode> {
+    ) -> Result<RawInstruction, InvalidInstructionError> {
         // Calculate relative offsets
         let calculate_rel = |action| {
             let target = match action {
@@ -384,12 +378,14 @@ impl Instruction {
                 // Linux checks that all targets are multiples of 4.
                 Action::Reject => total_len
                     .checked_add(ByteOffset::new(4).unwrap())
-                    .ok_or(SerializationErrorCode::IndexOverflow)?,
+                    .ok_or(InvalidInstructionError::IndexOverflow)?,
                 Action::AdvanceBy(dist) => {
                     let target_index = instruction_index
                         .checked_add(InstructionOffset::new_nonzero(dist))
-                        .ok_or(SerializationErrorCode::IndexOverflow)?;
-                    byte_indices_by_instruction_index[target_index.get()]
+                        .ok_or(InvalidInstructionError::IndexOverflow)?;
+                    *byte_indices_by_instruction_index
+                        .get(target_index.get())
+                        .ok_or(InvalidInstructionError::IndexPastEnd)?
                 }
             };
 
@@ -411,7 +407,7 @@ impl Instruction {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Arbitrary)]
 pub enum Action {
     Accept,
     Reject,
@@ -509,7 +505,7 @@ impl RawInstruction {
         Ok(inst)
     }
 
-    fn serialize(&self, buf: &mut [u8]) -> Result<(), SerializationErrorCode> {
+    fn serialize(&self, buf: &mut [u8]) -> Result<(), InvalidInstructionError> {
         // NOTE: buffer length was already checked in Bytecode::serialize, so we
         // don't need to do that again in this function.
 
@@ -526,11 +522,11 @@ impl RawInstruction {
         let mut buf = RawInstructionBuffer::new(buf).unwrap();
         buf.set_code(code);
         buf.set_yes(
-            yes.try_into().map_err(|_| SerializationErrorCode::IndexTooLargeForSerializedType)?,
+            yes.try_into().map_err(|_| InvalidInstructionError::IndexTooLargeForSerializedType)?,
         );
         buf.set_no(
             u16::try_from(no)
-                .map_err(|_| SerializationErrorCode::IndexTooLargeForSerializedType)?,
+                .map_err(|_| InvalidInstructionError::IndexTooLargeForSerializedType)?,
         );
 
         let buf = buf.payload_mut();
@@ -546,7 +542,7 @@ impl RawInstruction {
                     let mut buf = PortConditionBuffer::new(buf).unwrap();
                     buf.set_port(*port);
                 }
-                Condition::SrcTuple(c) | Condition::DstTuple(c) => c.serialize(buf),
+                Condition::SrcTuple(c) | Condition::DstTuple(c) => c.serialize(buf)?,
                 Condition::Device(ifindex) => {
                     let mut buf = DeviceConditionBuffer::new(buf).unwrap();
                     buf.set_ifindex(*ifindex);
@@ -567,7 +563,7 @@ impl RawInstruction {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Arbitrary)]
 pub enum Condition {
     SrcPortGe(u16),
     SrcPortLe(u16),
@@ -639,7 +635,7 @@ impl Condition {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Arbitrary)]
 pub struct TupleCondition {
     pub prefix_len: u8,
     pub addr: Option<IpAddr>,
@@ -708,25 +704,36 @@ impl TupleCondition {
         Ok(TupleCondition { prefix_len, port, addr })
     }
 
-    fn serialize(&self, buf: &mut [u8]) {
+    fn serialize(&self, buf: &mut [u8]) -> Result<(), InvalidInstructionError> {
         let mut buf = TupleConditionBuffer::new(buf).unwrap();
 
-        match self.addr {
+        let max_prefix_len = match self.addr {
             Some(IpAddr::V4(addr)) => {
                 buf.set_family(AF_INET);
                 Ipv4AddrBuffer::new(buf.payload_mut()).unwrap().set_addr(addr.into());
+
+                32
             }
             Some(IpAddr::V6(addr)) => {
                 buf.set_family(AF_INET6);
                 Ipv6AddrBuffer::new(buf.payload_mut()).unwrap().set_addr(addr.into());
+
+                128
             }
             None => {
                 buf.set_family(AF_UNSPEC);
+
+                0
             }
         };
 
+        if self.prefix_len > max_prefix_len {
+            return Err(InvalidInstructionError::PrefixLengthLongerThanAddress);
+        }
+
         buf.set_prefix_len(self.prefix_len);
         buf.set_port(self.port.map(i32::from).unwrap_or(-1));
+        Ok(())
     }
 }
 
@@ -838,7 +845,10 @@ mod tests {
         let mut buf = vec![0u8; bc.serialized_len()];
         assert_eq!(
             bc.serialize(&mut buf),
-            Err(SerializationError::IndexTooLargeForSerializedType { at: 0 })
+            Err(SerializationError::InvalidInstruction {
+                at: 0,
+                error: InvalidInstructionError::IndexTooLargeForSerializedType
+            })
         );
     }
 
@@ -857,7 +867,10 @@ mod tests {
         let mut buf = vec![0u8; bc.serialized_len()];
         assert_eq!(
             bc.serialize(&mut buf),
-            Err(SerializationError::IndexTooLargeForSerializedType { at: 0 })
+            Err(SerializationError::InvalidInstruction {
+                at: 0,
+                error: InvalidInstructionError::IndexTooLargeForSerializedType
+            })
         );
     }
 
@@ -869,7 +882,13 @@ mod tests {
         ];
         let bc = Bytecode(ops);
         let mut buf = vec![0u8; bc.serialized_len()];
-        assert_eq!(bc.serialize(&mut buf), Err(SerializationError::IndexOverflow { at: 1 }));
+        assert_eq!(
+            bc.serialize(&mut buf),
+            Err(SerializationError::InvalidInstruction {
+                at: 1,
+                error: InvalidInstructionError::IndexOverflow
+            })
+        );
     }
 
     #[test]
@@ -1049,6 +1068,82 @@ mod tests {
         assert_eq!(
             Bytecode::parse(&buf),
             Err(ParseError { index: 0, code: ParseErrorCode::TruncatedInstruction })
+        );
+    }
+
+    #[test]
+    fn index_past_end() {
+        let bc = Bytecode(vec![Instruction::Nop(Action::AdvanceBy(NonZeroUsize::new(2).unwrap()))]);
+        let mut buf = vec![0u8; bc.serialized_len()];
+        assert_eq!(
+            bc.serialize(&mut buf),
+            Err(SerializationError::InvalidInstruction {
+                at: 0,
+                error: InvalidInstructionError::IndexPastEnd
+            })
+        );
+    }
+
+    #[test]
+    fn prefix_length_longer_than_address_v4() {
+        let bc = Bytecode(vec![Instruction::Condition {
+            yes: Action::Accept,
+            no: Action::Accept,
+            condition: Condition::SrcTuple(TupleCondition {
+                prefix_len: 33,
+                port: None,
+                addr: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            }),
+        }]);
+        let mut buf = vec![0u8; bc.serialized_len()];
+        assert_eq!(
+            bc.serialize(&mut buf),
+            Err(SerializationError::InvalidInstruction {
+                at: 0,
+                error: InvalidInstructionError::PrefixLengthLongerThanAddress
+            })
+        );
+    }
+
+    #[test]
+    fn prefix_length_longer_than_address_v6() {
+        let bc = Bytecode(vec![Instruction::Condition {
+            yes: Action::Accept,
+            no: Action::Accept,
+            condition: Condition::SrcTuple(TupleCondition {
+                prefix_len: 129,
+                port: None,
+                addr: Some(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))),
+            }),
+        }]);
+        let mut buf = vec![0u8; bc.serialized_len()];
+        assert_eq!(
+            bc.serialize(&mut buf),
+            Err(SerializationError::InvalidInstruction {
+                at: 0,
+                error: InvalidInstructionError::PrefixLengthLongerThanAddress
+            })
+        );
+    }
+
+    #[test]
+    fn prefix_length_longer_than_address_unspec() {
+        let bc = Bytecode(vec![Instruction::Condition {
+            yes: Action::Accept,
+            no: Action::Accept,
+            condition: Condition::SrcTuple(TupleCondition {
+                prefix_len: 1,
+                port: None,
+                addr: None,
+            }),
+        }]);
+        let mut buf = vec![0u8; bc.serialized_len()];
+        assert_eq!(
+            bc.serialize(&mut buf),
+            Err(SerializationError::InvalidInstruction {
+                at: 0,
+                error: InvalidInstructionError::PrefixLengthLongerThanAddress
+            })
         );
     }
 }
