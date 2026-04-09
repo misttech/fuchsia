@@ -299,11 +299,33 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
                     println!("{}", output.bug_context("Error serializing args")?);
                     return Ok(ExitStatus::from_raw(0));
                 } else {
-                    return Err(Error::Help { command, output, code });
+                    let command_clone = command.clone();
+                    let res: Result<ExitStatus, Error> = Err(Error::Help { command, output, code });
+                    let enhanced_args = match send_enhanced_analytics().await {
+                        true => Some(cmd.unredacted_args_for_analytics()),
+                        false => None,
+                    };
+                    metrics
+                        .command_finished(&res, &command_clone, enhanced_args.as_deref())
+                        .await
+                        .ok();
+                    return Err(res.unwrap_err());
                 }
             }
 
-            Err(e) => return Err(e),
+            Err(e) => {
+                let mut command_name = cmd.cmd_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                if let Some(s) = cmd.subcmd_iter().next() {
+                    command_name.push(s.to_string());
+                }
+                let res: Result<ExitStatus, Error> = Err(e);
+                let enhanced_args = match send_enhanced_analytics().await {
+                    true => Some(cmd.unredacted_args_for_analytics()),
+                    false => None,
+                };
+                metrics.command_finished(&res, &command_name, enhanced_args.as_deref()).await.ok();
+                return Err(res.unwrap_err());
+            }
         }
     };
 
