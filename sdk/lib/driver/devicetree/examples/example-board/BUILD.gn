@@ -20,15 +20,6 @@ devicetree("example-board") {
   deps = [ "//zircon/system/ulib/ddk-platform-defs" ]
 }
 
-# Add this target to |kernel_zbi_extra_deps| to include the devicetree blob
-# (dtb) in the kernel ZBI. Typically the bootloader will pass down the dtb.
-# This method should only be used during board bringup.
-zbi_input("example-board-dtb") {
-  deps = [ ":example-board-dt" ]
-  type = "devicetree"
-  sources = [ "$target_out_dir/example-board.dtb" ]
-}
-
 bazel_input_file("test-dtb") {
   generator = ":example-board"
   outputs = [ "$target_out_dir/example-board.dtb" ]

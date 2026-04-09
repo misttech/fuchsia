@@ -15,17 +15,6 @@ import("//zircon/kernel/phys/kernel_elf_binary.gni")
 
 assert(toolchain_environment == "kernel")
 
-declare_args() {
-  # A list of GN labels comprising additional dependencies of the kernel
-  # proper. This can be useful - in a prototyping or 'vendor' capacity - for
-  # injecting new instances of subsystems that the kernel has defined modularly
-  # (e.g., pdev drivers or k commands).
-  #
-  # TODO(https://fxbug.dev/498633118): Revisit the need for this in a
-  # many-kernel-capable build.
-  kernel_extra_deps = []
-}
-
 # Represents a kernel executable (i.e., a kernel in ELF form) evaluated under
 # the current switchset.
 #
@@ -75,7 +64,6 @@ template("kernel_executable") {
       deps += [ "//zircon/kernel/platform/pc" ]
     }
 
-    deps += kernel_extra_deps
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }

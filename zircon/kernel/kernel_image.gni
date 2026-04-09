@@ -6,18 +6,6 @@
 
 import("//build/zbi/zbi.gni")
 
-declare_args() {
-  # A list of GN labels reaching zbi_input()-style targets to include in the
-  # kernel image.  These targets can be zbi_input(), kernel_cmdline(), etc. to
-  # inject ZBI items or resource(), etc. to inject items into the filesystem
-  # image that physboot decodes.
-  #
-  # These are injected first, so an item that's itself a zbi_executable() or
-  # the like can be listed here to be used as a ZBI-to-ZBI boot shim
-  # (e.g. //zircon/kernel/arch/x86/phys/boot-shim:x86-legacy-zbi-boot-shim)
-  kernel_zbi_extra_deps = []
-}
-
 # Defines a kernel image, i.e., a (bootable) ZBI containing a KERNEL item.
 #
 # Parameters
@@ -46,11 +34,6 @@ template("kernel_image") {
     if (!defined(output_name)) {
       output_name = target_name
     }
-
-    if (!defined(deps)) {
-      deps = []
-    }
-    deps += kernel_zbi_extra_deps
 
     compress = "zstd.max"
 
