@@ -50,7 +50,7 @@
   name: Structured Logs
   team: Diagnostics
   links:
-    Structured log encoding reference: /docs/reference/platform-spec/diagnostics/logs-encoding
+    Structured log encoding reference: /docs/reference/platform-spec/diagnostics/logs-encoding.md
   description: |
     Store structured key/value pairs in log messages.
 
@@ -64,7 +64,7 @@
   name: Persistence
   team: Diagnostics
   links:
-    Persistence documentation: /docs/reference/diagnostics/persistence
+    Persistence documentation: /docs/development/diagnostics/analytics/persistence.md
   description: |
     Persistence stores Inspect data and publishes it on the subsequent boot.
 
@@ -79,7 +79,7 @@
   name: Sampler
   team: Diagnostics
   links:
-    Sampler documentation: /docs/reference/diagnostics/sampler
+    Sampler documentation: /docs/development/diagnostics/analytics/sampler.md
   description: |
     Sampler reads data from Inspect and forwards it to Cobalt.
 
@@ -95,10 +95,10 @@
   team: Tracing
   links:
     Tracing documentation: /docs/concepts/kernel/tracing-system.md
-    Tracing guides: /docs/development/tracing/guides.md
-    Use trace events: /docs/development/tracing/events.md
-    Tutorial on Fuchsia tracing: /docs/development/tracing/tutorial/index.md
-    Fuchsia trace format: /docs/reference/tracing/trace-format
+    Tracing guides: /docs/development/tracing/README.md
+    Use trace events: /docs/development/tracing/trace_events.md
+    Tutorial on Fuchsia tracing: /docs/development/tracing/tutorial/README.md
+    Fuchsia trace format: /docs/reference/tracing/trace-format.md
   description: |
     Fuchsia's tracing system offers a comprehensive way to collect,
     aggregate, and visualize diagnostic tracing information from the
@@ -114,7 +114,7 @@
   name: Triage
   team: Diagnostics
   links:
-    Triage documentation: /docs/reference/diagnostics/triage
+    Triage documentation: /docs/development/diagnostics/triage/fx_triage.md
   description: |
     Triage selects and processes values from Diagnostics data, producing
     useful actions and insights on-device and off-device.
@@ -144,7 +144,7 @@
   name: Detect
   team: Diagnostics
   links:
-    Detect - Snapshot filing: /docs/development/diagnostics/analytics/detect
+    Detect - Snapshot filing: /docs/development/diagnostics/analytics/detect.md
   description: |
     Detect scans Inspect data on-device to decide when to file crash reports.
 

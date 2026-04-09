@@ -260,7 +260,7 @@ impl DocYamlCheck for YamlChecker {
                     yaml_value,
                     self.allow_fuchsia_src_links,
                 ),
-                Some("_tools.yaml") => check_tools(filename, yaml_value),
+                Some("_tools.yaml") => check_tools(&self.root_dir, filename, yaml_value),
                 Some(name) => todo!("Need to handle {} ({:?})", name, filename),
                 _ => panic!("No str avail for {:?}", filename),
             };
@@ -1024,10 +1024,42 @@ fn check_supported_sys_config(
     if errs.is_empty() { None } else { Some(errs) }
 }
 
-fn check_tools(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<ToolsEntry>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064935): other checks for ToolsEntry?
-    errors
+fn check_tools(root_dir: &Path, filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
+    let (items, errors) = parse_entries::<ToolsEntry>(filename, yaml_value);
+    let mut errs = errors.unwrap_or_default();
+    if let Some(entries) = items {
+        for entry in entries {
+            for (key, value) in entry.links {
+                if let (Some(key_str), Some(link_str)) = (key.as_str(), value.as_str()) {
+                    if link_str.starts_with("/docs/") {
+                        let path = root_dir.join(&link_str[1..]);
+                        if !path_helper::exists(&path) {
+                            errs.push(DocCheckError::new_error(
+                                1,
+                                filename.to_path_buf(),
+                                &format!(
+                                    "link {}: {} in tool {} does not exist",
+                                    key_str, link_str, entry.name
+                                ),
+                            ));
+                        }
+                    } else if link_str.starts_with("http://") || link_str.starts_with("https://") {
+                        // TODO(https://fxbug.dev/500468244): Collect these HTTP URLs and route them to the link_checker module.
+                    } else {
+                        errs.push(DocCheckError::new_error(
+                            1,
+                            filename.to_path_buf(),
+                            &format!(
+                                "link {}: {} in tool {} must start with '/docs/', 'http://', or 'https://'",
+                                key_str, link_str, entry.name
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if errs.is_empty() { None } else { Some(errs) }
 }
 
 /// parses the yaml_value into a list of T elements.
@@ -1324,6 +1356,39 @@ redirects:
         let errors = result.unwrap();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].message, "invalid CPU architecture: invalid_arch");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_tools() -> Result<()> {
+        let filename = PathBuf::from("docs/reference/troubleshooting/_tools.yaml");
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- name: Test Tool
+  team: Diagnostics
+  links:
+    Overview: /docs/README.md
+    Missing: /docs/invalid/missing.md
+    Bad: bad_prefix
+  description: 'Testing'
+          "#,
+        )?;
+
+        let root_dir = PathBuf::from(".");
+        let result = check_tools(&root_dir, &filename, &yaml_value);
+
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 2);
+        assert_eq!(
+            errors[0].message,
+            "link Missing: /docs/invalid/missing.md in tool Test Tool does not exist"
+        );
+        assert_eq!(
+            errors[1].message,
+            "link Bad: bad_prefix in tool Test Tool must start with '/docs/', 'http://', or 'https://'"
+        );
 
         Ok(())
     }
