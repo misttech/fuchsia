@@ -10,7 +10,10 @@
 //! fuchsia.net.policy.socketproxy.DnsServerWatcher.
 
 use anyhow::Context as _;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect_derive::{Inspect, WithInspect as _};
@@ -19,10 +22,6 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use log::{error, info};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fuchsia_async as fasync,
-};
 
 mod dns_watcher;
 pub mod registry;
@@ -93,9 +92,7 @@ impl SocketProxy {
         forwarder_tx: mpsc::Sender<crate::registry::NetworkRegistryRequest>,
     ) -> Result<Self, anyhow::Error> {
         let mark = Arc::new(Mutex::new(SocketMarks::default()));
-        // TODO(https://fxbug.dev/477682527): Remove this workaround and return the channel
-        // size to 1.
-        let (dns_tx, dns_rx) = mpsc::channel(10);
+        let (dns_tx, dns_rx) = mpsc::channel(1);
         Ok(Self {
             registry: registry::Registry::new(mark.clone(), dns_tx, forwarder_tx)
                 .context("while creating registry")?,
