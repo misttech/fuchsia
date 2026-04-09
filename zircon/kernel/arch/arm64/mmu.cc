@@ -66,6 +66,11 @@
 static_assert((MMU_PTE_ATTR_RES_SOFTWARE & MMU_PTE_ATTR_RES_SOFTWARE_AF) ==
               MMU_PTE_ATTR_RES_SOFTWARE_AF);
 
+// Use one of the ignored bits to do store an odd parity flag. This is checked whenever a pte is
+// read and its purpose is to help detect any stray memory corruption that impacts the page tables.
+#define MMU_PTE_RES_PARITY BM(56, 1, 1)
+static_assert((MMU_PTE_ATTR_RES_SOFTWARE & MMU_PTE_RES_PARITY) == MMU_PTE_RES_PARITY);
+
 static_assert(((long)kHandoffVirtualAddress >> MMU_KERNEL_SIZE_SHIFT) == -1, "");
 static_assert(((long)KERNEL_ASPACE_BASE >> MMU_KERNEL_SIZE_SHIFT) == -1, "");
 static_assert(MMU_KERNEL_SIZE_SHIFT <= 48, "");
@@ -184,6 +189,39 @@ void enable_bbm(uint32_t level) {
 // which is where a bunch of pieces of the physmap and kernel are unmapped or permissions
 // lowered.
 LK_INIT_HOOK(arm64_mmu_enable_bbm, enable_bbm, LK_INIT_LEVEL_VM)
+
+// Calculates the parity of the given pte. Return value of true indicates it has odd parity, which
+// is the goal.
+constexpr bool compute_parity(pte_t pte) { return (ktl::popcount(pte) % 2) == 0; }
+
+constexpr pte_t add_parity(pte_t pte) {
+  if (!compute_parity(pte)) {
+    pte ^= MMU_PTE_RES_PARITY;
+  }
+  return pte;
+}
+
+inline void check_parity(pte_t pte) {
+  ASSERT_MSG(compute_parity(pte), "PTE parity error: %#" PRIx64, pte);
+}
+
+inline pte_t load_pte(pte_t* pte, ktl::memory_order order) {
+  pte_t val = ktl::atomic_ref(*pte).load(order);
+  check_parity(val);
+  return val;
+}
+
+inline bool compare_exchange_pte(pte_t* pte, pte_t& expected, pte_t desired,
+                                 ktl::memory_order order) {
+  expected = add_parity(expected);
+  desired = add_parity(desired);
+  bool success = ktl::atomic_ref(*pte).compare_exchange_strong(expected, desired, order);
+  // If the exchange failed, expected will have been updated and so we should check its parity.
+  if (!success) {
+    check_parity(expected);
+  }
+  return success;
+}
 
 // Convert user level mmu flags to flags that go in L1 descriptors.
 // Hypervisor flag modifies behavior to work for single translation regimes
@@ -388,15 +426,15 @@ bool is_pte_valid(pte_t pte) {
   return (pte & MMU_PTE_DESCRIPTOR_MASK) != MMU_PTE_DESCRIPTOR_INVALID;
 }
 
-void update_pte(pte_t* pte, pte_t newval) {
-  ktl::atomic_ref(*pte).store(newval, ktl::memory_order_relaxed);
+void update_pte(pte_t* pte, pte_t newval, ktl::memory_order order = ktl::memory_order_relaxed) {
+  ktl::atomic_ref(*pte).store(add_parity(newval), order);
 }
 
 int first_used_page_table_entry(pte_t* page_table, uint page_size_shift) {
   const unsigned int count = 1U << (page_size_shift - 3);
 
   for (unsigned int i = 0; i < count; i++) {
-    pte_t pte = ktl::atomic_ref(page_table[i]).load(ktl::memory_order_relaxed);
+    pte_t pte = load_pte(&page_table[i], ktl::memory_order_relaxed);
     if (pte != MMU_PTE_DESCRIPTOR_INVALID) {
       // Although the descriptor isn't exactly the INVALID value, it might have been corrupted and
       // also not a valid entry. Some forms of corruption are indistinguishable from valid entries,
@@ -658,7 +696,7 @@ zx_status_t ArmArchVmAspace::QueryLocked(vaddr_t vaddr, paddr_t* paddr,
   while (true) {
     const ulong index = vaddr_rem >> index_shift;
     vaddr_rem -= (vaddr_t)index << index_shift;
-    const pte_t pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+    const pte_t pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
     const uint descriptor_type = pte & MMU_PTE_DESCRIPTOR_MASK;
     const paddr_t pte_addr = pte & MMU_PTE_OUTPUT_ADDR_MASK;
 
@@ -750,7 +788,7 @@ zx_status_t ArmArchVmAspace::SplitLargePage(vaddr_t vaddr, const uint index_shif
                                             pte_t* page_table, ConsistencyManager& cm) {
   DEBUG_ASSERT(index_shift > page_size_shift_);
 
-  const pte_t pte = ktl::atomic_ref(page_table[pt_index]).load(ktl::memory_order_relaxed);
+  const pte_t pte = load_pte(&page_table[pt_index], ktl::memory_order_relaxed);
   DEBUG_ASSERT((pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_BLOCK);
 
   auto result = AllocPageTable();
@@ -772,7 +810,7 @@ zx_status_t ArmArchVmAspace::SplitLargePage(vaddr_t vaddr, const uint index_shif
        i < MMU_KERNEL_PAGE_TABLE_ENTRIES; i++, mapped_paddr += next_size) {
     // directly write to the pte, no need to update since this is
     // a completely new table
-    new_page_table[i] = mapped_paddr | attrs;
+    new_page_table[i] = add_parity(mapped_paddr | attrs);
   }
   page->mmu.num_mappings = MMU_KERNEL_PAGE_TABLE_ENTRIES;
 
@@ -789,7 +827,7 @@ zx_status_t ArmArchVmAspace::SplitLargePage(vaddr_t vaddr, const uint index_shif
 
   update_pte(&page_table[pt_index], page->paddr() | MMU_PTE_L012_DESCRIPTOR_TABLE);
   LTRACEF("pte %p[%#" PRIxPTR "] = %#" PRIx64 "\n", page_table, pt_index,
-          ktl::atomic_ref(page_table[pt_index]).load(ktl::memory_order_relaxed));
+          load_pte(&page_table[pt_index], ktl::memory_order_relaxed));
 
   // no need to update the page table count here since we're replacing a block entry with a table
   // entry.
@@ -890,7 +928,7 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::UnmapPageTable(
   uint unmapped = 0;
 
   for (; index != num_entries && cursor.size() != 0; ++index) {
-    pte_t pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+    pte_t pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
 
     if ((pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_DESCRIPTOR_INVALID) {
       cursor.SkipEntry(block_size);
@@ -924,7 +962,7 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::UnmapPageTable(
         cursor.SkipEntry(block_size);
         continue;
       }
-      pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+      pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
     }
 
     if (index_shift > page_size_shift_ &&
@@ -1003,7 +1041,7 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::MapPageTable(pte_t attrs, bool ro,
   uint mapped = 0;
 
   for (; index != num_entries && cursor.size() != 0; ++index) {
-    pte_t pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+    pte_t pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
 
     // if we're at an unaligned address, not trying to map a block, and not at the terminal level,
     // recurse one more level of the page table tree
@@ -1032,6 +1070,9 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::MapPageTable(pte_t attrs, bool ro,
           void* pt_vaddr = paddr_to_physmap(page_table_paddr);
 
           LTRACEF("allocated page table, vaddr %p, paddr 0x%lx\n", pt_vaddr, page_table_paddr);
+          // Odd parity means that the 0 pte entry has correct parity, so assert that here, as it
+          // allows us to just zero the page.
+          static_assert(add_parity(0) == 0);
           arch_zero_page(pt_vaddr);
 
           // ensure that the zeroing is observable from hardware page table walkers, as we need to
@@ -1047,7 +1088,7 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::MapPageTable(pte_t attrs, bool ro,
           // paired with the load-acquire in the reader path. This is technically redundant, since
           // the dsb above that synchronized with the hardware page table walkers would have also
           // synchronized with the readers, but the explicit release here is added for clarity.
-          ktl::atomic_ref(page_table[index]).store(pte, ktl::memory_order_release);
+          update_pte(&page_table[index], pte, ktl::memory_order_release);
           mapped++;
 
           // Tell the consistency manager that we've mapped an inner node.
@@ -1163,7 +1204,7 @@ zx_status_t ArmArchVmAspace::ProtectPageTable(vaddr_t vaddr_in, vaddr_t vaddr_re
     const size_t chunk_size = ktl::min(size, block_size - vaddr_rem);
     const vaddr_t index = vaddr_rel >> index_shift;
 
-    pte_t pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+    pte_t pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
 
     // If the input range partially covers a large page, split the page.
     if (index_shift > page_size_shift_ &&
@@ -1178,7 +1219,7 @@ zx_status_t ArmArchVmAspace::ProtectPageTable(vaddr_t vaddr_in, vaddr_t vaddr_re
       if (unlikely(s != ZX_OK)) {
         return s;
       }
-      pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+      pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
     }
 
     if (index_shift > page_size_shift_ &&
@@ -1251,7 +1292,7 @@ size_t ArmArchVmAspace::HarvestAccessedPageTable(size_t* entry_limit, vaddr_t va
 
     size_t chunk_size = ktl::min(size, block_size - vaddr_rem);
 
-    pte_t pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+    pte_t pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
 
     if (index_shift > page_size_shift_ &&
         (pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_BLOCK &&
@@ -1397,7 +1438,7 @@ void ArmArchVmAspace::MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in,
     // In the case where this ends up being a reference to another table we load-acquire to ensure
     // the contents of the table reflect the order it become visible to us. This matches the
     // release performed when mapping in new page tables.
-    pte_t orig_pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_acquire);
+    pte_t orig_pte = load_pte(&page_table[index], ktl::memory_order_acquire);
     pte_t pte = orig_pte;
 
     if (index_shift > page_size_shift_ &&
@@ -1412,8 +1453,7 @@ void ArmArchVmAspace::MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in,
 
       // The result of the compare exchange is ignored as in the unlikely event we have raced with
       // some other page table operation then we will just take another accessed fault.
-      if (!ktl::atomic_ref(page_table[index])
-               .compare_exchange_strong(orig_pte, pte, ktl::memory_order_relaxed)) {
+      if (!compare_exchange_pte(&page_table[index], orig_pte, pte, ktl::memory_order_relaxed)) {
         vm_mmu_set_af_fail.Add(1);
       }
       const paddr_t page_table_paddr = pte & MMU_PTE_OUTPUT_ADDR_MASK;
@@ -1425,8 +1465,7 @@ void ArmArchVmAspace::MarkAccessedPageTable(vaddr_t vaddr, vaddr_t vaddr_rel_in,
 
       // The result of the compare exchange is ignored as in the unlikely event we have raced with
       // some other page table operation then we will just take another accessed fault.
-      if (!ktl::atomic_ref(page_table[index])
-               .compare_exchange_strong(orig_pte, pte, ktl::memory_order_relaxed)) {
+      if (!compare_exchange_pte(&page_table[index], orig_pte, pte, ktl::memory_order_relaxed)) {
         vm_mmu_set_af_fail.Add(1);
       }
     }
@@ -1960,8 +1999,8 @@ zx_status_t ArmArchVmAspace::InitShared() {
   const ulong start = base_ >> top_index_shift_;
   const ulong end = (base_ + size_ - 1) >> top_index_shift_;
   for (ulong i = start; i <= end; i++) {
-    DEBUG_ASSERT((ktl::atomic_ref(tt_virt_[i]).load(ktl::memory_order_relaxed) &
-                  MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_DESCRIPTOR_INVALID);
+    DEBUG_ASSERT((load_pte(&tt_virt_[i], ktl::memory_order_relaxed) & MMU_PTE_DESCRIPTOR_MASK) ==
+                 MMU_PTE_DESCRIPTOR_INVALID);
     auto result = AllocPageTable();
     if (result.is_error()) {
       return result.status_value();
@@ -1987,8 +2026,7 @@ zx_status_t ArmArchVmAspace::InitShared() {
     // anyway, so whether or not AF is set is irrelevant. Similarly any entries that did have AF set
     // at the time of copying are fine too. All harvesting is done on the shared and restricted
     // aspaces that the unified aspace is composed of.
-    ktl::atomic_ref(tt_virt_[i])
-        .store(page_table_paddr | MMU_PTE_L012_DESCRIPTOR_TABLE, ktl::memory_order_relaxed);
+    update_pte(&tt_virt_[i], page_table_paddr | MMU_PTE_L012_DESCRIPTOR_TABLE);
   }
   return ZX_OK;
 }
@@ -2045,7 +2083,7 @@ zx_status_t ArmArchVmAspace::InitUnified(ArchVmAspaceInterface& s, ArchVmAspaceI
     DEBUG_ASSERT(restricted.num_references_ == 0);
     DEBUG_ASSERT(!restricted.IsUnified());
     for (ulong i = restricted_start; i <= restricted_end; i++) {
-      DEBUG_ASSERT((ktl::atomic_ref(restricted.tt_virt_[i]).load(ktl::memory_order_relaxed) &
+      DEBUG_ASSERT((load_pte(&restricted.tt_virt_[i], ktl::memory_order_relaxed) &
                     MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_DESCRIPTOR_INVALID);
     }
     restricted.num_references_++;
@@ -2058,9 +2096,9 @@ zx_status_t ArmArchVmAspace::InitUnified(ArchVmAspaceInterface& s, ArchVmAspaceI
     DEBUG_ASSERT(shared.IsShared());
     DEBUG_ASSERT(!restricted.IsUnified());
     for (ulong i = shared_start; i <= shared_end; i++) {
-      pte_t shared_pte = ktl::atomic_ref(shared.tt_virt_[i]).load(ktl::memory_order_relaxed);
+      pte_t shared_pte = load_pte(&shared.tt_virt_[i], ktl::memory_order_relaxed);
       DEBUG_ASSERT((shared_pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_TABLE);
-      ktl::atomic_ref(tt_virt_[i]).store(shared_pte, ktl::memory_order_relaxed);
+      update_pte(&tt_virt_[i], shared_pte);
     }
     shared.num_references_++;
   }
@@ -2084,7 +2122,7 @@ zx_status_t ArmArchVmAspace::DebugFindFirstLeafMapping(vaddr_t* out_pt, vaddr_t*
     pte_t pte;
     // Walk the page table until we find an entry.
     for (index = 0; index < count; index++) {
-      pte = ktl::atomic_ref(page_table[index]).load(ktl::memory_order_relaxed);
+      pte = load_pte(&page_table[index], ktl::memory_order_relaxed);
       if (pte != MMU_PTE_DESCRIPTOR_INVALID) {
         break;
       }
@@ -2143,9 +2181,8 @@ void ArmArchVmAspace::AssertEmptyLocked() const {
     panic(
         "top level page table still in use! aspace %p pt_pages_ %zu tt_virt %p index %d entry "
         "%" PRIx64 ". Leaf query status %d pt_addr %zu vaddr %zu entry %" PRIx64 "\n",
-        this, pt_pages_, tt_virt_, index,
-        ktl::atomic_ref(tt_virt_[index]).load(ktl::memory_order_relaxed), status, pt_addr,
-        entry_vaddr, pte);
+        this, pt_pages_, tt_virt_, index, load_pte(&tt_virt_[index], ktl::memory_order_relaxed),
+        status, pt_addr, entry_vaddr, pte);
   }
 
   if (pt_pages_ != 1) {
@@ -2182,13 +2219,13 @@ zx_status_t ArmArchVmAspace::DestroyIndividual() {
     const ulong end = (base_ + size_ - 1) >> top_index_shift_;
     for (ulong i = start; i <= end; i++) {
       const paddr_t paddr =
-          ktl::atomic_ref(tt_virt_[i]).load(ktl::memory_order_relaxed) & MMU_PTE_OUTPUT_ADDR_MASK;
+          load_pte(&tt_virt_[i], ktl::memory_order_relaxed) & MMU_PTE_OUTPUT_ADDR_MASK;
       vm_page_t* page = paddr_to_vm_page(paddr);
       DEBUG_ASSERT(page);
       DEBUG_ASSERT(page->state() == vm_page_state::MMU);
       CacheFreePage(page);
       pt_pages_--;
-      ktl::atomic_ref(tt_virt_[i]).store(MMU_PTE_DESCRIPTOR_INVALID, ktl::memory_order_relaxed);
+      update_pte(&tt_virt_[i], MMU_PTE_DESCRIPTOR_INVALID);
     }
   }
 
@@ -2355,7 +2392,8 @@ void ArmArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
         kPageSize / sizeof(pte_t),
     };
     page->mmu.num_mappings = 0;
-    for (pte_t entry : entries) {
+    for (pte_t& entry : entries) {
+      entry = add_parity(entry);
       if ((entry & MMU_PTE_VALID) != 0) {
         page->mmu.num_mappings++;
       }
