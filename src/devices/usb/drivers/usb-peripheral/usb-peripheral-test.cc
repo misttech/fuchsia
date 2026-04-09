@@ -24,6 +24,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -37,6 +38,14 @@
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+
+namespace usb_peripheral {
+
+inline std::ostream& operator<<(std::ostream& os, const UsbPeripheral::DeviceState& state) {
+  return os << std::format("{}", state);
+}
+
+}  // namespace usb_peripheral
 
 namespace usb_peripheral::test {
 namespace {
@@ -168,11 +177,12 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   usb_dci_protocol_t* proto() { return &proto_; }
 
   fidl::ClientEnd<fdci::UsbDciInterface> TakeClient() {
-    set_interface_called_.Wait();
     auto client = std::move(client_);
     EXPECT_TRUE(client.has_value());
     return std::move(client.value());
   }
+
+  libsync::Completion& set_interface_called() { return set_interface_called_; }
 
   compat::DeviceServer::BanjoConfig GetBanjoConfig() {
     compat::DeviceServer::BanjoConfig config{ZX_PROTOCOL_USB_DCI};
@@ -317,6 +327,40 @@ class FakeUsbFunction
       binding_;
 };
 
+class FakeEvents : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Events> {
+ public:
+  FakeEvents() = default;
+  ~FakeEvents() { Unbind(); }
+
+  void FunctionRegistered(FunctionRegisteredCompleter::Sync& completer) override {
+    completer.Reply();
+  }
+  void FunctionsCleared(FunctionsClearedCompleter::Sync& completer) override {
+    cleared_called_ = true;
+  }
+
+  void WaitUntilCleared(fdf_testing::DriverRuntime& runtime) {
+    runtime.RunUntil([&]() { return cleared_called_; });
+    cleared_called_ = false;
+  }
+
+  void Bind(fidl::ServerEnd<fuchsia_hardware_usb_peripheral::Events> server_end) {
+    binding_.emplace(fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                      std::move(server_end), this));
+  }
+
+  void Unbind() {
+    if (binding_) {
+      binding_->Unbind();
+      binding_.reset();
+    }
+  }
+
+ private:
+  bool cleared_called_ = false;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_peripheral::Events>> binding_;
+};
+
 class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
  public:
   void Init(std::string_view serial_number) {
@@ -383,15 +427,106 @@ class UsbPeripheralHarness : public ::testing::Test {
   void StartDriverWithConfig(const usb_peripheral_config::Config& config) {
     ASSERT_OK(driver_test_.StartDriverWithCustomStartArgs(
         [&](auto& start_args) { start_args.config().emplace(config.ToVmo()); }));
+    if (config.functions().empty()) {
+      ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+    } else {
+      ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+    }
     started_driver_ = true;
+    driver_test_.runtime().RunUntil([&]() {
+      return driver_test_.RunInEnvironmentTypeContext<bool>([](UsbPeripheralTestEnvironment& env) {
+        return env.dci().set_interface_called().signaled();
+      });
+    });
+
     dci_.Bind(driver_test_.RunInEnvironmentTypeContext<fidl::ClientEnd<fdci::UsbDciInterface>>(
         [](auto& env) { return env.TakeDciClient(); }));
   }
 
+  void WaitForChildNode(const std::string& name) {
+    bool found = false;
+    dut().runtime().RunUntil([&]() {
+      dut().RunInNodeContext([&](fdf_testing::TestNode& root) {
+        auto it = root.children().find(std::string(UsbPeripheral::kChildNodeName));
+        if (it != root.children().end()) {
+          auto& peripheral_node = it->second;
+          auto func_it = peripheral_node.children().find(name);
+          if (func_it != peripheral_node.children().end()) {
+            found = true;
+          }
+        }
+      });
+      return found;
+    });
+  }
+
+  void SimulateFunctionUnbind(const std::vector<std::string>& function_names) {
+    for (const auto& name : function_names) {
+      WaitForChildNode(name);
+    }
+
+    this->dut().RunInNodeContext([&](fdf_testing::TestNode& root) {
+      auto it = root.children().find(std::string(UsbPeripheral::kChildNodeName));
+      ASSERT_NE(it, root.children().end());
+      auto& peripheral_node = it->second;
+
+      for (const auto& name : function_names) {
+        auto it_func = peripheral_node.children().find(name);
+        ASSERT_NE(it_func, peripheral_node.children().end());
+        // Dropping the returned Node channel triggers an unbind.
+        (void)it_func->second.CreateNodeChannel();
+      }
+    });
+  }
+
+  void ExpectChildNodeCount(size_t expected_count) {
+    this->dut().RunInNodeContext([&](fdf_testing::TestNode& root) {
+      auto it = root.children().find(std::string(UsbPeripheral::kChildNodeName));
+      ASSERT_NE(it, root.children().end());
+      auto& peripheral_node = it->second;
+      EXPECT_EQ(peripheral_node.children().size(), expected_count);
+    });
+  }
+
+  void WaitUntilChildNodeCount(size_t expected_count) {
+    dut().runtime().RunUntilIdle();
+    dut().runtime().RunUntil([&]() {
+      std::optional<size_t> actual_count;
+      dut().RunInNodeContext([&](fdf_testing::TestNode& root) {
+        auto it = root.children().find(std::string(UsbPeripheral::kChildNodeName));
+        if (it != root.children().end()) {
+          actual_count = it->second.children().size();
+        }
+      });
+      return actual_count == expected_count;
+    });
+  }
+
+  void ExpectControllerStarted(bool expected) {
+    this->dut().RunInEnvironmentTypeContext([expected](UsbPeripheralTestEnvironment& env) {
+      if (expected) {
+        EXPECT_TRUE(env.dci().controller_started());
+      } else {
+        EXPECT_FALSE(env.dci().controller_started());
+      }
+    });
+  }
+
   void TearDown() override {
     if (started_driver_) {
+      // StopDriver will call PrepareStop, which should stop the controller.
       ASSERT_OK(driver_test_.StopDriver());
+
+      ExpectControllerStarted(false);
     }
+  }
+
+  void RegisterFakeEvents(std::shared_ptr<FakeEvents> fake_events) {
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_hardware_usb_peripheral::Events>::Create();
+    fake_events->Bind(std::move(server_end));
+    auto client = Client();
+    ASSERT_TRUE(client->SetStateChangeListener(std::move(client_end)).ok());
   }
 
  protected:
@@ -404,6 +539,20 @@ class UsbPeripheralHarness : public ::testing::Test {
         [status](UsbPeripheralTestEnvironment& env) { env.CompleteAll(status); });
   }
 
+  void ExpectState(UsbPeripheral::DeviceState state) {
+    dut().RunInDriverContext(
+        [state](UsbPeripheral& peripheral) { EXPECT_EQ(peripheral.SnapshotState(), state); });
+  }
+
+  void WaitUntilState(UsbPeripheral::DeviceState state) {
+    dut().runtime().RunUntil([&]() {
+      bool matched = false;
+      dut().RunInDriverContext(
+          [&](UsbPeripheral& peripheral) { matched = (peripheral.SnapshotState() == state); });
+      return matched;
+    });
+  }
+
   fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig>& dut() { return driver_test_; }
 
   fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device> Client() {
@@ -414,36 +563,32 @@ class UsbPeripheralHarness : public ::testing::Test {
         std::move(client_end.value())};
   }
 
- private:
-  bool started_driver_ = false;
-  fidl::WireSyncClient<fdci::UsbDciInterface> dci_;
-  fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig> driver_test_;
-};
-
-using UnmanagedUsbPeripheralTest = UsbPeripheralHarness<false>;
-using ManagedUsbPeripheralTest = UsbPeripheralHarness<true>;
-
-class UsbPeripheralFunctionTest : public ManagedUsbPeripheralTest {
- public:
-  usb_peripheral_config::Config GetDriverConfig() override {
-    usb_peripheral_config::Config config;
-    config.functions() = {"test"};
-    return config;
-  }
-
-  zx::result<fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>> ConnectFunction() {
+  zx::result<fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>> ConnectFunction(
+      std::string name = "function-000") {
+    ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
     zx::result result =
-        dut().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>("function-000");
+        dut().template Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>(name);
     if (result.is_error()) {
       return result.take_error();
     }
+    ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
     return zx::ok(fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>(
         std::move(result.value())));
+  }
+
+  zx::result<fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>> ConnectPeripheral() {
+    zx::result result = dut().template Connect<fuchsia_hardware_usb_peripheral::Service::Device>();
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    return zx::ok(
+        fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>(std::move(result.value())));
   }
 
   zx::result<std::tuple<std::shared_ptr<FakeUsbFunction>,
                         fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface>>>
   BindFakeFunction() {
+    ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
     zx::result endpoints =
         fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
     if (endpoints.is_error()) {
@@ -452,7 +597,180 @@ class UsbPeripheralFunctionTest : public ManagedUsbPeripheralTest {
     auto fake_function = std::make_shared<FakeUsbFunction>();
     fake_function->Bind(dut().runtime().StartBackgroundDispatcher()->async_dispatcher(),
                         std::move(endpoints->server));
+    ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
     return zx::ok(std::make_tuple(fake_function, std::move(endpoints->client)));
+  }
+
+ private:
+  fidl::WireSyncClient<fdci::UsbDciInterface> dci_;
+  fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig> driver_test_;
+  bool started_driver_ = false;
+};
+
+class ManagedUsbPeripheralTest : public UsbPeripheralHarness<true> {
+ public:
+  usb_peripheral_config::Config GetDriverConfig() override {
+    return usb_peripheral_config::Config{};
+  }
+};
+using UnmanagedUsbPeripheralTest = UsbPeripheralHarness<false>;
+
+template <bool manage_lifetime>
+class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
+ public:
+  struct FunctionClients {
+    std::vector<fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>> clients;
+    std::vector<std::shared_ptr<FakeUsbFunction>> fakes;
+  };
+
+  static fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor CreateTestDeviceDescriptor() {
+    fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor device_desc = {};
+    device_desc.bcd_usb = 0x0200;
+    device_desc.b_device_class = 0;
+    device_desc.b_device_sub_class = 0;
+    device_desc.b_device_protocol = 0;
+    device_desc.b_max_packet_size0 = 64;
+    device_desc.id_vendor = 0x18D1;
+    device_desc.id_product = 0xA4A2;
+    device_desc.bcd_device = 0x0100;
+    device_desc.manufacturer = "Google";
+    device_desc.product = "Fuchsia";
+    device_desc.serial = "123456";
+    device_desc.b_num_configurations = 1;
+    return device_desc;
+  }
+
+  static fidl::VectorView<
+      fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor>>
+  CreateTestFunctionDescriptors(fidl::AnyArena& arena) {
+    fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor func_desc = {
+        .interface_class = 0xFF,
+        .interface_subclass = 0,
+        .interface_protocol = 0,
+    };
+    fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor> functions(arena, 1);
+    functions[0] = func_desc;
+    fidl::VectorView<fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor>>
+        configs(arena, 1);
+    configs[0] = functions;
+    return configs;
+  }
+
+  zx::result<std::vector<uint8_t>> CreateTestRawFunctionDescriptors(
+      fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>& function_client) {
+    uint8_t interface_num = 0xFF;
+    uint8_t ep_out = 0xFF;
+    uint8_t ep_in = 0xFF;
+
+    fuchsia_hardware_usb_function::wire::EndpointResource endpoints[2];
+    zx::result ep_ends1 = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+    if (ep_ends1.is_error()) {
+      return ep_ends1.take_error();
+    }
+    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
+    endpoints[0].endpoint = std::move(ep_ends1->server);
+
+    zx::result ep_ends2 = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+    if (ep_ends2.is_error()) {
+      return ep_ends2.take_error();
+    }
+    endpoints[1].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+    endpoints[1].endpoint = std::move(ep_ends2->server);
+
+    fidl::WireResult res = function_client->AllocResources(
+        1,
+        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>::FromExternal(
+            endpoints, 2),
+        {});
+    if (!res.ok()) {
+      return zx::error(res.status());
+    }
+    if (res->is_error()) {
+      return zx::error(res->error_value());
+    }
+    interface_num = res->value()->interface_nums[0];
+    ep_out = res->value()->endpoint_addrs[0];
+    ep_in = res->value()->endpoint_addrs[1];
+
+    std::vector<uint8_t> descriptors = {
+        0x09, 0x04, interface_num, 0x00, 0x02, 0xFF, 0x00, 0x00, 0x00,  // Interface
+    };
+    descriptors.insert(descriptors.end(),
+                       {
+                           0x07, 0x05, ep_out, 0x02, 0x40, 0x00, 0x00  // Bulk Out
+                       });
+    descriptors.insert(descriptors.end(), {
+                                              0x07, 0x05, ep_in, 0x02, 0x40, 0x00, 0x00  // Bulk In
+                                          });
+
+    return zx::ok(descriptors);
+  }
+
+  zx::result<FunctionClients> TransitionToPeripheralReady(uint8_t num_functions = 1) {
+    FunctionClients result;
+    for (uint8_t i = 0; i < num_functions; i++) {
+      char name[16];
+      snprintf(name, sizeof(name), "function-%03d", i);
+      this->dut().runtime().RunUntilIdle();
+      this->WaitForChildNode(name);
+      auto function_client = this->ConnectFunction(name);
+      if (function_client.is_error()) {
+        return function_client.take_error();
+      }
+      auto bind_res = this->BindFakeFunction();
+      if (bind_res.is_error()) {
+        return bind_res.take_error();
+      }
+
+      auto desc_res = CreateTestRawFunctionDescriptors(function_client.value());
+      if (desc_res.is_error()) {
+        return desc_res.take_error();
+      }
+      auto configure_res = function_client.value()->Configure(
+          fidl::VectorView<uint8_t>::FromExternal(desc_res.value()),
+          std::move(std::get<1>(bind_res.value())));
+      if (!configure_res.ok()) {
+        return zx::error(configure_res.status());
+      }
+      if (configure_res->is_error()) {
+        return zx::error(configure_res->error_value());
+      }
+      result.clients.push_back(std::move(function_client.value()));
+      result.fakes.push_back(std::get<0>(bind_res.value()));
+      this->dut().runtime().RunUntilIdle();
+    }
+    this->ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+    this->ExpectControllerStarted(true);
+    return zx::ok(std::move(result));
+  }
+};
+
+using UnmanagedUsbPeripheralReadyTest = PeripheralReadyTestBase<false>;
+
+class UsbPeripheralReadyTest : public PeripheralReadyTestBase<true> {
+ public:
+  void SetUp() override {
+    PeripheralReadyTestBase<true>::SetUp();
+    auto res = TransitionToPeripheralReady();
+    ASSERT_OK(res);
+    function_clients_ = std::move(res.value());
+  }
+
+  usb_peripheral_config::Config GetDriverConfig() override {
+    usb_peripheral_config::Config config;
+    config.functions() = {"test"};
+    return config;
+  }
+
+  typename PeripheralReadyTestBase<true>::FunctionClients function_clients_;
+};
+
+class UsbPeripheralFunctionTest : public ManagedUsbPeripheralTest {
+ public:
+  usb_peripheral_config::Config GetDriverConfig() override {
+    usb_peripheral_config::Config config;
+    config.functions() = {"test"};
+    return config;
   }
 };
 
@@ -494,7 +812,21 @@ TEST_F(ManagedUsbPeripheralTest, WorksWithVendorSpecificCommandWhenConfiguration
   ASSERT_EQ(ZX_ERR_BAD_STATE, result->error_value());
 }
 
-TEST_F(ManagedUsbPeripheralTest, SmallRequestQueueing) {
+TEST_F(UsbPeripheralReadyTest, HostConnectionToggle) {
+  for (int i = 0; i < 10; ++i) {
+    // Connect host.
+    auto connected_res = this->dci()->SetConnected(true);
+    ASSERT_TRUE(connected_res.ok());
+    ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+    // Disconnect host.
+    auto disconnected_res = this->dci()->SetConnected(false);
+    ASSERT_TRUE(disconnected_res.ok());
+    ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+  }
+}
+
+TEST_F(UsbPeripheralReadyTest, SmallRequestQueueing) {
   size_t parent_req_size = 0;
   this->dut().RunInDriverContext(
       [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
@@ -504,24 +836,24 @@ TEST_F(ManagedUsbPeripheralTest, SmallRequestQueueing) {
   usb_request_t* raw_req;
   ASSERT_OK(usb_request_alloc(&raw_req, 1024, 1 /* ep_address */, parent_req_size - 1));
 
-  bool called = false;
+  libsync::Completion completion;
   usb_request_complete_callback_t cb = {
       .callback =
           [](void* ctx, usb_request_t* req) {
             EXPECT_EQ(req->response.status, ZX_ERR_INVALID_ARGS);
-            *static_cast<bool*>(ctx) = true;
+            static_cast<libsync::Completion*>(ctx)->Signal();
             usb_request_release(req);
           },
-      .ctx = &called,
+      .ctx = &completion,
   };
 
   this->dut().RunInDriverContext(
       [&](UsbPeripheral& peripheral) { peripheral.UsbPeripheralRequestQueue(raw_req, &cb); });
 
-  EXPECT_TRUE(called);
+  completion.Wait();
 }
 
-TEST_F(ManagedUsbPeripheralTest, DuplicateRequestQueueing) {
+TEST_F(UsbPeripheralReadyTest, DuplicateRequestQueueing) {
   size_t parent_req_size = 0;
   this->dut().RunInDriverContext(
       [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
@@ -577,7 +909,7 @@ TEST_F(ManagedUsbPeripheralTest, DuplicateRequestQueueing) {
   completion.Wait();
 }
 
-TEST_F(ManagedUsbPeripheralTest, PendingRequestsCompletedOnClearFunctions) {
+TEST_F(UsbPeripheralReadyTest, PendingRequestsCompletedOnClearFunctions) {
   size_t parent_req_size = 0;
   this->dut().RunInDriverContext(
       [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
@@ -614,7 +946,31 @@ TEST_F(ManagedUsbPeripheralTest, PendingRequestsCompletedOnClearFunctions) {
   auto result = client->ClearFunctions();
   ASSERT_TRUE(result.ok());
 
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+
   completion.Wait();
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
+  StartDriverWithConfig(usb_peripheral_config::Config{});
+
+  auto client = this->Client();
+
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
+  ASSERT_OK(endpoints);
+
+  FakeEvents fake_events;
+  fake_events.Bind(std::move(endpoints->server));
+
+  auto set_listener_res = client->SetStateChangeListener(std::move(endpoints->client));
+  ASSERT_TRUE(set_listener_res.ok()) << set_listener_res.FormatDescription();
+
+  // Clear functions - should work immediately.
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  fake_events.WaitUntilCleared(this->dut().runtime());
+  fake_events.Unbind();
 }
 
 TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {
@@ -686,9 +1042,13 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   ASSERT_TRUE(configure_res->is_ok());
 
   // Controller starts when all functions are registered.
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+  ExpectControllerStarted(true);
+
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
   ASSERT_OK(dci()->SetConnected(true).status());
+
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 
   fidl::Arena arena;
   std::vector<uint8_t> unused;
@@ -744,9 +1104,74 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   EXPECT_EQ(1, fake_function->alt_setting());
 }
 
+TEST_F(UsbPeripheralFunctionTest, ClearFunctionsWaitsForTeardown) {
+  zx::result peripheral_client_result = ConnectPeripheral();
+  ASSERT_OK(peripheral_client_result);
+  auto peripheral_client = std::move(peripheral_client_result.value());
+
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
+  ASSERT_OK(endpoints);
+
+  FakeEvents fake_events;
+  fake_events.Bind(std::move(endpoints->server));
+
+  auto set_listener_res = peripheral_client->SetStateChangeListener(std::move(endpoints->client));
+  ASSERT_TRUE(set_listener_res.ok()) << set_listener_res.FormatDescription();
+
+  // Add a function so there is something to clear.
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.FormatDescription();
+  ASSERT_OK(alloc_res.value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+      .i_interface = 0,
+  };
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok()) << configure_res.FormatDescription();
+  ASSERT_OK(configure_res.value());
+
+  // Clear functions and wait for event.
+  auto clear_res = peripheral_client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  // Wait for async teardown to complete.
+  this->dut().runtime().RunUntilIdle();
+
+  // DCI should be stopped.
+  ExpectControllerStarted(false);
+
+  // 2. State should be back to kNoConfiguration.
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+
+  fake_events.WaitUntilCleared(this->dut().runtime());
+  fake_events.Unbind();
+}
+
 TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfInterfaceNotAllocated) {
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { EXPECT_FALSE(env.dci().controller_started()); });
+  ExpectControllerStarted(false);
 
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
@@ -818,10 +1243,17 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
   ASSERT_TRUE(configure_res.ok()) << configure_res.FormatDescription();
   ASSERT_OK(configure_res.value());
 
-  // Second call with a new endpoint should fail with ZX_ERR_ALREADY_BOUND
-  zx::result second_fake_result = BindFakeFunction();
-  ASSERT_OK(second_fake_result);
-  auto [second_fake, second_fake_endpoint] = std::move(second_fake_result.value());
+  // Second call with a new endpoint should fail with ZX_ERR_ALREADY_BOUND.
+  // The driver is already in kPeripheralReady because the first function was configured.
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+  zx::result endpoints =
+      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  ASSERT_OK(endpoints);
+  auto second_fake = std::make_shared<FakeUsbFunction>();
+  second_fake->Bind(dut().runtime().StartBackgroundDispatcher()->async_dispatcher(),
+                    std::move(endpoints->server));
+  auto second_fake_endpoint = std::move(endpoints->client);
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
 
   fidl::WireResult second_configure_res = function_client->Configure(
       fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
@@ -869,6 +1301,7 @@ TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
     ASSERT_TRUE(result.ok()) << result.FormatDescription();
     ASSERT_OK(result.value());
   }
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
 
   // Deconfigure
   {
@@ -877,9 +1310,9 @@ TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
     ASSERT_OK(result.value());
   }
   fake_function->WaitUntilUnbound();
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
 
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { EXPECT_FALSE(env.dci().controller_started()); });
+  ExpectControllerStarted(false);
 
   // Now Configure should succeed again with a new endpoint
   fake_function_result = BindFakeFunction();
@@ -893,9 +1326,9 @@ TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
     ASSERT_TRUE(result.ok()) << result.FormatDescription();
     ASSERT_OK(result.value());
   }
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
 
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+  ExpectControllerStarted(true);
 
   // Verify new fake function is called.
   {
@@ -956,8 +1389,7 @@ TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {
   ASSERT_OK(configure_res.value());
 
   // Controller starts when all functions are registered.
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+  ExpectControllerStarted(true);
 
   // Set the stop completion before unbinding.
   libsync::Completion stop_completion;
@@ -1116,18 +1548,12 @@ TEST_F(UsbPeripheralFunctionTest, ResourceCleanupOnClose) {
   function_client = {};
 
   // Verify resources are cleared.
-  bool cleared = false;
-  for (int i = 0; i < 100; i++) {
+  dut().runtime().RunUntil([&]() {
     dut().RunInDriverContext(
         [&](UsbPeripheral& peripheral) { allocations = peripheral.GetResourceAllocations(0); });
-    if (allocations.interface_nums.empty() && allocations.endpoint_addrs.empty() &&
-        allocations.string_indices.empty()) {
-      cleared = true;
-      break;
-    }
-    zx::nanosleep(zx::deadline_after(zx::msec(10)));
-  }
-  ASSERT_TRUE(cleared);
+    return allocations.interface_nums.empty() && allocations.endpoint_addrs.empty() &&
+           allocations.string_indices.empty();
+  });
 }
 
 TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
@@ -1505,8 +1931,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   ASSERT_TRUE(configure_res.ok()) << configure_res.FormatDescription();
   ASSERT_OK(configure_res.value());
 
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+  ExpectControllerStarted(true);
   ASSERT_OK(dci()->SetConnected(true).status());
 
   libsync::Completion configure_endpoint_completed;
@@ -1553,6 +1978,461 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
     EXPECT_EQ(env.dci().configured_endpoints_.size(), 1u);
     EXPECT_EQ(env.dci().configured_endpoints_[0].b_endpoint_address, ep_addr);
+  });
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenAlreadyUnbound) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto client = Client();
+
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
+  ASSERT_OK(endpoints);
+
+  FakeEvents fake_events;
+  fake_events.Bind(std::move(endpoints->server));
+
+  auto set_listener_res = client->SetStateChangeListener(std::move(endpoints->client));
+  ASSERT_TRUE(set_listener_res.ok()) << set_listener_res.FormatDescription();
+
+  // Trigger framework-level removal for BOTH function-000 and function-001.
+  SimulateFunctionUnbind({"function-000", "function-001"});
+
+  // Process unbind handlers.
+  this->dut().runtime().RunUntilIdle();
+
+  // The peripheral driver should detect the spontaneous unbind and drop to kWaitForFunctionBind.
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+  ExpectControllerStarted(false);
+
+  // Verify that the framework has actually removed the nodes.
+  WaitUntilChildNodeCount(0);
+
+  // Call ClearFunctions. Since they are already unbound, this will return immediately.
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+  ExpectControllerStarted(false);
+
+  // Verify that the node count remains zero.
+  ExpectChildNodeCount(0);
+
+  fake_events.WaitUntilCleared(this->dut().runtime());
+  fake_events.Unbind();
+
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsDuringBind) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto client = Client();
+
+  // We are now in kWaitForFunctionBind (as child devices were added).
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Call ClearFunctions before any function driver has registered.
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  // Process the unbinds.
+  this->dut().runtime().RunUntilIdle();
+
+  // Should reach kNoConfiguration.
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionInterfaceClosedButNodeBound) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Simulate a function driver closing its interface.
+  {
+    function_clients.value().clients[0] = {};
+  }
+
+  // The peripheral driver should detect this and drop back to kWaitForFunctionBind.
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionInterfaceClosedInHostConnectedState) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Connect host using the DCI interface.
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok()) << connected_res.FormatDescription();
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Simulate a function driver closing its interface.
+  {
+    function_clients.value().clients[0] = {};
+  }
+
+  // The peripheral driver should detect this, take the peripheral offline,
+  // and drop back to kWaitForFunctionBind (even if host was connected).
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Check that the controller was stopped.
+  ExpectControllerStarted(false);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionUnbindDuringTeardown) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto client = Client();
+
+  auto function_clients = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients);
+
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // Trigger an unsolicited unbind for one function.
+  SimulateFunctionUnbind({"function-000"});
+
+  // Start ClearFunctions.
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  WaitUntilState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, FaultyFunctionInterfaceReset) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Faulty function driver closes its interface but doesn't unbind the node.
+  {
+    function_clients.value().clients[0] = {};
+  }
+
+  // The peripheral driver should detect this and drop back to kWaitForFunctionBind.
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Restore again by re-configuring.
+  {
+    auto peripheral_client = ConnectPeripheral();
+    ASSERT_OK(peripheral_client);
+
+    auto clear_res = peripheral_client.value()->ClearFunctions();
+    ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+    fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor device_desc =
+        CreateTestDeviceDescriptor();
+
+    fidl::Arena arena;
+    auto configs = CreateTestFunctionDescriptors(arena);
+
+    auto set_config_res = peripheral_client.value()->SetConfiguration(device_desc, configs);
+    ASSERT_TRUE(set_config_res.ok()) << set_config_res.FormatDescription();
+    ASSERT_TRUE(set_config_res->is_ok()) << zx_status_get_string(set_config_res->error_value());
+
+    auto function_clients = TransitionToPeripheralReady();
+    ASSERT_OK(function_clients);
+  }
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, PartialFunctionRegistration) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  // We should be in kWaitForFunctionBind because only 0/2 functions are registered.
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Bind one function.
+  zx::result function_client = ConnectFunction();
+  ASSERT_OK(function_client);
+
+  // Still kWaitForFunctionBind (1/2 registered).
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Unbind that one function by closing the client.
+  {
+    function_client.value() = {};
+  }
+
+  // We can't wait for FunctionsCleared here because one function is still registered (virtually).
+  // But we can wait for the state to be stable.
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, PrepareStopTransitionFromNoConfiguration) {
+  // Driver started without config reaches kNoConfiguration.
+  StartDriverWithConfig({});
+  // TearDown will call StopDriver which will in turn call PrepareStop and verify controller is
+  // stopped.
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, PrepareStopTransitionFromWaitForFunctionBind) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // TearDown will call StopDriver which will in turn call PrepareStop and verify controller is
+  // stopped.
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsFromNoConfiguration) {
+  StartDriverWithConfig(usb_peripheral_config::Config{});
+  auto client = Client();
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsFromWaitForFunctionBind) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  auto client = Client();
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+
+  ExpectControllerStarted(false);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, ClearFunctionsFromPeripheralReady) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  auto client = Client();
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+
+  ExpectControllerStarted(false);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, ClearFunctionsFromHostConnected) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok()) << connected_res.FormatDescription();
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  auto client = Client();
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+
+  ExpectControllerStarted(false);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, PrepareStopTransitionFromPeripheralReady) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+  this->dut().runtime().RunUntilIdle();
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // TearDown will call StopDriver which will in turn call PrepareStop and verify controller is
+  // stopped.
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, PrepareStopTransitionFromHostConnected) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+  this->dut().runtime().RunUntilIdle();
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok()) << connected_res.FormatDescription();
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // TearDown will call StopDriver which will in turn call PrepareStop and verify controller is
+  // stopped.
+}
+
+TEST_F(UnmanagedUsbPeripheralTest, PartialFunctionNodeUnbind) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  // We should be in kWaitForFunctionBind because only 0/2 functions are registered.
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Bind one function (by connecting its interface). State remains kWaitForFunctionBind.
+  {
+    zx::result function_client = ConnectFunction();
+    ASSERT_OK(function_client);
+  }
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Simulate one function provider (the child node) unbinding entirely.
+  // This is different from just closing the UsbFunction interface.
+  SimulateFunctionUnbind({"function-001"});
+
+  // State should stay kWaitForFunctionBind.
+  this->dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, ClearFunctionsAfterPartialFunctionUnbind) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients);
+
+  auto client = Client();
+
+  // Simulate one function provider (the child node) unbinding.
+  SimulateFunctionUnbind({"function-000"});
+
+  // State should drop to kWaitForFunctionBind.
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Call ClearFunctions.
+  auto clear_res = client->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  WaitUntilState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionNodeUnbindInHostConnectedState) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Connect host.
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok()) << connected_res.FormatDescription();
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Simulate function node unbind.
+  SimulateFunctionUnbind({"function-000"});
+
+  // Peripheral should go offline and wait for functions.
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+
+  // Controller should be stopped.
+  ExpectControllerStarted(false);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, FaultyFunctionNodeUnbindReset) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  auto fake_events = std::make_shared<FakeEvents>();
+  this->RegisterFakeEvents(fake_events);
+
+  // Simulate repeated node unbinds.
+  for (int i = 0; i < 10; i++) {
+    SimulateFunctionUnbind({"function-000"});
+
+    WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+    ExpectControllerStarted(false);
+    WaitUntilChildNodeCount(0);
+
+    // Restore again by re-configuring.
+    {
+      auto peripheral_client = ConnectPeripheral();
+      ASSERT_OK(peripheral_client);
+
+      auto clear_res = peripheral_client.value()->ClearFunctions();
+      ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+      fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor device_desc =
+          CreateTestDeviceDescriptor();
+
+      fidl::Arena arena;
+      auto configs = CreateTestFunctionDescriptors(arena);
+
+      auto set_config_res = peripheral_client.value()->SetConfiguration(device_desc, configs);
+      ASSERT_TRUE(set_config_res.ok()) << set_config_res.FormatDescription();
+      ASSERT_TRUE(set_config_res->is_ok()) << zx_status_get_string(set_config_res->error_value());
+
+      auto function_clients = TransitionToPeripheralReady();
+      ASSERT_OK(function_clients);
+    }
+  }
+
+  fake_events->WaitUntilCleared(this->dut().runtime());
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, CheckAndStartControllerGuard) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients);
+
+  // Verify initial state.
+  this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
+    ASSERT_EQ(peripheral.SnapshotState(), UsbPeripheral::DeviceState::kPeripheralReady);
+  });
+
+  // Call CheckAndStartController again.
+  // This is to check for a very rare race condition where the function register calls occur in
+  // parallel and the peripheral has already started the controller.
+  // It's hard to simulate this race condition, so we just call CheckAndStartController again
+  // to be safe.
+  // This race condition would go away once we move to a single dispatcher.
+  this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
+    // This should do nothing and return ZX_OK because state is not kWaitForFunctionBind.
+    ASSERT_OK(peripheral.CheckAndStartController());
+  });
+
+  // Verify state is still kPeripheralReady.
+  this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
+    ASSERT_EQ(peripheral.SnapshotState(), UsbPeripheral::DeviceState::kPeripheralReady);
   });
 }
 

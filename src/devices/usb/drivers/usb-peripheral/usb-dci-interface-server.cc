@@ -36,7 +36,7 @@ void UsbDciInterfaceServer::Control(ControlRequestView req, ControlCompleter::Sy
 void UsbDciInterfaceServer::SetConnected(SetConnectedRequestView req,
                                          SetConnectedCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
-  drv_->CommonSetConnected(req->is_connected);
+  drv_->OnHostConnectionChanged(req->is_connected);
   completer.ReplySuccess();
 }
 

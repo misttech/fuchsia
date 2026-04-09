@@ -20,9 +20,12 @@
 #include <lib/zx/channel.h>
 #include <zircon/errors.h>
 
+#include <format>
 #include <optional>
+#include <string_view>
 #include <utility>
 
+#include <fbl/auto_lock.h>
 #include <fbl/mutex.h>
 #include <usb-monitor-util/usb-monitor-util.h>
 #include <usb/request-cpp.h>
@@ -99,6 +102,63 @@ struct UsbConfiguration {
 class UsbPeripheral : public fdf::DriverBase,
                       public fidl::WireServer<fuchsia_hardware_usb_peripheral::Device> {
  public:
+  // The driver uses a formal state machine to manage the lifecycle of configurations
+  // and host connections. This ensures that resources (child nodes, DCI mode) are
+  // handled safely during asynchronous events like host (dis)connects or driver
+  // teardown.
+  //
+  // State Machine:
+  //
+  // kNoConfiguration:
+  //   Initial state. No active configuration. Functions can be added to the staging area.
+  //   Transitions:
+  //     -> kWaitForFunctionBind: Occurs when a configuration is committed (SetConfiguration()
+  //        or SetDefaultConfig()). Child nodes are published.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
+  //
+  // kWaitForFunctionBind:
+  //   Configuration committed. Child nodes are published. Waiting for function drivers to bind.
+  //   Transitions:
+  //     -> kStarting: Occurs when all functions have registered.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
+  //     -> kWaitForFunctionBind: Occurs when a function is unregistered (node unbound).
+  //
+  // kStarting:
+  //   All functions have registered. Starting the DCI controller.
+  //   Transitions:
+  //     -> kPeripheralReady: Occurs when StartController() succeeds.
+  //     -> kWaitForFunctionBind: Occurs if StartController() fails.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
+  //
+  // kPeripheralReady:
+  //   All functions have registered. DCI is active. Ready for a USB host to connect.
+  //   Transitions:
+  //     -> kHostConnected: Occurs when a USB host connects.
+  //     -> kWaitForFunctionBind: Occurs if a function is unregistered.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
+  //
+  // kHostConnected:
+  //   USB host has performed enumeration and selected a configuration. Data paths are active.
+  //   Transitions:
+  //     -> kPeripheralReady: Occurs when the host disconnects.
+  //     -> kWaitForFunctionBind: Occurs if a function is unregistered.
+  //     -> kStopping: Occurs on ClearFunctions() or PrepareStop().
+  //
+  // kStopping:
+  //   Teardown in progress (either a configuration clear or a full driver shutdown).
+  //   Transitions:
+  //     -> Terminates: When all functions are cleared and the driver is stopping.
+  //     -> kNoConfiguration: When all functions are cleared and we are just clearing functions
+  //        (not stopping the driver).
+  enum class DeviceState : uint8_t {
+    kNoConfiguration,
+    kWaitForFunctionBind,
+    kStarting,
+    kPeripheralReady,
+    kHostConnected,
+    kStopping,
+  };
+
   static constexpr std::string_view kDriverName = "usb_device";
   static constexpr std::string_view kChildNodeName = "usb-peripheral";
 
@@ -133,7 +193,32 @@ class UsbPeripheral : public fdf::DriverBase,
   // success.
   zx::result<uint8_t> ValidateFunction(size_t function_index, void* descriptors, size_t length);
   zx_status_t FunctionRegistered();
-  void FunctionCleared();
+  zx_status_t CheckAndStartController();
+  zx_status_t StartController();
+  zx_status_t StopController();
+  zx_status_t FunctionUnregistered();
+  void FunctionCleared(size_t function_index);
+
+  DeviceState SnapshotState() const {
+    fbl::AutoLock lock(&lock_);
+    return state_;
+  }
+
+  void SetStateLocked(DeviceState state) __TA_REQUIRES(lock_);
+  void SetState(DeviceState state) {
+    fbl::AutoLock lock(&lock_);
+    SetStateLocked(state);
+  }
+
+  usb_mode_t SnapshotUsbMode() const {
+    fbl::AutoLock lock(&lock_);
+    return cur_usb_mode_;
+  }
+
+  void SetUsbMode(usb_mode_t mode) {
+    fbl::AutoLock lock(&lock_);
+    cur_usb_mode_ = mode;
+  }
 
   struct StringDescriptor {
     std::string text;
@@ -155,6 +240,7 @@ class UsbPeripheral : public fdf::DriverBase,
   bool ValidateEndpoint(size_t function_index, uint8_t ep_address) const;
 
   void ReleaseResources(size_t function_index) __TA_EXCLUDES(lock_);
+  void ReleaseResourcesLocked(size_t function_index) __TA_REQUIRES(lock_);
 
   // Returns currently allocated resources for the given function.
   // For testing purposes only.
@@ -184,24 +270,41 @@ class UsbPeripheral : public fdf::DriverBase,
   }
 
   const usb_device_descriptor_t& device_desc() { return device_desc_; }
-  zx_status_t DeviceStateChanged();
+  void OnHostConnectionChanged(bool connected);
 
  private:
+  DISALLOW_COPY_ASSIGN_AND_MOVE(UsbPeripheral);
+
   // Considered part of the private impl.
   friend class UsbDciInterfaceServer;
+
+  // Wrapper for Callbacks that must be invoked without holding a specific lock to prevent
+  // deadlocks.
+  class UnlockedCallback {
+   public:
+    UnlockedCallback(fit::callback<void()> cb, fbl::Mutex& lock)
+        : cb_(std::move(cb)), lock_(&lock) {}
+    UnlockedCallback() = default;
+
+    // Call the callback ensuring the associated lock is not held.
+    void operator()() __TA_EXCLUDES(*lock_) {
+      if (cb_) {
+        cb_();
+      }
+    }
+
+    explicit operator bool() const { return !!cb_; }
+
+   private:
+    fit::callback<void()> cb_;
+    fbl::Mutex* lock_ = nullptr;
+  };
 
   // For the purposes of banjo->FIDL migration. Once banjo is ripped out of the driver, the logic
   // here can be folded into the FIDL endpoint implementation and calling code.
   void CommonControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
                      cpp20::span<uint8_t> write_buffer,
                      fit::callback<void(zx::result<std::vector<uint8_t>>)> completer);
-  void CommonSetConnected(bool connected);
-  // SetSpeed() is trivial and warrants no common impl.
-
-  zx_status_t StartController();
-  zx_status_t StopController();
-
-  DISALLOW_COPY_ASSIGN_AND_MOVE(UsbPeripheral);
 
   // For mapping b_endpoint_address value to/from index in range 0 - 31.
   static inline uint8_t EpAddressToIndex(uint8_t addr) {
@@ -214,9 +317,10 @@ class UsbPeripheral : public fdf::DriverBase,
   // Returns the index of the function that was added.
   zx::result<size_t> AddFunction(UsbConfiguration& config, FunctionDescriptor desc);
   // Begins the process of clearing the functions.
-  void ClearFunctions();
+  void ClearFunctions(std::optional<fit::callback<void()>> callback = std::nullopt);
+  void CheckAllFunctionsCleared();
+
   zx::result<std::string> GetSerialNumber();
-  zx_status_t DeviceStateChangedLocked() __TA_REQUIRES(lock_);
   zx_status_t AddFunctionDevices() __TA_REQUIRES(lock_);
   zx_status_t GetDescriptor(uint8_t request_type, uint16_t value, uint16_t index, void* buffer,
                             size_t length, size_t* out_actual);
@@ -238,6 +342,7 @@ class UsbPeripheral : public fdf::DriverBase,
                               uint8_t* out_index) __TA_EXCLUDES(lock_);
 
   bool AllFunctionsRegistered() const __TA_REQUIRES(lock_);
+
   UsbFunction& GetFunction(size_t index);
   const UsbFunction& GetFunction(size_t index) const;
 
@@ -264,24 +369,18 @@ class UsbPeripheral : public fdf::DriverBase,
   // List of usb_function_t.
   std::vector<UsbConfiguration> configurations_;
   // mutex for protecting our state
-  fbl::Mutex lock_;
+  // mutable to allow locking in const methods (e.g. state())
+  mutable fbl::Mutex lock_;
   // Current USB mode set via ioctl_usb_peripheral_set_mode()
   usb_mode_t cur_usb_mode_ __TA_GUARDED(lock_) = USB_MODE_NONE;
   // Our parent's USB mode. Should not change after being set.
   usb_mode_t parent_usb_mode_ __TA_GUARDED(lock_) = USB_MODE_NONE;
-  // |lock_functions_|: true if all functions have been added to configurations_ and should not be
-  // changed any more.
-  bool lock_functions_ __TA_GUARDED(lock_) = false;
   // True if we have added child devices for our functions.
   bool function_devs_added_ __TA_GUARDED(lock_) = false;
   // True if fuchsia_hardware_usb_dci::SetInterface performed in Init().
   bool set_interface_in_init_ __TA_GUARDED(lock_) = false;
-  // Number of functions left to clear.
-  size_t num_functions_to_clear_ __TA_GUARDED(lock_) = 0;
   // True if we are connected to a host,
   bool connected_ __TA_GUARDED(lock_) = false;
-  // True if we are shutting down/clearing functions
-  bool shutting_down_ = false;
   // True if we are under the PrepareStop() codepath.
   bool stopping_driver_ = false;
   // Current configuration number selected via USB_REQ_SET_CONFIGURATION
@@ -296,7 +395,9 @@ class UsbPeripheral : public fdf::DriverBase,
   // Size of our parent's DCI request metadata, only relevant to the banjo interface.
   size_t dci_request_size_ = 0;
   // Registered listener
-  fidl::ClientEnd<fuchsia_hardware_usb_peripheral::Events> listener_;
+  fidl::WireSharedClient<fuchsia_hardware_usb_peripheral::Events> listener_;
+
+  DeviceState state_ __TA_GUARDED(lock_) = DeviceState::kNoConfiguration;
 
   bool cache_enabled_ = true;
   bool cache_report_enabled_ = true;
@@ -307,9 +408,14 @@ class UsbPeripheral : public fdf::DriverBase,
   // If the queue is already empty, the callback is called immediately.
   void WaitForPendingRequests(fit::callback<void()> callback) __TA_EXCLUDES(pending_requests_lock_);
 
+  // Wait for all functions to be cleared. Call the callback when all functions are gone.
+  // If no functions are pending clearance, the callback is called immediately.
+  void WaitForFunctionsCleared(fit::callback<void()> callback) __TA_EXCLUDES(lock_);
+
   fbl::Mutex pending_requests_lock_;
   usb::BorrowedRequestList<void> pending_requests_ __TA_GUARDED(pending_requests_lock_);
-  fit::callback<void()> on_all_pending_requests_complete_ __TA_GUARDED(pending_requests_lock_);
+  UnlockedCallback on_all_pending_requests_complete_ __TA_GUARDED(pending_requests_lock_);
+  std::vector<UnlockedCallback> on_all_functions_cleared_ __TA_GUARDED(lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
 
@@ -326,5 +432,34 @@ inline UsbPeripheral::UsbPeripheral(fdf::DriverStartArgs start_args,
     : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
 }  // namespace usb_peripheral
+
+template <>
+struct std::formatter<usb_peripheral::UsbPeripheral::DeviceState>
+    : std::formatter<std::string_view> {
+  auto format(usb_peripheral::UsbPeripheral::DeviceState state, std::format_context& ctx) const {
+    std::string_view name = "<unknown>";
+    switch (state) {
+      case usb_peripheral::UsbPeripheral::DeviceState::kNoConfiguration:
+        name = "kNoConfiguration";
+        break;
+      case usb_peripheral::UsbPeripheral::DeviceState::kWaitForFunctionBind:
+        name = "kWaitForFunctionBind";
+        break;
+      case usb_peripheral::UsbPeripheral::DeviceState::kStarting:
+        name = "kStarting";
+        break;
+      case usb_peripheral::UsbPeripheral::DeviceState::kPeripheralReady:
+        name = "kPeripheralReady";
+        break;
+      case usb_peripheral::UsbPeripheral::DeviceState::kHostConnected:
+        name = "kHostConnected";
+        break;
+      case usb_peripheral::UsbPeripheral::DeviceState::kStopping:
+        name = "kStopping";
+        break;
+    }
+    return std::formatter<std::string_view>::format(name, ctx);
+  }
+};
 
 #endif  // SRC_DEVICES_USB_DRIVERS_USB_PERIPHERAL_USB_PERIPHERAL_H_

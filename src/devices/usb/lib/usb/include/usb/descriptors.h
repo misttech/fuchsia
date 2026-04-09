@@ -149,6 +149,21 @@ typedef uint32_t usb_mode_t;
 #define USB_MODE_PERIPHERAL UINT32_C(2)
 #define USB_MODE_OTG UINT32_C(3)
 
+static inline const char* usb_mode_to_string(usb_mode_t mode) {
+  switch (mode) {
+    case USB_MODE_NONE:
+      return "NONE";
+    case USB_MODE_HOST:
+      return "HOST";
+    case USB_MODE_PERIPHERAL:
+      return "PERIPHERAL";
+    case USB_MODE_OTG:
+      return "OTG";
+    default:
+      return "<unknown>";
+  }
+}
+
 // TODO(https://fxbug.dev/42062723) : Some of these structs are duplicates of usb banjo. Remove and
 // consolidate them.
 /* general USB defines */
