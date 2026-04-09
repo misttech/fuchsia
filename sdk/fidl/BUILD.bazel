@@ -172,124 +172,38 @@ filegroup(
     ],
 )
 
-# TODO(https://fxbug.dev/496597510): Figure out how to base the allowlists on
-# the same lists used for the molecule. This will help ensure that libraries
-# assigned an SDK category also appear in the appropriate artifacts. It will also
-# ensure that API compatibility tests actually run on all libraries in a
-# category.
+# The allowlists allow visibility for the package for each library in the list.
+# used for the corresponding molecule. This helps ensure that libraries assigned
+# an SDK category also appear in the appropriate artifacts and that API
+# compatibility tests run on all libraries in a category.
+# Caveats:
+# * Other FIDL libraries in one of these packages could use the category without
+#   being in the list - see https://fxbug.dev/496597510.
+# * The `visibility` list may have duplicates, which is fine.
 
 filegroup(
     name = "partner_idk_fidl_library_allowlist",
-    visibility = [
-        "//build/bazel/bazel_idk/tests:__pkg__",
-        "//sdk/fidl/fuchsia.accessibility.gesture:__pkg__",
-        "//sdk/fidl/fuchsia.audio.effects:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth.a2dp:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth.bredr:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth.fastpair:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth.gatt:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth.gatt2:__pkg__",
-        "//sdk/fidl/fuchsia.bluetooth.sys:__pkg__",
-        "//sdk/fidl/fuchsia.buildinfo:__pkg__",
-        "//sdk/fidl/fuchsia.camera:__pkg__",
-        "//sdk/fidl/fuchsia.camera2:__pkg__",
-        "//sdk/fidl/fuchsia.camera2.hal:__pkg__",
-        "//sdk/fidl/fuchsia.camera3:__pkg__",
-        "//sdk/fidl/fuchsia.castauth:__pkg__",
-        "//sdk/fidl/fuchsia.castconfig:__pkg__",
-        "//sdk/fidl/fuchsia.castremotecontrol:__pkg__",
-        "//sdk/fidl/fuchsia.castsetup:__pkg__",
-        "//sdk/fidl/fuchsia.castsysteminfo:__pkg__",
-        "//sdk/fidl/fuchsia.castwindow:__pkg__",
-        "//sdk/fidl/fuchsia.component:__pkg__",
-        "//sdk/fidl/fuchsia.component.decl:__pkg__",
-        "//sdk/fidl/fuchsia.component.resolution:__pkg__",
-        "//sdk/fidl/fuchsia.component.runner:__pkg__",
-        "//sdk/fidl/fuchsia.component.runtime:__pkg__",
-        "//sdk/fidl/fuchsia.component.sandbox:__pkg__",
-        "//sdk/fidl/fuchsia.component.test:__pkg__",
-        "//sdk/fidl/fuchsia.data:__pkg__",
-        "//sdk/fidl/fuchsia.diagnostics:__pkg__",
-        "//sdk/fidl/fuchsia.diagnostics.system:__pkg__",
-        "//sdk/fidl/fuchsia.diagnostics.types:__pkg__",
-        "//sdk/fidl/fuchsia.feedback:__pkg__",
-        "//sdk/fidl/fuchsia.hardware.audio:__pkg__",
-        "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:__pkg__",
-        "//sdk/fidl/fuchsia.images:__pkg__",
-        "//sdk/fidl/fuchsia.images2:__pkg__",
-        "//sdk/fidl/fuchsia.input:__pkg__",
-        "//sdk/fidl/fuchsia.intl:__pkg__",
-        "//sdk/fidl/fuchsia.io:__pkg__",
-        "//sdk/fidl/fuchsia.ldsvc:__pkg__",
-        "//sdk/fidl/fuchsia.logger:__pkg__",
-        "//sdk/fidl/fuchsia.math:__pkg__",
-        "//sdk/fidl/fuchsia.media:__pkg__",
-        "//sdk/fidl/fuchsia.media.audio:__pkg__",
-        "//sdk/fidl/fuchsia.media.drm:__pkg__",
-        "//sdk/fidl/fuchsia.media.sessions2:__pkg__",
-        "//sdk/fidl/fuchsia.media.sounds:__pkg__",
-        "//sdk/fidl/fuchsia.media.target:__pkg__",
-        "//sdk/fidl/fuchsia.mediastreams:__pkg__",
-        "//sdk/fidl/fuchsia.mem:__pkg__",
-        "//sdk/fidl/fuchsia.net:__pkg__",
-        "//sdk/fidl/fuchsia.process:__pkg__",
-        "//sdk/fidl/fuchsia.settings:__pkg__",
-        "//sdk/fidl/fuchsia.settings.policy:__pkg__",
-        "//sdk/fidl/fuchsia.sysmem:__pkg__",
-        "//sdk/fidl/fuchsia.sysmem2:__pkg__",
-        "//sdk/fidl/fuchsia.ui.types:__pkg__",
-        "//sdk/fidl/fuchsia.ui.views:__pkg__",
-        "//sdk/fidl/fuchsia.unknown:__pkg__",
-        "//sdk/fidl/fuchsia.update:__pkg__",
-        "//sdk/fidl/fuchsia.update.channel:__pkg__",
-        "//sdk/fidl/fuchsia.update.channelcontrol:__pkg__",
-        "//sdk/fidl/fuchsia.update.config:__pkg__",
-        "//sdk/fidl/fuchsia.url:__pkg__",
-        "//sdk/fidl/fuchsia.version:__pkg__",
-        "//sdk/fidl/fuchsia.weave:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.common:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.ieee80211:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.phyimpl:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.policy:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.softmac:__pkg__",
-        "//zircon/vdso/zx:__pkg__",
-    ],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in _partner_idk_stable_fidl_libraries_targets_list],
 )
 
 filegroup(
     name = "partner_idk_unstable_fidl_library_allowlist",
-    visibility = [
-        "//build/bazel/bazel_idk/tests:__pkg__",
-        "//sdk/fidl/fuchsia.hardware.spi.businfo:__pkg__",
-        "//sdk/fidl/fuchsia.hardware.usb.policy:__pkg__",
-        "//sdk/fidl/fuchsia.usb.policy:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.fullmac:__pkg__",
-        "//sdk/fidl/fuchsia.wlan.stats:__pkg__",
-    ],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in _partner_idk_unstable_fidl_libraries_targets_list],
 )
 
 filegroup(
     name = "prebuilt_fidl_library_allowlist",
-    visibility = [
-        "//sdk/fidl/fuchsia.vulkan.loader:__pkg__",
-    ],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in _prebuilt_fidl_libraries_targets_list],
 )
 
 filegroup(
     name = "host_tool_fidl_library_allowlist",
-    visibility = [
-        "//sdk/fidl/fuchsia.diagnostics.host:__pkg__",
-        "//sdk/fidl/fuchsia.fdomain:__pkg__",
-        "//sdk/fidl/fuchsia.sys2:__pkg__",
-    ],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in _host_tool_fidl_libraries_targets_list],
 )
 
 filegroup(
     name = "compat_test_fidl_library_allowlist",
-    visibility = [],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in _compat_test_fidl_libraries_targets_list],
 )
 
 filegroup(

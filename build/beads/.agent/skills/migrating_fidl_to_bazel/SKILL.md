@@ -48,8 +48,8 @@ GN to Bazel.
 
 ## 2. Register the target
 
-1.  Add the Bazel target to the appropriate list in `//sdk/fidl/BUILD.bazel`
-    based on its category:
+1.  If Bazel target has a category, add it to the appropriate list in
+    `//sdk/fidl/BUILD.bazel` based on its category:
     -   `partner` (and `stable` is `true`) ->
         `_partner_idk_stable_fidl_libraries_targets_list`
     -   `partner` (and `stable` is `false`) ->
@@ -57,12 +57,6 @@ GN to Bazel.
     -   `prebuilt` -> `_prebuilt_fidl_libraries_targets_list`
     -   `host_tool` -> `_host_tool_fidl_libraries_targets_list`
     -   `compat_test` -> `_compat_test_fidl_libraries_targets_list`
-
-2.  When adding the target to a categorized list, you must also add the
-    library's package (e.g., `"//sdk/fidl/{library_name}:__pkg__"`) to the
-    `visibility` list of the corresponding `filegroup` allowlist in
-    `//sdk/fidl/BUILD.bazel`. The allowlists share similar names to the lists
-    above (e.g., `partner_idk_fidl_library_allowlist`).
 
 ## 3. Sync FIDL targets back to GN
 
