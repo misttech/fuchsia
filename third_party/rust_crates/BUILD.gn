@@ -2030,11 +2030,11 @@ group("simplelog-0.10.2") {
 }
 
 group("siphasher") {
-  public_deps = [ ":siphasher-v1_0_1" ]
+  public_deps = [ ":siphasher-v1_0_2" ]
 }
 
-group("siphasher-1.0.1") {
-  public_deps = [ ":siphasher-v1_0_1" ]
+group("siphasher-1.0.2") {
+  public_deps = [ ":siphasher-v1_0_2" ]
 }
 
 group("slab") {
@@ -14193,7 +14193,7 @@ rustc_library("phf_shared-v0_13_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":siphasher-v1_0_1" ]
+  deps += [ ":siphasher-v1_0_2" ]
 
   rustenv = []
 
@@ -19109,15 +19109,15 @@ rustc_library("siphasher-v0_2_3") {
   applicable_licenses = [ ":siphasher-v0_2_3.license" ]
 }
 
-license("siphasher-v1_0_1.license") {
+license("siphasher-v1_0_2.license") {
   public_package_name = "siphasher"
-  license_files = [ "//third_party/rust_crates/vendor/siphasher-1.0.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/siphasher-1.0.2/LICENSE" ]
 }
 
-rustc_library("siphasher-v1_0_1") {
+rustc_library("siphasher-v1_0_2") {
   crate_name = "siphasher"
-  source_root = "//third_party/rust_crates/vendor/siphasher-1.0.1/src/lib.rs"
-  output_name = "siphasher-2bd039ab7ff5c5eb"
+  source_root = "//third_party/rust_crates/vendor/siphasher-1.0.2/src/lib.rs"
+  output_name = "siphasher-16a2fdc6d8c73eea"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -19129,15 +19129,15 @@ rustc_library("siphasher-v1_0_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2bd039ab7ff5c5eb",
-    "-Cextra-filename=-2bd039ab7ff5c5eb",
+    "-Cmetadata=16a2fdc6d8c73eea",
+    "-Cextra-filename=-16a2fdc6d8c73eea",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":siphasher-v1_0_1.license" ]
+  applicable_licenses = [ ":siphasher-v1_0_2.license" ]
 }
 
 license("slab-v0_4_11.license") {

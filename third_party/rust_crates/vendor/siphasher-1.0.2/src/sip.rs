@@ -8,54 +8,37 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! An implementation of SipHash with a 128-bit output.
+//! An implementation of SipHash.
 
 use core::cmp;
 use core::hash;
 use core::hash::Hasher as _;
 use core::marker::PhantomData;
 use core::mem;
-use core::ptr;
-use core::u64;
 
-/// A 128-bit (2x64) hash output
-#[derive(Debug, Clone, Copy, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Hash128 {
-    pub h1: u64,
-    pub h2: u64,
-}
+use crate::common::{compress, load_int_le, u8to64_le};
 
-impl From<u128> for Hash128 {
-    fn from(v: u128) -> Self {
-        Hash128 {
-            h1: v as u64,
-            h2: (v >> 64) as u64,
-        }
-    }
-}
-
-impl From<Hash128> for u128 {
-    fn from(h: Hash128) -> u128 {
-        (h.h1 as u128) | ((h.h2 as u128) << 64)
-    }
-}
-
-/// An implementation of SipHash128 1-3.
+/// An implementation of SipHash 1-3.
+///
+/// See: <https://www.aumasson.jp/siphash/siphash.pdf>
 #[derive(Debug, Clone, Copy, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SipHasher13 {
     hasher: Hasher<Sip13Rounds>,
 }
 
-/// An implementation of SipHash128 2-4.
+/// An implementation of SipHash 2-4.
+///
+/// See: <https://www.aumasson.jp/siphash/siphash.pdf>
 #[derive(Debug, Clone, Copy, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SipHasher24 {
     hasher: Hasher<Sip24Rounds>,
 }
 
-/// An implementation of SipHash128 2-4.
+/// An implementation of SipHash 2-4.
+///
+/// See: <https://www.aumasson.jp/siphash/siphash.pdf>
 ///
 /// SipHash is a general-purpose hashing function: it runs at a good
 /// speed (competitive with Spooky and City) and permits strong _keyed_
@@ -66,9 +49,10 @@ pub struct SipHasher24 {
 /// it is not intended for cryptographic purposes. As such, all
 /// cryptographic uses of this implementation are _strongly discouraged_.
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SipHasher(SipHasher24);
 
-#[derive(Debug, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct Hasher<S: Sip> {
     k0: u64,
@@ -91,77 +75,6 @@ struct State {
     v2: u64,
     v1: u64,
     v3: u64,
-}
-
-macro_rules! compress {
-    ($state:expr) => {{
-        compress!($state.v0, $state.v1, $state.v2, $state.v3)
-    }};
-    ($v0:expr, $v1:expr, $v2:expr, $v3:expr) => {{
-        $v0 = $v0.wrapping_add($v1);
-        $v1 = $v1.rotate_left(13);
-        $v1 ^= $v0;
-        $v0 = $v0.rotate_left(32);
-        $v2 = $v2.wrapping_add($v3);
-        $v3 = $v3.rotate_left(16);
-        $v3 ^= $v2;
-        $v0 = $v0.wrapping_add($v3);
-        $v3 = $v3.rotate_left(21);
-        $v3 ^= $v0;
-        $v2 = $v2.wrapping_add($v1);
-        $v1 = $v1.rotate_left(17);
-        $v1 ^= $v2;
-        $v2 = $v2.rotate_left(32);
-    }};
-}
-
-/// Loads an integer of the desired type from a byte stream, in LE order. Uses
-/// `copy_nonoverlapping` to let the compiler generate the most efficient way
-/// to load it from a possibly unaligned address.
-///
-/// Unsafe because: unchecked indexing at `i..i+size_of(int_ty)`
-macro_rules! load_int_le {
-    ($buf:expr, $i:expr, $int_ty:ident) => {{
-        debug_assert!($i + mem::size_of::<$int_ty>() <= $buf.len());
-        let mut data = 0 as $int_ty;
-        ptr::copy_nonoverlapping(
-            $buf.as_ptr().add($i),
-            &mut data as *mut _ as *mut u8,
-            mem::size_of::<$int_ty>(),
-        );
-        data.to_le()
-    }};
-}
-
-/// Loads a u64 using up to 7 bytes of a byte slice. It looks clumsy but the
-/// `copy_nonoverlapping` calls that occur (via `load_int_le!`) all have fixed
-/// sizes and avoid calling `memcpy`, which is good for speed.
-///
-/// Unsafe because: unchecked indexing at start..start+len
-#[inline]
-unsafe fn u8to64_le(buf: &[u8], start: usize, len: usize) -> u64 {
-    debug_assert!(len < 8);
-    let mut i = 0; // current byte index (from LSB) in the output u64
-    let mut out = 0;
-    if i + 3 < len {
-        out = load_int_le!(buf, start + i, u32) as u64;
-        i += 4;
-    }
-    if i + 1 < len {
-        out |= (load_int_le!(buf, start + i, u16) as u64) << (i * 8);
-        i += 2
-    }
-    if i < len {
-        out |= (*buf.get_unchecked(start + i) as u64) << (i * 8);
-        i += 1;
-    }
-    debug_assert_eq!(i, len);
-    out
-}
-
-pub trait Hasher128 {
-    /// Return a 128-bit hash
-    fn finish128(&self) -> Hash128;
 }
 
 impl SipHasher {
@@ -203,18 +116,10 @@ impl SipHasher {
 
     /// Hash a byte array - This is the easiest and safest way to use SipHash.
     #[inline]
-    pub fn hash(&self, bytes: &[u8]) -> Hash128 {
+    pub fn hash(&self, bytes: &[u8]) -> u64 {
         let mut hasher = self.0.hasher;
         hasher.write(bytes);
-        hasher.finish128()
-    }
-}
-
-impl Hasher128 for SipHasher {
-    /// Return a 128-bit hash
-    #[inline]
-    fn finish128(&self) -> Hash128 {
-        self.0.finish128()
+        hasher.finish()
     }
 }
 
@@ -259,18 +164,10 @@ impl SipHasher13 {
 
     /// Hash a byte array - This is the easiest and safest way to use SipHash.
     #[inline]
-    pub fn hash(&self, bytes: &[u8]) -> Hash128 {
+    pub fn hash(&self, bytes: &[u8]) -> u64 {
         let mut hasher = self.hasher;
         hasher.write(bytes);
-        hasher.finish128()
-    }
-}
-
-impl Hasher128 for SipHasher13 {
-    /// Return a 128-bit hash
-    #[inline]
-    fn finish128(&self) -> Hash128 {
-        self.hasher.finish128()
+        hasher.finish()
     }
 }
 
@@ -315,18 +212,10 @@ impl SipHasher24 {
 
     /// Hash a byte array - This is the easiest and safest way to use SipHash.
     #[inline]
-    pub fn hash(&self, bytes: &[u8]) -> Hash128 {
+    pub fn hash(&self, bytes: &[u8]) -> u64 {
         let mut hasher = self.hasher;
         hasher.write(bytes);
-        hasher.finish128()
-    }
-}
-
-impl Hasher128 for SipHasher24 {
-    /// Return a 128-bit hash
-    #[inline]
-    fn finish128(&self) -> Hash128 {
-        self.hasher.finish128()
+        hasher.finish()
     }
 }
 
@@ -339,7 +228,7 @@ impl<S: Sip> Hasher<S> {
             length: 0,
             state: State {
                 v0: 0,
-                v1: 0xee,
+                v1: 0,
                 v2: 0,
                 v3: 0,
             },
@@ -355,7 +244,7 @@ impl<S: Sip> Hasher<S> {
     fn reset(&mut self) {
         self.length = 0;
         self.state.v0 = self.k0 ^ 0x736f6d6570736575;
-        self.state.v1 = self.k1 ^ 0x646f72616e646f83;
+        self.state.v1 = self.k1 ^ 0x646f72616e646f6d;
         self.state.v2 = self.k0 ^ 0x6c7967656e657261;
         self.state.v3 = self.k1 ^ 0x7465646279746573;
         self.ntail = 0;
@@ -396,29 +285,6 @@ impl<S: Sip> Hasher<S> {
 
         self.ntail = size - needed;
         self.tail = if needed < 8 { x >> (8 * needed) } else { 0 };
-    }
-}
-
-impl<S: Sip> Hasher<S> {
-    #[inline]
-    pub fn finish128(&self) -> Hash128 {
-        let mut state = self.state;
-
-        let b: u64 = ((self.length as u64 & 0xff) << 56) | self.tail;
-
-        state.v3 ^= b;
-        S::c_rounds(&mut state);
-        state.v0 ^= b;
-
-        state.v2 ^= 0xee;
-        S::d_rounds(&mut state);
-        let h1 = state.v0 ^ state.v1 ^ state.v2 ^ state.v3;
-
-        state.v1 ^= 0xdd;
-        S::d_rounds(&mut state);
-        let h2 = state.v0 ^ state.v1 ^ state.v2 ^ state.v3;
-
-        Hash128 { h1, h2 }
     }
 }
 
@@ -596,22 +462,18 @@ impl<S: Sip> hash::Hasher for Hasher<S> {
 
     #[inline]
     fn finish(&self) -> u64 {
-        self.finish128().h2
-    }
-}
+        let mut state = self.state;
 
-impl<S: Sip> Clone for Hasher<S> {
-    #[inline]
-    fn clone(&self) -> Hasher<S> {
-        Hasher {
-            k0: self.k0,
-            k1: self.k1,
-            length: self.length,
-            state: self.state,
-            tail: self.tail,
-            ntail: self.ntail,
-            _marker: self._marker,
-        }
+        let b: u64 = ((self.length as u64 & 0xff) << 56) | self.tail;
+
+        state.v3 ^= b;
+        S::c_rounds(&mut state);
+        state.v0 ^= b;
+
+        state.v2 ^= 0xff;
+        S::d_rounds(&mut state);
+
+        state.v0 ^ state.v1 ^ state.v2 ^ state.v3
     }
 }
 
@@ -662,35 +524,5 @@ impl Sip for Sip24Rounds {
         compress!(state);
         compress!(state);
         compress!(state);
-    }
-}
-
-impl Hash128 {
-    /// Convert into a 16-bytes vector
-    pub fn as_bytes(&self) -> [u8; 16] {
-        let mut bytes = [0u8; 16];
-        let h1 = self.h1.to_le();
-        let h2 = self.h2.to_le();
-        unsafe {
-            ptr::copy_nonoverlapping(&h1 as *const _ as *const u8, bytes.as_mut_ptr(), 8);
-            ptr::copy_nonoverlapping(&h2 as *const _ as *const u8, bytes.as_mut_ptr().add(8), 8);
-        }
-        bytes
-    }
-
-    /// Convert into a `u128`
-    #[inline]
-    pub fn as_u128(&self) -> u128 {
-        let h1 = self.h1.to_le();
-        let h2 = self.h2.to_le();
-        h1 as u128 | ((h2 as u128) << 64)
-    }
-
-    /// Convert into `(u64, u64)`
-    #[inline]
-    pub fn as_u64(&self) -> (u64, u64) {
-        let h1 = self.h1.to_le();
-        let h2 = self.h2.to_le();
-        (h1, h2)
     }
 }
