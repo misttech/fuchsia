@@ -127,9 +127,12 @@ using BaseVisitor =
 template <Mode mode, FidlWireFormatVersion WireFormatVersion, typename Byte>
 class FidlDecoder final : public BaseVisitor<WireFormatVersion, Byte> {
  public:
-  FidlDecoder(Byte* bytes, uint32_t num_bytes, const fidl_handle_t* handles,
-              const void* handle_metadata, uint32_t num_handles, uint32_t next_out_of_line,
-              const char** out_error_msg, bool hlcpp_mode)
+  using HandleArray =
+      std::conditional_t<mode == Mode::Decode, fidl_handle_t*, const fidl_handle_t*>;
+
+  FidlDecoder(Byte* bytes, uint32_t num_bytes, HandleArray handles, const void* handle_metadata,
+              uint32_t num_handles, uint32_t next_out_of_line, const char** out_error_msg,
+              bool hlcpp_mode)
       : bytes_(bytes),
         num_bytes_(num_bytes),
         handles_(handles),
@@ -222,13 +225,14 @@ class FidlDecoder final : public BaseVisitor<WireFormatVersion, Byte> {
       SetError("invalid handle detected in handle table");
       return Status::kConstraintViolationError;
     }
-    if (mode == Mode::Decode) {
+    if constexpr (mode == Mode::Decode) {
       AssignInDecode<mode>(handle, handles_[handle_idx_]);
 
       const char* error;
       zx_status_t status =
           DecodeProcessHandle<mode>(handle, required_handle_subtype, required_handle_rights,
                                     handle_idx_, handle_metadata_, &error);
+      handles_[handle_idx_] = *handle;
       if (status != ZX_OK) {
         SetError(error);
         return Status::kConstraintViolationError;
@@ -361,7 +365,7 @@ class FidlDecoder final : public BaseVisitor<WireFormatVersion, Byte> {
   // Message state passed in to the constructor.
   Byte* const bytes_;
   const uint32_t num_bytes_;
-  const fidl_handle_t* handles_;
+  HandleArray handles_;
   const void* handle_metadata_;
   const uint32_t num_handles_;
   uint32_t next_out_of_line_;
@@ -384,7 +388,7 @@ class FidlDecoder final : public BaseVisitor<WireFormatVersion, Byte> {
 namespace {
 template <FidlWireFormatVersion WireFormatVersion>
 zx_status_t fidl_decode_impl(const fidl_type_t* type, void* bytes, uint32_t num_bytes,
-                             const fidl_handle_t* handles, const void* handle_metadata,
+                             fidl_handle_t* handles, const void* handle_metadata,
                              uint32_t num_handles, const char** out_error_msg, bool hlcpp_mode) {
   auto drop_all_handles = [&]() { FidlHandleCloseMany(handles, num_handles); };
   auto set_error = [&out_error_msg](const char* msg) {
