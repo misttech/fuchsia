@@ -31,7 +31,7 @@ func (f *FFXInstance) StartPackageServer(ctx context.Context, name, address, rep
 		"--alias", "fuchsia.com", "--alias", "chromium.org",
 		"--no-device",
 	}
-	return f.invoker(args).setTimeout(0).setStrict().setTarget(f.target).setMachineFormat(MachineRaw).run(ctx)
+	return f.invoker(args).setTimeout(0).setTarget(f.target).setMachineFormat(MachineRaw).run(ctx)
 }
 
 // StopPackageServer stops the package repository server with the given name.
@@ -39,7 +39,7 @@ func (f *FFXInstance) StopPackageServer(ctx context.Context, name string, port i
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	return f.invoker([]string{"repository", "server", "stop", name, "--port", strconv.Itoa(port)}).setStrict().setTarget(f.target).run(ctx)
+	return f.invoker([]string{"repository", "server", "stop", name, "--port", strconv.Itoa(port)}).setTarget(f.target).run(ctx)
 }
 
 // ListPackageServer lists the running package servers.
@@ -47,7 +47,7 @@ func (f *FFXInstance) ListPackageServer(ctx context.Context) ([]string, error) {
 	if f.target == "" {
 		return nil, fmt.Errorf("no target is set")
 	}
-	i := f.invoker([]string{"repository", "server", "list"}).setStrict().setTarget(f.target).setCaptureOutput()
+	i := f.invoker([]string{"repository", "server", "list"}).setTarget(f.target).setCaptureOutput()
 	err := i.run(ctx)
 	var result RepoServersList
 	if err := json.Unmarshal(i.output.Bytes(), &result); err != nil {
@@ -66,7 +66,7 @@ func (f *FFXInstance) Forward(ctx context.Context, port int) error {
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	return f.invoker([]string{"forward", fmt.Sprintf("%d<=0", port)}).setStrict().setTarget(f.target).setTimeout(0).run(ctx)
+	return f.invoker([]string{"forward", fmt.Sprintf("%d<=0", port)}).setTarget(f.target).setTimeout(0).run(ctx)
 }
 
 // RegisterRepository registers the given package repository server with the target.
@@ -80,5 +80,5 @@ func (f *FFXInstance) RegisterRepository(ctx context.Context, repoName string, p
 	if overrideAddr != "" {
 		args = append(args, "--address-override", overrideAddr)
 	}
-	return f.invoker(args).setStrict().setTarget(f.target).run(ctx)
+	return f.invoker(args).setTarget(f.target).run(ctx)
 }

@@ -59,9 +59,9 @@ const (
 
 type ffxCmdBuilder interface {
 	// Build an ffx command with appropriate additional arguments
-	command(ffxPath string, supportsStrict bool, args []string) []string
+	command(ffxPath string, args []string) []string
 	// Build an ffx command with appropriate additional arguments and specific config values
-	commandWithConfigs(ffxPath string, supportsStrict bool, args []string, configs map[string]any) []string
+	commandWithConfigs(ffxPath string, args []string, configs map[string]any) []string
 	// Store the configuration for future ffx invocations
 	setConfigMap(user, global map[string]any) error
 	// Get the config map
@@ -92,11 +92,11 @@ func newLegacyFfxCmdBuilder(
 	}
 }
 
-func (b *legacyFfxCmdBuilder) command(ffxPath string, supportsStrict bool, args []string) []string {
-	return b.commandWithConfigs(ffxPath, supportsStrict, args, map[string]any{})
+func (b *legacyFfxCmdBuilder) command(ffxPath string, args []string) []string {
+	return b.commandWithConfigs(ffxPath, args, map[string]any{})
 }
 
-func (b *legacyFfxCmdBuilder) commandWithConfigs(ffxPath string, _supportsStrict bool, args []string, configs map[string]any) []string {
+func (b *legacyFfxCmdBuilder) commandWithConfigs(ffxPath string, args []string, configs map[string]any) []string {
 	configArgs := []string{}
 	for key, val := range configs {
 		configArgs = append(configArgs, []string{"-c", fmt.Sprintf("%s=%v", key, val)}...)
@@ -161,33 +161,20 @@ func newStrictFfxCmdBuilder(outputFile string) *strictFfxCmdBuilder {
 
 // Build the required command for a strict invocation. Note that the command
 // may require the target, but the caller should have set that if so.
-func (b *strictFfxCmdBuilder) command(ffxPath string, supportsStrict bool, args []string) []string {
-	return b.commandWithConfigs(ffxPath, supportsStrict, args, map[string]any{})
+func (b *strictFfxCmdBuilder) command(ffxPath string, args []string) []string {
+	return b.commandWithConfigs(ffxPath, args, map[string]any{})
 }
 
 // Build the required command for a strict invocation, including any invocation-specific config options.
 // Note that the command may require the target, but the caller should have set that if so.
-func (b *strictFfxCmdBuilder) commandWithConfigs(ffxPath string, supportsStrict bool, args []string, configs map[string]any) []string {
-	cmd := []string{ffxPath, "-o", b.outputFile}
-	if supportsStrict {
-		cmd = append(cmd, "--strict")
-	} else {
-		// TODO(awdavies): This is intended to be for debugging as additional builders are brought
-		// in for testing. The current builders being tested do not trigger this line, meaning no
-		// commands have been executed thus far that require strict ffx and do not support it.
-		// This should be removed once all possible commands are moved to support strict. Any
-		// invocations of `Run()` or usage of the invoker without `setStrict()` are commands that
-		// do not yet have explicit strict support. These are mostly found in uses of `ffxutil`
-		// outside of botanist, so places like //tools/lib/syslog/syslog.go which are invoking
-		// `Run()` to achieve `ffx target wait` behavior.
-		logger.Fatalf(context.TODO(), "Running command with strict builder that doesn't support strict: args=%v", args)
-	}
+func (b *strictFfxCmdBuilder) commandWithConfigs(ffxPath string, args []string, configs map[string]any) []string {
+	cmd := []string{ffxPath, "-o", b.outputFile, "--strict"}
 	// Commands that support strict always need a machine argument. If none is supplied,
 	// default to "json".
 	// TODO(https://fxbug.dev/478137751): ffx usb-driver currently doesn't support using --machine
 	// but botanist requires ffx to be run in strict mode. Remove this exception once usb-driver
 	// support --machine.
-	if !slices.Contains(args, "--machine") && supportsStrict && !slices.Contains(args, "usb-driver") {
+	if !slices.Contains(args, "--machine") && !slices.Contains(args, "usb-driver") {
 		cmd = append(cmd, "--machine", "json")
 	}
 
@@ -607,17 +594,16 @@ func (f *FFXInstance) invoker(args []string) *ffxInvoker {
 }
 
 type ffxInvoker struct {
-	ffx            *FFXInstance
-	args           []string
-	target         string
-	timeout        *time.Duration
-	captureOutput  bool
-	output         *bytes.Buffer
-	stdout         io.Writer
-	stderr         io.Writer
-	machineFormat  MachineFormat
-	configs        map[string]any
-	supportsStrict bool // TODO(slgrady) Remove once all required commands support --strict
+	ffx           *FFXInstance
+	args          []string
+	target        string
+	timeout       *time.Duration
+	captureOutput bool
+	output        *bytes.Buffer
+	stdout        io.Writer
+	stderr        io.Writer
+	machineFormat MachineFormat
+	configs       map[string]any
 }
 
 func (f *ffxInvoker) cmd() *exec.Cmd {
@@ -628,13 +614,13 @@ func (f *ffxInvoker) cmd() *exec.Cmd {
 	// Priority logic for setting machine format:
 	// 1: if command includes "--machine", use it
 	// 2: instead, if invoker sets the machine format, use that
-	// 3: otherwise, cmdBuilder may add --machine json (only if supportsStrict).
+	// 3: otherwise, cmdBuilder may add --machine json (only if in strict mode).
 	if !slices.Contains(args, "--machine") {
 		if f.machineFormat != MachineNone {
 			args = append([]string{"--machine", f.machineFormat.str()}, args...)
 		}
 	}
-	ffx_cmd := f.ffx.cmdBuilder.commandWithConfigs(f.ffx.ffxPath, f.supportsStrict, args, f.configs)
+	ffx_cmd := f.ffx.cmdBuilder.commandWithConfigs(f.ffx.ffxPath, args, f.configs)
 	return f.ffx.runner.Command(ffx_cmd, subprocess.RunOptions{
 		Stdout:  f.stdout,
 		Stderr:  f.stderr,
@@ -695,11 +681,6 @@ func (i *ffxInvoker) setStderr(stderr io.Writer) *ffxInvoker {
 	return i
 }
 
-func (i *ffxInvoker) setStrict() *ffxInvoker {
-	i.supportsStrict = true
-	return i
-}
-
 func (i *ffxInvoker) setConfigs(configs map[string]any) *ffxInvoker {
 	i.configs = configs
 	return i
@@ -738,6 +719,9 @@ func (f *FFXInstance) RunWithTimeout(ctx context.Context, timeout time.Duration,
 
 // Run runs ffx with the associated config and provided args.
 func (f *FFXInstance) Run(ctx context.Context, args ...string) error {
+	if f.isStrict() {
+		return fmt.Errorf("running non-strict command on strict builder. use RunWithTarget() instead")
+	}
 	logger.Infof(ctx, "running ffx command (non-strict): args=%v", args)
 	return f.invoker(args).run(ctx)
 }
@@ -783,7 +767,7 @@ func (f *FFXInstance) StartDaemon(ctx context.Context, daemonLog *os.File) *exec
 	// Special-case the daemon handling, since it's the one command where we want to redirect the stdout,
 	// _instead_ of specifying "-o ffx.log"
 	invoker := f.invoker(args)
-	ffx_cmd := invoker.ffx.cmdBuilder.command(f.ffxPath, false, args)
+	ffx_cmd := invoker.ffx.cmdBuilder.command(f.ffxPath, args)
 	// Strip out the "--machine json" and "-o file" flags
 	for i, arg := range ffx_cmd {
 		if arg == "--machine" || arg == "-o" {
@@ -837,6 +821,14 @@ func (f *FFXInstance) Stop() error {
 	return nil
 }
 
+// Doctor runs ffx doctor to diagnose issues with ffx.
+func (f *FFXInstance) Doctor(ctx context.Context) error {
+	if f.target == "" {
+		return fmt.Errorf("no target is set")
+	}
+	return f.invoker([]string{"doctor", "--verbose", "--record", "--no-config"}).setTarget(f.target).setMachineFormat(MachineRaw).run(ctx)
+}
+
 // BootloaderBoot RAM boots the target.
 func (f *FFXInstance) BootloaderBoot(ctx context.Context, target, productBundle string, tcpFlash bool) error {
 	logger.Infof(ctx, "running bootloader boot with tcp flash: %t ", tcpFlash)
@@ -846,7 +838,7 @@ func (f *FFXInstance) BootloaderBoot(ctx context.Context, target, productBundle 
 		"discovery.timeout":      12000,
 	}
 
-	return f.invoker([]string{"target", "bootloader", "--product-bundle", productBundle, "boot"}).setTarget(target).setStrict().setTimeout(0).setConfigs(configs).run(ctx)
+	return f.invoker([]string{"target", "bootloader", "--product-bundle", productBundle, "boot"}).setTarget(target).setTimeout(0).setConfigs(configs).run(ctx)
 }
 
 // TestEarlyBootProfile puts a target's early boot profile in the specified directory
@@ -854,7 +846,7 @@ func (f *FFXInstance) TestEarlyBootProfile(ctx context.Context, outputDirectory 
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	return f.invoker([]string{"test", "early-boot-profile", "--output-directory", outputDirectory}).setTarget(f.target).setStrict().setTimeout(0).run(ctx)
+	return f.invoker([]string{"test", "early-boot-profile", "--output-directory", outputDirectory}).setTarget(f.target).setTimeout(0).run(ctx)
 }
 
 // List lists all available targets.
@@ -867,22 +859,22 @@ func (f *FFXInstance) TargetWait(ctx context.Context, args ...string) error {
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	return f.invoker(append([]string{"target", "wait"}, args...)).setTarget(f.target).setStrict().run(ctx)
+	return f.invoker(append([]string{"target", "wait"}, args...)).setTarget(f.target).run(ctx)
 }
 
 // EmuStart returns an invoker to start the emulator with the specified
 // commands.
 func (f *FFXInstance) EmuStart(args ...string) *ffxInvoker {
-	return f.invoker(append([]string{"emu", "start"}, args...)).setStrict()
+	return f.invoker(append([]string{"emu", "start"}, args...))
 }
 
 func (f *FFXInstance) EmuStop(ctx context.Context, args ...string) error {
-	return f.invoker(append([]string{"emu", "stop"}, args...)).setStrict().run(ctx)
+	return f.invoker(append([]string{"emu", "stop"}, args...)).run(ctx)
 }
 
 // USBDriver starts up a USB driver to talk to the device associated with the provided serialNum.
 func (f *FFXInstance) USBDriver(ctx context.Context, serialNum, logDir string) error {
-	return f.invoker([]string{"usb-driver", "--log-dir", logDir, "--serial", serialNum}).setStrict().setMachineFormat(MachineNone).setTimeout(0).run(ctx)
+	return f.invoker([]string{"usb-driver", "--log-dir", logDir, "--serial", serialNum}).setMachineFormat(MachineNone).setTimeout(0).run(ctx)
 }
 
 // PackageResolve resolves the package on the target.
@@ -890,7 +882,7 @@ func (f *FFXInstance) PackageResolve(ctx context.Context, packageURL string) err
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	return f.invoker([]string{"target", "package", "resolve", packageURL}).setTarget(f.target).setStrict().setTimeout(0).run(ctx)
+	return f.invoker([]string{"target", "package", "resolve", packageURL}).setTarget(f.target).setTimeout(0).run(ctx)
 }
 
 // TestRun runs a test suite.
@@ -923,7 +915,7 @@ func (f *FFXInstance) TestRun(
 			"--show-full-moniker-in-logs",
 		},
 		args...)
-	err := f.invoker(args).setTarget(f.target).setTimeout(0).setStrict().setMachineFormat(MachineRaw).run(ctx)
+	err := f.invoker(args).setTarget(f.target).setTimeout(0).setMachineFormat(MachineRaw).run(ctx)
 
 	// ffx test run returns a non-zero exit code if the test fails, so try to get the runResult anyway
 	// and return it along with the error.
@@ -939,7 +931,7 @@ func (f *FFXInstance) Snapshot(ctx context.Context, outDir string, snapshotFilen
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	err := f.invoker([]string{"target", "snapshot", "--dir", outDir}).setStrict().setTarget(f.target).run(ctx)
+	err := f.invoker([]string{"target", "snapshot", "--dir", outDir}).setTarget(f.target).run(ctx)
 	if err != nil {
 		return err
 	}
@@ -961,12 +953,12 @@ func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port, logFile, aggreg
 	if aggregationsFile != "" {
 		args = append(args, "--aggregations-file", aggregationsFile)
 	}
-	return f.invoker(args).setTimeout(0).setStrict().run(ctx)
+	return f.invoker(args).setTimeout(0).run(ctx)
 }
 
 // StopFFXMonitor stops the ffx monitor.
 func (f *FFXInstance) StopFFXMonitor(ctx context.Context) error {
-	return f.invoker([]string{"monitor", "stop"}).setStrict().run(ctx)
+	return f.invoker([]string{"monitor", "stop"}).run(ctx)
 }
 
 // GetConfig shows the ffx config.
@@ -985,7 +977,7 @@ func (f *FFXInstance) checkSpecificSshKeys(ctx context.Context, privPath, pubPat
 	// Check that the keys exist and are valid
 	cfgs := fmt.Sprintf("ssh.priv=%s,ssh.pub=%s", privPath, pubPath)
 	args := []string{"-c", cfgs, "config", "check-ssh-keys"}
-	if err := f.invoker(args).setStrict().run(ctx); err != nil {
+	if err := f.invoker(args).run(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -1067,7 +1059,7 @@ func (f *FFXInstance) Log(ctx context.Context, output *io.Writer, args ...string
 		return fmt.Errorf("no target is set")
 	}
 	args = append([]string{"log"}, args...)
-	i := f.invoker(args).setTarget(f.target).setTimeout(0).setMachineFormat(MachineRaw).setStrict()
+	i := f.invoker(args).setTarget(f.target).setTimeout(0).setMachineFormat(MachineRaw)
 	if output != nil {
 		i.setStdout(*output)
 	}

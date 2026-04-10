@@ -631,6 +631,7 @@ func (s *serialSocket) runDiagnostics(ctx context.Context) error {
 
 // for testability
 type FFXInstance interface {
+	Doctor(ctx context.Context) error
 	PackageResolve(ctx context.Context, packageURL string) error
 	Run(ctx context.Context, args ...string) error
 	RunWithTarget(ctx context.Context, args ...string) error
@@ -1316,10 +1317,10 @@ func (t *FFXTester) RunSnapshot(ctx context.Context, snapshotFile string) error 
 		logger.Errorf(ctx, "%s: %s", constants.FailedToRunSnapshotMsg, err)
 		// TODO(https://fxbug.dev/387497485): For debugging. Remove when issue is fixed.
 		target := os.Getenv(botanistconstants.NodenameEnvKey)
-		if err := t.ffx.Run(ctx, "doctor", "--verbose", "--record", "--no-config"); err != nil {
+		if err := t.ffx.Doctor(ctx); err != nil {
 			logger.Errorf(ctx, "failed to run `ffx doctor`: %s", err)
 		}
-		if err := t.ffx.Run(ctx, "target", "list", target); err != nil {
+		if err := t.ffx.RunWithTarget(ctx, "target", "list", target); err != nil {
 			logger.Errorf(ctx, "failed to run `ffx target list`: %s", err)
 		}
 		// Try capturing snapshot using target nodename.

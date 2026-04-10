@@ -182,3 +182,7 @@ func (f *MockFFXInstance) ContainsCmd(cmd string, args ...string) bool {
 func (f *MockFFXInstance) TargetWait(_ context.Context, args ...string) error {
 	return nil
 }
+
+func (f *MockFFXInstance) Doctor(_ context.Context) error {
+	return f.run("doctor")
+}

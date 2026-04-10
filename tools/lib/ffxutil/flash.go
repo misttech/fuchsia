@@ -31,7 +31,7 @@ func (f *FFXInstance) Flash(ctx context.Context, target, sshKey, productBundle s
 	if sshKey != "" {
 		args = append(args, "--authorized-keys", sshKey)
 	}
-	i := f.invoker(args).setConfigs(configs).setTarget(target).setCaptureOutput().setStrict().setTimeout(0)
+	i := f.invoker(args).setConfigs(configs).setTarget(target).setCaptureOutput().setTimeout(0)
 	err := i.run(ctx)
 	s := strings.TrimSpace(i.output.String())
 	// The reboot may return an error even it happened. Make note of it, but
