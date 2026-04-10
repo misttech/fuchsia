@@ -30,12 +30,10 @@ driver_manager
 ?f2fs
 ?fshost
 ?ftdi
-?fvm
 ?fvm2
 ?fxfs
 ?fxfs-crypt
 gpio
-?gpt
 ?gpt2
 ?hid
 ?hid-input-report
@@ -55,7 +53,6 @@ power-manager
 ?process-resolver
 ?ptysvc
 ?pwm
-?ramdisk
 ?realtek-8211f
 ?registers
 ?rndis-function
@@ -84,4 +81,3 @@ usb-bus
 ?usb-peripheral
 ?virtual-console
 ?xhci
-?zxcrypt

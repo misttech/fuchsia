@@ -128,7 +128,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let ramdisk_image = storage_config.filesystems.image_mode == FilesystemImageMode::Ramdisk;
         let no_zxcrypt = storage_config.filesystems.no_zxcrypt;
         let format_data_on_corruption = storage_config.filesystems.format_data_on_corruption.0;
-        let storage_host = storage_config.storage_host_enabled;
         let provision_fxfs = storage_config.provision_fxfs;
         let sdmmc_command_queueing = storage_config.sdmmc_command_queueing_enabled;
         if sdmmc_command_queueing {
@@ -167,87 +166,51 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
 
         // Prepare some default arguments that may get overridden by the product config.
         let mut blob_deprecated_padded = false;
-        let mut use_disk_migration = false;
         let mut data_filesystem_format_str = "fxfs";
         let mut fxfs_blob = false;
 
         // Add all the AIBs and collect some argument values.
         builder.platform_bundle("fshost_common")?;
         builder.platform_bundle("fshost_storage")?;
-        if storage_config.storage_host_enabled {
-            match &storage_config.filesystems.volume {
-                VolumeConfig::Fxfs => {
-                    ensure!(gpt, "GPT required for Fxfs-based product assemblies");
-                    fxfs_blob = true;
-                    builder.platform_bundle("fshost_storage_host_fxfs")?;
-                    if provision_fxfs {
-                        builder.platform_bundle("fshost_provision_fxfs")?;
-                    }
-                }
-                VolumeConfig::Fvm(FvmConfig { blob, data, .. }) => {
-                    blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
-                    match data.data_filesystem_format {
-                        DataFilesystemFormat::Fxfs => {
-                            bail!("Fxfs-in-FVM isn't supported in storage-host");
-                        }
-                        DataFilesystemFormat::F2fs => {
-                            context
-                                .ensure_build_type(&[BuildType::Eng], "GPT with FVM and F2FS")?;
-                            data_filesystem_format_str = "f2fs";
-                            if gpt {
-                                builder.platform_bundle("fshost_storage_host_gpt_fvm_f2fs")?;
-                            } else {
-                                // NOTE: There is no technical reason that this can't be supported,
-                                // but there is no need for it at this time, as no products use f2fs
-                                // without GPT.
-                                bail!("f2fs without GPT is not supported with storage-host");
-                            }
-                        }
-                        DataFilesystemFormat::Minfs => {
-                            data_filesystem_format_str = "minfs";
-                            // TODO(https://fxbug.dev/339491886): Implement support for migration
-                            // images in storage-host.
-                            ensure!(
-                                !data.use_disk_based_minfs_migration,
-                                "Migration isn't supported in storage-host yet",
-                            );
-                            if gpt {
-                                builder.platform_bundle("fshost_storage_host_gpt_fvm_minfs")?;
-                            } else {
-                                builder.platform_bundle("fshost_storage_host_fvm_minfs")?;
-                            }
-                        }
-                    }
+        match &storage_config.filesystems.volume {
+            VolumeConfig::Fxfs => {
+                ensure!(gpt, "GPT required for Fxfs-based product assemblies");
+                fxfs_blob = true;
+                builder.platform_bundle("fshost_storage_host_fxfs")?;
+                if provision_fxfs {
+                    builder.platform_bundle("fshost_provision_fxfs")?;
                 }
             }
-        } else {
-            // TODO(https://fxbug.dev/339491886): Delete the non-storage-host branch.
-            builder.platform_bundle("fshost_non_storage_host")?;
-            match &storage_config.filesystems.volume {
-                VolumeConfig::Fxfs => {
-                    ensure!(gpt, "GPT required for Fxfs-based product assemblies");
-                    fxfs_blob = true;
-                    builder.platform_bundle("fshost_fxfs")?;
-                }
-                VolumeConfig::Fvm(FvmConfig { blob, data, .. }) => {
-                    builder.platform_bundle("fshost_fvm")?;
-                    blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
-                    match data.data_filesystem_format {
-                        DataFilesystemFormat::Fxfs => {
-                            builder.platform_bundle("fshost_fvm_fxfs")?;
+            VolumeConfig::Fvm(FvmConfig { blob, data, .. }) => {
+                blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
+                match data.data_filesystem_format {
+                    DataFilesystemFormat::Fxfs => {
+                        bail!("Fxfs-in-FVM isn't supported in storage-host");
+                    }
+                    DataFilesystemFormat::F2fs => {
+                        context.ensure_build_type(&[BuildType::Eng], "GPT with FVM and F2FS")?;
+                        data_filesystem_format_str = "f2fs";
+                        if gpt {
+                            builder.platform_bundle("fshost_storage_host_gpt_fvm_f2fs")?;
+                        } else {
+                            // NOTE: There is no technical reason that this can't be supported,
+                            // but there is no need for it at this time, as no products use f2fs
+                            // without GPT.
+                            bail!("f2fs without GPT is not supported with storage-host");
                         }
-                        DataFilesystemFormat::F2fs => {
-                            data_filesystem_format_str = "f2fs";
-                            builder.platform_bundle("fshost_fvm_f2fs")?;
-                        }
-                        DataFilesystemFormat::Minfs => {
-                            data_filesystem_format_str = "minfs";
-                            if data.use_disk_based_minfs_migration {
-                                use_disk_migration = true;
-                                builder.platform_bundle("fshost_fvm_minfs_migration")?;
-                            } else {
-                                builder.platform_bundle("fshost_fvm_minfs")?;
-                            }
+                    }
+                    DataFilesystemFormat::Minfs => {
+                        data_filesystem_format_str = "minfs";
+                        // TODO(https://fxbug.dev/339491886): Implement support for migration
+                        // images in storage-host.
+                        ensure!(
+                            !data.use_disk_based_minfs_migration,
+                            "Migration isn't supported in storage-host yet",
+                        );
+                        if gpt {
+                            builder.platform_bundle("fshost_storage_host_gpt_fvm_minfs")?;
+                        } else {
+                            builder.platform_bundle("fshost_storage_host_fvm_minfs")?;
                         }
                     }
                 }
@@ -298,9 +261,9 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                 "fuchsia.fshost.BlobfsUseDeprecatedPaddedFormat",
                 Config::new_bool(blob_deprecated_padded),
             ),
-            ("fuchsia.fshost.UseDiskMigration", Config::new_bool(use_disk_migration)),
+            ("fuchsia.fshost.UseDiskMigration", Config::new_bool(false)),
             ("fuchsia.fshost.FxfsBlob", Config::new_bool(fxfs_blob)),
-            ("fuchsia.fshost.StorageHost", Config::new_bool(storage_host)),
+            ("fuchsia.fshost.StorageHost", Config::new_bool(true)),
             ("fuchsia.fshost.FvmSliceSize", Config::new_uint64(fvm_slice_size)),
             (
                 "fuchsia.fshost.DataFilesystemFormat",

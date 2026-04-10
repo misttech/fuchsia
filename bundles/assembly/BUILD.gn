@@ -2971,45 +2971,6 @@ assembly_input_bundle("fshost_storage_host_fvm_minfs") {
   ]
 }
 
-# AIB containing drivers and fshost shards needed for non-storage-host configurations.
-assembly_input_bundle("fshost_non_storage_host") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards =
-              [ "//src/storage/fshost/meta/non_storage_host_gpt.shard.cml" ]
-        },
-      ]
-    },
-  ]
-  drivers = [
-    {
-      set = "bootfs"
-      package_target = "//src/devices/block/drivers/ramdisk:package"
-      driver_components = [ "meta/ramdisk.cm" ]
-    },
-    {
-      set = "bootfs"
-      package_target = "//src/devices/block/drivers/gpt:package"
-      driver_components = [ "meta/gpt.cm" ]
-    },
-    {
-      set = "bootfs"
-      package_target = "//src/storage/fvm/driver:package"
-      driver_components = [ "meta/fvm.cm" ]
-    },
-    {
-      set = "bootfs"
-      package_target = "//src/devices/block/drivers/zxcrypt:package"
-      driver_components = [ "meta/zxcrypt.cm" ]
-    },
-  ]
-}
-
 # AIB containing the fshost with fxfs.
 assembly_input_bundle("fshost_fxfs") {
   compiled_packages = [

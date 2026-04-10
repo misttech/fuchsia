@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Platform configuration options for storage support.
-#[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 pub struct StorageConfig {
     #[walk_paths]
@@ -25,11 +25,6 @@ pub struct StorageConfig {
     /// Prevents fshost from binding to detected block devices.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub disable_automount: bool,
-
-    /// Enables storage-host.  See RFC (https://fxrev.dev/1077832) for details.
-    #[serde(default = "default_storage_host")]
-    #[serde(skip_serializing_if = "is_default_storage_host")]
-    pub storage_host_enabled: bool,
 
     /// Enable the automatic garbage collection of mutable storage.
     #[serde(skip_serializing_if = "crate::common::is_default")]
@@ -49,31 +44,6 @@ pub struct StorageConfig {
     /// If set, enables SDMMC command queueing.  Requires the `fuchsia::sdmmc_cqe` board capability.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub sdmmc_command_queueing_enabled: bool,
-}
-
-fn is_default_storage_host(value: &bool) -> bool {
-    *value == default_storage_host()
-}
-
-fn default_storage_host() -> bool {
-    true
-}
-
-impl Default for StorageConfig {
-    fn default() -> Self {
-        Self {
-            component_id_index: Default::default(),
-            factory_data: Default::default(),
-            filesystems: Default::default(),
-            disable_automount: Default::default(),
-            storage_host_enabled: true,
-            provision_fxfs: false,
-            mutable_storage_garbage_collection: Default::default(),
-            starnix_volume: Default::default(),
-            keymint_enabled: false,
-            sdmmc_command_queueing_enabled: false,
-        }
-    }
 }
 
 /// Platform configuration options for the component id index
