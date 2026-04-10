@@ -196,6 +196,7 @@ pub struct InputFile {
     x_axis_info: uapi::input_absinfo,
     y_axis_info: uapi::input_absinfo,
     inner: Mutex<InputFileMutableState>,
+    waiters: WaitQueue,
     // InputFile will be initialized with an InputFileStatus that holds Inspect data
     // `None` for Uinput InputFiles
     pub inspect_status: Option<Arc<InputFileStatus>>,
@@ -228,7 +229,6 @@ impl LinuxEventWithTraceId {
 // Mutable state of `InputFile`
 struct InputFileMutableState {
     pub(super) events: VecDeque<LinuxEventWithTraceId>,
-    pub(super) waiters: WaitQueue,
 }
 
 /// Returns the minimum number of bytes required to store `n_bits` bits.
@@ -362,10 +362,8 @@ impl InputFile {
                 // Y position.
                 ..uapi::input_absinfo::default()
             },
-            inner: Mutex::new(InputFileMutableState {
-                events: VecDeque::new(),
-                waiters: WaitQueue::default(),
-            }),
+            inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
+            waiters: WaitQueue::default(),
             inspect_status: node.map(|n| InputFileStatus::new(n)),
             device_name,
         }
@@ -394,10 +392,8 @@ impl InputFile {
             mt_tracking_id_axis_info: uapi::input_absinfo::default(),
             x_axis_info: uapi::input_absinfo::default(),
             y_axis_info: uapi::input_absinfo::default(),
-            inner: Mutex::new(InputFileMutableState {
-                events: VecDeque::new(),
-                waiters: WaitQueue::default(),
-            }),
+            inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
+            waiters: WaitQueue::default(),
             inspect_status: node.map(|n| InputFileStatus::new(n)),
             device_name,
         }
@@ -426,10 +422,8 @@ impl InputFile {
             mt_tracking_id_axis_info: uapi::input_absinfo::default(),
             x_axis_info: uapi::input_absinfo::default(),
             y_axis_info: uapi::input_absinfo::default(),
-            inner: Mutex::new(InputFileMutableState {
-                events: VecDeque::new(),
-                waiters: WaitQueue::default(),
-            }),
+            inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
+            waiters: WaitQueue::default(),
             inspect_status: node.map(|n| InputFileStatus::new(n)),
             device_name,
         }
@@ -442,30 +436,39 @@ impl InputFile {
         if let Some(inspect) = &self.inspect_status {
             inspect.count_fd_notify_calls();
         }
-        let mut inner = self.inner.lock();
-        inner.events.extend(events.into_iter().map(LinuxEventWithTraceId::new));
-        inner.waiters.notify_fd_events(FdEvents::POLLIN);
+        {
+            let mut inner = self.inner.lock();
+            inner.events.extend(events.into_iter().map(LinuxEventWithTraceId::new));
+        }
+        self.waiters.notify_fd_events(FdEvents::POLLIN);
     }
 
     pub fn read_events(&self, limit: usize) -> Vec<LinuxEventWithTraceId> {
         if let Some(inspect) = &self.inspect_status {
             inspect.count_fd_read_calls();
         }
-        let mut inner = self.inner.lock();
-        let num_events = inner.events.len();
-        let limit = std::cmp::min(limit, num_events);
-        if num_events > limit {
-            log_info!(
-                "There was only space in the given buffer to read {} of the {} queued events. Sending a notification to prompt another read.",
-                limit,
-                num_events
-            );
+        let (events, should_notify) = {
+            let mut inner = self.inner.lock();
+            let num_events = inner.events.len();
+            let limit = std::cmp::min(limit, num_events);
+            let should_notify = num_events > limit;
+            if should_notify {
+                log_info!(
+                    "There was only space in the given buffer to read {} of the {} queued events. Sending a notification to prompt another read.",
+                    limit,
+                    num_events
+                );
+            }
+            let events = inner.events.drain(..limit).collect();
+            (events, should_notify)
+        };
+        if should_notify {
             if let Some(inspect) = &self.inspect_status {
                 inspect.count_fd_notify_calls();
             }
-            inner.waiters.notify_fd_events(FdEvents::POLLIN);
+            self.waiters.notify_fd_events(FdEvents::POLLIN);
         }
-        inner.events.drain(..limit).collect()
+        events
     }
 }
 
@@ -687,7 +690,7 @@ impl FileOps for InputFile {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(self.inner.lock().waiters.wait_async_fd_events(waiter, events, handler))
+        Some(self.waiters.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
