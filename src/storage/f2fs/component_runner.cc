@@ -153,6 +153,12 @@ void ComponentRunner::Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) {
       async::PostTask(dispatcher(), [this, status, cb = std::move(cb)]() mutable {
         if (f2fs_) {
           f2fs_->Sync([this](zx_status_t) mutable { f2fs_->PutSuper(); });
+          TearDown();
+          // F2fs has a BcacheMapper which has a VmoBuffer which has a Vmoid. When the VmoBuffer is
+          // destructed it tries to detach the Vmoid from the block device. F2fs must be destructed
+          // before responding to the Shutdown request to ensure that the block device still exists
+          // for these operations.
+          f2fs_.reset();
         }
         if (on_unmount_) {
           on_unmount_();
