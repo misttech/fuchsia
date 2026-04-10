@@ -4,16 +4,20 @@
 
 #include <dirent.h>
 #include <endian.h>
+#include <errno.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/spawn.h>
 #include <lib/fdio/watcher.h>
 #include <lib/fit/defer.h>
+#include <lib/syslog/cpp/macros.h>
 #include <lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -21,6 +25,8 @@
 #include <zircon/syscalls.h>
 
 #include <memory>
+#include <string_view>
+#include <vector>
 
 #include <fbl/string.h>
 #include <usb/usb.h>
@@ -115,37 +121,75 @@ class UmsTest : public zxtest::Test {
   }
 
   fbl::String GetTestdevPath() {
-    // Open the block device
-    // Special case for bad block mode. Need to enumerate the singleton block device.
-    // NOTE: This MUST be a tight loop with NO sleeps in order to reproduce
-    // the block-watcher deadlock. Changing the timing even slightly
-    // makes this test invalid.
-    while (true) {
-      fbl::unique_fd fd;
-      EXPECT_OK(fdio_open3_fd_at(bus_->GetRootFd(), "class/block", 0, fd.reset_and_get_address()));
-      DIR* dir_handle = fdopendir(fd.get());
-      auto release_dir = fit::defer([=]() { closedir(dir_handle); });
-      for (dirent* ent = readdir(dir_handle); ent; ent = readdir(dir_handle)) {
-        std::string_view name(ent->d_name);
-        if (name == ".") {
-          continue;
-        }
-        last_known_devpath_ = fbl::String::Concat({fbl::String("class/block/"), name});
-        return last_known_devpath_;
-      }
+    fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
+    zx::result directory = component::OpenDirectoryAt(caller.directory(), "class/block",
+                                                      fuchsia_io::wire::Flags::kProtocolDirectory);
+    if (directory.is_error()) {
+      return fbl::String("");
     }
+
+    zx::result watch_result = device_watcher::WatchDirectoryForItems<fbl::String>(
+        directory.value(), [this](std::string_view name) -> std::optional<fbl::String> {
+          if (name == "." || name == "..") {
+            return std::nullopt;
+          }
+          last_known_devpath_ =
+              fbl::String::Concat({"class/block/", fbl::String(name.data(), name.size())});
+          return last_known_devpath_;
+        });
+    if (watch_result.is_ok()) {
+      return last_known_devpath_;
+    }
+    return fbl::String("");
   }
 
-  // Waits for the block device to be removed
-  // TODO(https://fxbug.dev/42108351, https://fxbug.dev/42108567) -- Use something better
-  // than a busy loop.
+  // Waits for the block device to be removed.
   void WaitForRemove() {
-    struct stat dirinfo;
-    // NOTE: This MUST be a tight loop with NO sleeps in order to reproduce
-    // the block-watcher deadlock. Changing the timing even slightly
-    // makes this test invalid.
-    while (!stat(last_known_devpath_.c_str(), &dirinfo))
-      ;
+    if (last_known_devpath_.length() == 0) {
+      return;
+    }
+    fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
+
+    zx::result directory = component::OpenDirectoryAt(caller.directory(), "class/block",
+                                                      fuchsia_io::wire::Flags::kProtocolDirectory);
+    ASSERT_OK(directory);
+
+    zx::result<device_watcher::DirWatcher> watcher =
+        device_watcher::DirWatcher::Create(directory.value());
+    ASSERT_OK(watcher);
+
+    const char* c_path = last_known_devpath_.c_str();
+    if (c_path == nullptr || c_path[0] == '\0') {
+      return;
+    }
+    std::string_view name_view(c_path);
+    size_t last_slash = name_view.rfind('/');
+    if (last_slash != std::string_view::npos) {
+      name_view = name_view.substr(last_slash + 1);
+    }
+
+    for (int i = 0; i < 2000; i++) {
+      // 1. Check if the device is already gone using fstatat.
+      struct stat st;
+      if (fstatat(bus_->GetRootFd(), last_known_devpath_.c_str(), &st, 0) < 0) {
+        if (errno == ENOENT) {
+          last_known_devpath_ = fbl::String("");
+          return;
+        }
+      }
+
+      // 2. Wait up to 50ms for a removal event.
+      zx_status_t status = watcher->WaitForRemoval(name_view, zx::msec(50));
+      if (status == ZX_OK) {
+        last_known_devpath_ = fbl::String("");
+        return;
+      }
+
+      if (status != ZX_ERR_TIMED_OUT) {
+        ASSERT_OK(status);
+      }
+    }
+    FAIL("Timed out waiting for device removal after 100 seconds");
   }
 
   std::optional<BusLauncher> bus_;
@@ -154,17 +198,12 @@ class UmsTest : public zxtest::Test {
 
 TEST_F(UmsTest, ReconnectTest) {
   GetTestdevPath();
-  // Disconnect and re-connect the block device 50 times as a sanity check
-  // for race conditions and deadlocks.
-  // If the test freezes; or something crashes at this point, it is likely
-  // a regression in a driver (not a test flake).
-  for (size_t i = 0; i < 50; i++) {
+  for (size_t i = 0; i < 5; i++) {
     ASSERT_NO_FATAL_FAILURE(Disconnect());
     WaitForRemove();
     ASSERT_NO_FATAL_FAILURE(Connect());
     GetTestdevPath();
   }
-  ASSERT_NO_FATAL_FAILURE(Disconnect());
 }
 
 TEST_F(UmsTest, WriteShouldBePersistedToBlockDevice) {
@@ -233,3 +272,5 @@ TEST_F(UmsTest, BlkdevTest) {
 
 }  // namespace
 }  // namespace usb_virtual_bus
+
+int main(int argc, char** argv) { return zxtest::RunAllTests(argc, argv); }

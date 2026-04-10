@@ -75,6 +75,7 @@ test("ums") {
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/fit",
+    "//sdk/lib/syslog/cpp",
     "//src/devices/bin/driver_runtime",
     "//src/devices/block/lib/scsi",
     "//src/devices/usb/lib/usb:ums",
@@ -111,7 +112,9 @@ test("ums-integration") {
     "//sdk/fidl/fuchsia.hardware.usb.virtual.bus:fuchsia.hardware.usb.virtual.bus_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/component/incoming/cpp",
+    "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/syslog/cpp",
     "//src/devices/usb/lib/usb",
     "//src/devices/usb/testing/usb-virtual-bus-launcher",
     "//src/lib/ddk",
@@ -139,7 +142,12 @@ test("ums-integration") {
 
 fuchsia_test_package("ums-integration-test") {
   test_components = [ ":ums-integration-component" ]
-  deps = [ ":usb-mass-storage" ]
+  deps = [
+    ":usb-mass-storage",
+    "//src/devices/bin/driver-host:component",
+    "//src/devices/bin/driver-host:next_component",
+  ]
+
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -151,7 +159,7 @@ group("tests") {
   testonly = true
   deps = [
     # TODO(b/317154044): Fix flakes and re-enable
-    # ":ums-integration-test",
+    ":ums-integration-test",
     ":ums-test",
     ":usb_mass_storage_bind_test",
   ]

@@ -46,6 +46,11 @@ void UsbMassStorageDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iov
                                                scsi::DeviceOp* device_op, iovec data) {
   Transaction* txn = containerof(device_op, Transaction, device_op);
 
+  if (dead_) {
+    device_op->Complete(ZX_ERR_IO_NOT_PRESENT);
+    return;
+  }
+
   if (lun > UINT8_MAX) {
     device_op->Complete(ZX_ERR_OUT_OF_RANGE);
     return;
@@ -80,11 +85,9 @@ void UsbMassStorageDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iov
 }
 
 void UsbMassStorageDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+  dead_ = true;
   // wait for worker loop to finish before removing devices
   if (worker_dispatcher_.get()) {
-    // terminate our worker loop
-    dead_ = true;
-
     sync_completion_signal(&txn_completion_);
     worker_dispatcher_.ShutdownAsync();
     worker_shutdown_completion_.Wait();
@@ -385,6 +388,8 @@ zx_status_t UsbMassStorageDevice::ReadCsw(uint32_t* out_residue, bool retry) {
       }
       return ReadCsw(out_residue, true);
     }
+    fdf::error("UMS: ReadCsw failed with status {}",
+               zx_status_get_string(csw_request->response.status));
     return csw_request->response.status;
   }
   csw_status_t csw_error = VerifyCsw(csw_request, out_residue);

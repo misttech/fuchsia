@@ -57,43 +57,51 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
 
   void RequestQueue(usb::Request<>* req, const usb_request_complete_callback_t* completion);
   static void CompletionCallback(void* ctx, usb_request_t* req);
+  bool IsReadyForShutdown() const { return !active_.load() && pending_request_count_.load() == 0; }
 
   // Main driver initialization.
   zx_status_t Init();
 
-  void QueueData(usb::Request<>* req);
-  void QueueCsw(uint8_t status);
-  void ContinueTransfer();
-  void StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba = 0);
+  void QueueData(usb::Request<>* req) __TA_EXCLUDES(mtx_);
+  void QueueCsw(uint8_t status) __TA_EXCLUDES(mtx_);
+  void ContinueTransfer() __TA_EXCLUDES(mtx_);
+  void StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba = 0)
+      __TA_EXCLUDES(mtx_);
 
-  void HandleInquiry(ums_cbw_t* cbw);
-  void HandleTestUnitReady(ums_cbw_t* cbw);
-  void HandleRequestSense(ums_cbw_t* cbw);
-  void HandleReadCapacity10(ums_cbw_t* cbw);
-  void HandleReadCapacity16(ums_cbw_t* cbw);
-  void HandleModeSense6(ums_cbw_t* cbw);
-  void HandleRead10(ums_cbw_t* cbw);
-  void HandleRead12(ums_cbw_t* cbw);
-  void HandleRead16(ums_cbw_t* cbw);
-  void HandleWrite10(ums_cbw_t* cbw);
-  void HandleWrite12(ums_cbw_t* cbw);
-  void HandleWrite16(ums_cbw_t* cbw);
-  void HandleUnmap(ums_cbw_t* cbw);
+  void HandleInquiry(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleTestUnitReady(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleRequestSense(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleReadCapacity10(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleReadCapacity16(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleModeSense6(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleRead10(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleRead12(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleRead16(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleWrite10(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleWrite12(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleWrite16(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleUnmap(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
 
-  void HandleCbw(ums_cbw_t* cbw);
-  void CbwComplete(usb::Request<>* req);
-  void DataComplete(usb::Request<>* req);
+  void HandleCbw(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void CbwComplete(usb::Request<>* req) __TA_EXCLUDES(mtx_);
+  void DataComplete(usb::Request<>* req) __TA_EXCLUDES(mtx_);
 
   int WorkerLoop();
 
   ddk::UsbFunctionProtocolClient function_;
+  bool configured_ = false;
 
   std::optional<usb::Request<>> cbw_req_;
-  bool cbw_req_complete_ = false;
+  bool cbw_req_complete_ __TA_GUARDED(mtx_) = false;
+  bool cbw_in_flight_ __TA_GUARDED(mtx_) = false;
   std::optional<usb::Request<>> data_req_;
-  bool data_req_complete_ = false;
+  bool data_req_complete_ __TA_GUARDED(mtx_) = false;
+  bool data_in_flight_ __TA_GUARDED(mtx_) = false;
   std::optional<usb::Request<>> csw_req_;
-  bool csw_req_complete_ = false;
+  bool csw_req_complete_ __TA_GUARDED(mtx_) = false;
+  bool csw_in_flight_ __TA_GUARDED(mtx_) = false;
+
+  usb_request_complete_callback_t request_complete_;
 
   // vmo for backing storage
   static zx::vmo vmo_;
@@ -114,7 +122,7 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
   uint8_t bulk_in_addr_;
   size_t parent_req_size_;
   thrd_t thread_;
-  bool active_;
+  std::atomic_bool active_;
   fbl::Mutex mtx_;
   fbl::ConditionVariable condvar_ __TA_GUARDED(mtx_);
   std::atomic_int pending_request_count_ = 0;

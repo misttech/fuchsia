@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
   if (blkdev != NULL) {
     setenv(BLKTEST_BLK_DEV, blkdev, 1);
   }
-
-  return zxtest_run_all_tests(argc, argv);
+  // Remove processed options from argc/argv to zxtest_run_all_tests().
+  argv[optind - 1] = argv[0];
+  return zxtest_run_all_tests(argc - optind + 1, argv + optind - 1);
 }
