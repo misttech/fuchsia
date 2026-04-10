@@ -7,7 +7,7 @@ use crate::fs::fuchsia::zxio::{zxio_query_events, zxio_wait_async};
 use crate::mm::{MemoryAccessorExt, UNIFIED_ASPACES_ENABLED};
 use crate::security;
 use crate::task::syscalls::SockFProgPtr;
-use crate::task::{CurrentTask, EventHandler, Task, WaitCanceler, Waiter};
+use crate::task::{CurrentTask, EventHandler, Kernel, Task, WaitCanceler, Waiter};
 use crate::vfs::socket::socket::ReadFromSockOptValue as _;
 use crate::vfs::socket::{
     SockOptValue, Socket, SocketAddress, SocketDomain, SocketHandle, SocketMessageFlags, SocketOps,
@@ -35,10 +35,10 @@ use starnix_uapi::{
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use syncio::zxio::{
-    IP_RECVERR, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_TYPE, SOL_IP, SOL_SOCKET,
-    ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, zxio_socket_mark,
+    IP_RECVERR, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_REUSEPORT, SO_TYPE, SOL_IP,
+    SOL_SOCKET, ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, zxio_socket_mark,
 };
 use syncio::{
     ControlMessage, RecvMessageInfo, ServiceConnector, Zxio, ZxioErrorCode,
@@ -120,6 +120,9 @@ pub struct ZxioBackedSocket {
     // SO_COOKIE cache.
     cookie: OnceLock<u64>,
 
+    // Token resolver for this socket.
+    token_resolver: Arc<SocketTokenResolver>,
+
     // TODO(https://fxbug.dev/496276975): Stub TCP_ANDROID_L4S implementation.
     tcp_android_l4s: Mutex<bool>,
 }
@@ -184,12 +187,16 @@ impl ZxioBackedSocket {
 
     pub fn new_with_zxio(current_task: &CurrentTask, zxio: syncio::Zxio) -> ZxioBackedSocket {
         let uid = current_task.current_creds().euid;
-        let resolver = current_task
+        let token_resolver = current_task
             .kernel()
             .socket_tokens_store
             .get_token_resolver(current_task.kernel(), uid);
-        let zxio = zxio.with_token_resolver(resolver);
-        ZxioBackedSocket { zxio, cookie: Default::default(), tcp_android_l4s: Mutex::new(true) }
+        ZxioBackedSocket {
+            zxio,
+            cookie: Default::default(),
+            token_resolver,
+            tcp_android_l4s: Mutex::new(true),
+        }
     }
 
     fn sendmsg(
@@ -710,7 +717,7 @@ impl SocketOps for ZxioBackedSocket {
                     zerocopy::transmute_ref!(&socket_mark);
                 return self
                     .zxio
-                    .setsockopt(SOL_SOCKET as i32, SO_FUCHSIA_MARK as i32, optval)
+                    .setsockopt(SOL_SOCKET as i32, SO_FUCHSIA_MARK as i32, optval, None)
                     .map_err(|status| from_status_like_fdio!(status))?
                     .map_err(|out_code| errno_from_zxio_code!(out_code));
             }
@@ -737,8 +744,14 @@ impl SocketOps for ZxioBackedSocket {
         }
 
         let optval = optval.to_vec(current_task)?;
+
+        let access_token = match (level, optname) {
+            (SOL_SOCKET, SO_REUSEPORT) => Some(self.token_resolver.get_sharing_domain_token()),
+            _ => None,
+        };
+
         self.zxio
-            .setsockopt(level as i32, optname as i32, &optval)
+            .setsockopt(level as i32, optname as i32, &optval, access_token)
             .map_err(|status| from_status_like_fdio!(status))?
             .map_err(|out_code| errno_from_zxio_code!(out_code))
     }
@@ -810,6 +823,7 @@ impl SocketOps for ZxioBackedSocket {
 }
 
 pub use tokens_store::SocketTokensStore;
+type SocketTokenResolver = tokens_store::SocketTokenResolver<Kernel>;
 
 mod tokens_store {
     use crate::task::Kernel;
@@ -860,18 +874,13 @@ mod tokens_store {
         }
     }
 
-    impl syncio::ZxioTokenResolver for TokenCollection {
-        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::NullableHandle> {
-            match token_type {
-                syncio::ZxioTokenType::SharingDomain => {
-                    let token = self
-                        .sharing_domain_token
-                        .get_or_init(|| zx::Event::create())
-                        .duplicate_handle(zx::Rights::TRANSFER)
-                        .expect("Failed to duplicate handle");
-                    Some(token.into_handle())
-                }
-            }
+    impl TokenCollection {
+        fn get_sharing_domain_token(&self) -> zx::NullableHandle {
+            self.sharing_domain_token
+                .get_or_init(|| zx::Event::create())
+                .duplicate_handle(zx::Rights::TRANSFER)
+                .expect("Failed to duplicate handle")
+                .into()
         }
     }
 
@@ -934,7 +943,7 @@ mod tokens_store {
             &self,
             host: &Arc<H>,
             uid: uid_t,
-        ) -> Arc<dyn syncio::ZxioTokenResolver> {
+        ) -> Arc<SocketTokenResolver<H>> {
             let mut guard = self.map.lock();
             let mut entry = guard.entry(uid).or_insert_with(|| UidEntry::new());
 
@@ -1012,7 +1021,7 @@ mod tokens_store {
 
     // Resolver for socket tokens. This type essentially acts as a proxy for
     // `TokenCollection` that also notifies `SocketTokensStore` when it is dropped.
-    struct SocketTokenResolver<H: SocketTokenStoreHost> {
+    pub struct SocketTokenResolver<H: SocketTokenStoreHost> {
         tokens: Arc<TokenCollection>,
 
         // Used in `Drop` implementation to cleanup the entry in
@@ -1025,6 +1034,10 @@ mod tokens_store {
         fn new(tokens: Arc<TokenCollection>, host: &Arc<H>, uid: uid_t) -> Arc<Self> {
             Arc::new(Self { tokens, host: Arc::downgrade(host), uid })
         }
+
+        pub fn get_sharing_domain_token(&self) -> zx::NullableHandle {
+            self.tokens.get_sharing_domain_token()
+        }
     }
 
     impl<H: SocketTokenStoreHost> Drop for SocketTokenResolver<H> {
@@ -1032,12 +1045,6 @@ mod tokens_store {
             if let Some(host) = self.host.upgrade() {
                 host.get_socket_tokens_store().on_resolver_dropped(&host, self.uid);
             }
-        }
-    }
-
-    impl<H: SocketTokenStoreHost> syncio::ZxioTokenResolver for SocketTokenResolver<H> {
-        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::NullableHandle> {
-            self.tokens.get_token(token_type)
         }
     }
 
@@ -1093,9 +1100,7 @@ mod tokens_store {
             let token_resolver = store.get_token_resolver(&host, UID);
             assert!(store.map.lock().contains_key(&UID));
 
-            let token = token_resolver
-                .get_token(syncio::ZxioTokenType::SharingDomain)
-                .expect("Failed to get token");
+            let token = token_resolver.get_sharing_domain_token();
             drop(token);
             drop(token_resolver);
 
@@ -1108,9 +1113,7 @@ mod tokens_store {
             let host = TestSocketTokenStoreHost::new();
             let store = &host.socket_tokens_store;
             let token_resolver = store.get_token_resolver(&host, UID);
-            let token = token_resolver
-                .get_token(syncio::ZxioTokenType::SharingDomain)
-                .expect("Failed to get token");
+            let token = token_resolver.get_sharing_domain_token();
             assert!(store.map.lock().contains_key(&UID));
             drop(token_resolver);
 
@@ -1144,9 +1147,7 @@ mod tokens_store {
             let host = TestSocketTokenStoreHost::new();
             let store = &host.socket_tokens_store;
             let token_resolver = store.get_token_resolver(&host, UID);
-            let token1 = token_resolver
-                .get_token(syncio::ZxioTokenType::SharingDomain)
-                .expect("Failed to get token");
+            let token1 = token_resolver.get_sharing_domain_token();
             drop(token_resolver);
 
             // The entry should not be dropped since we still hold the token
@@ -1155,9 +1156,7 @@ mod tokens_store {
 
             // Create another resolver. It should reuse the same token.
             let token_resolver = store.get_token_resolver(&host, UID);
-            let token2 = token_resolver
-                .get_token(syncio::ZxioTokenType::SharingDomain)
-                .expect("Failed to get token");
+            let token2 = token_resolver.get_sharing_domain_token();
             assert!(token1.koid() == token2.koid());
 
             // Token should not be dropped while we have a TokenResolver.

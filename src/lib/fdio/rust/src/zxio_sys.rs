@@ -1321,13 +1321,10 @@ pub struct zxio_ops {
             descriptor: *const zxio_fsverity_descriptor_t,
         ) -> zx_status_t,
     >,
-    pub set_token_resolver: ::std::option::Option<
-        unsafe extern "C" fn(io: *mut zxio_t, resolver: zxio_token_resolver_t) -> zx_status_t,
-    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of zxio_ops"][::std::mem::size_of::<zxio_ops>() - 456usize];
+    ["Size of zxio_ops"][::std::mem::size_of::<zxio_ops>() - 448usize];
     ["Alignment of zxio_ops"][::std::mem::align_of::<zxio_ops>() - 8usize];
     ["Offset of field: zxio_ops::destroy"][::std::mem::offset_of!(zxio_ops, destroy) - 0usize];
     ["Offset of field: zxio_ops::close"][::std::mem::offset_of!(zxio_ops, close) - 8usize];
@@ -1412,8 +1409,6 @@ const _: () = {
     ["Offset of field: zxio_ops::allocate"][::std::mem::offset_of!(zxio_ops, allocate) - 432usize];
     ["Offset of field: zxio_ops::enable_verity"]
         [::std::mem::offset_of!(zxio_ops, enable_verity) - 440usize];
-    ["Offset of field: zxio_ops::set_token_resolver"]
-        [::std::mem::offset_of!(zxio_ops, set_token_resolver) - 448usize];
 };
 pub type zxio_ops_t = zxio_ops;
 unsafe extern "C" {
@@ -1811,12 +1806,6 @@ unsafe extern "C" {
         flags: zxio_open_flags_t,
         options: *const zxio_open_options_t,
         storage: *mut zxio_storage_t,
-    ) -> zx_status_t;
-}
-unsafe extern "C" {
-    pub fn zxio_default_set_token_resolver(
-        io: *mut zxio_t,
-        resolver: zxio_token_resolver_t,
     ) -> zx_status_t;
 }
 unsafe extern "C" {

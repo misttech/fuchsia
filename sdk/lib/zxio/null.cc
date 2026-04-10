@@ -208,7 +208,8 @@ zx_status_t zxio_default_getsockopt(zxio_t* io, int level, int optname, void* op
 }
 
 zx_status_t zxio_default_setsockopt(zxio_t* io, int level, int optname, const void* optval,
-                                    socklen_t optlen, int16_t* out_code) {
+                                    socklen_t optlen, zx_handle_t access_token, int16_t* out_code) {
+  zx_handle_close(access_token);
   *out_code = ENOTSOCK;
   return ZX_OK;
 }
@@ -315,9 +316,5 @@ zx_status_t zxio_default_enable_verity(zxio_t* io, const zxio_fsverity_descripto
 zx_status_t zxio_default_open(zxio_t* directory, const char* path, size_t path_len,
                               zxio_open_flags_t flags, const zxio_open_options_t* options,
                               zxio_storage_t* storage) {
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-zx_status_t zxio_default_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver) {
   return ZX_ERR_NOT_SUPPORTED;
 }

@@ -2212,16 +2212,10 @@ TEST(SocketTest, BlockCrossProcessReusePort) {
 
   status = zx::event::create(0, &storage.sharing_domain_token);
   EXPECT_EQ(status, ZX_OK);
-  zxio_token_resolver_t resolver = [](zxio_t* io, uint32_t token_type) -> zx_handle_t {
-    EXPECT_EQ(token_type, ZXIO_TOKEN_TYPE_SHARING_DOMAIN);
-    auto* storage = reinterpret_cast<ZxioStorage*>(io);
-    zx::event dup;
-    EXPECT_EQ(storage->sharing_domain_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup), ZX_OK);
-    return dup.release();
-  };
-  EXPECT_EQ(zxio_set_token_resolver(io, resolver), ZX_OK);
-
-  EXPECT_EQ(zxio_setsockopt(io, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval), &out_code),
+  zx::event dup;
+  EXPECT_EQ(storage.sharing_domain_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup), ZX_OK);
+  EXPECT_EQ(zxio_setsockopt(io, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval), dup.release(),
+                            &out_code),
             ZX_OK);
   EXPECT_EQ(out_code, 0);
 

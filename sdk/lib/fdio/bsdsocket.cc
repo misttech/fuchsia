@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.posix.socket.raw/cpp/wire.h>
 #include <lib/fdio/io.h>
 #include <lib/fit/defer.h>
+#include <lib/zx/event.h>
 #include <lib/zxio/bsdsocket.h>
 #include <lib/zxio/cpp/create_with_type.h>
 #include <netdb.h>
@@ -29,6 +30,21 @@
 #include "sdk/lib/fdio/internal.h"
 #include "sdk/lib/fdio/socket.h"
 #include "src/network/getifaddrs.h"
+
+static zx::event create_sharing_domain_token() {
+  zx::event sharing_domain;
+  zx_status_t status = zx::event::create(0, &sharing_domain);
+  ZX_ASSERT(status == ZX_OK);
+  return sharing_domain;
+}
+
+static zx::event get_sharing_domain_token() {
+  static zx::event sharing_domain = create_sharing_domain_token();
+  zx::event sharing_domain_peer;
+  zx_status_t result = sharing_domain.duplicate(ZX_RIGHT_TRANSFER, &sharing_domain_peer);
+  ZX_ASSERT(result == ZX_OK);
+  return sharing_domain_peer;
+}
 
 namespace fnet = fuchsia_net;
 namespace fnet_name = fuchsia_net_name;
@@ -244,8 +260,6 @@ int accept4(int fd, struct sockaddr* __restrict addr, socklen_t* __restrict addr
       return ERRNO(out_code);
     }
   }
-
-  accepted_io->init_token_resolver();
 
   if (flags & SOCK_NONBLOCK) {
     accepted_io->ioflag() |= IOFLAG_NONBLOCK;
@@ -489,9 +503,14 @@ int setsockopt(int fd, int level, int optname, const void* optval, socklen_t opt
       break;
   }
 
+  zx_handle_t access_token = ZX_HANDLE_INVALID;
+  if (level == SOL_SOCKET && optname == SO_REUSEPORT) {
+    access_token = get_sharing_domain_token().release();
+  }
+
   int16_t out_code;
-  const zx_status_t status =
-      zxio_setsockopt(&io->zxio_storage().io, level, optname, optval, optlen, &out_code);
+  const zx_status_t status = zxio_setsockopt(&io->zxio_storage().io, level, optname, optval, optlen,
+                                             access_token, &out_code);
   if (status != ZX_OK) {
     return ERROR(status);
   }

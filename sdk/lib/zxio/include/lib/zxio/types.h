@@ -510,15 +510,6 @@ typedef struct zxio_open_options {
   const zxio_node_attributes_t* create_attr;
 } zxio_open_options_t;
 
-typedef uint32_t zxio_token_type_t;
-#define ZXIO_TOKEN_TYPE_SHARING_DOMAIN ((zxio_token_type_t)1u)
-
-// Function pointer type for a token resolver callback. This callback is called by ZXIO sockets
-// when a token is needed to perform a socket operation. Ownership of the returned handle is
-// passed to the caller. The callback may return `ZX_HANDLE_INVALID` if a token of the specified
-// `type` is not available - this will result in the corresponding operation failing.
-typedef zx_handle_t (*zxio_token_resolver_t)(zxio_t* io, zxio_token_type_t type);
-
 // NOLINTEND(modernize-use-using)
 
 __END_CDECLS

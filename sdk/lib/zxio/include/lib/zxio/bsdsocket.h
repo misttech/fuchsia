@@ -57,9 +57,18 @@ ZXIO_EXPORT zx_status_t zxio_getsockopt(zxio_t* io, int level, int optname, void
                                         socklen_t* optlen, int16_t* out_code);
 
 // Reads up to |optlen| bytes from |*optval| into the value of the socket option specified
-// by |level| and |optname|.
+// by |level| and |optname|. |access_token| should be provided if the socket option needs an
+// access token, otherwise it should be set to |ZX_HANDLE_INVALID|. See table below for the
+// required access tokens:
+//
+//  Option                     | Required Access Token
+//  ---------------------------|--------------------------------------------------------
+//  (SOL_SOCKET, SO_REUSEPORT) | Sharing Domain Token of the calling process
+//
+// If |access_token| is provided, it is consumed independently of the result of the call.
 ZXIO_EXPORT zx_status_t zxio_setsockopt(zxio_t* io, int level, int optname, const void* optval,
-                                        socklen_t optlen, int16_t* out_code);
+                                        socklen_t optlen, zx_handle_t access_token,
+                                        int16_t* out_code);
 
 // Receives a message from a socket and sets |*out_actual| to the total bytes received.
 //
@@ -134,10 +143,6 @@ ZXIO_EXPORT zx_status_t zxio_socket_with_options(zxio_service_connector service_
                                                  zxio_socket_creation_options_t opts,
                                                  zxio_storage_alloc allocator, void** out_context,
                                                  int16_t* out_code);
-
-// Sets a token resolver to use for the socket. May fail with `ZX_ERR_NOT_SUPPORTED` if the `io`
-// is not a socket and doesn't need a token resolver.
-ZXIO_EXPORT zx_status_t zxio_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver);
 
 __END_CDECLS
 

@@ -566,13 +566,14 @@ zx_status_t zxio_getsockopt(zxio_t* io, int level, int optname, void* optval, so
 }
 
 zx_status_t zxio_setsockopt(zxio_t* io, int level, int optname, const void* optval,
-                            socklen_t optlen, int16_t* out_code) {
+                            socklen_t optlen, zx_handle_t access_token, int16_t* out_code) {
   if (!zxio_is_valid(io)) {
+    zx_handle_close(access_token);
     return ZX_ERR_BAD_HANDLE;
   }
 
   zxio_internal_t* zio = to_internal(io);
-  return zio->ops->setsockopt(io, level, optname, optval, optlen, out_code);
+  return zio->ops->setsockopt(io, level, optname, optval, optlen, access_token, out_code);
 }
 
 zx_status_t zxio_recvmsg(zxio_t* io, struct msghdr* msg, int flags, size_t* out_actual,
@@ -1130,14 +1131,6 @@ zx_status_t zxio_socket(zxio_service_connector service_connector, int domain, in
                         int16_t* out_code) {
   return zxio_socket_inner(service_connector, domain, type, protocol, {}, allocator, out_context,
                            out_code);
-}
-
-zx_status_t zxio_set_token_resolver(zxio_t* io, zxio_token_resolver_t resolver) {
-  if (!zxio_is_valid(io)) {
-    return ZX_ERR_BAD_HANDLE;
-  }
-  zxio_internal_t* zio = to_internal(io);
-  return zio->ops->set_token_resolver(io, resolver);
 }
 
 zx_status_t zxio_read_link(zxio_t* io, const uint8_t** out_target, size_t* out_target_len) {
