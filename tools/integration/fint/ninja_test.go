@@ -151,6 +151,13 @@ func TestRunNinja(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                   "fallback to stderr on malformed json",
+			fail:                   true,
+			mockNinjaErrors:        `{`,
+			stderr:                 "ninja: error: dependency cycle: ...",
+			expectedFailureMessage: "ninja: error: dependency cycle: ...",
+		},
 	}
 
 	for _, tc := range testCases {

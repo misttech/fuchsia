@@ -21,6 +21,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/build"
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
 	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/streams"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 )
@@ -123,7 +124,7 @@ func (r ninjaRunner) run(ctx context.Context, args []string, stdout, stderr io.W
 	}})
 
 	if runErr != nil {
-		failureMsg, err := ninjaFailureMessage(errorsFileName, stderrBuf.String())
+		failureMsg, err := ninjaFailureMessage(ctx, errorsFileName, stderrBuf.String())
 		if err != nil {
 			return "", err
 		}
@@ -269,13 +270,12 @@ func runNinja(
 	return "", metrics, nil
 }
 
-func ninjaFailureMessage(errorsFileName string, ninjaStderr string) (string, error) {
+func ninjaFailureMessage(ctx context.Context, errorsFileName string, ninjaStderr string) (string, error) {
 	var failureLog ninjaFailureLog
 	parseErr := jsonutil.ReadFromFile(errorsFileName, &failureLog)
-	if parseErr != nil && !errors.Is(parseErr, os.ErrNotExist) {
-		return "", fmt.Errorf("failed to read ninja errors file: %w", parseErr)
-	}
-	if parseErr == nil && failureLog.Version != 1 {
+	if parseErr != nil {
+		logger.Warningf(ctx, "Ninja failed but ninja errors file is not parseable: %s", parseErr)
+	} else if failureLog.Version != 1 {
 		return "", fmt.Errorf("unsupported ninja failure log version: %d", failureLog.Version)
 	}
 
@@ -284,6 +284,15 @@ func ninjaFailureMessage(errorsFileName string, ninjaStderr string) (string, err
 		// could be a configuration error (e.g. duplicate rule).
 		failureMsg := strings.TrimSpace(ninjaStderr)
 		if failureMsg == "" {
+			// Only show the parsing error if there is no other information in
+			// the stderr. Often parsing ninja_errors.json fails because ninja
+			// failed at an earlier step (e.g. detecting a dependency cycle)
+			// before generating the file and we want to show the original ninja
+			// error (which should be in stderr) instead of complaining about
+			// the file being malformed.
+			if parseErr != nil {
+				return "", fmt.Errorf("failed to read ninja errors file: %w", parseErr)
+			}
 			failureMsg = unrecognizedFailureMsg
 		}
 		failureMsg += "\n"

@@ -115,7 +115,7 @@ func TestBuild(t *testing.T) {
 
 	platform := "linux-x64"
 
-	failedBuildRunner := func(cmd []string, _, _ io.Writer) error {
+	failedBuildRunner := func(cmd []string, _, stderr io.Writer) error {
 		// Make ninja build fail, but ninjatrace succeed.
 		prog := filepath.Base(cmd[0])
 		if prog == "ninjatrace_prebuilt" || prog == "buildstats_prebuilt" {
@@ -125,6 +125,7 @@ func TestBuild(t *testing.T) {
 		if slices.Contains(cmd, "-t") { // for compdb and graph
 			return nil
 		}
+		stderr.Write([]byte("ninja: error: simulated failure\n"))
 		return fmt.Errorf("failed to run command: %s", cmd)
 	}
 
@@ -243,7 +244,7 @@ func TestBuild(t *testing.T) {
 			},
 			runnerFunc: failedBuildRunner,
 			expectedArtifacts: &fintpb.BuildArtifacts{
-				FailureSummary:      unrecognizedFailureMsg + "\n",
+				FailureSummary:      "ninja: error: simulated failure\n",
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 				DebugFiles: []*fintpb.DebugFile{
@@ -276,7 +277,7 @@ func TestBuild(t *testing.T) {
 			},
 			runnerFunc: failedBuildRunner,
 			expectedArtifacts: &fintpb.BuildArtifacts{
-				FailureSummary:      unrecognizedFailureMsg + "\n",
+				FailureSummary:      "ninja: error: simulated failure\n",
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 				DebugFiles: []*fintpb.DebugFile{
@@ -308,7 +309,7 @@ func TestBuild(t *testing.T) {
 			},
 			runnerFunc: failedBuildRunner,
 			expectedArtifacts: &fintpb.BuildArtifacts{
-				FailureSummary:      unrecognizedFailureMsg + "\n",
+				FailureSummary:      "ninja: error: simulated failure\n",
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 				DebugFiles: []*fintpb.DebugFile{
