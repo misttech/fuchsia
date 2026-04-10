@@ -415,11 +415,15 @@ zx::result<std::unique_ptr<PciAllocation>> Device::AllocateFromUpstream(
     return upstream_->pio_regions().Allocate(base, bar.size);
   }
 
-  // If a BAR is prefetchable and we're attached to a bridge then the only
-  // allocation option available is to use the PF-MMIO window. Otherwise, when
+  // If a BAR is prefetchable and we're attached to a bridge then the highly preferred
+  // allocation option is to use the PF-MMIO window. Otherwise, when
   // attached to a root we can use either MMIO allocator.
   if (upstream_->type() == pci::UpstreamNode::Type::BRIDGE && bar.is_prefetchable) {
-    return upstream_->pf_mmio_regions().Allocate(base, bar.size);
+    if (auto result = upstream_->pf_mmio_regions().Allocate(base, bar.size); result.is_ok()) {
+      return result;
+    }
+    // Fall back to allocating from non-prefetchable window; this is valid but unoptimal.
+    return upstream_->mmio_regions().Allocate(base, bar.size);
   }
 
   // If the allocation fits within the low MMIO window then attempt to allocate

@@ -53,16 +53,33 @@ class FakeAllocation : public PciAllocation {
   size_t size_;
 };
 
+struct AllocationLogEntry {
+  size_t size;
+  bool succeeded;
+
+  bool operator==(const AllocationLogEntry&) const = default;
+};
+
 // This fake will fulfill any allocation so long as it isn't configured to fail by calling
 // |FailNextAllocation|.
 class FakeAllocator : public PciAllocator {
  public:
   explicit FakeAllocator(pci_address_space_t type) : PciAllocator(type) {}
-  void FailNextAllocation(bool enable) { fail_next_allocation_ = enable; }
+  // Arms the allocator to fail the next allocation. If |assigned_only| is true
+  // (default), only fails allocations that request a specific base address.
+  void FailNextAllocation(bool assigned_only = true) {
+    if (assigned_only) {
+      fail_next_assigned_ = true;
+    } else {
+      fail_next_any_ = true;
+    }
+  }
   zx::result<std::unique_ptr<PciAllocation>> Allocate(std::optional<zx_paddr_t> in_base,
                                                       size_t size) final {
-    if (in_base.has_value() && fail_next_allocation_) {
-      fail_next_allocation_ = false;
+    if (fail_next_any_ || (fail_next_assigned_ && in_base.has_value())) {
+      fail_next_any_ = false;
+      fail_next_assigned_ = false;
+      allocation_log_.push_back({.size = size, .succeeded = false});
       return zx::error(ZX_ERR_NOT_FOUND);
     }
 
@@ -70,7 +87,7 @@ class FakeAllocator : public PciAllocator {
     // should align to the size so that's a convenient placeholder.
     const zx_paddr_t base = (in_base.has_value()) ? *in_base : size;
     auto allocation = std::unique_ptr<PciAllocation>(new FakeAllocation(type(), base, size));
-    allocation_log_.push_back(size);
+    allocation_log_.push_back({.size = size, .succeeded = true});
     return zx::ok(std::move(allocation));
   }
 
@@ -79,11 +96,12 @@ class FakeAllocator : public PciAllocator {
     return ZX_OK;
   }
 
-  const std::vector<size_t>& allocation_log() const { return allocation_log_; }
+  const std::vector<AllocationLogEntry>& allocation_log() const { return allocation_log_; }
 
  private:
-  bool fail_next_allocation_ = false;
-  std::vector<size_t> allocation_log_;
+  bool fail_next_assigned_ = false;
+  bool fail_next_any_ = false;
+  std::vector<AllocationLogEntry> allocation_log_;
 };
 
 }  // namespace pci

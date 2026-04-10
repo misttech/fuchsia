@@ -13,6 +13,7 @@
 #include <zircon/syscalls/object.h>
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -24,6 +25,7 @@
 #include "src/devices/bus/drivers/pci/capabilities/power_management.h"
 #include "src/devices/bus/drivers/pci/config.h"
 #include "src/devices/bus/drivers/pci/device.h"
+#include "src/devices/bus/drivers/pci/test/fakes/fake_allocator.h"
 #include "src/devices/bus/drivers/pci/test/fakes/fake_bus.h"
 #include "src/devices/bus/drivers/pci/test/fakes/fake_config.h"
 #include "src/devices/bus/drivers/pci/test/fakes/fake_pciroot.h"
@@ -37,7 +39,7 @@ namespace pci {
 
 // Creates a test device with a given device config using test defaults)
 
-template <bool IsExtended>
+template <bool IsExtended, UpstreamNode::Type UpstreamType = UpstreamNode::Type::ROOT>
 class PciDeviceTests : protected ::pci_testing::InspectHelper, public ::testing::Test {
  public:
   static constexpr char kTestNodeName[] = "Test";
@@ -72,7 +74,7 @@ class PciDeviceTests : protected ::pci_testing::InspectHelper, public ::testing:
   // TODO(https://fxbug.dev/42075363): Migrate test to use dispatcher integration.
   PciDeviceTests()
       : bus_(/*bus_start=*/0, /*bus_end=*/2, /*is_extended=*/IsExtended),
-        upstream_(UpstreamNode::Type::ROOT, 0),
+        upstream_(UpstreamType, 0),
         inspect_vmo_(inspector_.DuplicateVmo()) {}
   ~PciDeviceTests() override {
     upstream_.DisableDownstream();
@@ -88,6 +90,7 @@ class PciDeviceTests : protected ::pci_testing::InspectHelper, public ::testing:
 
 using PciDeviceTestsCam = PciDeviceTests<false>;
 using PciDeviceTestsExtendedCam = PciDeviceTests<true>;
+using PciDeviceTestExtendedCamBridge = PciDeviceTests<true, UpstreamNode::Type::BRIDGE>;
 
 extern "C" {
 // MockDevice does not cover adding composite devices within a driver, but
@@ -178,11 +181,11 @@ TEST_F(PciDeviceTestsExtendedCam, BarAllocationSizeDescendingOrder) {
 
   // BAR 0 is pre-assigned so it is allocated first, and the remaining MMIO BARs of
   // |kFakeQuadroDeviceConfig| follow in size-descending order (BAR 1, 3, 2).
-  const std::vector<size_t> expected = {
-      kTestDeviceBars[0].size,
-      kTestDeviceBars[1].size,
-      kTestDeviceBars[3].size,
-      kTestDeviceBars[2].size,
+  const std::vector<AllocationLogEntry> expected = {
+      {.size = kTestDeviceBars[0].size, .succeeded = true},
+      {.size = kTestDeviceBars[1].size, .succeeded = true},
+      {.size = kTestDeviceBars[3].size, .succeeded = true},
+      {.size = kTestDeviceBars[2].size, .succeeded = true},
   };
   EXPECT_EQ(allocation_log, expected);
 }
@@ -551,6 +554,36 @@ TEST_F(PciDeviceTestsExtendedCam, PowerStateTransitions) {
   ASSERT_TRUE(test_recovery_delay(PowerManagementCapability::PowerState::D2,
                                   PowerManagementCapability::PowerState::D1));
   ASSERT_EQ(dev.GetPowerState().value(), PowerManagementCapability::PowerState::D1);
+}
+
+// Verify that a prefetchable BAR behind a bridge falls back to the non-prefetchable
+// MMIO window when PF-MMIO allocation fails.
+TEST_F(PciDeviceTestExtendedCamBridge, PrefetchableBridgeBarMmioFallback) {
+  [[maybe_unused]] auto& dev =
+      CreateTestDevice(MockDevice::FakeRootParent().get(), kFakeQuadroDeviceConfig.data(),
+                       kFakeQuadroDeviceConfig.max_size());
+
+  // BAR 0 of |kFakeQuadroDeviceConfig| is non-prefetchable and allocates from the regular MMIO
+  // window. BAR 1 of |kFakeQuadroDeviceConfig| is the first prefetchable BAR, so it will be the
+  // first to attempt allocation from the PF-MMIO window.
+
+  // Fail the next prefetchable allocation (BAR 1) in order to trigger the fallback to the
+  // non-prefetchable MMIO window of the bridge.
+  auto& pf_alloc = upstream().fake_pf_mmio_regions();
+  auto& mmio_alloc = upstream().fake_mmio_regions();
+  pf_alloc.FailNextAllocation(/*assigned_only=*/false);
+  ConfigureDownstreamDevices();
+
+  // BAR 1 fails the prefetchable allocation.
+  const auto& pf_log = pf_alloc.allocation_log();
+  EXPECT_TRUE(std::ranges::any_of(pf_log, [](const AllocationLogEntry& e) {
+    return e.size == kTestDeviceBars[1].size && !e.succeeded;
+  }));
+  // BAR 1 successfully falls back to the non-prefetchable allocation.
+  const auto& mmio_log = mmio_alloc.allocation_log();
+  EXPECT_TRUE(std::ranges::any_of(mmio_log, [](const AllocationLogEntry& e) {
+    return e.size == kTestDeviceBars[1].size && e.succeeded;
+  }));
 }
 
 }  // namespace pci
