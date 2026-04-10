@@ -122,15 +122,10 @@ impl LinuxTouchEventParser {
         self.processed_slots.insert(new_slot_id);
         self.current_slot_id = Some(new_slot_id);
 
-        if !self.slot_id_to_contact.contains_key(&new_slot_id) {
-            self.slot_id_to_contact.insert(
-                new_slot_id.clone(),
-                fir::ContactInputReport {
-                    contact_id: Some(new_slot_id as u32),
-                    ..fir::ContactInputReport::default()
-                },
-            );
-        }
+        self.slot_id_to_contact.entry(new_slot_id).or_insert_with(|| fir::ContactInputReport {
+            contact_id: Some(new_slot_id as u32),
+            ..fir::ContactInputReport::default()
+        });
 
         Ok(())
     }
