@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 library fuchsia.fdomain;
 
-// FDomain operations on EventPairs.
+/// FDomain operations on EventPairs.
 @no_resource
 open protocol EventPair {
-    // Create a new event pair in this FDomain and return both its ends.
+    /// Create a new event pair in this FDomain and return both its ends.
     flexible CreateEventPair(struct {
         handles array<NewHandleId, 2>;
     }) -> () error Error;
