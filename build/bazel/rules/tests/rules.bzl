@@ -10,7 +10,7 @@ load(
     "stamp_group_impl",
 )
 
-visibility("private")
+visibility(["//build/bazel/bazel_idk/tests/..."])
 
 def _apply_clang_platform_api_level_impl(settings, _attr):
     _platform_api_level_copt = "-ffuchsia-api-level=4293918720"
@@ -50,6 +50,18 @@ build_with_platform_api_level = rule(
             doc = "List of Labels to build at the 'PLATFORM' API level.",
             mandatory = True,
             cfg = _apply_clang_platform_api_level,
+        ),
+    } | STAMP_GROUP_NON_DEPS_ATTRS,
+)
+
+build_for_host = rule(
+    doc = "Builds `deps` using the host configuration.",
+    implementation = stamp_group_impl,
+    attrs = {
+        "deps": attr.label_list(
+            doc = "List of Labels to build using the host configuration.",
+            mandatory = True,
+            cfg = "exec",
         ),
     } | STAMP_GROUP_NON_DEPS_ATTRS,
 )

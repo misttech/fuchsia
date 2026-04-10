@@ -19,6 +19,7 @@ load(
 )
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
+load("//build/bazel/rules/tests:rules.bzl", "build_for_host")
 load(
     ":rules.bzl",
     "create_test_atom_info",
@@ -930,7 +931,7 @@ filegroup(
         "//zircon/system/ulib/zx",
 
         # Build some of the targets on the host toolchain.
-        ":build_only_tests_on_host_toolchain",
+        ":build_only_tests_in_host_configuration",
 
         # Exercise FIDL.
         # TODO(https://fxbug.dev/428285014): Remove these once we are building them elsewhere.
@@ -970,16 +971,13 @@ filegroup(
     ],
 )
 
-# Builds the targets listed in `tools` on the host toolchain.
-genrule(
-    name = "build_only_tests_on_host_toolchain",
+build_for_host(
+    name = "build_only_tests_in_host_configuration",
     testonly = True,
-    outs = ["build_only_tests_on_host_toolchain.stamp"],
-    cmd = "touch $@",
-    # This target builds the test targets in the host config ("exec") using the
-    # `tools` attribute.
+    stamp = "build_only_tests_in_host_configuration.stamp",
+    # This target transitions to the host config ("exec") to build the test targets.
     target_compatible_with = ["@platforms//os:fuchsia"],
-    tools = [
+    deps = [
         # Verify that a target using `select()` statements for `hdrs`,
         # `hdrs_for_internal_use`, and `srcs` can be built on the host toolchain.
         ":test_executable_using_platform_dependent_source_library",
@@ -1004,16 +1002,6 @@ genrule(
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
-
-        # Other libraries.
-        "//sdk/lib/fidl",
-        "//sdk/lib/fidl/cpp:cpp_base",
-        "//sdk/lib/fidl/cpp/wire",
-        "//sdk/lib/fidl_base",
-        "//sdk/lib/stdcompat",
-        "//sdk/lib/utf-utils",
-        "//src/zircon/lib/zircon",
-        "//zircon/system/ulib/zx",
     ],
 )
 

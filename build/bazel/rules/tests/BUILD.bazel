@@ -10,7 +10,8 @@ During the migration, it also contains migrated targets that are not yet
 otherwise part of the build.
 """
 
-load(":rules.bzl", "build_with_platform_api_level")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load(":rules.bzl", "build_for_host", "build_with_platform_api_level")
 
 # Runs all tests.
 filegroup(
@@ -29,6 +30,9 @@ filegroup(
     testonly = True,
     srcs = [
         ":build_only_tests_requiring_api_level",
+        ":build_only_tests_in_host_configuration",
+
+        # Fuchsia tests that do not require defining the API level as "PLATFORM".
         "//build/bazel/bazel_idk/tests:build_only_tests_for_combinations",
     ],
     # Individual test groups can transition to host as needed.
@@ -45,4 +49,32 @@ build_with_platform_api_level(
     deps = [
         "//build/bazel/bazel_idk/tests:build_only_tests",
     ],
+)
+
+filegroup(
+    name = "targets_to_build_in_host_configuration",
+    testonly = True,
+    srcs = [
+        "//sdk/lib/fidl",
+        "//sdk/lib/fidl/cpp:cpp_base",
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/fidl_base",
+        "//sdk/lib/stdcompat",
+        "//sdk/lib/utf-utils",
+        "//src/zircon/lib/zircon",
+        "//zircon/system/ulib/zx",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# Builds targets for which building successfully is the test using the host configuration.
+build_for_host(
+    name = "build_only_tests_in_host_configuration",
+    testonly = True,
+    stamp = "build_only_tests_in_host_configuration.stamp",
+    # This target transitions to the host config ("exec") to build the test targets.
+    # To build the targets directly for the host platform, build the dependency
+    # directly.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":targets_to_build_in_host_configuration"],
 )
