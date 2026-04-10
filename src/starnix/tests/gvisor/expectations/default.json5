@@ -357,6 +357,7 @@
                 "Inotify.ExcludeUnlink",
                 "Inotify.IncludeUnlinkedFile",
                 "Inotify.Exec",
+                "Inotify.OpenWithTruncGeneratesModify",
 
                 // ioctl_test
                 "IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/*",
