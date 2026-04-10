@@ -14,8 +14,10 @@ if (is_host) {
     edition = "2024"
     sources = [
       "src/context.rs",
+      "src/ident.rs",
       "src/main.rs",
       "src/templates/bits.rs",
+      "src/templates/enum.rs",
       "src/templates/mod.rs",
     ]
     deps = [
@@ -28,6 +30,7 @@ if (is_host) {
     inputs = [
       "askama.toml",
       "templates/bits.askama",
+      "templates/enum.askama",
       "templates/library.askama",
     ]
     rustenv = [ "CARGO_MANIFEST_DIR=${cargo_manifest_dir}" ]

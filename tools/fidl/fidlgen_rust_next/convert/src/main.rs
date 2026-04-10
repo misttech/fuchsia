@@ -13,6 +13,7 @@ use fidl_ir::Library;
 use fidlgen::trim_trailing_whitespace;
 
 mod context;
+mod ident;
 mod templates;
 
 /// Generate conversion functions between old and new FIDL bindings.

@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use {{ context.rust_crate }} as _;
 use {{ context.rust_next_crate }} as _;
 
@@ -9,7 +11,7 @@ use {{ context.rust_next_crate }} as _;
                 {{ self.bits(self.library().bits_declarations[ident]) }}
             {% when DeclType::Const %}
             {% when DeclType::Enum %}
-                {# TODO: write enum conversions #}
+                {{ self.enm(self.library().enum_declarations[ident]) }}
             {% when DeclType::Struct %}
                 {# TODO: write struct conversions #}
             {% when DeclType::Table %}

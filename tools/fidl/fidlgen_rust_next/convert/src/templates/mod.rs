@@ -3,13 +3,15 @@
 // found in the LICENSE file.
 
 mod bits;
+mod r#enum;
 
 use askama::Template;
-use fidl_ir::{Bits, DeclType};
+use fidl_ir::{Bits, DeclType, Enum};
 use fidlgen::Denylist;
 
+use self::bits::BitsTemplate;
+use self::r#enum::EnumTemplate;
 use crate::context::{Context, Contextual};
-use crate::templates::bits::BitsTemplate;
 
 #[derive(Template)]
 #[template(path = "library.askama")]
@@ -24,6 +26,10 @@ impl<'a> LibraryTemplate<'a> {
 
     fn bits(&self, bits: &'a Bits) -> BitsTemplate<'a> {
         BitsTemplate::new(bits, self.context)
+    }
+
+    fn enm(&self, enm: &'a Enum) -> EnumTemplate<'a> {
+        EnumTemplate::new(enm, self.context)
     }
 }
 
