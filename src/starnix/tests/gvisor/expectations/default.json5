@@ -692,6 +692,9 @@
                 // rlimits_test
                 "RlimitTest.RlimitNProc",
 
+                // signalfd_test
+                "Signalfd.RtQueueDeliversPayload",
+
                 // sigaltstack_test - https://fxbug.dev/42159586
                 "SigaltstackTest.ResetByExecve",
 
