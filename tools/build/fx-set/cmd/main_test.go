@@ -225,12 +225,12 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "autodir and release",
 			args: []string{"core.x64", "--variant", "foo", "--release"},
 			expected: setArgs{
-				product:       "core",
-				board:         "x64",
-				includeClippy: true,
-				isRelease:     true,
-				buildDir:      "out/core.x64-foo-release",
-				variants:      []string{"foo"},
+				product:         "core",
+				board:           "x64",
+				includeClippy:   true,
+				compilationMode: "release",
+				buildDir:        "out/core.x64-foo-release",
+				variants:        []string{"foo"},
 			},
 		},
 		{
@@ -308,11 +308,11 @@ func TestParseArgsAndEnv(t *testing.T) {
 			name: "Debug compilation mode",
 			args: []string{"core.x64", "--debug"},
 			expected: setArgs{
-				product:       "core",
-				board:         "x64",
-				buildDir:      "out/core.x64-debug",
-				includeClippy: true,
-				isDebug:       true,
+				product:         "core",
+				board:           "x64",
+				buildDir:        "out/core.x64-debug",
+				includeClippy:   true,
+				compilationMode: "debug",
 			},
 		},
 		{
@@ -345,6 +345,9 @@ func TestParseArgsAndEnv(t *testing.T) {
 			}
 			if tc.expected.rbeMode == "" {
 				tc.expected.rbeMode = defaultRbeMode
+			}
+			if tc.expected.compilationMode == "" {
+				tc.expected.compilationMode = "balanced"
 			}
 			cmd, err := parseArgsAndEnv(tc.args, tc.env)
 			if err != nil {
@@ -393,7 +396,7 @@ func TestConstructStaticSpec(t *testing.T) {
 			args: &setArgs{
 				board:            "arm64",
 				product:          "bringup",
-				isRelease:        true,
+				compilationMode:  "release",
 				universePackages: []string{"universe"},
 				hostLabels:       []string{"host"},
 				variants:         []string{"variant"},

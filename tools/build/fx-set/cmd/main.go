@@ -50,6 +50,9 @@ const (
 	// When unspecified, this is used for --rbe-mode.
 	defaultRbeMode = "auto"
 
+	// When unspecified, this is used for --compilation-mode.
+	defaultCompilationMode = "balanced"
+
 	productBundlesFile = "product_bundles.json"
 )
 
@@ -245,9 +248,7 @@ type setArgs struct {
 
 	includeClippy bool
 
-	isBalanced       bool
-	isRelease        bool
-	isDebug          bool
+	compilationMode  string
 	netboot          bool
 	cargoTOMLGen     bool
 	jsonIDEScripts   []string
@@ -318,9 +319,16 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 
 	flagSet.StringVar(&cmd.mainPbLabel, "main-pb", "", "")
 
-	flagSet.BoolVar(&cmd.isRelease, "release", false, "")
-	flagSet.BoolVar(&cmd.isDebug, "debug", false, "")
-	flagSet.BoolVar(&cmd.isBalanced, "balanced", false, "")
+	flagSet.StringVar(&cmd.compilationMode, "compilation-mode", defaultCompilationMode, "")
+
+	flagSet.StringVar(&cmd.compilationMode, "release", defaultCompilationMode, "")
+	flagSet.Lookup("release").NoOptDefVal = "release"
+
+	flagSet.StringVar(&cmd.compilationMode, "debug", defaultCompilationMode, "")
+	flagSet.Lookup("debug").NoOptDefVal = "debug"
+
+	flagSet.StringVar(&cmd.compilationMode, "balanced", defaultCompilationMode, "")
+	flagSet.Lookup("balanced").NoOptDefVal = "balanced"
 	flagSet.BoolVar(&cmd.cargoTOMLGen, "cargo-toml-gen", false, "")
 	flagSet.StringSliceVar(&cmd.jsonIDEScripts, "json-ide-script", []string{}, "")
 	flagSet.StringSliceVar(&cmd.universePackages, "with", []string{}, "")
@@ -340,6 +348,22 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 
 	if err := flagSet.Parse(args); err != nil {
 		return nil, err
+	}
+
+	modesSet := 0
+	for _, f := range []string{"release", "debug", "balanced", "compilation-mode"} {
+		if flagSet.Changed(f) {
+			modesSet++
+		}
+	}
+	if modesSet > 1 {
+		return nil, fmt.Errorf("Only one of --release, --debug, --balanced, or --compilation-mode can be specified.")
+	}
+
+	switch cmd.compilationMode {
+	case "release", "debug", "balanced":
+	default:
+		return nil, fmt.Errorf("Invalid --compilation-mode: %q. Valid values are 'release', 'balanced', 'debug'.", cmd.compilationMode)
 	}
 
 	if len(cmd.basePackages) != 0 || len(cmd.cachePackages) != 0 {
@@ -414,13 +438,7 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 		}
 		nameComponents := []string{productDotBoard}
 		nameComponents = append(nameComponents, cmd.variants...)
-		if cmd.isRelease {
-			nameComponents = append(nameComponents, "release")
-		} else if cmd.isDebug {
-			nameComponents = append(nameComponents, "debug")
-		} else {
-			nameComponents = append(nameComponents, "balanced")
-		}
+		nameComponents = append(nameComponents, cmd.compilationMode)
 		cmd.buildDir = filepath.Join("out", strings.Join(nameComponents, "-"))
 	}
 	message := "The build directory for this build is " + cmd.buildDir + "\n"
@@ -442,7 +460,7 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	}
 
 	balancedNudge, _ := isNudgeOn(env, "balanced")
-	if cmd.isRelease && balancedNudge {
+	if cmd.compilationMode == "release" && balancedNudge {
 		message += "[Nudge] You have set --release, consider --balanced: https://fuchsia.dev/fuchsia-src/development/build/build_system/fuchsia_build_system_overview#quick_comparison\n"
 		message += "(Silence nudge with `ffx config set ffx.ui.nudges.balanced false`)\n"
 	}
@@ -481,16 +499,11 @@ func constructStaticSpec(checkoutDir string, args *setArgs, canUseRbe bool) (*fi
 	}
 
 	compilationMode := fintpb.Static_COMPILATION_MODE_BALANCED
-	if args.isRelease && args.isDebug || args.isRelease && args.isBalanced || args.isBalanced && args.isDebug {
-
-		return nil, fmt.Errorf("Only one of --release, --debug and --balanced can be specified.")
-	}
-	if args.isRelease {
+	switch args.compilationMode {
+	case "release":
 		compilationMode = fintpb.Static_COMPILATION_MODE_RELEASE
-	} else if args.isDebug {
+	case "debug":
 		compilationMode = fintpb.Static_COMPILATION_MODE_DEBUG
-	} else if args.isBalanced {
-		compilationMode = fintpb.Static_COMPILATION_MODE_BALANCED
 	}
 
 	variants := args.variants
