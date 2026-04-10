@@ -285,7 +285,7 @@ From //build/images/args.gni:140
 
 **Current value for `target_cpu = "riscv64"`:** `"riscv64"`
 
-From //boards/riscv64.gni:34
+From //boards/riscv64.gni:32
 
 **Overridden from the default:** `false`
 
@@ -415,24 +415,6 @@ Valid options:
 **Current value (from the default):** `""`
 
 From //build/bazel/remote_services.gni:48
-
-### blobfs_capacity
-
-Maximum allowable contents for the /blob in a release mode build for
-both slot A and slot B of the system.
-False means no limit.
-
-**Current value for `target_cpu = "arm64"`:** `10485760000`
-
-From //boards/arm64.gni:41
-
-**Overridden from the default:** `false`
-
-From //build/images/filesystem_limits.gni:17
-
-**Current value (from the default):** `false`
-
-From //build/images/filesystem_limits.gni:17
 
 ### blobfs_num_pager_threads
 
@@ -990,7 +972,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -1105,7 +1087,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -5641,25 +5623,6 @@ build is not desired.
 
 From //build/images/args.gni:148
 
-### max_blob_contents_size
-
-Maximum allowable contents for the /blob in a release mode build.
-False means no limit.
-contents_size refers to contents stored within the filesystem (regardless
-of how they are stored).
-
-**Current value for `target_cpu = "arm64"`:** `5216665600`
-
-From //boards/arm64.gni:43
-
-**Overridden from the default:** `false`
-
-From //build/images/filesystem_limits.gni:12
-
-**Current value (from the default):** `false`
-
-From //build/images/filesystem_limits.gni:12
-
 ### max_log_disk_usage
 
 Controls how many bytes of space on disk are used to persist device logs.
@@ -6405,35 +6368,6 @@ package flavors.
 **Current value (from the default):** `[]`
 
 From //build/packages/prebuilt_package_with_flavors.gni:30
-
-### partitions_config_label
-
-The partitions config information used to create an update package and
-product bundle.
-
-**Current value for `target_cpu = "arm64"`:** `"//boards/partitions:arm64"`
-
-From //boards/arm64.gni:39
-
-**Overridden from the default:** `false`
-
-From //build/board.gni:41
-
-**Current value for `target_cpu = "riscv64"`:** `"//boards/partitions:riscv64"`
-
-From //boards/riscv64.gni:32
-
-**Overridden from the default:** `false`
-
-From //build/board.gni:41
-
-**Current value for `target_cpu = "x64"`:** `"//boards/partitions:x64"`
-
-From //boards/x64.gni:34
-
-**Overridden from the default:** `false`
-
-From //build/board.gni:41
 
 ### perfetto_build_with_android
 
@@ -8569,7 +8503,7 @@ provided value for 'board_configuration_label'
 
 **Current value (from the default):** `"//boards/arm64"`
 
-From //build/board.gni:50
+From //build/board.gni:46
 
 ### recovery_label
 
@@ -8738,7 +8672,7 @@ Enable the rust parallel front-end with N threads
 
 **Current value (from the default):** `false`
 
-From //build/config/rust/BUILD.gn:30
+From //build/config/rust/BUILD.gn:29
 
 ### rust_rbe_check
 
@@ -8827,7 +8761,7 @@ Controls whether the rust compiler uses v0 symbol mangling scheme
 
 **Current value (from the default):** `true`
 
-From //build/config/rust/BUILD.gn:27
+From //build/config/rust/BUILD.gn:26
 
 ### rust_virtio_net
 
