@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 
+#include <fbl/mutex.h>
 #include <usb/request-cpp.h>
 #include <usb/request-fidl.h>
 
@@ -29,14 +30,18 @@ class UsbEpServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint>
   explicit UsbEpServer(UsbVirtualEp* ep) : ep_(ep) {}
   ~UsbEpServer() { ZX_ASSERT(pending_reqs_.empty()); }
 
+  fbl::Mutex& lock() __TA_RETURN_CAPABILITY(lock_) { return lock_; }
+
   void Connect(fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end);
 
   void QueueRequest(RequestVariant req);
   void CommonCancelAll();
 
   void RequestComplete(zx_status_t status, size_t actual, RequestVariant& request);
+  zx::result<void*> GetBuffer(RequestVariant& req) __TA_REQUIRES(lock_);
+
   zx::result<std::optional<usb::MappedVmo>> GetMapped(
-      const fuchsia_hardware_usb_request::Buffer& buffer) {
+      const fuchsia_hardware_usb_request::Buffer& buffer) __TA_REQUIRES(lock_) {
     if (buffer.Which() == fuchsia_hardware_usb_request::Buffer::Tag::kData) {
       return zx::ok(std::nullopt);
     }
@@ -52,10 +57,10 @@ class UsbEpServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint>
     uint8_t* ptr() { return buffer + offset; }
     size_t todo() const { return length - offset; }
   };
-  std::optional<CurrentRequest> current_req_;
+  std::optional<CurrentRequest> current_req_ __TA_GUARDED(lock_);
 
   // pending_reqs_: Requests not processed yet.
-  std::queue<RequestVariant> pending_reqs_;
+  std::queue<RequestVariant> pending_reqs_ __TA_GUARDED(lock_);
 
  private:
   // fuchsia_hardware_usb_new.Endpoint protocol implementation.
@@ -78,7 +83,10 @@ class UsbEpServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint>
 
   // registered_vmos_: All pre-registered VMOs registered through RegisterVmos(). Mapping from
   // vmo_id to usb::MappedVmo.
-  std::map<uint64_t, usb::MappedVmo> registered_vmos_;
+  std::map<uint64_t, usb::MappedVmo> registered_vmos_ __TA_GUARDED(lock_);
+
+  // Guards access to pending_reqs_, current_req_, and registered_vmos_.
+  fbl::Mutex lock_;
 };
 
 class UsbVirtualBus;
