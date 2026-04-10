@@ -24,7 +24,7 @@ use rayon::prelude::*;
 use crate::extend::{ExtendTuple3, ExtendVec};
 use crate::lines::GeomId;
 use crate::transform::GeomPresTransform;
-use crate::{Point, PIXEL_WIDTH};
+use crate::{PIXEL_WIDTH, Point};
 
 // Pixel accuracy should be within 0.5 of a sub-pixel.
 pub const MAX_ERROR: f32 = 1.0 / PIXEL_WIDTH as f32;
@@ -887,8 +887,8 @@ mod tests {
 
     fn min_dist(p: Point, points: &[Point]) -> f32 {
         points
-            .windows(2)
-            .map(|window| dist(p, window[0], window[1]))
+            .array_windows()
+            .map(|&[a, b]| dist(p, a, b))
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap()
     }
@@ -1064,8 +1064,7 @@ mod tests {
 
         assert!((points[2].x - 1.0).abs() <= 0.001);
 
-        let distances: Vec<_> =
-            points.windows(2).map(|window| (window[1] - window[0]).len()).collect();
+        let distances: Vec<_> = points.array_windows().map(|&[a, b]| (b - a).len()).collect();
 
         assert!(distances[0] > 1.5);
         assert!(distances[1] < 0.2);
@@ -1202,12 +1201,12 @@ mod tests {
 
         assert_eq!(lines.x.len(), 9);
 
-        for x in lines.x.windows(2) {
-            assert!(x[0] < x[1]);
+        for &[a, b] in lines.x.array_windows() {
+            assert!(a < b);
         }
 
-        for y in lines.y.windows(2) {
-            assert!(y[0] < y[1]);
+        for &[a, b] in lines.y.array_windows() {
+            assert!(a < b);
         }
 
         for (&x, &y) in lines.x.iter().zip(lines.y.iter()) {
@@ -1316,8 +1315,8 @@ mod tests {
             lines.x.iter().zip(lines.y.iter()).map(|(&x, &y)| Point::new(x, y)).collect();
 
         let max_distance = points
-            .windows(2)
-            .map(|window| (window[1] - window[0]).len())
+            .array_windows()
+            .map(|&[a, b]| (b - a).len())
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap();
 

@@ -537,16 +537,16 @@ impl gesture_arena::MatchedContender for MatchedContender {
     ) -> ProcessBufferedEventsResult {
         let mut mouse_events: Vec<MouseEvent> = Vec::new();
 
-        for pair in events.windows(2) {
-            // Ignore events not having 2 contacts. No need to check pair[1],
-            // because if pair[1] is 1 and pair[0] is 2, MatchedContender or
+        for [a, b] in events.array_windows() {
+            // Ignore events not having 2 contacts. No need to check b,
+            // because if b is 1 and a is 2, MatchedContender or
             // TwoFingerContactContender will return miss match, never reach to
             // here.
-            if pair[0].contacts.len() != 2 {
+            if a.contacts.len() != 2 {
                 continue;
             }
-            assert_eq!(pair[1].contacts.len(), 2);
-            let old_positions = match ContactPositions::from(&pair[0]) {
+            assert_eq!(b.contacts.len(), 2);
+            let old_positions = match ContactPositions::from(a) {
                 Ok(positions) => positions,
                 Err(_) => ContactPositions {
                     // Likely a bug in `GestureArena`, because all event here has been
@@ -561,7 +561,7 @@ impl gesture_arena::MatchedContender for MatchedContender {
             mouse_events.push(touchpad_event_to_mouse_scroll_event(
                 self.direction,
                 old_positions,
-                &pair[1],
+                b,
             ));
         }
 

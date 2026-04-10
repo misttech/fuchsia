@@ -581,7 +581,7 @@ pub fn build_sparse_files(
             break;
         }
 
-        let is_fill = buf.chunks(4).collect::<Vec<&[u8]>>().windows(2).all(|w| w[0] == w[1]);
+        let is_fill = buf.chunks(4).collect::<Vec<&[u8]>>().array_windows().all(|[a, b]| a == b);
 
         if is_fill {
             // The Android Sparse Image Format specifies that a fill block

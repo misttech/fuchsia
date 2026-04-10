@@ -68,28 +68,16 @@ fn approx_eq(p0: math::Vec, p1: math::Vec) -> bool {
 
 fn left_different(points: &[math::Vec]) -> [math::Vec; 2] {
     points
-        .windows(2)
-        .find_map(|window| {
-            if let [p0, p1] = *window {
-                (!approx_eq(p0, p1)).then_some([p0, p1])
-            } else {
-                unreachable!()
-            }
-        })
+        .array_windows()
+        .find_map(|&[p0, p1]| (!approx_eq(p0, p1)).then_some([p0, p1]))
         .expect("Bezier cannot be a point")
 }
 
 pub fn right_different(points: &[math::Vec]) -> [math::Vec; 2] {
     points
-        .windows(2)
+        .array_windows()
         .rev()
-        .find_map(|window| {
-            if let [p0, p1] = *window {
-                (!approx_eq(p0, p1)).then_some([p0, p1])
-            } else {
-                unreachable!()
-            }
-        })
+        .find_map(|&[p0, p1]| (!approx_eq(p0, p1)).then_some([p0, p1]))
         .expect("Bezier cannot be a point")
 }
 
@@ -121,10 +109,8 @@ fn normal_right(points: &[math::Vec]) -> math::Vec {
 fn derive(points: &[math::Vec]) -> SmallVec<[math::Vec; 3]> {
     let mut derived = SmallVec::new();
 
-    for window in points.windows(2) {
-        if let [p0, p1] = *window {
-            derived.push((p1 - p0) * (points.len() - 1) as f32);
-        }
+    for &[p0, p1] in points.array_windows() {
+        derived.push((p1 - p0) * (points.len() - 1) as f32);
     }
 
     derived
@@ -177,12 +163,10 @@ fn hull(points: &[math::Vec; 4], t: f32) -> SmallVec<[math::Vec; 10]> {
     while points.len() > 1 {
         next_points.clear();
 
-        for window in points.windows(2) {
-            if let [p0, p1] = *window {
-                let point = p0.lerp(p1, t);
-                hull.push(point);
-                next_points.push(point);
-            }
+        for &[p0, p1] in points.array_windows() {
+            let point = p0.lerp(p1, t);
+            hull.push(point);
+            next_points.push(point);
         }
 
         mem::swap(&mut points, &mut next_points);
@@ -396,10 +380,8 @@ impl Bezier {
         let mut pass1 = SmallVec::new();
 
         if let Self::Cubic(points) = self {
-            for window in extrema.windows(2) {
-                if let [t0, t1] = *window {
-                    pass0.push(split(points, t0, t1));
-                }
+            for &[t0, t1] in extrema.array_windows() {
+                pass0.push(split(points, t0, t1));
             }
 
             'outer: for segment_pass0 in pass0 {

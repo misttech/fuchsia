@@ -158,11 +158,8 @@ impl gesture_arena::MatchedContender for MatchedContender {
         let mut mouse_events: Vec<MouseEvent> = Vec::new();
         let last_position = events[events.len() - 1].contacts[0].position.clone();
 
-        for pair in events.windows(2) {
-            mouse_events.push(touchpad_event_to_mouse_motion_event(
-                &pair[0].contacts[0].position,
-                &pair[1],
-            ));
+        for [a, b] in events.array_windows() {
+            mouse_events.push(touchpad_event_to_mouse_motion_event(&a.contacts[0].position, b));
         }
 
         ProcessBufferedEventsResult {

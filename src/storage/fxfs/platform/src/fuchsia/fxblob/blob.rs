@@ -396,7 +396,7 @@ impl CompressionInfo {
         } else if offsets.is_empty() || *offsets.first().unwrap() != 0 {
             // There should always be at least 1 offset and the first offset must always be 0.
             Err(FxfsError::IntegrityError.into())
-        } else if !offsets.windows(2).all(|window| window[0] < window[1]) {
+        } else if !offsets.array_windows().all(|[a, b]| a < b) {
             // The offsets must be in ascending order.
             Err(FxfsError::IntegrityError.into())
         } else if offsets.len() == 1 {

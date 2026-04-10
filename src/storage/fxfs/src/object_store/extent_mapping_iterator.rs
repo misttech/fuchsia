@@ -86,8 +86,7 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> ExtentMappingIterator<I> {
                 .context("first extents should start from offset 0");
         }
         // The backing extents should be logically contiguous (i.e. there should be no holes).
-        for extent_pair in backing_extents.windows(2) {
-            let [prev, next] = extent_pair else { unreachable!() };
+        for [prev, next] in backing_extents.array_windows() {
             if prev.logical_range().end != next.logical_range().start {
                 return Err(FxfsError::Inconsistent).context("backing extents must be contiguous");
             }

@@ -879,8 +879,7 @@ mod tests {
         );
         // Check that the process list is sorted
         {
-            let mut pairs = processed.processes.windows(2);
-            while let Some([p1, p2]) = pairs.next() {
+            for [p1, p2] in processed.processes.array_windows() {
                 assert!(
                     p1.memory.private >= p2.memory.private,
                     "Processes are not presented in sorted order: {:?} < {:?}",
@@ -1107,8 +1106,7 @@ mod tests {
 
         // Check that the process list is sorted
         {
-            let mut pairs = processed.processes.windows(2);
-            while let Some([p1, p2]) = pairs.next() {
+            for [p1, p2] in processed.processes.array_windows() {
                 assert!(
                     p1.memory.private >= p2.memory.private,
                     "Processes are not presented in sorted order: {:?} < {:?}",

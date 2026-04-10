@@ -452,9 +452,9 @@ impl Gpt {
         allocated_ranges.sort_by_key(|range| range.start);
 
         let mut start_block = None;
-        for window in allocated_ranges.windows(2) {
-            if window[1].start - window[0].end >= info.num_blocks {
-                start_block = Some(window[0].end);
+        for [a, b] in allocated_ranges.array_windows() {
+            if b.start - a.end >= info.num_blocks {
+                start_block = Some(a.end);
                 break;
             }
         }
@@ -510,6 +510,8 @@ impl Drop for Transaction {
 mod tests {
     use crate::{AddPartitionError, Gpt, Guid, PartitionInfo};
     use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient};
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use std::ops::Range;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -517,7 +519,6 @@ mod tests {
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };
     use zx::HandleBased;
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn load_unformatted_gpt() {

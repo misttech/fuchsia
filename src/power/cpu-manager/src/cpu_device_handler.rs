@@ -11,12 +11,13 @@ use crate::utils::get_cpu_ctrl_proxy;
 use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl;
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_hardware_cpu_ctrl as fcpu_ctrl, serde_json as json, zx};
 
 /// Node: CpuDeviceHandler
 ///
@@ -486,15 +487,11 @@ fn validate_opps(opps: &Vec<OperatingPoint>) -> Result<(), Error> {
     if opps.len() == 0 {
         anyhow::bail!("Must have at least one opp");
     } else if opps.len() > 1 {
-        for pair in opps.as_slice().windows(2) {
-            if pair[1].frequency > pair[0].frequency
-                || (pair[1].frequency == pair[0].frequency && pair[1].voltage >= pair[0].voltage)
-            {
+        for [a, b] in opps.as_slice().array_windows() {
+            if b.frequency > a.frequency || (b.frequency == a.frequency && b.voltage >= a.voltage) {
                 anyhow::bail!(
                     "opps must be primarily sorted by decreasing frequency and secondarily \
-                    sorted by decreasing voltage; violated by {:?} and {:?}.",
-                    pair[0],
-                    pair[1]
+                    sorted by decreasing voltage; violated by {a:?} and {b:?}."
                 );
             }
         }

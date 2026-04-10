@@ -250,8 +250,8 @@ pub fn serialize_partition_table(
         partition_table_view = &mut partition_table_view[part_size..];
     }
     used_ranges.sort_by_key(|range| range.start);
-    for ranges in used_ranges.windows(2) {
-        if ranges[0].end > ranges[1].start {
+    for [a, b] in used_ranges.array_windows() {
+        if a.end > b.start {
             return Err(FormatError::InvalidArguments);
         }
     }

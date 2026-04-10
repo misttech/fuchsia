@@ -4,6 +4,9 @@
 
 use fidl::AsHandleRef;
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_fdomain as proto;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::prelude::*;
 use replace_with::replace_with;
 use std::collections::hash_map::Entry;
@@ -12,7 +15,6 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::task::{Context, Poll, Waker};
-use {fidl_fuchsia_fdomain as proto, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 mod handles;
 pub mod wire;
@@ -929,9 +931,9 @@ impl FDomain {
         let mut sorted_ids = ids;
         sorted_ids.sort();
 
-        if let Some(a) = sorted_ids.windows(2).find(|x| x[0] == x[1]) {
+        if let Some([a, _]) = sorted_ids.array_windows().find(|&[a, b]| a == b) {
             Err(proto::Error::NewHandleIdReused(proto::NewHandleIdReused {
-                id: a[0].id,
+                id: a.id,
                 same_call: true,
             }))
         } else {

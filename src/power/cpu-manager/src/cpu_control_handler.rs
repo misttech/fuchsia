@@ -11,17 +11,16 @@ use crate::utils::get_cpu_ctrl_proxy;
 use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
+use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
+use fidl_fuchsia_thermal as fthermal;
 use fuchsia_inspect::{self as inspect, Property};
 use serde_derive::Deserialize;
+use serde_json as json;
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl, fidl_fuchsia_thermal as fthermal,
-    serde_json as json,
-};
 
 /// Node: CpuControlHandler
 ///
@@ -62,7 +61,7 @@ impl CpuControlParams {
         if self.logical_cpu_numbers.len() == 0 {
             return Err(format_err!("Must have > 0 CPUs"));
         }
-        if !self.logical_cpu_numbers.windows(2).all(|w| w[0] < w[1]) {
+        if !self.logical_cpu_numbers.array_windows().all(|&[a, b]| a < b) {
             return Err(format_err!("CPUs must be sorted and non-repeating"));
         }
         if self.opps.len() == 0 {

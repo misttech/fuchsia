@@ -901,7 +901,7 @@ impl ViewStrategy for FlatlandViewStrategy {
                 .filter_map(|info| info.presentation_time)
                 .collect();
             let average_interval: i64 =
-                times.as_slice().windows(2).map(|slice| slice[1] - slice[0]).sum::<i64>()
+                times.as_slice().array_windows().map(|&[a, b]| b - a).sum::<i64>()
                     / present_intervals as i64;
             self.present_interval = average_interval;
         } else {

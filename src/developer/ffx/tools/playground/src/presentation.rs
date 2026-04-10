@@ -34,11 +34,11 @@ fn all_objects_same_fields(values: &[Value]) -> bool {
     } else if values.len() == 1 {
         matches!(&values[0], Value::Object(_))
     } else {
-        values.windows(2).all(|arr| {
-            let Value::Object(a) = &arr[0] else {
+        values.array_windows().all(|[a, b]| {
+            let Value::Object(a) = a else {
                 return false;
             };
-            let Value::Object(b) = &arr[1] else {
+            let Value::Object(b) = b else {
                 return false;
             };
 

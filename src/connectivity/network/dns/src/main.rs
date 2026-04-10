@@ -2939,9 +2939,9 @@ mod tests {
                 .expect("invalid subnet")
         );
         // Policy table must be sorted by prefix length.
-        POLICY_TABLE.windows(2).for_each(|w| {
-            let Policy { prefix: cur, precedence: _, label: _ } = w[0];
-            let Policy { prefix: nxt, precedence: _, label: _ } = w[1];
+        POLICY_TABLE.array_windows().for_each(|[w0, w1]| {
+            let Policy { prefix: cur, precedence: _, label: _ } = w0;
+            let Policy { prefix: nxt, precedence: _, label: _ } = w1;
             assert!(
                 cur.prefix() >= nxt.prefix(),
                 "bad ordering of prefixes, {} must come after {}",
