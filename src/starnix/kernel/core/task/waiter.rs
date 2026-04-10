@@ -6,7 +6,9 @@ use crate::signals::RunState;
 use crate::task::CurrentTask;
 use crate::vfs::{EpollEventHandler, FdNumber};
 use bitflags::bitflags;
+use futures::stream::AbortHandle;
 use slab::Slab;
+use smallvec::SmallVec;
 use starnix_lifecycle::{AtomicU64Counter, AtomicUsizeCounter};
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, NotifyKind,
@@ -176,6 +178,12 @@ enum WaitCancelerInner {
     Zxio(WaitCancelerZxio),
     Queue(WaitCancelerQueue),
     Port(WaitCancelerPort),
+}
+
+enum NotifiableRef {
+    Port(Arc<PortWaiter>),
+    Event(Arc<InterruptibleEvent>),
+    AbortHandle(Arc<AbortHandle>),
 }
 
 const WAIT_CANCELER_COMMON_SIZE: usize = 2;
@@ -830,6 +838,29 @@ impl WaiterRef {
         }
     }
 
+    /// Attempts to upgrade a waiter ref to a notifiable ref. If the waiter ref is no
+    /// longer valid, returns None.
+    fn upgrade_notifiable(&self) -> Option<NotifiableRef> {
+        match &self.0 {
+            WaiterKind::Port(waiter) => {
+                if let Some(waiter) = waiter.upgrade() {
+                    return Some(NotifiableRef::Port(waiter));
+                }
+            }
+            WaiterKind::Event(event) => {
+                if let Some(event) = event.upgrade() {
+                    return Some(NotifiableRef::Event(event));
+                }
+            }
+            WaiterKind::AbortHandle(handle) => {
+                if let Some(handle) = handle.upgrade() {
+                    return Some(NotifiableRef::AbortHandle(handle));
+                }
+            }
+        }
+        None
+    }
+
     /// Called by the WaitQueue when this waiter is about to be removed from the queue.
     ///
     /// TODO(abarth): This function does not appear to be called when the WaitQueue is dropped,
@@ -843,36 +874,6 @@ impl WaiterRef {
             }
             _ => (),
         }
-    }
-
-    /// Notify the waiter that the `events` have occurred.
-    ///
-    /// If the client is using an `SimpleWaiter`, they will be notified but they will not learn
-    /// which events occurred.
-    ///
-    /// If the client is using an `AbortHandle`, `AbortHandle::abort()` will be called.
-    fn notify(&self, key: &WaitKey, events: WaitEvents) -> bool {
-        match &self.0 {
-            WaiterKind::Port(waiter) => {
-                if let Some(waiter) = waiter.upgrade() {
-                    waiter.queue_events(key, events);
-                    return true;
-                }
-            }
-            WaiterKind::Event(event) => {
-                if let Some(event) = event.upgrade() {
-                    event.notify();
-                    return true;
-                }
-            }
-            WaiterKind::AbortHandle(handle) => {
-                if let Some(handle) = handle.upgrade() {
-                    handle.abort();
-                    return true;
-                }
-            }
-        }
-        false
     }
 }
 
@@ -901,6 +902,16 @@ impl PartialEq for WaiterRef {
             (WaiterKind::Event(lhs), WaiterKind::Event(rhs)) => Weak::ptr_eq(lhs, rhs),
             (WaiterKind::AbortHandle(lhs), WaiterKind::AbortHandle(rhs)) => Weak::ptr_eq(lhs, rhs),
             _ => false,
+        }
+    }
+}
+
+impl NotifiableRef {
+    fn notify(&self, key: &WaitKey, events: WaitEvents) {
+        match self {
+            NotifiableRef::Port(port_waiter) => port_waiter.queue_events(key, events),
+            NotifiableRef::Event(interruptible_event) => interruptible_event.notify(),
+            NotifiableRef::AbortHandle(handle) => handle.abort(),
         }
     }
 }
@@ -1061,20 +1072,33 @@ impl WaitQueue {
         if let WaitEvents::Fd(ref mut fd_events) = events {
             *fd_events = fd_events.add_equivalent_fd_events();
         }
+        // Store references to waiters ready to be notified locally so that we can drop our waiters
+        // lock before notifying the waiters. The waiters will need to acquire the waiters lock once
+        // they wake up in order to remove themselves from the queue and so they might contend
+        // with this thread for that lock.
+        // Usually we expect to notify at most a single waiter.
+        let mut notifiable_refs = SmallVec::<[(NotifiableRef, WaitKey); 1]>::new();
         let mut woken = 0;
-        self.0.lock().waiters.retain(|_, WaitEntryWithId { entry, id: _ }| {
-            if limit > 0 && entry.filter.intercept(&events) {
-                if entry.waiter.notify(&entry.key, events) {
-                    limit -= 1;
-                    woken += 1;
-                }
+        {
+            let mut guard = self.0.lock();
+            guard.waiters.retain(|_, WaitEntryWithId { entry, id: _ }| {
+                if limit > 0 && entry.filter.intercept(&events) {
+                    if let Some(notifiable_ref) = entry.waiter.upgrade_notifiable() {
+                        limit -= 1;
+                        woken += 1;
+                        notifiable_refs.push((notifiable_ref, entry.key));
+                    }
 
-                entry.waiter.will_remove_from_wait_queue(&entry.key);
-                false
-            } else {
-                true
-            }
-        });
+                    entry.waiter.will_remove_from_wait_queue(&entry.key);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        for (notifiable_ref, key) in notifiable_refs {
+            notifiable_ref.notify(&key, events);
+        }
         woken
     }
 
