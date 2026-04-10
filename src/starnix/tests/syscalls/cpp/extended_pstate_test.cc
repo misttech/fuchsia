@@ -558,9 +558,9 @@ TEST(ExtendedPstate, Signals) {
     SAFE_SYSCALL(sigaction(SIGUSR1, &sigusr1_action, nullptr));
 
     // Register SIGSEGV handler.
-    struct sigaction sigserv_action = {};
+    struct sigaction sigsegv_action = {};
     signal_data.received_sigsegv = false;
-    sigserv_action.sa_sigaction = [](int sig, siginfo_t* info, void* ucontext) {
+    sigsegv_action.sa_sigaction = [](int sig, siginfo_t* info, void* ucontext) {
       if (sig != SIGSEGV || info->si_addr != signal_data.sigsegv_target) {
         _exit(1);
       }
@@ -602,8 +602,8 @@ TEST(ExtendedPstate, Signals) {
       // TODO: mprotect is not listed in signal-safety(7), should issue raw syscall
       mprotect(info->si_addr, 4096, PROT_READ | PROT_WRITE);
     };
-    sigserv_action.sa_flags = SA_SIGINFO;
-    SAFE_SYSCALL(sigaction(SIGSEGV, &sigserv_action, nullptr));
+    sigsegv_action.sa_flags = SA_SIGINFO;
+    SAFE_SYSCALL(sigaction(SIGSEGV, &sigsegv_action, nullptr));
 
     RegistersValue kTestRegsValue;
 #if defined(__x86_64__)
