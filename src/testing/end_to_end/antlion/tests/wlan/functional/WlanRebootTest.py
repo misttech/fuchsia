@@ -21,11 +21,11 @@ from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
-    WlanPolicyControllerError,
-)
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanError,
+)
 from honeydew.affordances.connectivity.wlan.utils.types import ConnectionState
 from mobly import asserts, signals, test_runner
 
@@ -409,12 +409,12 @@ class WlanRebootTest(base_test.WifiBaseTest):
                     f"Checking if DUT is connected to {ssid} network. Will retry for "
                     f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
                 )
-                self.fuchsia_device.wlan_policy_controller.wait_for_network_state(
+                self.fuchsia_device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                     ssid,
                     ConnectionState.CONNECTED,
-                    timeout_sec=DUT_NETWORK_CONNECTION_TIMEOUT,
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
                 )
-            except WlanPolicyControllerError as e:
+            except HoneydewWlanError as e:
                 if (
                     reboot_device == DeviceType.DUT
                     and security_mode == SecurityMode.WPA3

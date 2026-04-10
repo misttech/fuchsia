@@ -15,11 +15,11 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
-from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
-    WlanPolicyControllerError,
-)
 from antlion.test_utils.wifi import base_test
 from antlion.utils import rand_ascii_str
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanError,
+)
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectionState,
     SecurityType,
@@ -177,12 +177,12 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             # Reboot the device and check that it auto connects.
             fd.reboot()
             try:
-                fd.wlan_policy_controller.wait_for_network_state(
+                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                     self.hidden_ssid,
                     ConnectionState.CONNECTED,
-                    timeout_sec=TIME_WAIT_FOR_CONNECT,
+                    timeout=TIME_WAIT_FOR_CONNECT,
                 )
-            except WlanPolicyControllerError as e:
+            except HoneydewWlanError as e:
                 raise signals.TestFailure(
                     "Failed to auto connect to hidden network on startup"
                 ) from e
@@ -203,12 +203,12 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
             )
             try:
-                fd.wlan_policy_controller.wait_for_network_state(
+                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                     self.hidden_ssid,
                     ConnectionState.CONNECTED,
-                    timeout_sec=TIME_WAIT_FOR_CONNECT,
+                    timeout=TIME_WAIT_FOR_CONNECT,
                 )
-            except WlanPolicyControllerError as e:
+            except HoneydewWlanError as e:
                 raise signals.TestFailure(
                     "Failed to auto connect to hidden network on save"
                 ) from e

@@ -572,12 +572,15 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
-    ) -> None:
+    ) -> ClientStateSummary:
         """Waits for update.
 
         Args:
             f: Function that returns True when condition is met.
             timeout: timeout value.
+
+        Returns:
+            The ClientStateSummary that matched the condition.
 
         Raises:
              HoneydewWlanError: Error from WLAN stack.
@@ -596,13 +599,50 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 if inspect.isawaitable(result):
                     result = await result
                 if result:
-                    return
+                    return client_state_summaries[-1]
             except TimeoutError as e:
                 raise wlan_errors.HoneydewWlanError(
                     f"Timeout out waiting for next update. Waited: {timeout}s."
                     f"Updates received:\n\n"
                     f"{pprint.pformat(client_state_summaries, indent=4)}"
                 ) from e
+
+    @ensure_ready
+    async def wait_for_network_state(
+        self,
+        ssid: str,
+        expected_state: ConnectionState,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ConnectionState:
+        await self.set_new_update_listener()
+
+        def check_net(update: ClientStateSummary) -> bool:
+            for net in update.networks:
+                if net.network_identifier.ssid == ssid:
+                    if net.connection_state == expected_state:
+                        return True
+                    elif net.connection_state is ConnectionState.CONNECTING:
+                        _LOGGER.debug(
+                            f"Network {ssid} still attempting to connect."
+                        )
+                        return False
+                    else:
+                        raise wlan_errors.HoneydewWlanError(
+                            f'Expected network "{ssid}" to be in state {expected_state}, '
+                            f"got {net.connection_state}"
+                        )
+            return False
+
+        matched_update = await self._wait_on_update(check_net, timeout=timeout)
+
+        for net in matched_update.networks:
+            if net.network_identifier.ssid == ssid:
+                return net.connection_state
+
+        raise wlan_errors.HoneydewWlanError(
+            f"Timed out trying to find ssid: {ssid}"
+        )
 
     @ensure_ready
     async def wait_for_client_state(
@@ -1139,6 +1179,20 @@ class WlanPolicy(wlan_policy.WlanPolicy):
         """Waits until the client converges to expected state."""
         return fuchsia_async_extension.get_loop().run_until_complete(
             self._inner.wait_for_client_state(expected_state, timeout=timeout)
+        )
+
+    def wait_for_network_state(
+        self,
+        ssid: str,
+        expected_state: ConnectionState,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ConnectionState:
+        """Waits until the network converges to expected state."""
+        return fuchsia_async_extension.get_loop().run_until_complete(
+            self._inner.wait_for_network_state(
+                ssid, expected_state, timeout=timeout
+            )
         )
 
     def remove_all_networks(

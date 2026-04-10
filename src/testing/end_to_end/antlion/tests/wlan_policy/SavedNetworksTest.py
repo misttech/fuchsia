@@ -396,7 +396,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
                 test_network.credential_value,
             )
 
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                 test_network.ssid, ConnectionState.CONNECTED
             )
             # Remove network and verify we disconnect
@@ -440,10 +440,10 @@ class SavedNetworksTest(base_test.WifiBaseTest):
                 test_network.ssid, test_network.security_type
             )
             try:
-                fd.wlan_policy_controller.wait_for_network_state(
+                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                     test_network.ssid, ConnectionState.CONNECTED
                 )
-            except WlanPolicyControllerError as e:
+            except HoneydewWlanError as e:
                 raise signals.TestFailure(
                     "network is not in connected state"
                 ) from e
@@ -479,10 +479,10 @@ class SavedNetworksTest(base_test.WifiBaseTest):
                 test_network.credential_value,
             )
             try:
-                fd.wlan_policy_controller.wait_for_network_state(
+                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                     test_network.ssid, ConnectionState.CONNECTED
                 )
-            except WlanPolicyControllerError as e:
+            except HoneydewWlanError as e:
                 raise signals.TestFailure(
                     "network is not in connected state"
                 ) from e

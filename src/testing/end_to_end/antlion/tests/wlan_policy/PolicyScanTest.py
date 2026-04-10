@@ -207,7 +207,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
                     self.open_network_2g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                 self.open_network_2g["SSID"], ConnectionState.CONNECTED
             )
 
@@ -233,7 +233,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
                     self.wpa2_network_2g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                 self.wpa2_network_2g["SSID"], ConnectionState.CONNECTED
             )
 
@@ -259,7 +259,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
                     self.open_network_5g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                 self.open_network_5g["SSID"], ConnectionState.CONNECTED
             )
 
@@ -285,7 +285,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
                     self.wpa2_network_5g["security"].fuchsia_security_type()
                 ),
             )
-            fd.wlan_policy_controller.wait_for_network_state(
+            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                 self.wpa2_network_5g["SSID"], ConnectionState.CONNECTED
             )
 

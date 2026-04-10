@@ -13,8 +13,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
-    ConnectionState,
-    DisconnectStatus,
     NetworkState,
     WlanClientState,
 )
@@ -198,94 +196,3 @@ class WlanPolicyController:
             if network.network_identifier.ssid == ssid:
                 return network
         return None
-
-    def wait_for_network_state(
-        self,
-        ssid: str,
-        expected_states: ConnectionState | set[ConnectionState],
-        expected_status: DisconnectStatus | None = None,
-        timeout_sec: int = DEFAULT_GET_UPDATE_TIMEOUT,
-    ) -> ConnectionState:
-        """Waits until the device returns with expected network state.
-
-        Args:
-            ssid: The network name to check the state of.
-            expected_states: The network state or states we are expecting to see.
-            expected_status: The disconnect status of the network. Only relevant when
-                expected_state is FAILED or DISCONNECTED.
-            timeout_sec: The number of seconds to wait for a update showing connection.
-
-        Returns:
-            Current network state if network converges on one of the expected states.
-
-        Raises:
-            TypeError: If DisconnectStatus provided with a CONNECTING or CONNECTED
-                state.
-            WlanPolicyControllerError: If no network is found before timeout or fails to
-                converge to one of the expected states.
-        """
-
-        if not isinstance(expected_states, set):
-            expected_states = {expected_states}
-
-        if (
-            expected_states
-            == {ConnectionState.CONNECTING, ConnectionState.CONNECTED}
-            or expected_states.issubset(
-                {ConnectionState.CONNECTING, ConnectionState.CONNECTED}
-            )
-            and expected_status is not None
-        ):
-            raise TypeError(
-                "Disconnect status not valid for CONNECTING or CONNECTED states."
-            )
-
-        self.honeydew.wlan_policy_deprecated_sync.set_new_update_listener()
-        network: NetworkState | None = None
-
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
-            time_left = max(1.0, end_time - time.time())
-            try:
-                client = self.honeydew.wlan_policy_deprecated_sync.get_update(
-                    timeout=time_left
-                )
-            except TimeoutError as e:
-                self.log.debug("Timeout waiting for WLAN state updates: %s", e)
-                continue
-
-            # If we don't find the network initially, wait and retry.
-            network = self._find_network(ssid, client.networks)
-            if network is None:
-                self.log.debug(
-                    f"{ssid} not found in client networks: {client.networks}"
-                )
-                continue
-
-            if network.connection_state in expected_states:
-                # Check optional disconnect status matches.
-                if expected_status:
-                    if network.disconnect_status is not expected_status:
-                        raise WlanPolicyControllerError(
-                            f"Disconnect status is not {expected_status}"
-                        )
-            elif network.connection_state is ConnectionState.CONNECTING:
-                self.log.debug(f"Network {ssid} still attempting to connect.")
-                continue
-            else:
-                raise WlanPolicyControllerError(
-                    f'Expected network "{ssid}" to be in state {expected_states}, '
-                    f"got {network.connection_state}"
-                )
-
-            # Successfully converged on expected state and status
-            return network.connection_state
-
-        if network is None:
-            raise WlanPolicyControllerError(
-                f"Timed out trying to find ssid: {ssid}"
-            )
-        raise WlanPolicyControllerError(
-            f'Timed out waiting for "{ssid}" to reach state {expected_states} and '
-            f"status {expected_status}"
-        )

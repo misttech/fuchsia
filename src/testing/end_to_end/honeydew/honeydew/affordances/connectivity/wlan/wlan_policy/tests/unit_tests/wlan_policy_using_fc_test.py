@@ -479,6 +479,63 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
         )
         await push_task
 
+    async def test_wait_for_network_state(self) -> None:
+        """Test if wait_for_network_state works."""
+        fidl_state = f_wlan_policy.ClientStateSummary(
+            state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+            networks=[
+                f_wlan_policy.NetworkState(
+                    id_=f_wlan_policy.NetworkIdentifier(
+                        ssid=b"ssid1",
+                        type_=f_wlan_policy.SecurityType.NONE,
+                    ),
+                    state=f_wlan_policy.ConnectionState.CONNECTED,
+                )
+            ],
+        )
+
+        async def push_updates() -> None:
+            await asyncio.sleep(0.1)
+            assert self.client_state_updates_proxy is not None
+            await self.client_state_updates_proxy.on_client_state_update(
+                summary=fidl_state
+            )
+
+        push_task = asyncio.create_task(push_updates())
+
+        state = await self.wlan_policy_obj.wait_for_network_state(
+            ssid="ssid1",
+            expected_state=ConnectionState.CONNECTED,
+            timeout=5,
+        )
+        self.assertEqual(state, ConnectionState.CONNECTED)
+        await push_task
+
+    async def test__wait_on_update(self) -> None:
+        """Test if _wait_on_update returns the summary."""
+        fidl_state = f_wlan_policy.ClientStateSummary(
+            state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
+            networks=[],
+        )
+
+        async def push_updates() -> None:
+            await asyncio.sleep(0.1)
+            assert self.client_state_updates_proxy is not None
+            await self.client_state_updates_proxy.on_client_state_update(
+                summary=fidl_state
+            )
+
+        push_task = asyncio.create_task(push_updates())
+
+        def condition(update: ClientStateSummary) -> bool:
+            return update.state == WlanClientState.CONNECTIONS_ENABLED
+
+        summary = await self.wlan_policy_obj._wait_on_update(
+            condition, timeout=5
+        )
+        self.assertEqual(summary.state, WlanClientState.CONNECTIONS_ENABLED)
+        await push_task
+
     async def test_remove_all_networks(self) -> None:
         """Test if remove_all_networks works."""
         client_controller = self.client_controller_proxy

@@ -15,13 +15,13 @@ from antlion.controllers import iperf_client
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
-    WlanPolicyControllerError,
-)
 from antlion.controllers.iperf_client import IPerfClientBase
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.wifi import wifi_test_utils as awutils
 from antlion.utils import PingResult, adb_shell_ping
+from honeydew.affordances.connectivity.wlan.utils.errors import (
+    HoneydewWlanError,
+)
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStatusConnected,
     ClientStatusConnecting,
@@ -451,10 +451,10 @@ class FuchsiaWlanDevice(SupportsWLAN):
                         HdSecurityType(target_security.fuchsia_security_type()),
                     )
                     if status is f_wlan_policy.RequestStatus.ACKNOWLEDGED:
-                        self.device.wlan_policy_controller.wait_for_network_state(
+                        self.device.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
                             target_ssid,
                             ConnectionState.CONNECTED,
-                            timeout_sec=timeout_sec,
+                            timeout=timeout_sec,
                         )
                     else:
                         self.device.log.warning(
@@ -464,7 +464,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
                         return False
 
                     return True
-                except WlanPolicyControllerError as e:
+                except HoneydewWlanError as e:
                     self.device.log.error(
                         f"Failed to save and connect to {target_ssid} with "
                         f"error: {e}"

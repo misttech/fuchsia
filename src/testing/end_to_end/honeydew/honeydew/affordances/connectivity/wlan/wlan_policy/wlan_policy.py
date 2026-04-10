@@ -11,6 +11,7 @@ import fidl_fuchsia_wlan_policy as f_wlan_policy
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
+    ConnectionState,
     CountryCode,
     NetworkConfig,
     SecurityType,
@@ -123,6 +124,15 @@ class AsyncWlanPolicy(abc.ABC):
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Waits until the client converges to expected state."""
+
+    @abc.abstractmethod
+    async def wait_for_network_state(
+        self,
+        ssid: str,
+        expected_state: ConnectionState,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ConnectionState:
+        """Waits until the network converges to expected state."""
 
     @abc.abstractmethod
     async def remove_all_networks(
@@ -367,6 +377,15 @@ class WlanPolicy(affordance.Affordance):
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Waits until the client converges to expected state."""
+
+    @abc.abstractmethod
+    def wait_for_network_state(
+        self,
+        ssid: str,
+        expected_state: ConnectionState,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> ConnectionState:
+        """Waits until the network converges to expected state."""
 
     @abc.abstractmethod
     def remove_all_networks(
