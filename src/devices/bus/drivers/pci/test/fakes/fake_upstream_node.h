@@ -29,6 +29,10 @@ class FakeUpstreamNode : public UpstreamNode {
   PciAllocator& mmio_regions() final { return mmio_alloc_; }
   PciAllocator& pio_regions() final { return pio_alloc_; }
 
+  FakeAllocator& fake_pf_mmio_regions() { return pf_mmio_alloc_; }
+  FakeAllocator& fake_mmio_regions() { return mmio_alloc_; }
+  FakeAllocator& fake_pio_regions() { return pio_alloc_; }
+
   void ConfigureDownstreamDevices() final { UpstreamNode::ConfigureDownstreamDevices(); }
   void UnplugDownstream() final { UpstreamNode::UnplugDownstream(); }
   void DisableDownstream() final { UpstreamNode::DisableDownstream(); }

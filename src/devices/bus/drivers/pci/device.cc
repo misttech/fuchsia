@@ -19,8 +19,9 @@
 #include <zircon/time.h>
 #include <zircon/types.h>
 
-#include <array>
+#include <algorithm>
 #include <optional>
+#include <vector>
 
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
@@ -485,28 +486,36 @@ zx::result<> Device::AllocateBars() {
   ZX_DEBUG_ASSERT(plugged_in_);
   ZX_DEBUG_ASSERT(bar_count_ <= bars_.max_size());
 
-  // Ensure we allocate BARs that already have an assigned address first, in
-  // case it lines up with the allocators that we might use an address in a
-  // lower BAR that is already assigned to a later BAR.
-  std::deque<uint32_t> bar_allocation_order;
-  for (auto& bar : bars_) {
-    if (bar) {
-      if (bar->address) {
-        bar_allocation_order.emplace_front(bar->bar_id);
-      } else {
-        bar_allocation_order.emplace_back(bar->bar_id);
-      }
+  std::vector<uint32_t> bar_allocation_order;
+  bar_allocation_order.reserve(PCI_MAX_BAR_REGS);
+  for (uint32_t i = 0; i < bars_.size(); ++i) {
+    if (bars_[i]) {
+      ZX_DEBUG_ASSERT(bars_[i]->bar_id == i);
+      bar_allocation_order.push_back(i);
     }
   }
 
+  // Sort BARs by size descending so the largest BAR will be allocated first. This avoids a smaller
+  // BAR fragmenting the window and preventing the larger BAR from being allocated.
+  std::ranges::sort(bar_allocation_order, [this](uint32_t a, uint32_t b) {
+    []() __TA_ASSERT(dev_lock_) {}();
+    return bars_[a]->size > bars_[b]->size;
+  });
+
+  // Ensure we allocate BARs that already have an assigned address first, in
+  // case it lines up with the allocators that we might use an address in a
+  // lower BAR that is already assigned to a later BAR.
+  std::ranges::stable_partition(bar_allocation_order, [this](uint32_t i) {
+    []() __TA_ASSERT(dev_lock_) {}();
+    return bars_[i]->address != 0;
+  });
+
   // Allocate BARs for the device
   for (auto bar_id : bar_allocation_order) {
-    if (bars_[bar_id]) {
-      if (auto result = AllocateBar(bar_id); result.is_error()) {
-        zxlogf(ERROR, "[%s] failed to allocate bar %u: %s", cfg_->addr(), bar_id,
-               result.status_string());
-        return result.take_error();
-      }
+    if (auto result = AllocateBar(bar_id); result.is_error()) {
+      zxlogf(ERROR, "[%s] failed to allocate bar %u: %s", cfg_->addr(), bar_id,
+             result.status_string());
+      return result.take_error();
     }
   }
 

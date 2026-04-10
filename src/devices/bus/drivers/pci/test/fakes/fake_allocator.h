@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "src/devices/bus/drivers/pci/allocation.h"
 
@@ -69,6 +70,7 @@ class FakeAllocator : public PciAllocator {
     // should align to the size so that's a convenient placeholder.
     const zx_paddr_t base = (in_base.has_value()) ? *in_base : size;
     auto allocation = std::unique_ptr<PciAllocation>(new FakeAllocation(type(), base, size));
+    allocation_log_.push_back(size);
     return zx::ok(std::move(allocation));
   }
 
@@ -77,8 +79,11 @@ class FakeAllocator : public PciAllocator {
     return ZX_OK;
   }
 
+  const std::vector<size_t>& allocation_log() const { return allocation_log_; }
+
  private:
   bool fail_next_allocation_ = false;
+  std::vector<size_t> allocation_log_;
 };
 
 }  // namespace pci

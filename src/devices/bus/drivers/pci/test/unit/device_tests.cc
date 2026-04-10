@@ -12,8 +12,10 @@
 #include <zircon/limits.h>
 #include <zircon/syscalls/object.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
@@ -119,8 +121,8 @@ TEST_F(PciDeviceTestsExtendedCam, CreationTest) {
                            &bus(), GetInspectNode(),
                            /*has_acpi=*/false));
 
-  reinterpret_cast<FakeAllocator*>(&upstream().mmio_regions())->FailNextAllocation(true);
-  reinterpret_cast<FakeAllocator*>(&upstream().pf_mmio_regions())->FailNextAllocation(true);
+  upstream().fake_mmio_regions().FailNextAllocation(true);
+  upstream().fake_pf_mmio_regions().FailNextAllocation(true);
   ConfigureDownstreamDevices();
 
   // Verify the created device's BDF.
@@ -161,6 +163,28 @@ TEST_F(PciDeviceTestsExtendedCam, CreationTest) {
                     ->node()
                     .properties()
                     .size());
+}
+
+// Verify BARs are allocated in size-descending order so that a large BAR
+// cannot be blocked by a small BAR fragmenting the available address window.
+TEST_F(PciDeviceTestsExtendedCam, BarAllocationSizeDescendingOrder) {
+  [[maybe_unused]] auto& dev =
+      CreateTestDevice(MockDevice::FakeRootParent().get(), kFakeQuadroDeviceConfig.data(),
+                       kFakeQuadroDeviceConfig.max_size());
+  ASSERT_EQ(false, HasNonfatalFailure());
+  ConfigureDownstreamDevices();
+
+  const auto& allocation_log = upstream().fake_mmio_regions().allocation_log();
+
+  // BAR 0 is pre-assigned so it is allocated first, and the remaining MMIO BARs of
+  // |kFakeQuadroDeviceConfig| follow in size-descending order (BAR 1, 3, 2).
+  const std::vector<size_t> expected = {
+      kTestDeviceBars[0].size,
+      kTestDeviceBars[1].size,
+      kTestDeviceBars[3].size,
+      kTestDeviceBars[2].size,
+  };
+  EXPECT_EQ(allocation_log, expected);
 }
 
 // Test a normal capability chain
