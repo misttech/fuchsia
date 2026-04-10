@@ -3771,5 +3771,22 @@ async fn test_acquire_and_drop_wake_lease_during_before_suspend() -> Result<()> 
     // Verify AfterResume is not called.
     assert!(after_resume_received_rx.next().now_or_never().is_none());
 
+    // Verify all expected events are registered.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::SUSPEND_EVENTS_NODE: contains {
+                "9": contains {
+                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                    ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
+                },
+                "10": contains {
+                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                    ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
+                },
+            },
+        }
+    );
+
     Ok(())
 }

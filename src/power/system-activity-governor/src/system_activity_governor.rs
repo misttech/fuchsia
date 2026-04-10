@@ -375,6 +375,7 @@ impl LeaseManager {
                     log::debug!(
                         "Wake lease '{}' dropped before BeforeSuspend completed, skipping power broker lease request",
                         &name);
+                    sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
                     return;
                 }
             }
