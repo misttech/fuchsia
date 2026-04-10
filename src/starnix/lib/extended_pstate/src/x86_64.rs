@@ -12,6 +12,13 @@ pub(crate) struct State {
     strategy: Strategy,
 }
 
+// Ensure ABI compatibility with assembly routines in `x86_64_asm.S`.
+static_assertions::assert_eq_align!(State, XSaveArea);
+// LINT.IfChange(x86_64_state_offsets)
+const_assert_eq!(std::mem::offset_of!(State, buffer), 0);
+const_assert_eq!(std::mem::offset_of!(State, strategy), 832);
+// LINT.ThenChange(x86_64_asm.S:x86_64_state_offsets)
+
 // Size of the XSAVE area.
 pub const XSAVE_AREA_SIZE: usize = 832;
 

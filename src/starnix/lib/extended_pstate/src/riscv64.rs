@@ -35,6 +35,23 @@ pub struct State {
 const_assert_eq!(std::mem::align_of::<u128>(), VLEN / 8);
 const_assert_eq!(std::mem::size_of::<u128>(), VLEN / 8);
 
+// Ensure ABI compatibility with assembly routines in `riscv64_asm.S`.
+static_assertions::assert_eq_align!(State, u128); // Alignment should be at least 16 for vector ops
+const_assert_eq!(std::mem::offset_of!(State, fp_registers), 0);
+// LINT.IfChange(riscv64_state_offsets)
+const_assert_eq!(std::mem::offset_of!(State, fcsr), 256);
+const_assert_eq!(std::mem::offset_of!(State, v_registers), 272);
+const_assert_eq!(std::mem::offset_of!(State, vcsrs), 784);
+// LINT.ThenChange(riscv64_asm.S:riscv64_state_offsets)
+
+static_assertions::assert_eq_align!(RiscvVectorCsrs, u64);
+// LINT.IfChange(riscv64_vector_csrs_offsets)
+const_assert_eq!(std::mem::offset_of!(RiscvVectorCsrs, vcsr), 0);
+const_assert_eq!(std::mem::offset_of!(RiscvVectorCsrs, vstart), 8);
+const_assert_eq!(std::mem::offset_of!(RiscvVectorCsrs, vl), 16);
+const_assert_eq!(std::mem::offset_of!(RiscvVectorCsrs, vtype), 24);
+// LINT.ThenChange(riscv64_asm.S:riscv64_vector_csrs_offsets)
+
 impl State {
     pub fn reset(&mut self) {
         *self = Default::default();

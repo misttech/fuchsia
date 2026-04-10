@@ -4,11 +4,15 @@
 
 #include <starnix_asm_utils/asm.h>
 
+// LINT.IfChange(aarch64_state_offsets)
 #define FPCR_OFFSET 512
 #define FPSR_OFFSET 516
+// LINT.ThenChange(aarch64.rs:aarch64_state_offsets)
 
+// LINT.IfChange(aarch32_state_offsets)
 #define FPCR_OFFSET_32 256
 #define FPSR_OFFSET_32 260
+// LINT.ThenChange(aarch64.rs:aarch32_state_offsets)
 
 FUNCTION(save_extended_pstate)
     // state_addr is in x0

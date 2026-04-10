@@ -17,6 +17,14 @@ pub struct State {
 
 const_assert_eq!(std::mem::size_of::<State>(), 512 + 16);
 
+// Ensure ABI compatibility with assembly routines in `aarch64_asm.S`.
+static_assertions::assert_eq_align!(State, u128);
+const_assert_eq!(std::mem::offset_of!(State, q), 0);
+// LINT.IfChange(aarch64_state_offsets)
+const_assert_eq!(std::mem::offset_of!(State, fpcr), 512);
+const_assert_eq!(std::mem::offset_of!(State, fpsr), 516);
+// LINT.ThenChange(aarch64_asm.S:aarch64_state_offsets)
+
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct Aarch32State {
@@ -33,6 +41,14 @@ pub struct Aarch32State {
 }
 
 const_assert_eq!(std::mem::size_of::<Aarch32State>(), 256 + 16);
+
+// Ensure ABI compatibility with assembly routines in `aarch64_asm.S`.
+static_assertions::assert_eq_align!(Aarch32State, u128);
+const_assert_eq!(std::mem::offset_of!(Aarch32State, q), 0);
+// LINT.IfChange(aarch32_state_offsets)
+const_assert_eq!(std::mem::offset_of!(Aarch32State, fpcr), 256);
+const_assert_eq!(std::mem::offset_of!(Aarch32State, fpsr), 260);
+// LINT.ThenChange(aarch64_asm.S:aarch32_state_offsets)
 
 // Aarch64 supports aligned and unaligned stores to/from vector registers. Aligned accesses may be
 // faster.

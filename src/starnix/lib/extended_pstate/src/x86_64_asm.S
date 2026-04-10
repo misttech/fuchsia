@@ -5,7 +5,9 @@
 #include <starnix_asm_utils/asm.h>
 
 // XSaveArea size is 832
+// LINT.IfChange(x86_64_state_offsets)
 #define STRATEGY_OFFSET 832
+// LINT.ThenChange(x86_64.rs:x86_64_state_offsets)
 
 // LINT.IfChange(strategy_discriminants)
 #define STRATEGY_XSAVEOPT 0

@@ -5,15 +5,19 @@
 #include <starnix_asm_utils/asm.h>
 
 // Offsets for `State` fields.
+// LINT.IfChange(riscv64_state_offsets)
 #define STATE_FCSR_OFFSET 256
 #define STATE_V_REGISTERS_OFFSET 272
 #define STATE_VCSRS_OFFSET 784
+// LINT.ThenChange(riscv64.rs:riscv64_state_offsets)
 
 // Offsets for `RiscvVectorCsrs` fields.
+// LINT.IfChange(riscv64_vector_csrs_offsets)
 #define CSRS_STRUCT_VCSR (0)
 #define CSRS_STRUCT_VSTART (1 * 8)
 #define CSRS_STRUCT_VL (2 * 8)
 #define CSRS_STRUCT_VTYPE (3 * 8)
+// LINT.ThenChange(riscv64.rs:riscv64_vector_csrs_offsets)
 
 FUNCTION(save_extended_pstate)
     // state_addr is in a0
