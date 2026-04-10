@@ -6,9 +6,10 @@
 #define SRC_DEVELOPER_ADB_BIN_ADB_ADB_H_
 
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
+#include <lib/fit/function.h>
 
-#include <atomic>
 #include <map>
+#include <memory>
 
 #include "service-manager.h"
 #include "src/developer/adb/third_party/adb/adb-base.h"
@@ -34,6 +35,7 @@ class DeviceConnector {
 class Adb : public AdbBase {
  public:
   explicit Adb(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
+  ~Adb();
 
   static zx::result<std::unique_ptr<Adb>> Create(async_dispatcher_t* dispatcher);
 
@@ -74,7 +76,8 @@ class Adb : public AdbBase {
   // completely received, copied_len_ should be 0.
   size_t copied_len_;
 
-  std::atomic<bool> resetting_ = false;
+  std::shared_ptr<fit::callback<void()>> teardown_callback_ =
+      std::make_shared<fit::callback<void()>>();
   ServiceManager service_manager_;
 };
 

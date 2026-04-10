@@ -16,7 +16,7 @@ void Adb::ReceiveCallback(
   if (!result.ok()) {
     // TODO(https://fxbug.dev/42073024): improve the graceful shutdown story in tests and remove
     // this.
-    if (result.is_peer_closed()) {
+    if (result.is_peer_closed() || result.is_canceled()) {
       FX_PLOGS(WARNING, result.status()) << "Connection to underlying UsbAdbImpl failed. Quitting.";
       return;
     }
@@ -200,10 +200,12 @@ zx_status_t Adb::StartUsbAdbImpl() {
     return ends.status_value();
   }
 
+  auto cb = teardown_callback_;
   impl_ = fidl::WireSharedClient<fuchsia_hardware_adb::UsbAdbImpl>(
-      std::move(ends->client), dispatcher_, fidl::ObserveTeardown([this] {
-        if (resetting_.exchange(false)) {
-          StartUsbAdbImpl();
+      std::move(ends->client), dispatcher_, fidl::ObserveTeardown([cb] {
+        fit::callback<void()> target = std::move(*cb);
+        if (target) {
+          target();
         }
       }));
   impl_->Receive().Then(fit::bind_member<&Adb::ReceiveCallback>(this));
@@ -244,12 +246,16 @@ zx::result<std::unique_ptr<Adb>> Adb::Create(async_dispatcher_t* dispatcher) {
   return zx::ok(std::move(adb));
 }
 
+Adb::~Adb() { *teardown_callback_ = nullptr; }
+
 void Adb::Reset() {
   auto result = fidl::WireCall(device_client_)->StopAdb();
   if (!result.ok()) {
     FX_PLOGS(ERROR, result.status()) << "Failed to stop adb";
   }
-  resetting_ = true;
+
+  *teardown_callback_ = [this]() mutable { this->StartUsbAdbImpl(); };
+
   impl_.AsyncTeardown();
 }
 

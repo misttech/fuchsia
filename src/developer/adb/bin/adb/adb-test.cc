@@ -397,10 +397,10 @@ class AdbRealmTest : public AdbTest, public loop_fixture::RealLoop {
   }
 
   void TearDown() override {
-    AdbTest::TearDown();
     bool complete = false;
     realm_->Teardown([&](fit::result<fuchsia::component::Error> result) { complete = true; });
     RunLoopUntil([&]() { return complete; });
+    AdbTest::TearDown();
   }
 
   void SendConnect() {
