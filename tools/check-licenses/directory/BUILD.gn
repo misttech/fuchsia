@@ -38,12 +38,12 @@ if (is_host) {
     sources = [
       "config.go",
       "directory.go",
-      "metrics.go",
       "readme.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//tools/check-licenses/file",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/project",
       "//tools/check-licenses/readme",
       "//tools/lib/logger",
@@ -60,6 +60,7 @@ if (is_host) {
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//tools/check-licenses/file",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/project",
       "//tools/check-licenses/readme",
       "//tools/check-licenses/testutil",

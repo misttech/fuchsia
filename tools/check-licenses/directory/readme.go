@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func readmeFileExists(root string) (string, bool) {
+func readmeFileExists(root string) (string, string, bool) {
 	// If multiple README.* files exist in a given directory,
 	// README.fuchsia files will take precedence.
 	// Using os.Stat is an O(1) file system operation, whereas os.ReadDir
@@ -17,16 +17,16 @@ func readmeFileExists(root string) (string, bool) {
 	// This makes it the most mathematically efficient way to check for
 	// file existence when looking for known names.
 	if path := filepath.Join(root, "README.fuchsia"); fileExists(path) {
-		return path, true
+		return path, "explicit_fuchsia", true
 	}
 	if path := filepath.Join(root, "README.chromium"); fileExists(path) {
-		return path, true
+		return path, "explicit_chromium", true
 	}
 	if path := filepath.Join(root, "README.crashpad"); fileExists(path) {
-		return path, true
+		return path, "explicit_crashpad", true
 	}
 
-	return "", false
+	return "", "", false
 }
 
 func fileExists(path string) bool {
@@ -34,12 +34,19 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func readmeFileWillNeverExist(root string) bool {
+func readmeFileWillNeverExist(root string) (string, bool) {
 	// There are several other 3p projects that don't (and will never) have a README.(*) file.
 	// Handle those projects separately.
-	return isCustomGolibProject(root) ||
-		isCustomRustCrateProject(root) ||
-		isCustomDartPkgProject(root)
+	if isCustomGolibProject(root) {
+		return "fallback_go", true
+	}
+	if isCustomRustCrateProject(root) {
+		return "fallback_rust", true
+	}
+	if isCustomDartPkgProject(root) {
+		return "fallback_dart", true
+	}
+	return "", false
 }
 
 func isCustomDartPkgProject(path string) bool {

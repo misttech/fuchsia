@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
@@ -40,6 +41,7 @@ func NewDirectory(root string, parent *Directory) (*Directory, error) {
 // Call NewDirectory with a passed-in config variable (instead of using
 // the static Config variable). This allows for easier testing.
 func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryConfig) (*Directory, error) {
+	defer metrics.DirectoryTraversalDuration.Track()()
 	d := &Directory{}
 	if RootDirectory == nil {
 		RootDirectory = d
@@ -62,12 +64,18 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 	var err error
 
 	// If a README.fuchsia file exists in the current directory, load it.
-	if readmePath, exists := readmeFileExists(root); exists {
-		if r, err = readme.NewReadmeFromFile(readmePath); err != nil {
+	if readmePath, detectionType, exists := readmeFileExists(root); exists {
+		metrics.BoundaryDetectionType.Inc(detectionType)
+		func() {
+			defer metrics.ReadmeParsingDuration.Track()()
+			r, err = readme.NewReadmeFromFile(readmePath)
+		}()
+		if err != nil {
 			return nil, fmt.Errorf("error loading readme file [%s]: %w",
 				readmePath, err)
 		}
-	} else if readmeFileWillNeverExist(root) {
+	} else if fallbackType, exists := readmeFileWillNeverExist(root); exists {
+		metrics.BoundaryDetectionType.Inc(fallbackType)
 		// Some 3P projects don't have (and never will have) a README.fuchsia file.
 		// In those cases, generate an in-memory README file that describes
 		// the project.
@@ -75,6 +83,8 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 			return nil, fmt.Errorf("error creating custom readme [%s]: %w",
 				root, err)
 		}
+	} else if d.Project != project.UnknownProject {
+		metrics.BoundaryDetectionType.Inc("inherited")
 	}
 
 	relRoot := root
@@ -100,6 +110,10 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 		d.Project = p
 	}
 
+	if d.Project == project.UnknownProject {
+		metrics.OrphanedEntities.Inc("directory")
+	}
+
 	directoryContents, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -107,14 +121,17 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 	// Then traverse the rest of the contents of this directory.
 	for _, item := range directoryContents {
 		path := filepath.Join(root, item.Name())
+		isDir := item.IsDir()
 
 		// Check the config file to see if we should skip this file / folder.
 		if config.shouldSkip(path) {
-			plusVal(Skipped, path)
+			if isDir {
+				metrics.DirectoriesProcessed.Inc("skipped_by_config")
+			} else {
+				metrics.FilesProcessed.Inc(filepath.Ext(path), "skipped")
+			}
 			continue
 		}
-
-		isDir := item.IsDir()
 
 		// Edge case: item.IsDir() returns false for symlinks.
 		// If the symlink points to a directory, we must catch it here to
@@ -124,13 +141,15 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 			info, err := os.Stat(path)
 			if err == nil && info.IsDir() {
 				// It's a directory symlink. Skip it entirely.
+				metrics.SymlinksProcessed.Inc("skipped_directory")
 				continue
 			}
+			metrics.SymlinksProcessed.Inc("analyzed")
 		}
 
 		// Directories
 		if isDir {
-			plus1(NumFolders)
+			metrics.DirectoriesProcessed.Inc("analyzed")
 			child, err := newDirectoryWithConfig(path, d, config)
 			if err != nil {
 				return nil, err
@@ -148,9 +167,13 @@ func newDirectoryWithConfig(root string, parent *Directory, config *DirectoryCon
 		if err != nil {
 			// Likely a symlink issue, or an empty file error from file.LoadFile.
 			// We swallow the error to continue traversing the rest of the tree.
+			metrics.FilesProcessed.Inc(filepath.Ext(path), "error")
 			continue
 		} else {
-			plus1(NumFiles)
+			if d.Project == project.UnknownProject {
+				metrics.OrphanedEntities.Inc("file")
+			}
+			// File counting is already handled by the file package metrics.
 			d.Files = append(d.Files, f)
 			d.Project.AddFile(f)
 		}

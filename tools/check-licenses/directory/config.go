@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 )
 
@@ -45,10 +46,10 @@ func Initialize(c *DirectoryConfig) error {
 	c.Skips = append(c.Skips, patternSkips)
 
 	// Save the config file to the out directory (if defined).
-	if b, err := json.MarshalIndent(c, "", "  "); err != nil {
+	if b, err := json.MarshalIndent(Config, "", "  "); err != nil {
 		return err
 	} else {
-		plusFile("_config.json", b)
+		metrics.AddArtifact("directory/_config.json", b)
 	}
 
 	Config = c

@@ -82,4 +82,38 @@ var (
 		"How often reading a README.fuchsia file was avoided because it was in memory",
 		"status", // status: "hit"
 	)
+
+	DirectoryTraversalDuration = RegisterTimer(
+		"directory_traversal_duration",
+		"Time spent crawling the directory structure",
+	)
+
+	ReadmeParsingDuration = RegisterTimer(
+		"readme_parsing_duration",
+		"Time spent parsing README.fuchsia files",
+	)
+
+	BoundaryDetectionType = RegisterCounter(
+		"boundary_detection_type",
+		"How the tool decided to start a new project",
+		"detection_type", // detection_type: "explicit_fuchsia", "explicit_chromium", "fallback_go", "fallback_rust", "fallback_dart", "inherited"
+	)
+
+	OrphanedEntities = RegisterCounter(
+		"orphaned_entities",
+		"Number of files or directories attributed to UnknownProject",
+		"type", // type: "file", "directory"
+	)
+
+	DirectoriesProcessed = RegisterCounter(
+		"directories_processed",
+		"Number of directories processed",
+		"status", // status: "analyzed", "skipped", "missing_project"
+	)
+
+	SymlinksProcessed = RegisterCounter(
+		"symlinks_processed",
+		"Number of symlinks processed",
+		"status",
+	)
 )

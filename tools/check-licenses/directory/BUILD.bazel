@@ -10,7 +10,6 @@ go_library(
     srcs = [
         "config.go",
         "directory.go",
-        "metrics.go",
         "readme.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/directory",
@@ -18,6 +17,7 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         "//tools/check-licenses/file",
+        "//tools/check-licenses/metrics",
         "//tools/check-licenses/project",
         "//tools/check-licenses/readme",
         "//tools/lib/logger",
@@ -35,6 +35,7 @@ go_test(
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//tools/check-licenses/file",
+        "//tools/check-licenses/metrics",
         "//tools/check-licenses/project",
         "//tools/check-licenses/readme",
         "//tools/check-licenses/testutil",
