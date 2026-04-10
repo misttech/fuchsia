@@ -88,14 +88,7 @@ zx::result<BusLauncher> BusLauncher::Create(
   }
   launcher.virtual_bus_.Bind(std::move(*virtual_bus));
 
-  const fidl::WireResult enable_result = launcher.virtual_bus_->Enable();
-  if (!enable_result.ok()) {
-    std::cerr << "virtual_bus_->Enable(): " << enable_result.FormatDescription() << '\n';
-    return zx::error(enable_result.status());
-  }
-  const fidl::WireResponse enable_response = enable_result.value();
-  if (zx_status_t status = enable_response.status; status != ZX_OK) {
-    std::cerr << "virtual_bus_->Enable(): " << zx_status_get_string(status) << '\n';
+  if (zx_status_t status = launcher.Enable(); status != ZX_OK) {
     return zx::error(status);
   }
   fidl::UnownedClientEnd<fuchsia_io::Directory> svc = launcher.GetExposedDir();
@@ -226,6 +219,19 @@ zx_status_t BusLauncher::Disable() {
     return result.value().status;
   }
   return result.value().status;
+}
+
+zx_status_t BusLauncher::Enable() {
+  auto result = virtual_bus_->Enable();
+  if (!result.ok()) {
+    std::cerr << "virtual_bus_->Enable(): " << result.FormatDescription() << '\n';
+    return result.status();
+  }
+  if (zx_status_t status = result.value().status; status != ZX_OK) {
+    std::cerr << "virtual_bus_->Enable() returned status: " << zx_status_get_string(status) << '\n';
+    return status;
+  }
+  return ZX_OK;
 }
 
 zx_status_t BusLauncher::Disconnect() {

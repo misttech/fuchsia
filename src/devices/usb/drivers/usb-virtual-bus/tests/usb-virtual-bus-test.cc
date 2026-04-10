@@ -36,21 +36,11 @@ class VirtualBusTest : public testing::Test {
     bus_ = std::move(bus.value());
     InitUsbVirtualBus();
 
-    {
-      component::SyncServiceMemberWatcher<virtualbustest::BusTestService::Device> watcher(
-          bus_->GetExposedDir());
-      zx::result result = watcher.GetNextInstance(false);
-      ASSERT_TRUE(result.is_ok());
-      test_.Bind(std::move(result.value()));
-    }
-    {
-      component::SyncServiceMemberWatcher<virtualbustest::ExpectBusTestService::Device> watcher(
-          bus_->GetExposedDir());
-      zx::result result = watcher.GetNextInstance(false);
-      ASSERT_TRUE(result.is_ok());
-      expect_test_.Bind(std::move(result.value()),
-                        fdf::Dispatcher::GetCurrent()->async_dispatcher());
-    }
+    bus_test_.Bind(Connect<virtualbustest::BusTestService::Device>());
+    async_bus_test_.Bind(Connect<virtualbustest::BusTestService::Device>(),
+                         fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    expect_bus_test_.Bind(Connect<virtualbustest::ExpectBusTestService::Device>(),
+                          fdf::Dispatcher::GetCurrent()->async_dispatcher());
   }
 
   void TearDown() override {
@@ -58,15 +48,24 @@ class VirtualBusTest : public testing::Test {
     ASSERT_EQ(bus_->Disable(), ZX_OK);
   }
 
+  template <typename ServiceMember>
+  fidl::ClientEnd<typename ServiceMember::ProtocolType> Connect() {
+    component::SyncServiceMemberWatcher<ServiceMember> watcher(bus_->GetExposedDir());
+    zx::result result = watcher.GetNextInstance(false);
+    if (result.is_error()) {
+      ADD_FAILURE() << "Failed to find service instance: " << result.status_string();
+      return {};
+    }
+    return std::move(result.value());
+  }
+
  protected:
+  void InitUsbVirtualBus();
   fdf_testing::DriverRuntime& runtime() { return runtime_; }
 
-  fidl::SyncClient<virtualbustest::BusTest> test_;
-  fidl::Client<virtualbustest::ExpectBusTest> expect_test_;
-
- private:
-  void InitUsbVirtualBus();
-
+  fidl::SyncClient<virtualbustest::BusTest> bus_test_;
+  fidl::Client<virtualbustest::BusTest> async_bus_test_;
+  fidl::Client<virtualbustest::ExpectBusTest> expect_bus_test_;
   fdf_testing::DriverRuntime runtime_;
   std::optional<usb_virtual::BusLauncher> bus_;
 };
@@ -110,29 +109,33 @@ void VirtualBusTest::InitUsbVirtualBus() {
 TEST_F(VirtualBusTest, ControlOutTransfer) {
   static const size_t kExpectedDataSize = 19;
 
-  expect_test_->ExpectControl({false, {}}).ThenExactlyOnce([this](auto& result) {
+  bool expect_completed = false;
+  expect_bus_test_->ExpectControl({false, {}}).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-    for (size_t i = 0; i < kExpectedDataSize; i++) {
-      EXPECT_EQ(result->out_data()[i], static_cast<uint8_t>(i));
+    if (result.is_ok()) {
+      for (size_t i = 0; i < kExpectedDataSize; i++) {
+        EXPECT_EQ(result->out_data()[i], static_cast<uint8_t>(i));
+      }
     }
-
-    runtime().Quit();
+    expect_completed = true;
   });
-  expect_test_->Sync().ThenExactlyOnce([this](auto& result) {
+
+  bool sync_completed = false;
+  expect_bus_test_->Sync().Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
-    runtime().ResetQuit();
+    sync_completed = true;
   });
-  runtime().Run();
+  runtime().RunUntil([&]() { return sync_completed; });
 
   std::vector<uint8_t> data(kExpectedDataSize);
   for (size_t i = 0; i < data.size(); i++) {
     data[i] = static_cast<uint8_t>(i);
   }
-  auto result = test_->Control({false, std::move(data)});
+  auto result = bus_test_->Control({false, std::move(data)});
   ASSERT_TRUE(result.is_ok());
-  runtime().Run();
+
+  runtime().RunUntil([&]() { return expect_completed; });
+  runtime().RunUntilIdle();
 }
 
 TEST_F(VirtualBusTest, ControlInTransfer) {
@@ -142,57 +145,62 @@ TEST_F(VirtualBusTest, ControlInTransfer) {
   for (size_t i = 0; i < data.size(); i++) {
     data[i] = static_cast<uint8_t>(i);
   }
-  expect_test_->ExpectControl({true, std::move(data)}).ThenExactlyOnce([this](auto& result) {
+  bool expect_completed = false;
+  expect_bus_test_->ExpectControl({true, std::move(data)}).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
+    expect_completed = true;
   });
-  expect_test_->Sync().ThenExactlyOnce([this](auto& result) {
+
+  bool sync_completed = false;
+  expect_bus_test_->Sync().Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
-    runtime().ResetQuit();
+    sync_completed = true;
   });
-  runtime().Run();
+  runtime().RunUntil([&]() { return sync_completed; });
 
-  auto result = test_->Control({true, {}});
+  auto result = bus_test_->Control({true, {}});
   ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(result->in_data().size(), kExpectedDataSize);
   for (size_t i = 0; i < kExpectedDataSize; i++) {
     EXPECT_EQ(result->in_data()[i], static_cast<uint8_t>(i));
   }
-  runtime().Run();
+
+  runtime().RunUntil([&]() { return expect_completed; });
+  runtime().RunUntilIdle();
 }
 
 TEST_F(VirtualBusTest, OutTransfer) {
   static const size_t kExpectedDataSize = 8;
 
-  expect_test_->ExpectOut().ThenExactlyOnce([this](auto& result) {
+  bool expect_completed = false;
+  expect_bus_test_->ExpectOut().Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-    EXPECT_EQ(result->data().size(), kExpectedDataSize);
-    for (size_t i = 0; i < result->data().size(); i++) {
-      EXPECT_EQ(result->data()[i], static_cast<uint8_t>(i));
+    if (result.is_ok()) {
+      EXPECT_EQ(result->data().size(), kExpectedDataSize);
+      for (size_t i = 0; i < result->data().size(); i++) {
+        EXPECT_EQ(result->data()[i], static_cast<uint8_t>(i));
+      }
     }
-
-    runtime().Quit();
+    expect_completed = true;
   });
-  expect_test_->Sync().ThenExactlyOnce([this](auto& result) {
+
+  bool sync_completed = false;
+  expect_bus_test_->Sync().Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
-    runtime().ResetQuit();
+    sync_completed = true;
   });
-  runtime().Run();
+  runtime().RunUntil([&]() { return sync_completed; });
 
   std::vector<uint8_t> data(kExpectedDataSize);
   for (size_t i = 0; i < data.size(); i++) {
     data[i] = static_cast<uint8_t>(i);
   }
-  auto result = test_->Out(std::move(data));
+  auto result = bus_test_->Out(std::move(data));
   ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(result->actual(), kExpectedDataSize);
 
-  runtime().Run();
+  runtime().RunUntil([&]() { return expect_completed; });
+  runtime().RunUntilIdle();
 }
 
 TEST_F(VirtualBusTest, InTransfer) {
@@ -202,44 +210,123 @@ TEST_F(VirtualBusTest, InTransfer) {
   for (size_t i = 0; i < data.size(); i++) {
     data[i] = static_cast<uint8_t>(i);
   }
-  expect_test_->ExpectIn(std::move(data)).ThenExactlyOnce([this](auto& result) {
+  bool expect_completed = false;
+  expect_bus_test_->ExpectIn(std::move(data)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-    EXPECT_EQ(result->actual(), kExpectedDataSize);
-
-    runtime().Quit();
+    if (result.is_ok()) {
+      EXPECT_EQ(result->actual(), kExpectedDataSize);
+    }
+    expect_completed = true;
   });
-  expect_test_->Sync().ThenExactlyOnce([this](auto& result) {
+
+  bool sync_completed = false;
+  expect_bus_test_->Sync().Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
-    runtime().ResetQuit();
+    sync_completed = true;
   });
-  runtime().Run();
+  runtime().RunUntil([&]() { return sync_completed; });
 
-  auto result = test_->In(kExpectedDataSize);
+  auto result = bus_test_->In(kExpectedDataSize);
   ASSERT_TRUE(result.is_ok());
   EXPECT_EQ(result->data().size(), kExpectedDataSize);
   for (size_t i = 0; i < kExpectedDataSize; i++) {
     EXPECT_EQ(result->data()[i], static_cast<uint8_t>(i));
   }
-  runtime().Run();
+
+  runtime().RunUntil([&]() { return expect_completed; });
+  runtime().RunUntilIdle();
 }
 
 TEST_F(VirtualBusTest, Reconnect) {
-  expect_test_->Connect(false).ThenExactlyOnce([this](auto& result) {
+  bool disconnected = false;
+  expect_bus_test_->Connect(false).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
-    runtime().ResetQuit();
+    disconnected = true;
   });
-  runtime().Run();
+  runtime().RunUntil([&]() { return disconnected; });
 
-  expect_test_->Connect(true).ThenExactlyOnce([this](auto& result) {
+  bool connected = false;
+  expect_bus_test_->Connect(true).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    runtime().Quit();
+    connected = true;
   });
-  runtime().Run();
+  runtime().RunUntil([&]() { return connected; });
+}
+
+TEST_F(VirtualBusTest, RepeatedConfiguration) {
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_EQ(bus_->ClearPeripheralDeviceFunctions(), ZX_OK);
+    ASSERT_EQ(bus_->Disconnect(), ZX_OK);
+
+    ASSERT_NO_FATAL_FAILURE(InitUsbVirtualBus());
+    ASSERT_EQ(bus_->Enable(), ZX_OK);
+
+    bus_test_ = {};
+    async_bus_test_ = {};
+    expect_bus_test_ = {};
+
+    bus_test_ = fidl::SyncClient<virtualbustest::BusTest>(
+        Connect<virtualbustest::BusTestService::Device>());
+    async_bus_test_.Bind(Connect<virtualbustest::BusTestService::Device>(),
+                         fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    expect_bus_test_.Bind(Connect<virtualbustest::ExpectBusTestService::Device>(),
+                          fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+    // Verify transfers still work after re-configuration
+    static const size_t kExpectedDataSize = 8;
+    bool expect_completed = false;
+    expect_bus_test_->ExpectOut().Then([&](auto& result) {
+      EXPECT_TRUE(result.is_ok());
+      if (result.is_ok()) {
+        EXPECT_EQ(result->data().size(), kExpectedDataSize);
+      }
+      expect_completed = true;
+    });
+
+    bool sync_completed = false;
+    expect_bus_test_->Sync().Then([&](auto& result) {
+      EXPECT_TRUE(result.is_ok());
+      sync_completed = true;
+    });
+    runtime().RunUntil([&]() { return sync_completed; });
+
+    std::vector<uint8_t> data(kExpectedDataSize);
+    for (size_t i = 0; i < data.size(); i++) {
+      data[i] = static_cast<uint8_t>(i);
+    }
+    auto result = bus_test_->Out(std::move(data));
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->actual(), kExpectedDataSize);
+
+    runtime().RunUntil([&]() { return expect_completed; });
+    runtime().RunUntilIdle();
+  }
+}
+
+TEST_F(VirtualBusTest, PendingRequestsDuringClearFunctions) {
+  // Queue a request without setting expectation, so it remains pending.
+  std::vector<uint8_t> data(8, 0xAA);
+  bool request_completed = false;
+  async_bus_test_->Out({data}).Then([&](auto& result) {
+    // We expect this to fail or be cancelled because we are clearing functions.
+    EXPECT_FALSE(result.is_ok());
+    request_completed = true;
+  });
+
+  // Ensure the request is truly pending (not completed immediately).
+  runtime().RunUntilIdle();
+  ASSERT_FALSE(request_completed);
+
+  // Trigger ClearFunctions using the launcher API. PerformBlockingWork runs the dispatcher
+  // while waiting for the synchronous command to finish in the background.
+  bool clear_completed = false;
+  runtime().PerformBlockingWork([&]() {
+    ASSERT_EQ(bus_->ClearPeripheralDeviceFunctions(), ZX_OK);
+    clear_completed = true;
+  });
+
+  EXPECT_TRUE(request_completed);
+  EXPECT_TRUE(clear_completed);
 }
 
 }  // namespace

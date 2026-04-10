@@ -55,6 +55,9 @@ class BusLauncher {
   // Disable the virtual bus.
   [[nodiscard]] zx_status_t Disable();
 
+  // Enable the virtual bus.
+  [[nodiscard]] zx_status_t Enable();
+
   // Disconnect the virtual bus.
   [[nodiscard]] zx_status_t Disconnect();
 

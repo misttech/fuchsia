@@ -32,8 +32,13 @@ void BanjoDevice::QueueOut(std::vector<uint8_t> data) {
       .callback =
           [](void* ctx, usb_request_t* request) {
             usb::Request<> req(request, static_cast<BanjoDevice*>(ctx)->parent_req_size_);
-            static_cast<BanjoDevice*>(ctx)->out_completer_->Reply(
-                zx::ok(req.request()->response.actual));
+            if (req.request()->response.status == ZX_OK) {
+              static_cast<BanjoDevice*>(ctx)->out_completer_->Reply(
+                  zx::ok(req.request()->response.actual));
+            } else {
+              static_cast<BanjoDevice*>(ctx)->out_completer_->Reply(
+                  zx::error(req.request()->response.status));
+            }
             static_cast<BanjoDevice*>(ctx)->out_completer_.reset();
           },
       .ctx = this,
@@ -54,6 +59,12 @@ void BanjoDevice::QueueIn(size_t size) {
       .callback =
           [](void* ctx, usb_request_t* request) {
             usb::Request<> req(request, static_cast<BanjoDevice*>(ctx)->parent_req_size_);
+            if (req.request()->response.status != ZX_OK) {
+              static_cast<BanjoDevice*>(ctx)->in_completer_->Reply(
+                  zx::error(req.request()->response.status));
+              static_cast<BanjoDevice*>(ctx)->in_completer_.reset();
+              return;
+            }
 
             std::vector<uint8_t> data(req.request()->response.actual);
             size_t actual = req.CopyFrom(data.data(), data.size(), 0);
