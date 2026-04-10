@@ -263,11 +263,6 @@ You can recognize backtrace markup in logs as lines with triple curly brackets
 like `{{{bt:6:0xffffffff003033cb:ra}}}`. Pipe the original text into its stdin
 and it will print the symbolized text to stdout.
 
-### Buganizer
-
-Fuchsia tracks bugs and feature requests using Buganizer. If the user has
-`bugged` installed you can run `bugged help` to learn how to read bug state.
-
 ### Fetching CQ failures
 
 Use `fx fetch-cq-failures --help` to see how to fetch CQ/Tryjob failures for a CL.
