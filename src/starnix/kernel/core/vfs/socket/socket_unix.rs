@@ -66,6 +66,7 @@ const SOCKET_MAX_SIZE: usize = 4 << 20;
 ///
 pub struct UnixSocket {
     inner: Mutex<UnixSocketInner>,
+    waiters: WaitQueue,
 }
 
 fn downcast_socket_to_unix(socket: &Socket) -> &UnixSocket {
@@ -93,9 +94,6 @@ enum UnixSocketState {
 struct UnixSocketInner {
     /// The `MessageQueue` that contains messages sent to this socket.
     messages: MessageQueue,
-
-    /// This queue will be notified on reads, writes, disconnects etc.
-    waiters: WaitQueue,
 
     /// The address that this socket has been bound to, if it has been bound.
     address: Option<SocketAddress>,
@@ -148,7 +146,6 @@ impl UnixSocket {
         UnixSocket {
             inner: Mutex::new(UnixSocketInner {
                 messages: MessageQueue::new(SOCKET_DEFAULT_SIZE),
-                waiters: WaitQueue::default(),
                 address: None,
                 is_shutdown: false,
                 peer_closed_with_unread_data: false,
@@ -164,6 +161,7 @@ impl UnixSocket {
                 credentials: None,
                 state: UnixSocketState::Disconnected,
             }),
+            waiters: WaitQueue::default(),
         }
     }
 
@@ -245,48 +243,51 @@ impl UnixSocket {
             _ => return error!(EINVAL),
         };
 
-        let mut listener = downcast_socket_to_unix(peer).lock();
-        // Must check this again because we released the listener lock for a moment
-        let queue = match &listener.state {
-            UnixSocketState::Listening(queue) => queue,
-            _ => return error!(ECONNREFUSED),
-        };
-
-        self.check_type_for_connect(socket, peer, &listener.address)?;
-
-        if queue.sockets.len() > queue.backlog {
-            return error!(EAGAIN);
-        }
-
-        let server = Socket::new(
-            locked,
-            current_task,
-            peer.domain,
-            peer.socket_type,
-            SocketProtocol::default(),
-            /* kernel_private = */ true,
-        )?;
-        security::unix_stream_connect(current_task, socket, peer, &server)?;
-        client.state = UnixSocketState::Connected(server.clone());
-        client.credentials = Some(current_task.current_ucred());
+        let unix_socket_peer = downcast_socket_to_unix(peer);
         {
-            let mut server = downcast_socket_to_unix(&server).lock();
-            server.state = UnixSocketState::Connected(socket.clone());
-            server.address = listener.address.clone();
-            server.messages.set_capacity(listener.messages.capacity())?;
-            server.credentials = listener.credentials.clone();
-            server.passcred = listener.passcred;
-            server.passsec = listener.passsec;
-        }
+            let mut listener = unix_socket_peer.lock();
+            // Must check this again because we released the listener lock for a moment
+            let queue = match &listener.state {
+                UnixSocketState::Listening(queue) => queue,
+                _ => return error!(ECONNREFUSED),
+            };
 
-        // We already checked that the socket is in Listening state...but the borrow checker cannot
-        // be convinced that it's ok to combine these checks
-        let queue = match listener.state {
-            UnixSocketState::Listening(ref mut queue) => queue,
-            _ => panic!("something changed the server socket state while I held a lock on it"),
-        };
-        queue.sockets.push_back(server);
-        listener.waiters.notify_fd_events(FdEvents::POLLIN);
+            self.check_type_for_connect(socket, peer, &listener.address)?;
+
+            if queue.sockets.len() > queue.backlog {
+                return error!(EAGAIN);
+            }
+
+            let server = Socket::new(
+                locked,
+                current_task,
+                peer.domain,
+                peer.socket_type,
+                SocketProtocol::default(),
+                /* kernel_private = */ true,
+            )?;
+            security::unix_stream_connect(current_task, socket, peer, &server)?;
+            client.state = UnixSocketState::Connected(server.clone());
+            client.credentials = Some(current_task.current_ucred());
+            {
+                let mut server = downcast_socket_to_unix(&server).lock();
+                server.state = UnixSocketState::Connected(socket.clone());
+                server.address = listener.address.clone();
+                server.messages.set_capacity(listener.messages.capacity())?;
+                server.credentials = listener.credentials.clone();
+                server.passcred = listener.passcred;
+                server.passsec = listener.passsec;
+            }
+
+            // We already checked that the socket is in Listening state...but the borrow checker cannot
+            // be convinced that it's ok to combine these checks
+            let queue = match listener.state {
+                UnixSocketState::Listening(ref mut queue) => queue,
+                _ => panic!("something changed the server socket state while I held a lock on it"),
+            };
+            queue.sockets.push_back(server);
+        }
+        unix_socket_peer.waiters.notify_fd_events(FdEvents::POLLIN);
         Ok(())
     }
 
@@ -473,6 +474,10 @@ impl UnixSocket {
         node.set_bound_socket(socket.clone());
         Ok(())
     }
+
+    fn notify_shutdown(&self) {
+        self.waiters.notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+    }
 }
 
 impl SocketOps for UnixSocket {
@@ -573,7 +578,7 @@ impl SocketOps for UnixSocket {
             if let Some(socket) = peer {
                 let unix_socket_peer = socket.downcast_socket::<UnixSocket>();
                 if let Some(socket) = unix_socket_peer {
-                    socket.lock().waiters.notify_fd_events(FdEvents::POLLOUT);
+                    socket.waiters.notify_fd_events(FdEvents::POLLOUT);
                 }
             }
         }
@@ -611,18 +616,31 @@ impl SocketOps for UnixSocket {
         }
 
         let unix_socket = downcast_socket_to_unix(&peer);
-        let mut peer = unix_socket.lock();
-        if peer.passcred {
-            let creds = creds.unwrap_or_else(|| current_task.current_ucred());
-            ancillary_data.push(AncillaryData::Unix(UnixControlData::Credentials(creds)));
+        let bytes_written = {
+            let mut peer = unix_socket.lock();
+            if peer.passcred {
+                let creds = creds.unwrap_or_else(|| current_task.current_ucred());
+                ancillary_data.push(AncillaryData::Unix(UnixControlData::Credentials(creds)));
+            }
+            if peer.passsec {
+                // TODO: https://fxbug.dev/364568855 - Store the opaque LSM property value, and expand
+                // it to a string upon readmsg.
+                let context = security::socket_getpeersec_dgram(current_task, socket);
+                ancillary_data.push(AncillaryData::Unix(UnixControlData::Security(context.into())));
+            }
+            peer.write(
+                locked,
+                current_task,
+                data,
+                local_address,
+                ancillary_data,
+                socket.socket_type,
+            )?
+        };
+        if bytes_written > 0 {
+            unix_socket.waiters.notify_fd_events(FdEvents::POLLIN);
         }
-        if peer.passsec {
-            // TODO: https://fxbug.dev/364568855 - Store the opaque LSM property value, and expand
-            // it to a string upon readmsg.
-            let context = security::socket_getpeersec_dgram(current_task, socket);
-            ancillary_data.push(AncillaryData::Unix(UnixControlData::Security(context.into())));
-        }
-        peer.write(locked, current_task, data, local_address, ancillary_data, socket.socket_type)
+        Ok(bytes_written)
     }
 
     fn wait_async(
@@ -634,7 +652,7 @@ impl SocketOps for UnixSocket {
         events: FdEvents,
         handler: EventHandler,
     ) -> WaitCanceler {
-        self.lock().waiters.wait_async_fd_events(waiter, events, handler)
+        self.waiters.wait_async_fd_events(waiter, events, handler)
     }
 
     fn query_events(
@@ -697,17 +715,30 @@ impl SocketOps for UnixSocket {
         _socket: &Socket,
         how: SocketShutdownFlags,
     ) -> Result<(), Errno> {
+        let mut should_notify_self = false;
+        let mut should_notify_peer = false;
         let peer = {
             let mut inner = self.lock();
             let peer = inner.peer().ok_or_else(|| errno!(ENOTCONN))?.clone();
             if how.contains(SocketShutdownFlags::READ) {
-                inner.shutdown_one_end();
+                inner.is_shutdown = true;
+                should_notify_self = true;
             }
             peer
         };
         if how.contains(SocketShutdownFlags::WRITE) {
             let unix_socket = downcast_socket_to_unix(&peer);
-            unix_socket.lock().shutdown_one_end();
+            unix_socket.lock().is_shutdown = true;
+            should_notify_peer = true;
+        }
+        if should_notify_self {
+            self.waiters.notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
+        }
+        if should_notify_peer {
+            let unix_socket = downcast_socket_to_unix(&peer);
+            unix_socket
+                .waiters
+                .notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
         }
         Ok(())
     }
@@ -731,22 +762,26 @@ impl SocketOps for UnixSocket {
         let (maybe_peer, has_unread) = {
             let mut inner = self.lock();
             let maybe_peer = inner.peer().map(Arc::clone);
-            inner.shutdown_one_end();
+            inner.is_shutdown = true;
+            inner.state = UnixSocketState::Closed;
             (maybe_peer, !inner.messages.is_empty())
         };
+        self.notify_shutdown();
         // If this is a connected socket type, also shut down the connected peer.
         if socket.socket_type == SocketType::Stream || socket.socket_type == SocketType::SeqPacket {
             if let Some(peer) = maybe_peer {
                 let unix_socket = downcast_socket_to_unix(&peer);
 
-                let mut peer_inner = unix_socket.lock();
-                if has_unread {
-                    peer_inner.peer_closed_with_unread_data = true;
+                {
+                    let mut peer_inner = unix_socket.lock();
+                    if has_unread {
+                        peer_inner.peer_closed_with_unread_data = true;
+                    }
+                    peer_inner.is_shutdown = true;
                 }
-                peer_inner.shutdown_one_end();
+                unix_socket.notify_shutdown();
             }
         }
-        self.lock().state = UnixSocketState::Closed;
     }
 
     /// Returns the name of this socket.
@@ -1043,15 +1078,7 @@ impl UnixSocketInner {
         } else {
             self.messages.write_datagram_with_filter(data, address, ancillary_data, filter)?
         };
-        if bytes_written > 0 {
-            self.waiters.notify_fd_events(FdEvents::POLLIN);
-        }
         Ok(bytes_written)
-    }
-
-    fn shutdown_one_end(&mut self) {
-        self.is_shutdown = true;
-        self.waiters.notify_fd_events(FdEvents::POLLIN | FdEvents::POLLOUT | FdEvents::POLLHUP);
     }
 }
 
