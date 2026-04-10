@@ -71,7 +71,7 @@ pub struct ProductSettings {
     #[walk_paths]
     #[schemars(schema_with = "crate::option_path_schema")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bootfs_files_package: Option<Utf8PathBuf>,
+    pub bootfs_files_package: OptionalPackage,
 
     /// Release information about this assembly container artifact.
     pub release_info: ProductReleaseInfo,
@@ -298,6 +298,37 @@ impl WalkPaths for ProductPackagesConfig {
         walk_package_set(&mut self.base, found, dest.join("base"))?;
         walk_package_set(&mut self.cache, found, dest.join("cache"))?;
         walk_package_set(&mut self.bootfs, found, dest.join("bootfs"))?;
+        Ok(())
+    }
+}
+
+/// A newtype wrapper for the path to an optional package manifest.
+#[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OptionalPackage(Option<Utf8PathBuf>);
+
+impl std::ops::Deref for OptionalPackage {
+    type Target = Option<Utf8PathBuf>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<Option<Utf8PathBuf>> for OptionalPackage {
+    fn as_ref(&self) -> &Option<Utf8PathBuf> {
+        &self.0
+    }
+}
+
+impl WalkPaths for OptionalPackage {
+    fn walk_paths_with_dest<F: WalkPathsFn>(
+        &mut self,
+        found: &mut F,
+        dest: Utf8PathBuf,
+    ) -> anyhow::Result<()> {
+        if let Some(path) = &mut self.0 {
+            found(path, dest, FileType::PackageManifest)?;
+        }
         Ok(())
     }
 }

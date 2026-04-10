@@ -315,7 +315,7 @@ impl ProductAssembly {
         }
 
         // Add product-specified bootfs files, if present
-        if let Some(bootfs_files_package) = &product.bootfs_files_package {
+        if let Some(bootfs_files_package) = product.bootfs_files_package.as_ref() {
             builder
                 .add_bootfs_files_package(bootfs_files_package, true)
                 .context("Adding product-specified bootfs files")?;
