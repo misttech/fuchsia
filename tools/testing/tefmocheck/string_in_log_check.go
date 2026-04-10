@@ -453,14 +453,6 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type: syslogType,
 		},
 		&stringInLogCheck{
-			// LINT.IfChange(sysmem_allocation_timeout)
-			String: "timed out. Waiting for (connected) tokens",
-			// LINT.ThenChange(//src/sysmem/server/logical_buffer_collection.cc:sysmem_allocation_timeout)
-			Type:                  syslogType,
-			SkipAllPassedTests:    true,
-			emitSyntheticTestCase: true,
-		},
-		&stringInLogCheck{
 			// LINT.IfChange
 			String: "honeydew.errors.HealthCheckError: health check failed on",
 			// LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py)

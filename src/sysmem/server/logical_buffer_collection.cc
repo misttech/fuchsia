@@ -4499,9 +4499,7 @@ void LogicalBufferCollection::CreationTimedOut(async_dispatcher_t* dispatcher,
 
   std::string name = name_.has_value() ? name_->name : "Unknown";
 
-  // LINT.IfChange(sysmem_allocation_timeout)
   LogError(FROM_HERE, "Allocation of %s timed out. Waiting for (connected) tokens: ", name.c_str());
-  // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:sysmem_allocation_timeout)
   ZX_DEBUG_ASSERT(root_);
   // Current token Node(s), not logical token nodes that are presently OrphanedNode, as those can't
   // be blocking allocation.
