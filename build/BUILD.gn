@@ -208,6 +208,7 @@ if (is_host) {
       "//sdk/rust/zx-types:verify_bazel2gn",
       "//src/connectivity/network/testing/conformance/parseoutput:verify_bazel2gn",
       "//src/developer/ffx/lib/netext:verify_bazel2gn",
+      "//src/lib/fidl/rust/fidl:verify_bazel2gn",
       "//src/lib/fidl/rust_constants:verify_bazel2gn",
       "//src/lib/files:verify_bazel2gn",
       "//src/lib/fuchsia-async:verify_bazel2gn",
