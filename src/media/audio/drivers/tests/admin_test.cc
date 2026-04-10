@@ -2260,7 +2260,8 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
 
     fhasp::SettableElementState state;
     if (can_stop) {
-      state.set_started(!initial_state.has_started() || initial_state.started());
+      // Alter 'started' state, else WatchElementState call will not return.
+      state.set_started(!initial_state.has_started() || !initial_state.started());
     } else {
       state.set_started(true);
     }
