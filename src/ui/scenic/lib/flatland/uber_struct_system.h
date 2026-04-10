@@ -41,7 +41,7 @@ class UberStructSystem {
   // associated with.
   struct PendingUberStruct {
     scheduling::PresentId present_id;
-    std::unique_ptr<UberStruct> uber_struct;
+    std::unique_ptr<const UberStruct> uber_struct;
     bool recompute_view_tree = true;
   };
 
@@ -52,7 +52,7 @@ class UberStructSystem {
     // Queues an UberStruct for |present_id|. Each Flatland instance can queue multiple UberStructs
     // in the UberStructSystem by using different PresentIds. PresentIds must be increasing between
     // subsequent calls.
-    void Push(scheduling::PresentId present_id, std::unique_ptr<UberStruct> uber_struct,
+    void Push(scheduling::PresentId present_id, std::unique_ptr<const UberStruct> uber_struct,
               bool recompute_view_tree = true);
 
     // Pops a PendingUberStruct off of this Queue. If the queue is currently empty, returns

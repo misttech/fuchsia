@@ -336,8 +336,11 @@ TEST(SceneDumperTest, TopologyTree) {
 
   const TransformHandle hit_region_transform(2, 0);
   const types::RectangleF hit_region({.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f});
-  uber_structs.begin()->second->local_hit_regions_map[hit_region_transform].emplace_back(
-      hit_region);
+  // In production, UberStructs are const after being produced by the Flatland session, but it's
+  // convenient and harmless to modify (only one of) them here.
+  std::const_pointer_cast<UberStruct>(uber_structs.begin()->second)
+      ->local_hit_regions_map[hit_region_transform]
+      .emplace_back(hit_region);
 
   GlobalImageVector images;
   GlobalIndexVector image_indices;

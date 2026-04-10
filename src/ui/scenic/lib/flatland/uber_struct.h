@@ -26,7 +26,8 @@ namespace flatland {
 // state of a Flatland instance, it must be stateless. It should contain only data and no
 // references to external resources.
 struct UberStruct {
-  using InstanceMap = std::unordered_map<TransformHandle::InstanceId, std::shared_ptr<UberStruct>>;
+  using InstanceMap =
+      std::unordered_map<TransformHandle::InstanceId, std::shared_ptr<const UberStruct>>;
 
   // The local topology of this Flatland instance.
   TransformGraph::TopologyVector local_topology;

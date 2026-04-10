@@ -525,7 +525,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
 
   // Snapshots the UberStructSystem and fetches the UberStruct associated with |flatland|. If no
   // UberStruct exists for |flatland|, returns nullptr.
-  std::shared_ptr<UberStruct> GetUberStruct(Flatland* flatland) {
+  std::shared_ptr<const UberStruct> GetUberStruct(Flatland* flatland) {
     auto snapshot = uber_struct_system_->Snapshot();
 
     auto root = flatland->GetRoot();
@@ -2459,8 +2459,8 @@ TEST_F(FlatlandTest, DefaultHitRegion_IsInfinite) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     ASSERT_EQ(hit_regions.size(), 1u);
-    ASSERT_EQ(hit_regions[handle1].size(), 1u);
-    EXPECT_FALSE(hit_regions[handle1][0].is_finite());
+    ASSERT_EQ(hit_regions.at(handle1).size(), 1u);
+    EXPECT_FALSE(hit_regions.at(handle1)[0].is_finite());
   }
 }
 
@@ -2485,8 +2485,8 @@ TEST_F(FlatlandTest, DefaultHitRegionsExist_OnlyForCurrentRoot) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     EXPECT_EQ(hit_regions.size(), 1u);
-    EXPECT_EQ(hit_regions[handle1].size(), 1u);
-    EXPECT_EQ(hit_regions[handle2].size(), 0u);
+    EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
+    EXPECT_FALSE(hit_regions.contains(handle2));
   }
 
   flatland->SetRootTransform(kId2);
@@ -2498,8 +2498,8 @@ TEST_F(FlatlandTest, DefaultHitRegionsExist_OnlyForCurrentRoot) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     EXPECT_EQ(hit_regions.size(), 1u);
-    EXPECT_EQ(hit_regions[handle1].size(), 0u);
-    EXPECT_EQ(hit_regions[handle2].size(), 1u);
+    EXPECT_FALSE(hit_regions.contains(handle1));
+    EXPECT_EQ(hit_regions.at(handle2).size(), 1u);
   }
 }
 
@@ -2521,9 +2521,9 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     EXPECT_EQ(hit_regions.size(), 1u);
-    EXPECT_EQ(hit_regions[handle1].size(), 1u);
+    EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
 
-    auto hit_region = hit_regions[handle1][0];
+    auto hit_region = hit_regions.at(handle1)[0];
 
     EXPECT_FALSE(hit_region.is_finite());
     EXPECT_EQ(hit_region.interaction(), fuchsia::ui::composition::HitTestInteraction::DEFAULT);
@@ -2544,18 +2544,18 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     EXPECT_EQ(hit_regions.size(), 2u);
-    EXPECT_EQ(hit_regions[handle1].size(), 1u);
-    EXPECT_EQ(hit_regions[handle2].size(), 1u);
+    EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
+    EXPECT_EQ(hit_regions.at(handle2).size(), 1u);
 
     {
-      auto hit_region = hit_regions[handle1][0];
+      auto hit_region = hit_regions.at(handle1)[0];
 
       EXPECT_FALSE(hit_region.is_finite());
       EXPECT_EQ(hit_region.interaction(), fuchsia::ui::composition::HitTestInteraction::DEFAULT);
     }
 
     {
-      auto hit_region = hit_regions[handle2][0];
+      auto hit_region = hit_regions.at(handle2)[0];
 
       ASSERT_TRUE(hit_region.is_finite());
       const auto rect = hit_region.region();
@@ -2576,9 +2576,9 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     EXPECT_EQ(hit_regions.size(), 2u);
-    EXPECT_EQ(hit_regions[handle1].size(), 1u);
+    EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
 
-    auto hit_region = hit_regions[handle1][0];
+    auto hit_region = hit_regions.at(handle1)[0];
 
     ASSERT_TRUE(hit_region.is_finite());
     const auto rect = hit_region.region();
@@ -2607,9 +2607,9 @@ TEST_F(FlatlandTest, SetRootTransformAfterSetHitRegions_DoesNotChangeHitRegion) 
   auto& hit_regions = uber_struct->local_hit_regions_map;
 
   EXPECT_EQ(hit_regions.size(), 1u);
-  EXPECT_EQ(hit_regions[handle1].size(), 1u);
+  EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
 
-  auto hit_region = hit_regions[handle1][0];
+  auto hit_region = hit_regions.at(handle1)[0];
 
   ASSERT_TRUE(hit_region.is_finite());
   const auto rect = hit_region.region();
@@ -2644,11 +2644,11 @@ TEST_F(FlatlandTest, MultipleTransformsWithHitRegions) {
     auto& hit_regions = uber_struct->local_hit_regions_map;
 
     EXPECT_EQ(hit_regions.size(), 2u);
-    EXPECT_EQ(hit_regions[handle1].size(), 1u);
-    EXPECT_EQ(hit_regions[handle2].size(), 1u);
+    EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
+    EXPECT_EQ(hit_regions.at(handle2).size(), 1u);
 
-    auto hit_region1 = hit_regions[handle1][0];
-    auto hit_region2 = hit_regions[handle2][0];
+    auto hit_region1 = hit_regions.at(handle1)[0];
+    auto hit_region2 = hit_regions.at(handle2)[0];
 
     ASSERT_TRUE(hit_region1.is_finite());
     auto rect1 = hit_region1.region();
@@ -2687,8 +2687,8 @@ TEST_F(FlatlandTest, ManuallyAddedMaximalHitRegionPersists) {
   auto& hit_regions = uber_struct->local_hit_regions_map;
 
   EXPECT_EQ(hit_regions.size(), 1u);
-  EXPECT_EQ(hit_regions[handle1].size(), 1u);
-  auto hit_region1 = hit_regions[handle1][0];
+  EXPECT_EQ(hit_regions.at(handle1).size(), 1u);
+  auto hit_region1 = hit_regions.at(handle1)[0];
 
   ASSERT_TRUE(hit_region1.is_finite());
   auto rect = hit_region1.region();

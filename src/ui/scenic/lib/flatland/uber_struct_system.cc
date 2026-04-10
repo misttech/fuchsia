@@ -128,7 +128,7 @@ TransformHandle::InstanceId UberStructSystem::GetLatestInstanceId() const {
 // |UberStructSystem::Queue| implementations.
 
 void UberStructSystem::UberStructQueue::Push(scheduling::PresentId present_id,
-                                             std::unique_ptr<UberStruct> uber_struct,
+                                             std::unique_ptr<const UberStruct> uber_struct,
                                              bool recompute_view_tree) {
   FX_DCHECK(uber_struct);
 #ifndef NDEBUG
