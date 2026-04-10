@@ -26,6 +26,7 @@ test_suite(
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
         "//tools/check-licenses/file:file_test",
+        "//tools/check-licenses/metrics:metrics_test",
         "//tools/check-licenses/project:project_test",
         "//tools/check-licenses/readme:readme_test",
         "//tools/check-licenses/result:result_test",

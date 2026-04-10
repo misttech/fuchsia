@@ -1,4 +1,4 @@
-# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -34,27 +34,23 @@ if (is_host) {
 }
 
 if (is_host) {
-  go_binary("check-licenses") {
-    embed = [ "//tools/check-licenses/cmd:main" ]
+  go_library("metrics") {
+    sources = [
+      "counter.go",
+      "definitions.go",
+      "registry.go",
+      "timer.go",
+    ]
     visibility = [ "*" ]
   }
 }
 if (is_host) {
-  install_host_tools("host") {
-    deps = [ ":check-licenses" ]
-    outputs = [ "check-licenses" ]
+  go_test("metrics_test") {
+    sources = [
+      "counter_test.go",
+      "registry_test.go",
+      "timer_test.go",
+    ]
+    embed = [ ":metrics" ]
   }
-}
-group("tests") {
-  deps = [
-    "//tools/check-licenses/cmd:cmd_test",
-    "//tools/check-licenses/directory:directory_test",
-    "//tools/check-licenses/file:file_test",
-    "//tools/check-licenses/metrics:metrics_test",
-    "//tools/check-licenses/project:project_test",
-    "//tools/check-licenses/readme:readme_test",
-    "//tools/check-licenses/result:result_test",
-    "//tools/check-licenses/util:util_test",
-  ]
-  testonly = true
 }

@@ -239,6 +239,7 @@ if (is_host) {
       "//tools/check-licenses/directory:verify_bazel2gn",
       "//tools/check-licenses/file:verify_bazel2gn",
       "//tools/check-licenses/file/notice:verify_bazel2gn",
+      "//tools/check-licenses/metrics:verify_bazel2gn",
       "//tools/check-licenses/project:verify_bazel2gn",
       "//tools/check-licenses/readme:verify_bazel2gn",
       "//tools/check-licenses/result:verify_bazel2gn",
