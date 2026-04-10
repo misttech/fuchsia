@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import time
 from enum import StrEnum
 from typing import Dict, List
@@ -20,6 +21,10 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     Security,
+)
+from mobly_controller.openwrt_access_point.lib.dhcp_config import DhcpConfig
+from mobly_controller.openwrt_access_point.lib.dhcp_controller import (
+    DhcpController,
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -85,6 +90,7 @@ class OpenWrtAP:
         c = MapValidator(config)
         self.ssh_settings = settings.from_config(c.get(dict, "ssh_config"))
         self.ssh = connection.SshConnection(self.ssh_settings)
+        self.dhcp = DhcpController(self.ssh)
         self.reset_wifi_config()
 
     def _clear_all_bss(self) -> None:

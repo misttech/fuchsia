@@ -5,29 +5,41 @@
 # found in the LICENSE file.
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 
-from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.ap_lib import dhcp_config, hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
-from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.test_utils.wifi import base_test
 from mobly import asserts, signals
 from mobly.config_parser import TestRunConfig
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_5G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
 
 
 @dataclass
 class APParams:
     id: str
     ssid: str
-    security: Security
+    security: DeprecatedSecurity
     ip: IPv4Address
     network: IPv4Network
 
@@ -44,7 +56,12 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         super().__init__(configs)
         self.log = logging.getLogger()
         self.fuchsia_device: FuchsiaDevice | None = None
-        self.access_point: AccessPoint = self.access_points[0]
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point: AccessPoint = self.access_points[0]
+        else:
+            raise signals.TestAbortClass("Requires at least one access point")
 
         device_type = self.user_params.get("dut", "fuchsia_devices")
         if device_type == "fuchsia_devices":
@@ -63,7 +80,8 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
 
     def setup_class(self) -> None:
         super().setup_class()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def setup_test(self) -> None:
         if hasattr(self, "android_devices"):
@@ -80,7 +98,8 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
         self.dut.reset_wifi()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def connect(self, ap_params: APParams) -> None:
         asserts.assert_true(
@@ -100,44 +119,84 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         Returns:
             APParams for the newly setup AP.
         """
-        ssid = utils.rand_ascii_str(20)
-        security = Security(
-            security_mode=SecurityMode.WPA2,
-            password=generate_random_password(length=20),
-            wpa_cipher="CCMP",
-            wpa2_cipher="CCMP",
-        )
+        ssid = AccessPointConfig.random_string(20)
+        password = AccessPointConfig.random_string(20)
 
-        ap_ids = setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            mode=hostapd_constants.Mode.MODE_11N_MIXED,
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            n_capabilities=[],
-            ac_capabilities=[],
-            force_wmm=True,
-            ssid=ssid,
-            security=security,
-        )
+        if self.openwrt_ap:
+            # TODO(b/501011320): Support different ciphers in WPA/WPA2
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=DEFAULT_5G_CHANNEL,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=Security.WPA2,
+                                password=password,
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
 
-        if len(ap_ids) > 1:
-            raise Exception("Expected only one SSID on AP")
+            router_ip = IPv4Address(
+                self.openwrt_ap.get_addr("br-lan", "ipv4_private")
+            )
+            network = IPv4Network(f"{router_ip}/24", strict=False)
 
-        configured_subnets = self.access_point.get_configured_subnets()
-        if len(configured_subnets) > 1:
-            raise Exception("Expected only one subnet on AP")
-        router_ip = configured_subnets[0].router
-        network = configured_subnets[0].network
+            self.openwrt_ap.dhcp.stop_dhcp()
 
-        self.access_point.stop_dhcp()
+            return APParams(
+                id="radio1",
+                ssid=ssid,
+                security=DeprecatedSecurity(
+                    DeprecatedSecurityMode.WPA2, password
+                ),
+                ip=router_ip,
+                network=network,
+            )
+        elif self.access_point:
+            security = DeprecatedSecurity(
+                security_mode=DeprecatedSecurityMode.WPA2,
+                password=password,
+                wpa_cipher="CCMP",
+                wpa2_cipher="CCMP",
+            )
 
-        return APParams(
-            id=ap_ids[0],
-            ssid=ssid,
-            security=security,
-            ip=router_ip,
-            network=network,
-        )
+            ap_ids = setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                mode=hostapd_constants.Mode.MODE_11N_MIXED,
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                n_capabilities=[],
+                ac_capabilities=[],
+                force_wmm=True,
+                ssid=ssid,
+                security=security,
+            )
+
+            if len(ap_ids) > 1:
+                raise Exception("Expected only one SSID on AP")
+
+            configured_subnets = self.access_point.get_configured_subnets()
+            if len(configured_subnets) > 1:
+                raise Exception("Expected only one subnet on AP")
+            router_ip = configured_subnets[0].router
+            network = configured_subnets[0].network
+
+            self.access_point.stop_dhcp()
+
+            return APParams(
+                id=ap_ids[0],
+                ssid=ssid,
+                security=security,
+                ip=router_ip,
+                network=network,
+            )
+        else:
+            raise signals.TestAbortClass("Requires at least one access point")
 
     def get_device_ipv4_addr(
         self, interface: str | None = None, timeout_sec: float = 20.0
@@ -188,6 +247,17 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         else:
             raise ConnectionError("DUT failed to get an ipv4 address.")
 
+    def get_dhcp_logs(self) -> str:
+        if self.openwrt_ap:
+            return self.openwrt_ap.dhcp.get_dhcp_logs_since_last_dhcp_start()
+        elif self.access_point:
+            dhcp_logs = self.access_point.get_dhcp_logs()
+            if dhcp_logs is None:
+                raise signals.TestFailure("No DHCP logs")
+            return dhcp_logs
+        else:
+            raise signals.TestFailure("No access point found")
+
     def run_test_case_expect_dhcp_success(
         self,
         dhcp_parameters: dict[str, str],
@@ -213,98 +283,72 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
             "DHCP Configuration:\n%s\n", dhcp_conf.render_config_file()
         )
 
-        with self.access_point.tcpdump.start(
-            self.access_point.wlan_5g, Path(self.log_path)
-        ):
-            self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+        if self.openwrt_ap:
+            self.openwrt_ap.dhcp.start_dhcp()
             self.connect(ap_params=ap_params)
-
-            # Typical log lines look like:
-            #
-            # dhcpd[26695]: DHCPDISCOVER from 01:23:45:67:89:ab via wlan1
-            # dhcpd[26695]: DHCPOFFER on 192.168.9.2 to 01:23:45:67:89:ab via wlan1
-            # dhcpd[26695]: DHCPREQUEST for 192.168.9.2 (192.168.9.1) from 01:23:45:67:89:ab via wlan1
-            # dhcpd[26695]: DHCPACK on 192.168.9.2 to 01:23:45:67:89:ab via wlan1
-
-            # Due to b/384790032, logs can also show duplicate DISCOVER and
-            # OFFER packets due to the Fuchsia DHCP client queuing packets while
-            # EAPOL is in progress:
-            #
-            # DHCPDISCOVER from 01:23:45:67:89:ab via wlan1
-            # DHCPOFFER on 192.168.9.2 to 01:23:45:67:89:ab via wlan1
-            # DHCPDISCOVER from 01:23:45:67:89:ab via wlan1
-            # DHCPOFFER on 192.168.9.2 to 01:23:45:67:89:ab via wlan1
-            # DHCPREQUEST for 192.168.9.2 (192.168.9.1) from 01:23:45:67:89:ab via wlan1
-            # DHCPACK on 192.168.9.2 to 01:23:45:67:89:ab via wlan1
 
             try:
                 ip = self.get_device_ipv4_addr()
             except ConnectionError:
                 self.log.warning(
-                    "DHCP logs: %s", self.access_point.get_dhcp_logs()
+                    "DHCP logs: %s",
+                    self.openwrt_ap.dhcp.get_dhcp_logs_since_last_dhcp_start(),
                 )
                 raise signals.TestFailure("DUT failed to get an IP address")
 
-            # Get updates to DHCP logs
-            dhcp_logs = self.access_point.get_dhcp_logs()
-            if dhcp_logs is None:
-                raise signals.TestFailure("No DHCP logs")
+        elif self.access_point:
+            with self.access_point.tcpdump.start(
+                self.access_point.wlan_5g, Path(self.log_path)
+            ):
+                self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+                self.connect(ap_params=ap_params)
 
-            # TODO(http://b/384790032): Replace with logic below with this
-            # comment once DHCP is started after EAPOL finishes. Or remove this
-            # comment if queueing is determined expected and acceptable
-            # behavior.
-            #
-            # expected_string = f"DHCPDISCOVER from"
-            # asserts.assert_equal(
-            #     dhcp_logs.count(expected_string),
-            #     1,
-            #     f'Incorrect count of DHCP Discovers ("{expected_string}") in logs',
-            #     dhcp_logs,
-            # )
-            #
-            # expected_string = f"DHCPOFFER on {ip}"
-            # asserts.assert_equal(
-            #     dhcp_logs.count(expected_string),
-            #     1,
-            #     f'Incorrect count of DHCP Offers ("{expected_string}") in logs',
-            #     dhcp_logs,
-            # )
+                try:
+                    ip = self.get_device_ipv4_addr()
+                except ConnectionError:
+                    self.log.warning(
+                        "DHCP logs: %s", self.access_point.get_dhcp_logs()
+                    )
+                    raise signals.TestFailure("DUT failed to get an IP address")
+        else:
+            raise signals.TestAbortClass("Requires at least one access point")
 
-            discover_count = dhcp_logs.count("DHCPDISCOVER from")
-            offer_count = dhcp_logs.count(f"DHCPOFFER on {ip}")
-            asserts.assert_greater(
-                discover_count,
-                0,
-                "Expected one or more DHCP Discovers",
-                dhcp_logs,
-            )
-            asserts.assert_equal(
-                discover_count,
-                offer_count,
-                "Expected an equal amount of DHCP Discovers and Offers",
-                dhcp_logs,
-            )
+        dhcp_logs = self.get_dhcp_logs()
+        discover_count = dhcp_logs.count("DHCPDISCOVER")
+        offer_count = len(
+            re.findall(rf"DHCPOFFER.*{re.escape(str(ip))}", dhcp_logs)
+        )
+        asserts.assert_greater(
+            discover_count,
+            0,
+            "Expected one or more DHCP Discovers",
+            dhcp_logs,
+        )
+        asserts.assert_equal(
+            discover_count,
+            offer_count,
+            "Expected an equal amount of DHCP Discovers and Offers",
+            dhcp_logs,
+        )
 
-            expected_string = f"DHCPREQUEST for {ip}"
-            asserts.assert_true(
-                dhcp_logs.count(expected_string) >= 1,
-                f'Incorrect count of DHCP Requests ("{expected_string}") in logs: '
-                + dhcp_logs
-                + "\n",
-            )
+        request_count = len(
+            re.findall(rf"DHCPREQUEST.*{re.escape(str(ip))}", dhcp_logs)
+        )
+        asserts.assert_true(
+            request_count >= 1,
+            f"Incorrect count of DHCP Requests in logs:\n{dhcp_logs}\n",
+        )
+        ack_count = len(
+            re.findall(rf"DHCPACK.*{re.escape(str(ip))}", dhcp_logs)
+        )
+        asserts.assert_true(
+            ack_count >= 1,
+            f"Incorrect count of DHCP Acks in logs:\n{dhcp_logs}\n",
+        )
 
-            expected_string = f"DHCPACK on {ip}"
-            asserts.assert_true(
-                dhcp_logs.count(expected_string) >= 1,
-                f'Incorrect count of DHCP Acks ("{expected_string}") in logs: '
-                + dhcp_logs
-                + "\n",
-            )
-
-            self.log.info(f"Attempting to ping {ap_params.ip}...")
-            ping_result = self.dut.ping(str(ap_params.ip), count=2)
-            asserts.assert_true(
-                ping_result.success,
-                f"DUT failed to ping router at {ap_params.ip}: {ping_result}",
-            )
+        self.log.info(f"Attempting to ping {ap_params.ip}...")
+        ping_result = self.dut.ping(str(ap_params.ip), count=2)
+        asserts.assert_true(
+            ping_result.success,
+            f"DUT failed to ping router at {ap_params.ip}: {ping_result}",
+        )

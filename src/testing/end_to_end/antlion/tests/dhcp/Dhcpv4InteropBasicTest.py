@@ -9,7 +9,11 @@ import time
 
 from antlion.controllers.ap_lib import dhcp_config
 from antlion.test_utils.dhcp import base_test
-from mobly import asserts, signals, test_runner
+from mobly import asserts, test_runner
+from mobly_controller.openwrt_access_point.lib.dhcp_config import (
+    DhcpConfig,
+    Lan,
+)
 
 
 class Dhcpv4InteropBasicTest(base_test.Dhcpv4InteropFixture):
@@ -29,42 +33,61 @@ class Dhcpv4InteropBasicTest(base_test.Dhcpv4InteropFixture):
 
     def test_pool_disallows_unknown_clients(self) -> None:
         ap_params = self.setup_ap()
-        subnet_conf = dhcp_config.Subnet(
-            subnet=ap_params.network,
-            router=ap_params.ip,
-            additional_parameters={"deny": "unknown-clients"},
-        )
-        dhcp_conf = dhcp_config.DhcpConfig(subnets=[subnet_conf])
-        self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+
+        if self.openwrt_ap:
+            self.openwrt_ap.dhcp.start_dhcp(
+                config=DhcpConfig(lan=Lan(dynamic_dhcp=False))
+            )
+
+        elif self.access_point:
+            subnet_conf = dhcp_config.Subnet(
+                subnet=ap_params.network,
+                router=ap_params.ip,
+                additional_parameters={"deny": "unknown-clients"},
+            )
+            dhcp_conf = dhcp_config.DhcpConfig(subnets=[subnet_conf])
+            self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
 
         self.connect(ap_params=ap_params)
         with asserts.assert_raises(ConnectionError):
             self.get_device_ipv4_addr()
 
-        dhcp_logs = self.access_point.get_dhcp_logs()
-        if dhcp_logs is None:
-            raise signals.TestError(
-                "DHCP logs not found; was the DHCP server started?"
-            )
+        dhcp_logs = self.get_dhcp_logs()
+
+        if hasattr(self, "openwrt_ap"):
+            # dnsmasq logs "no address available" when dynamic DHCP is disabled and the client is unknown.
+            pattern = r"DHCPDISCOVER.*no address available"
+        else:
+            # ISC DHCPD logs "no free leases" when it cannot offer a lease due to "deny unknown-clients".
+            pattern = r"DHCPDISCOVER.*no free leases"
 
         asserts.assert_true(
-            re.search(r"DHCPDISCOVER from .*no free leases", dhcp_logs),
+            re.search(pattern, dhcp_logs),
             "Did not find expected message in dhcp logs: " + dhcp_logs + "\n",
         )
 
     def test_lease_renewal(self) -> None:
         """Validates that a client renews their DHCP lease."""
-        LEASE_TIME = 30
+
         ap_params = self.setup_ap()
-        subnet_conf = dhcp_config.Subnet(
-            subnet=ap_params.network, router=ap_params.ip
-        )
-        dhcp_conf = dhcp_config.DhcpConfig(
-            subnets=[subnet_conf],
-            default_lease_time=LEASE_TIME,
-            max_lease_time=LEASE_TIME,
-        )
-        self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+        LEASE_TIME = 30
+        if self.openwrt_ap:
+            # The min lease time is 2m for OpenWRT AP
+            LEASE_TIME = 120
+            self.openwrt_ap.dhcp.start_dhcp(
+                config=DhcpConfig(lan=Lan(lease_time=f"{LEASE_TIME}s"))
+            )
+        elif self.access_point:
+            subnet_conf = dhcp_config.Subnet(
+                subnet=ap_params.network, router=ap_params.ip
+            )
+            dhcp_conf = dhcp_config.DhcpConfig(
+                subnets=[subnet_conf],
+                default_lease_time=LEASE_TIME,
+                max_lease_time=LEASE_TIME,
+            )
+            self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+
         self.connect(ap_params=ap_params)
         ip = self.get_device_ipv4_addr()
 
@@ -72,22 +95,18 @@ class Dhcpv4InteropBasicTest(base_test.Dhcpv4InteropFixture):
         self.log.info(f"Sleeping {SLEEP_TIME}s to await DHCP renewal")
         time.sleep(SLEEP_TIME)
 
-        dhcp_logs = self.access_point.get_dhcp_logs()
-        if dhcp_logs is None:
-            raise signals.TestError(
-                "DHCP logs not found; was the DHCP server started?"
-            )
+        dhcp_logs = self.get_dhcp_logs()
 
         # Fuchsia renews at LEASE_TIME / 2, so there should be at least 2 DHCPREQUESTs in logs.
         # The log lines look like:
         # INFO dhcpd[17385]: DHCPREQUEST for 192.168.9.2 from 01:23:45:67:89:ab via wlan1
         # INFO dhcpd[17385]: DHCPACK on 192.168.9.2 to 01:23:45:67:89:ab via wlan1
-        expected_string = f"DHCPREQUEST for {ip}"
+        request_matches = len(
+            re.findall(rf"DHCPREQUEST.*{re.escape(str(ip))}", dhcp_logs)
+        )
         asserts.assert_true(
-            dhcp_logs.count(expected_string) >= 2,
-            f'Not enough DHCP renewals ("{expected_string}") in logs: '
-            + dhcp_logs
-            + "\n",
+            request_matches >= 2,
+            f"Not enough DHCP renewals in logs: " + dhcp_logs + "\n",
         )
 
 
