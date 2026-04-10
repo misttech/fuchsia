@@ -787,8 +787,10 @@ class TestWorkspace(unittest.TestCase):
             result = ws._find_previous_instance()
             self.assertIsNone(result)
 
-    def test_initialize_cartfs_directory_up_to_date(self) -> None:
-        """Test that initialization skips sync when up-to-date but still creates symlinks."""
+    def test_checkout_cartfs_to_cog_revisions_up_to_date_no_cog_integration(
+        self,
+    ) -> None:
+        """Test that initialization skips sync and symlinks when up-to-date."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
                 workspace_dir=fs.full_path(
@@ -807,19 +809,60 @@ class TestWorkspace(unittest.TestCase):
 
             with (
                 patch.object(ws, "get_cog_commit", return_value="hash123"),
+                patch.object(ws, "get_cartfs_commit", return_value="hash123"),
+                patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
+                patch.object(ws, "_create_symlinks") as mock_symlinks,
+            ):
+                ws.checkout_cartfs_to_cog_revisions()
+
+                mock_sync.assert_not_called()
+                mock_symlinks.assert_not_called()
+
+    def test_checkout_cartfs_to_cog_revisions_up_to_date_with_cog_integration(
+        self,
+    ) -> None:
+        """Test that initialization skips sync and symlinks when up-to-date (including integration)."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["config"] = {
+                "fuchsia": {"repo": "fuchsia"},
+                "integration": {"repo": "integration"},
+            }
+
+            def mock_get_cog_commit(repo: str) -> str:
+                return "fuchsia_hash" if repo == "fuchsia" else "int_hash"
+
+            def mock_get_cartfs_commit(repo: str) -> str:
+                return "fuchsia_hash" if repo == "fuchsia" else "int_hash"
+
+            with (
                 patch.object(
-                    ws, "get_cartfs_fuchsia_commit", return_value="hash123"
+                    ws, "get_cog_commit", side_effect=mock_get_cog_commit
+                ),
+                patch.object(
+                    ws, "get_cartfs_commit", side_effect=mock_get_cartfs_commit
                 ),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
             ):
-                ws.initialize_cartfs_directory()
+                ws.checkout_cartfs_to_cog_revisions()
 
                 mock_sync.assert_not_called()
-                mock_symlinks.assert_called_once()
+                mock_symlinks.assert_not_called()
 
-    def test_initialize_cartfs_directory_not_up_to_date(self) -> None:
-        """Test that initialization performs sync when not up-to-date."""
+    def test_checkout_cartfs_to_cog_revisions_not_up_to_date_no_cog_integration(
+        self,
+    ) -> None:
+        """Test that initialization performs sync when not up-to-date (no integration repo)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
                 workspace_dir=fs.full_path(
@@ -844,9 +887,7 @@ class TestWorkspace(unittest.TestCase):
             with (
                 patch.object(ws, "get_cog_commit", return_value="hash123"),
                 patch.object(
-                    ws,
-                    "get_cartfs_fuchsia_commit",
-                    return_value="different-hash",
+                    ws, "get_cartfs_commit", return_value="different-hash"
                 ),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
@@ -858,11 +899,66 @@ class TestWorkspace(unittest.TestCase):
                     return_value="integration_hash_abc",
                 ) as mock_checkout,
             ):
-                ws.initialize_cartfs_directory()
+                ws.checkout_cartfs_to_cog_revisions()
 
                 mock_reinit.assert_called_once()
                 mock_checkout.assert_called_once_with("hash123")
                 mock_sync.assert_called_once_with("hash123")
+                mock_symlinks.assert_called_once()
+                mock_fetch.assert_called_once()
+
+    def test_checkout_cartfs_to_cog_revisions_not_up_to_date_with_cog_integration(
+        self,
+    ) -> None:
+        """Test that initialization performs sync when not up-to-date (with integration repo)."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                workspace_dir=fs.full_path(
+                    "test-workspace", mock_fs.FSType.COG
+                ),
+                repo_name="fuchsia",
+                workspace_name="test-workspace",
+                workspace_id=fs.workspace_id,
+                cartfs_directory=fs.cartfs_dir,
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["config"] = {
+                "fuchsia": {"repo": "fuchsia"},
+                "integration": {
+                    "repo": "integration",
+                },
+                "jiriImports": [],
+                "symlinks": {},
+            }
+
+            def mock_get_cog_commit(repo: str) -> str:
+                return "fuchsia_hash" if repo == "fuchsia" else "int_hash"
+
+            def mock_get_cartfs_commit(repo: str) -> str:
+                return (
+                    "diff_fuchsia_hash"
+                    if repo == "fuchsia"
+                    else "diff_int_hash"
+                )
+
+            with (
+                patch.object(
+                    ws, "get_cog_commit", side_effect=mock_get_cog_commit
+                ),
+                patch.object(
+                    ws, "get_cartfs_commit", side_effect=mock_get_cartfs_commit
+                ),
+                patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
+                patch.object(ws, "_create_symlinks") as mock_symlinks,
+                patch.object(ws, "_fetch_prebuilts") as mock_fetch,
+                patch.object(ws, "_reinit_integration_repo") as mock_reinit,
+                patch.object(ws, "_checkout_integration_roll") as mock_checkout,
+            ):
+                ws.checkout_cartfs_to_cog_revisions()
+
+                mock_reinit.assert_called_once_with("int_hash")
+                mock_checkout.assert_not_called()
+                mock_sync.assert_called_once_with("fuchsia_hash")
                 mock_symlinks.assert_called_once()
                 mock_fetch.assert_called_once()
 
@@ -954,7 +1050,9 @@ class TestWorkspace(unittest.TestCase):
             self.assertIn('<localimport file="manifest/path1"/>', content)
             self.assertIn('<localimport file="manifest/path2"/>', content)
 
-    def test_initialize_cartfs_directory_with_integration_config(self) -> None:
+    def test_checkout_cartfs_to_cog_revisions_with_custom_integration(
+        self,
+    ) -> None:
         """Test that specifying integration.repo and integration.remote changes behavior."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
@@ -985,9 +1083,7 @@ class TestWorkspace(unittest.TestCase):
 
             with (
                 patch.object(ws, "get_cog_commit") as mock_get_cog_commit,
-                patch.object(
-                    ws, "get_cartfs_fuchsia_commit", return_value="hash123"
-                ),
+                patch.object(ws, "get_cartfs_commit", return_value="hash123"),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
                 patch.object(ws, "_fetch_prebuilts") as mock_fetch,
@@ -1001,7 +1097,7 @@ class TestWorkspace(unittest.TestCase):
                     "custom-integration": "integration_hash",
                 }[repo]
 
-                ws.initialize_cartfs_directory()
+                ws.checkout_cartfs_to_cog_revisions()
 
                 # Should bypass checkout_integration_roll
                 mock_checkout_roll.assert_not_called()
@@ -1017,7 +1113,7 @@ class TestWorkspace(unittest.TestCase):
                 self.assertIn("--revision=integration_hash", cmd)
 
                 # Should call _fetch_prebuilts
-                mock_fetch.assert_called_once_with("integration_hash")
+                mock_fetch.assert_called_once()
 
 
 if __name__ == "__main__":

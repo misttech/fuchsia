@@ -13,7 +13,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import cartfs
 import logger
@@ -431,8 +431,8 @@ class Workspace:
             else None
         )
 
-    def initialize_cartfs_directory(self) -> None:
-        """Initializes the cartfs directory for this workspace."""
+    def checkout_cartfs_to_cog_revisions(self) -> None:
+        """Checkouts the CartFS fuchsia and integration repos to match the revisions in Cog."""
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
@@ -440,28 +440,68 @@ class Workspace:
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
+        cog_integration_repo = self.config["integration"]["repo"]
+
         cog_fuchsia_commit = self.get_cog_commit(self.config["fuchsia"]["repo"])
-        cartfs_fuchsia_commit = self.get_cartfs_fuchsia_commit()
+        cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
         logger.log_info(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
         logger.log_info(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
 
-        integration_commit = None
-        if self.config["integration"]["repo"]:
-            integration_commit = self.get_cog_commit(
-                self.config["integration"]["repo"]
+        # If this is a standalone fuchsia cog checkout and the CartFS fuchsia
+        # checkout is up to date, skip CartFS initialization.
+        if (
+            not cog_integration_repo
+            and cog_fuchsia_commit == cartfs_fuchsia_commit
+        ):
+            logger.log_info(
+                "Fuchsia repo is up to date, skipping cartfs initialization."
             )
-            self._reinit_integration_repo(integration_commit)
-            self._sync_fuchsia_repo(cog_fuchsia_commit)
-        elif cog_fuchsia_commit != cartfs_fuchsia_commit:
+            return
+
+        cog_integration_commit = cog_integration_repo and self.get_cog_commit(
+            cog_integration_repo
+        )
+        cartfs_integration_commit = self.get_cartfs_commit("integration")
+
+        # If this is a superproject checkout with both fuchsia and integration
+        # repos and both CartFS checkouts are up to date, skip CartFS initialization.
+        if (
+            cog_integration_repo
+            and cog_integration_commit == cartfs_integration_commit
+            and cog_fuchsia_commit == cartfs_fuchsia_commit
+        ):
+            logger.log_info(
+                "Fuchsia and integration repos are up to date, skipping cartfs initialization."
+            )
+            return
+
+        # Update CartFS integration and fuchsia checkouts.
+        if cog_integration_repo:
+            self._reinit_integration_repo(cog_integration_commit)
+        else:
             self._reinit_integration_repo()
-            integration_commit = self._checkout_integration_roll(
+
+            # Try to find the integration commit that rolled `cog_fuchsia_commit`.
+            cog_integration_commit = self._checkout_integration_roll(
                 cog_fuchsia_commit
             )
-            self._sync_fuchsia_repo(cog_fuchsia_commit)
 
-        if integration_commit:
-            self._fetch_prebuilts(integration_commit)
+        logger.log_info(f"Cog integration commit: {cog_integration_commit}")
+        logger.log_info(
+            f"CartFS integration commit: {cartfs_integration_commit}"
+        )
+
+        self._sync_fuchsia_repo(cog_fuchsia_commit)
+        self._fetch_prebuilts()
         self._create_symlinks()
+
+        # Record the updated commit hashes in CartFS.
+        (self.cartfs_directory / ".fuchsia_commit_hash").write_text(
+            cog_fuchsia_commit
+        )
+        (self.cartfs_directory / ".integration_commit_hash").write_text(
+            cog_integration_commit
+        )
 
     def get_cog_commit(self, repository: str) -> str:
         """Determines the `repository` commit hash from CitC."""
@@ -484,17 +524,19 @@ class Workspace:
         logger.log_error(f"Failed to get {repository} repo commit hash.")
         raise RepoSetupError(f"Failed to get {repository} repo commit hash.")
 
-    def get_cartfs_fuchsia_commit(self) -> str | None:
-        """Determines the fuchsia repo commit hash from CartFS."""
+    def get_cartfs_commit(
+        self, repository: Literal["fuchsia", "integration"]
+    ) -> str | None:
+        """Determines the fuchsia or integration repo commit hash from CartFS."""
         if not self.cartfs_directory:
             return None
 
-        fuchsia_hash_file = self.cartfs_directory / ".fuchsia_commit_hash"
-        if not fuchsia_hash_file.is_file():
+        hash_file = self.cartfs_directory / f".{repository}_commit_hash"
+        if not hash_file.is_file():
             return None
 
         try:
-            return fuchsia_hash_file.read_text().strip()
+            return hash_file.read_text().strip()
         except Exception:
             return None
 
@@ -582,22 +624,11 @@ class Workspace:
         logger.log_info("Bootstrapping jiri.")
         self._run_bootstrap_jiri_script()
 
-    def _fetch_prebuilts(self, current_integration_hash: str) -> None:
+    def _fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
         logger.emit_status("Fetching prebuilts...")
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
-
-        integration_hash_file = (
-            self.cartfs_directory / ".integration_commit_hash"
-        )
-        if integration_hash_file.exists():
-            former_integration_hash = integration_hash_file.read_text().strip()
-            if former_integration_hash == current_integration_hash:
-                logger.log_info(
-                    f"Integration repo not changed, skip fetching prebuilts."
-                )
-                return
 
         logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
@@ -616,9 +647,6 @@ class Workspace:
         )
         update_process.wait()
         fetch_process.wait()
-
-        # Record integration repo commit hash in the fuchsia repo.
-        integration_hash_file.write_text(current_integration_hash)
 
     def _reinit_integration_repo(self, revision: str | None = None) -> None:
         """Destroys and re-clones the `integration` checkout in CartFS, with a depth of 100 cls."""
@@ -708,7 +736,7 @@ class Workspace:
         # clone fuchsia repository and reset it to the commit hash
         logger.log_info(
             "Syncing the CartFS fuchsia checkout from "
-            f"{self.get_cartfs_fuchsia_commit()} to {commit}"
+            f"{self.get_cartfs_commit('fuchsia')} to {commit}"
         )
 
         if self.cartfs_fuchsia_dir.exists():
@@ -773,8 +801,6 @@ class Workspace:
 
         self._write_jiri_manifest()
         self._write_jiri_config()
-
-        (self.cartfs_directory / ".fuchsia_commit_hash").write_text(commit)
 
     def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""

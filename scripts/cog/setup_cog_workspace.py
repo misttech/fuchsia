@@ -168,7 +168,7 @@ def main() -> int:
         logger.log_warn("Could not create workspace instance.")
         return 1
 
-    workspace_instance.initialize_cartfs_directory()
+    workspace_instance.checkout_cartfs_to_cog_revisions()
     return 0
 
 
