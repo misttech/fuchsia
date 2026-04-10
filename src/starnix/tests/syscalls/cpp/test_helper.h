@@ -419,9 +419,10 @@ class ScopedMount {
   static fit::result<int, ScopedMount> Mount(const std::string &source, const std::string &target,
                                              const std::string &filesystemtype,
                                              unsigned long mountflags, const void *data);
+  ScopedMount() = default;
   ScopedMount(const ScopedMount &) = delete;
   ScopedMount &operator=(const ScopedMount &) = delete;
-  ScopedMount &operator=(ScopedMount &&other) = delete;
+  ScopedMount &operator=(ScopedMount &&other) noexcept;
   ScopedMount(ScopedMount &&other) noexcept;
   ~ScopedMount();
 

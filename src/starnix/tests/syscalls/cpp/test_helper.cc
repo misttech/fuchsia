@@ -653,11 +653,16 @@ fit::result<int, ScopedMount> ScopedMount::Mount(const std::string &source,
   return fit::ok(ScopedMount(target));
 }
 
-ScopedMount::ScopedMount(ScopedMount &&other) noexcept {
+ScopedMount &ScopedMount::operator=(ScopedMount &&other) noexcept {
   Unmount();
   is_mounted_ = other.is_mounted_;
   target_path_ = other.target_path_;
   other.is_mounted_ = false;
+  return *this;
+}
+
+ScopedMount::ScopedMount(ScopedMount &&other) noexcept : ScopedMount("") {
+  *this = std::move(other);
 }
 
 ScopedMount::~ScopedMount() { Unmount(); }

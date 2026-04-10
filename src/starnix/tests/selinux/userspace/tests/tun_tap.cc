@@ -20,17 +20,24 @@
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-extern std::string DoPrePolicyLoadWork() {
-  EXPECT_THAT(
-      mount("devtmpfs", "/dev", "devtmpfs", MS_NOEXEC | MS_NOSUID | MS_STRICTATIME, nullptr),
-      SyscallSucceeds());
-  return "tun_policy.pp";
-}
-
 namespace {
+const char kTunPath[] = "/dev/net/tun";
 
-const char kTunPathStarnix[] = "/dev/tun";
-const char kTunPathLinux[] = "/dev/net/tun";
+template <typename T>
+class TunTapTestBase : public ::testing::TestWithParam<T> {
+ protected:
+  test_helper::ScopedMount mount_;
+
+  void SetUp() {
+    mount_ = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMount::Mount(
+        "tmpfs", "/dev", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_STRICTATIME,
+        "fscontext=system_u:object_r:devfs_t:s0"));
+
+    ASSERT_THAT(mkdir("/dev/net", 0755), SyscallSucceeds());
+    ASSERT_THAT(mknod(kTunPath, S_IFCHR | 0666, makedev(10, 200)), SyscallSucceeds());
+    ASSERT_THAT(chmod(kTunPath, 0666), SyscallSucceeds());
+  }
+};
 
 struct TunTapTestCase {
   std::string_view label;
@@ -38,7 +45,7 @@ struct TunTapTestCase {
   short tun_or_tap;
 };
 
-class TunTapCreateTest : public ::testing::TestWithParam<TunTapTestCase> {};
+class TunTapCreateTest : public TunTapTestBase<TunTapTestCase> {};
 
 INSTANTIATE_TEST_SUITE_P(
     TunTapTests, TunTapCreateTest,
@@ -53,7 +60,7 @@ TEST_P(TunTapCreateTest, CheckCreateAccess) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   EXPECT_TRUE(RunSubprocessAs(test_case.label, [&]() {
-    fbl::unique_fd fd(open(test_helper::IsStarnix() ? kTunPathStarnix : kTunPathLinux, O_RDWR));
+    fbl::unique_fd fd(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd) << strerror(errno);
     EXPECT_THAT(GetLinkLabel(fd.get()), IsOk(std::string(test_case.label).c_str()));
 
@@ -71,7 +78,7 @@ TEST_P(TunTapCreateTest, CheckCreateAccess) {
   }));
 }
 
-class TunTapSockcreateTest : public testing::TestWithParam<bool> {};
+class TunTapSockcreateTest : public TunTapTestBase<bool> {};
 
 INSTANTIATE_TEST_SUITE_P(TunTapTests, TunTapSockcreateTest, testing::Bool());
 
@@ -81,7 +88,7 @@ TEST_P(TunTapSockcreateTest, SockcreateIgnored) {
     auto sockcreate =
         ScopedTaskAttrResetter::SetTaskAttr("sockcreate", "test_u:test_r:tun_test_create_t:s0");
 
-    fbl::unique_fd fd(open(test_helper::IsStarnix() ? kTunPathStarnix : kTunPathLinux, O_RDWR));
+    fbl::unique_fd fd(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd) << strerror(errno);
 
     struct ifreq ifr;
@@ -94,14 +101,14 @@ TEST_P(TunTapSockcreateTest, SockcreateIgnored) {
   }));
 }
 
-class TunTapTransitionTest : public testing::TestWithParam<bool> {};
+class TunTapTransitionTest : public TunTapTestBase<bool> {};
 
 INSTANTIATE_TEST_SUITE_P(TunTapTests, TunTapTransitionTest, testing::Bool());
 
 TEST_P(TunTapTransitionTest, TypeTransitionIgnored) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:tun_test_trans_t:s0", [&]() {
-    fbl::unique_fd fd(open(test_helper::IsStarnix() ? kTunPathStarnix : kTunPathLinux, O_RDWR));
+    fbl::unique_fd fd(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd) << strerror(errno);
 
     struct ifreq ifr;
@@ -114,7 +121,7 @@ TEST_P(TunTapTransitionTest, TypeTransitionIgnored) {
   }));
 }
 
-class TunTapAttachTest : public ::testing::TestWithParam<TunTapTestCase> {};
+class TunTapAttachTest : public TunTapTestBase<TunTapTestCase> {};
 
 INSTANTIATE_TEST_SUITE_P(
     TunTapTests, TunTapAttachTest,
@@ -129,7 +136,7 @@ TEST_P(TunTapAttachTest, AttachQueue) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   EXPECT_TRUE(RunSubprocessAs(test_case.label, [&]() {
-    fbl::unique_fd fd(open(test_helper::IsStarnix() ? kTunPathStarnix : kTunPathLinux, O_RDWR));
+    fbl::unique_fd fd(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd) << strerror(errno);
 
     struct ifreq ifr;
@@ -159,7 +166,7 @@ TEST_P(TunTapAttachTest, AttachQueue) {
   }));
 }
 
-class TunTapRelabelTest : public ::testing::TestWithParam<TunTapTestCase> {};
+class TunTapRelabelTest : public TunTapTestBase<TunTapTestCase> {};
 
 INSTANTIATE_TEST_SUITE_P(
     TunTapTests, TunTapRelabelTest,
@@ -176,7 +183,7 @@ TEST_P(TunTapRelabelTest, Relabel) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:tun_test_t:s0", [&]() {
-    fbl::unique_fd fd(open(test_helper::IsStarnix() ? kTunPathStarnix : kTunPathLinux, O_RDWR));
+    fbl::unique_fd fd(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd) << strerror(errno);
 
     struct ifreq ifr;
@@ -195,7 +202,7 @@ TEST_P(TunTapRelabelTest, Relabel) {
     ASSERT_THAT(ioctl(fd.get(), TUNSETPERSIST, 1), SyscallSucceeds());
 
     ASSERT_EQ(WriteTaskAttr("current", test_case.label), fit::ok());
-    fbl::unique_fd fd2(open(test_helper::IsStarnix() ? kTunPathStarnix : kTunPathLinux, O_RDWR));
+    fbl::unique_fd fd2(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd2) << strerror(errno);
     memset(&ifr, 0, sizeof(struct ifreq));
     ifr.ifr_flags = test_case.tun_or_tap | IFF_MULTI_QUEUE;
@@ -211,3 +218,5 @@ TEST_P(TunTapRelabelTest, Relabel) {
 }
 
 }  // namespace
+
+extern std::string DoPrePolicyLoadWork() { return "tun_policy.pp"; }
