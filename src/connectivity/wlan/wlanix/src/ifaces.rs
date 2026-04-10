@@ -19,7 +19,7 @@ use futures::lock::Mutex as MutexAsync;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, select};
 use ieee80211::{Bssid, MacAddr};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use state_recorder as power_observability_state_recorder;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -351,6 +351,7 @@ impl From<StaIfacePowerLevel> for u64 {
 pub(crate) struct PowerState {
     suspend_mode_enabled: bool,
     power_save_enabled: bool,
+    apf_filter_installed: bool,
     recorder: Option<power_observability_state_recorder::EnumStateRecorder<StaIfacePowerLevel>>,
 }
 
@@ -479,6 +480,7 @@ impl SmeClientIface {
             power_state: Arc::new(MutexAsync::new(PowerState {
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
+                apf_filter_installed: false,
                 recorder,
             })),
             telemetry_sender,
@@ -507,20 +509,29 @@ impl SmeClientIface {
         });
 
         // Apply (or turn off) the optimizations for "suspend mode"
-        if new_level == StaIfacePowerLevel::Suspended {
-            match self.sme_proxy.set_apf_packet_filter_enabled(true).await {
-                Ok(Ok(())) => {}
-                e => {
-                    warn!("Failed to enable APF packet filter: {:?}", e)
+        let apf_filter_installed = {
+            let power_state = self.power_state.lock().await;
+            power_state.apf_filter_installed
+        };
+
+        if apf_filter_installed {
+            if new_level == StaIfacePowerLevel::Suspended {
+                match self.sme_proxy.set_apf_packet_filter_enabled(true).await {
+                    Ok(Ok(())) => {}
+                    e => {
+                        warn!("Failed to enable APF packet filter: {:?}", e)
+                    }
+                }
+            } else {
+                match self.sme_proxy.set_apf_packet_filter_enabled(false).await {
+                    Ok(Ok(())) => {}
+                    e => {
+                        warn!("Failed to disable APF packet filter: {:?}", e)
+                    }
                 }
             }
         } else {
-            match self.sme_proxy.set_apf_packet_filter_enabled(false).await {
-                Ok(Ok(())) => {}
-                e => {
-                    warn!("Failed to disable APF packet filter: {:?}", e)
-                }
-            }
+            debug!("Skipping APF enable/disable as no filter is installed");
         }
 
         Ok(())
@@ -832,14 +843,21 @@ impl ClientIface for SmeClientIface {
     }
 
     async fn install_apf_packet_filter(&self, program: Vec<u8>) -> Result<(), zx::Status> {
-        self.sme_proxy
+        let result = self
+            .sme_proxy
             .install_apf_packet_filter(&program)
             .await
             .map_err(|e| {
                 error!("FIDL error calling install_apf_packet_filter: {:?}", e);
                 zx::Status::INTERNAL
             })?
-            .map_err(zx::Status::from_raw)
+            .map_err(zx::Status::from_raw);
+
+        if result.is_ok() {
+            let mut power_state = self.power_state.lock().await;
+            power_state.apf_filter_installed = true;
+        }
+        result
     }
 
     async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status> {
@@ -1637,6 +1655,7 @@ mod tests {
             power_state: Arc::new(MutexAsync::new(PowerState {
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
+                apf_filter_installed: false,
                 recorder: Some(
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
@@ -1899,6 +1918,7 @@ mod tests {
             power_state: Arc::new(MutexAsync::new(PowerState {
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
+                apf_filter_installed: false,
                 recorder: Some(
                     power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
@@ -2956,6 +2976,12 @@ mod tests {
             TelemetrySender::new(telemetry_sender),
         );
 
+        // Simulate that a filter is installed so APF calls are not skipped in tests.
+        exec.run_singlethreaded(async {
+            let mut power_state = iface.power_state.lock().await;
+            power_state.apf_filter_installed = true;
+        });
+
         // Run each call in the test sequence
         for (call, _expected_driver_val) in sequence {
             // Set the power save mode
@@ -3001,6 +3027,12 @@ mod tests {
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
+
+        // Simulate that a filter is installed so APF calls are not skipped in tests.
+        exec.run_singlethreaded(async {
+            let mut power_state = iface.power_state.lock().await;
+            power_state.apf_filter_installed = true;
+        });
 
         // Set the power save mode
         let power_call_fut = match call {
@@ -3062,6 +3094,12 @@ mod tests {
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
+
+        // Simulate that a filter is installed so APF calls are not skipped in tests.
+        exec.run_singlethreaded(async {
+            let mut power_state = iface.power_state.lock().await;
+            power_state.apf_filter_installed = true;
+        });
 
         // Set suspend mode on
         let power_call_fut = iface.set_suspend_mode(true);
@@ -3131,6 +3169,12 @@ mod tests {
             TelemetrySender::new(telemetry_sender),
         );
 
+        // Simulate that a filter is installed so APF calls are not skipped in tests.
+        exec.run_singlethreaded(async {
+            let mut power_state = iface.power_state.lock().await;
+            power_state.apf_filter_installed = true;
+        });
+
         // Update the power level
         let level_to_set =
             if suspend_mode { StaIfacePowerLevel::Suspended } else { StaIfacePowerLevel::Normal };
@@ -3149,6 +3193,30 @@ mod tests {
 
         // Future completes
         exec.run_singlethreaded(power_call_fut).expect("future finished");
+    }
+
+    #[fuchsia::test]
+    fn test_update_power_level_skips_suspend_optimizations_when_no_filter() {
+        let mut exec = fasync::TestExecutor::new();
+        let (monitor_svc, _monitor_stream) =
+            create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
+        let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let phy_id = rand::random();
+        let (telemetry_sender, mut _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+
+        let iface = SmeClientIface::new(
+            phy_id,
+            TEST_IFACE_ID,
+            sme_proxy,
+            monitor_svc,
+            TelemetrySender::new(telemetry_sender),
+        );
+
+        let power_call_fut = iface.update_power_level(StaIfacePowerLevel::Suspended);
+        let mut power_call_fut = pin!(power_call_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Ready(Ok(())));
+        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
     }
 
     #[fuchsia::test]
