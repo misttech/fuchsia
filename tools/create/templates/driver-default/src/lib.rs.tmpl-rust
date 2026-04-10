@@ -1,0 +1,44 @@
+{{>copyright comment="//"}}
+
+use fdf_component::{Driver, DriverContext, Node, driver_register};
+use log::info;
+use zx::Status;
+
+struct {{pascal_case PROJECT_NAME}} {
+    node: Node,
+}
+
+driver_register!({{pascal_case PROJECT_NAME}});
+
+impl Driver for {{pascal_case PROJECT_NAME}} {
+    const NAME: &str = "{{snake_case PROJECT_NAME}}";
+
+    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+        info!("{{pascal_case PROJECT_NAME}}::start()");
+
+        let node = context.take_node()?;
+
+        Ok(Self { node })
+    }
+
+    async fn stop(&self) {
+        info!("{{pascal_case PROJECT_NAME}}::stop()");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fdf_component::testing::harness::TestHarness;
+
+    #[fuchsia::test]
+    async fn test_driver_start() {
+        let mut harness = TestHarness::<{{pascal_case PROJECT_NAME}}>::new();
+        let started_driver = harness.start_driver().await.unwrap();
+
+        // Verify driver started successfully
+        assert!(true);
+
+        started_driver.stop_driver().await;
+    }
+}
