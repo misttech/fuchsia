@@ -5,11 +5,52 @@
 package metrics
 
 var (
+	// --- DOMAIN METRICS ---
+
+	LicenseDetected = RegisterCounter(
+		"license_detected",
+		"Number of licenses found",
+		"spdx_id", "policy_category", "ecosystem",
+	)
+
+	// --- OPERATIONAL METRICS ---
+
+	PhaseDuration = RegisterTimer(
+		"phase_duration",
+		"Time spent executing major phases",
+	)
+
 	FilesProcessed = RegisterCounter(
 		"files_processed",
 		"Number of files processed",
 		"extension", "status", // status: "analyzed", "skipped", "cached", "error"
 	)
+
+	DirectoriesProcessed = RegisterCounter(
+		"directories_processed",
+		"Number of directories processed",
+		"status", // status: "analyzed", "skipped", "missing_project"
+	)
+
+	SymlinksProcessed = RegisterCounter(
+		"symlinks_processed",
+		"Number of symlinks processed",
+		"status",
+	)
+
+	ProjectsProcessed = RegisterCounter(
+		"projects_processed",
+		"Number of projects processed",
+		"status", // status: "discovered", "filtered", "skipped", "custom_init", "readme_error", "cache_hit"
+	)
+
+	TemplatesProcessed = RegisterCounter(
+		"templates_processed",
+		"Number of templates processed",
+		"status",
+	)
+
+	// --- FILE PACKAGE METRICS ---
 
 	DiskReadDuration = RegisterTimer(
 		"disk_read_duration",
@@ -49,6 +90,50 @@ var (
 		"encoding", // encoding: "utf8", "legacy"
 	)
 
+	// --- DIRECTORY PACKAGE METRICS ---
+
+	DirectoryTraversalDuration = RegisterTimer(
+		"directory_traversal_duration",
+		"Time spent crawling the directory structure",
+	)
+
+	ReadmeParsingDuration = RegisterTimer(
+		"readme_parsing_duration",
+		"Time spent parsing README.fuchsia files",
+	)
+
+	BoundaryDetectionType = RegisterCounter(
+		"boundary_detection_type",
+		"How the tool decided to start a new project",
+		"detection_type", // detection_type: "explicit_fuchsia", "explicit_chromium", "fallback_go", "fallback_rust", "fallback_dart", "inherited"
+	)
+
+	OrphanedEntities = RegisterCounter(
+		"orphaned_entities",
+		"Number of files or directories attributed to UnknownProject",
+		"type", // type: "file", "directory"
+	)
+
+	// --- PROJECT PACKAGE METRICS ---
+
+	MissingMetadata = RegisterCounter(
+		"missing_metadata",
+		"Number of projects missing required fields",
+		"field", // field: "name", "license", "url"
+	)
+
+	FilterDuration = RegisterTimer(
+		"filter_duration",
+		"Time spent executing GN and filtering the build graph",
+	)
+
+	AnalyzeDuration = RegisterTimer(
+		"analyze_duration",
+		"Total time spent spinning up goroutines to analyze all filtered projects",
+	)
+
+	// --- README PACKAGE METRICS ---
+
 	ReadmeParseDuration = RegisterTimer(
 		"readme_parse_duration",
 		"Time spent unmarshaling text proto files or Cargo.toml",
@@ -83,59 +168,43 @@ var (
 		"status", // status: "hit"
 	)
 
-	DirectoryTraversalDuration = RegisterTimer(
-		"directory_traversal_duration",
-		"Time spent crawling the directory structure",
+	// --- RESULT PACKAGE METRICS ---
+
+	TotalRuntime = RegisterTimer(
+		"total_runtime",
+		"Total wall time of execution",
 	)
 
-	ReadmeParsingDuration = RegisterTimer(
-		"readme_parsing_duration",
-		"Time spent parsing README.fuchsia files",
+	ValidationErrors = RegisterCounter(
+		"validation_errors",
+		"Number of compliance validation errors before allowlist",
+		"check_name",
 	)
 
-	BoundaryDetectionType = RegisterCounter(
-		"boundary_detection_type",
-		"How the tool decided to start a new project",
-		"detection_type", // detection_type: "explicit_fuchsia", "explicit_chromium", "fallback_go", "fallback_rust", "fallback_dart", "inherited"
+	AllowlistHits = RegisterCounter(
+		"allowlist_hits",
+		"Number of compliance validation errors ignored via allowlist",
+		"check_name",
 	)
 
-	OrphanedEntities = RegisterCounter(
-		"orphaned_entities",
-		"Number of files or directories attributed to UnknownProject",
-		"type", // type: "file", "directory"
+	LicenseDeduplication = RegisterCounter(
+		"license_deduplication",
+		"Number of raw license texts found vs unique texts kept",
+		"type", // type: "raw_texts", "unique_texts"
 	)
 
-	DirectoriesProcessed = RegisterCounter(
-		"directories_processed",
-		"Number of directories processed",
-		"status", // status: "analyzed", "skipped", "missing_project"
+	ChecksDuration = RegisterTimer(
+		"checks_duration",
+		"Time spent running compliance checks",
 	)
 
-	SymlinksProcessed = RegisterCounter(
-		"symlinks_processed",
-		"Number of symlinks processed",
-		"status",
+	TemplateExpansionDuration = RegisterTimer(
+		"template_expansion_duration",
+		"Time spent expanding notice templates",
 	)
 
-	ProjectsProcessed = RegisterCounter(
-		"projects_processed",
-		"Number of projects processed",
-		"status", // status: "discovered", "filtered", "skipped", "custom_init", "readme_error", "cache_hit"
-	)
-
-	MissingMetadata = RegisterCounter(
-		"missing_metadata",
-		"Number of projects missing required fields",
-		"field", // field: "name", "license", "url"
-	)
-
-	FilterDuration = RegisterTimer(
-		"filter_duration",
-		"Time spent executing GN and filtering the build graph",
-	)
-
-	AnalyzeDuration = RegisterTimer(
-		"analyze_duration",
-		"Total time spent spinning up goroutines to analyze all filtered projects",
+	SpdxGenerationDuration = RegisterTimer(
+		"spdx_generation_duration",
+		"Time spent generating SPDX SBOM",
 	)
 )

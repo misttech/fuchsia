@@ -39,12 +39,12 @@ if (is_host) {
       "config.go",
       "driver.go",
       "main.go",
-      "metrics.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//tools/check-licenses/directory",
       "//tools/check-licenses/file",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/project",
       "//tools/check-licenses/readme",
       "//tools/check-licenses/result",

@@ -38,7 +38,6 @@ if (is_host) {
     sources = [
       "checks.go",
       "config.go",
-      "metrics.go",
       "result.go",
       "spdx.go",
       "template.go",
@@ -51,6 +50,7 @@ if (is_host) {
       "//third_party/golibs:github.com/spdx/tools-golang/spdx/v2_2",
       "//tools/check-licenses/directory",
       "//tools/check-licenses/file",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/project",
       "//tools/check-licenses/readme",
       "//tools/lib/logger",
@@ -78,6 +78,7 @@ if (is_host) {
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",
       "//third_party/golibs:github.com/spdx/tools-golang/spdx/v2_2",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/project",
       "//tools/check-licenses/testutil",
     ]

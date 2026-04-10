@@ -8,7 +8,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -16,9 +15,9 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 )
 
@@ -27,31 +26,22 @@ const (
 )
 
 // SaveResults saves the results to the output files defined in the config file.
-func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
+func SaveResults() error {
 	var b strings.Builder
 
-	s, err := savePackageInfo("cmd", cmdConfig, cmdMetrics)
+	s, err := saveReadmeFuchsiaFiles()
 	if err != nil {
-		return "", err
-	}
-	b.WriteString(s)
-
-	s, err = savePackageInfo("result", Config, Metrics)
-	if err != nil {
-		return "", err
-	}
-	b.WriteString(s)
-
-	s, err = saveReadmeFuchsiaFiles()
-	if err != nil {
-		return "", err
+		return err
 	}
 	b.WriteString(s)
 
 	if Config.RunAnalysis {
-		err = RunChecks()
+		func() {
+			defer metrics.ChecksDuration.Track()()
+			err = RunChecks()
+		}()
 		if err != nil {
-			return "", err
+			return err
 		}
 	} else {
 		log.Printf(" -> Not running tests on results.\n")
@@ -60,7 +50,7 @@ func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
 	if Config.OutputLicenseFile {
 		s1, err := expandTemplates()
 		if err != nil {
-			return "", err
+			return err
 		}
 		b.WriteString(s1)
 	} else {
@@ -92,52 +82,16 @@ func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
 	}
 
 	if err = writeFile("summary", []byte(b.String())); err != nil {
-		return "", err
+		return err
 	}
 
-	b.WriteString("\n")
 	if Config.OutDir != "" {
-		b.WriteString(fmt.Sprintf("Full summary and output files -> %s\n", Config.OutDir))
 		if err := compressTarGZ(Config.OutDir, path.Join(Config.RootOutDir, "runFiles")); err != nil {
-			return "", err
-		}
-	} else {
-		b.WriteString("Set the 'outputdir' arg in the config file to save detailed information to disk.\n")
-	}
-
-	return b.String(), nil
-}
-
-// This retrieves all the relevant metrics information for a given package.
-// e.g. the //tools/check-licenses/directory package.
-func savePackageInfo(pkgName string, c any, m MetricsInterface) (string, error) {
-	var b strings.Builder
-
-	fmt.Fprintf(&b, "\n%s Metrics:\n", strings.Title(pkgName))
-
-	counts := m.Counts()
-	keys := make([]string, 0, len(counts))
-	for k := range counts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		fmt.Fprintf(&b, "%s%s: %s\n", indent, k, strconv.Itoa(counts[k]))
-	}
-	if Config.OutDir != "" {
-		if _, err := os.Stat(Config.OutDir); os.IsNotExist(err) {
-			err := os.MkdirAll(Config.OutDir, 0755)
-			if err != nil {
-				return "", fmt.Errorf("failed to make directory %s: %w", Config.OutDir, err)
-			}
-		}
-
-		if err := saveMetrics(pkgName, m); err != nil {
-			return "", err
+			return err
 		}
 	}
-	return b.String(), nil
+
+	return nil
 }
 
 // This retrieves all the relevant metrics information for a given package.
@@ -171,46 +125,6 @@ func saveReadmeFuchsiaFiles() (string, error) {
 	}
 
 	return b.String(), nil
-}
-
-// Save the "Files" and "Values" metrics: freeform data stored in a map with string keys.
-func saveMetrics(pkg string, m MetricsInterface) error {
-	for k, bytes := range m.Files() {
-
-		// Spaces and commas are not allowed in file or folder names.
-		// Replace spaces and commas with underscores.
-		k = strings.Replace(k, " ", "_", -1)
-		k = strings.Replace(k, ",", "_", -1)
-
-		path := filepath.Join(pkg, k)
-
-		// For uploading to GCS, the license files need to be saved in
-		// a separate directory.
-		if Config.LicenseOutDir != "" && strings.HasPrefix(path, "license/matches/") {
-			path = strings.TrimPrefix(path, "license/matches/")
-			if err := writeFileRoot(path, bytes, Config.LicenseOutDir); err != nil {
-				return fmt.Errorf("failed to write Files file %s: %w", path, err)
-			}
-		} else {
-			if err := writeFile(path, bytes); err != nil {
-				return fmt.Errorf("failed to write Files file %s: %w", path, err)
-			}
-		}
-	}
-
-	for k, v := range m.Values() {
-		sort.Strings(v)
-		if bytes, err := json.MarshalIndent(v, "", "  "); err != nil {
-			return fmt.Errorf("failed to marshal indent for key %s: %w", k, err)
-		} else {
-			k = strings.Replace(k, " ", "_", -1)
-			path := filepath.Join(pkg, k)
-			if err := writeFile(path, bytes); err != nil {
-				return fmt.Errorf("failed to write Values file %s: %w", path, err)
-			}
-		}
-	}
-	return nil
 }
 
 // Write file to <Config.OutDir>/<path parameter>

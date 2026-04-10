@@ -10,6 +10,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/directory"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 )
 
@@ -62,6 +63,7 @@ func getWorldStruct() *world {
 			}
 
 			for _, d := range data {
+				metrics.LicenseDeduplication.Inc("raw_texts")
 				hash := d.Hash()
 				dl := &DedupedLicense{
 					LibraryNames: []string{d.LibraryName()},
@@ -71,6 +73,7 @@ func getWorldStruct() *world {
 
 				if value, ok := dedupedLicenseDataMap[hash]; !ok {
 					dedupedLicenseDataMap[hash] = dl
+					metrics.LicenseDeduplication.Inc("unique_texts")
 				} else {
 					value.LibraryNames = append(value.LibraryNames, d.LibraryName())
 				}

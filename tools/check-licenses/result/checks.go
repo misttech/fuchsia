@@ -18,6 +18,7 @@ import (
 
 	classifierLib "github.com/google/licenseclassifier/v2"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/directory"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
@@ -195,6 +196,7 @@ func AllLicensePatternUsagesMustBeApproved() error {
 	for _, p := range project.GetAllFilteredProjects() {
 		for _, l := range p.GetLicenseFiles() {
 			if _, ok := allowlist[l.RelPath()]; ok {
+				metrics.AllowlistHits.Inc(name)
 				continue
 			}
 			data, _ := l.Data()
@@ -205,6 +207,7 @@ func AllLicensePatternUsagesMustBeApproved() error {
 				}
 				for _, m := range results.Matches {
 					if _, ok := allowlist[l.RelPath()]; ok {
+						metrics.AllowlistHits.Inc(name)
 						continue
 					}
 

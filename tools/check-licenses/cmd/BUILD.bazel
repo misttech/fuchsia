@@ -11,7 +11,6 @@ go_library(
         "config.go",
         "driver.go",
         "main.go",
-        "metrics.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/cmd",
     target_compatible_with = HOST_CONSTRAINTS,
@@ -19,6 +18,7 @@ go_library(
     deps = [
         "//tools/check-licenses/directory",
         "//tools/check-licenses/file",
+        "//tools/check-licenses/metrics",
         "//tools/check-licenses/project",
         "//tools/check-licenses/readme",
         "//tools/check-licenses/result",

@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 const (
@@ -60,6 +62,9 @@ func setupLogging() error {
 		log.SetOutput(w)
 	}
 
+	// Remove timestamps from logs
+	log.SetFlags(0)
+
 	return nil
 }
 
@@ -105,6 +110,8 @@ func mainImpl() error {
 	if err := setupLogging(); err != nil {
 		return fmt.Errorf("Failed to setup logging: %w", err)
 	}
+
+	defer metrics.PhaseDuration.Track()()
 
 	configVars := make(map[string]string)
 

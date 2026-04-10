@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 type ResultConfig struct {
@@ -65,7 +67,7 @@ func Initialize(c *ResultConfig) error {
 	if b, err := json.MarshalIndent(c, "", "  "); err != nil {
 		return err
 	} else {
-		plusFile("_config.json", b)
+		metrics.AddArtifact("result/_config.json", b)
 	}
 
 	Config = c
@@ -99,7 +101,7 @@ func initializeTemplates() error {
 						if err != nil {
 							return err
 						}
-						plusVal(NumInitTemplates, currentPath)
+						metrics.TemplatesProcessed.Inc("initialized")
 						AllTemplates[relPath] = temp
 					}
 				}
