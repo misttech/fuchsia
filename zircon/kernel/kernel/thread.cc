@@ -62,6 +62,7 @@
 #include <lk/main.h>
 #include <lockdep/lockdep.h>
 #include <object/process_dispatcher.h>
+#include <object/sampler_dispatcher.h>
 #include <object/thread_dispatcher.h>
 #include <pretty/hexdump.h>
 #include <vm/kstack.h>
@@ -1365,8 +1366,8 @@ void Thread::Current::DoSampleStack(GeneralRegsSource source, void* gregs) {
     // If a thread was marked to be sampled but was first suspended, it may now be long after the
     // sampling session has ended. sampler::SampleThread grabs the global state, checks if it's
     // still valid.
-    auto sampler_result = ThreadSamplerDispatcher::SampleThread(
-        current_thread->pid(), current_thread->tid(), source, gregs);
+    auto sampler_result = SamplerDispatcher::SampleThread(current_thread->pid(),
+                                                          current_thread->tid(), source, gregs);
     if (sampler_result.is_error()) {
       kcounter_add(thread_sampling_failed, 1);
     }

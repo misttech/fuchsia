@@ -7,10 +7,9 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/boot-options/types.h>
 #include <lib/syscalls/forward.h>
-#include <lib/thread_sampler/thread_sampler.h>
 
-#include <object/io_buffer_dispatcher.h>
 #include <object/resource.h>
+#include <object/sampler_dispatcher.h>
 
 #include "lib/user_copy/user_ptr.h"
 
@@ -63,12 +62,11 @@ zx_status_t sys_sampler_create(zx_handle_t rsrc, uint64_t options,
     return ZX_ERR_INVALID_ARGS;
   }
 
-  zx::result<KernelHandle<ThreadSamplerDispatcher>> create_res =
-      ThreadSamplerDispatcher::Create(sample_config);
+  zx::result<KernelHandle<SamplerDispatcher>> create_res = SamplerDispatcher::Create(sample_config);
   if (create_res.is_error()) {
     return create_res.status_value();
   }
-  return up->MakeAndAddHandle(ktl::move(*create_res), ThreadSamplerDispatcher::default_rights(),
+  return up->MakeAndAddHandle(ktl::move(*create_res), SamplerDispatcher::default_rights(),
                               sampler_out);
 }
 
@@ -82,7 +80,7 @@ zx_status_t sys_sampler_start(zx_handle_t sampler) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  fbl::RefPtr<ThreadSamplerDispatcher> thread_sampler;
+  fbl::RefPtr<SamplerDispatcher> thread_sampler;
   auto up = ProcessDispatcher::GetCurrent();
   if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
       status != ZX_OK) {
@@ -102,7 +100,7 @@ zx_status_t sys_sampler_stop(zx_handle_t sampler) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  fbl::RefPtr<ThreadSamplerDispatcher> thread_sampler;
+  fbl::RefPtr<SamplerDispatcher> thread_sampler;
   auto up = ProcessDispatcher::GetCurrent();
   if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
       status != ZX_OK) {
@@ -123,7 +121,7 @@ zx_status_t sys_sampler_read(zx_handle_t sampler, user_out_ptr<void> data, size_
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  fbl::RefPtr<ThreadSamplerDispatcher> thread_sampler;
+  fbl::RefPtr<SamplerDispatcher> thread_sampler;
   auto up = ProcessDispatcher::GetCurrent();
   if (zx_status_t status = up->handle_table().GetDispatcher(*up, sampler, &thread_sampler);
       status != ZX_OK) {
