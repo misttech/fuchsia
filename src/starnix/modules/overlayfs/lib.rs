@@ -1193,7 +1193,9 @@ impl FileOps for OverlayFile {
             }
 
             // TODO(mariagl): Drop state here
-            state.file().read_at(locked, current_task, offset, data)
+            let file = state.file();
+            security::file_permission(current_task, &file, security::PermissionFlags::READ)?;
+            file.ops().read(locked, file, current_task, offset, data)
         })
     }
 
@@ -1215,12 +1217,17 @@ impl FileOps for OverlayFile {
                 OverlayFileState::Lower(_) => panic!("write() called for a lower FS file."),
             };
             std::mem::drop(state);
-            file.write_at(locked, current_task, offset, data)
+            security::file_permission(current_task, &file, security::PermissionFlags::WRITE)?;
+            file.ops().write(locked, &file, current_task, offset, data)
         })
     }
 
     fn sync(&self, _file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
-        self.node.as_mounter(current_task, || self.state.read().file().sync(current_task))
+        self.node.as_mounter(current_task, || {
+            let state = self.state.read();
+            let file = state.file();
+            file.ops().sync(file, current_task)
+        })
     }
 
     fn get_memory(
@@ -1232,10 +1239,12 @@ impl FileOps for OverlayFile {
         prot: starnix_core::mm::ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
         self.node.as_mounter(current_task, || {
+            let state = self.state.read();
+            let file = state.file();
             // Not that the VMO returned here will not updated if the file is promoted to upper FS
             // later. This is consistent with OverlayFS behavior on Linux, see
             // https://docs.kernel.org/filesystems/overlayfs.html#non-standard-behavior .
-            self.state.read().file().get_memory(locked, current_task, length, prot)
+            file.ops().get_memory(locked, file, current_task, length, prot)
         })
     }
 }
@@ -1531,28 +1540,57 @@ fn copy_file_content<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
+    let locked = locked.cast_locked::<FileOpsCore>();
     let from_file = from.entry().open_anonymous(locked, current_task, OpenFlags::RDONLY)?;
     let to_file = to.entry().open_anonymous(locked, current_task, OpenFlags::WRONLY)?;
 
+    security::fs_node_permission(
+        current_task,
+        from_file.node().as_ref(),
+        security::PermissionFlags::READ,
+        (&**from_file).into(),
+    )?;
+    security::fs_node_permission(
+        current_task,
+        to_file.node().as_ref(),
+        security::PermissionFlags::WRITE,
+        (&**to_file).into(),
+    )?;
+
     const BUFFER_SIZE: usize = 4096;
 
+    let mut read_offset = 0;
+    let mut write_offset = 0;
     loop {
         // TODO(sergeyu): Reuse buffer between iterations.
 
         let mut output_buffer = VecOutputBuffer::new(BUFFER_SIZE);
-        let bytes_read = from_file.read(locked, current_task, &mut output_buffer)?;
+        let bytes_read = from_file.ops().read(
+            locked,
+            &from_file,
+            current_task,
+            read_offset,
+            &mut output_buffer,
+        )?;
         if bytes_read == 0 {
             break;
         }
+        read_offset += bytes_read;
 
         let buffer: Vec<u8> = output_buffer.into();
         let mut input_buffer = VecInputBuffer::from(buffer);
         while input_buffer.available() > 0 {
-            to_file.write(locked, current_task, &mut input_buffer)?;
+            write_offset += to_file.ops().write(
+                locked,
+                &to_file,
+                current_task,
+                write_offset,
+                &mut input_buffer,
+            )?;
         }
     }
 
-    to_file.data_sync(current_task)?;
+    to_file.ops().data_sync(&to_file, current_task)?;
 
     Ok(())
 }
