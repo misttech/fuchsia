@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use assembly_cli_args::{
     CreateSystemArgs, CreateSystemOutputs, ProductArgs, ProductAssemblyOutputs,
 };
@@ -41,8 +41,9 @@ pub fn assemble(context: &EnvironmentContext, args: ProductArgs) -> Result<Creat
     // Create a temporary directory for the product assembly outputs.
     // We cannot use the directories in `args`, because those are reserved for
     // the system.
-    let product_tmp = tempfile::TempDir::new().unwrap();
-    let product_tmp = Utf8PathBuf::from_path_buf(product_tmp.path().to_path_buf()).unwrap();
+    let product_tmp = tempfile::TempDir::new().context("Creating temporary directory")?;
+    let product_tmp = Utf8PathBuf::from_path_buf(product_tmp.path().to_path_buf())
+        .map_err(|path| anyhow::anyhow!("Path is not valid UTF-8: {:?}", path))?;
     let product_out = product_tmp.join("out");
     let product_gen = product_tmp.join("gen");
     let product_args = ProductArgs { outdir: product_out, gendir: product_gen, ..args };
