@@ -9,6 +9,7 @@ import logging
 import multiprocessing
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -331,6 +332,13 @@ def main() -> int:
     if args.clean and build_dir.exists():
         logger.info(f"{build_dir}: Cleaning build directory")
         run_command([*ninja_cmd_prefix, "-C", str(build_dir), "-t", "clean"])
+
+    # Copy regenerator.py-created files from the root build dir to the subbuild dir.
+    files = ["icu_build_config.json"]
+    for file in files:
+        source_file = build_dir.parent / file
+        dest_file = build_dir / file
+        shutil.copy2(source_file, dest_file)
 
     args_gn_content = _ARGS_GN_TEMPLATE.format(
         cpu=target_cpu,

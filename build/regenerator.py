@@ -34,6 +34,7 @@ import build_utils
 import compute_content_hash
 import remote_services_utils
 import workspace_utils
+from bazel_action_file_copy_utils import write_file_if_changed
 from fuchsia_idk import generate_repository
 from generate_prebuild_idk import IdkGenerator
 
@@ -261,6 +262,10 @@ def main() -> int:
         Returns:
             0 upon success and a positive integer otherwise.
         """
+
+        # Prepare files that need to be read by both GN and Bazel
+        write_icu_build_config(fuchsia_dir, build_dir)
+
         # Run `gn gen` in fuchsia_dir to regenerate the Ninja build plan.
         prebuilt_gn_subpath = f"prebuilt/third_party/gn/{args.host_tag}/gn"
         prebuilt_ninja_subpath = (
@@ -757,6 +762,38 @@ def main() -> int:
 
     log("Done.")
     return 0
+
+
+def write_icu_build_config(fuchsia_dir: Path, build_dir: Path) -> None:
+    """Read the git commit hashes for the icu repos, and write them to the icu_build_config.json file.
+
+    Args:
+        fuchsia_dir: The Path value of the Fuchsia source directory.
+        build_dir: The Path value of the Fuchsia build directory.
+    """
+
+    revisions: dict[str, str] = {}
+    icu_dirs = [
+        dirname
+        for dirname in (fuchsia_dir / "third_party/icu").iterdir()
+        if dirname.is_dir()
+    ]
+    for icu_dir in icu_dirs:
+        revisions[icu_dir.name] = subprocess.check_output(
+            [
+                "git",
+                "--no-optional-locks",
+                "-C",
+                fuchsia_dir / icu_dir,
+                "rev-parse",
+                "HEAD",
+            ],
+            text=True,
+        ).strip()
+
+    write_file_if_changed(
+        build_dir / "icu_build_config.json", json.dumps(revisions, indent=2)
+    )
 
 
 if __name__ == "__main__":

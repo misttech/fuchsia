@@ -41,7 +41,7 @@ icu_flavors = struct(
 """
 
 def _fuchsia_icu_config_impl(repo_ctx):
-    workspace_root = str(repo_ctx.path(Label("@//:WORKSPACE.bazel")).dirname)
+    ninja_build_dir_path = repo_ctx.path("%s/%s" % (repo_ctx.workspace_root, repo_ctx.attr.ninja_build_dir))
 
     # Ensure this repository is regenerated any time the content hash file
     # changes. Creating a content hash file at `fx gen` time allows
@@ -50,20 +50,9 @@ def _fuchsia_icu_config_impl(repo_ctx):
     if hasattr(repo_ctx.attr, "content_hash_file"):
         repo_ctx.path(Label("@//:" + repo_ctx.attr.content_hash_file))
 
-    # Unlike //build/icu/config.gni which is evaluated 15 times, this repository
-    # rule is invoked only once per Bazel build invocation. See https://fxbug.dev/377674727
-    # it needs to run.
-    ret = repo_ctx.execute(
-        [
-            str(repo_ctx.path(Label("@//build/icu:update-config-json.sh"))),
-            "--fuchsia-dir=%s" % repo_ctx.workspace_root,
-            "--mode=print",
-        ],
-    )
-    if ret.return_code != 0:
-        fail("Cannot read icu config: " + ret.stdout + ret.stderr)
-
-    icu_config = json.decode(ret.stdout)
+    icu_build_config_file = repo_ctx.path("%s/icu_build_config.json" % ninja_build_dir_path)
+    contents = repo_ctx.read(icu_build_config_file)
+    icu_config = json.decode(contents)
 
     constants_bzl = _CONSTANTS_BZL_TEMPLATE.format(
         default_commit = icu_config["default"],
