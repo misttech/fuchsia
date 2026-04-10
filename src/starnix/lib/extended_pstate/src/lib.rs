@@ -64,26 +64,6 @@ impl ExtendedPstateState {
         Self { state: x86_64::State::with_strategy(strategy) }
     }
 
-    #[cfg(target_arch = "riscv64")]
-    #[inline(always)]
-    fn save(&mut self) {
-        self.state.save()
-    }
-
-    #[cfg(target_arch = "riscv64")]
-    #[inline(always)]
-    /// # Safety
-    ///
-    /// This clobbers the current vector register, floating point register, and floating
-    /// point status and control register state including callee-saved registers. This should be
-    /// used in conjunction with save() to switch to an alternate extended processor state.
-    unsafe fn restore(&self) {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            self.state.restore()
-        }
-    }
-
     pub fn reset(&mut self) {
         self.state.reset()
     }
@@ -147,42 +127,7 @@ pub union ExtendedPstatePointer {
     pub extended_aarch32_pstate: *mut ExtendedAarch32PstateState,
 }
 
-// TODO(https://fxbug.dev/491848090) move other ISAs to use pure asm save/restore
-#[cfg(target_arch = "riscv64")]
-#[unsafe(no_mangle)]
-/// Restores the current extended architectural process state.
-///
-/// # Safety
-///    - state_addr must point to a pointer to an instance of ExtendedPstatePointer.
-///    - The active member of the ExtendedPstatePointer union must be extended_pstate.
-pub unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
-    let pointer = state_addr as *const ExtendedPstatePointer;
-    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-    unsafe {
-        let state = (*pointer).extended_pstate;
-        (*state).restore()
-    }
-}
-
-// TODO(https://fxbug.dev/491848090) move other ISAs to use pure asm save/restore
-#[cfg(target_arch = "riscv64")]
-#[unsafe(no_mangle)]
-/// Save the current extended architectural process state.
-///
-/// # Safety
-///    - state_addr must point to pointer to an an exclusively owned instance of ExtendedPstateState.
-///    - The active member of the ExtendedPstatePointer union must be extended_pstate.
-pub unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
-    let pointer = state_addr as *const ExtendedPstatePointer;
-    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-    unsafe {
-        let state = (*pointer).extended_pstate;
-        (*state).save()
-    }
-}
-
 // Provided by assembly targets.
-#[cfg(not(target_arch = "riscv64"))]
 unsafe extern "C" {
     pub fn save_extended_pstate(state_addr: usize);
     pub fn restore_extended_pstate(state_addr: usize);
@@ -191,22 +136,4 @@ unsafe extern "C" {
     pub fn save_extended_aarch32_pstate(state_addr: usize);
     #[cfg(target_arch = "aarch64")]
     pub fn restore_extended_aarch32_pstate(state_addr: usize);
-}
-
-#[cfg(all(test, target_arch = "riscv64"))]
-mod test {
-    use super::*;
-
-    #[::fuchsia::test]
-    fn extended_pstate_state_lifecycle() {
-        let mut state = ExtendedPstateState::default();
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        unsafe {
-            state.save();
-            state.restore();
-        }
-    }
 }

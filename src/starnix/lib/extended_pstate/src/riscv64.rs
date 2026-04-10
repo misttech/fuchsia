@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::arch::asm;
 use static_assertions::const_assert_eq;
 
 const NUM_FP_REGISTERS: usize = 32;
@@ -18,18 +17,6 @@ pub struct RiscvVectorCsrs {
     pub vstart: u64,
     pub vl: u64,
     pub vtype: u64,
-}
-
-// Helpers for V extension, see `riscv64_vector.S`. We cannot use inline asm for these yet because
-// support for V extension in Rust is not stable yet.
-unsafe extern "C" {
-    fn get_riscv64_vlenb() -> usize;
-
-    #[allow(improper_ctypes)]
-    fn save_riscv64_v_registers(v_registers: *mut u128, vcsrs: &mut RiscvVectorCsrs);
-
-    #[allow(improper_ctypes)]
-    fn restore_riscv64_v_registers(v_registers: *const u128, vcsrs: &RiscvVectorCsrs);
 }
 
 #[derive(Clone, Copy, Default)]
@@ -49,106 +36,6 @@ const_assert_eq!(std::mem::align_of::<u128>(), VLEN / 8);
 const_assert_eq!(std::mem::size_of::<u128>(), VLEN / 8);
 
 impl State {
-    #[inline(always)]
-    pub(crate) fn save(&mut self) {
-        unsafe {
-            if get_riscv64_vlenb() != VLEN / 8 {
-                panic!("Only VLEN={} is supported", VLEN);
-            }
-
-            asm!(
-              "fsd  f0,  0 * 8({regs})",
-              "fsd  f1,  1 * 8({regs})",
-              "fsd  f2,  2 * 8({regs})",
-              "fsd  f3,  3 * 8({regs})",
-              "fsd  f4,  4 * 8({regs})",
-              "fsd  f5,  5 * 8({regs})",
-              "fsd  f6,  6 * 8({regs})",
-              "fsd  f7,  7 * 8({regs})",
-              "fsd  f8,  8 * 8({regs})",
-              "fsd  f9,  9 * 8({regs})",
-              "fsd f10, 10 * 8({regs})",
-              "fsd f11, 11 * 8({regs})",
-              "fsd f12, 12 * 8({regs})",
-              "fsd f13, 13 * 8({regs})",
-              "fsd f14, 14 * 8({regs})",
-              "fsd f15, 15 * 8({regs})",
-              "fsd f16, 16 * 8({regs})",
-              "fsd f17, 17 * 8({regs})",
-              "fsd f18, 18 * 8({regs})",
-              "fsd f19, 19 * 8({regs})",
-              "fsd f20, 20 * 8({regs})",
-              "fsd f21, 21 * 8({regs})",
-              "fsd f22, 22 * 8({regs})",
-              "fsd f23, 23 * 8({regs})",
-              "fsd f24, 24 * 8({regs})",
-              "fsd f25, 25 * 8({regs})",
-              "fsd f26, 26 * 8({regs})",
-              "fsd f27, 27 * 8({regs})",
-              "fsd f28, 28 * 8({regs})",
-              "fsd f29, 29 * 8({regs})",
-              "fsd f30, 30 * 8({regs})",
-              "fsd f31, 31 * 8({regs})",
-              regs = in(reg) &self.fp_registers,
-            );
-            asm!(
-              "csrr {fcsr}, fcsr",
-              fcsr = out(reg) self.fcsr,
-            );
-
-            save_riscv64_v_registers(self.v_registers.as_mut_ptr(), &mut self.vcsrs);
-        }
-    }
-
-    #[inline(always)]
-    // Safety: See comment in lib.rs.
-    pub(crate) unsafe fn restore(&self) {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            asm!(
-                "fld  f0,  0 * 8({regs})",
-                "fld  f1,  1 * 8({regs})",
-                "fld  f2,  2 * 8({regs})",
-                "fld  f3,  3 * 8({regs})",
-                "fld  f4,  4 * 8({regs})",
-                "fld  f5,  5 * 8({regs})",
-                "fld  f6,  6 * 8({regs})",
-                "fld  f7,  7 * 8({regs})",
-                "fld  f8,  8 * 8({regs})",
-                "fld  f9,  9 * 8({regs})",
-                "fld f10, 10 * 8({regs})",
-                "fld f11, 11 * 8({regs})",
-                "fld f12, 12 * 8({regs})",
-                "fld f13, 13 * 8({regs})",
-                "fld f14, 14 * 8({regs})",
-                "fld f15, 15 * 8({regs})",
-                "fld f16, 16 * 8({regs})",
-                "fld f17, 17 * 8({regs})",
-                "fld f18, 18 * 8({regs})",
-                "fld f19, 19 * 8({regs})",
-                "fld f20, 20 * 8({regs})",
-                "fld f21, 21 * 8({regs})",
-                "fld f22, 22 * 8({regs})",
-                "fld f23, 23 * 8({regs})",
-                "fld f24, 24 * 8({regs})",
-                "fld f25, 25 * 8({regs})",
-                "fld f26, 26 * 8({regs})",
-                "fld f27, 27 * 8({regs})",
-                "fld f28, 28 * 8({regs})",
-                "fld f29, 29 * 8({regs})",
-                "fld f30, 30 * 8({regs})",
-                "fld f31, 31 * 8({regs})",
-                regs = in(reg) &self.fp_registers,
-            );
-            asm!(
-                "fscsr {fcsr}",
-                fcsr = in(reg) self.fcsr,
-            );
-
-            restore_riscv64_v_registers(self.v_registers.as_ptr(), &self.vcsrs);
-        }
-    }
-
     pub fn reset(&mut self) {
         *self = Default::default();
     }
@@ -157,101 +44,219 @@ impl State {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::*;
+    use core::arch::asm;
 
-    #[::fuchsia::test]
+    #[fuchsia::test]
     fn save_restore_registers() {
-        use core::arch::asm;
+        let mut state = crate::ExtendedPstateState::default();
+        let mut pstate_ptr_struct = crate::ExtendedPstatePointer { extended_pstate: &mut state };
+        let pstate_ptr = &mut pstate_ptr_struct as *mut crate::ExtendedPstatePointer;
 
-        let mut state = State::default();
+        let mut restored_state = State::default();
+        let buffer_ptr = &mut restored_state as *mut State as *mut u8;
 
-        let f0 = 6.41352134f64;
-        let f10 = 10.5134f64;
-        let f31 = -153.5754f64;
+        let base_sentinel_f: u64 = 0x01234567_89ABCDEF;
+        let mut sentinels_f = [0u64; NUM_FP_REGISTERS];
+        for i in 0..NUM_FP_REGISTERS {
+            sentinels_f[i] = base_sentinel_f + i as u64;
+        }
 
-        // Set rounding mode to 0o111.
-        let fcsr: u32 = 0x000000e0;
+        let base_sentinel_v: u128 = 0x01234567_89ABCDEF_FEDCBA98_76543210_u128;
+        let mut sentinels_v = [0u128; NUM_V_REGISTERS];
+        for i in 0..NUM_V_REGISTERS {
+            sentinels_v[i] = base_sentinel_v + i as u128;
+        }
 
-        // Set custom state by hand.
+        // SAFETY: all memory accesses are to mutable variables on the stack and all clobbers are
+        // specified.
         unsafe {
-            asm!("fmv.d.x f0, {f0}", f0 = in(reg) f0);
-            asm!("fmv.d.x f10, {f10}", f10 = in(reg) f10);
-            asm!("fmv.d.x f31, {f31}", f31 = in(reg) f31);
-            asm!("fscsr {fcsr}", fcsr = in(reg) fcsr);
+            asm!(
+                // 1. Load sentinels into F registers
+                "fld f0, 0({sentinels_f})",
+                "fld f1, 8({sentinels_f})",
+                "fld f2, 16({sentinels_f})",
+                "fld f3, 24({sentinels_f})",
+                "fld f4, 32({sentinels_f})",
+                "fld f5, 40({sentinels_f})",
+                "fld f6, 48({sentinels_f})",
+                "fld f7, 56({sentinels_f})",
+                "fld f8, 64({sentinels_f})",
+                "fld f9, 72({sentinels_f})",
+                "fld f10, 80({sentinels_f})",
+                "fld f11, 88({sentinels_f})",
+                "fld f12, 96({sentinels_f})",
+                "fld f13, 104({sentinels_f})",
+                "fld f14, 112({sentinels_f})",
+                "fld f15, 120({sentinels_f})",
+                "fld f16, 128({sentinels_f})",
+                "fld f17, 136({sentinels_f})",
+                "fld f18, 144({sentinels_f})",
+                "fld f19, 152({sentinels_f})",
+                "fld f20, 160({sentinels_f})",
+                "fld f21, 168({sentinels_f})",
+                "fld f22, 176({sentinels_f})",
+                "fld f23, 184({sentinels_f})",
+                "fld f24, 192({sentinels_f})",
+                "fld f25, 200({sentinels_f})",
+                "fld f26, 208({sentinels_f})",
+                "fld f27, 216({sentinels_f})",
+                "fld f28, 224({sentinels_f})",
+                "fld f29, 232({sentinels_f})",
+                "fld f30, 240({sentinels_f})",
+                "fld f31, 248({sentinels_f})",
+
+                // 2. Load sentinels into V registers
+                "vl8r.v v0, ({sentinels_v})",
+                "addi t2, {sentinels_v}, 128",
+                "vl8r.v v8, (t2)",
+                "addi t2, t2, 128",
+                "vl8r.v v16, (t2)",
+                "addi t2, t2, 128",
+                "vl8r.v v24, (t2)",
+
+                // 3. Call save routine
+                "mv a0, {pstate_ptr}",
+                "call {save_fn}",
+
+                // 4. Zero registers
+                "fmv.d.x f0, zero",
+                "fmv.d.x f1, zero",
+                "fmv.d.x f2, zero",
+                "fmv.d.x f3, zero",
+                "fmv.d.x f4, zero",
+                "fmv.d.x f5, zero",
+                "fmv.d.x f6, zero",
+                "fmv.d.x f7, zero",
+                "fmv.d.x f8, zero",
+                "fmv.d.x f9, zero",
+                "fmv.d.x f10, zero",
+                "fmv.d.x f11, zero",
+                "fmv.d.x f12, zero",
+                "fmv.d.x f13, zero",
+                "fmv.d.x f14, zero",
+                "fmv.d.x f15, zero",
+                "fmv.d.x f16, zero",
+                "fmv.d.x f17, zero",
+                "fmv.d.x f18, zero",
+                "fmv.d.x f19, zero",
+                "fmv.d.x f20, zero",
+                "fmv.d.x f21, zero",
+                "fmv.d.x f22, zero",
+                "fmv.d.x f23, zero",
+                "fmv.d.x f24, zero",
+                "fmv.d.x f25, zero",
+                "fmv.d.x f26, zero",
+                "fmv.d.x f27, zero",
+                "fmv.d.x f28, zero",
+                "fmv.d.x f29, zero",
+                "fmv.d.x f30, zero",
+                "fmv.d.x f31, zero",
+
+                "vl8r.v v0, ({zero_v})",
+                "addi t2, {zero_v}, 128",
+                "vl8r.v v8, (t2)",
+                "addi t2, t2, 128",
+                "vl8r.v v16, (t2)",
+                "addi t2, t2, 128",
+                "vl8r.v v24, (t2)",
+
+                // 5. Call restore routine
+                "mv a0, {pstate_ptr}",
+                "call {restore_fn}",
+
+                // 6. Save registers to output buffer
+                "fsd f0, 0({buffer_ptr_out})",
+                "fsd f1, 8({buffer_ptr_out})",
+                "fsd f2, 16({buffer_ptr_out})",
+                "fsd f3, 24({buffer_ptr_out})",
+                "fsd f4, 32({buffer_ptr_out})",
+                "fsd f5, 40({buffer_ptr_out})",
+                "fsd f6, 48({buffer_ptr_out})",
+                "fsd f7, 56({buffer_ptr_out})",
+                "fsd f8, 64({buffer_ptr_out})",
+                "fsd f9, 72({buffer_ptr_out})",
+                "fsd f10, 80({buffer_ptr_out})",
+                "fsd f11, 88({buffer_ptr_out})",
+                "fsd f12, 96({buffer_ptr_out})",
+                "fsd f13, 104({buffer_ptr_out})",
+                "fsd f14, 112({buffer_ptr_out})",
+                "fsd f15, 120({buffer_ptr_out})",
+                "fsd f16, 128({buffer_ptr_out})",
+                "fsd f17, 136({buffer_ptr_out})",
+                "fsd f18, 144({buffer_ptr_out})",
+                "fsd f19, 152({buffer_ptr_out})",
+                "fsd f20, 160({buffer_ptr_out})",
+                "fsd f21, 168({buffer_ptr_out})",
+                "fsd f22, 176({buffer_ptr_out})",
+                "fsd f23, 184({buffer_ptr_out})",
+                "fsd f24, 192({buffer_ptr_out})",
+                "fsd f25, 200({buffer_ptr_out})",
+                "fsd f26, 208({buffer_ptr_out})",
+                "fsd f27, 216({buffer_ptr_out})",
+                "fsd f28, 224({buffer_ptr_out})",
+                "fsd f29, 232({buffer_ptr_out})",
+                "fsd f30, 240({buffer_ptr_out})",
+                "fsd f31, 248({buffer_ptr_out})",
+
+                "addi t2, {buffer_ptr_out}, 272", // Offset of v_registers in State
+                "vs8r.v v0, (t2)",
+                "addi t2, t2, 128",
+                "vs8r.v v8, (t2)",
+                "addi t2, t2, 128",
+                "vs8r.v v16, (t2)",
+                "addi t2, t2, 128",
+                "vs8r.v v24, (t2)",
+
+                sentinels_f = in(reg) &sentinels_f,
+                sentinels_v = in(reg) &sentinels_v,
+                zero_v = in(reg) &[0u128; NUM_V_REGISTERS],
+                pstate_ptr = in(reg) pstate_ptr,
+                buffer_ptr_out = in(reg) buffer_ptr,
+                save_fn = sym save_extended_pstate,
+                restore_fn = sym restore_extended_pstate,
+                clobber_abi("C"),
+                out("f0") _, out("f1") _, out("f2") _, out("f3") _,
+                out("f4") _, out("f5") _, out("f6") _, out("f7") _,
+                out("f8") _, out("f9") _, out("f10") _, out("f11") _,
+                out("f12") _, out("f13") _, out("f14") _, out("f15") _,
+                out("f16") _, out("f17") _, out("f18") _, out("f19") _,
+                out("f20") _, out("f21") _, out("f22") _, out("f23") _,
+                out("f24") _, out("f25") _, out("f26") _, out("f27") _,
+                out("f28") _, out("f29") _, out("f30") _, out("f31") _,
+            );
         }
 
-        state.save();
-
-        // Clear state manually.
-        unsafe {
-            asm!("fmv.d.x f0, zero");
-            asm!("fmv.d.x f10, zero");
-            asm!("fmv.d.x f31, zero");
-            asm!("fscsr zero");
+        // Assertions
+        let state_val = state.get_riscv64_state();
+        for i in 0..NUM_FP_REGISTERS {
+            assert_eq!(
+                state_val.fp_registers[i], sentinels_f[i],
+                "state.fp_registers[{}] mismatch",
+                i
+            );
+        }
+        for i in 0..NUM_V_REGISTERS {
+            assert_eq!(
+                state_val.v_registers[i], sentinels_v[i],
+                "state.v_registers[{}] mismatch",
+                i
+            );
         }
 
-        // Verify that the state is cleared.
-        {
-            let f0: f64;
-            let f10: f64;
-            let f31: f64;
-            let fcsr: u64;
-            unsafe {
-                asm!("fmv.x.d {f0}, f0", f0 = out(reg) f0);
-                asm!("fmv.x.d {f10}, f10", f10 = out(reg) f10);
-                asm!("fmv.x.d {f31}, f31", f31 = out(reg) f31);
-                asm!("frcsr {fcsr}", fcsr = out(reg) fcsr);
-            }
-
-            assert_eq!(f0, 0.0f64);
-            assert_eq!(f10, 0.0f64);
-            assert_eq!(f31, 0.0f64);
-            assert_eq!(fcsr, 0);
+        for i in 0..NUM_FP_REGISTERS {
+            assert_eq!(
+                restored_state.fp_registers[i], sentinels_f[i],
+                "restored_state.fp_registers[{}] mismatch",
+                i
+            );
         }
-
-        unsafe {
-            state.restore();
+        for i in 0..NUM_V_REGISTERS {
+            assert_eq!(
+                restored_state.v_registers[i], sentinels_v[i],
+                "restored_state.v_registers[{}] mismatch",
+                i
+            );
         }
-
-        // Verify that the state restored to what we expect.
-        {
-            let f0_restored: f64;
-            let f10_restored: f64;
-            let f31_restored: f64;
-            let fcsr_restored: u32;
-            unsafe {
-                asm!("fmv.x.d {f0}, f0", f0 = out(reg) f0_restored);
-                asm!("fmv.x.d {f10}, f10", f10 = out(reg) f10_restored);
-                asm!("fmv.x.d {f31}, f31", f31 = out(reg) f31_restored);
-                asm!("frcsr {fcsr}", fcsr = out(reg) fcsr_restored);
-            }
-            assert_eq!(f0, f0_restored);
-            assert_eq!(f10, f10_restored);
-            assert_eq!(f31, f31_restored);
-            assert_eq!(fcsr, fcsr_restored);
-        }
-    }
-
-    #[::fuchsia::test]
-    fn save_restore_v_registers() {
-        let mut state = State::default();
-
-        // Get default state.
-        state.save();
-
-        for i in 0..state.v_registers.len() {
-            state.v_registers[i] = 0x123456789abcdef << i;
-        }
-
-        // This calls `memset()` which may mutate V registers, so it should be done before the
-        // `restore_riscv64_v_registers()` call below.
-        let mut state2 = State::default();
-
-        unsafe {
-            state.restore();
-        }
-        state2.save();
-
-        assert_eq!(state.v_registers, state2.v_registers);
-        assert_eq!(state.vcsrs, state2.vcsrs);
     }
 }
