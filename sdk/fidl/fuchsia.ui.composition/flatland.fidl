@@ -356,21 +356,32 @@ type PresentArgs = resource table {
     /// If absent, `unsquashable` is false.
     4: unsquashable bool;
 
-    /// Unused.  Originally intended to be a renaming of `acquire_fences`, but was never hooked up.
-    @available(removed=24)
-    5: server_wait_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
-
-    /// Unused.  Originally intended to be a renaming of `release_fences`, but was never hooked up.
-    @available(removed=24)
-    6: server_signal_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
+    /// Flatland will signal all `release_counters` when it is safe to reuse resources which no
+    /// longer appear in the local scene graph at the time of the current `Present` (i.e. resources
+    /// from the previous present). This is similar to `release_fences` but by using counters
+    /// instead of events, counters hold the monotonic timestamp of when resources became safe for
+    /// reuse. The event based `release_fences` can be used simultaneously with `release_counters`
+    /// for resources that don't care about this timestamp.
+    ///
+    /// The default `release_counters` value is the empty vector.
+    @available(added=HEAD)
+    8: release_counters vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
 
     /// Flatland will signal all `present_fences` when the frame corresponding to this `Present`
     /// is reported as displayed by the display hardware.  Additionally, each fence will have the
-    /// timestamp of the corresponding vsync written into it.
+    /// monotonic timestamp of the corresponding vsync written into it.
     ///
     /// The default `present_fences` value is the empty vector.
     @available(added=HEAD)
     7: present_fences vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
+
+    /// Removed.  Originally intended to be a renaming of `acquire_fences`, but was never hooked up.
+    @available(removed=24)
+    5: server_wait_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
+
+    /// Removed.  Originally intended to be a renaming of `release_fences`, but was never hooked up.
+    @available(removed=24)
+    6: server_signal_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
 };
 
 /// A user-defined identifier for future presentation info. A maximum of 8
