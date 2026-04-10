@@ -10,12 +10,14 @@ import (
 	"sync"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 // AnalyzeLicenses loops over every project that was created during this run,
 // and performs a license search on the licenses and regular files included
 // in each project.
 func AnalyzeLicenses() error {
+	defer metrics.AnalyzeDuration.Track()()
 	// Convert the projects map into a list and sort it, to make this function consistent.
 	filteredProjectsMap := GetAllFilteredProjects()
 	filteredProjectsList := make([]*Project, 0, len(filteredProjectsMap))
@@ -26,7 +28,7 @@ func AnalyzeLicenses() error {
 
 	var wg sync.WaitGroup
 	for _, p := range filteredProjectsList {
-		plusVal(NumFilteredProjects, p.Root)
+		metrics.ProjectsProcessed.Inc("analyzed")
 
 		// Analyze the license files in each project.
 		sort.Sort(file.Order(p.LicenseFiles))

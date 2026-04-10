@@ -6,12 +6,12 @@ package project
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"path/filepath"
 	"sort"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/util"
 )
 
@@ -98,7 +98,7 @@ func processGenOutput(gen *util.Gen, fileMap map[string]*Project) (*Project, err
 		for _, possibleProjectName := range t.CleanNames {
 			if project, ok = fileMap[possibleProjectName]; ok {
 				if _, ok := GetFilteredProject(project.Root); !ok {
-					plusVal(FilteredProjectReasons, fmt.Sprintf("Adding %s because of %s\n", project.Root, possibleProjectName))
+					metrics.ProjectsProcessed.Inc("filtered")
 				}
 
 				// Project 'project' represents GN target 't'.
@@ -121,9 +121,7 @@ func processGenOutput(gen *util.Gen, fileMap map[string]*Project) (*Project, err
 			if child, ok := fileMap[d]; ok && child.Root != project.Root {
 				project.Children[child.Root] = child
 				if _, ok := GetFilteredProject(child.Root); !ok {
-					plusVal(
-						FilteredProjectReasons,
-						fmt.Sprintf("Adding %s because of %s\n", child.Root, d))
+					metrics.ProjectsProcessed.Inc("filtered")
 				}
 				AddFilteredProject(child)
 			}

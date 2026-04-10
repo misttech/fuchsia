@@ -6,13 +6,13 @@ package project
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"slices"
 	"sync"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
 
@@ -117,10 +117,10 @@ func GetDedupedLicenseData() [][]*file.FileData {
 
 func Initialize(c *ProjectConfig) error {
 	// Save the config file to the out directory (if defined).
-	if b, err := json.MarshalIndent(c, "", "  "); err != nil {
+	if b, err := json.MarshalIndent(Config, "", "  "); err != nil {
 		return err
 	} else {
-		plusFile("_config.json", b)
+		metrics.AddArtifact("project/_config.json", b)
 	}
 
 	Config = c
@@ -160,7 +160,7 @@ func initializeCustomReadmes() error {
 				if info.Name() == "README.fuchsia" ||
 					info.Name() == "README.chromium" ||
 					info.Name() == "README.crashpad" {
-					plusVal(NumInitCustomProjects, currentPath)
+					metrics.ProjectsProcessed.Inc("custom_init")
 					projectRoot := filepath.Dir(currentPath)
 					projectRoot, err = filepath.Rel(readmePath, projectRoot)
 					if err != nil {
@@ -170,15 +170,13 @@ func initializeCustomReadmes() error {
 					r, err := readme.NewReadmeFromFileCustomLocation(projectRoot, currentPath)
 					if err != nil {
 						// Don't error out with these custom README.fuchsia files, so we don't break rollers.
-						msg := fmt.Sprintf("Found issue with custom README.fuchsia file: %v: %v\n", currentPath, err)
-						plusVal(ReadmeFileInitError, msg)
+						metrics.ProjectsProcessed.Inc("readme_error")
 
 						return nil
 					}
 
 					if _, err := NewProject(r, projectRoot); err != nil {
-						msg := fmt.Sprintf("Found issue with NON-custom README.fuchsia file: %v: %v\n", currentPath, err)
-						plusVal(ReadmeFileInitError, msg)
+						metrics.ProjectsProcessed.Inc("readme_error")
 						return nil
 					}
 				}

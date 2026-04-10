@@ -36,12 +36,6 @@ func SaveResults(cmdConfig any, cmdMetrics MetricsInterface) (string, error) {
 	}
 	b.WriteString(s)
 
-	s, err = savePackageInfo("project", project.Config, project.Metrics)
-	if err != nil {
-		return "", err
-	}
-	b.WriteString(s)
-
 	s, err = savePackageInfo("result", Config, Metrics)
 	if err != nil {
 		return "", err

@@ -12,6 +12,7 @@ import (
 
 	spdx "github.com/spdx/tools-golang/spdx/v2_2"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
 
@@ -66,7 +67,7 @@ func NewProject(r *readme.Readme, projectRootPath string) (*Project, error) {
 	// See if we've already processed this project.
 	// If so, return the previously created instance.
 	if p, ok := GetProject(projectRootPath); ok {
-		plusVal(NumPreviousProjectRetrieved, projectRootPath)
+		metrics.ProjectsProcessed.Inc("cache_hit")
 		return p, nil
 	}
 
@@ -106,7 +107,7 @@ func NewProject(r *readme.Readme, projectRootPath string) (*Project, error) {
 	}
 
 	AddProject(p)
-	plusVal(NumProjects, p.Root)
+	metrics.ProjectsProcessed.Inc("discovered")
 
 	return p, nil
 }

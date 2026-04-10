@@ -116,4 +116,26 @@ var (
 		"Number of symlinks processed",
 		"status",
 	)
+
+	ProjectsProcessed = RegisterCounter(
+		"projects_processed",
+		"Number of projects processed",
+		"status", // status: "discovered", "filtered", "skipped", "custom_init", "readme_error", "cache_hit"
+	)
+
+	MissingMetadata = RegisterCounter(
+		"missing_metadata",
+		"Number of projects missing required fields",
+		"field", // field: "name", "license", "url"
+	)
+
+	FilterDuration = RegisterTimer(
+		"filter_duration",
+		"Time spent executing GN and filtering the build graph",
+	)
+
+	AnalyzeDuration = RegisterTimer(
+		"analyze_duration",
+		"Total time spent spinning up goroutines to analyze all filtered projects",
+	)
 )
