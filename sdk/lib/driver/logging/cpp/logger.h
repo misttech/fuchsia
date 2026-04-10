@@ -33,7 +33,7 @@
 
 #include <optional>
 
-#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
+#if __cplusplus >= 202002L
 #include <format>
 #include <source_location>
 
@@ -45,7 +45,7 @@
 
 #define FDF_LOG(severity, msg...) FDF_LOGL(severity, *fdf::Logger::GlobalInstance(), msg)
 
-#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
+#if __cplusplus >= 202002L
 
 #define FDF_ASSERT(x)                                                     \
   do {                                                                    \
@@ -158,7 +158,7 @@ class Logger final {
   void logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, const char* file, int line,
              const char* msg, va_list args);
 
-#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
+#if __cplusplus >= 202002L
   struct SeverityAndSourceLocation {
     FuchsiaLogSeverity severity;
     std::source_location loc;
@@ -266,7 +266,7 @@ class Logger final {
   std::atomic<uint32_t> dropped_logs_ = 0;
 };
 
-#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
+#if __cplusplus >= 202002L
 // Use template type deduction to allow us to get source location while using variadic templates.
 template <typename... Args>
 struct trace {

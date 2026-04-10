@@ -410,7 +410,7 @@ void Logger::logvf(FuchsiaLogSeverity severity, cpp20::span<std::string> tags, c
 }
 #endif  // !HOST_LOGGING
 
-#if (FUCHSIA_API_LEVEL_AT_LEAST(HEAD) || HOST_LOGGING) && __cplusplus >= 202002L
+#if __cplusplus >= 202002L
 namespace {
 template <typename T, std::size_t N>
 class array_output_iterator {
