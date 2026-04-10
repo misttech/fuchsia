@@ -66,6 +66,9 @@ if (current_toolchain == default_toolchain) {
           build_dir = "."
         },
         {
+          path = _source_root + "prebuilt/.build-id"
+        },
+        {
           path =
               _source_root + "prebuilt/third_party/clang/*/lib/debug/.build-id"
         },
