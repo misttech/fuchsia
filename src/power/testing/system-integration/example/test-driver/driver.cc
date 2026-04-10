@@ -17,26 +17,26 @@ class Driver final : public fdf::DriverBase {
   zx::result<> Start() override {
     auto broker = incoming()->Connect<fuchsia_power_broker::Topology>();
     if (broker.is_error()) {
-      FDF_LOG(INFO, "Failed to connect to broker");
+      fdf::info("Failed to connect to broker");
     }
 
     auto sag = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
     if (sag.is_error()) {
-      FDF_LOG(INFO, "Failed to connect to sag");
+      fdf::info("Failed to connect to sag");
     }
 
     // Use the GetPowerElements call to see if we are successfully connected to the test realm's.
     fidl::Result power_elements = fidl::Call(*sag)->GetPowerElements();
     if (power_elements.is_error()) {
-      FDF_LOG(INFO, "Failed to GetPowerElements from SAG: %s",
-              power_elements.error_value().FormatDescription().c_str());
+      fdf::info("Failed to GetPowerElements from SAG: {}",
+                power_elements.error_value().FormatDescription());
     } else {
-      FDF_LOG(INFO, "Successfully did GetPowerElements.");
+      fdf::info("Successfully did GetPowerElements.");
     }
 
     auto cpu_element = incoming()->Connect<fuchsia_power_system::CpuElementManager>();
     if (cpu_element.is_error()) {
-      FDF_LOG(INFO, "Failed to connect to cpu element manager");
+      fdf::info("Failed to connect to cpu element manager");
     }
 
     return zx::ok();
