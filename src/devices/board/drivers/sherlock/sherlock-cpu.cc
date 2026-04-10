@@ -71,9 +71,9 @@ zx_status_t Sherlock::CpuInit() {
   auto aml_cpu_legacy_thermal_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                       bind_fuchsia_thermal::BIND_PROTOCOL_DEVICE),
-              fdf::MakeAcceptBindRule2(
+              fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                      bind_fuchsia_thermal::BIND_PROTOCOL_DEVICE),
+              fdf::MakeAcceptBindRule(
                   bind_fuchsia::PLATFORM_DEV_DID,
                   bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_PLL),
           },

@@ -144,9 +144,9 @@ zx::result<> PwmVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
   auto pwm_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_pwm::SERVICE,
-                                       bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PWM_ID, id),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
+                                      bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, id),
           },
       .properties =
           {

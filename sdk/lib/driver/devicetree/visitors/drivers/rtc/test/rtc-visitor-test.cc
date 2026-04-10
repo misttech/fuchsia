@@ -43,8 +43,8 @@ TEST(RtcVisitorTester, TestReferences) {
   // Parent 1 - RTC
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_hrtimer::SERVICE,
-                                   bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_hrtimer::SERVICE,
+                                  bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
       }},
       (*parents)[1].bind_rules(), false));
 

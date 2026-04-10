@@ -23,8 +23,6 @@ class SpiBusVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<Sp
  public:
   explicit SpiBusVisitorTester(std::string_view dtb_path)
       : fdf_devicetree::testing::VisitorTestHelper<SpiBusVisitor>(dtb_path, "SpiBusVisitorTest") {}
-
-
 };
 
 TEST(SpiBusVisitorTest, TestSpiChannels) {
@@ -87,10 +85,10 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
       (*child0_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
-                                   bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
+                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
       (*child0_spec.parents2())[1].bind_rules(), false));
 
@@ -110,10 +108,10 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
       (*child1_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
-                                   bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 1u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
+                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 1u),
       }},
       (*child1_spec.parents2())[1].bind_rules(), false));
 
@@ -133,10 +131,10 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
       (*child2_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
-                                   bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 2u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
+                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 2u),
       }},
       (*child2_spec.parents2())[1].bind_rules(), false));
 
@@ -149,10 +147,10 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
       (*child2_spec.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
-                                   bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::SPI_CHIP_SELECT, 3u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
+                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 3u),
       }},
       (*child2_spec.parents2())[2].bind_rules(), false));
 }

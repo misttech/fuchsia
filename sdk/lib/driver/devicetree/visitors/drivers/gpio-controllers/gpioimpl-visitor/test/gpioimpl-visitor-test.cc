@@ -207,10 +207,10 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
         fdf::MakeProperty2(bind_fuchsia_gpio::NAME, std::string(PIN1_NAME))}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                                 bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_CONTROLLER, gpioA_id),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN1))}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN1))}},
       (*mgr_request_audio.parents2())[1].bind_rules(), false));
 
   // 3rd parent is GPIO PIN2.
@@ -222,10 +222,10 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
         fdf::MakeProperty2(bind_fuchsia_gpio::NAME, std::string(PIN2_NAME))}},
       (*mgr_request_audio.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                                 bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_CONTROLLER, gpioA_id),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN2))}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(PIN2))}},
       (*mgr_request_audio.parents2())[2].bind_rules(), false));
 
   // 4th parent is GPIO INIT.
@@ -234,8 +234,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
         fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, static_cast<uint32_t>(0))}},
       (*mgr_request_audio.parents2())[3].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_CONTROLLER, gpioA_id)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id)}},
       (*mgr_request_audio.parents2())[3].bind_rules(), false));
 
   ASSERT_EQ(1lu, gpio_tester->GetCompositeNodeSpecs("video").size());
@@ -250,8 +250,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
         fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, static_cast<uint32_t>(0))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_CONTROLLER, gpioA_id)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioA_id)}},
       (*mgr_request_video.parents2())[1].bind_rules(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -259,8 +259,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
         fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, static_cast<uint32_t>(1))}},
       (*mgr_request_video.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_CONTROLLER, gpioB_id)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, gpioB_id)}},
       (*mgr_request_video.parents2())[2].bind_rules(), false));
 }
 

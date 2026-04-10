@@ -256,7 +256,7 @@ zx_status_t Sherlock::CameraInit() {
   }
 
   auto imx227_sensor_mipicsi_spec = fuchsia_driver_framework::ParentSpec2{{
-      .bind_rules = std::vector{fdf::MakeAcceptBindRule2(
+      .bind_rules = std::vector{fdf::MakeAcceptBindRule(
           bind_fuchsia::PROTOCOL, bind_fuchsia_camera::BIND_PROTOCOL_MIPICSI)},
       .properties = {fdf::MakeProperty2(bind_fuchsia::PROTOCOL,
                                         bind_fuchsia_camera::BIND_PROTOCOL_MIPICSI)},
@@ -265,12 +265,12 @@ zx_status_t Sherlock::CameraInit() {
   auto imx227_sensor_i2c_spec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                                       bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID,
-                                       bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS,
-                                       bind_fuchsia_i2c::BIND_I2C_ADDRESS_SHERLOCK),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                                      bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID,
+                                      bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
+              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                                      bind_fuchsia_i2c::BIND_I2C_ADDRESS_SHERLOCK),
           },
       .properties =
           {
@@ -282,10 +282,10 @@ zx_status_t Sherlock::CameraInit() {
   auto imx227_sensor_gpio_reset_spec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                                       bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_0),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                                      bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                                      bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_0),
           },
       .properties =
           {
@@ -299,10 +299,10 @@ zx_status_t Sherlock::CameraInit() {
   auto imx227_sensor_gpio_vana_spec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                                       bind_fuchsia_amlogic_platform_t931::GPIOA_PIN_ID_PIN_6),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                                      bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                                      bind_fuchsia_amlogic_platform_t931::GPIOA_PIN_ID_PIN_6),
           },
       .properties =
           {
@@ -316,10 +316,10 @@ zx_status_t Sherlock::CameraInit() {
   auto imx227_sensor_gpio_vdig_spec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                                       bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_12),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                                      bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                                      bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_12),
           },
       .properties =
           {
@@ -333,9 +333,9 @@ zx_status_t Sherlock::CameraInit() {
   auto imx227_sensor_clock_sensor_spec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(
                   bind_fuchsia::CLOCK_ID,
                   bind_fuchsia_amlogic_platform_meson::G12B_CLK_ID_CLK_CAM_INCK_24M),
           },
@@ -351,8 +351,8 @@ zx_status_t Sherlock::CameraInit() {
   auto imx227_sensor_gpio_init_spec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP,
-                                       bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+              fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
+                                      bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
           },
       .properties =
           {
@@ -388,8 +388,8 @@ zx_status_t Sherlock::CameraInit() {
   }
 
   auto bind_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                               bind_fuchsia_camera::BIND_PROTOCOL_CAMERA_SENSOR_2),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                              bind_fuchsia_camera::BIND_PROTOCOL_CAMERA_SENSOR_2),
   };
 
   auto properties = std::vector{
@@ -423,8 +423,8 @@ zx_status_t Sherlock::CameraInit() {
   auto ge2d_sensor_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                       bind_fuchsia_camera::BIND_PROTOCOL_CAMERA_SENSOR_2),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                      bind_fuchsia_camera::BIND_PROTOCOL_CAMERA_SENSOR_2),
           },
       .properties =
           {
@@ -436,9 +436,8 @@ zx_status_t Sherlock::CameraInit() {
   auto ge2d_canvas_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(
-                  bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                  bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                                      bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
           },
       .properties =
           {
@@ -468,8 +467,8 @@ zx_status_t Sherlock::CameraInit() {
   auto isp_sensor_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                       bind_fuchsia_camera::BIND_PROTOCOL_CAMERA_SENSOR_2),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                      bind_fuchsia_camera::BIND_PROTOCOL_CAMERA_SENSOR_2),
           },
       .properties =
           {
@@ -481,10 +480,10 @@ zx_status_t Sherlock::CameraInit() {
   auto isp_reset_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_registers::SERVICE,
-                                       bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_register::NAME,
-                                       bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
+                                      bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
+                                      bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
           },
       .properties =
           {

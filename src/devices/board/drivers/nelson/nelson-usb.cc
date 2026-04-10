@@ -174,10 +174,10 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   }};
 
   const std::vector<fdf::BindRule2> kResetRegisterRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_registers::SERVICE,
-                               bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia_register::NAME,
-                               bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
+                              bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
+                              bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
   };
 
   const std::vector<fdf::NodeProperty2> kResetRegisterProperties = std::vector{
@@ -223,14 +223,14 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   }();
 
   const std::vector<fdf::BindRule2> kDwc2PhyRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                               bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
+                              bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
   };
 
   const std::vector<fdf::NodeProperty2> kDwc2PhyProperties = std::vector{
@@ -265,14 +265,14 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 zx_status_t AddXhciComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                              fidl::AnyArena& fidl_arena, fdf::Arena& arena) {
   const std::vector<fuchsia_driver_framework::BindRule2> kXhciCompositeRules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                               bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                               bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
+                              bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kXhciCompositeProperties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,

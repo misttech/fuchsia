@@ -23,11 +23,11 @@ namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 const std::vector kI2cRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                             bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS,
-                             bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                            bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                            bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kI2cProperties = std::vector{
@@ -38,10 +38,10 @@ const std::vector kI2cProperties = std::vector{
 };
 
 const std::vector kInterruptRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                             bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                             bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_1),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                            bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_1),
 };
 
 const std::vector kInterruptProperties = std::vector{
@@ -50,10 +50,10 @@ const std::vector kInterruptProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_TOUCH_INTERRUPT)};
 
 const std::vector kResetRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                             bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                             bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_9),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                            bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_9),
 };
 
 const std::vector kResetProperties = std::vector{
@@ -63,7 +63,7 @@ const std::vector kResetProperties = std::vector{
 };
 
 const std::vector kGpioInitRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
 const std::vector kGpioInitProperties = std::vector{

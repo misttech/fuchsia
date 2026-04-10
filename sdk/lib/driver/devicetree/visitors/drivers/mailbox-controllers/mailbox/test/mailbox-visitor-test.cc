@@ -42,7 +42,6 @@ class MailboxVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<M
   explicit MailboxVisitorTester(std::string_view dtb_path)
       : fdf_devicetree::testing::VisitorTestHelper<MailboxVisitor>(dtb_path,
                                                                    "MailboxBusVisitorTest") {}
-
 };
 
 TEST(MailboxVisitorTest, TwoControllers) {
@@ -126,10 +125,10 @@ TEST(MailboxVisitorTest, TwoControllers) {
   // The 0th composite parent has the `compatible` string and is added by the default visitor.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_mailbox::SERVICE,
-                                   bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_mailbox::SERVICE,
+                                  bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
       },
       (*client_0.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -144,10 +143,10 @@ TEST(MailboxVisitorTest, TwoControllers) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_mailbox::SERVICE,
-                                   bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x5678u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_mailbox::SERVICE,
+                                  bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_0_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, 0x5678u),
       },
       (*client_0.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -162,10 +161,10 @@ TEST(MailboxVisitorTest, TwoControllers) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_mailbox::SERVICE,
-                                   bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x9abcu),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_mailbox::SERVICE,
+                                  bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, 0x9abcu),
       },
       (*client_0.parents2())[3].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -188,10 +187,10 @@ TEST(MailboxVisitorTest, TwoControllers) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_mailbox::SERVICE,
-                                   bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_mailbox::SERVICE,
+                                  bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID, controller_1_id),
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, 0x1234u),
       },
       (*client_1.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(

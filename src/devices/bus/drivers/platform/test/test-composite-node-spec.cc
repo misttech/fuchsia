@@ -29,12 +29,12 @@ zx_status_t TestBoard::CompositeNodeSpecInit() {
   fdf::Arena arena('DVGP');
 
   auto bind_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                               bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                               bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                               bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_PARENT_SPEC),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_PARENT_SPEC),
   };
 
   auto properties = std::vector{

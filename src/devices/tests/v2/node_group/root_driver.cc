@@ -30,7 +30,7 @@ const std::string_view kOptionalName = "optional-node";
 // Group 1 is created before creating both the left and right nodes.
 fdf::CompositeNodeSpec NodeGroupOne() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
   };
 
   auto properties_left = std::vector{
@@ -38,7 +38,7 @@ fdf::CompositeNodeSpec NodeGroupOne() {
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
   };
 
   auto properties_right = std::vector{
@@ -62,7 +62,7 @@ fdf::CompositeNodeSpec NodeGroupOne() {
 // Group 2 is created after creating the right node, but before creating the left node.
 fdf::CompositeNodeSpec NodeGroupTwo() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_LEFT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_LEFT),
   };
 
   auto properties_left = std::vector{
@@ -70,7 +70,7 @@ fdf::CompositeNodeSpec NodeGroupTwo() {
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_RIGHT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_TWO_RIGHT),
   };
 
   auto properties_right = std::vector{
@@ -94,7 +94,7 @@ fdf::CompositeNodeSpec NodeGroupTwo() {
 // Group 3 is created after creating both the left and right nodes.
 fdf::CompositeNodeSpec NodeGroupThree() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_THREE_LEFT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_THREE_LEFT),
   };
 
   auto properties_left = std::vector{
@@ -102,8 +102,7 @@ fdf::CompositeNodeSpec NodeGroupThree() {
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                               bindlib::TEST_BIND_PROPERTY_THREE_RIGHT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_THREE_RIGHT),
   };
 
   auto properties_right = std::vector{
@@ -127,7 +126,7 @@ fdf::CompositeNodeSpec NodeGroupThree() {
 // Group 4 is created before creating the left, optional, and right nodes.
 fdf::CompositeNodeSpec NodeGroupFour() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_LEFT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_LEFT),
   };
 
   auto properties_left = std::vector{
@@ -135,7 +134,7 @@ fdf::CompositeNodeSpec NodeGroupFour() {
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_RIGHT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_FOUR_RIGHT),
   };
 
   auto properties_right = std::vector{
@@ -143,8 +142,8 @@ fdf::CompositeNodeSpec NodeGroupFour() {
   };
 
   auto bind_rules_optional = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                               bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                              bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
   };
 
   auto properties_optional = std::vector{

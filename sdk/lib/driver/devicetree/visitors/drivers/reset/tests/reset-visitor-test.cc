@@ -77,10 +77,10 @@ TEST(ResetVisitorTest, TestResetProperty) {
   // Parent 1 - Reset with only one reset-cell, RESET_ID defaults to 0
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_reset::SERVICE,
-                                   bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_reset::CONTROLLER_ID, reset_controller1_id.value()),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_reset::RESET_ID, static_cast<unsigned int>(0)),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_reset::SERVICE,
+                                  bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_reset::CONTROLLER_ID, reset_controller1_id.value()),
+          fdf::MakeAcceptBindRule(bind_fuchsia_reset::RESET_ID, static_cast<unsigned int>(0)),
       }},
       (*parents)[1].bind_rules(), false));
 
@@ -95,11 +95,11 @@ TEST(ResetVisitorTest, TestResetProperty) {
   // Parent 2 - Reset with multiple reset-cells
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_reset::SERVICE,
-                                   bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_reset::CONTROLLER_ID, reset_controller2_id.value()),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_reset::RESET_ID,
-                                   static_cast<unsigned int>(RESET_ID_1)),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_reset::SERVICE,
+                                  bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_reset::CONTROLLER_ID, reset_controller2_id.value()),
+          fdf::MakeAcceptBindRule(bind_fuchsia_reset::RESET_ID,
+                                  static_cast<unsigned int>(RESET_ID_1)),
       }},
       (*parents)[2].bind_rules(), false));
 
@@ -114,11 +114,11 @@ TEST(ResetVisitorTest, TestResetProperty) {
   // Parent 3 - Reset with multiple reset-cells
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_reset::SERVICE,
-                                   bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_reset::CONTROLLER_ID, reset_controller2_id.value()),
-          fdf::MakeAcceptBindRule2(bind_fuchsia_reset::RESET_ID,
-                                   static_cast<unsigned int>(RESET_ID_2)),
+          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_reset::SERVICE,
+                                  bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia_reset::CONTROLLER_ID, reset_controller2_id.value()),
+          fdf::MakeAcceptBindRule(bind_fuchsia_reset::RESET_ID,
+                                  static_cast<unsigned int>(RESET_ID_2)),
       }},
       (*parents)[3].bind_rules(), false));
 

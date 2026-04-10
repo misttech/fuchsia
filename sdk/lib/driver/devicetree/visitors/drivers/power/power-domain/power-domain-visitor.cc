@@ -67,9 +67,9 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
   auto power_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_power::SERVICE,
-                                       bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_power::POWER_DOMAIN, domain_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
+                                      bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id),
           },
       .properties =
           {

@@ -365,12 +365,12 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
   composite_node_spec.parents2()->push_back(fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                       bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID, vid),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID, pid),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID, did),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                      bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID, vid),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID, pid),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID, did),
+              fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id),
           },
       .properties =
           {

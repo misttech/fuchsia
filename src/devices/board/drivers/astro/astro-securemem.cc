@@ -49,8 +49,8 @@ zx_status_t Astro::SecureMemInit() {
       {
           {
               {
-                  fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_tee::SERVICE,
-                                           bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+                  fdf::MakeAcceptBindRule(bind_fuchsia_hardware_tee::SERVICE,
+                                          bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
               },
               {
                   fdf::MakeProperty2(bind_fuchsia_hardware_tee::SERVICE,

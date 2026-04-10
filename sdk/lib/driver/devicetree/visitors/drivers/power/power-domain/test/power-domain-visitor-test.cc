@@ -54,10 +54,10 @@ TEST(PowerDomainVisitorTest, TestMetadataAndBindProperty) {
                            static_cast<uint32_t>(TEST_DOMAIN_ID))}},
       cpufreq_node_spec[0].parents2()->at(1).properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_power::SERVICE,
-                                 bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia_power::POWER_DOMAIN,
-                                 static_cast<uint32_t>(TEST_DOMAIN_ID))}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
+                                bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN,
+                                static_cast<uint32_t>(TEST_DOMAIN_ID))}},
       cpufreq_node_spec[0].parents2()->at(1).bind_rules(), false));
 
   // Test the power controller metadata

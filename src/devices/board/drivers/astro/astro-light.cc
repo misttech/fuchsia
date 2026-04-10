@@ -67,12 +67,11 @@ zx_status_t Astro::LightInit() {
   });
 
   const auto kI2cBindRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                               bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID,
-                               bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_A0_0),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS,
-                               bind_fuchsia_i2c::BIND_I2C_ADDRESS_AMBIENTLIGHT),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_A0_0),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                              bind_fuchsia_i2c::BIND_I2C_ADDRESS_AMBIENTLIGHT),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
@@ -83,10 +82,10 @@ zx_status_t Astro::LightInit() {
   };
 
   const auto kGpioLightInterruptRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_s905d2::GPIOAO_PIN_ID_PIN_5),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_s905d2::GPIOAO_PIN_ID_PIN_5),
   };
   const auto kGpioLightInterruptProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
@@ -95,7 +94,7 @@ zx_status_t Astro::LightInit() {
   };
 
   const auto kGpioInitBindRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const auto kGpioInitProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
@@ -173,10 +172,10 @@ zx_status_t Astro::LightInit() {
   gpio_init_steps_.push_back(GpioOutput(GPIO_AMBER_LED, true));
 
   auto amber_led_gpio_bind_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_s905d2::GPIOAO_PIN_ID_PIN_11),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_s905d2::GPIOAO_PIN_ID_PIN_11),
   };
 
   auto amber_led_gpio_properties = std::vector{
@@ -186,10 +185,10 @@ zx_status_t Astro::LightInit() {
   };
 
   auto amber_led_pwm_bind_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_pwm::SERVICE,
-                               bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PWM_ID,
-                               bind_fuchsia_amlogic_platform_s905d2::BIND_PWM_ID_PWM_AO_A),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
+                              bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID,
+                              bind_fuchsia_amlogic_platform_s905d2::BIND_PWM_ID_PWM_AO_A),
   };
 
   auto amber_led_pwm_properties = std::vector{

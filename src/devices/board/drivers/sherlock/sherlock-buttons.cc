@@ -100,17 +100,17 @@ zx_status_t Sherlock::ButtonsInit() {
                    }}}});
 
   const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProps = {
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> kVolUpRules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_4)};
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_4)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolUpProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
@@ -118,10 +118,10 @@ zx_status_t Sherlock::ButtonsInit() {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> kVolDownRules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_5)};
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_5)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolDownProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
@@ -129,10 +129,10 @@ zx_status_t Sherlock::ButtonsInit() {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> kVolBothRules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_13)};
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_13)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolBothProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
@@ -140,10 +140,10 @@ zx_status_t Sherlock::ButtonsInit() {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> kMicPrivacyRules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_t931::GPIOH_PIN_ID_PIN_3)};
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_t931::GPIOH_PIN_ID_PIN_3)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kMicPrivacyProps = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),

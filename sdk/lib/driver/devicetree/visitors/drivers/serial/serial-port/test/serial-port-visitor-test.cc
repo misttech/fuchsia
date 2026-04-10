@@ -89,12 +89,12 @@ TEST(SerialPortVisitorTest, TestMetadataAndBindProperty) {
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule2(bind_fuchsia::SERIAL_CLASS, static_cast<uint32_t>(TEST_CLASS)),
-            fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serial::SERVICE,
-                                     bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERIAL_CLASS, static_cast<uint32_t>(TEST_CLASS)),
+            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_serial::SERVICE,
+                                    bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
             // TODO(https://fxbug.dev/467370573): Temporary workaround for a composite issue.
             // Remove this once the composite issue is resolved.
-            fdf::MakeRejectBindRule2(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),
+            fdf::MakeRejectBindRule(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),
         }},
         (*mgr_request.parents2())[1].bind_rules(), false));
   }

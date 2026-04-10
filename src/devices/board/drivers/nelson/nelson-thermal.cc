@@ -196,9 +196,9 @@ static const aml_thermal_info_t aml_thermal_info = {
 };
 
 const std::vector<fdf::BindRule2> kPwmRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_pwm::SERVICE,
-                             bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::PWM_ID, static_cast<uint32_t>(S905D3_PWM_AO_D)),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
+                            bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(S905D3_PWM_AO_D)),
 };
 
 const std::vector<fdf::NodeProperty2> kPwmProperties = std::vector{
@@ -209,7 +209,7 @@ const std::vector<fdf::NodeProperty2> kPwmProperties = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
 const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
@@ -300,9 +300,9 @@ zx_status_t Nelson::ThermalInit() {
   parents.reserve(parents.size() + kClockFunctionMap.size());
   for (auto& [clock_id, function] : kClockFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                 bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID, clock_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,

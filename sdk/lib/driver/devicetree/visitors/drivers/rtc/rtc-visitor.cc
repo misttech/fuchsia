@@ -49,8 +49,8 @@ zx::result<> RtcVisitor::Visit(fdf_devicetree::Node& node,
 zx::result<> RtcVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                              fdf_devicetree::ReferenceNode& parent) {
   std::vector bind_rules = {{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_hrtimer::SERVICE,
-                               bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_hrtimer::SERVICE,
+                              bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
   }};
 
   std::vector bind_properties = {{

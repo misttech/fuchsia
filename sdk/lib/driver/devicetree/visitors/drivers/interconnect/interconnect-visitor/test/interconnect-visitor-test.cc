@@ -117,9 +117,9 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
           fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(PATH1_NAME))}},
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-        {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::INTERCONNECT_PATH_ID, 1u)}},
+        {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
+                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::INTERCONNECT_PATH_ID, 1u)}},
         (*mgr_request.parents2())[1].bind_rules(), false));
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -128,9 +128,9 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
           fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(PATH2_NAME))}},
         (*mgr_request.parents2())[2].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-        {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::INTERCONNECT_PATH_ID, 2u)}},
+        {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
+                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::INTERCONNECT_PATH_ID, 2u)}},
         (*mgr_request.parents2())[2].bind_rules(), false));
   }
 
@@ -152,9 +152,9 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
           fdf::MakeProperty2(bind_fuchsia_interconnect::PATH_NAME, std::string(PATH3_NAME))}},
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-        {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule2(bind_fuchsia::INTERCONNECT_PATH_ID, uint32_t{3})}},
+        {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
+                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::INTERCONNECT_PATH_ID, uint32_t{3})}},
         (*mgr_request.parents2())[1].bind_rules(), false));
   }
 }

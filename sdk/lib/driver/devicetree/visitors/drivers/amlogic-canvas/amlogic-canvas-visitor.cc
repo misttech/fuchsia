@@ -17,8 +17,8 @@ namespace amlogic_canvas_dt {
 
 zx::result<> AmlogicCanvasVisitor::AddChildNodeSpec(fdf_devicetree::Node& child) {
   std::vector bind_rules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                               bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)};
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                              bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)};
 
   std::vector bind_properties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,

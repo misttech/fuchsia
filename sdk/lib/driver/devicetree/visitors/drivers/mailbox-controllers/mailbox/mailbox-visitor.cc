@@ -96,11 +96,11 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
     fuchsia_driver_framework::ParentSpec2 parent_spec{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_mailbox::SERVICE,
-                                         bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CONTROLLER_ID,
-                                         reference.reference_node().id()),
-                fdf::MakeAcceptBindRule2(bind_fuchsia_mailbox::CHANNEL, *channel),
+                fdf::MakeAcceptBindRule(bind_fuchsia_hardware_mailbox::SERVICE,
+                                        bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID,
+                                        reference.reference_node().id()),
+                fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, *channel),
             },
         .properties =
             {

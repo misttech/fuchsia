@@ -105,9 +105,9 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
         fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                 bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
+                                bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
       (*mgr_request_audio.parents2())[1].bind_rules(), false));
 
   // 3rd parent is ADC CHAN2.
@@ -117,9 +117,9 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
         fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
       (*mgr_request_audio.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                 bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
+                                bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
       (*mgr_request_audio.parents2())[2].bind_rules(), false));
 
   ASSERT_EQ(1lu, adc_tester->GetCompositeNodeSpecs("video").size());
@@ -136,9 +136,9 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
         fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                 bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
+                                bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
       (*mgr_request_video.parents2())[1].bind_rules(), false));
 }
 

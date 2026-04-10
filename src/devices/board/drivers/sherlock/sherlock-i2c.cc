@@ -170,7 +170,7 @@ zx_status_t AddI2cBus(const I2cBus& bus,
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('I2C_');
   const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const std::vector<fdf::NodeProperty2> kGpioInitProps = std::vector{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),

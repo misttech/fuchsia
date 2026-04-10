@@ -41,10 +41,10 @@ const std::vector<fpbus::Mmio> cpu_mmios{
 };
 
 const std::vector<fdf::BindRule2> kPowerRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_power::SERVICE,
-                             bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia_power::POWER_DOMAIN,
-                             bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_BIG),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
+                            bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN,
+                            bind_fuchsia_amlogic_platform::POWER_DOMAIN_ARM_CORE_BIG),
 };
 
 const std::vector<fdf::NodeProperty2> kPowerProperties = std::vector{
@@ -55,7 +55,7 @@ const std::vector<fdf::NodeProperty2> kPowerProperties = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
@@ -131,9 +131,9 @@ zx_status_t Astro::CpuInit() {
 
   for (auto& [clock_id, function] : kClockFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                 bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID, clock_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,

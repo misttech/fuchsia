@@ -85,8 +85,8 @@ zx::result<> UsbPhyVisitor::Visit(fdf_devicetree::Node& node,
 zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                              std::string_view phy_name) {
   std::vector bind_rules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                               bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
+                              bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
   };
   std::vector bind_properties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
@@ -101,16 +101,16 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   } else if (phy_name == "dwc3-phy") {
     did = bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3;
   } else if (!phy_name.empty()) {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(bind_fuchsia_usb_phy::NAME, phy_name));
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia_usb_phy::NAME, phy_name));
     bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia_usb_phy::NAME, phy_name));
   }
 
   if (did) {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule(
         bind_fuchsia::PLATFORM_DEV_VID, bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC));
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule(
         bind_fuchsia::PLATFORM_DEV_PID, bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC));
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID, *did));
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID, *did));
 
     bind_properties.emplace_back(fdf::MakeProperty2(
         bind_fuchsia::PLATFORM_DEV_VID, bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC));

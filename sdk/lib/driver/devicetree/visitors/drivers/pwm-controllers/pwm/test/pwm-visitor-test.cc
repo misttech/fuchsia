@@ -95,9 +95,9 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
     // Bind rules for PIN1
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_pwm::SERVICE,
-                                     bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia::PWM_ID, static_cast<uint32_t>(PIN1)),
+            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
+                                    bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(PIN1)),
         }},
         (*mgr_request.parents2())[1].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -112,9 +112,9 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
     // Bind rules for PIN2
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_pwm::SERVICE,
-                                     bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-            fdf::MakeAcceptBindRule2(bind_fuchsia::PWM_ID, static_cast<uint32_t>(PIN2)),
+            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
+                                    bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(PIN2)),
         }},
         (*mgr_request.parents2())[2].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(

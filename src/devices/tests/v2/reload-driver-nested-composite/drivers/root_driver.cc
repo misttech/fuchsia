@@ -56,8 +56,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_b = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_NODE_B),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_NODE_B),
             },
         .properties =
             {
@@ -69,8 +69,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_e = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_NODE_E),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_NODE_E),
             },
         .properties =
             {
@@ -90,8 +90,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_g = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_NODE_G),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_NODE_G),
             },
         .properties =
             {
@@ -103,8 +103,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_d = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_NODE_D),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_NODE_D),
             },
         .properties =
             {

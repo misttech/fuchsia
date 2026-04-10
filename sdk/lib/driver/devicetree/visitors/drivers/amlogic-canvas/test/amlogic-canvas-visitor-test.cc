@@ -41,8 +41,8 @@ TEST(AmlogicCanvasVisitorTest, TestBindProperty) {
   ASSERT_EQ(2lu, mgr_request.parents2()->size());
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                                 bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                                bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)}},
       (*mgr_request.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{

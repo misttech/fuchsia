@@ -64,8 +64,8 @@ zx_status_t Sherlock::BluetoothInit() {
 
   fuchsia_driver_framework::wire::BindRule2 kPwmBindRules[] = {
       // TODO(https://fxbug.dev/42079489): Replace this with wire type function.
-      fidl::ToWire(arena, fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP,
-                                                   bind_fuchsia_pwm::BIND_INIT_STEP_PWM)),
+      fidl::ToWire(arena, fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
+                                                  bind_fuchsia_pwm::BIND_INIT_STEP_PWM)),
   };
 
   fuchsia_driver_framework::wire::NodeProperty2 kPwmProperties[] = {
@@ -73,8 +73,8 @@ zx_status_t Sherlock::BluetoothInit() {
   };
 
   fuchsia_driver_framework::wire::BindRule2 kGpioBindRules[] = {
-      fidl::ToWire(arena, fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP,
-                                                   bind_fuchsia_gpio::BIND_INIT_STEP_GPIO)),
+      fidl::ToWire(arena, fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
+                                                  bind_fuchsia_gpio::BIND_INIT_STEP_GPIO)),
   };
 
   fuchsia_driver_framework::wire::NodeProperty2 kGpioProperties[] = {

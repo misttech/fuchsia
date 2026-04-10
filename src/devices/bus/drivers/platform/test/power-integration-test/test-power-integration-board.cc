@@ -55,11 +55,11 @@ zx::result<> PowerIntegrationBoard::Start() {
     pdev.power_config() = std::move(config.value().power_elements());
 
     auto bind_rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                 bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                                 bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_POWER_TEST),
-        fdf::MakeAcceptBindRule2(
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                                bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                                bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_POWER_TEST),
+        fdf::MakeAcceptBindRule(
             bind_fuchsia::PLATFORM_DEV_DID,
             bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_FAKE_POWER_CHILD)};
 
@@ -133,11 +133,11 @@ zx::result<> PowerIntegrationBoard::Start() {
     };
 
     auto bind_rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                 bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                                 bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_POWER_TEST),
-        fdf::MakeAcceptBindRule2(
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                                bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                                bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_POWER_TEST),
+        fdf::MakeAcceptBindRule(
             bind_fuchsia::PLATFORM_DEV_DID,
             bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_FAKE_POWER_PARENT)};
 

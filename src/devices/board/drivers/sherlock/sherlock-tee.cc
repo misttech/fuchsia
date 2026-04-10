@@ -72,7 +72,7 @@ static tee_thread_config_t tee_thread_cfg[] = {
          {0xe043cde0, 0x61d0, 0x11e5, {0x9c, 0x26, 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}  // widevine
      }}};
 
-const std::vector<fdf::BindRule2> kRpmbRules = std::vector{fdf::MakeAcceptBindRule2(
+const std::vector<fdf::BindRule2> kRpmbRules = std::vector{fdf::MakeAcceptBindRule(
     bind_fuchsia_hardware_rpmb::SERVICE, bind_fuchsia_hardware_rpmb::SERVICE_ZIRCONTRANSPORT)};
 
 const std::vector<fdf::NodeProperty2> kRpmbProperties = std::vector{fdf::MakeProperty2(

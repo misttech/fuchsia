@@ -341,14 +341,14 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
   }
 
   const std::vector<fuchsia_driver_framework::BindRule2> spi_rules{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
-                               bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                               bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_VID_INFINEON),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                               bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_PID_BGT60TR13C),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                               bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_DID_RADAR_SENSOR),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
+                              bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                              bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_VID_INFINEON),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                              bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_PID_BGT60TR13C),
+      fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                              bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_DID_RADAR_SENSOR),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> spi_properties{
@@ -363,10 +363,10 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> irq_gpio_rules{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_3),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_3),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> irq_gpio_properties{
@@ -376,10 +376,10 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> reset_gpio_rules{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_2),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_2),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> reset_gpio_properties{
@@ -389,10 +389,10 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> cs_gpio_rules{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                               bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_6),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                              bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_6),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> cs_gpio_properties{

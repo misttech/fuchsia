@@ -48,8 +48,8 @@ TEST(EthVisitorTest, TestMetadataAndBindProperty) {
 
   // 1st parent is pdev. Skip that.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_ethernet_board::SERVICE,
-                                 bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT)}},
+      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_ethernet_board::SERVICE,
+                                bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT)}},
       (*mgr_request.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{

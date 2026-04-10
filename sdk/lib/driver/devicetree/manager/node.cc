@@ -206,13 +206,13 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
                                       additional_node_properties.end());
 
     platform_node.bind_rules() = std::vector<fdf::BindRule2>{
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                 bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                                bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                                bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, id_),
     };
     parents_.insert(parents_.begin(), std::move(platform_node));
   } else if (add_board_child) {

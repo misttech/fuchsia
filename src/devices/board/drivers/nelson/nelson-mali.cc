@@ -116,10 +116,10 @@ zx_status_t Nelson::MaliInit() {
     auto aml_gpu_register_reset_node = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_registers::SERVICE,
-                                         bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeAcceptBindRule2(bind_fuchsia_register::NAME,
-                                         bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
+                fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
+                                        bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
+                                        bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },
         .properties =
             {
@@ -132,9 +132,9 @@ zx_status_t Nelson::MaliInit() {
     auto aml_gpu_clock_node = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                         bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-                fdf::MakeAcceptBindRule2(
+                fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                        bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(
                     bind_fuchsia::CLOCK_ID,
                     bind_fuchsia_amlogic_platform_meson::SM1_CLK_ID_CLK_GP0_PLL),
             },
@@ -181,8 +181,8 @@ zx_status_t Nelson::MaliInit() {
     fdf::Arena arena('MALI');
 
     auto aml_gpu_bind_rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpu_mali::SERVICE,
-                                 bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)};
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpu_mali::SERVICE,
+                                bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)};
 
     auto aml_gpu_properties =
         std::vector{fdf::MakeProperty2(bind_fuchsia_hardware_gpu_mali::SERVICE,

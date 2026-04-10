@@ -191,7 +191,9 @@ zx::result<> CreateThermalPllNode(
           .critical_temp_celsius = 101.0f,
           .trip_point_info =
               {
-                  TripPoint(82.5f, 9, 10, 4), TripPoint(85.0f, 8, 9, 4), TripPoint(87.5f, 6, 6, 4),
+                  TripPoint(82.5f, 9, 10, 4),
+                  TripPoint(85.0f, 8, 9, 4),
+                  TripPoint(87.5f, 6, 6, 4),
                   TripPoint(90.0f, 4, 4, 4),
                   TripPoint(-273.15f, 0, 0, 0),  // 0 Kelvin is impossible, marks end of TripPoints
               },
@@ -278,8 +280,8 @@ zx::result<> CreateThermalPllNode(
   parents.push_back(fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP,
-                                       bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+              fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
+                                      bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
           },
       .properties =
           {
@@ -289,9 +291,9 @@ zx::result<> CreateThermalPllNode(
 
   for (auto& [pwm_id, function] : kPwmIdMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_pwm::SERVICE,
-                                 bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PWM_ID, pwm_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
+                                bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, pwm_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
@@ -303,9 +305,9 @@ zx::result<> CreateThermalPllNode(
 
   for (auto& [clock_id, function] : kClockFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                 bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID, clock_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,

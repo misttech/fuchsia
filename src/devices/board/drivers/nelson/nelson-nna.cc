@@ -72,9 +72,9 @@ zx_status_t Nelson::NnaInit() {
   auto aml_nna_register_reset_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_registers::SERVICE,
-                                       bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
+                                      bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(
                   bind_fuchsia_register::NAME,
                   bind_fuchsia_amlogic_platform::NAME_REGISTER_NNA_RESET_LEVEL2),
           },

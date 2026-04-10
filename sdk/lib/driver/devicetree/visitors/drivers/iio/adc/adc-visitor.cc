@@ -74,9 +74,9 @@ zx::result<> AdcVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
   auto adc_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_adc::SERVICE,
-                                       bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_adc::CHANNEL, chan_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
+                                      bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, chan_id),
           },
       .properties =
           {

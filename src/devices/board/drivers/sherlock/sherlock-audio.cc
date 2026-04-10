@@ -58,17 +58,17 @@ zx_status_t AddTas5720Device(fdf::WireSyncClient<fuchsia_hardware_platform_bus::
   };
 
   const auto gpio_init_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const auto gpio_init_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
 
   const auto i2c_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                               bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(SHERLOCK_I2C_A0_0)),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS, i2c_address),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(SHERLOCK_I2C_A0_0)),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, i2c_address),
   };
   const auto i2c_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
@@ -152,14 +152,14 @@ zx_status_t Sherlock::AudioInit() {
   sherlock_tdm_i2s_parents.reserve(6);
 
   const auto gpio_init_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const auto gpio_init_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
 
   const auto clock_init_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
   };
   const auto clock_init_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
@@ -175,9 +175,9 @@ zx_status_t Sherlock::AudioInit() {
 
   // Add a spec for the enable audio GPIO pin.
   auto enable_audio_gpio_rules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                               bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
   };
   auto enable_audio_gpio_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
@@ -192,13 +192,13 @@ zx_status_t Sherlock::AudioInit() {
   // Add a composite for each codec instance.
   for (size_t i = 0; i < 3; i++) {
     auto codec_rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_audio::CODECSERVICE,
-                                 bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                                 bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                                 bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS5720),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(i + 1)),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
+                                bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                                bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
+        fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                                bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS5720),
+        fdf::MakeAcceptBindRule(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(i + 1)),
     };
     auto codec_props = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,

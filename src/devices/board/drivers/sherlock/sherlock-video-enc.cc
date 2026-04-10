@@ -62,8 +62,8 @@ static const std::vector<fpbus::Irq> sherlock_video_enc_irqs{
 };
 
 const std::vector<fdf::BindRule2> kCanvasRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                             bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)};
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                            bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)};
 
 const std::vector<fdf::NodeProperty2> kCanvasProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
@@ -71,9 +71,9 @@ const std::vector<fdf::NodeProperty2> kCanvasProperties = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kClkDosHCodecRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                             bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS_GCLK_HCODEC),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS_GCLK_HCODEC),
 };
 const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
@@ -82,9 +82,9 @@ const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                             bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS),
 };
 const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,

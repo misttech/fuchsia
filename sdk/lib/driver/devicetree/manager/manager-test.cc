@@ -398,7 +398,7 @@ TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
 
     zx::result<> DriverVisit(Node& node, const devicetree::PropertyDecoder& decoder) override {
       visited = true;
-      parent_spec.bind_rules({fdf::MakeAcceptBindRule2(kTestKey, kTestProperty)});
+      parent_spec.bind_rules({fdf::MakeAcceptBindRule(kTestKey, kTestProperty)});
       parent_spec.properties({fdf::MakeProperty2(kTestKey, kTestProperty)});
       node.AddNodeSpec(parent_spec);
       return zx::ok();
@@ -428,14 +428,14 @@ TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
                                   (*mgr_request.parents2())[0].properties(), true));
   EXPECT_TRUE(testing::CheckHasBindRules(
       {
-          fdf::MakeAcceptBindRule2(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
-                                   SAMPLE_DEVICE_COMPATIBILITY),
+          fdf::MakeAcceptBindRule(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
+                                  SAMPLE_DEVICE_COMPATIBILITY),
       },
       (*mgr_request.parents2())[0].bind_rules(), true));
 
   EXPECT_TRUE(testing::CheckHasProperties({{fdf::MakeProperty2(kTestKey, kTestProperty)}},
                                           (*mgr_request.parents2())[1].properties(), false));
-  EXPECT_TRUE(testing::CheckHasBindRules({{fdf::MakeAcceptBindRule2(kTestKey, kTestProperty)}},
+  EXPECT_TRUE(testing::CheckHasBindRules({{fdf::MakeAcceptBindRule(kTestKey, kTestProperty)}},
                                          (*mgr_request.parents2())[1].bind_rules(), false));
 }
 
@@ -450,7 +450,7 @@ TEST_F(ManagerTest, TestPbusCompositeSpec) {
 
     zx::result<> DriverVisit(Node& node, const devicetree::PropertyDecoder& decoder) override {
       visited = true;
-      parent_spec.bind_rules({fdf::MakeAcceptBindRule2(kTestKey, kTestProperty)});
+      parent_spec.bind_rules({fdf::MakeAcceptBindRule(kTestKey, kTestProperty)});
       parent_spec.properties({fdf::MakeProperty2(kTestKey, kTestProperty)});
       node.AddNodeSpec(parent_spec);
       // This adds a pbus resource, making the one of the parent of the composite to be platform
@@ -482,14 +482,14 @@ TEST_F(ManagerTest, TestPbusCompositeSpec) {
       (*mgr_request.parents2())[0].properties(), true));
   EXPECT_TRUE(testing::CheckHasBindRules(
       {
-          fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                   bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
+          fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                  bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),
       },
       (*mgr_request.parents2())[0].bind_rules(), true));
 
   EXPECT_TRUE(testing::CheckHasProperties({{fdf::MakeProperty2(kTestKey, kTestProperty)}},
                                           (*mgr_request.parents2())[1].properties(), false));
-  EXPECT_TRUE(testing::CheckHasBindRules({{fdf::MakeAcceptBindRule2(kTestKey, kTestProperty)}},
+  EXPECT_TRUE(testing::CheckHasBindRules({{fdf::MakeAcceptBindRule(kTestKey, kTestProperty)}},
                                          (*mgr_request.parents2())[1].bind_rules(), false));
 }
 

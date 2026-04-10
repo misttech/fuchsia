@@ -161,10 +161,10 @@ zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uin
   auto clock_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID, clock_id),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_NODE_ID, node_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, node_id),
           },
       .properties =
           {
@@ -186,8 +186,8 @@ zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uin
 
 zx::result<> ClockImplVisitor::AddInitChildNodeSpec(fdf_devicetree::Node& child) {
   auto clock_init_node = fuchsia_driver_framework::ParentSpec2{{
-      .bind_rules = {fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP,
-                                              bind_fuchsia_clock::BIND_INIT_STEP_CLOCK)},
+      .bind_rules = {fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
+                                             bind_fuchsia_clock::BIND_INIT_STEP_CLOCK)},
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),

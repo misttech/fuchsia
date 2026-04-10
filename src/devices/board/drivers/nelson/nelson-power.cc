@@ -79,11 +79,11 @@ zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   });
 
   const auto kI2cRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                               bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS,
-                               bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                              bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
@@ -147,11 +147,11 @@ zx_status_t AddSpeakerComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   });
 
   const auto kI2cRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                               bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
-      fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS,
-                               bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                              bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,

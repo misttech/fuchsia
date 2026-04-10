@@ -47,10 +47,10 @@ zx::result<> I2cBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, u
   auto i2c_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                                       bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID, bus_id),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS, address),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                                      bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bus_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, address),
           },
       .properties =
           {

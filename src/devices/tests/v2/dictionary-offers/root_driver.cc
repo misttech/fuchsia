@@ -18,7 +18,7 @@ namespace {
 
 fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
   auto bind_rules_left = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_LEFT),
   };
 
   auto properties_left = std::vector{
@@ -26,7 +26,7 @@ fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
   };
 
   auto bind_rules_right = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY, bindlib::TEST_BIND_PROPERTY_ONE_RIGHT),
   };
 
   auto properties_right = std::vector{
@@ -34,8 +34,8 @@ fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
   };
 
   auto bind_rules_opt = std::vector{
-      fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                               bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
+      fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                              bindlib::TEST_BIND_PROPERTY_FOUR_OPTIONAL),
   };
 
   auto properties_opt = std::vector{

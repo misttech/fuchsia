@@ -41,7 +41,7 @@ TEST(GptVisitorTest, TestGptProperty) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_block_gpt::PARTITION_NAME, "partition1"),
+          fdf::MakeAcceptBindRule(bind_fuchsia_block_gpt::PARTITION_NAME, "partition1"),
       }},
       (*mgr_request.parents2())[0].bind_rules(), false));
 
@@ -52,7 +52,7 @@ TEST(GptVisitorTest, TestGptProperty) {
       (*mgr_request.parents2())[0].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule2(bind_fuchsia_block_gpt::PARTITION_NAME, "partition2"),
+          fdf::MakeAcceptBindRule(bind_fuchsia_block_gpt::PARTITION_NAME, "partition2"),
       }},
       (*mgr_request.parents2())[1].bind_rules(), false));
 

@@ -40,7 +40,10 @@ struct I2cBus {
 
 constexpr i2c_channel_t i2c_ao_channels[]{
     {
-        .address = I2C_AMBIENTLIGHT_ADDR, .vid = 0, .pid = 0, .did = 0,
+        .address = I2C_AMBIENTLIGHT_ADDR,
+        .vid = 0,
+        .pid = 0,
+        .did = 0,
         // binds as composite device
     },
 };
@@ -48,12 +51,18 @@ constexpr i2c_channel_t i2c_ao_channels[]{
 constexpr i2c_channel_t i2c_2_channels[]{
     // Focaltech touch screen
     {
-        .address = I2C_FOCALTECH_TOUCH_ADDR, .vid = 0, .pid = 0, .did = 0,
+        .address = I2C_FOCALTECH_TOUCH_ADDR,
+        .vid = 0,
+        .pid = 0,
+        .did = 0,
         // binds as composite device
     },
     // Goodix touch screen
     {
-        .address = I2C_GOODIX_TOUCH_ADDR, .vid = 0, .pid = 0, .did = 0,
+        .address = I2C_GOODIX_TOUCH_ADDR,
+        .vid = 0,
+        .pid = 0,
+        .did = 0,
         // binds as composite device
     },
 };
@@ -68,7 +77,10 @@ constexpr i2c_channel_t i2c_3_channels[]{
     },
     // Audio output
     {
-        .address = I2C_AUDIO_CODEC_ADDR, .vid = 0, .pid = 0, .did = 0,
+        .address = I2C_AUDIO_CODEC_ADDR,
+        .vid = 0,
+        .pid = 0,
+        .did = 0,
         // binds as composite device
     },
 };
@@ -140,7 +152,7 @@ zx_status_t AddI2cBus(const I2cBus& bus,
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('I2C_');
   const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-      fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+      fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const std::vector<fdf::NodeProperty2> kGpioInitProps = std::vector{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),

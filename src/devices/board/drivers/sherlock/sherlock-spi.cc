@@ -67,9 +67,9 @@ static const spi_channel_t spi_channels[] = {
 };
 
 const std::vector kGpioSpiRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                             bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SPICC0_SS0)),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SPICC0_SS0)),
 };
 
 const std::vector kGpioSpiProperties = {
@@ -79,10 +79,10 @@ const std::vector kGpioSpiProperties = {
 };
 
 const std::vector kResetRegisterRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_registers::SERVICE,
-                             bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia_register::NAME,
-                             bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
+                            bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia_register::NAME,
+                            bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };
 
 const std::vector kResetRegisterProperties = {
@@ -93,7 +93,7 @@ const std::vector kResetRegisterProperties = {
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
 const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{

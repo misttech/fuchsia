@@ -51,8 +51,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_d = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_D),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_D),
             },
         .properties =
             {
@@ -64,8 +64,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_e = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_E),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_E),
             },
         .properties =
             {
@@ -77,8 +77,8 @@ class RootDriver : public fdf::DriverBase {
     auto parent_f = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bindlib::TEST_BIND_PROPERTY,
-                                         bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_F),
+                fdf::MakeAcceptBindRule(bindlib::TEST_BIND_PROPERTY,
+                                        bindlib::TEST_BIND_PROPERTY_COMPOSITE_PARENT_F),
             },
         .properties =
             {

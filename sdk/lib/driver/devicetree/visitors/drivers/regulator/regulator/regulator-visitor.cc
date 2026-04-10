@@ -175,10 +175,10 @@ zx::result<> RegulatorVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   auto regulator_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_vreg::SERVICE,
-                                       bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia_regulator::NAME, *regulator_name),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::REGULATOR_NODE_ID, instance_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_vreg::SERVICE,
+                                      bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_regulator::NAME, *regulator_name),
+              fdf::MakeAcceptBindRule(bind_fuchsia::REGULATOR_NODE_ID, instance_id),
           },
       .properties =
           {

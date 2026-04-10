@@ -50,11 +50,11 @@ zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view 
 }
 
 const std::vector kI2cRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_i2c::SERVICE,
-                             bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::I2C_ADDRESS,
-                             bind_fuchsia_goodix_platform::BIND_I2C_ADDRESS_TOUCH),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
+                            bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                            bind_fuchsia_goodix_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kI2cProperties = {
@@ -65,10 +65,10 @@ const std::vector kI2cProperties = {
 };
 
 const std::vector kInterruptRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                             bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                             bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_4),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                            bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_4),
 };
 
 const std::vector kInterruptProperties = {
@@ -77,10 +77,10 @@ const std::vector kInterruptProperties = {
     fdf::MakeProperty2(bind_fuchsia_gpio::FUNCTION, bind_fuchsia_gpio::FUNCTION_TOUCH_INTERRUPT)};
 
 const std::vector kResetRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                             bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN,
-                             bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_9),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+                            bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_9),
 };
 
 const std::vector kResetProperties = {
@@ -90,7 +90,7 @@ const std::vector kResetProperties = {
 };
 
 const std::vector kGpioInitRules = {
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
 const std::vector kGpioInitProperties = {

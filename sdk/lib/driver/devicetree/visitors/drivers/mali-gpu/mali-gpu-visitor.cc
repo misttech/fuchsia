@@ -20,8 +20,8 @@ namespace mali_gpu_dt {
 
 zx::result<> MaliGpuVisitor::AddChildNodeSpec(fdf_devicetree::Node& child) {
   std::vector bind_rules = {
-      fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpu_mali::SERVICE,
-                               bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)};
+      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpu_mali::SERVICE,
+                              bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)};
 
   std::vector bind_properties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_gpu_mali::SERVICE,

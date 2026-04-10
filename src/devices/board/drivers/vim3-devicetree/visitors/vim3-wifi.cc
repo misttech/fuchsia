@@ -59,15 +59,15 @@ zx::result<> Vim3WifiVisitor::DriverVisit(fdf_devicetree::Node& node,
     auto sdio_node = fuchsia_driver_framework::ParentSpec2{
         {.bind_rules =
              {
-                 fdf::MakeAcceptBindRule2(bind_fuchsia::PROTOCOL,
-                                          bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE),
-                 fdf::MakeAcceptBindRule2(
+                 fdf::MakeAcceptBindRule(bind_fuchsia::PROTOCOL,
+                                         bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE),
+                 fdf::MakeAcceptBindRule(
                      bind_fuchsia::SDIO_VID,
                      bind_fuchsia_broadcom_platform_sdio::BIND_SDIO_VID_BROADCOM),
-                 fdf::MakeAcceptBindRule2(
+                 fdf::MakeAcceptBindRule(
                      bind_fuchsia::SDIO_PID,
                      bind_fuchsia_broadcom_platform_sdio::BIND_SDIO_PID_BCM4359),
-                 fdf::MakeAcceptBindRule2(bind_fuchsia::SDIO_FUNCTION, i),
+                 fdf::MakeAcceptBindRule(bind_fuchsia::SDIO_FUNCTION, i),
              },
          .properties = {
              fdf::MakeProperty2(bind_fuchsia_hardware_sdio::SERVICE,

@@ -36,14 +36,14 @@ namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 const std::vector<fdf::BindRule2> kSpiRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_spi::SERVICE,
-                             bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
-                             bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_VID_NORDIC),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
-                             bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_PID_NRF52840),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_DID,
-                             bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_DID_THREAD),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
+                            bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                            bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_VID_NORDIC),
+    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
+                            bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_PID_NRF52840),
+    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                            bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_DID_THREAD),
 
 };
 
@@ -57,7 +57,7 @@ const std::vector<fdf::NodeProperty2> kSpiProperties = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
@@ -86,9 +86,9 @@ zx_status_t Sherlock::OtRadioInit() {
 
   for (auto& [gpio_pin, function] : kGpioPinFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                                 bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN, gpio_pin),
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, gpio_pin),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,

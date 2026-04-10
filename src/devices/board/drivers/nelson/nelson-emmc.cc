@@ -67,9 +67,9 @@ static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
 };
 
 const std::vector<fdf::BindRule2> kGpioResetRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_gpio::SERVICE,
-                             bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule2(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(SOC_EMMC_RST_L)),
+    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
+                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(SOC_EMMC_RST_L)),
 };
 
 const std::vector<fdf::NodeProperty2> kGpioResetProperties = std::vector{
@@ -79,7 +79,7 @@ const std::vector<fdf::NodeProperty2> kGpioResetProperties = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
-    fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
+    fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
 const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{

@@ -27,7 +27,7 @@ zx::result<> GptVisitor::Visit(fdf_devicetree::Node& node,
     node.AddNodeSpec({{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule2(bind_fuchsia_block_gpt::PARTITION_NAME, partition_name),
+                fdf::MakeAcceptBindRule(bind_fuchsia_block_gpt::PARTITION_NAME, partition_name),
             },
         .properties =
             {

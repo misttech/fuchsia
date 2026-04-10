@@ -106,9 +106,8 @@ zx_status_t Astro::VideoInit() {
   auto video_canvas = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(
-                  bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                  bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
+                                      bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
           },
       .properties =
           {
@@ -120,9 +119,9 @@ zx_status_t Astro::VideoInit() {
   auto video_clock_dos_vdec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(
                   bind_fuchsia::CLOCK_ID,
                   bind_fuchsia_amlogic_platform_meson::G12A_CLK_ID_CLK_DOS_GCLK_VDEC),
           },
@@ -138,10 +137,10 @@ zx_status_t Astro::VideoInit() {
   auto video_clock_dos = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_clock::SERVICE,
-                                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule2(bind_fuchsia::CLOCK_ID,
-                                       bind_fuchsia_amlogic_platform_meson::G12A_CLK_ID_CLK_DOS),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
+                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID,
+                                      bind_fuchsia_amlogic_platform_meson::G12A_CLK_ID_CLK_DOS),
           },
       .properties =
           {
@@ -154,8 +153,8 @@ zx_status_t Astro::VideoInit() {
   auto video_tee = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_tee::SERVICE,
-                                       bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_tee::SERVICE,
+                                      bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
           },
       .properties =
           {
