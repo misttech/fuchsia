@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 // Templates generate a lot of code which have tendencies to trip lints.
+// TODO(501102481): Remove the unreachable code and the `allow` after rolling to the new toolchain
 #![expect(clippy::diverging_sub_expression, dead_code, unreachable_code)]
+#![allow(unfulfilled_lint_expectations)]
 
 mod alias;
 mod bits;
