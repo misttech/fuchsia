@@ -13,6 +13,7 @@ use crate::link_checker::{
 use crate::{DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck};
 use anyhow::Result;
 use async_trait::async_trait;
+use regex::Regex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_yaml::{Mapping, Value};
@@ -164,6 +165,7 @@ struct RoadmapEntry {
     workstream: String,
     area: String,
     category: Vec<String>,
+    bug: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -245,7 +247,14 @@ impl DocYamlCheck for YamlChecker {
                     self.allow_fuchsia_src_links,
                 ),
                 Some("_rfcs.yaml") => check_rfcs(filename, yaml_value),
-                Some("_roadmap.yaml") => check_roadmap(filename, yaml_value),
+                Some("_roadmap.yaml") => check_roadmap(
+                    &self.root_dir,
+                    &self.docs_folder,
+                    &self.project,
+                    filename,
+                    yaml_value,
+                    self.allow_fuchsia_src_links,
+                ),
                 Some("_supported_cpu_architecture.yaml") => {
                     check_supported_cpu_architecture(filename, yaml_value)
                 }
@@ -618,6 +627,11 @@ static VALID_DRIVER_AREAS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLoc
     serde_yaml::from_str(s).expect("Failed to parse driver areas")
 });
 
+// Matches the `href` attribute in HTML anchor tags (e.g., <a href="...">).
+static HREF_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r#"href="([^"]+)""#).expect("Failed to compile HREF regex")
+});
+
 fn check_drivers_epitaphs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
     let (items, errors) = parse_entries::<DriverEpitaph>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
@@ -914,10 +928,87 @@ fn check_rfcs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>>
     if errs.is_empty() { None } else { Some(errs) }
 }
 
-fn check_roadmap(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
-    let (_items, errors) = parse_entries::<RoadmapEntry>(filename, yaml_value);
-    //TODO(https://fxbug.dev/42064932): other checks for RoadmapEntry?
-    errors
+fn check_roadmap(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    yaml_value: &Value,
+    allow_fuchsia_src_links: bool,
+) -> Option<Vec<DocCheckError>> {
+    let (items, errors) = parse_entries::<RoadmapEntry>(filename, yaml_value);
+    let mut errs = errors.unwrap_or_default();
+    if let Some(entries) = items {
+        for entry in entries {
+            if entry.workstream.is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "workstream cannot be empty",
+                ));
+            }
+            if entry.area.is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "area cannot be empty",
+                ));
+            }
+
+            for cap in HREF_REGEX.captures_iter(&entry.workstream) {
+                let link = &cap[1];
+                let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+                match do_check_link(&doc_line, link, project, allow_fuchsia_src_links) {
+                    Ok(Some(err)) => errs.push(err),
+                    Ok(None) => {
+                        let root_dir_str = root_dir.display().to_string();
+                        match is_intree_link(project, &root_dir_str, docs_folder, link) {
+                            Ok(Some(in_tree_path)) => {
+                                if let Some(err) = do_in_tree_check(
+                                    &doc_line,
+                                    root_dir,
+                                    docs_folder,
+                                    link,
+                                    &in_tree_path,
+                                ) {
+                                    errs.push(err);
+                                }
+                            }
+                            Ok(None) => {
+                                // TODO(https://fxbug.dev/500468244): Support checking external links in roadmap files.
+                            }
+                            Err(e) => errs.push(DocCheckError::new_error(
+                                1,
+                                filename.to_path_buf(),
+                                &format!("Error checking in-tree link {}: {}", link, e),
+                            )),
+                        }
+                    }
+                    Err(e) => errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("Error parsing link {}: {}", link, e),
+                    )),
+                }
+            }
+
+            if let Some(bugs) = entry.bug {
+                for bug in bugs {
+                    if !bug.starts_with("https://fxbug.dev/") {
+                        errs.push(DocCheckError::new_error(
+                            1,
+                            filename.to_path_buf(),
+                            &format!(
+                                "invalid bug link: {}. Must start with 'https://fxbug.dev/'",
+                                bug
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if errs.is_empty() { None } else { Some(errs) }
 }
 
 fn check_supported_cpu_architecture(
@@ -1203,6 +1294,50 @@ mod test {
         )?;
 
         assert_eq!(check_areas(&PathBuf::from(filename), &yaml_value), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_roadmap() -> Result<()> {
+        let filename = "docs/contribute/roadmap/2022/_roadmap.yaml";
+        let yaml_value: Value = serde_yaml::from_str(
+            r#"
+- workstream: 'Workstream1 <a href="/docs/valid.md">Link</a>'
+  area: 'Area1'
+  category: ['Category1']
+  bug: ['https://fxbug.dev/123']
+- workstream: 'Workstream2 <a href="/docs/missing.md">Invalid</a>'
+  area: 'Area2'
+  category: []
+- workstream: ''
+  area: ''
+  category: []
+  bug: ['https://invalid.com/123']
+          "#,
+        )?;
+
+        let result = check_roadmap(
+            &PathBuf::from("."),
+            &PathBuf::from("docs"),
+            "fuchsia",
+            &PathBuf::from(filename),
+            &yaml_value,
+            false,
+        );
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 4);
+        assert_eq!(
+            errors[0].message,
+            "in-tree link to /docs/missing.md could not be found at \"./docs/missing.md\""
+        );
+        assert_eq!(errors[1].message, "workstream cannot be empty");
+        assert_eq!(errors[2].message, "area cannot be empty");
+        assert_eq!(
+            errors[3].message,
+            "invalid bug link: https://invalid.com/123. Must start with 'https://fxbug.dev/'"
+        );
 
         Ok(())
     }
