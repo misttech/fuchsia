@@ -391,8 +391,10 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn start_sched_scan(
         &self,
         request: fidl_wlanix::SchedScanRequest,
+        initial_charging_status: bool,
     ) -> Result<Vec<fidl_sme::ScanResult>, Error>;
     async fn stop_sched_scan(&self) -> Result<(), Error>;
+    fn set_charging_status(&self, is_charging: bool) -> Result<(), Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -416,6 +418,9 @@ pub(crate) struct SmeClientIface {
     last_scan_results: Arc<Mutex<Option<LastScanResults>>>,
     scan_abort_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     pno_scan_stop_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    /// This is for sending charging status to the PNO scan loop; when a PNO scan is in progress
+    /// it will listen to this channel for charging status updates.
+    pno_scan_charge_signal: Arc<Mutex<Option<futures::channel::mpsc::UnboundedSender<bool>>>>,
     connected_network: Arc<Mutex<Option<ConnectedNetwork>>>,
     // TODO(b/298030838): Remove unmanaged iface support when wlanix is the sole config path.
     wlanix_provisioned: bool,
@@ -474,6 +479,7 @@ impl SmeClientIface {
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
             pno_scan_stop_signal: Arc::new(Mutex::new(None)),
+            pno_scan_charge_signal: Arc::new(Mutex::new(None)),
             connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
@@ -546,6 +552,15 @@ impl ClientIface for SmeClientIface {
             .await?
             .map_err(zx::Status::from_raw)
             .context("Could not query iface info")
+    }
+
+    fn set_charging_status(&self, is_charging: bool) -> Result<(), Error> {
+        if let Some(charge_tx) = self.pno_scan_charge_signal.lock().as_ref() {
+            charge_tx
+                .unbounded_send(is_charging)
+                .map_err(|e| anyhow::format_err!("Failed to send charge status: {:?}", e))?;
+        }
+        Ok(())
     }
 
     async fn trigger_scan(&self) -> Result<ScanEnd, Error> {
@@ -874,68 +889,95 @@ impl ClientIface for SmeClientIface {
     async fn start_sched_scan(
         &self,
         request: fidl_wlanix::SchedScanRequest,
+        initial_charging_status: bool,
     ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
         info!("SmeClientIface.start_sched_scan called with request: {:?}", request);
 
         // Note that one scan will be logged to metrics for a requested PNO scan even if many
         // scans actually happen to find the network(s).
         self.telemetry_sender.send(TelemetryEvent::ScanStart);
-        // Listen for signals to stop the scheduled scan.
-        let (stop_tx, mut stop_rx) = oneshot::channel();
-        self.pno_scan_stop_signal.lock().replace(stop_tx);
+        // Listen for signals to stop or control the scheduled scan.
+        let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        let (charge_tx, mut charge_rx) = futures::channel::mpsc::unbounded::<bool>();
+        // Explicitly send a stop signal to the old scan if one exists. Dropping the sender should
+        // be sufficient outside of tests, but we are explicit here to ensure behavior.
+        if let Some(old_stop) = self.pno_scan_stop_signal.lock().replace(stop_tx) {
+            let _ = old_stop.send(());
+        }
+        self.pno_scan_charge_signal.lock().replace(charge_tx);
+
+        let mut is_charging = initial_charging_status;
 
         // Use FuturesUnordered to asynchronously listen for stop signals while scanning or waiting.
         let mut scan_futures = FuturesUnordered::new();
         let mut timer_futures = FuturesUnordered::new();
         scan_futures.push(self.trigger_scan());
-
         loop {
             futures::select! {
-                // If a new PNO scan is started, the old stop_tx will be dropped, and we will get a
-                // cancelled channel message here.
+                // If there is an explicit command to stop the scheduled scan or if the sender is
+                // dropped, a message will come in here.
                 _ = stop_rx => {
-                    info!("pno_scan_stop_signal triggered. Stopping PNO scan.");
+                    info!("Received stop command or a new PNO scan was started. Stopping PNO scan.");
                     return Ok(vec![]);
                 }
-                scan_res = scan_futures.next() => {
-                    if let Some(res) = scan_res {
-                        match res {
-                            Ok(ScanEnd::Complete) => {
-                                self.telemetry_sender.send(TelemetryEvent::ScanResult {
-                                    result: wlan_telemetry::ScanResult::Complete {
-                                        num_results: self.get_last_scan_results().len(),
-                                    },
-                                });
-
-                                let results = self.get_last_scan_results();
-                                let matching_results = get_matching_scan_results(&request.match_sets, results);
-
-                                if matching_results.is_empty() {
-                                    timer_futures.push(fasync::Timer::new(TIME_WAIT_BETWEEN_SCHEDULED_SCANS.after_now()));
-                                } else {
-                                    return Ok(matching_results);
-                                }
+                charging_event = charge_rx.next() => {
+                    if let Some(new_charging_state) = charging_event {
+                        let was_charging = is_charging;
+                        is_charging = new_charging_state;
+                        if !was_charging && is_charging {
+                            info!("Transitioned to charging. Resuming PNO scans.");
+                            if scan_futures.is_empty() && timer_futures.is_empty() {
+                                scan_futures.push(self.trigger_scan());
                             }
-                            Ok(ScanEnd::Cancelled) => {
-                                info!("Scan cancelled, will not continue PNO scans");
-                                self.telemetry_sender.send(TelemetryEvent::ScanResult {
-                                    result: wlan_telemetry::ScanResult::Cancelled,
-                                });
-                                return Err(format_err!("PNO scan was unexpectedly cancelled"));
-                            }
-                            Err(e) => {
-                                error!("Failed to run scan, will not continue PNO scans: {:?}", e);
-                                self.telemetry_sender.send(TelemetryEvent::ScanResult {
-                                    result: wlan_telemetry::ScanResult::Failed,
-                                });
-                                return Err(e);
-                            }
+                        } else if was_charging && !is_charging {
+                            info!("Transitioned to not charging. PNO scans will pause after current scan if no results.");
                         }
                     }
                 }
-                timer_res = timer_futures.next() => {
-                    if timer_res.is_some() {
+                _ = timer_futures.select_next_some() => {
+                    // Check charging state before triggering scan instead of when starting a timer
+                    // frequent changes in state don't skip the wait between scans.
+                    if is_charging {
+                        info!("Triggering scheduled PNO scan");
                         scan_futures.push(self.trigger_scan());
+                    }
+                }
+                res = scan_futures.select_next_some() => {
+                    match res {
+                        Ok(ScanEnd::Complete) => {
+                            self.telemetry_sender.send(TelemetryEvent::ScanResult {
+                                result: wlan_telemetry::ScanResult::Complete {
+                                    num_results: self.get_last_scan_results().len(),
+                                },
+                            });
+
+                            let results = self.get_last_scan_results();
+                            let matching_results = get_matching_scan_results(&request.match_sets, results);
+
+                            if matching_results.is_empty() {
+                                timer_futures.push(fasync::Timer::new(TIME_WAIT_BETWEEN_SCHEDULED_SCANS.after_now()));
+                            } else {
+                                return Ok(matching_results);
+                            }
+                        }
+                        Ok(ScanEnd::Cancelled) => {
+                            if stop_rx.now_or_never().is_some() {
+                                info!("Scan cancelled due to stop signal. Stopping PNO scan.");
+                                return Ok(vec![]);
+                            }
+                            info!("Scan cancelled, will not continue PNO scans");
+                            self.telemetry_sender.send(TelemetryEvent::ScanResult {
+                                result: wlan_telemetry::ScanResult::Cancelled,
+                            });
+                            return Err(format_err!("PNO scan was unexpectedly cancelled"));
+                        }
+                        Err(e) => {
+                            error!("Failed to run scan, will not continue PNO scans: {:?}", e);
+                            self.telemetry_sender.send(TelemetryEvent::ScanResult {
+                                result: wlan_telemetry::ScanResult::Failed,
+                            });
+                            return Err(e);
+                        }
                     }
                 }
             }
@@ -947,7 +989,7 @@ impl ClientIface for SmeClientIface {
         // If a PNO scan is running, it will listen for signals to cancel, so we just need to send one here.
         if let Some(abort_tx) = self.pno_scan_stop_signal.lock().take() {
             let _ = abort_tx.send(());
-            info!("Sent abort signal to PNO scan loop");
+            info!("Sent stop signal to PNO scan loop");
         }
         Ok(())
     }
@@ -1098,6 +1140,7 @@ pub mod test_utils {
         ReadApfPacketFilterData,
         StartSchedScan { _request: fidl_wlanix::SchedScanRequest },
         StopSchedScan,
+        SetChargingStatus(bool),
     }
 
     pub struct TestClientIface {
@@ -1244,6 +1287,7 @@ pub mod test_utils {
         async fn start_sched_scan(
             &self,
             request: fidl_wlanix::SchedScanRequest,
+            _initial_charging_status: bool,
         ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
             self.calls.lock().push(ClientIfaceCall::StartSchedScan { _request: request });
             Ok(self.scan_results.lock().clone())
@@ -1251,6 +1295,11 @@ pub mod test_utils {
 
         async fn stop_sched_scan(&self) -> Result<(), Error> {
             self.calls.lock().push(ClientIfaceCall::StopSchedScan);
+            Ok(())
+        }
+
+        fn set_charging_status(&self, is_charging: bool) -> Result<(), Error> {
+            self.calls.lock().push(ClientIfaceCall::SetChargingStatus(is_charging));
             Ok(())
         }
     }
@@ -1649,6 +1698,7 @@ mod tests {
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
             pno_scan_stop_signal: Arc::new(Mutex::new(None)),
+            pno_scan_charge_signal: Arc::new(Mutex::new(None)),
             connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
@@ -1912,6 +1962,7 @@ mod tests {
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
             pno_scan_stop_signal: Arc::new(Mutex::new(None)),
+            pno_scan_charge_signal: Arc::new(Mutex::new(None)),
             connected_network: Arc::new(Mutex::new(None)),
             wlanix_provisioned: false, // set to false for this test
             bss_scorer: BssScorer::new(),
@@ -2092,7 +2143,8 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             exec.run_until_stalled(&mut sme_stream.next()),
-            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
+        );
         let result = wlan_common::scan::write_vmo(vec![test_utils::fake_scan_result()])
             .expect("Failed to write scan VMO");
         responder.send(Ok(result)).expect("Failed to send result");
@@ -2185,7 +2237,7 @@ mod tests {
             }]),
             ..Default::default()
         };
-        let mut scan_fut = iface.start_sched_scan(request);
+        let mut scan_fut = iface.start_sched_scan(request, true);
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // Respond to the SME scan request
@@ -2209,6 +2261,123 @@ mod tests {
         assert_eq!(found_results.len(), 1);
     }
 
+    #[fuchsia::test]
+    fn test_second_sched_scan_stops_first() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let request1 = fidl_wlanix::SchedScanRequest::default();
+        let request2 = fidl_wlanix::SchedScanRequest::default();
+
+        // Start a first PNO scan
+        let mut scan_fut1 = iface.start_sched_scan(request1, true);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut1), Poll::Pending);
+
+        // Verify that a scan request was sent to SME
+        let (_req, _responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
+        );
+
+        // Start a second PNO scan, which should cause the first PNO scan to stop
+        let mut scan_fut2 = iface.start_sched_scan(request2, true);
+        assert_matches!(exec.run_until_stalled(&mut scan_fut2), Poll::Pending);
+
+        // Check if a scan request was made for the second PNO scan.
+        let (_req2, _responder2) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
+        );
+
+        // The first scan future should finish running with no results
+        assert_matches!(exec.run_until_stalled(&mut scan_fut1), Poll::Ready(Ok(results)) if results.is_empty());
+
+        // The second PNO scan should still be running
+        assert_matches!(exec.run_until_stalled(&mut scan_fut2), Poll::Pending);
+    }
+
+    #[fuchsia::test]
+    fn test_sched_scan_resumes_when_charging_starts() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface_and_fake_time();
+        let request = fidl_wlanix::SchedScanRequest::default();
+
+        let mut scan_fut = iface.start_sched_scan(request, false); // initial_charging_status = false
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        // Verify that it sent a scan request to SME (first scan is always triggered)
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        // Complete the scan with empty results
+        let scan_result = wlan_common::scan::write_vmo(vec![]).expect("Failed to write scan VMO");
+        responder.send(Ok(scan_result)).expect("Failed to send result");
+
+        // Scan should complete and NOT trigger another scan since we are not charging
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+
+        // Advance time by 5 hours
+        let new_time = exec.now() + fasync::MonotonicDuration::from_hours(5);
+        exec.set_fake_time(new_time);
+        let _ = exec.wake_expired_timers();
+
+        // Still no new scan
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+
+        // Set that the device is charging
+        iface.set_charging_status(true).expect("Failed to set charging status");
+
+        // A new scan should be triggered after charging starts
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let (_req, _responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+    }
+
+    #[fuchsia::test]
+    fn test_sched_scan_pauses_and_resumes() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface_and_fake_time();
+        let request = fidl_wlanix::SchedScanRequest::default();
+
+        let mut scan_fut = iface.start_sched_scan(request, true); // initial_charging_status = true
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        // Verify that it sent a scan request to SME
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        // Stop charging!
+        iface.set_charging_status(false).expect("Failed to set charging status");
+
+        // Complete the scan with empty results
+        let scan_result = wlan_common::scan::write_vmo(vec![]).expect("Failed to write scan VMO");
+        responder.send(Ok(scan_result)).expect("Failed to send result");
+
+        // Scan should complete and NOT trigger another scan
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+
+        // Advance time to make sure no scans are sent after some time.
+        let new_time = exec.now() + fasync::MonotonicDuration::from_hours(5);
+        exec.set_fake_time(new_time);
+        let _ = exec.wake_expired_timers();
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+
+        // Now back to charging
+        iface.set_charging_status(true).expect("Failed to set charging status");
+
+        // A scan should be triggered now that the device is charging again
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let (_req, _responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+    }
+
     #[test]
     fn test_start_sched_scan_rssi_too_low() {
         let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
@@ -2223,7 +2392,7 @@ mod tests {
             }]),
             ..Default::default()
         };
-        let mut scan_fut = iface.start_sched_scan(request);
+        let mut scan_fut = iface.start_sched_scan(request, true);
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // Respond to the scan request with the right SSID but a low RSSI
@@ -2281,7 +2450,7 @@ mod tests {
             match_sets: Some(vec![]),
             ..Default::default()
         };
-        let mut scan_fut = iface.start_sched_scan(request);
+        let mut scan_fut = iface.start_sched_scan(request, true);
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         let (_req, responder) = assert_matches!(
@@ -2310,7 +2479,7 @@ mod tests {
         let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
             setup_test_manager_with_iface();
         let request = fidl_wlanix::SchedScanRequest::default();
-        let mut scan_fut = iface.start_sched_scan(request);
+        let mut scan_fut = iface.start_sched_scan(request, true);
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         let (_req, responder) = assert_matches!(
@@ -2331,7 +2500,7 @@ mod tests {
             setup_test_manager_with_iface();
         let request = fidl_wlanix::SchedScanRequest::default();
 
-        let mut scan_fut = iface.start_sched_scan(request);
+        let mut scan_fut = iface.start_sched_scan(request, true);
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         let mut stop_fut = iface.stop_sched_scan();

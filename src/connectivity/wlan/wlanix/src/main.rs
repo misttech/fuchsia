@@ -1917,20 +1917,6 @@ async fn handle_nl80211_message<I: IfaceManager>(
         }
         Nl80211Cmd::StartSchedScan => {
             info!("Nl80211Cmd::StartSchedScan");
-            let is_charging = state.lock().is_charging;
-            if let Some(charging) = is_charging
-                && !charging
-            {
-                warn!(
-                    "Nl80211Cmd::StartSchedScan: Skipping scan and sending back failure since device is not on charger and PNO scans are not implemented"
-                );
-                // Ack the request but don't start any scans.
-                responder
-                    .take()
-                    .send(Ok(vec![build_nl80211_ack()]))
-                    .context("Failed to ack StartSchedScan")?;
-                return Ok(());
-            }
 
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, iface_id)) => {
@@ -2095,7 +2081,8 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         ..Default::default()
                     };
 
-                    match client_iface.start_sched_scan(request).await {
+                    let initial_charging = state.lock().is_charging.unwrap_or(false);
+                    match client_iface.start_sched_scan(request, initial_charging).await {
                         Ok(results) => {
                             if !results.is_empty() {
                                 info!("PNO scan loop completed with resultss");
@@ -2745,9 +2732,7 @@ async fn report_battery_updates<I: IfaceManager>(
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
 ) {
-    match client::connect_to_protocol::<
-        fidl_fuchsia_power_battery::BatteryManagerMarker,
-    >() {
+    match client::connect_to_protocol::<fidl_fuchsia_power_battery::BatteryManagerMarker>() {
         Ok(proxy) => {
             // Swallow and log failure to watch battery updates because they only affect some
             // Cobalt metrics and should not cause wlanix to shutdown.
@@ -2802,21 +2787,16 @@ async fn report_battery_updates_helper<I: IfaceManager>(
                 responder,
                 ..
             } => {
-                let charging = is_charging(&info);
-                let was_charging = {
-                    let mut state_guard = state.lock();
-                    let was_charging = state_guard.is_charging.unwrap_or(false);
-                    state_guard.is_charging = Some(charging);
-                    was_charging
-                };
+                let is_charging = is_charging(&info);
+                // Set the new charging status and get the old one, or false if it was never set
+                let was_charging = state.lock().is_charging.replace(is_charging).unwrap_or(false);
 
-                if was_charging && !charging {
+                // If the charging status has changed, update the charging status of all interfaces
+                if was_charging != is_charging {
                     let ifaces = iface_manager.list_ifaces();
                     for iface_id in ifaces {
-                        if let Ok(client_iface) = iface_manager.get_client_iface(iface_id).await
-                            && let Err(e) = client_iface.stop_sched_scan().await
-                        {
-                            warn!("Failed to stop scheduled scan: {:?}", e);
+                        if let Ok(client_iface) = iface_manager.get_client_iface(iface_id).await {
+                            let _ = client_iface.set_charging_status(is_charging);
                         }
                     }
                 }
@@ -5263,10 +5243,10 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
-        // Verify the iface_manager did not receive a StartSchedScan call inside its history
+        // Verify the iface_manager did receive a StartSchedScan call inside its history
         let client_calls = iface_manager.get_iface_call_history();
         assert!(
-            !client_calls
+            client_calls
                 .lock()
                 .iter()
                 .any(|c| matches!(c, ifaces::test_utils::ClientIfaceCall::StartSchedScan { .. }))
@@ -6392,11 +6372,11 @@ mod tests {
             )))
         );
 
-        // Verify that stop_sched_scan was called on the interface manager
+        // Verify that set_charging_status(false) was called on the interface manager
         let client_calls = iface_manager.get_iface_call_history();
         assert_matches!(
             &client_calls.lock().last().unwrap(),
-            ifaces::test_utils::ClientIfaceCall::StopSchedScan
+            ifaces::test_utils::ClientIfaceCall::SetChargingStatus(false)
         );
 
         // Transition back to charging and verify that stop_sched_scan is NOT called again
