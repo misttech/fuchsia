@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/file"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 const (
@@ -243,10 +244,16 @@ func NewReadme(r io.Reader, projectRoot string, readmePath string) (*Readme, err
 		case "Versions", "Version":
 			readme.Version = value
 		case "LICENSE", "License", " -> License Classifications":
+			if directive == "LICENSE" {
+				metrics.DeprecatedDirectives.Inc("LICENSE")
+			}
 			readme.ProcessReadmeLicense(&ReadmeLicense{LicenseClassifications: value})
 		case "License File Format", " -> License File Format":
 			readme.ProcessReadmeLicense(&ReadmeLicense{LicenseFileFormat: value})
-		case "License File":
+		case "#License File", "License File":
+			if directive == "#License File" {
+				metrics.DeprecatedDirectives.Inc("#License File")
+			}
 			readme.ProcessReadmeLicense(&ReadmeLicense{LicenseFile: value})
 		case " -> License File URL", "License File URL":
 			readme.ProcessReadmeLicense(&ReadmeLicense{LicenseFileURL: value})
@@ -267,6 +274,7 @@ func NewReadme(r io.Reader, projectRoot string, readmePath string) (*Readme, err
 
 		// Deprecated but still in use currently
 		case "check-licenses":
+			metrics.DeprecatedDirectives.Inc("check-licenses")
 			// Used to specify license format
 			switch value {
 			case "license format: multi_license_google":

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 const (
@@ -40,6 +41,9 @@ type (
 // Create an in-memory representation of a new README.fuchsia file
 // using data pulled from the Cargo.toml file of the given Rust crate.
 func NewRustCrateReadme(path string) (*Readme, error) {
+	defer metrics.ReadmeParseDuration.Track()()
+	metrics.ReadmeGenerationType.Inc("synthesized_rust")
+
 	name := filepath.Base(path)
 	parentName := filepath.Base(filepath.Dir(path))
 	url := fmt.Sprintf("%s/+/%s/third_party/rust_crates/%s/%s", rustCrateURLPrefix, GitRevision, parentName, name)

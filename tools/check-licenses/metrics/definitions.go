@@ -48,4 +48,38 @@ var (
 		"Number of files with valid UTF-8 vs legacy encodings",
 		"encoding", // encoding: "utf8", "legacy"
 	)
+
+	ReadmeParseDuration = RegisterTimer(
+		"readme_parse_duration",
+		"Time spent unmarshaling text proto files or Cargo.toml",
+	)
+
+	GitCommandDuration = RegisterTimer(
+		"git_command_duration",
+		"Time spent running git commands to discover upstream URLs",
+	)
+
+	MalformedReadmeLines = RegisterCounter(
+		"malformed_readme_lines",
+		"Number of lines in a README.fuchsia file that the parser could not understand",
+		"type", // type: "unknown_directive", "parse_error"
+	)
+
+	DeprecatedDirectives = RegisterCounter(
+		"deprecated_directives",
+		"Usage of legacy syntax in README.fuchsia files",
+		"directive",
+	)
+
+	ReadmeGenerationType = RegisterCounter(
+		"readme_generation_type",
+		"How a Readme struct was created",
+		"type", // type: "explicit", "synthesized_rust", "synthesized_go", "synthesized_dart"
+	)
+
+	ReadmeCacheHits = RegisterCounter(
+		"readme_cache_hits",
+		"How often reading a README.fuchsia file was avoided because it was in memory",
+		"status", // status: "hit"
+	)
 )

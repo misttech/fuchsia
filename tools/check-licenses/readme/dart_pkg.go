@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 const (
@@ -18,6 +20,9 @@ const (
 // Create an in-memory representation of a new README.fuchsia file
 // by inferring info about a Dart package given it's location in the repo.
 func NewDartPkgReadme(path string) (*Readme, error) {
+	defer metrics.ReadmeParseDuration.Track()()
+	metrics.ReadmeGenerationType.Inc("synthesized_dart")
+
 	name := filepath.Base(path)
 	url := fmt.Sprintf("https://pub.dev/packages/%s", name)
 

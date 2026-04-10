@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/util"
 )
 
@@ -19,7 +20,25 @@ func Initialize() error {
 	if err != nil {
 		return fmt.Errorf("Failed to create git hook: %w", err)
 	}
+
+	// Wrap the git interface to add metrics tracking
+	git = &gitMetricsWrapper{git}
+
 	return nil
+}
+
+type gitMetricsWrapper struct {
+	util.GitInterface
+}
+
+func (w *gitMetricsWrapper) GetURL(ctx context.Context, path string) (string, error) {
+	defer metrics.GitCommandDuration.Track()()
+	return w.GitInterface.GetURL(ctx, path)
+}
+
+func (w *gitMetricsWrapper) GetCommitHash(ctx context.Context, path string) (string, error) {
+	defer metrics.GitCommandDuration.Track()()
+	return w.GitInterface.GetCommitHash(ctx, path)
 }
 
 func InitializeForTest() {

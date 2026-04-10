@@ -48,6 +48,7 @@ if (is_host) {
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//third_party/golibs:golang.org/x/sync/errgroup",
       "//tools/check-licenses/file",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/util",
       "//tools/lib/logger",
     ]

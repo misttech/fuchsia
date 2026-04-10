@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 const (
@@ -31,6 +33,9 @@ type golibReadmeBuilder struct {
 // Create an in-memory representation of a new README.fuchsia file
 // by inferring info about the given go library from it's location in the repo.
 func NewGolibReadme(path string) (*Readme, error) {
+	defer metrics.ReadmeParseDuration.Track()()
+	metrics.ReadmeGenerationType.Inc("synthesized_go")
+
 	name := filepath.Base(path)
 
 	var remainder string
