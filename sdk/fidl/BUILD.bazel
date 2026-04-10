@@ -46,6 +46,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system",
     "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback",
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio",
     "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing",
     "//sdk/fidl/fuchsia.images:fuchsia.images",
@@ -101,6 +102,8 @@ _partner_idk_stable_fidl_libraries_targets_list = [
 
 _partner_idk_unstable_fidl_libraries_targets_list = [
     # keep-sorted: begin
+    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl",
+    "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata",
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo",
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
