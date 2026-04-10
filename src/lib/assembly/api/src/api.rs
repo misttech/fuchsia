@@ -10,6 +10,8 @@ use assembly_tool::{PlatformToolProvider, ToolProvider};
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 
+/// Runs the product assembly step, which processes the product and board configurations
+/// and generates the intermediate files needed to create the system.
 pub fn product_assembly(
     context: &EnvironmentContext,
     args: ProductArgs,
@@ -22,6 +24,8 @@ pub fn product_assembly(
     Ok(outputs)
 }
 
+/// Runs the create-system step, which takes the outputs of product assembly and
+/// generates the final system images (ZBI, FVM, etc.).
 pub fn create_system(args: CreateSystemArgs) -> Result<CreateSystemOutputs> {
     let tools = PlatformToolProvider::new(args.platform.clone());
     let assembly_tool = tools.get_tool("assembly")?;
@@ -31,6 +35,8 @@ pub fn create_system(args: CreateSystemArgs) -> Result<CreateSystemOutputs> {
     Ok(outputs)
 }
 
+/// A helper function that runs both `product_assembly` and `create_system` in sequence.
+/// It creates a temporary directory for the intermediate product assembly outputs.
 pub fn assemble(context: &EnvironmentContext, args: ProductArgs) -> Result<CreateSystemOutputs> {
     // Create a temporary directory for the product assembly outputs.
     // We cannot use the directories in `args`, because those are reserved for
