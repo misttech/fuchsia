@@ -167,8 +167,8 @@ TEST(TcpTest, Open) {
         return EFI_SUCCESS;
       });
 
-  EXPECT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   EXPECT_EQ(socket.binding_handle, MockTcp::kTcpBindingHandle);
   EXPECT_EQ(socket.binding_protocol, mock_tcp.binding_protocol().protocol());
   EXPECT_EQ(socket.server_handle, MockTcp::kTcpServerHandle);
@@ -189,8 +189,8 @@ TEST(TcpTest, OpenMultipleBindingHandles) {
             num_handles, buf, {MockTcp::kTcpBindingHandle, MockTcp::kTcpServerHandle});
       });
 
-  EXPECT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(socket.binding_handle, MockTcp::kTcpBindingHandle);
 }
@@ -204,8 +204,8 @@ TEST(TcpTest, OpenFailLocateBindingHandleError) {
       LocateHandleBuffer(ByProtocol, MatchGuid(EFI_TCP6_SERVICE_BINDING_PROTOCOL_GUID), _, _, _))
       .WillOnce(Return(EFI_NOT_FOUND));
 
-  EXPECT_EQ(TCP6_RESULT_ERROR,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                         &kTestAddress, kTestPort));
 }
 
 TEST(TcpTest, OpenFailLocateBindingHandleZeroHandles) {
@@ -219,8 +219,8 @@ TEST(TcpTest, OpenFailLocateBindingHandleZeroHandles) {
         return mock_tcp.AllocateHandleBuffer(num_handles, buf, {});
       });
 
-  EXPECT_EQ(TCP6_RESULT_ERROR,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                         &kTestAddress, kTestPort));
 }
 
 TEST(TcpTest, OpenFailOpenBindingProtocol) {
@@ -233,8 +233,8 @@ TEST(TcpTest, OpenFailOpenBindingProtocol) {
   EXPECT_CALL(mock_tcp.boot_services(), CloseProtocol(MockTcp::kTcpBindingHandle, _, _, _))
       .Times(0);
 
-  EXPECT_EQ(TCP6_RESULT_ERROR,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                         &kTestAddress, kTestPort));
 }
 
 TEST(TcpTest, OpenFailCreateServerHandle) {
@@ -247,8 +247,8 @@ TEST(TcpTest, OpenFailCreateServerHandle) {
   EXPECT_CALL(mock_tcp.boot_services(), CloseProtocol(MockTcp::kTcpBindingHandle, _, _, _));
   EXPECT_CALL(mock_tcp.binding_protocol(), DestroyChild).Times(0);
 
-  EXPECT_EQ(TCP6_RESULT_ERROR,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                         &kTestAddress, kTestPort));
 }
 
 TEST(TcpTest, OpenFailOpenServerProtocol) {
@@ -264,8 +264,8 @@ TEST(TcpTest, OpenFailOpenServerProtocol) {
   EXPECT_CALL(mock_tcp.binding_protocol(), DestroyChild);
   EXPECT_CALL(mock_tcp.boot_services(), CloseProtocol(MockTcp::kTcpServerHandle, _, _, _)).Times(0);
 
-  EXPECT_EQ(TCP6_RESULT_ERROR,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                         &kTestAddress, kTestPort));
 }
 
 TEST(TcpTest, OpenFailConfig) {
@@ -276,16 +276,16 @@ TEST(TcpTest, OpenFailConfig) {
   // We should close everything out.
   mock_tcp.ExpectServerClose();
 
-  EXPECT_EQ(TCP6_RESULT_ERROR,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                         &kTestAddress, kTestPort));
 }
 
 TEST(TcpTest, Accept) {
   MockTcp mock_tcp;
   tcp6_socket socket = {};
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   // No client should be set until tcp6_accept().
   EXPECT_EQ(socket.client_handle, nullptr);
   EXPECT_EQ(socket.client_protocol, nullptr);
@@ -303,8 +303,8 @@ TEST(TcpTest, AcceptPending) {
       .WillOnce(Return(EFI_NOT_READY))  // Accept() #1
       .WillOnce(Return(EFI_SUCCESS));   // Accept() #2
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(TCP6_RESULT_PENDING, tcp6_accept(&socket));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
@@ -318,8 +318,8 @@ TEST(TcpTest, AcceptFailCreateEvent) {
 
   EXPECT_CALL(mock_tcp.boot_services(), CreateEvent).WillOnce(Return(EFI_OUT_OF_RESOURCES));
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_accept(&socket));
 }
@@ -330,8 +330,8 @@ TEST(TcpTest, AcceptFailAccept) {
 
   EXPECT_CALL(mock_tcp.server_protocol(), Accept).WillOnce(Return(EFI_OUT_OF_RESOURCES));
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_accept(&socket));
 }
@@ -342,8 +342,8 @@ TEST(TcpTest, AcceptFailCheckEvent) {
 
   EXPECT_CALL(mock_tcp.boot_services(), CheckEvent).WillOnce(Return(EFI_OUT_OF_RESOURCES));
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_accept(&socket));
 }
@@ -358,8 +358,8 @@ TEST(TcpTest, AcceptFailStatusError) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_accept(&socket));
 }
@@ -373,8 +373,8 @@ TEST(TcpTest, AcceptFailOpenClientProtocol) {
   EXPECT_CALL(mock_tcp.boot_services(), OpenProtocol(MockTcp::kTcpClientHandle, _, _, _, _, _))
       .WillOnce(Return(EFI_UNSUPPORTED));
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_accept(&socket));
 }
@@ -397,8 +397,8 @@ TEST(TcpTest, Read) {
   // Make sure we call Poll() each time we read, for performance.
   EXPECT_CALL(mock_tcp.client_protocol(), Poll);
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_read(&socket, data.data(), data.size()));
@@ -415,8 +415,8 @@ TEST(TcpTest, ReadPending) {
       .WillOnce(Return(EFI_NOT_READY))  // Receive() #1
       .WillOnce(Return(EFI_SUCCESS));   // Receive() #2
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_PENDING, tcp6_read(&socket, data.data(), data.size()));
@@ -442,8 +442,8 @@ TEST(TcpTest, ReadPartial) {
         return EFI_SUCCESS;
       });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   // When we see a partial read we try again immediately, so we should only
@@ -461,8 +461,8 @@ TEST(TcpTest, ReadFailCreateEvent) {
       .WillOnce(Return(EFI_SUCCESS))            // Accept()
       .WillOnce(Return(EFI_OUT_OF_RESOURCES));  // Receive()
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_read(&socket, data.data(), data.size()));
@@ -475,8 +475,8 @@ TEST(TcpTest, ReadFailReceive) {
 
   EXPECT_CALL(mock_tcp.client_protocol(), Receive).WillOnce(Return(EFI_OUT_OF_RESOURCES));
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_read(&socket, data.data(), data.size()));
@@ -491,8 +491,8 @@ TEST(TcpTest, ReadFailCheckEvent) {
       .WillOnce(Return(EFI_SUCCESS))            // Accept()
       .WillOnce(Return(EFI_OUT_OF_RESOURCES));  // Receive()
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_read(&socket, data.data(), data.size()));
@@ -508,8 +508,8 @@ TEST(TcpTest, ReadFailCompletionError) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_read(&socket, data.data(), data.size()));
@@ -525,8 +525,8 @@ TEST(TcpTest, ReadFailDisconnectFin) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_DISCONNECTED, tcp6_read(&socket, data.data(), data.size()));
@@ -542,8 +542,8 @@ TEST(TcpTest, ReadFailDisconnectReset) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_DISCONNECTED, tcp6_read(&socket, data.data(), data.size()));
@@ -561,8 +561,8 @@ TEST(TcpTest, ReadFailOverflow) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_read(&socket, data.data(), data.size()));
@@ -587,8 +587,8 @@ TEST(TcpTest, Write) {
   // Make sure we call Poll() each time we read, for performance.
   EXPECT_CALL(mock_tcp.client_protocol(), Poll);
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_write(&socket, data.data(), data.size()));
@@ -603,8 +603,8 @@ TEST(TcpTest, WriteFailCreateEvent) {
       .WillOnce(Return(EFI_SUCCESS))            // Accept()
       .WillOnce(Return(EFI_OUT_OF_RESOURCES));  // Transmit()
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_write(&socket, data.data(), data.size()));
@@ -617,8 +617,8 @@ TEST(TcpTest, WriteFailTransmit) {
 
   EXPECT_CALL(mock_tcp.client_protocol(), Transmit).WillOnce(Return(EFI_OUT_OF_RESOURCES));
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_write(&socket, data.data(), data.size()));
@@ -633,8 +633,8 @@ TEST(TcpTest, WriteFailCheckEvent) {
       .WillOnce(Return(EFI_SUCCESS))            // Accept()
       .WillOnce(Return(EFI_OUT_OF_RESOURCES));  // Transmit()
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_write(&socket, data.data(), data.size()));
@@ -650,8 +650,8 @@ TEST(TcpTest, WriteFailCompletionError) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_write(&socket, data.data(), data.size()));
@@ -667,8 +667,8 @@ TEST(TcpTest, WriteFailDisconnectFin) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_DISCONNECTED, tcp6_write(&socket, data.data(), data.size()));
@@ -684,8 +684,8 @@ TEST(TcpTest, WriteFailDisconnectReset) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_DISCONNECTED, tcp6_write(&socket, data.data(), data.size()));
@@ -703,8 +703,8 @@ TEST(TcpTest, WriteFailPartial) {
     return EFI_SUCCESS;
   });
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_ERROR, tcp6_write(&socket, data.data(), data.size()));
@@ -716,8 +716,8 @@ TEST(TcpTest, Disconnect) {
 
   mock_tcp.ExpectDisconnect();
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_disconnect(&socket));
@@ -730,8 +730,8 @@ TEST(TcpTest, DisconnectTwice) {
   // We should only try to disconnect once, the second should be a no-op.
   mock_tcp.ExpectDisconnect();
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_disconnect(&socket));
@@ -749,8 +749,8 @@ TEST(TcpTest, DisconnectPending) {
       .WillOnce(Return(EFI_SUCCESS));   // Close() #2
   mock_tcp.ExpectDisconnect();
 
-  ASSERT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   ASSERT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
 
   EXPECT_EQ(TCP6_RESULT_PENDING, tcp6_disconnect(&socket));
@@ -763,8 +763,8 @@ TEST(TcpTest, Close) {
 
   mock_tcp.ExpectServerClose();
 
-  EXPECT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_close(&socket));
 
   EXPECT_EQ(socket.binding_protocol, nullptr);
@@ -780,8 +780,8 @@ TEST(TcpTest, CloseWithClient) {
   mock_tcp.ExpectDisconnect();
   mock_tcp.ExpectServerClose();
 
-  EXPECT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_accept(&socket));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_close(&socket));
 }
@@ -794,8 +794,8 @@ TEST(TcpTest, CloseTwice) {
   // a second time should be a no-op.
   mock_tcp.ExpectServerClose();
 
-  EXPECT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_close(&socket));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_close(&socket));
 }
@@ -812,8 +812,8 @@ TEST(TcpTest, ClosePending) {
   // All the members should still be closed exactly once each.
   mock_tcp.ExpectServerClose();
 
-  EXPECT_EQ(TCP6_RESULT_SUCCESS,
-            tcp6_open(&socket, mock_tcp.boot_services().services(), &kTestAddress, kTestPort));
+  EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_open(&socket, mock_tcp.boot_services().services(), NULL,
+                                           &kTestAddress, kTestPort));
   EXPECT_EQ(TCP6_RESULT_PENDING, tcp6_close(&socket));
   EXPECT_EQ(TCP6_RESULT_SUCCESS, tcp6_close(&socket));
 }

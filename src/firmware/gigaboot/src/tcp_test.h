@@ -29,7 +29,7 @@
 // To use, pass the MockTcp's boot_services protocol table to tcp6_open():
 //   MockTcp mock_tcp;
 //   tcp6_socket socket;
-//   tcp6_open(mock_tcp.boot_services().services(), &socket);
+//   tcp6_open(&socket, mock_tcp.boot_services().services(), NULL, &addr, port);
 class MockTcp {
  public:
   // Fake objects used by the default mock behavior that can be used by tests

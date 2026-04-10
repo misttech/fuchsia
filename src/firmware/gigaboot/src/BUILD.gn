@@ -12,3 +12,23 @@ config("config") {
   # Fastboot needs to provide the board name so `ffx flash` can verify it.
   cflags = [ "-DBOARD_NAME=\"${board_name}\"" ]
 }
+
+test("gigaboot_tcp_tests") {
+  sources = [
+    "tcp.c",
+    "tcp.h",
+    "tcp_test.cc",
+    "tcp_test.h",
+  ]
+  deps = [
+    "//src/firmware/gigaboot/lib:shared",
+    "//src/lib/fxl/test:gtest_main",
+    "//zircon/kernel/lib/efi",
+    "//zircon/kernel/lib/efi/testing",
+  ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":gigaboot_tcp_tests($host_toolchain)" ]
+}

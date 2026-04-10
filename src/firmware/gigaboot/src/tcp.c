@@ -118,8 +118,65 @@ static tcp6_result check_token(efi_boot_services* boot_services, efi_tcp6_comple
   return status_to_tcp6_result(status);
 }
 
+static tcp6_result socket_efi_init(tcp6_socket* socket, efi_handle binding_handle) {
+  efi_boot_services* bs = socket->boot_services;
+  socket->binding_handle = binding_handle;
+
+  do {
+    if (bs->OpenProtocol(binding_handle, &kTcp6ServiceBindingProtocolGuid,
+                         (void**)&socket->binding_protocol, gImg, NULL,
+                         EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL) != EFI_SUCCESS) {
+      break;
+    }
+    if (socket->binding_protocol->CreateChild(socket->binding_protocol, &socket->server_handle) !=
+        EFI_SUCCESS) {
+      break;
+    }
+    if (bs->OpenProtocol(socket->server_handle, &kTcp6ProtocolGuid,
+                         (void**)&socket->server_protocol, gImg, NULL,
+                         EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL) != EFI_SUCCESS) {
+      break;
+    }
+    return TCP6_RESULT_SUCCESS;
+  } while (false);
+
+  ELOG("Failed to initialize socket EFI protocols");
+  tcp6_close(socket);
+  return TCP6_RESULT_ERROR;
+}
+
+// Initialize the socket using the handle matching expected_mac, or fall back to the first handle.
+static tcp6_result find_and_init_socket(tcp6_socket* socket, efi_handle* handles,
+                                        size_t num_handles, const uint8_t* expected_mac) {
+  if (expected_mac != NULL) {
+    for (size_t i = 0; i < num_handles; i++) {
+      // Initialize the socket first in order to access the underlying NIC's MAC address.
+      if (socket_efi_init(socket, handles[i]) != TCP6_RESULT_SUCCESS) {
+        continue;
+      }
+
+      // Read the MAC address and check for a match.
+      efi_simple_network_mode snp_mode = {};
+      if (socket->server_protocol->GetModeData(socket->server_protocol, NULL, NULL, NULL, NULL,
+                                               &snp_mode) == EFI_SUCCESS &&
+          memcmp(snp_mode.CurrentAddress.addr, expected_mac, ETH_ADDR_LEN) == 0) {
+        return TCP6_RESULT_SUCCESS;
+      }
+
+      tcp6_close(socket);
+    }
+    WLOG("No TCP6 handle matched the expected MAC");
+  }
+
+  // Fall back to the first handle.
+  if (num_handles > 1) {
+    WLOG("Found %zu TCP service handles, but only using the first", num_handles);
+  }
+  return socket_efi_init(socket, handles[0]);
+}
+
 tcp6_result tcp6_open(tcp6_socket* socket, efi_boot_services* boot_services,
-                      const efi_ipv6_addr* address, uint16_t port) {
+                      const uint8_t* expected_mac, const efi_ipv6_addr* address, uint16_t port) {
   memset(socket, 0, sizeof(*socket));
 
   socket->boot_services = boot_services;
@@ -140,39 +197,12 @@ tcp6_result tcp6_open(tcp6_socket* socket, efi_boot_services* boot_services,
     ELOG("No TCP service handles found");
     boot_services->FreePool(handles);
     return TCP6_RESULT_ERROR;
-  } else if (num_handles > 1) {
-    // To keep things simple for now, just always take the first handle. We'll
-    // probably want to improve this in the future.
-    WLOG("Found %zu TCP service handles, but only using the first", num_handles);
   }
-  socket->binding_handle = handles[0];
+
+  tcp6_result result = find_and_init_socket(socket, handles, num_handles, expected_mac);
   boot_services->FreePool(handles);
-
-  DLOG("Opening TCP6 binding protocol");
-  status = boot_services->OpenProtocol(socket->binding_handle, &kTcp6ServiceBindingProtocolGuid,
-                                       (void**)&socket->binding_protocol, gImg, NULL,
-                                       EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
-  if (status != EFI_SUCCESS) {
-    ELOG_S(status, "Failed to open TCP binding protocol");
-    return TCP6_RESULT_ERROR;
-  }
-
-  DLOG("Creating TCP6 server handle");
-  status = socket->binding_protocol->CreateChild(socket->binding_protocol, &socket->server_handle);
-  if (status != EFI_SUCCESS) {
-    ELOG_S(status, "Failed to create TCP child handle");
-    tcp6_close(socket);
-    return TCP6_RESULT_ERROR;
-  }
-
-  DLOG("Opening TCP6 server protocol");
-  status = boot_services->OpenProtocol(socket->server_handle, &kTcp6ProtocolGuid,
-                                       (void**)&socket->server_protocol, gImg, NULL,
-                                       EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
-  if (status != EFI_SUCCESS) {
-    ELOG_S(status, "Failed to open TCP protocol");
-    tcp6_close(socket);
-    return TCP6_RESULT_ERROR;
+  if (result != TCP6_RESULT_SUCCESS) {
+    return result;
   }
 
   efi_tcp6_config_data config_data = {

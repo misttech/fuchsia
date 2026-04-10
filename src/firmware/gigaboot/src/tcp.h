@@ -81,14 +81,15 @@ typedef enum {
 
 // Opens a TCP6 server socket.
 //
-// This uses the first TCP interface it finds; we may need to improve this for
-// devices with multiple TCP interfaces
+// This first attempts to select the TCP interface that matches the given mac address. If a matching
+// interface is not found, the first available interface will be selected.
 //
 // Call tcp6_close() on this socket when finished.
 //
 // Args:
 //   socket: socket struct to open; must not already be open
 //   boot_services: EFI boot services table
+//   expected_mac: 6-byte MAC address of the interface to match, or NULL for first available
 //   address: IP6 address to open the server on
 //   port: TCP server port to open
 //
@@ -96,7 +97,7 @@ typedef enum {
 //   TCP6_RESULT_SUCCESS
 //   TCP6_RESULT_ERROR
 tcp6_result tcp6_open(tcp6_socket* socket, efi_boot_services* boot_services,
-                      const efi_ipv6_addr* address, uint16_t port);
+                      const uint8_t* expected_mac, const efi_ipv6_addr* address, uint16_t port);
 
 // Accepts an incoming TCP client connection.
 //

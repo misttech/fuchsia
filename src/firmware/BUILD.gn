@@ -9,6 +9,7 @@ group("tests") {
     "fastboot-tcp:tests",
     "fastboot-usb:tests",
     "gigaboot/cpp/tests",
+    "gigaboot/src:tests",
     "lib/abr/test",
     "lib/boot-shim-utils:tests",
     "lib/fastboot:tests",

@@ -12,7 +12,6 @@
 
 #include "efi/types.h"
 #include "fastboot.h"
-#include "gigaboot/src/inet6.h"
 #include "gigaboot/src/tcp.h"
 #include "lib/zx/time.h"
 #include "mdns.h"
@@ -27,18 +26,17 @@ constexpr size_t kPageSize = 4096;
 constexpr size_t kDownloadBufferSize = 1ULL * 1024 * 1024 * 1024;  // 1GB
 constexpr size_t kDownloadBufferPageCount = kDownloadBufferSize / kPageSize;
 
-zx::result<> TcpInitialize(tcp6_socket &fb_tcp_socket) {
+zx::result<> TcpInitialize(tcp6_socket &fb_tcp_socket, const MacAddr &mac) {
   if (fb_tcp_socket.binding_protocol) {
     return zx::ok();
   }
 
-  static_assert(sizeof(efi_ipv6_addr) == sizeof(ll_ip6_addr), "IP6 address size mismatch");
-  efi_ipv6_addr efi_ll_addr;
-  memcpy(&efi_ll_addr, &ll_ip6_addr, sizeof(ll_ip6_addr));
+  // Use the unspecified address (::) so UEFI's TCP6 driver auto-selects a local address.
+  efi_ipv6_addr unspecified_addr = {};
 
   while (true) {
-    if (tcp6_open(&fb_tcp_socket, gEfiSystemTable->BootServices, &efi_ll_addr, kFbServerPort) ==
-        TCP6_RESULT_SUCCESS) {
+    if (tcp6_open(&fb_tcp_socket, gEfiSystemTable->BootServices, mac.data(), &unspecified_addr,
+                  kFbServerPort) == TCP6_RESULT_SUCCESS) {
       printf("Fastboot TCP is ready\n");
       return zx::ok();
     }
@@ -96,8 +94,19 @@ zx::result<> FastbootTcpMain() {
   // We could potentially move this to the heap if we want to be able to return without closing the
   // socket, but it doesn't seem necessary at this point; fastboot isn't part of the standard boot
   // flow so it's probably OK to just abort() on TCP failure rather than trying to push through.
+
+  // EthernetAgent will initialize on the active NIC. If there are multiple active NICs, only the
+  // first will be selected.
+  auto res = EthernetAgent::Create();
+  if (res.is_error()) {
+    printf("Error creating ethernet agent: %s\n", EfiStatusToString(res.error_value()));
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  EthernetAgent eth_agent = std::move(res.value());
+
+  // Use the active NIC's MAC address to determine which NIC to open the fastboot server on.
   tcp6_socket fb_tcp_socket = {};
-  auto init_res = TcpInitialize(fb_tcp_socket);
+  auto init_res = TcpInitialize(fb_tcp_socket, eth_agent.Addr());
   if (init_res.is_error()) {
     return zx::error(ZX_ERR_INTERNAL);
   }
@@ -118,13 +127,6 @@ zx::result<> FastbootTcpMain() {
   }
 
   Fastboot fastboot({reinterpret_cast<uint8_t *>(download_buffer), kDownloadBufferSize}, zb_ops);
-  auto res = EthernetAgent::Create();
-  if (res.is_error()) {
-    printf("Error creating ethernet agent: %s\n", EfiStatusToString(res.error_value()));
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-
-  EthernetAgent eth_agent = std::move(res.value());
   MdnsAgent mdns_agent(eth_agent, gEfiSystemTable);
   while (true) {
     if (auto poll = mdns_agent.Poll(); poll.is_error()) {
