@@ -70,6 +70,10 @@ def find_files(
     files = []
     for glob in globs:
         for file in glob:
+            # Skip directories that might have a .fidl extension
+            if not file.is_file():
+                continue
+
             # Read in FIDL file
             with open(file, "r") as f:
                 # Parse `library` decl
