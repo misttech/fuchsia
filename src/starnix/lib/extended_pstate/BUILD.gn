@@ -31,11 +31,6 @@ static_library("riscv64_assembly") {
   deps = [ "//src/starnix/lib/asm_utils" ]
 }
 
-# TODO(https://fxbug.dev/501183733) remove once supported globally
-config("riscv_vector") {
-  rustflags = [ "-Ctarget-feature=+v" ]
-}
-
 rustc_library("lib") {
   name = "extended_pstate"
   edition = "2024"
@@ -56,7 +51,6 @@ rustc_library("lib") {
   } else if (target_cpu == "riscv64") {
     sources += [ "src/riscv64.rs" ]
     deps += [ ":riscv64_assembly" ]
-    configs += [ ":riscv_vector" ]
   }
 
   configs += [ "//src/starnix/build:kernel_library_config" ]

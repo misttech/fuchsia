@@ -277,6 +277,9 @@ rust_toolchain(
         # code that is targeted for RISC-V64 Fuchsia must be compiled with shadow
         # call stack to avoid build failures due to ABI mismatch.
         "-Zsanitizer=shadow-call-stack",
+
+        # TODO(https://fxbug.dev/501183733) remove once rustc's frontend does this automatically
+        "-Ctarget-feature=+v",
     ],
 )
 

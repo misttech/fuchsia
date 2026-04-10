@@ -26,8 +26,13 @@ config("riscv64") {
   }
   configs = [ ":abi" ]
 
-  # TODO(https://fxbug.dev/360955800): remove the SCS option once the rustc driver can set it by default for Fuchsia targets
-  rustflags = [ "-Zsanitizer=shadow-call-stack" ]
+  rustflags = [
+    # TODO(https://fxbug.dev/360955800): remove the SCS option once the rustc driver can set it by default for Fuchsia targets
+    "-Zsanitizer=shadow-call-stack",
+
+    # TODO(https://fxbug.dev/501183733) remove once rustc's frontend does this automatically
+    "-Ctarget-feature=+v",
+  ]
 }
 
 riscv64_abi_config("no-vector") {
