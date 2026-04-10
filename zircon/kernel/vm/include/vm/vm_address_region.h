@@ -807,201 +807,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   const char name_[ZX_MAX_NAME_LEN] = {};
 };
 
-// Helper object for managing a WAVL tree of protection ranges inside a VmMapping. For efficiency
-// this object does not duplicate the base_ and size_ of the mapping, and so these values must be
-// passed into most methods as |mapping_base| and |mapping_size|.
-// This object is thread-compatible
-// TODO: This object could be generalized into a dense range tracker as it is not really doing
-// anything mapping specific.
-class MappingProtectionRanges {
- public:
-  explicit MappingProtectionRanges(arch_mmu_flags_t arch_mmu_flags)
-      : first_region_arch_mmu_flags_(arch_mmu_flags) {}
-  MappingProtectionRanges(MappingProtectionRanges&&) = default;
-  ~MappingProtectionRanges() = default;
-  MappingProtectionRanges& operator=(MappingProtectionRanges&&) = default;
-
-  // Helper struct for FlagsRangeAtAddr
-  struct FlagsRange {
-    arch_mmu_flags_t mmu_flags;
-    uint64_t region_top;
-  };
-  // Returns both the flags for the specified vaddr, as well as the end of the range those flags are
-  // valid for.
-  FlagsRange FlagsRangeAtAddr(vaddr_t mapping_base, size_t mapping_size, vaddr_t vaddr) const {
-    if (protect_region_list_rest_.is_empty()) {
-      return FlagsRange{first_region_arch_mmu_flags_, mapping_base + mapping_size};
-    } else {
-      auto region = protect_region_list_rest_.upper_bound(vaddr);
-      const vaddr_t region_top =
-          region.IsValid() ? region->region_start : (mapping_base + mapping_size);
-      const arch_mmu_flags_t mmu_flags = FlagsForPreviousRegion(region);
-      return FlagsRange{mmu_flags, region_top};
-    }
-  }
-
-  // Updates the specified inclusive sub range to have the given flags. On error state is unchanged.
-  // When updating the provided callback is invoked for every old range and value that is being
-  // modified.
-  template <typename F>
-  zx_status_t UpdateProtectionRange(vaddr_t mapping_base, size_t mapping_size, vaddr_t base,
-                                    size_t size, arch_mmu_flags_t new_arch_mmu_flags, F callback);
-
-  // Enumerates any different protection ranges that exist inside this mapping. The virtual range
-  // specified by range_base and range_size must be within this mappings base_ and size_. The
-  // provided callback is called in virtual address order for each protection type. ZX_ERR_NEXT
-  // and ZX_ERR_STOP can be used to control iteration, with any other status becoming the return
-  // value of this method. The callback |func| is assumed to have a type signature of:
-  // |zx_status_t(vaddr_t region_base, size_t region_size, arch_mmu_flags_t mmu_flags)|
-  template <typename F>
-  zx_status_t EnumerateProtectionRanges(vaddr_t mapping_base, size_t mapping_size, vaddr_t base,
-                                        size_t size, F func) const {
-    DEBUG_ASSERT(size > 0);
-
-    // Have a short circuit for the single protect region case to avoid wavl tree processing in the
-    // common case.
-    if (protect_region_list_rest_.is_empty()) {
-      zx_status_t result = func(base, size, first_region_arch_mmu_flags_);
-      if (result == ZX_ERR_NEXT || result == ZX_ERR_STOP) {
-        return ZX_OK;
-      }
-      return result;
-    }
-
-    // See comments in the loop that explain what next and current represent.
-    auto next = protect_region_list_rest_.upper_bound(base);
-    auto current = next;
-    current--;
-    const vaddr_t range_top = base + (size - 1);
-    do {
-      // The region starting from 'current' and ending at 'next' represents a single protection
-      // domain. We first work that, remembering that either of these could be an invalid node,
-      // meaning the start or end of the mapping respectively.
-      const vaddr_t protect_region_base = current.IsValid() ? current->region_start : mapping_base;
-      const vaddr_t protect_region_top =
-          next.IsValid() ? (next->region_start - 1) : (mapping_base + (mapping_size - 1));
-      // We should only be iterating nodes that are actually part of the requested range.
-      DEBUG_ASSERT(base <= protect_region_top);
-      DEBUG_ASSERT(range_top >= protect_region_base);
-      // The region found is of an entire protection block, and could extend outside the requested
-      // range, so trim if necessary.
-      const vaddr_t region_base = ktl::max(protect_region_base, base);
-      const size_t region_len = ktl::min(protect_region_top, range_top) - region_base + 1;
-      zx_status_t result =
-          func(region_base, region_len,
-               current.IsValid() ? current->arch_mmu_flags : first_region_arch_mmu_flags_);
-      if (result != ZX_ERR_NEXT) {
-        if (result == ZX_ERR_STOP) {
-          return ZX_OK;
-        }
-        return result;
-      }
-      // Move to the next block.
-      current = next;
-      next++;
-      // Continue looping as long we operating on nodes that overlap with the requested range.
-    } while (current.IsValid() && current->region_start <= range_top);
-
-    return ZX_OK;
-  }
-
-  // Merges protection ranges such that |right| is left cleared, and |this| contains the information
-  // of both ranges. It is an error to call this if |this| and |right| are not virtually contiguous.
-  zx_status_t MergeRightNeighbor(MappingProtectionRanges& right, vaddr_t merge_addr);
-
-  // Splits this protection range into two ranges around the specified split point. |this| becomes
-  // the left range and the right range is returned.
-  MappingProtectionRanges SplitAt(vaddr_t split);
-
-  // Discard any protection information below the given address.
-  void DiscardBelow(vaddr_t addr);
-
-  // Discard any protection information above the given address.
-  void DiscardAbove(vaddr_t addr);
-
-  // Returns whether all the protection nodes are within the given range. Intended for asserts.
-  bool DebugNodesWithinRange(vaddr_t mapping_base, size_t mapping_size);
-
-  // Clears all protection information and sets the size to 0.
-  void clear() { protect_region_list_rest_.clear(); }
-
-  // Flags for the first protection region.
-  arch_mmu_flags_t FirstRegionMmuFlags() const { return first_region_arch_mmu_flags_; }
-
-  // Returns whether there is only a single protection region, that being the first region.
-  bool IsSingleRegion() const { return protect_region_list_rest_.is_empty(); }
-
-  // Sets the flags for the first region
-  void SetFirstRegionMmuFlags(arch_mmu_flags_t new_flags) {
-    first_region_arch_mmu_flags_ = new_flags;
-  }
-
- private:
-  // If a mapping is protected so that parts of it are different types then we need to track this
-  // information. The ProtectNode represents the additional metadata that we need to allocate to
-  // track this, and these nodes get placed in the protect_region_list_rest_.
-  struct ProtectNode : public fbl::WAVLTreeContainable<ktl::unique_ptr<ProtectNode>> {
-    ProtectNode(vaddr_t start, arch_mmu_flags_t flags)
-        : region_start(start), arch_mmu_flags(flags) {}
-    ProtectNode() = default;
-    ~ProtectNode() = default;
-
-    vaddr_t GetKey() const { return region_start; }
-
-    // Defines the start of the region that the flags apply to. The end of the region is determined
-    // implicitly by either the next region in the tree, or the end of the mapping.
-    vaddr_t region_start = 0;
-    // The mapping flags (read/write/user/etc) for this region.
-    arch_mmu_flags_t arch_mmu_flags = 0;
-  };
-  using KeyTraits = fbl::DefaultKeyedObjectTraits<
-      vaddr_t, typename fbl::internal::ContainerPtrTraits<ktl::unique_ptr<ProtectNode>>::ValueType>;
-  using RegionList = fbl::WAVLTree<vaddr_t, ktl::unique_ptr<ProtectNode>, KeyTraits,
-                                   fbl::DefaultObjectTag, fbl::SizeOrder::N>;
-
-  // Internal helper that returns the flags for the region before the given node. Templated to work
-  // on both iterator and const_iterator.
-  template <typename T>
-  arch_mmu_flags_t FlagsForPreviousRegion(T node) const {
-    node--;
-    return node.IsValid() ? node->arch_mmu_flags : first_region_arch_mmu_flags_;
-  }
-
-  // Counts how many nodes would need to be allocated for a protection range. This calculation is
-  // based of whether there are actually changes in the protection type that require a node to be
-  // added.
-  uint NodeAllocationsForRange(vaddr_t mapping_base, size_t mapping_size, vaddr_t base, size_t size,
-                               RegionList::iterator removal_start, RegionList::iterator removal_end,
-                               arch_mmu_flags_t new_mmu_flags) const;
-
-  // To efficiently track the current protection/arch mmu flags of the mapping we want to avoid
-  // allocating ProtectNode's as much as possible. For this the following scheme is used:
-  // * The first_region_arch_mmu_flags_ represent the mmu flags from the start of the mapping (that
-  //   is base_) up to the first node in the protect_region_list_rest_. Should
-  //   protect_region_list_rest_ be empty then the region extends all the way to base_+size_. This
-  //   means that when a mapping is first created no nodes need to be allocated and inserted into
-  //   protect_region_list_rest_, we can simply set first_region_arch_mmu_flags_ to the initial
-  //   protection flags.
-  // * Should ::Protect need to 'split' a region, then nodes can be added to the
-  // protect_region_list_rest_
-  //   such that the mapping base_+first_region-arch_mmu_flags_ always represent the start of the
-  //   first region, and the last region is implicitly ended by the end of the mapping.
-  // As we want to avoid having redundant nodes, we can apply the following invariants to
-  // protect_region_list_rest_
-  // * No node region_start==base_
-  // * No node with region_start==(base_+size_-1)
-  // * First node in the tree cannot have arch_mmu_flags == first_region_arch_mmu_flags_
-  // * No two adjacent nodes in the tree can have the same arch_mmu_flags.
-  // To give an example. If there was a mapping with base_ = 0x1000, size_ = 0x5000,
-  // first_region_arch_mmu_flags_ = READ and a single ProtectNode with region_start = 0x3000,
-  // arch_mmu_flags = READ_WRITE. Then would determine there to be the regions
-  // 0x1000-0x3000: READ (start comes from base_, the end comes from the start of the first node)
-  // 0x3000-0x6000: READ_WRITE (start from node start, end comes from the end of the mapping as
-  // there is no next node.
-  arch_mmu_flags_t first_region_arch_mmu_flags_;
-  RegionList protect_region_list_rest_;
-};
-
 // A representation of the mapping of a VMO into the address space
 class VmMapping final : public VmAddressRegionOrMapping {
  public:
@@ -1010,15 +815,19 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // different accessors, one for each lock.
   arch_mmu_flags_t arch_mmu_flags_locked(vaddr_t offset) const
       TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
+    return FlagsRangeAtAddrLocked(offset).mmu_flags;
   }
   arch_mmu_flags_t arch_mmu_flags_locked_object(vaddr_t offset) const
       TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset).mmu_flags;
+    return FlagsRangeAtAddrLocked(offset).mmu_flags;
   }
-  MappingProtectionRanges::FlagsRange arch_mmu_flags_range_locked(vaddr_t offset) const
+  struct FlagsRange {
+    arch_mmu_flags_t mmu_flags;
+    uint64_t region_top;
+  };
+  FlagsRange arch_mmu_flags_range_locked(vaddr_t offset) const
       TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_.FlagsRangeAtAddr(base_, size_, offset);
+    return FlagsRangeAtAddrLocked(offset);
   }
   uint64_t object_offset() const { return object_offset_; }
   uint64_t mapping_subtree_max_offset() const TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -1145,13 +954,76 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // value of this method.
   template <typename F>
   zx_status_t EnumerateProtectionRangesLocked(vaddr_t base, size_t size, F func) const
-      TA_REQ(lock()) {
+      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
     DEBUG_ASSERT(is_in_range(base, size));
     // If the mapping is no longer alive, then return early since there's nothing to enumerate.
     if (!IsAliveLocked()) {
       return ZX_OK;
     }
-    return ProtectRangesLocked().EnumerateProtectionRanges(base_, size_, base, size, func);
+
+    const vaddr_t end = base + size;
+
+    // Find the first transition strictly after 'base'.
+    auto it = rest_protection_ranges_.upper_bound(base);
+
+    // |it| now represents the end point of the first range, so look backwards to determine the
+    // start flags.
+    auto prev = it;
+    prev--;
+    arch_mmu_flags_t flags = prev ? (*prev).second : first_region_arch_mmu_flags_;
+    vaddr_t range_start = base;
+
+    while (true) {
+      // The current range ends at either 'end' or the next transition point, whichever is earlier.
+      const vaddr_t range_end = it ? ktl::min((*it).first, end) : end;
+      DEBUG_ASSERT(range_start < range_end);
+
+      zx_status_t result = func(range_start, range_end - range_start, flags);
+      if (result != ZX_ERR_NEXT) {
+        if (result == ZX_ERR_STOP) {
+          return ZX_OK;
+        }
+        return result;
+      }
+
+      // If we've reached the end of the requested range, or there are no more transitions, stop.
+      // Placing this check here allows the range generation above to also generate the 'trailing'
+      // range for the last transition point without needing an extra invocation of |func|, which
+      // helps inlining.
+      if (!it || (*it).first >= end) {
+        break;
+      }
+
+      // Move to the next transition point.
+      range_start = range_end;
+      flags = (*it).second;
+      it++;
+    }
+    return ZX_OK;
+  }
+
+  template <typename F>
+  zx_status_t EnumerateProtectionRangesLockedObject(vaddr_t base, size_t size, F func) const
+      TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    return EnumerateProtectionRangesLocked(base, size, func);
+  }
+
+  FlagsRange FlagsRangeAtAddrLocked(vaddr_t va) const TA_REQ(lock()) TA_REQ(object_->lock()) {
+    if (rest_protection_ranges_.is_empty()) {
+      return FlagsRange{first_region_arch_mmu_flags_, base_ + size_};
+    }
+    // Find the first transition strictly after 'va'.
+    auto it = rest_protection_ranges_.upper_bound(va);
+    // |it| represents the end of the range that includes |va|
+    vaddr_t top = it ? (*it).first : base_ + size_;
+    // Now go backwards to find the start of the range that includes |va|, which tells us the flags.
+    it--;
+    arch_mmu_flags_t flags = it ? (*it).second : first_region_arch_mmu_flags_;
+    return FlagsRange{flags, top};
+  }
+  FlagsRange FlagsRangeAtAddrLockedObject(vaddr_t va) const
+      TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    return FlagsRangeAtAddrLocked(va);
   }
 
   // The maximum number of pages that a page fault can optimistically extend the fault to include.
@@ -1196,7 +1068,8 @@ class VmMapping final : public VmAddressRegionOrMapping {
             arch_mmu_flags_t arch_mmu_flags, Mergeable mergeable);
   VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
             uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-            MappingProtectionRanges&& ranges, Mergeable mergeable);
+            arch_mmu_flags_t first_mmu_flags, btree::BTree<arch_mmu_flags_t>&& ranges,
+            Mergeable mergeable);
 
   zx_status_t DestroyLocked() TA_REQ(region_lock()) TA_REQ(lock()) override;
   zx_status_t DestroyLockedObject(bool unmap) TA_REQ(region_lock()) TA_REQ(lock())
@@ -1229,6 +1102,27 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // Helper for protect and unmap.
   static zx_status_t ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr_t base, size_t size,
                                     arch_mmu_flags_t new_arch_mmu_flags);
+
+  // Copies protection ranges for the given sub-range into |out_first_flags| and |out_ranges|.
+  // The sub-range [base, base + size) must be within [base_, base_ + size_).
+  zx_status_t CopyProtectionRangesLocked(vaddr_t base, size_t size,
+                                         arch_mmu_flags_t* out_first_flags,
+                                         btree::BTree<arch_mmu_flags_t>* out_ranges) const
+      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS;
+
+  // Merges a copy of the protection ranges of |right| into this mapping.
+  // Assumes |right| is immediately to the right of this mapping.
+  zx_status_t MergeProtectionRangesLocked(const VmMapping& right) TA_REQ(lock())
+      TA_REQ(object_->lock()) TA_REQ(right.lock()) TA_REQ(right.object_lock());
+
+  // Removes any protection range transitions within the range [base, end).
+  void ClearProtectionRangeTransitionsLocked(vaddr_t base, vaddr_t end) TA_REQ(lock())
+      TA_REQ(object_->lock());
+
+  // Removes all protection range transitions at or below |split_addr|, returning the flags
+  // that are active at |split_addr|.
+  arch_mmu_flags_t RemoveAfterSplitLocked(vaddr_t split_addr) TA_REQ(lock())
+      TA_REQ(object_->lock());
 
   AttributionCounts GetAttributedMemoryLocked(Guard<CriticalMutex>& guard) const TA_REQ(lock());
 
@@ -1315,6 +1209,26 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // the aspace lock() and the object_->lock(). See PageFault for usage of this.
   RelaxedAtomic<bool> object_reset_ = false;
 
+  // The protection flags of this mapping are tracked as a series of contiguous
+  // virtual address ranges. Since the base address of the mapping is known (`base_`),
+  // we only need to store the flags for the first range, and then the start address
+  // and flags for any subsequent ranges where the protections change.
+  //
+  // `first_region_arch_mmu_flags_` holds the MMU flags for the interval starting
+  // exactly at `base_`. If `protection_ranges_` is empty, these flags apply to the
+  // entire mapping: [base_, base_ + size_).
+  //
+  // `protection_ranges_` is a B-Tree that records any transitions in protection.
+  // Each entry consists of a `vaddr_t` key and an `arch_mmu_flags_t` value.
+  // A node (addr, flags) means that the range starting at `addr` has the protections
+  // `flags`, up until the address of the next node in the tree, or `base_ + size_`
+  // if it is the last node.
+  //
+  // This can be read with either lock held, but requires both locks to write it.
+  arch_mmu_flags_t first_region_arch_mmu_flags_ TA_GUARDED(lock()) TA_GUARDED(object_->lock());
+  btree::BTree<arch_mmu_flags_t> rest_protection_ranges_ TA_GUARDED(lock())
+      TA_GUARDED(object_->lock());
+
   fbl::WAVLTreeNodeState<VmMapping*> vmo_mapping_node_ TA_GUARDED(object_->lock());
   VmMappingSubtreeState mapping_subtree_state_ TA_GUARDED(object_->lock());
 
@@ -1327,24 +1241,10 @@ class VmMapping final : public VmAddressRegionOrMapping {
   fbl::RefPtr<VmObject> object_ TA_GUARDED(lock());
   const uint64_t object_offset_ = 0;
 
-  // This can be read with either lock hold, but requires both locks to write it.
-  MappingProtectionRanges protection_ranges_ TA_GUARDED(object_->lock()) TA_GUARDED(lock());
-
   class CurrentlyFaulting;
   // Pointer to a CurrentlyFaulting object if the mapping is presently handling a page fault. This
   // is protected specifically by the object lock so that AspaceUnmapLockedObject can inspect it.
   CurrentlyFaulting* currently_faulting_ TA_GUARDED(object_->lock()) = nullptr;
-
-  // Helpers for gaining read access to the protection information when only one of the locks is
-  // held.
-  const MappingProtectionRanges& ProtectRangesLocked() const
-      TA_REQ(lock()) __TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_;
-  }
-  const MappingProtectionRanges& ProtectRangesLockedObject() const
-      TA_REQ(object_->lock()) __TA_NO_THREAD_SAFETY_ANALYSIS {
-    return protection_ranges_;
-  }
 };
 
 // Interface for walking a VmAspace-rooted VmAddressRegion/VmMapping tree.

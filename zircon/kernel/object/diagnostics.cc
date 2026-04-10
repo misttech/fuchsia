@@ -1074,8 +1074,7 @@ class AspaceEnumerator final : public VmEnumerator {
 
     while (region_offset < map_size && map->IsAliveLocked()) {
       const vaddr_t region_base = map_base + region_offset;
-      MappingProtectionRanges::FlagsRange protect_range =
-          map->arch_mmu_flags_range_locked(region_base);
+      VmMapping::FlagsRange protect_range = map->arch_mmu_flags_range_locked(region_base);
       const size_t region_len = protect_range.region_top - region_base;
       if (available_ < max_) {
         const arch_mmu_flags_t mmu_flags = protect_range.mmu_flags;
