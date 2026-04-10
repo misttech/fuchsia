@@ -7,6 +7,8 @@ package file
 import (
 	"bytes"
 	"unicode/utf8"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 // windows1252 is a lookup table used to translate the upper 128 bytes (0x80 to 0xFF)
@@ -40,9 +42,13 @@ var windows1252 = [128]rune{
 // encoding for legacy license files containing smart quotes) and decodes it
 // into valid UTF-8.
 func forceUTF8(data []byte) []byte {
+	defer metrics.TransliterationDuration.Track()()
 	if utf8.Valid(data) {
+		metrics.FileEncoding.Inc("utf8")
 		return data
 	}
+
+	metrics.FileEncoding.Inc("legacy")
 
 	var buf bytes.Buffer
 	// Windows-1252 is a single-byte encoding

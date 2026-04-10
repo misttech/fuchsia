@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 const (
@@ -47,10 +48,10 @@ func Initialize(c *FileConfig) error {
 	}
 
 	// Save the config file to the out directory (if defined).
-	if b, err := json.MarshalIndent(c, "", "  "); err != nil {
+	if b, err := json.MarshalIndent(Config, "", "  "); err != nil {
 		return err
 	} else {
-		plusFile("_config.json", b)
+		metrics.AddArtifact("file/_config.json", b)
 	}
 
 	Config = c

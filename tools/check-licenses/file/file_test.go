@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 // setup initializes the global state for each test.
@@ -23,12 +24,6 @@ func setup(t *testing.T) {
 	AllFiles = make(map[string]*File)
 	AllLicenseFiles = make(map[string]*File)
 	allFilesMu.Unlock()
-
-	Metrics = &FileMetrics{
-		counts: make(map[string]int),
-		values: make(map[string][]string),
-		files:  make(map[string][]byte),
-	}
 }
 
 // =========================================================================
@@ -146,8 +141,13 @@ func TestLoadFile_Caching(t *testing.T) {
 		t.Error("Expected LoadFile to return the exact same pointer on subsequent calls")
 	}
 
-	if Metrics.Counts()[RepeatedFileTraversal] != 1 {
-		t.Errorf("Expected RepeatedFileTraversal metric to be 1, got %d", Metrics.Counts()[RepeatedFileTraversal])
+	ext := filepath.Ext(filename)
+	count, err := metrics.FilesProcessed.GetCount(ext, "cached")
+	if err != nil {
+		t.Fatalf("Failed to get metrics count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected FilesProcessed metric to be 1 for %s/cached, got %d", ext, count)
 	}
 }
 

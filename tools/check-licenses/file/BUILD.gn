@@ -40,12 +40,12 @@ if (is_host) {
       "encoding.go",
       "file.go",
       "filedata.go",
-      "metrics.go",
       "notice.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/licenseclassifier/v2",
+      "//tools/check-licenses/metrics",
       "//tools/lib/logger",
     ]
   }
@@ -68,6 +68,7 @@ if (is_host) {
     ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
+      "//tools/check-licenses/metrics",
       "//tools/check-licenses/testutil",
     ]
   }

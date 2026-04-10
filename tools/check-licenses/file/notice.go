@@ -6,6 +6,8 @@ package file
 
 import (
 	"bytes"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 type Data struct {
@@ -18,6 +20,10 @@ func mergeDuplicates(licenses []*Data) []*Data {
 	set := make(map[string]map[string]bool)
 	dedupedLicenses := make([]*Data, 0, len(licenses))
 
+	for i := 0; i < len(licenses); i++ {
+		metrics.NoticeSegments.Inc("raw")
+	}
+
 	for _, l := range licenses {
 		if _, ok := set[l.LibraryName]; !ok {
 			set[l.LibraryName] = make(map[string]bool)
@@ -28,6 +34,7 @@ func mergeDuplicates(licenses []*Data) []*Data {
 		if !set[l.LibraryName][string(l.LicenseText)] {
 			set[l.LibraryName][string(l.LicenseText)] = true
 			dedupedLicenses = append(dedupedLicenses, l)
+			metrics.NoticeSegments.Inc("unique")
 		}
 	}
 
@@ -98,6 +105,7 @@ func ParseChromium(path string, content []byte) ([]*Data, error) {
 
 // ParseFlutter extracts licenses from Flutter NOTICE files.
 func ParseFlutter(path string, content []byte) ([]*Data, error) {
+	defer metrics.NoticeParsingDuration.Track()()
 	var licenses []*Data
 	content = bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
 	blocks := bytes.Split(content, []byte("===================================================================================================="))

@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	classifierLib "github.com/google/licenseclassifier/v2"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 // FileData holds the text information (and some metadata) for a given file.
@@ -191,8 +192,11 @@ func (fd *FileData) Search() {
 	// while we were waiting for the lock. classifier.Match is computationally
 	// expensive, so we only want to run it exactly once per FileData.
 	if fd.searchResults == nil {
-		results := classifier.Match(fd.data)
-		fd.searchResults = &results
+		func() {
+			defer metrics.ClassifierDuration.Track()()
+			results := classifier.Match(fd.data)
+			fd.searchResults = &results
+		}()
 	}
 }
 

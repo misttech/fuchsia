@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 )
 
 // FileType is an "enum" describing the type of file this is.
@@ -105,7 +107,7 @@ func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 	f, ok := AllFiles[absPath]
 	allFilesMu.RUnlock()
 	if ok {
-		plusVal(RepeatedFileTraversal, absPath)
+		metrics.FilesProcessed.Inc(filepath.Ext(absPath), "cached")
 		return f, nil
 	}
 
@@ -122,10 +124,7 @@ func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 		}
 	}
 
-	plusVal(NumFiles, absPath)
-	if Config.Extensions[filepath.Ext(absPath)] {
-		plusVal(NumPotentialLicenseFiles, absPath)
-	}
+	metrics.FilesProcessed.Inc(filepath.Ext(absPath), "analyzed")
 
 	// TODO: Instead of skipping empty files here, mark them as
 	// "Empty" in the README.fuchsia file.
@@ -152,7 +151,7 @@ func LoadFile(path string, ft FileType, projectName string) (*File, error) {
 	// Double-check to prevent TOCTOU race condition
 	if existingFile, exists := AllFiles[absPath]; exists {
 		allFilesMu.Unlock()
-		plusVal(RepeatedFileTraversal, absPath)
+		metrics.FilesProcessed.Inc(filepath.Ext(absPath), "cached")
 		return existingFile, nil
 	}
 	AllFiles[absPath] = f
@@ -249,7 +248,12 @@ func (f *File) LoadContent() error {
 		return nil
 	}
 
-	content, err := os.ReadFile(f.absPath)
+	var content []byte
+	var err error
+	func() {
+		defer metrics.DiskReadDuration.Track()()
+		content, err = os.ReadFile(f.absPath)
+	}()
 	if err != nil {
 		return err
 	}
@@ -257,7 +261,12 @@ func (f *File) LoadContent() error {
 	// Some source files are extremely large.
 	// Only load in the top portion of regular files to save memory.
 	if f.fileType == RegularFile && len(content) > 0 && Config.CopyrightSize > 0 {
-		content = content[:min(Config.CopyrightSize, len(content))]
+		if len(content) > Config.CopyrightSize {
+			content = content[:Config.CopyrightSize]
+			metrics.FileTruncation.Inc("truncated")
+		} else {
+			metrics.FileTruncation.Inc("full")
+		}
 	}
 
 	// Some legacy third-party source files use Windows-1252 or other non-UTF8 encodings.
