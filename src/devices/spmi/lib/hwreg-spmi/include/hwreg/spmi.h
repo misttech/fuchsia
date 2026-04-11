@@ -112,7 +112,7 @@ class SpmiRegisterBase : public RegisterBase<DerivedType, IntType, PrinterState>
       const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
     uint32_t addr = RegisterBaseType::reg_addr();
 
-    auto response = fidl::WireCall(client)->ExtendedRegisterReadLong(addr, sizeof(IntType));
+    auto response = fidl::WireCall(client)->RegisterRead(addr, sizeof(IntType));
     if (!response.ok()) {
       return zx::error(response.status());
     }
@@ -142,7 +142,7 @@ class SpmiRegisterBase : public RegisterBase<DerivedType, IntType, PrinterState>
 
     std::vector<uint8_t> vector{reinterpret_cast<uint8_t*>(&value),
                                 reinterpret_cast<uint8_t*>(&value) + sizeof(IntType)};
-    auto response = fidl::WireCall(client)->ExtendedRegisterWriteLong(
+    auto response = fidl::WireCall(client)->RegisterWrite(
         addr, fidl::VectorView<uint8_t>::FromExternal(vector));
     if (!response.ok()) {
       return zx::error(response.status());
@@ -207,8 +207,8 @@ class SpmiRegisterArray {
 
   zx::result<SpmiRegisterArray> ReadFrom(
       const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
-    auto response = fidl::WireCall(client)->ExtendedRegisterReadLong(
-        base_address_, static_cast<uint32_t>(regs_.size()));
+    auto response =
+        fidl::WireCall(client)->RegisterRead(base_address_, static_cast<uint32_t>(regs_.size()));
     if (!response.ok()) {
       return zx::error(response.status());
     }
@@ -229,7 +229,7 @@ class SpmiRegisterArray {
   }
 
   zx::result<> WriteTo(const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
-    auto response = fidl::WireCall(client)->ExtendedRegisterWriteLong(
+    auto response = fidl::WireCall(client)->RegisterWrite(
         base_address_, fidl::VectorView<uint8_t>::FromExternal(regs_));
     if (!response.ok()) {
       return zx::error(response.status());

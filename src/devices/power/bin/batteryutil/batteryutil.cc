@@ -70,11 +70,11 @@ zx::result<> SetPowerSource(const std::string& source) {
 
   fidl::SyncClient<fuchsia_hardware_spmi::Device> spmi_client(std::move(device_client));
 
-  fuchsia_hardware_spmi::DeviceExtendedRegisterWriteLongRequest request;
+  fuchsia_hardware_spmi::DeviceRegisterWriteRequest request;
   request.address(kUsbInSuspendReg);
   request.data({disconnect ? kSuspendUsbValue : kResumeUsbValue});
 
-  auto write_result = spmi_client->ExtendedRegisterWriteLong(std::move(request));
+  auto write_result = spmi_client->RegisterWrite(std::move(request));
   if (write_result.is_error()) {
     fprintf(stderr, "Failed to write to SPMI register 0x%x: %s\n", kUsbInSuspendReg,
             write_result.error_value().FormatDescription().c_str());

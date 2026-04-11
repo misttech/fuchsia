@@ -24,8 +24,7 @@ class FakeSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device>,
     response.sid(123);
     completer.Reply(std::move(response));
   }
-  void ExtendedRegisterReadLong(ExtendedRegisterReadLongRequest& request,
-                                ExtendedRegisterReadLongCompleter::Sync& completer) override {
+  void RegisterRead(RegisterReadRequest& request, RegisterReadCompleter::Sync& completer) override {
     // Only allow reads on address written to.
     if (!address_ || *address_ != request.address()) {
       completer.Reply(zx::error(fuchsia_hardware_spmi::DriverError::kBadState));
@@ -34,8 +33,8 @@ class FakeSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device>,
     read_size_ = request.size_bytes();
     return completer.Reply(zx::ok(data_));
   }
-  void ExtendedRegisterWriteLong(ExtendedRegisterWriteLongRequest& request,
-                                 ExtendedRegisterWriteLongCompleter::Sync& completer) override {
+  void RegisterWrite(RegisterWriteRequest& request,
+                     RegisterWriteCompleter::Sync& completer) override {
     address_.emplace(request.address());
     data_ = request.data();
     return completer.Reply(zx::ok());

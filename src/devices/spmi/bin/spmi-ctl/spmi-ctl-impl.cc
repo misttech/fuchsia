@@ -48,14 +48,14 @@ Options:
 
 Examples:
 
-Write 0x12 (one byte) to address 0x1234 using a Long Extended Write SPMI command:
+Write 0x12 (one byte) to address 0x1234 using a Write SPMI command:
 $ spmi-ctl -t 0 -a 0x1234 -w 0x12 0x34 0x56 0x78
 Executing on device: /svc/fuchsia.hardware.spmi.DebugService/c3d9294786beb5a906e4dbd5fd3b596e/device
 
-Read one byte from address 0x1234 using a Long Extended Read SPMI command:
+Read one byte from address 0x1234 using a Read SPMI command:
 $ spmi-ctl -t 0 -a 0x5678 -r 1
 Executing on device: /svc/fuchsia.hardware.spmi.DebugService/c3d9294786beb5a906e4dbd5fd3b596e/device
-fuchsia_hardware_spmi::DeviceExtendedRegisterReadLongResponse{ data = [ 219, ], }
+fuchsia_hardware_spmi::DeviceRegisterReadResponse{ data = [ 219, ], }
 
 Get properties for device named "pmic":
 $ spmi-ctl -c pmic -t 0 -p
@@ -275,14 +275,14 @@ int SpmiCtl::Execute(int argc, char** argv) {
           return -1;
         }
 
-        fuchsia_hardware_spmi::DeviceExtendedRegisterReadLongRequest request;
+        fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
         request.address(std::move(*address));
         request.size_bytes(static_cast<uint8_t>(read_bytes));
         auto client = GetSpmiClient(controller, *target);
         if (!client.is_valid()) {
           return -1;
         }
-        auto result = client->ExtendedRegisterReadLong(std::move(request));
+        auto result = client->RegisterRead(std::move(request));
         if (result.is_error()) {
           std::cerr << "Read failed: " << result.error_value().FormatDescription() << std::endl;
           return -1;
@@ -327,7 +327,7 @@ int SpmiCtl::Execute(int argc, char** argv) {
         if (!client.is_valid()) {
           return -1;
         }
-        fuchsia_hardware_spmi::DeviceExtendedRegisterReadLongRequest request;
+        fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
         // Read 1 byte at the time. If there is an error, continue with the next register.
         for (size_t j = 0; j < dump_bytes; ++j) {
           if (static_cast<size_t>(*address) + j > std::numeric_limits<uint16_t>::max()) {
@@ -337,7 +337,7 @@ int SpmiCtl::Execute(int argc, char** argv) {
           const uint16_t local_address = *address + static_cast<uint16_t>(j);
           request.address(local_address);
           request.size_bytes(1);
-          auto result = client->ExtendedRegisterReadLong(request);
+          auto result = client->RegisterRead(request);
           if (result.is_error()) {
             printf("Register: 0x%04x  %s\n", local_address,
                    result.error_value().FormatDescription().c_str());
@@ -366,14 +366,14 @@ int SpmiCtl::Execute(int argc, char** argv) {
         while (optind < argc && sscanf(argv[optind++], "%x", &write_byte) == 1) {
           write_bytes.push_back(static_cast<uint8_t>(write_byte));
         }
-        fuchsia_hardware_spmi::DeviceExtendedRegisterWriteLongRequest request;
+        fuchsia_hardware_spmi::DeviceRegisterWriteRequest request;
         request.address(std::move(*address));
         request.data(std::move(write_bytes));
         auto client = GetSpmiClient(controller, *target);
         if (!client.is_valid()) {
           return -1;
         }
-        auto result = client->ExtendedRegisterWriteLong(std::move(request));
+        auto result = client->RegisterWrite(std::move(request));
         if (result.is_error()) {
           std::cerr << "Write failed: " << result.error_value().FormatDescription() << std::endl;
           return -1;

@@ -49,22 +49,22 @@ type Register8 = struct {
 /// To support multiple SPMI devices, multiple nodes must be instantiated.
 @discoverable
 open protocol Device {
-    /// Issue Extended Register Read Long SPMI commands to the SPMI device.
-    /// Used to read from a 16 bit SPMI register space.
+    /// Issue register read commands to the SPMI device.
+    /// The implementation may choose which SPMI variation (e.g. extended, long) to use.
     /// When successful, it returns `size_bytes` in `data` read contiguously starting from
     /// `address` in the device.
-    flexible ExtendedRegisterReadLong(struct {
+    flexible RegisterRead(struct {
         address uint16;
         size_bytes uint32;
     }) -> (struct {
         data vector<uint8>:MAX;
     }) error DriverError;
 
-    /// Issue Extended Register Write Long SPMI commands to the SPMI device.
-    /// Used to write to a 16 bit SPMI register space.
+    /// Issue register write commands to the SPMI device.
+    /// The implementation may choose which SPMI variation (e.g. extended, long) to use.
     /// When this command is successful, `data` will be written contiguously starting from
     /// `address` in the device.
-    flexible ExtendedRegisterWriteLong(struct {
+    flexible RegisterWrite(struct {
         address uint16;
         data vector<uint8>:MAX;
     }) -> () error DriverError;

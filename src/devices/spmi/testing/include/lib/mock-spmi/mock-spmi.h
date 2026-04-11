@@ -26,8 +26,8 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     });
   }
 
-  void ExpectExtendedRegisterReadLong(uint16_t address, uint32_t size_bytes,
-                                      std::vector<uint8_t> expected_data) {
+  void ExpectRegisterRead(uint16_t address, uint32_t size_bytes,
+                          std::vector<uint8_t> expected_data) {
     expectations_.push({
         .type = CallType::kRead,
         .address = address,
@@ -36,8 +36,8 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     });
   }
 
-  void ExpectExtendedRegisterReadLong(uint16_t address, uint32_t size_bytes,
-                                      fuchsia_hardware_spmi::DriverError expected_error) {
+  void ExpectRegisterRead(uint16_t address, uint32_t size_bytes,
+                          fuchsia_hardware_spmi::DriverError expected_error) {
     expectations_.push({
         .type = CallType::kRead,
         .error = expected_error,
@@ -46,7 +46,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     });
   }
 
-  void ExpectExtendedRegisterWriteLong(
+  void ExpectRegisterWrite(
       uint16_t address, std::vector<uint8_t> data,
       std::optional<fuchsia_hardware_spmi::DriverError> expected_error = std::nullopt) {
     expectations_.push({
@@ -147,8 +147,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     }});
   }
 
-  void ExtendedRegisterReadLong(ExtendedRegisterReadLongRequest& request,
-                                ExtendedRegisterReadLongCompleter::Sync& completer) override {
+  void RegisterRead(RegisterReadRequest& request, RegisterReadCompleter::Sync& completer) override {
     ASSERT_FALSE(expectations_.empty());
     auto expectation = std::move(expectations_.front());
     expectations_.pop();
@@ -164,8 +163,8 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     }
   }
 
-  void ExtendedRegisterWriteLong(ExtendedRegisterWriteLongRequest& request,
-                                 ExtendedRegisterWriteLongCompleter::Sync& completer) override {
+  void RegisterWrite(RegisterWriteRequest& request,
+                     RegisterWriteCompleter::Sync& completer) override {
     ASSERT_FALSE(expectations_.empty());
     auto expectation = std::move(expectations_.front());
     expectations_.pop();

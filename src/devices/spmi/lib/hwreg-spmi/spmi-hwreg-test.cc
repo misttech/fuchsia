@@ -50,7 +50,7 @@ class SpmiHwregTest : public testing::Test {
 
 TEST_F(SpmiHwregTest, Read) {
   mock_spmi().SyncCall(
-      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectExtendedRegisterReadLong(0xAB, 1, {0x8A}); });
+      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectRegisterRead(0xAB, 1, {0x8A}); });
 
   auto dut = DummySpmiRegister::Get().FromValue(0).ReadFrom(TakeSpmiClient());
   EXPECT_TRUE(dut.is_ok());
@@ -65,8 +65,7 @@ TEST_F(SpmiHwregTest, Write) {
   dut.set_test_bit(1);
   dut.set_test_field(0xA);
 
-  mock_spmi().SyncCall(
-      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectExtendedRegisterWriteLong(0xAB, {0x8A}); });
+  mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) { spmi->ExpectRegisterWrite(0xAB, {0x8A}); });
   EXPECT_TRUE(dut.WriteTo(TakeSpmiClient()).is_ok());
 
   mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
@@ -74,7 +73,7 @@ TEST_F(SpmiHwregTest, Write) {
 
 TEST_F(SpmiHwregTest, UnownedRead) {
   mock_spmi().SyncCall(
-      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectExtendedRegisterReadLong(0xAB, 1, {0x8A}); });
+      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectRegisterRead(0xAB, 1, {0x8A}); });
 
   auto dut = DummySpmiRegister::Get().FromValue(0).ReadFrom(BorrowSpmiClient());
   EXPECT_TRUE(dut.is_ok());
@@ -89,8 +88,7 @@ TEST_F(SpmiHwregTest, UnownedWrite) {
   dut.set_test_bit(1);
   dut.set_test_field(0xA);
 
-  mock_spmi().SyncCall(
-      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectExtendedRegisterWriteLong(0xAB, {0x8A}); });
+  mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) { spmi->ExpectRegisterWrite(0xAB, {0x8A}); });
   EXPECT_TRUE(dut.WriteTo(BorrowSpmiClient()).is_ok());
 
   mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
@@ -101,7 +99,7 @@ TEST_F(SpmiHwregTest, ArrayRead) {
 
   {
     mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) {
-      spmi->ExpectExtendedRegisterReadLong(0xAB, 7, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+      spmi->ExpectRegisterRead(0xAB, 7, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
     });
     auto read_result = hwreg::SpmiRegisterArray(0xAB, 7).ReadFrom(BorrowSpmiClient());
     ASSERT_FALSE(read_result.is_error());
@@ -110,8 +108,8 @@ TEST_F(SpmiHwregTest, ArrayRead) {
 
   {
     mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) {
-      spmi->ExpectExtendedRegisterReadLong(
-          0xAB, 10, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99});
+      spmi->ExpectRegisterRead(0xAB, 10,
+                               {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99});
     });
     auto read_result = hwreg::SpmiRegisterArray(0xAB, 10).ReadFrom(TakeSpmiClient());
     ASSERT_FALSE(read_result.is_error());
@@ -127,7 +125,7 @@ TEST_F(SpmiHwregTest, ArrayWrite) {
     values.regs() = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
 
     mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) {
-      spmi->ExpectExtendedRegisterWriteLong(0xAB, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+      spmi->ExpectRegisterWrite(0xAB, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
     });
     ASSERT_FALSE(values.WriteTo(BorrowSpmiClient()).is_error());
   }
@@ -137,8 +135,7 @@ TEST_F(SpmiHwregTest, ArrayWrite) {
     values.regs() = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
 
     mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) {
-      spmi->ExpectExtendedRegisterWriteLong(
-          0xAB, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99});
+      spmi->ExpectRegisterWrite(0xAB, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99});
     });
     ASSERT_FALSE(values.WriteTo(TakeSpmiClient()).is_error());
   }
