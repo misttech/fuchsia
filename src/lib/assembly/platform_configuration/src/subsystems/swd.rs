@@ -115,9 +115,9 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
         )?;
 
         let manifest_public_keys = if subsystem_config.ota_manifest_public_keys.is_empty()
-            && context.build_type == &BuildType::Eng
+            && matches!(context.build_type, BuildType::UserDebug | BuildType::Eng)
         {
-            // Include a default dev key in eng builds.
+            // Include a default dev key in userdebug and eng builds.
             [OTA_MANIFEST_DEV_PUBLIC_KEY].into()
         } else {
             for key in &subsystem_config.ota_manifest_public_keys {
