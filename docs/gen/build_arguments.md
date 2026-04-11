@@ -1011,7 +1011,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -1087,7 +1087,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -4895,15 +4895,6 @@ is only useful in Fuchsia.
 **Current value (from the default):** `"78"`
 
 From //third_party/icu/default/version.gni:13
-
-### icu_root
-
-The GN files for the ICU library are located in this directory.
-Some Fuchsia builds use a different value here.
-
-**Current value (from the default):** `"//third_party/icu/default"`
-
-From //build/icu/build_config.gni:12
 
 ### icu_tzres_path
 
