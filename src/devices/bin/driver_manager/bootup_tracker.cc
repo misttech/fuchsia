@@ -72,7 +72,8 @@ void BootupTracker::BootupDoneForTesting() {
 bool BootupTracker::BootupComplete() const { return bootup_done_; }
 
 void BootupTracker::CheckBootupDone() {
-  if (IsUpdateDeadlineExceeded()) {
+  if (IsUpdateDeadlineExceeded() &&
+      (!outstanding_start_requests_.empty() || bind_manager_->HasOngoingBind())) {
     // This log message is used by tefmocheck to detect driver start/bind hangs.
     // LINT.IfChange
     fdf_log::warn("Deadline exceeded in the bootup tracker with:");
