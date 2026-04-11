@@ -45,14 +45,14 @@ func TestFFXInstance(t *testing.T) {
 	}
 	assertRunsExpectedCmd(ffx.List(ctx), stdout, "target list")
 
-	assertRunsExpectedCmd(ffx.TargetWait(ctx), stdout, "--target target target wait")
+	assertRunsExpectedCmd(ffx.TargetWait(ctx), stdout, "--target target --config log.level=debug target wait")
 
 	// Create a new instance that uses the same ffx config but runs against a different target.
 	ffx2 := FFXWithTarget(ffx, "target2")
 	var buf2 []byte
 	stdout2 := bytes.NewBuffer(buf2)
 	ffx2.SetStdoutStderr(stdout2, stdout2)
-	assertRunsExpectedCmd(ffx2.TargetWait(ctx), stdout2, "--target target2 target wait")
+	assertRunsExpectedCmd(ffx2.TargetWait(ctx), stdout2, "--target target2 --config log.level=debug target wait")
 
 	// Test expects a run_summary.json to be written in the test output directory.
 	outDir := filepath.Join(tmpDir, "out")

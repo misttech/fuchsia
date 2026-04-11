@@ -859,7 +859,7 @@ func (f *FFXInstance) TargetWait(ctx context.Context, args ...string) error {
 	if f.target == "" {
 		return fmt.Errorf("no target is set")
 	}
-	return f.invoker(append([]string{"target", "wait"}, args...)).setTarget(f.target).run(ctx)
+	return f.invoker(append([]string{"--config", "log.level=debug", "target", "wait"}, args...)).setTarget(f.target).run(ctx)
 }
 
 // EmuStart returns an invoker to start the emulator with the specified
